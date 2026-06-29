@@ -23,6 +23,33 @@ function Write-Step($Text) { Write-Host "`n=== $Text ===`n" -ForegroundColor Blu
 function Write-Ok($Text) { Write-Host "  [OK] $Text" -ForegroundColor Green }
 function Write-Warn($Text) { Write-Host "  [!] $Text" -ForegroundColor Yellow }
 function Test-Cmd($Name) { return $null -ne (Get-Command $Name -ErrorAction SilentlyContinue) }
+function Test-PythonCandidate($Exe, [string[]]$Args = @()) {
+  try {
+    $Output = & $Exe @Args -c "import sys; print(sys.executable)" 2>$null
+    return ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace(($Output | Select-Object -First 1)))
+  } catch {
+    return $false
+  }
+}
+function Get-PythonCommand {
+  $Candidates = @(
+    @{ Exe = "py"; Args = @("-3.12") },
+    @{ Exe = "py"; Args = @("-3.11") },
+    @{ Exe = "py"; Args = @("-3") },
+    @{ Exe = "python"; Args = @() },
+    @{ Exe = "python3"; Args = @() }
+  )
+  foreach ($Candidate in $Candidates) {
+    if ((Test-Cmd $Candidate.Exe) -and (Test-PythonCandidate $Candidate.Exe $Candidate.Args)) {
+      return $Candidate
+    }
+  }
+  return $null
+}
+function Invoke-Python($PythonCommand, [string[]]$Args) {
+  $Exe = $PythonCommand.Exe
+  & $Exe @($PythonCommand.Args + $Args)
+}
 function Normalize-Profile($Value, $Fallback) {
   $Text = ""
   if ($null -ne $Value) { $Text = [string]$Value }
@@ -195,11 +222,15 @@ if (Test-Cmd winget) {
   Install-WingetPackage "Ollama.Ollama" "ollama"
   $env:Path = [Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [Environment]::GetEnvironmentVariable("Path", "User")
 }
-if (-not (Test-Cmd python)) {
-  Write-Warn "Python was not found. Install Python 3.10+ from https://python.org and re-run this script."
+$PythonCommand = Get-PythonCommand
+if ($null -eq $PythonCommand) {
+  Write-Warn "Python 3.10+ was not found or only the Microsoft Store alias is available."
+  Write-Warn "Install Python from winget/python.org, reopen PowerShell, and re-run this script:"
+  Write-Warn "  winget install --id Python.Python.3.12 --source winget"
   exit 1
 } else {
-  Write-Ok "Python found"
+  $PythonExe = Invoke-Python $PythonCommand @("-c", "import sys; print(sys.executable)")
+  Write-Ok "Python found: $($PythonExe | Select-Object -First 1)"
 }
 
 $FreeGb = [math]::Round((Get-PSDrive -Name ((Get-Location).Path.Substring(0,1))).Free / 1GB)
@@ -220,15 +251,23 @@ if (-not (Test-Cmd ollama)) {
 }
 
 Write-Step "3/6 Python environment"
-if (Test-Cmd python) {
-  if (-not (Test-Path ".venv")) { python -m venv .venv }
-  & ".\.venv\Scripts\python.exe" -m pip install --upgrade pip
-  & ".\.venv\Scripts\python.exe" -m pip install -r requirements.txt
-  & ".\.venv\Scripts\python.exe" -m pip install -e .
-  Write-Ok "Python packages installed"
-  Write-Ok "TrinaxAI CLI installed: .\.venv\Scripts\trinaxai.exe"
-  Write-Warn "If 'trinaxai' is not available globally, run it from this shell after activating .\.venv\Scripts\Activate.ps1 or add .\.venv\Scripts to PATH."
+if (-not (Test-Path ".venv\Scripts\python.exe")) {
+  if (Test-Path ".venv") {
+    Write-Warn "Existing .venv is incomplete. Recreating it."
+    Remove-Item -Recurse -Force ".venv"
+  }
+  Invoke-Python $PythonCommand @("-m", "venv", ".venv")
 }
+if (-not (Test-Path ".venv\Scripts\python.exe")) {
+  Write-Warn "Could not create .venv\Scripts\python.exe. Reopen PowerShell after Python installation and re-run install.ps1."
+  exit 1
+}
+& ".\.venv\Scripts\python.exe" -m pip install --upgrade pip
+& ".\.venv\Scripts\python.exe" -m pip install -r requirements.txt
+& ".\.venv\Scripts\python.exe" -m pip install -e .
+Write-Ok "Python packages installed"
+Write-Ok "TrinaxAI CLI installed: .\.venv\Scripts\trinaxai.exe"
+Write-Warn "If 'trinaxai' is not available globally, run it from this shell after activating .\.venv\Scripts\Activate.ps1 or add .\.venv\Scripts to PATH."
 
 Write-Step "4/6 PWA frontend"
 if ((Test-Cmd npm) -and (Test-Path "chat-pwa")) {
