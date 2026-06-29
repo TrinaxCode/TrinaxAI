@@ -1,6 +1,10 @@
 # 🚀 TrinaxAI — Asistente de IA 100% Local
 
 <p align="center">
+  <img src="chat-pwa/public/logo-of-app.webp" alt="TrinaxAI Logo" width="180" />
+</p>
+
+<p align="center">
   <strong>Asistente de IA open-source, local-first con RAG, visión, voz y PWA.</strong><br>
   Corre completamente en tu máquina. Sin nube. Sin suscripciones. Sin límites.
 </p>
@@ -80,9 +84,9 @@ Para instrucciones completas por sistema, usa:
 
 | Sistema | Guia completa |
 |---|---|
-| Linux | [docs/INSTALL_LINUX.md](docs/INSTALL_LINUX.md) |
-| macOS | [docs/INSTALL_MACOS.md](docs/INSTALL_MACOS.md) |
-| Windows | [docs/INSTALL_WINDOWS.md](docs/INSTALL_WINDOWS.md) |
+| Linux | [Español](docs/INSTALL_LINUX.es.md) · [English](docs/INSTALL_LINUX.md) |
+| macOS | [Español](docs/INSTALL_MACOS.es.md) · [English](docs/INSTALL_MACOS.md) |
+| Windows | [Español](docs/INSTALL_WINDOWS.es.md) · [English](docs/INSTALL_WINDOWS.md) |
 
 ### Requisitos
 - Python 3.10+, Node.js 18+, 8GB+ RAM (16GB recomendado)

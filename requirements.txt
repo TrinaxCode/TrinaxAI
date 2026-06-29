@@ -11,12 +11,12 @@ llama-index-embeddings-ollama>=0.5
 llama-index-retrievers-bm25>=0.5
 
 bm25s>=0.2
-docx2txt>=0.8
+docx2txt>=0.9
 pypdf>=5.0
 tree-sitter>=0.22
 tree-sitter-language-pack>=0.9
 
-httpx>=0.27
+httpx>=0.28.1
 psutil>=6.0
 rich>=13.0
 watchdog>=6.0

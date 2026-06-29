@@ -1,63 +1,63 @@
-# TrinaxAI en Linux
+# TrinaxAI on Linux
 
-Guia para instalar, configurar, iniciar y dejar listo TrinaxAI en Linux. Aplica para Ubuntu, Debian, Fedora, Arch, openSUSE y distribuciones similares.
+Guide to install, configure, start, and get TrinaxAI running on Linux. Applies to Ubuntu, Debian, Fedora, Arch, openSUSE, and similar distributions.
 
-## Que queda funcionando
+## What you'll have running
 
-Al terminar deberias tener:
+When done, you should have:
 
-- Ollama corriendo localmente en `http://localhost:11434`.
-- API RAG de TrinaxAI en `https://localhost:3333`.
-- PWA de TrinaxAI en `https://localhost:3334`.
-- Modelos base descargados.
-- Entorno Python `.venv` instalado.
-- Dependencias del frontend instaladas.
-- `.env` generado con el perfil de tu equipo.
-- Autoarranque de usuario con systemd: la PWA vuelve al iniciar el equipo y la IA respeta si quedo encendida o apagada.
+- Ollama running locally at `http://localhost:11434`.
+- TrinaxAI RAG API at `https://localhost:3333`.
+- TrinaxAI PWA at `https://localhost:3334`.
+- Base models downloaded.
+- Python `.venv` environment installed.
+- Frontend dependencies installed.
+- `.env` generated with your machine's profile.
+- User autostart with systemd: the PWA comes back on boot and the AI respects whether it was left on or off.
 
-## Requisitos
+## Requirements
 
-| Recurso | Minimo | Recomendado |
+| Resource | Minimum | Recommended |
 |---|---:|---:|
-| RAM | 8 GB | 16 GB o mas |
-| Disco libre | 5 GB | 10-25 GB |
+| RAM | 8 GB | 16 GB or more |
+| Free disk | 5 GB | 10-25 GB |
 | Python | 3.10 | 3.12 |
 | Node.js | 18 | 20 LTS |
-| Git | Si | Si |
-| Ollama | Si | Ultima version |
+| Git | Yes | Yes |
+| Ollama | Yes | Latest version |
 
-Si usas NVIDIA, instala los drivers antes de descargar modelos grandes. TrinaxAI tambien funciona solo con CPU, pero las respuestas seran mas lentas.
+If you use NVIDIA, install the drivers before downloading large models. TrinaxAI also works CPU-only, but responses will be slower.
 
-## Instalacion automatica recomendada
+## Recommended automatic install
 
-Desde una terminal:
+From a terminal:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/TrinaxCode/TrinaxAI/main/install.sh | bash
 ```
 
-El instalador clona el proyecto en `~/trinaxai` si todavia no existe, detecta tu RAM, crea `.env`, instala dependencias, prepara la PWA, descarga los modelos recomendados, habilita autoarranque e inicia TrinaxAI. Usa `./install.sh --interactive` si quieres preguntas manuales.
+The installer clones the project to `~/trinaxai` if it doesn't exist yet, detects your RAM, creates `.env`, installs dependencies, prepares the PWA, downloads the recommended models, enables autostart, and starts TrinaxAI. Use `./install.sh --interactive` if you want manual prompts.
 
-Si ya clonaste el repositorio:
+If you already cloned the repository:
 
 ```bash
-cd /ruta/a/TrinaxAI
+cd /path/to/TrinaxAI
 chmod +x install.sh
 ./install.sh
 ```
 
-El perfil se elige automaticamente. En modo interactivo, elige `Normal` salvo que sepas que quieres un perfil manual:
+The profile is chosen automatically. In interactive mode, choose `Normal` unless you know you want a specific profile:
 
-- `8gb`: equipos con poca memoria.
-- `16gb`: perfil equilibrado.
-- `max`: mas RAM/CPU, modelos mas grandes.
-- `ultra`: 32 GB+ y hardware potente.
+- `8gb`: low-memory machines.
+- `16gb`: balanced profile.
+- `max`: more RAM/CPU, larger models.
+- `ultra`: 32 GB+ and powerful hardware.
 
-## Instalacion manual
+## Manual install
 
-Usa estos pasos si prefieres revisar cada parte.
+Use these steps if you prefer to review each part.
 
-### 1. Instalar dependencias del sistema
+### 1. Install system dependencies
 
 Ubuntu/Debian:
 
@@ -84,14 +84,14 @@ openSUSE:
 sudo zypper install python3 python3-pip curl git unzip nodejs npm
 ```
 
-### 2. Clonar el proyecto
+### 2. Clone the project
 
 ```bash
 git clone https://github.com/TrinaxCode/TrinaxAI.git ~/trinaxai
 cd ~/trinaxai
 ```
 
-### 3. Crear el entorno Python
+### 3. Create the Python environment
 
 ```bash
 python3 -m venv .venv
@@ -100,7 +100,7 @@ python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
 ```
 
-### 4. Instalar la PWA
+### 4. Install the PWA
 
 ```bash
 cd chat-pwa
@@ -109,28 +109,28 @@ npm run build
 cd ..
 ```
 
-### 5. Instalar Ollama
+### 5. Install Ollama
 
 ```bash
 curl -fsSL https://ollama.com/install.sh | sh
 ```
 
-Verifica que responda:
+Verify it responds:
 
 ```bash
 ollama --version
 ollama list
 ```
 
-### 6. Crear `.env`
+### 6. Create `.env`
 
-Puedes copiar la plantilla:
+You can copy the template:
 
 ```bash
 cp .env.example .env
 ```
 
-Valores recomendados para empezar:
+Recommended starting values:
 
 ```bash
 TRINAXAI_PROFILE=16gb
@@ -144,21 +144,21 @@ OLLAMA_HOST=0.0.0.0
 VITE_TRINAXAI_RAG_TARGET=https://localhost:3333
 ```
 
-Si vas a abrir TrinaxAI desde un telefono en la misma red, agrega tu IP local a `TRINAXAI_CORS_ORIGINS`:
+If you want to access TrinaxAI from a phone on the same network, add your local IP to `TRINAXAI_CORS_ORIGINS`:
 
 ```bash
 hostname -I
 ```
 
-Ejemplo:
+Example:
 
 ```bash
 TRINAXAI_CORS_ORIGINS=https://localhost:3334,http://localhost:3334,https://192.168.1.25:3334,http://192.168.1.25:3334
 ```
 
-## Descargar modelos
+## Download models
 
-Modelos base:
+Base models:
 
 ```bash
 ollama pull qwen2.5-coder:3b
@@ -172,22 +172,22 @@ Vision:
 ollama pull qwen2.5vl:3b
 ```
 
-Equipos con mas memoria:
+Machines with more memory:
 
 ```bash
 ollama pull qwen2.5-coder:7b
 ```
 
-Perfil ultra:
+Ultra profile:
 
 ```bash
 ollama pull qwen2.5-coder:14b
 ollama pull qwen2.5vl:7b
 ```
 
-## Indexar tus archivos
+## Index your files
 
-El indexado crea la base de conocimiento local que usa RAG.
+Indexing creates the local knowledge base used by RAG.
 
 ```bash
 cd ~/trinaxai
@@ -195,96 +195,96 @@ source .venv/bin/activate
 python index.py
 ```
 
-Tambien puedes indexar desde la PWA: abre `https://localhost:3334`, ve a configuracion, elige una carpeta y asignala a una coleccion.
+You can also index from the PWA: open `https://localhost:3334`, go to settings, choose a folder and assign it to a collection.
 
-Los archivos importados desde navegador se copian a `local_sources/collections/`. El navegador no entrega la ruta absoluta original por seguridad.
+Files imported through the browser are copied to `local_sources/collections/`. The browser does not expose the original absolute path for security reasons.
 
-## Iniciar TrinaxAI
+## Start TrinaxAI
 
-Camino recomendado:
+Recommended way:
 
 ```bash
 cd ~/trinaxai
 ./startup_ai.sh
 ```
 
-Alternativa directa:
+Direct alternative:
 
 ```bash
 .venv/bin/python service_manager.py start --base-dir "$PWD"
 ```
 
-Abrir:
+Open:
 
 ```text
 https://localhost:3334
 ```
 
-Desde telefono o tablet en la misma WiFi:
+From a phone or tablet on the same Wi-Fi:
 
 ```text
-https://TU-IP-LAN:3334
+https://YOUR-LAN-IP:3334
 ```
 
-Acepta la advertencia del certificado si aparece. Es un certificado local/autofirmado.
+Accept the certificate warning if it appears. It is a local/self-signed certificate.
 
-## Apagar, reiniciar y revisar estado
+## Shut down, restart, and check status
 
-Apagar solo los servicios de IA, dejando la PWA disponible:
+Shut down only the AI services, leaving the PWA available:
 
 ```bash
 ./shutdown_ai.sh
 ```
 
-Apagar todo:
+Shut down everything:
 
 ```bash
 .venv/bin/python service_manager.py stop-all --base-dir "$PWD"
 ```
 
-Ver estado:
+Check status:
 
 ```bash
 .venv/bin/python service_manager.py status --base-dir "$PWD"
 ```
 
-Supervisor en primer plano:
+Supervisor in the foreground:
 
 ```bash
 .venv/bin/python service_manager.py watch --base-dir "$PWD"
 ```
 
-## Autoarranque
+## Autostart
 
-El instalador lo habilita automaticamente. El supervisor siempre intenta mantener la PWA disponible; si apagaste la IA con `./shutdown_ai.sh` o desde la PWA, el siguiente arranque no levanta Ollama/RAG hasta que vuelvas a encender la IA.
+The installer enables it automatically. The supervisor always tries to keep the PWA available; if you shut down the AI with `./shutdown_ai.sh` or from the PWA, the next boot will not start Ollama/RAG until you turn the AI back on.
 
-### Opcion segura por usuario
+### Safe per-user option
 
-Esta opcion crea un servicio systemd de usuario y no requiere escribir en `/etc`:
+This creates a user systemd service and does not require writing to `/etc`:
 
 ```bash
 cd ~/trinaxai
 .venv/bin/python service_manager.py enable-autostart --base-dir "$PWD"
 ```
 
-Desactivar:
+Disable:
 
 ```bash
 .venv/bin/python service_manager.py disable-autostart --base-dir "$PWD"
 ```
 
-### Opcion avanzada con systemd de sistema
+### Advanced option with system systemd
 
-`setup_trinaxai.sh` es solo para Linux. Crea unidades systemd en `/etc/systemd/system`, configura Ollama y agrega una regla sudoers para permitir iniciar/apagar desde la PWA sin pedir contrasena.
+`setup_trinaxai.sh` is Linux-only. It creates systemd units in `/etc/systemd/system`, configures Ollama, and adds a sudoers rule to allow starting/stopping from the PWA without a password prompt.
 
-Ejecutalo solo si entiendes ese cambio de permisos:
+Run it only if you understand that permission change:
 
 ```bash
 cd ~/trinaxai
 sudo ./setup_trinaxai.sh
 ```
 
-Revisar servicios:
+Check services:
 
 ```bash
 systemctl status ollama
@@ -299,37 +299,37 @@ journalctl -u ai-rag -f
 journalctl -u trinaxai-frontend -f
 ```
 
-## Verificar que todo funciona
+## Verify everything works
 
 ```bash
 cd ~/trinaxai
 .venv/bin/python test_system.py --verbose
 ```
 
-Tambien puedes revisar manualmente:
+You can also check manually:
 
 ```bash
 curl http://localhost:11434/api/tags
 curl -k https://localhost:3333/health
 ```
 
-La PWA debe abrir en:
+The PWA should open at:
 
 ```text
 https://localhost:3334
 ```
 
-## Uso diario
+## Daily use
 
-1. Inicia TrinaxAI con `./startup_ai.sh` o deja autoarranque habilitado.
-2. Abre `https://localhost:3334`.
-3. Usa modo Ollama para chat general.
-4. Usa modo RAG para preguntas sobre tus archivos indexados.
-5. Crea colecciones para separar proyectos o temas.
-6. Adjunta archivos temporales si no quieres indexarlos.
-7. Usa frases como `recuerda que...` para guardar memoria local explicita.
+1. Start TrinaxAI with `./startup_ai.sh` or leave autostart enabled.
+2. Open `https://localhost:3334`.
+3. Use Ollama mode for general chat.
+4. Use RAG mode for questions about your indexed files.
+5. Create collections to separate projects or topics.
+6. Attach files temporarily if you don't want to index them.
+7. Use phrases like `remember that...` to save explicit local memory.
 
-## Actualizar
+## Update
 
 ```bash
 cd ~/trinaxai
@@ -337,7 +337,7 @@ cd ~/trinaxai
 ./update.sh
 ```
 
-Si actualizas manualmente:
+If you update manually:
 
 ```bash
 git pull
@@ -349,52 +349,52 @@ npm run build
 cd ..
 ```
 
-## Copias de seguridad
+## Backups
 
-Crear backup:
+Create a backup:
 
 ```bash
 ./backup.sh create
 ```
 
-Respaldar manualmente lo importante:
+Manually back up the important files:
 
 - `.env`
 - `storage/`
 - `local_sources/`
 
-## Desinstalar
+## Uninstall
 
 ```bash
 ./uninstall.sh
 ```
 
-Tambien quitar modelos de Ollama:
+Also remove Ollama models:
 
 ```bash
 ./uninstall.sh --remove-models
 ```
 
-## Puertos y firewall
+## Ports and firewall
 
-| Puerto | Servicio | Uso |
+| Port | Service | Purpose |
 |---:|---|---|
-| 11434 | Ollama | Modelos locales |
-| 3333 | RAG API | Backend FastAPI |
-| 3334 | PWA | Interfaz web |
+| 11434 | Ollama | Local models |
+| 3333 | RAG API | FastAPI backend |
+| 3334 | PWA | Web interface |
 
-Si usaras telefono/tablet, permite `3333` y `3334` solo en tu red privada. No expongas estos puertos a internet.
+If you use a phone/tablet, allow `3333` and `3334` only on your private network. Do not expose these ports to the internet.
 
-Ollama no trae autenticacion integrada. Si `OLLAMA_HOST=0.0.0.0`, otros dispositivos de tu LAN podrian usar tus modelos. Para acceso remoto, usa VPN como Tailscale o WireGuard.
+Ollama has no built-in authentication. If `OLLAMA_HOST=0.0.0.0`, other devices on your LAN could use your models. For remote access, use a VPN such as Tailscale or WireGuard.
 
-## Problemas comunes
+## Common issues
 
-| Problema | Solucion |
+| Problem | Solution |
 |---|---|
-| `python3 -m venv` falla | Instala `python3-venv`. |
-| PWA no abre | Ejecuta `cd chat-pwa && npm run dev`. |
-| API no responde | Ejecuta `./startup_ai.sh` y revisa `logs/rag_api.log`. |
-| Modelo no encontrado | Ejecuta `ollama pull nombre-del-modelo`. |
-| Telefono no conecta | Agrega tu IP LAN a `TRINAXAI_CORS_ORIGINS` y revisa firewall. |
-| Certificado no confiable | Acepta la advertencia para uso local. |
-| Respuestas lentas | Usa modelos mas pequenos o un perfil menor con `TRINAXAI_PROFILE=8gb ./install.sh`. |
+| `python3 -m venv` fails | Install `python3-venv`. |
+| PWA does not open | Run `cd chat-pwa && npm run dev`. |
+| API does not respond | Run `./startup_ai.sh` and check `logs/rag_api.log`. |
+| Model not found | Run `ollama pull model-name`. |
+| Phone cannot connect | Add your LAN IP to `TRINAXAI_CORS_ORIGINS` and check your firewall. |
+| Untrusted certificate | Accept the warning for local use. |
+| Slow responses | Use smaller models or a lower profile with `TRINAXAI_PROFILE=8gb ./install.sh`. |

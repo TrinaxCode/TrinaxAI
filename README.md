@@ -1,6 +1,10 @@
 # 🚀 TrinaxAI — 100% Local AI Assistant
 
 <p align="center">
+  <img src="chat-pwa/public/logo-of-app.webp" alt="TrinaxAI Logo" width="180" />
+</p>
+
+<p align="center">
   <strong>Open-source, local-first AI assistant with RAG, vision, voice, and PWA.</strong><br>
   Runs entirely on your machine. No cloud. No subscriptions. No limits.
 </p>
@@ -24,7 +28,7 @@
 | **Docker** | (planned) | — | — |
 
 - **Full setup guides:** [Linux](docs/INSTALL_LINUX.md) · [macOS](docs/INSTALL_MACOS.md) · [Windows](docs/INSTALL_WINDOWS.md)
-- **Guias completas en espanol:** [README.es.md](README.es.md) · [Linux](docs/INSTALL_LINUX.md) · [macOS](docs/INSTALL_MACOS.md) · [Windows](docs/INSTALL_WINDOWS.md)
+- **Guias completas en espanol:** [README.es.md](README.es.md) · [Linux](docs/INSTALL_LINUX.es.md) · [macOS](docs/INSTALL_MACOS.es.md) · [Windows](docs/INSTALL_WINDOWS.es.md)
 - **`setup_trinaxai.sh` is Linux-only legacy setup.** New installs should use `install.sh` / `install.ps1`; they configure `service_manager.py` so the PWA can stay available after reboot while the AI services only restart when the user left AI enabled.
 - Native install is the recommended path for V1 because Ollama GPU, host file indexing, LAN HTTPS, and phone access are more predictable than in a container.
 
@@ -81,9 +85,9 @@ For complete system-specific instructions, use:
 
 | System | Complete guide |
 |---|---|
-| Linux | [docs/INSTALL_LINUX.md](docs/INSTALL_LINUX.md) |
-| macOS | [docs/INSTALL_MACOS.md](docs/INSTALL_MACOS.md) |
-| Windows | [docs/INSTALL_WINDOWS.md](docs/INSTALL_WINDOWS.md) |
+| Linux | [English](docs/INSTALL_LINUX.md) · [Español](docs/INSTALL_LINUX.es.md) |
+| macOS | [English](docs/INSTALL_MACOS.md) · [Español](docs/INSTALL_MACOS.es.md) |
+| Windows | [English](docs/INSTALL_WINDOWS.md) · [Español](docs/INSTALL_WINDOWS.es.md) |
 
 ### Prerequisites
 - Python 3.10+, Node.js 18+, 8GB+ RAM (16GB recommended)
