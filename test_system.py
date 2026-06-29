@@ -55,6 +55,13 @@ def _fetch(url: str, timeout: int = 8) -> tuple[int, str]:
         return -1, ""
 
 
+def _fetch_with_http_fallback(url: str, timeout: int = 8) -> tuple[int, str]:
+    code, body = _fetch(url, timeout=timeout)
+    if code == -1 and url.startswith("https://"):
+        return _fetch("http://" + url.removeprefix("https://"), timeout=timeout)
+    return code, body
+
+
 def check_python() -> list[CheckResult]:
     py_ver = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
     return [
@@ -96,7 +103,7 @@ def check_ollama(ollama_base: str, *, verbose: bool = False) -> list[CheckResult
 
 
 def check_rag(rag_base: str, *, verbose: bool = False) -> list[CheckResult]:
-    code, body = _fetch(f"{rag_base}/health", timeout=5)
+    code, body = _fetch_with_http_fallback(f"{rag_base}/health", timeout=5)
     if code != 200:
         return [CheckResult("API responde", False, f"HTTP {code}", "RAG API")]
     try:
@@ -120,7 +127,7 @@ def check_rag(rag_base: str, *, verbose: bool = False) -> list[CheckResult]:
 
 
 def check_frontend(frontend_url: str) -> list[CheckResult]:
-    code, _ = _fetch(f"{frontend_url}/", timeout=5)
+    code, _ = _fetch_with_http_fallback(f"{frontend_url}/", timeout=5)
     return [CheckResult("PWA responde", code == 200, "Inicia: cd chat-pwa && npm run dev", "PWA")]
 
 

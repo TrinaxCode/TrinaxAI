@@ -118,6 +118,21 @@ function Require-Command($Command, $WingetId, $InstallName, $ManualUrl) {
   Write-Warn "Install it manually from $ManualUrl, reopen PowerShell, and re-run install.ps1."
   exit 1
 }
+function Add-UserPath($PathToAdd) {
+  if ([string]::IsNullOrWhiteSpace($PathToAdd) -or -not (Test-Path $PathToAdd)) { return }
+  $UserPath = [Environment]::GetEnvironmentVariable("Path", "User")
+  $Parts = @()
+  if (-not [string]::IsNullOrWhiteSpace($UserPath)) {
+    $Parts = $UserPath.Split(";") | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+  }
+  if ($Parts -notcontains $PathToAdd) {
+    $Next = (@($Parts) + $PathToAdd) -join ";"
+    [Environment]::SetEnvironmentVariable("Path", $Next, "User")
+  }
+  if (($env:Path.Split(";") | Where-Object { $_ -eq $PathToAdd }).Count -eq 0) {
+    $env:Path = "$env:Path;$PathToAdd"
+  }
+}
 function Test-OllamaReady {
   try {
     Invoke-RestMethod -Uri "http://localhost:11434/api/tags" -TimeoutSec 3 | Out-Null
@@ -228,6 +243,10 @@ $EnvLines = @(
   "TRINAXAI_PROFILE=$Profile",
   "TRINAXAI_HOST=0.0.0.0",
   "TRINAXAI_PORT=3333",
+  "TRINAXAI_HEALTH_URL=http://localhost:3333",
+  "TRINAXAI_FRONTEND_URL=http://localhost:3334",
+  "TRINAXAI_RAG_TARGET=http://localhost:3333",
+  "VITE_TRINAXAI_RAG_TARGET=http://localhost:3333",
   "OLLAMA_BASE_URL=http://localhost:11434",
   "TRINAXAI_MODEL_GENERAL=llama3.2:3b",
   "TRINAXAI_MODEL_CODE=qwen2.5-coder:3b",
@@ -313,9 +332,11 @@ if (-not (Test-Path ".venv\Scripts\python.exe")) {
 & ".\.venv\Scripts\python.exe" -m pip install --upgrade pip
 & ".\.venv\Scripts\python.exe" -m pip install -r requirements.txt
 & ".\.venv\Scripts\python.exe" -m pip install -e .
+$VenvScripts = Join-Path $Repo ".venv\Scripts"
+Add-UserPath $VenvScripts
 Write-Ok "Python packages installed"
 Write-Ok "TrinaxAI CLI installed: .\.venv\Scripts\trinaxai.exe"
-Write-Warn "If 'trinaxai' is not available globally, run it from this shell after activating .\.venv\Scripts\Activate.ps1 or add .\.venv\Scripts to PATH."
+Write-Ok "CLI path configured for this user: $VenvScripts"
 
 Write-Step "4/6 PWA frontend"
 if ((Test-Cmd npm) -and (Test-Path "chat-pwa")) {
@@ -372,10 +393,10 @@ if (-not $NoAutostart) {
   Write-Ok "Auto-start enabled"
 }
 Write-Host "Then open:" -ForegroundColor Cyan
-Write-Host "  https://localhost:3334"
+Write-Host "  http://localhost:3334"
 Write-Host "CLI:" -ForegroundColor Cyan
 Write-Host "  trinaxai"
-if ($LanIp) { Write-Host "  https://$($LanIp):3334" }
+if ($LanIp) { Write-Host "  http://$($LanIp):3334" }
 Write-Host ""
 if ($EnableLanSystem -eq 1) {
   Write-Host "  LAN system control: enabled" -ForegroundColor Yellow
