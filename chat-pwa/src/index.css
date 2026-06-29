@@ -239,7 +239,7 @@
 }
 
 .animate-brand {
-  animation: brand-shift 4s ease-in-out infinite;
+  animation: brand-shift 14s ease-in-out infinite;
 }
 
 html.light .animate-brand {

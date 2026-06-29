@@ -2,7 +2,7 @@ import { memo, useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import ReactMarkdown from 'react-markdown';
 import rehypeSanitize from 'rehype-sanitize';
-import { MdSend, MdStop, MdMenu, MdMic, MdVolumeUp, MdImage, MdClose, MdContentCopy, MdCheck, MdUploadFile, MdDownload, MdPictureAsPdf, MdRefresh, MdEdit, MdScience } from 'react-icons/md';
+import { MdSend, MdStop, MdMenu, MdMic, MdVolumeUp, MdImage, MdClose, MdContentCopy, MdCheck, MdUploadFile, MdDownload, MdPictureAsPdf, MdRefresh, MdEdit, MdScience, MdKeyboardArrowDown } from 'react-icons/md';
 import { useI18n } from '../i18n/I18nContext';
 import { useTheme } from '../theme/ThemeContext';
 import ToggleSwitch from './ToggleSwitch';
@@ -112,7 +112,9 @@ export default function ChatInterface({
   const [editingText, setEditingText] = useState('');
   const { streaming, streamedText, sendMessage, abort } = useStreamChat();
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const messagesRef = useRef<HTMLDivElement>(null);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  const [showScrollButton, setShowScrollButton] = useState(false);
   const [userAvatar, setUserAvatar] = useState('');
   const [userDisplayName, setUserDisplayName] = useState(() => getPreferredUserName(lang));
   const [collections, setCollections] = useState<Collection[]>([]);
@@ -221,6 +223,25 @@ export default function ChatInterface({
       if (inputRef.current) inputRef.current.style.height = '40px';
     });
   }, []);
+
+  const updateScrollState = useCallback(() => {
+    const el = messagesRef.current;
+    if (!el) return;
+    const distance = el.scrollHeight - el.scrollTop - el.clientHeight;
+    const atBottom = distance < 96;
+    setShowScrollButton(!atBottom && el.scrollHeight > el.clientHeight + 16);
+  }, []);
+
+  const scrollToBottom = useCallback((behavior: ScrollBehavior = 'smooth') => {
+    const el = messagesRef.current;
+    if (!el) return;
+    el.scrollTo({ top: el.scrollHeight, behavior });
+    setShowScrollButton(false);
+  }, []);
+
+  useEffect(() => {
+    requestAnimationFrame(updateScrollState);
+  }, [messages.length, streamedText, streaming, updateScrollState]);
 
   const copyMessage = useCallback(async (text: string, key: string) => {
     if (!text.trim()) return;
@@ -675,6 +696,7 @@ function getLastUserText(messages: ChatMessage[], beforeMsg?: ChatMessage): stri
             const prompt = tail || 'Give me a thorough overview.';
             const userMsg: ChatMessage = { role: 'user', content: prompt };
             onMessagesChange([...messages, userMsg]);
+            requestAnimationFrame(() => scrollToBottom('smooth'));
             setInput(''); resetInputHeight();
             await runBuiltinDeepResearch(prompt, [...messages, userMsg]);
             return;
@@ -733,6 +755,7 @@ function getLastUserText(messages: ChatMessage[], beforeMsg?: ChatMessage): stri
     };
     const updated = [...messages, userMsg];
     onMessagesChange(updated);
+    requestAnimationFrame(() => scrollToBottom('smooth'));
     setInput('');
     resetInputHeight();
     setAttachedImage(null);
@@ -806,7 +829,7 @@ function getLastUserText(messages: ChatMessage[], beforeMsg?: ChatMessage): stri
         window.setTimeout(() => startVoiceRef.current(true), 800);
       }
     }
-  }, [attachedImage, attachedDocs, messages, streaming, engine, sendMessage, onMessagesChange, speak, activeCollectionsForRequest, t, resetInputHeight, assistantErrorMessage, researchMode, onNavigate, exportMarkdown, runBuiltinDeepResearch, runBuiltinSummarize]);
+  }, [attachedImage, attachedDocs, messages, streaming, engine, sendMessage, onMessagesChange, speak, activeCollectionsForRequest, t, resetInputHeight, assistantErrorMessage, researchMode, onNavigate, exportMarkdown, runBuiltinDeepResearch, runBuiltinSummarize, scrollToBottom]);
 
   const handleSend = useCallback(() => { handleSendText(input); }, [handleSendText, input]);
 
@@ -1079,6 +1102,8 @@ function getLastUserText(messages: ChatMessage[], beforeMsg?: ChatMessage): stri
 
       {/* Messages */}
       <div
+        ref={messagesRef}
+        onScroll={updateScrollState}
         className={`${messages.length === 0 && !streaming ? 'hidden' : 'flex-1'} chat-messages min-h-0 min-w-0 max-w-full overflow-y-auto overflow-x-hidden px-2 sm:px-4 py-4 space-y-4`}
         style={{ overscrollBehavior: 'contain', WebkitOverflowScrolling: 'touch' }}
       >
@@ -1327,9 +1352,30 @@ function getLastUserText(messages: ChatMessage[], beforeMsg?: ChatMessage): stri
 
       {/* Input Area */}
       <div
-        className={`shrink-0 px-2 sm:px-4 pt-2 border-t ${isDark ? 'border-white/[0.06]' : 'border-gray-200'}`}
+        className={`relative shrink-0 px-2 sm:px-4 pt-2 border-t ${isDark ? 'border-white/[0.06]' : 'border-gray-200'}`}
         style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 12px)' }}
       >
+        <AnimatePresence>
+          {showScrollButton && (
+            <motion.button
+              type="button"
+              onClick={() => scrollToBottom('smooth')}
+              initial={{ opacity: 0, scale: 0.94 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.94 }}
+              transition={{ duration: 0.16, ease: 'easeOut' }}
+              className={`absolute -top-14 left-1/2 z-30 grid h-11 w-11 -translate-x-1/2 place-items-center rounded-full border shadow-lg backdrop-blur-xl transition-colors active:scale-95 ${
+                isDark
+                  ? 'border-white/[0.08] bg-black/85 text-white/80 hover:bg-[#006bbd] hover:text-white'
+                  : 'border-gray-200 bg-white/95 text-gray-600 hover:bg-[#006bbd] hover:text-white'
+              }`}
+              aria-label={lang === 'en' ? 'Scroll to bottom' : 'Ir al final del chat'}
+              title={lang === 'en' ? 'Scroll to bottom' : 'Ir al final del chat'}
+            >
+              <MdKeyboardArrowDown size={30} />
+            </motion.button>
+          )}
+        </AnimatePresence>
         {engine === 'rag' && collections.length > 0 && (
           <div className="mb-2 flex items-center gap-2 overflow-x-auto pb-1">
             <span className={`shrink-0 text-[10px] uppercase tracking-wider ${isDark ? 'text-white/35' : 'text-gray-400'}`}>

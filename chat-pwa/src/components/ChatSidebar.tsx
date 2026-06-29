@@ -133,7 +133,13 @@ export default function ChatSidebar({
           </div>
         </div>
 
-        <div className={`mx-3 mt-3 mb-2 flex items-center gap-2 rounded-xl border px-3 py-2 ${isDark ? 'bg-white/[0.03] border-white/[0.06]' : 'bg-gray-50 border-gray-200'}`}>
+        <div
+          className={`mx-3 mt-3 mb-2 flex items-center gap-2 rounded-xl border px-3 py-2 transition-all duration-300 focus-within:animate-border-glow ${
+            isDark
+              ? 'bg-white/[0.03] border-white/[0.06] focus-within:border-[#006bbd]/40 focus-within:shadow-[0_0_20px_rgba(0,107,189,0.15)]'
+              : 'bg-gray-50 border-gray-200 focus-within:border-[#006bbd]/40 focus-within:shadow-[0_0_20px_rgba(0,107,189,0.1)]'
+          }`}
+        >
           <MdSearch size={16} className={isDark ? 'text-white/30' : 'text-gray-400'} />
           <input
             value={query}
@@ -237,7 +243,7 @@ export default function ChatSidebar({
             href="https://github.com/TrinaxCode"
             target="_blank"
             rel="noopener noreferrer"
-            className={`flex items-center gap-2 px-3 py-2 rounded-xl ${textMuted} hover:text-[#006bbd] ${hoverBg} transition-colors text-sm`}
+            className={`flex w-full items-center justify-center gap-2 px-3 py-2 rounded-xl text-center ${textMuted} hover:text-[#006bbd] ${hoverBg} transition-colors text-sm`}
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
           >
