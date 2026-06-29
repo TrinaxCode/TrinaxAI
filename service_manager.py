@@ -54,6 +54,18 @@ class _Backend:
         raise NotImplementedError
 
 
+def _windows_no_window_kwargs() -> dict[str, object]:
+    if sys.platform != "win32":
+        return {}
+    startupinfo = subprocess.STARTUPINFO()
+    startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+    startupinfo.wShowWindow = getattr(subprocess, "SW_HIDE", 0)
+    return {
+        "creationflags": getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        "startupinfo": startupinfo,
+    }
+
+
 # ── Linux: systemd with direct fallback ────────────────────────────
 _SYSTEMCTL = shutil.which("systemctl") or "/usr/bin/systemctl"
 SYSTEMD_SERVICE_ALIASES = {
@@ -249,6 +261,7 @@ def _pgrep_status(name: str) -> ProcessState:
                 capture_output=True,
                 text=True,
                 timeout=8,
+                **_windows_no_window_kwargs(),
             )
             running = bool(r.stdout.strip())
             pid = int(r.stdout.strip().splitlines()[0]) if running else None
@@ -302,6 +315,7 @@ def _stop_by_name(name: str) -> ProcessState:
             ],
             capture_output=True,
             timeout=15,
+            **_windows_no_window_kwargs(),
         )
         return ProcessState(
             name=name, running=False, detail="stopped matching processes"
@@ -342,7 +356,9 @@ def _start_direct(
     if sys.platform == "win32":
         popen_kwargs["creationflags"] = getattr(
             subprocess, "CREATE_NEW_PROCESS_GROUP", 0
-        ) | getattr(subprocess, "DETACHED_PROCESS", 0)
+        ) | getattr(subprocess, "DETACHED_PROCESS", 0) | getattr(
+            subprocess, "CREATE_NO_WINDOW", 0
+        )
         startupinfo = subprocess.STARTUPINFO()
         startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
         startupinfo.wShowWindow = getattr(subprocess, "SW_HIDE", 0)
@@ -400,6 +416,10 @@ PROCESS_PATTERNS = {
     "rag_api": ["uvicorn rag_api:app", "rag_api.py", "rag_api"],
     "trinaxai-frontend": [
         "vite --host",
+        "vite preview",
+        "vite.js preview",
+        "node_modules\\vite\\bin\\vite.js",
+        "node_modules/vite/bin/vite.js",
         "npm run dev",
         "npm run preview",
         "trinaxai-frontend",

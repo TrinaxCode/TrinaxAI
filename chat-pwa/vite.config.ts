@@ -7,6 +7,7 @@ import http from 'node:http';
 import https from 'node:https';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import net from 'node:net';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '..');
@@ -88,14 +89,31 @@ function proxyConfig() {
 
 function installSystemControl(server: any): void {
   const ragTarget = env('TRINAXAI_RAG_TARGET', env('VITE_TRINAXAI_RAG_TARGET', 'http://localhost:3333'));
+  const allowLanSystem = ['1', 'true', 'yes', 'on'].includes((process.env.TRINAXAI_ALLOW_LAN_SYSTEM || '').toLowerCase());
+  const isLoopback = (host: string): boolean => {
+    const clean = host.replace(/^::ffff:/, '');
+    if (['127.0.0.1', '::1', 'localhost'].includes(clean)) return true;
+    if (net.isIP(clean) === 0) return false;
+    return clean.startsWith('127.');
+  };
+  const isPrivateLan = (host: string): boolean => {
+    const clean = host.replace(/^::ffff:/, '');
+    if (isLoopback(clean)) return true;
+    if (net.isIP(clean) === 0) return false;
+    if (clean.startsWith('10.') || clean.startsWith('192.168.')) return true;
+    const parts = clean.split('.').map((part) => Number(part));
+    return parts.length === 4 && parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31;
+  };
   server.middlewares.use('/api/system', async (req: any, res: any) => {
     if (req.method !== 'POST') { res.statusCode = 405; res.end(); return; }
     const token = req.headers['x-admin-token'] as string | undefined;
     const adminToken = process.env.TRINAXAI_ADMIN_TOKEN;
-    if (adminToken && token !== adminToken) {
+    const peer = req.socket?.remoteAddress || '127.0.0.1';
+    const authorized = (adminToken && token === adminToken) || isLoopback(peer) || (allowLanSystem && isPrivateLan(peer));
+    if (!authorized) {
       res.statusCode = 403;
       res.setHeader('Content-Type', 'application/json');
-      res.end(JSON.stringify({ ok: false, error: 'Missing or invalid X-Admin-Token.' }));
+      res.end(JSON.stringify({ ok: false, error: 'Operación no autorizada. Activa LAN system control o usa X-Admin-Token.' }));
       return;
     }
     const url = new URL(req.url || '/', 'http://localhost');
