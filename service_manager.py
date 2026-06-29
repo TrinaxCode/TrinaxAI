@@ -469,6 +469,20 @@ def _service_specs(base_dir: str) -> dict[str, dict]:
     service_env = _service_env(base_dir)
     python = _windows_hidden_python(service_env.get("TRINAXAI_PYTHON", sys.executable))
     npm = shutil.which("npm") or "npm"
+    mode = _frontend_script(service_env)
+
+    if sys.platform == "win32":
+        node = shutil.which("node") or "node.exe"
+        frontend_cmd = [
+            node,
+            os.path.abspath(os.path.join(base_dir, "chat-pwa", "node_modules", "vite", "bin", "vite.js")),
+            mode,
+            "--host", "0.0.0.0",
+            "--port", "3334",
+        ]
+    else:
+        frontend_cmd = [npm, "run", mode]
+
     return {
         "ollama": {
             "command": ["ollama", "serve"],
@@ -482,7 +496,7 @@ def _service_specs(base_dir: str) -> dict[str, dict]:
             "log_file": os.path.join(base_dir, "logs", "rag_api.log"),
         },
         "trinaxai-frontend": {
-            "command": [npm, "run", _frontend_script(service_env)],
+            "command": frontend_cmd,
             "cwd": os.path.join(base_dir, "chat-pwa"),
             "env": service_env,
             "log_file": os.path.join(base_dir, "logs", "frontend.log"),

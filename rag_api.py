@@ -64,7 +64,7 @@ if _cors == "*":
 elif _cors == "":
     # Empty env var: fall back to safe defaults (PWA frontend origins)
     LOG.warning(
-        "[TrinaxAI] \u26a0\ufe0f  TRINAXAI_CORS_ORIGINS is empty \u2014 using safe localhost defaults"
+        "[TrinaxAI] WARN: TRINAXAI_CORS_ORIGINS is empty -- using safe localhost defaults"
     )
     cors_origins = [
         "https://localhost:3334",
@@ -82,7 +82,7 @@ else:
     if not cors_origins:
         # Split produced empty list: revert to safe defaults
         LOG.warning(
-            "[TrinaxAI] \u26a0\ufe0f  TRINAXAI_CORS_ORIGINS parsed to empty \u2014 using safe localhost defaults"
+            "[TrinaxAI] WARN: TRINAXAI_CORS_ORIGINS parsed to empty -- using safe localhost defaults"
         )
         cors_origins = [
             "https://localhost:3334",
@@ -616,15 +616,24 @@ def build_engine() -> bool:
                     if n.metadata.get("project")
                 }
             )
-            print(
-                f"[TrinaxAI] ✓ Índice: {len(index.docstore.docs)} chunks, "
-                f"{len(KNOWN_PROJECTS)} proyectos"
-            )
+            try:
+                print(
+                    f"[TrinaxAI] OK: {len(index.docstore.docs)} chunks, "
+                    f"{len(KNOWN_PROJECTS)} projects"
+                )
+            except UnicodeEncodeError:
+                print(
+                    f"[TrinaxAI] OK: {len(index.docstore.docs)} chunks, "
+                    f"{len(KNOWN_PROJECTS)} projects (index loaded)"
+                )
             return True
         except Exception as e:
             _fusion_retriever = None
             KNOWN_PROJECTS = []
-            print(f"[TrinaxAI] ⚠️  Sin índice ({e}). Ejecuta: python index.py")
+            try:
+                print(f"[TrinaxAI] WARN: No index ({e}). Run: python index.py")
+            except UnicodeEncodeError:
+                print(f"[TrinaxAI] WARN: No index. Run: python index.py")
             return False
 
 
@@ -1734,7 +1743,15 @@ def _write_app_state(values: dict[str, str]) -> None:
     tmp = f"{APP_STATE_PATH}.tmp"
     with open(tmp, "w", encoding="utf-8") as f:
         f.write(encoded)
-    os.replace(tmp, APP_STATE_PATH)
+    for attempt in range(3):
+        try:
+            os.replace(tmp, APP_STATE_PATH)
+            break
+        except OSError:
+            if attempt < 2:
+                time.sleep(0.05 + attempt * 0.05)
+            else:
+                raise
 
 
 @app.get("/app-state")
@@ -2021,9 +2038,15 @@ def _spawn_service_manager(script: str, action: str) -> None:
         "stderr": subprocess.DEVNULL,
     }
     if sys.platform == "win32":
-        kwargs["creationflags"] = getattr(
-            subprocess, "CREATE_NEW_PROCESS_GROUP", 0
-        ) | getattr(subprocess, "DETACHED_PROCESS", 0)
+        kwargs["creationflags"] = (
+            getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+            | getattr(subprocess, "DETACHED_PROCESS", 0)
+            | getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        )
+        startupinfo = subprocess.STARTUPINFO()
+        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+        startupinfo.wShowWindow = getattr(subprocess, "SW_HIDE", 0)
+        kwargs["startupinfo"] = startupinfo
     else:
         kwargs["start_new_session"] = True
     subprocess.Popen(

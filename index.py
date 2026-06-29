@@ -132,7 +132,8 @@ def collect_files(root: str) -> list[str]:
 
 def _rel(path: str) -> str:
     try:
-        return os.path.relpath(path, config.PROJECTS_DIRS[0])
+        rel = os.path.relpath(path, config.PROJECTS_DIRS[0])
+        return rel.replace("\\", "/")
     except ValueError:
         return path
 

@@ -592,7 +592,8 @@ def project_of(file_path: str) -> str:
         rel = os.path.relpath(file_path, PROJECTS_DIRS[0])
     except ValueError:
         return "(unknown)"
-    parts = rel.split(os.sep)
+    rel = rel.replace("\\", "/")
+    parts = rel.split("/")
     return parts[0] if len(parts) > 1 else "(root)"
 
 

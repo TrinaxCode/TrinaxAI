@@ -55,14 +55,16 @@ function spawnManager(action: string): void {
 
 function postReload(ragTarget: string): void {
   const url = new URL('/system/reload', ragTarget);
-  const client = url.protocol === 'https:' ? https : http;
-  const req = client.request({
+  const requestOptions = {
     hostname: url.hostname,
     port: url.port,
     path: url.pathname,
     method: 'POST',
     rejectUnauthorized: false,
-  }, () => {});
+    family: 4,
+  };
+  const client = url.protocol === 'https:' ? https : http;
+  const req = client.request(requestOptions, () => {});
   req.on('error', () => {});
   req.end();
 }
@@ -70,25 +72,25 @@ function postReload(ragTarget: string): void {
 function proxyConfig() {
   return {
     '/api/rag': {
-      target: env('TRINAXAI_RAG_TARGET', env('VITE_TRINAXAI_RAG_TARGET', 'http://localhost:3333')),
+      target: env('TRINAXAI_RAG_TARGET', env('VITE_TRINAXAI_RAG_TARGET', 'http://127.0.0.1:3333')),
       changeOrigin: true,
       secure: false,
       xfwd: true,
       rewrite: (proxyPath: string) => proxyPath.replace(/^\/api\/rag/, ''),
     },
     '/api/ollama': {
-      target: env('TRINAXAI_OLLAMA_TARGET', 'http://localhost:11434'),
+      target: env('TRINAXAI_OLLAMA_TARGET', 'http://127.0.0.1:11434'),
       changeOrigin: true,
       secure: false,
       xfwd: true,
-      headers: { Origin: env('TRINAXAI_OLLAMA_TARGET', 'http://localhost:11434') },
+      headers: { Origin: env('TRINAXAI_OLLAMA_TARGET', 'http://127.0.0.1:11434') },
       rewrite: (proxyPath: string) => proxyPath.replace(/^\/api\/ollama/, ''),
     },
   };
 }
 
 function installSystemControl(server: any): void {
-  const ragTarget = env('TRINAXAI_RAG_TARGET', env('VITE_TRINAXAI_RAG_TARGET', 'http://localhost:3333'));
+  const ragTarget = env('TRINAXAI_RAG_TARGET', env('VITE_TRINAXAI_RAG_TARGET', 'http://127.0.0.1:3333'));
   const allowLanSystem = ['1', 'true', 'yes', 'on'].includes((process.env.TRINAXAI_ALLOW_LAN_SYSTEM || '').toLowerCase());
   const isLoopback = (host: string): boolean => {
     const clean = host.replace(/^::ffff:/, '');
@@ -102,7 +104,12 @@ function installSystemControl(server: any): void {
     if (net.isIP(clean) === 0) return false;
     if (clean.startsWith('10.') || clean.startsWith('192.168.')) return true;
     const parts = clean.split('.').map((part) => Number(part));
-    return parts.length === 4 && parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31;
+    if (parts.length === 4 && parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) return true;
+    // IPv6 link-local (fe80::/10) — common on Windows dual-stack networks
+    if (net.isIPv6(clean) && clean.startsWith('fe80:')) return true;
+    // IPv6 unique local (fc00::/7 fd00::/8)
+    if (net.isIPv6(clean) && (clean.startsWith('fd') || clean.startsWith('fc'))) return true;
+    return false;
   };
   server.middlewares.use('/api/system', async (req: any, res: any) => {
     if (req.method !== 'POST') { res.statusCode = 405; res.end(); return; }
