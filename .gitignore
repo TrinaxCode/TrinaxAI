@@ -1,0 +1,58 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+.venv/
+venv/
+
+# Node / PWA
+chat-pwa/node_modules/
+chat-pwa/dist/
+chat-pwa/.vite/
+
+# Environment & Secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+certs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Storage (user data)
+storage/
+storage.bak.nomic/
+local_sources/
+projects/
+backups/
+
+# Logs
+*.log
+logs/
+
+# Systemd service files (user-specific)
+*.service
+
+# AI/IDE tool data (project-local, not source)
+.kimchi/
+.agents/
+.codex/
+.commandcode/
+
+# Continue.dev config (may contain user API keys if customized)
+continue-config.yaml
+!continue-config.yaml.example
+
+# Local PWA HTTPS dev certificates (self-signed, user/host-specific)
+chat-pwa/certs/

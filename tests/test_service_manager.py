@@ -1,0 +1,83 @@
+from __future__ import annotations
+
+import json
+import tempfile
+import unittest
+from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
+
+import service_manager as sm
+
+
+class _FakeBackend:
+    def __init__(self) -> None:
+        self.started: list[str] = []
+        self.stopped: list[str] = []
+
+    def start(self, name: str, *, command: list[str], cwd: str | None = None,
+              env: dict[str, str] | None = None, log_file: str | None = None) -> sm.ProcessState:
+        self.started.append(name)
+        return sm.ProcessState(name=name, running=True, pid=1234, detail="started")
+
+    def stop(self, name: str) -> sm.ProcessState:
+        self.stopped.append(name)
+        return sm.ProcessState(name=name, running=False, detail="stopped")
+
+    def status(self, name: str) -> sm.ProcessState:
+        return sm.ProcessState(name=name, running=False, detail="not running")
+
+
+class ServiceManagerPersistenceTests(unittest.TestCase):
+    def test_stop_ai_disables_boot_and_start_ai_reenables_it(self) -> None:
+        fake_backend = _FakeBackend()
+        systemctl_calls: list[list[str]] = []
+
+        def fake_run(cmd, **_kwargs):  # noqa: ANN001
+            if isinstance(cmd, list) and cmd and cmd[0].endswith("systemctl"):
+                systemctl_calls.append(cmd)
+                return SimpleNamespace(returncode=0, stdout="", stderr="")
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            base_dir = Path(tmp)
+            with (
+                patch.object(sm, "_backend", fake_backend),
+                patch.object(sm.platform, "system", return_value="Linux"),
+                patch.object(sm.shutil, "which", side_effect=lambda name: "/usr/bin/systemctl" if name == "systemctl" else None),
+                patch.object(sm.subprocess, "run", side_effect=fake_run),
+            ):
+                stop_results = sm.stop_ai(str(base_dir))
+                state = json.loads((base_dir / "storage" / "service_state.json").read_text(encoding="utf-8"))
+                self.assertEqual(state["ai_enabled"], False)
+                self.assertEqual([item.name for item in stop_results], ["ollama", "rag_api"])
+                self.assertEqual(fake_backend.stopped, ["ollama", "rag_api"])
+                self.assertEqual(
+                    systemctl_calls,
+                    [
+                        ["/usr/bin/systemctl", "disable", "ollama.service"],
+                        ["/usr/bin/systemctl", "disable", "rag_api.service"],
+                        ["/usr/bin/systemctl", "disable", "ai-rag.service"],
+                    ],
+                )
+
+                systemctl_calls.clear()
+                fake_backend.started.clear()
+
+                start_results = sm.start_ai(str(base_dir))
+                state = json.loads((base_dir / "storage" / "service_state.json").read_text(encoding="utf-8"))
+                self.assertEqual(state["ai_enabled"], True)
+                self.assertEqual([item.name for item in start_results], ["ollama", "rag_api", "trinaxai-frontend"])
+                self.assertEqual(fake_backend.started, ["ollama", "rag_api", "trinaxai-frontend"])
+                self.assertEqual(
+                    systemctl_calls,
+                    [
+                        ["/usr/bin/systemctl", "enable", "ollama.service"],
+                        ["/usr/bin/systemctl", "enable", "rag_api.service"],
+                        ["/usr/bin/systemctl", "enable", "ai-rag.service"],
+                    ],
+                )
+
+
+if __name__ == "__main__":
+    unittest.main()

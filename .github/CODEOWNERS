@@ -1,0 +1,12 @@
+# CODEOWNERS — TrinaxAI
+# https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# Default owners for the entire repository
+* @TrinaxCode
+
+# Security-critical files
+/.github/ @TrinaxCode
+/.env.example @TrinaxCode
+config.py @TrinaxCode
+rag_api.py @TrinaxCode
+service_manager.py @TrinaxCode

@@ -1,0 +1,505 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ============================================
+   TRINAXAI CHAT — Dark & Light Theme
+   ============================================ */
+
+@layer base {
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+
+  html {
+    -webkit-tap-highlight-color: transparent;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+    height: 100dvh;
+    width: 100%;
+    overflow: hidden;
+  }
+
+  html.dark {
+    background: #000000;
+  }
+  html.light {
+    background: #ffffff;
+  }
+
+  body {
+    font-family: 'SF Pro Display', 'Inter', system-ui, -apple-system,
+      BlinkMacSystemFont, sans-serif;
+    overflow: hidden;
+    overscroll-behavior: none;
+    width: 100%;
+    max-width: 100%;
+    min-height: 100%;
+    /* Allow vertical panning for scrollable areas but prevent rubber-band on fixed */
+    touch-action: manipulation;
+  }
+
+  /* Prevent iOS text-size-adjust after orientation change */
+  html {
+    -webkit-text-size-adjust: 100%;
+    -moz-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+
+  input,
+  textarea,
+  select,
+  button {
+    max-width: 100%;
+  }
+
+  img,
+  video,
+  canvas,
+  svg,
+  table,
+  pre {
+    max-width: 100%;
+  }
+
+  pre,
+  code {
+    overflow-wrap: anywhere;
+  }
+
+  /* Prevent iOS zoom-on-focus for inputs (16px minimum) */
+  @media (max-width: 768px), (pointer: coarse) {
+    input,
+    textarea,
+    select {
+      font-size: 16px !important;
+    }
+  }
+
+  html.dark body {
+    background: #000000;
+    color: #ffffff;
+  }
+  html.light body {
+    background: #ffffff;
+    color: #1a1a1a;
+  }
+
+  #root {
+    height: var(--app-height, 100dvh);
+    width: 100%;
+    max-width: 100%;
+    overflow: hidden;
+  }
+
+  /* Custom scrollbar — WebKit (Chrome, Safari, Edge) */
+  ::-webkit-scrollbar {
+    width: 5px;
+    height: 5px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  html.dark ::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.10);
+    border-radius: 9999px;
+  }
+  html.dark ::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.20);
+  }
+  html.light ::-webkit-scrollbar-thumb {
+    background: rgba(0, 0, 0, 0.12);
+    border-radius: 9999px;
+  }
+  html.light ::-webkit-scrollbar-thumb:hover {
+    background: rgba(0, 0, 0, 0.22);
+  }
+
+  /* Custom scrollbar — Firefox */
+  html.dark * {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.10) transparent;
+  }
+  html.light * {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(0, 0, 0, 0.12) transparent;
+  }
+
+  /* Selection */
+  ::selection {
+    background: rgba(0, 107, 189, 0.35);
+    color: #ffffff;
+  }
+
+  /* Focus ring */
+  :focus-visible {
+    outline: 2px solid rgba(0, 107, 189, 0.6);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+}
+
+@layer components {
+  /* Glassmorphism utility — dark only for now */
+  .glass {
+    background: rgba(255, 255, 255, 0.04);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+  }
+
+  .glass-strong {
+    background: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  html.light .glass {
+    background: rgba(255, 255, 255, 0.6);
+    border: 1px solid rgba(0, 0, 0, 0.08);
+  }
+}
+
+@layer utilities {
+  /* Dynamic viewport height fallback */
+  .h-dvh {
+    height: 100dvh;
+  }
+
+  .app-shell {
+    height: var(--app-height, 100dvh);
+    min-height: 0;
+  }
+
+  /* Prevent iOS rubber-banding on fixed containers */
+  .overflow-hidden {
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Smooth momentum scroll for scrollable areas */
+  .overflow-y-auto,
+  .overflow-x-auto {
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Ensure scrollable flex children don't overflow their parent */
+  .min-h-0 {
+    min-height: 0;
+  }
+  .min-w-0 {
+    min-width: 0;
+  }
+
+  /* Prevent horizontal scroll leakage on mobile */
+  .overflow-x-hidden {
+    overflow-x: hidden;
+  }
+
+  /* Hardware-accelerate animations to avoid jank on low-end devices */
+  .gpu-accelerated {
+    transform: translateZ(0);
+    will-change: transform, opacity;
+  }
+
+  /* Safe area padding shortcuts */
+  .pb-safe {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  .pt-safe {
+    padding-top: env(safe-area-inset-top, 0px);
+  }
+  .px-safe {
+    padding-left: env(safe-area-inset-left, 0px);
+    padding-right: env(safe-area-inset-right, 0px);
+  }
+}
+
+/* ============================================
+   Markdown Prose Overrides
+   ============================================ */
+html.dark .prose {
+  --tw-prose-body: rgba(255, 255, 255, 0.9);
+  --tw-prose-headings: #ffffff;
+  --tw-prose-links: #006bbd;
+  --tw-prose-bold: #ffffff;
+  --tw-prose-code: #006bbd;
+  --tw-prose-pre-bg: rgba(255, 255, 255, 0.05);
+  --tw-prose-pre-border: rgba(255, 255, 255, 0.08);
+}
+
+html.light .prose {
+  --tw-prose-body: #374151;
+  --tw-prose-headings: #111827;
+  --tw-prose-links: #006bbd;
+  --tw-prose-bold: #111827;
+  --tw-prose-code: #006bbd;
+  --tw-prose-pre-bg: #f3f4f6;
+  --tw-prose-pre-border: #e5e7eb;
+}
+
+.prose pre {
+  border-radius: 12px;
+  padding: 12px 16px;
+  overflow-x: auto;
+}
+
+html.dark .prose pre {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+html.light .prose pre {
+  background: #f3f4f6;
+  border: 1px solid #e5e7eb;
+  color: #1f2937;
+}
+
+.prose code {
+  font-family: 'SF Mono', 'JetBrains Mono', 'Fira Code', monospace;
+  font-size: 0.85em;
+}
+
+.prose code:not(pre code) {
+  background: rgba(0, 107, 189, 0.12);
+  padding: 2px 6px;
+  border-radius: 4px;
+  color: #5badf5;
+}
+
+html.light .prose code:not(pre code) {
+  background: rgba(0, 107, 189, 0.1);
+  color: #005299;
+}
+
+.prose blockquote {
+  border-left-color: rgba(0, 107, 189, 0.5);
+  font-style: normal;
+  opacity: 0.85;
+}
+
+.docs-content {
+  min-inline-size: 0;
+  max-inline-size: 100%;
+  overflow-x: hidden;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.docs-content * {
+  min-inline-size: 0;
+  max-inline-size: 100%;
+}
+
+.docs-content p,
+.docs-content li,
+.docs-content h1,
+.docs-content h2,
+.docs-content h3,
+.docs-content h4,
+.docs-content summary {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.docs-content a,
+.docs-content code {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.docs-content pre,
+.docs-content table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+.docs-content pre {
+  white-space: pre;
+}
+
+.docs-content table {
+  width: max-content;
+  min-width: min(100%, 36rem);
+  border-collapse: collapse;
+}
+
+.docs-content code {
+  white-space: pre-wrap;
+}
+
+@media (max-width: 640px) {
+  .docs-content {
+    inline-size: 100%;
+    max-inline-size: calc(100vw - 1.5rem);
+  }
+
+  .docs-content pre {
+    font-size: 0.72rem;
+    white-space: pre-wrap;
+  }
+
+  .docs-content table {
+    min-width: 32rem;
+  }
+}
+
+.chat-markdown {
+  min-width: 0;
+  max-width: 100%;
+  max-inline-size: 100%;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.chat-markdown > * {
+  max-width: 100%;
+}
+
+.chat-markdown p,
+.chat-markdown li,
+.chat-markdown blockquote,
+.chat-markdown h1,
+.chat-markdown h2,
+.chat-markdown h3,
+.chat-markdown h4 {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.chat-markdown a {
+  overflow-wrap: anywhere;
+  word-break: break-all;
+}
+
+.chat-markdown pre {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  white-space: pre-wrap;
+  word-break: break-word;
+  -webkit-overflow-scrolling: touch;
+}
+
+.chat-markdown code {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.chat-markdown table {
+  display: block;
+  width: max-content;
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+.chat-messages,
+.chat-row {
+  inline-size: 100%;
+  max-inline-size: 100%;
+  min-inline-size: 0;
+  overflow-x: hidden;
+}
+
+.chat-row > * {
+  min-inline-size: 0;
+}
+
+.chat-bubble-wrap {
+  flex: 0 1 auto;
+  width: fit-content;
+  max-width: min(80%, calc(100vw - 5rem));
+  min-width: 0;
+  overflow-x: hidden;
+}
+
+.chat-bubble {
+  width: fit-content;
+  max-width: 100%;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: normal;
+}
+
+.chat-plain-text {
+  overflow-wrap: anywhere;
+  word-break: normal;
+  max-inline-size: 100%;
+}
+
+@media (max-width: 640px) {
+  .chat-bubble-wrap {
+    width: fit-content;
+    max-width: calc(100vw - 4.25rem);
+  }
+
+  .chat-markdown {
+    font-size: 0.92rem;
+    line-height: 1.58;
+  }
+}
+
+/* ============================================
+   Mobile-specific responsive overrides
+   ============================================ */
+
+/* Ensure all scroll containers have smooth momentum on iOS */
+@media (pointer: coarse) {
+  .overflow-y-auto,
+  .overflow-x-auto,
+  .overflow-auto {
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
+/* Reduce motion for users who prefer it (accessibility) */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Small phone landscape / very narrow viewports */
+@media (max-width: 380px) {
+  .chat-markdown {
+    font-size: 0.85rem;
+  }
+
+  .chat-bubble {
+    padding-left: 0.75rem;
+    padding-right: 0.75rem;
+  }
+}
+
+/* Tablet and larger: reduce bubble max-width for readability */
+@media (min-width: 768px) {
+  .chat-bubble-wrap {
+    width: fit-content;
+    max-width: min(70%, 42rem);
+  }
+}
+
+/* Prevent sticky hover states on touch devices */
+@media (hover: none) and (pointer: coarse) {
+  .hover\:bg-white\/\[0\.06\]:hover {
+    background-color: transparent;
+  }
+  .hover\:bg-gray-100:hover {
+    background-color: transparent;
+  }
+}

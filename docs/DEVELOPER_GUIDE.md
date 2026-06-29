@@ -1,0 +1,223 @@
+# TrinaxAI Developer Guide
+
+## Setup
+
+```bash
+git clone https://github.com/TrinaxCode/TrinaxAI.git
+cd TrinaxAI
+./install.sh           # or install.ps1 on Windows
+source .venv/bin/activate
+pip install -r requirements.txt
+cd chat-pwa && npm install && cd ..
+```
+
+For the reranker (optional but recommended for accuracy):
+```bash
+pip install -r requirements-rerank.txt
+```
+
+Copy `.env.example` to `.env` and edit as needed:
+```bash
+cp .env.example .env
+```
+
+---
+
+## Project Structure
+
+```
+.
+├── config.py              # Central configuration (models, profiles, chunking)
+├── rag_api.py             # FastAPI backend (RAG, memory, collections, watcher)
+├── index.py               # Document indexer (AST-aware, incremental)
+├── trinaxai_cli/          # Terminal interface (modular, subcommands)
+├── trinaxai_cli.py        # Legacy standalone CLI (deprecated)
+├── service_manager.py     # Cross-platform service supervisor
+├── test_system.py         # Automated health checks
+│
+├── chat-pwa/              # React PWA frontend
+│   ├── src/components/    # 18 React components
+│   ├── src/lib/           # API layer, config, shared state, user profile
+│   ├── src/hooks/         # useChatHistory, useStreamChat, useZenMode
+│   ├── src/i18n/          # Spanish/English translations (~250 keys)
+│   └── vite.config.ts     # Build config, PWA plugin, API proxy
+│
+├── scripts/               # Release tooling (public_readiness.py)
+├── docs/                  # Documentation (API ref, architecture, dev guide)
+├── storage/               # Persisted indexes, manifest, collections
+├── certs/                 # Self-signed HTTPS certs for local dev
+└── .github/               # CI, PR template, issue templates
+```
+
+---
+
+## Coding Conventions
+
+### Python
+
+- Use `pathlib.Path` for new code (existing `os.path` code may remain)
+- Docstrings in Google or NumPy style, either Spanish or English (project convention: bilingual)
+- Import order: stdlib → third-party → local
+- Type hints encouraged but not strictly enforced
+- Avoid bare `except Exception: pass` — at minimum log the exception
+
+### TypeScript (chat-pwa)
+
+- Strict TypeScript (`strict: true` in tsconfig.json)
+- Use `const` for non-reassigned bindings
+- Components are functional with hooks, no class components (except `ErrorBoundary`)
+- i18n: add new strings to `translations.ts` in both `es` and `en`
+- CSS: Tailwind utility classes; custom CSS only in `index.css`
+
+### Shell Scripts
+
+- Use `#!/usr/bin/env bash` shebang
+- Include `set -euo pipefail` 
+- Add `usage()` function and `--help` flag
+- Document environment variables used
+
+---
+
+## Adding a New Model
+
+1. Add the model constant in `config.py`:
+   ```python
+   MODEL_MY_NEW = os.getenv("TRINAXAI_MODEL_MY_NEW", "my-model:latest")
+   ```
+2. Add to `MODEL_FLEET` list
+3. Update `route_model()` if the model needs special routing heuristics
+4. Pull the model: `ollama pull my-model:latest`
+5. Add to the auto-routing table in `Docs.tsx` models section
+
+---
+
+## Adding a New API Endpoint
+
+1. Add the endpoint function in `rag_api.py`:
+   ```python
+   @app.get("/v1/my-feature")
+   async def my_feature(request: Request):
+       # No auth needed for read endpoints
+       return {"ok": True}
+   ```
+
+   For system endpoints that modify state:
+   ```python
+   @app.post("/system/my-action")
+   async def my_action(request: Request):
+       _authorize_system(request)
+       # ...
+       return {"ok": True}
+   ```
+
+2. Add to the API reference in `docs/API_REFERENCE.md`
+3. Add to the in-app docs in `Docs.tsx` API section
+4. If the PWA needs it, add the fetch function in `chat-pwa/src/lib/api.ts`
+
+---
+
+## Adding i18n Strings
+
+1. Open `chat-pwa/src/i18n/translations.ts`
+2. Add keys to both `es` and `en` objects
+3. Use `const { t, lang } = useI18n()` in components
+4. Call `t('myKey')` or `isEs ? 'Texto' : 'Text'` for inline
+
+---
+
+## Testing
+
+### Health Check
+```bash
+python test_system.py --verbose
+```
+Verifies: Ollama running, embedding works, RAG query works.
+
+### Pre-Release Audit
+```bash
+python scripts/public_readiness.py
+```
+Checks: required files, hardcoded paths, i18n coverage, Python compile.
+
+### CI
+`.github/workflows/ci.yml` runs on push/PR:
+- Python syntax check (`python -m compileall`)
+- TypeScript type check (`npx tsc --noEmit`)
+- Frontend build (`npm run build`)
+
+---
+
+## Debugging Tips
+
+### RAG API not starting
+```bash
+# Check port
+lsof -i :3333
+
+# Run directly with verbose output
+python -c "import uvicorn; uvicorn.run('rag_api:app', host='0.0.0.0', port=3333, reload=True)"
+```
+
+### Ollama not responding
+```bash
+# Check if running
+curl http://localhost:11434/api/tags
+
+# Check logs
+journalctl -u ollama -f  # Linux
+```
+
+### PWA not loading
+```bash
+cd chat-pwa
+npx vite --host 0.0.0.0 --port 3334
+# Check console for errors, CORS issues, or cert problems
+```
+
+### Indexing issues
+```bash
+# Full reindex (nuclear option)
+rm -rf storage/docstore.json storage/index_store.json storage/manifest.json
+python index.py
+curl -k -X POST https://localhost:3333/system/reload
+```
+
+---
+
+## Common Tasks
+
+### Reset everything
+```bash
+./shutdown_ai.sh
+rm -rf storage/ chat-pwa/dist/
+python index.py
+./startup_ai.sh
+```
+
+### Update dependencies
+```bash
+./update.sh  # backup, git pull, pip install, npm ci, rebuild PWA
+```
+
+### Add a new language
+1. Create `chat-pwa/src/i18n/translations.ts` entry for the new locale
+2. Update `I18nContext.tsx` to include the new language
+3. Add language option in `OnboardingWizard.tsx`
+
+### Connect VSCode (Continue.dev)
+```bash
+cp continue-config.yaml ~/.continue/config.yaml
+# Restart VSCode — models appear in Continue's picker
+```
+
+---
+
+## Release Checklist
+
+Before tagging a release, run:
+```bash
+python scripts/public_readiness.py
+python test_system.py --verbose
+cd chat-pwa && npx tsc --noEmit && npm run build && cd ..
+git diff --check  # verify no trailing whitespace
+```
