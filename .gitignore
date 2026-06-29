@@ -50,9 +50,6 @@ logs/
 .codex/
 .commandcode/
 
-# Continue.dev config (may contain user API keys if customized)
-continue-config.yaml
-!continue-config.yaml.example
 
 # Local PWA HTTPS dev certificates (self-signed, user/host-specific)
 chat-pwa/certs/
