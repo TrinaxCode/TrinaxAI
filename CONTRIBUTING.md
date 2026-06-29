@@ -13,8 +13,8 @@ This project follows [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md). Be respectful, di
 ### 🐛 Reporting Bugs
 
 Before creating a bug report:
-- Check the [FAQ](https://github.com/TrinaxCode/trinaxai#readme) and [docs](https://github.com/TrinaxCode/trinaxai/tree/main/docs)
-- Search [existing issues](https://github.com/TrinaxCode/trinaxai/issues) to see if it's already reported
+- Check the [docs](https://github.com/TrinaxCode/TrinaxAI/tree/main/docs)
+- Search [existing issues](https://github.com/TrinaxCode/TrinaxAI/issues) to see if it's already reported
 
 When reporting a bug, please include:
 - Your OS and hardware specs (CPU, RAM)
@@ -35,10 +35,8 @@ Feature suggestions are tracked as GitHub Issues. Please describe:
 1. Fork the repo and create your branch from `main`
 2. Sign off every commit for DCO: `git commit -s`
 3. If you've added code, add tests if applicable
-4. Run `python3 scripts/public_readiness.py`
-5. Run `python3 -m py_compile *.py scripts/*.py`
-6. Run `cd chat-pwa && npm run build`
-7. Open the pull request
+4. Run the pre-release checks (see below)
+5. Open the pull request
 
 ### 🌍 Translations
 
@@ -63,8 +61,8 @@ See [docs/DEVELOPER_GUIDE.md](docs/DEVELOPER_GUIDE.md) for full setup instructio
 
 Quick start:
 ```bash
-git clone https://github.com/TrinaxCode/trinaxai.git
-cd trinaxai
+git clone https://github.com/TrinaxCode/TrinaxAI.git
+cd TrinaxAI
 ./install.sh                # or install.ps1 on Windows
 source .venv/bin/activate
 pip install -r requirements.txt
@@ -73,20 +71,41 @@ pip install -r requirements.txt
 cd chat-pwa
 npm install
 npm run dev
+
+# CLI (editable install)
+pip install -e .
+trinaxai doctor
 ```
 
-## Release Checks
+## Pre-Release Checks
 
-Before a release:
+Before opening a PR or pushing to main, run these:
 
 ```bash
+# Python
 python3 scripts/public_readiness.py
-python3 -m py_compile *.py scripts/*.py
-cd chat-pwa && npm run build
+python3 -m py_compile rag_api.py config.py index.py trinaxai_cli.py
+ruff check .
+
+# Frontend
+cd chat-pwa
+npx tsc --noEmit
+npm run build
+npm audit --audit-level=high
+
+# System test (requires running services)
+trinaxai doctor
 python3 test_system.py --verbose
 ```
 
-See `docs/PUBLIC_RELEASE.md` for the full checklist.
+See `docs/PUBLIC_RELEASE.md` for the full release checklist.
+
+## Commit Style
+
+- Use present tense ("Add feature" not "Added feature")
+- Keep commits focused — one logical change per commit
+- Reference issues with `#123` when applicable
+- Sign off with `git commit -s` for DCO compliance
 
 ## License
 
@@ -94,7 +113,7 @@ By contributing, you agree that your contribution is licensed under AGPL-3.0-or-
 
 ## Questions?
 
-Open a [GitHub Discussion](https://github.com/TrinaxCode/trinaxai/discussions) or reach out on the issue tracker.
+Open a [GitHub Discussion](https://github.com/TrinaxCode/TrinaxAI/discussions) or reach out on the issue tracker.
 
 ---
 

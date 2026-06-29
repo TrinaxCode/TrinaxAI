@@ -20,6 +20,7 @@ from trinaxai_cli.config import CLIConfig
 from trinaxai_cli.ui import get_console
 
 LOG = logging.getLogger("trinaxai_cli")
+VERSION = "1.0.0"
 
 
 # ----------------------------------------------------------------- argparse
@@ -51,6 +52,11 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Verbose (DEBUG) logging.",
     )
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"TrinaxAI CLI {VERSION}",
+    )
 
     sub = parser.add_subparsers(dest="command", metavar="COMMAND")
 
@@ -60,8 +66,14 @@ def _build_parser() -> argparse.ArgumentParser:
     chat_p.add_argument("--session", default="default", help="Session name (default: default).")
     chat_p.add_argument("--collections", help="Comma-separated collection ids.")
 
+    ask_p = sub.add_parser("ask", help="Ask one question and exit.")
+    ask_p.add_argument("prompt", nargs="+", help="Question or prompt to send to TrinaxAI.")
+    ask_p.add_argument("--session", default="default", help="Session name (default: default).")
+    ask_p.add_argument("--collections", help="Comma-separated collection ids.")
+
     idx_p = sub.add_parser("index", help="Index a folder into the local RAG store.")
-    idx_p.add_argument("--folder", required=True, help="Folder to index.")
+    idx_p.add_argument("path", nargs="?", help="Folder to index, for example: trinaxai index .")
+    idx_p.add_argument("--folder", help="Folder to index (legacy alias).")
     idx_p.add_argument("--collection", default="default", help="Collection id.")
     idx_p.add_argument("--append", action="store_true", help="Append-only (don't remove deleted files).")
 
@@ -80,7 +92,18 @@ def _build_parser() -> argparse.ArgumentParser:
     res_p.add_argument("--collections", help="Comma-separated collection ids.")
     res_p.add_argument("--depth", type=int, default=2, choices=[1, 2, 3])
 
+    sub.add_parser("status", help="Show local service status.")
+    sub.add_parser("start", help="Start TrinaxAI local services.")
+    stop_p = sub.add_parser("stop", help="Stop AI services and keep them off after reboot.")
+    stop_p.add_argument("--all", action="store_true", help="Also stop the PWA frontend.")
+    stop_p.add_argument("-y", "--yes", action="store_true", help="Skip confirmation.")
+    restart_p = sub.add_parser("restart", help="Restart TrinaxAI local services.")
+    restart_p.add_argument("-y", "--yes", action="store_true", help="Skip confirmation.")
+    sub.add_parser("models", help="List installed and recommended local models.")
+    sub.add_parser("config", help="Show active CLI and environment configuration.")
     sub.add_parser("doctor", help="Run local health checks.")
+    sub.add_parser("version", help="Print TrinaxAI CLI version.")
+    sub.add_parser("help", help="Show TrinaxAI CLI help.")
     sub.add_parser("update", help="Self-update the installation.")
     sub.add_parser("mcp", help="Configure MCP server (placeholder).")
     exp_p = sub.add_parser("export", help="Export a saved session.")
@@ -167,7 +190,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     logging.basicConfig(
-        level=logging.DEBUG if args.verbose else logging.INFO,
+        level=logging.DEBUG if args.verbose else logging.WARNING,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
         stream=sys.stderr,
     )

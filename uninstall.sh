@@ -28,6 +28,15 @@ EOF
   exit 0
 }
 
+REMOVE_MODELS=0
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --help|-h) usage;;
+    --remove-models) REMOVE_MODELS=1; shift;;
+    *) echo "Unknown option: $1" >&2; usage;;
+  esac
+done
+
 [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]] && usage
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -49,9 +58,13 @@ if [ -x "./shutdown_ai.sh" ]; then
   ./shutdown_ai.sh || true
 fi
 
+rm -rf .venv chat-pwa/node_modules chat-pwa/dist storage local_sources logs .env
+
 if command -v systemctl >/dev/null 2>&1; then
-  sudo systemctl disable --now trinaxai.service 2>/dev/null || true
-  sudo rm -f /etc/systemd/system/trinaxai.service /etc/systemd/system/ai-rag.service /etc/systemd/system/trinaxai-frontend.service
+  systemctl --user disable --now trinaxai.service 2>/dev/null || true
+  rm -f "$HOME/.config/systemd/user/trinaxai.service"
+  systemctl --user daemon-reload 2>/dev/null || true
+  sudo rm -f /etc/systemd/system/trinaxai.service /etc/systemd/system/ai-rag.service /etc/systemd/system/trinaxai-frontend.service 2>/dev/null || true
   sudo systemctl daemon-reload 2>/dev/null || true
 fi
 
@@ -60,9 +73,7 @@ if [ "$(uname -s)" = "Darwin" ]; then
   rm -f "$HOME/Library/LaunchAgents/com.trinaxcode.trinaxai.plist"
 fi
 
-rm -rf .venv chat-pwa/node_modules chat-pwa/dist storage local_sources logs .env
-
-if [ "${1:-}" = "--remove-models" ] && command -v ollama >/dev/null 2>&1; then
+if [ "$REMOVE_MODELS" = "1" ] && command -v ollama >/dev/null 2>&1; then
   for model in qwen2.5-coder:1.5b qwen2.5-coder:3b qwen2.5-coder:7b qwen2.5-coder:14b llama3.2:3b bge-m3 qwen2.5vl:3b qwen2.5vl:7b; do
     ollama rm "$model" 2>/dev/null || true
   done

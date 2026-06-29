@@ -17,23 +17,12 @@ import urllib.request
 
 try:
     import config
-except Exception:
-    import ssl as _ssl
-
+except ImportError:
     class _FallbackConfig:
         OLLAMA_BASE_URL = "http://localhost:11434"
         LLM_MODEL = "qwen2.5-coder:3b"
         NUM_CTX = 4096
         NUM_THREAD = 8
-
-        @staticmethod
-        def create_ssl_context(verify: bool = True) -> "_ssl.SSLContext | None":
-            if verify:
-                return None
-            ctx = _ssl.create_default_context()
-            ctx.check_hostname = False
-            ctx.verify_mode = _ssl.CERT_NONE
-            return ctx
 
     config = _FallbackConfig()
 
@@ -174,7 +163,7 @@ def repl(engine: str, model: str, collections: list[str]) -> int:
                 if engine == "rag"
                 else ask_ollama(messages, model)
             )
-        except Exception as exc:
+        except (urllib.error.URLError, OSError, json.JSONDecodeError, KeyError, ValueError) as exc:
             print(f"Error: {exc}")
             continue
         messages.append({"role": "assistant", "content": answer})

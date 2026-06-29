@@ -229,7 +229,7 @@ def _pgrep_status(name: str) -> ProcessState:
         if sys.platform == "win32":
             patterns = PROCESS_PATTERNS.get(name, [name])
             escaped = " -or ".join(
-                f"$_.CommandLine -like '*{pattern.replace("'", "''")}*'"
+                f"$_.CommandLine -like '*{pattern.replace(chr(39), chr(39) + chr(39))}*'"
                 for pattern in patterns
             )
             script = (
@@ -283,7 +283,7 @@ def _stop_by_name(name: str) -> ProcessState:
     patterns = PROCESS_PATTERNS.get(name, [name])
     if sys.platform == "win32":
         escaped = " -or ".join(
-            f"$_.CommandLine -like '*{pattern.replace("'", "''")}*'"
+            f"$_.CommandLine -like '*{pattern.replace(chr(39), chr(39) + chr(39))}*'"
             for pattern in patterns
         )
         script = (

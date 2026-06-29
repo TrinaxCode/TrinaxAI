@@ -5,6 +5,9 @@ on:
     branches: [main]
   pull_request:
 
+# If GitHub Actions is temporarily blocked by billing, run the same commands
+# locally with: make check
+
 jobs:
   dco:
     runs-on: ubuntu-latest
@@ -28,7 +31,7 @@ jobs:
           done < <(git rev-list "$base..$head")
           exit "$missing"
 
-  backend-lint:
+  python:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -37,18 +40,63 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.12"
 
-      - name: Install lint tools
-        run: pip install ruff
-
-      - name: Ruff lint
-        run: ruff check *.py scripts/ --ignore E501
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt -r requirements-dev.txt
+          python -m pip install -e .
 
       - name: Python syntax check
-        run: python -m py_compile *.py scripts/*.py
+        run: python -m py_compile rag_api.py config.py index.py trinaxai_cli.py
 
-  frontend-and-audit:
+      - name: Ruff lint
+        run: ruff check .
+
+      - name: Pytest
+        run: pytest -q
+
+  cli:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install CLI
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt -r requirements-dev.txt
+          python -m pip install -e .
+
+      - name: CLI smoke tests
+        run: |
+          trinaxai --help
+          trinaxai version
+          trinaxai doctor
+          trinaxai ask --help
+          trinaxai index --help
+
+  scripts:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Bash syntax checks
+        run: |
+          bash -n install.sh
+          bash -n backup.sh
+          bash -n uninstall.sh
+          bash -n startup_ai.sh
+          bash -n shutdown_ai.sh
+
+  frontend:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -61,17 +109,13 @@ jobs:
           cache: npm
           cache-dependency-path: chat-pwa/package-lock.json
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
       - name: Install frontend dependencies
         working-directory: chat-pwa
         run: npm ci
 
-      - name: Public readiness audit
-        run: python scripts/public_readiness.py
+      - name: Frontend tests
+        working-directory: chat-pwa
+        run: npm test
 
       - name: TypeScript check
         working-directory: chat-pwa
@@ -81,19 +125,20 @@ jobs:
         working-directory: chat-pwa
         run: npm run build
 
-  security-audit:
+      - name: npm audit high
+        working-directory: chat-pwa
+        run: npm audit --audit-level=high
+
+  public-readiness:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
+      - name: Setup Python
+        uses: actions/setup-python@v5
         with:
-          node-version: 20
-          cache: npm
-          cache-dependency-path: chat-pwa/package-lock.json
+          python-version: "3.12"
 
-      - name: npm audit
-        working-directory: chat-pwa
-        run: npm audit --audit-level=high
+      - name: Public readiness audit
+        run: python scripts/public_readiness.py

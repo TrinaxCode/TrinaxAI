@@ -5,7 +5,6 @@ modules call this client and never touch HTTP directly.
 """
 from __future__ import annotations
 
-import json
 from typing import Any, Iterable
 from urllib.parse import urlencode
 

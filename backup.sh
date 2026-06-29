@@ -47,6 +47,25 @@ restore_backup() {
     echo "Usage: ./backup.sh restore /path/to/trinaxai-backup.tar.gz (or --help)" >&2
     exit 1
   fi
+
+  local listing
+  listing="$(tar -tzf "$archive" 2>/dev/null)" || {
+    echo "Error: could not read archive listing from $archive" >&2
+    exit 1
+  }
+
+  while IFS= read -r entry; do
+    [ -z "$entry" ] && continue
+    # reject absolute paths
+    case "$entry" in
+      /*) echo "Error: archive contains absolute path: $entry" >&2; exit 1;;
+    esac
+    # reject path traversal
+    case "$entry" in
+      *..*) echo "Error: archive contains path traversal: $entry" >&2; exit 1;;
+    esac
+  done <<< "$listing"
+
   tar --no-absolute-names -xzf "$archive" -C "$ROOT"
   echo "Restored $archive"
 }

@@ -1,6 +1,6 @@
 # TrinaxAI en macOS
 
-Guia para instalar, configurar, iniciar y dejar listo TrinaxAI en macOS, tanto Apple Silicon como Intel.
+Guía para instalar, configurar, iniciar y dejar listo TrinaxAI en macOS, tanto Apple Silicon como Intel.
 
 ## Que queda funcionando
 

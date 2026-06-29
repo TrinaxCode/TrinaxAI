@@ -86,11 +86,11 @@ class Console:
                 )
 
     # ------------------------------------------------------------------- text
-    def print(self, msg: Any = "") -> None:
+    def print(self, msg: Any = "", *, end: str = "\n") -> None:
         if self._rich_console is not None:
-            self._rich_console.print(msg)
+            self._rich_console.print(msg, end=end)
         else:
-            print(msg)
+            print(msg, end=end)
 
     def info(self, msg: Any) -> None:
         self._styled(msg, "info")

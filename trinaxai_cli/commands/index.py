@@ -13,9 +13,9 @@ from typing import Any
 
 
 def run(args: Any, client: Any, ui: Any, config: Any) -> int:
-    folder = getattr(args, "folder", None)
+    folder = getattr(args, "path", None) or getattr(args, "folder", None)
     if not folder:
-        ui.error("--folder is required.")
+        ui.error("Usage: trinaxai index /path/to/project")
         return 1
     folder_path = Path(folder).expanduser().resolve()
     if not folder_path.is_dir():

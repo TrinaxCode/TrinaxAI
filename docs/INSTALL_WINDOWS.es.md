@@ -1,6 +1,6 @@
 # TrinaxAI en Windows
 
-Guia para instalar, configurar, iniciar y dejar listo TrinaxAI en Windows 10/11 con PowerShell.
+Guía para instalar, configurar, iniciar y dejar listo TrinaxAI en Windows 10/11 con PowerShell.
 
 ## Que queda funcionando
 

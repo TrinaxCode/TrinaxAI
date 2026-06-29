@@ -27,6 +27,18 @@ from llama_index.core.schema import Document
 
 import config
 
+
+def _env_int(name: str, default: int, *, minimum: int = 1, maximum: int | None = None) -> int:
+    try:
+        value = int(os.getenv(name, str(default)))
+    except ValueError:
+        return default
+    value = max(minimum, value)
+    if maximum is not None:
+        value = min(maximum, value)
+    return value
+
+
 # ==================== SETTINGS ====================
 Settings.embed_model = config.make_embed()
 # NO se define Settings.llm: indexar solo necesita embeddings.
@@ -38,6 +50,8 @@ COLLECTION_NAME = (
     os.getenv("TRINAXAI_COLLECTION_NAME", config.DEFAULT_COLLECTION_NAME).strip()
     or config.DEFAULT_COLLECTION_NAME
 )
+
+INDEX_BATCH_SIZE = _env_int("TRINAXAI_INDEX_BATCH_SIZE", 100, minimum=1, maximum=1000)
 APPEND_ONLY = os.getenv("TRINAXAI_INDEX_APPEND", "0").strip().lower() in {
     "1",
     "true",
@@ -138,9 +152,8 @@ def load_docs(paths: list[str]) -> list[Document]:
     if not paths:
         return []
     out: list[Document] = []
-    BATCH = 100
-    for batch_start in range(0, len(paths), BATCH):
-        batch = paths[batch_start : batch_start + BATCH]
+    for batch_start in range(0, len(paths), INDEX_BATCH_SIZE):
+        batch = paths[batch_start : batch_start + INDEX_BATCH_SIZE]
         try:
             docs = SimpleDirectoryReader(
                 input_files=batch,
@@ -242,15 +255,107 @@ def current_state(paths: list[str]) -> dict:
     return state
 
 
-# ==================== MAIN ====================
-if __name__ == "__main__":
-    print("\n🧠 TrinaxAI — Indexador de Documentos")
+def diff_manifest(old_state: dict, new_state: dict, rel_to_path: dict[str, str]) -> tuple[list[str], list[str], list[str]]:
+    new_files: list[str] = []
+    changed: list[str] = []
+    for key, path in rel_to_path.items():
+        if key in old_state:
+            if old_state[key] != new_state[key]:
+                changed.append(path)
+        else:
+            new_files.append(path)
+    prefix = f"{COLLECTION_ID}:"
+    deleted = [] if APPEND_ONLY else [key for key in old_state if key.startswith(prefix) and key not in new_state]
+    return new_files, changed, deleted
+
+
+def remove_obsolete_nodes(index: VectorStoreIndex, changed: list[str], deleted: list[str]) -> int:
+    rels_to_remove = {_source_key(path) for path in changed} | set(deleted)
+    node_ids = [
+        nid
+        for nid, node in index.docstore.docs.items()
+        if node.metadata.get("source_key") in rels_to_remove
+        or node.metadata.get("rel_path") in rels_to_remove
+    ]
+    if node_ids:
+        index.delete_nodes(node_ids, delete_from_docstore=True)
+    return len(node_ids)
+
+
+def insert_files(index: VectorStoreIndex, paths: list[str]) -> int:
+    if not paths:
+        return 0
+    print("✂️  Troceando cambios...")
+    nodes = build_nodes(load_docs(paths))
+    if nodes:
+        print(f"🔨 Embeddings de {len(nodes)} chunks (bge-m3)...")
+        index.insert_nodes(nodes, show_progress=True)
+    return len(nodes)
+
+
+def persist_final_state(old_state: dict, new_state: dict, *, incremental: bool) -> int:
+    if incremental and APPEND_ONLY:
+        merged_state = dict(old_state)
+        merged_state.update(new_state)
+        write_manifest(merged_state)
+        return len(merged_state)
+    write_manifest(new_state)
+    return len(new_state)
+
+
+def run_incremental(old_state: dict, new_state: dict, rel_to_path: dict[str, str]) -> int:
+    new_files, changed, deleted = diff_manifest(old_state, new_state, rel_to_path)
+    if not (new_files or changed or deleted):
+        print("\n✅ Todo al día — no hay cambios que indexar.")
+        return 0
+
+    print(
+        f"\n🔄 Incremental: {len(new_files)} nuevos, {len(changed)} "
+        f"modificados, {len(deleted)} eliminados"
+    )
+    print("📥 Cargando índice existente...")
+    sc = StorageContext.from_defaults(persist_dir=config.PERSIST_DIR)
+    index = load_index_from_storage(sc)
+
+    removed = remove_obsolete_nodes(index, changed, deleted)
+    if removed:
+        print(f"   🗑️  {removed} chunks obsoletos eliminados")
+    insert_files(index, new_files + changed)
+    index.storage_context.persist(persist_dir=config.PERSIST_DIR)
+    final_count = persist_final_state(old_state, new_state, incremental=True)
+    print_summary(final_count)
+    return 0
+
+
+def run_full_index(paths: list[str], new_state: dict) -> int:
+    print("\n🆕 Indexado completo (primera vez)")
+    if not paths:
+        print("❌ No se encontraron documentos para indexar.")
+        return 1
+    print("✂️  Troceando (chunking consciente del lenguaje)...")
+    nodes = build_nodes(load_docs(paths))
+    print(f"🔨 Embeddings de {len(nodes)} chunks (bge-m3)...")
+    index = VectorStoreIndex(nodes, show_progress=True)
+    index.storage_context.persist(persist_dir=config.PERSIST_DIR)
+    final_count = persist_final_state({}, new_state, incremental=False)
+    print_summary(final_count)
+    return 0
+
+
+def print_summary(final_count: int) -> None:
+    print("\n✅ Indexado completado")
+    print(f"📚 Colección: {COLLECTION_NAME} ({COLLECTION_ID})")
+    print(f"📦 {config.PERSIST_DIR}  ·  {final_count} archivos en el índice")
     print("═" * 45)
 
-    root = config.PROJECTS_DIRS[0]
+
+def run_index(root: str | None = None) -> int:
+    root = root or config.PROJECTS_DIRS[0]
+    print("\n🧠 TrinaxAI — Indexador de Documentos")
+    print("═" * 45)
     if not os.path.isdir(root):
         print(f"❌ Directorio no encontrado: {root}")
-        sys.exit(1)
+        return 1
 
     print(f"📂 Recorriendo: {root}")
     paths = collect_files(root)
@@ -261,76 +366,11 @@ if __name__ == "__main__":
     old_state = read_manifest()
     index_exists = os.path.exists(os.path.join(config.PERSIST_DIR, "docstore.json"))
     incremental = index_exists and bool(old_state)
-
     if incremental:
-        new_files = []
-        changed = []
-        for r, p in rel_to_path.items():
-            if r in old_state:
-                if old_state[r] != new_state[r]:
-                    changed.append(p)
-            else:
-                new_files.append(p)
-        prefix = f"{COLLECTION_ID}:"
-        deleted = (
-            []
-            if APPEND_ONLY
-            else [r for r in old_state if r.startswith(prefix) and r not in new_state]
-        )
+        return run_incremental(old_state, new_state, rel_to_path)
+    return run_full_index(paths, new_state)
 
-        if not (new_files or changed or deleted):
-            print("\n✅ Todo al día — no hay cambios que indexar.")
-            sys.exit(0)
 
-        print(
-            f"\n🔄 Incremental: {len(new_files)} nuevos, {len(changed)} "
-            f"modificados, {len(deleted)} eliminados"
-        )
-        print("📥 Cargando índice existente...")
-        sc = StorageContext.from_defaults(persist_dir=config.PERSIST_DIR)
-        index = load_index_from_storage(sc)
-
-        rels_to_remove = {_source_key(p) for p in changed} | set(deleted)
-        node_ids = [
-            nid
-            for nid, n in index.docstore.docs.items()
-            if n.metadata.get("source_key") in rels_to_remove
-            or n.metadata.get("rel_path") in rels_to_remove
-        ]
-        if node_ids:
-            index.delete_nodes(node_ids, delete_from_docstore=True)
-            print(f"   🗑️  {len(node_ids)} chunks obsoletos eliminados")
-
-        # Insertar nuevos + modificados.
-        to_index = new_files + changed
-        if to_index:
-            print("✂️  Troceando cambios...")
-            nodes = build_nodes(load_docs(to_index))
-            if nodes:
-                print(f"🔨 Embeddings de {len(nodes)} chunks (bge-m3)...")
-                index.insert_nodes(nodes, show_progress=True)
-        index.storage_context.persist(persist_dir=config.PERSIST_DIR)
-    else:
-        # Construcción completa desde cero.
-        print("\n🆕 Indexado completo (primera vez)")
-        if not paths:
-            print("❌ No se encontraron documentos para indexar.")
-            sys.exit(1)
-        print("✂️  Troceando (chunking consciente del lenguaje)...")
-        nodes = build_nodes(load_docs(paths))
-        print(f"🔨 Embeddings de {len(nodes)} chunks (bge-m3)...")
-        index = VectorStoreIndex(nodes, show_progress=True)
-        index.storage_context.persist(persist_dir=config.PERSIST_DIR)
-
-    if incremental and APPEND_ONLY:
-        merged_state = dict(old_state)
-        merged_state.update(new_state)
-        write_manifest(merged_state)
-        final_count = len(merged_state)
-    else:
-        write_manifest(new_state)
-        final_count = len(new_state)
-    print("\n✅ Indexado completado")
-    print(f"📚 Colección: {COLLECTION_NAME} ({COLLECTION_ID})")
-    print(f"📦 {config.PERSIST_DIR}  ·  {final_count} archivos en el índice")
-    print("═" * 45)
+# ==================== MAIN ====================
+if __name__ == "__main__":
+    sys.exit(run_index())

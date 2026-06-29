@@ -13,8 +13,8 @@ Este proyecto sigue el [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md). Sé respetuoso,
 ### 🐛 Reportar errores
 
 Antes de crear un reporte de error:
-- Consulta el [FAQ](https://github.com/TrinaxCode/trinaxai#readme) y la [documentación](https://github.com/TrinaxCode/trinaxai/tree/main/docs)
-- Busca en los [issues existentes](https://github.com/TrinaxCode/trinaxai/issues) para ver si ya está reportado
+- Consulta la [documentación](https://github.com/TrinaxCode/TrinaxAI/tree/main/docs)
+- Busca en los [issues existentes](https://github.com/TrinaxCode/TrinaxAI/issues) para ver si ya está reportado
 
 Al reportar un error, incluye:
 - Tu sistema operativo y especificaciones de hardware (CPU, RAM)
@@ -35,10 +35,8 @@ Las sugerencias de características se gestionan como GitHub Issues. Por favor d
 1. Haz un fork del repositorio y crea tu rama desde `main`
 2. Firma cada commit para el DCO: `git commit -s`
 3. Si añadiste código, agrega pruebas si aplica
-4. Ejecuta `python3 scripts/public_readiness.py`
-5. Ejecuta `python3 -m py_compile *.py scripts/*.py`
-6. Ejecuta `cd chat-pwa && npm run build`
-7. Abre el pull request
+4. Ejecuta las verificaciones pre-release (ver abajo)
+5. Abre el pull request
 
 ### 🌍 Traducciones
 
@@ -63,8 +61,8 @@ Consulta [docs/DEVELOPER_GUIDE.md](docs/DEVELOPER_GUIDE.md) para las instruccion
 
 Inicio rápido:
 ```bash
-git clone https://github.com/TrinaxCode/trinaxai.git
-cd trinaxai
+git clone https://github.com/TrinaxCode/TrinaxAI.git
+cd TrinaxAI
 ./install.sh                # o install.ps1 en Windows
 source .venv/bin/activate
 pip install -r requirements.txt
@@ -73,20 +71,41 @@ pip install -r requirements.txt
 cd chat-pwa
 npm install
 npm run dev
+
+# CLI (instalación editable)
+pip install -e .
+trinaxai doctor
 ```
 
-## Verificaciones previas al lanzamiento
+## Verificaciones pre-release
 
-Antes de un lanzamiento:
+Antes de abrir un PR o hacer push a main, ejecuta:
 
 ```bash
+# Python
 python3 scripts/public_readiness.py
-python3 -m py_compile *.py scripts/*.py
-cd chat-pwa && npm run build
+python3 -m py_compile rag_api.py config.py index.py trinaxai_cli.py
+ruff check .
+
+# Frontend
+cd chat-pwa
+npx tsc --noEmit
+npm run build
+npm audit --audit-level=high
+
+# Prueba del sistema (requiere servicios corriendo)
+trinaxai doctor
 python3 test_system.py --verbose
 ```
 
-Consulta `docs/PUBLIC_RELEASE.md` para el checklist completo.
+Consulta `docs/PUBLIC_RELEASE.md` para el checklist completo de publicación.
+
+## Estilo de commits
+
+- Usa tiempo presente ("Agregar feature" no "Agregado feature")
+- Commits enfocados — un cambio lógico por commit
+- Referencia issues con `#123` cuando aplique
+- Firma con `git commit -s` para cumplir con DCO
 
 ## Licencia
 
@@ -94,7 +113,7 @@ Al contribuir, aceptas que tu aportación se licencia bajo AGPL-3.0-or-later.
 
 ## ¿Preguntas?
 
-Abre una [GitHub Discussion](https://github.com/TrinaxCode/trinaxai/discussions) o comunícate a través del issue tracker.
+Abre una [GitHub Discussion](https://github.com/TrinaxCode/TrinaxAI/discussions) o comunícate a través del issue tracker.
 
 ---
 

@@ -219,6 +219,107 @@
 }
 
 /* ============================================
+   Custom Animations
+   ============================================ */
+
+/* TrinaxAI brand title — smooth color wave (dark mode) */
+@keyframes brand-shift {
+  0%, 100% { color: rgba(255, 255, 255, 0.85); }
+  25%  { color: #4ea3e0; }
+  50%  { color: #006bbd; }
+  75%  { color: #4ea3e0; }
+}
+
+/* TrinaxAI brand title — smooth color wave (light mode) */
+@keyframes brand-shift-light {
+  0%, 100% { color: #374151; }
+  25%  { color: #006bbd; }
+  50%  { color: #004d8a; }
+  75%  { color: #006bbd; }
+}
+
+.animate-brand {
+  animation: brand-shift 4s ease-in-out infinite;
+}
+
+html.light .animate-brand {
+  animation-name: brand-shift-light;
+}
+
+/* Floating logo */
+@keyframes float {
+  0%, 100% { transform: translateY(0px); }
+  50%      { transform: translateY(-6px); }
+}
+
+.animate-float {
+  animation: float 3s ease-in-out infinite;
+}
+
+/* Glow pulse on logo */
+@keyframes glow-pulse {
+  0%, 100% { box-shadow: 0 0 15px rgba(0, 107, 189, 0.15), 0 0 30px rgba(0, 107, 189, 0.05); }
+  50%      { box-shadow: 0 0 25px rgba(0, 107, 189, 0.35), 0 0 50px rgba(0, 107, 189, 0.12); }
+}
+
+.animate-glow {
+  animation: glow-pulse 2.5s ease-in-out infinite;
+}
+
+/* Subtle shimmer sweep */
+@keyframes shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.animate-shimmer {
+  background: linear-gradient(90deg, transparent 0%, rgba(0, 107, 189, 0.08) 50%, transparent 100%);
+  background-size: 200% 100%;
+  animation: shimmer 3s ease-in-out infinite;
+}
+
+/* Border glow on focus */
+@keyframes border-glow {
+  0%, 100% { border-color: rgba(0, 107, 189, 0.3); box-shadow: 0 0 12px rgba(0, 107, 189, 0.08); }
+  50%      { border-color: rgba(0, 107, 189, 0.6); box-shadow: 0 0 22px rgba(0, 107, 189, 0.18); }
+}
+
+.animate-border-glow {
+  animation: border-glow 2.5s ease-in-out infinite;
+}
+
+/* Soft pulsing opacity */
+@keyframes soft-pulse {
+  0%, 100% { opacity: 0.6; }
+  50%      { opacity: 1; }
+}
+
+.animate-soft-pulse {
+  animation: soft-pulse 2s ease-in-out infinite;
+}
+
+/* Fade in up staggered */
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fade-up {
+  animation: fade-up 0.4s ease-out forwards;
+}
+
+/* Scale in bounce */
+@keyframes scale-bounce {
+  0%   { transform: scale(0.9); opacity: 0; }
+  60%  { transform: scale(1.04); }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+.animate-scale-bounce {
+  animation: scale-bounce 0.45s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* ============================================
    Markdown Prose Overrides
    ============================================ */
 html.dark .prose {

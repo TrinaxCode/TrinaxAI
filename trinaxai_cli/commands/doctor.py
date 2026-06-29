@@ -1,29 +1,48 @@
 """``trinaxai doctor`` — quick local health check."""
 from __future__ import annotations
 
+import shutil
+import subprocess
+import sys
 from typing import Any
+
+from trinaxai_cli.commands import _system
 
 
 def run(args: Any, client: Any, ui: Any, config: Any) -> int:
+    rows: list[list[str]] = []
+
+    def add(name: str, ok: bool, detail: str) -> None:
+        rows.append([name, "OK" if ok else "FAIL", detail])
+
+    add("Python package", True, "CLI import works")
+    add("Service manager", _system.service_manager().is_file(), str(_system.service_manager()))
+    add("Ollama command", bool(shutil.which("ollama")), shutil.which("ollama") or "install Ollama")
+
+    try:
+        status = subprocess.run(
+            [sys.executable, str(_system.service_manager()), "status", "--base-dir", str(_system.PROJECT_ROOT)],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+        add("Services", status.returncode == 0, (status.stdout or status.stderr or "").strip().replace("\n", " | ")[:220])
+    except Exception as exc:
+        add("Services", False, str(exc))
+
     try:
         health = client.health()
         indexed = bool(health.get("indexed"))
         projects = health.get("projects", []) or []
         collections = health.get("collections", []) or []
-
-        ui.table(
-            ["check", "status", "detail"],
-            [
-                ["API reachable", "OK" if health else "FAIL", ""],
-                ["Index built", "OK" if indexed else "NO", "run: trinaxai index --folder <path>"],
-                ["Projects", str(len(projects)), ", ".join(projects[:5]) + ("…" if len(projects) > 5 else "")],
-                ["Collections", str(len(collections)), ", ".join(c.get("id", "") for c in collections[:5])],
-            ],
-            title="TrinaxAI health",
-        )
+        add("RAG API", True, client.base_url)
+        add("Index built", indexed, "ready" if indexed else "run: trinaxai index .")
+        add("Projects", True, str(len(projects)))
+        add("Collections", True, ", ".join(c.get("id", "") for c in collections[:5]) or "none")
         try:
             stats = client.stats()
-            ui.info(f"Messages: {stats.get('messages_total', 0)} · est. tokens: {stats.get('tokens_estimated', 0)}")
+            add("Usage stats", True, f"messages={stats.get('messages_total', 0)} tokens={stats.get('tokens_estimated', 0)}")
         except Exception:
             pass
         try:
@@ -32,7 +51,8 @@ def run(args: Any, client: Any, ui: Any, config: Any) -> int:
                 ui.panel(mem.get("summary", ""), title="Memory summary")
         except Exception:
             pass
-        return 0
     except Exception as exc:
-        ui.error(f"doctor: {exc}")
-        return 1
+        add("RAG API", False, f"{exc}; run: trinaxai start")
+
+    ui.table(["check", "status", "detail"], rows, title="TrinaxAI doctor")
+    return 0 if all(row[1] == "OK" for row in rows if row[0] in {"Python package", "Service manager"}) else 1

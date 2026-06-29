@@ -978,12 +978,12 @@ function getLastUserText(messages: ChatMessage[], beforeMsg?: ChatMessage): stri
   return (
     <div className="flex flex-col h-full min-h-0 min-w-0 max-w-full overflow-hidden transition-colors duration-300">
       {/* Navbar — items centered vertically with proper safe-area padding */}
-      <nav className={`shrink-0 flex items-center px-2 sm:px-3 border-b ${isDark ? 'bg-black/90 border-white/[0.06]' : 'bg-white/95 border-gray-200'}`}
+      <nav className={`shrink-0 flex items-center px-2 sm:px-3 border-b ${isDark ? 'bg-black/80 border-white/[0.06]' : 'bg-white/90 border-gray-200'} backdrop-blur-xl`}
            style={{ minHeight: '44px', paddingTop: 'env(safe-area-inset-top, 0px)' }}>
         {/* Left: animated branding */}
         <div className="flex items-center shrink-0">
           <span
-            className={`text-lg sm:text-xl md:text-xl font-bold tracking-normal ${isDark ? 'text-white/85' : 'text-gray-800'}`}
+            className="text-lg sm:text-xl md:text-xl font-bold tracking-normal animate-brand"
           >
             TrinaxAI
           </span>
@@ -1022,7 +1022,7 @@ function getLastUserText(messages: ChatMessage[], beforeMsg?: ChatMessage): stri
               onClick={() => setResearchMode((v) => !v)}
               className={`p-2 sm:p-2 rounded-xl transition-colors ${
                 researchMode
-                  ? 'bg-[#006bbd]/20 text-[#006bbd] ring-1 ring-[#006bbd]/40'
+                  ? 'bg-[#006bbd]/20 text-[#006bbd] ring-1 ring-[#006bbd]/40 animate-soft-pulse'
                   : isDark ? 'text-white/55 hover:text-white hover:bg-white/[0.06]' : 'text-gray-600 hover:text-gray-800 hover:bg-gray-100'
               }`}
               aria-label={lang === 'en' ? 'Toggle Deep Research' : 'Activar Deep Research'}
@@ -1052,12 +1052,16 @@ function getLastUserText(messages: ChatMessage[], beforeMsg?: ChatMessage): stri
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
         >
-          <img
-            src="/new-logo-for-AI.webp"
-            alt="TrinaxAI"
-            className="w-16 h-16 md:w-20 md:h-20 rounded-full object-cover
-                       opacity-80 shadow-lg shadow-[#006bbd]/10"
-          />
+          <motion.div
+            className="animate-float"
+          >
+            <img
+              src="/new-logo-for-AI.webp"
+              alt="TrinaxAI"
+              className="w-16 h-16 md:w-20 md:h-20 rounded-full object-cover
+                         opacity-85 shadow-lg animate-glow"
+            />
+          </motion.div>
           <AnimatePresence mode="wait">
             <motion.p
               key={motd}
@@ -1081,9 +1085,9 @@ function getLastUserText(messages: ChatMessage[], beforeMsg?: ChatMessage): stri
           {messages.map((msg, i) => (
             <motion.div
               key={`${i}-${msg.role}`}
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.15, ease: 'easeOut' }}
+              initial={{ opacity: 0, y: 12, scale: 0.96 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              transition={{ duration: 0.3, delay: 0, ease: [0.16, 1, 0.3, 1] }}
               className={`chat-row flex min-w-0 w-full max-w-full gap-2 sm:gap-3 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
             >
               {/* Avatar (AI) */}
@@ -1247,7 +1251,7 @@ function getLastUserText(messages: ChatMessage[], beforeMsg?: ChatMessage): stri
                   />
                 ) : (
                   <div
-                    className="w-7 h-7 rounded-full shrink-0 mt-0.5 grid place-items-center bg-[#006bbd] text-white text-xs font-semibold"
+                    className="w-7 h-7 rounded-full shrink-0 mt-0.5 grid place-items-center bg-[#006bbd] text-white text-xs font-semibold animate-soft-pulse"
                     aria-label={t('userAvatar')}
                     title={userDisplayName}
                   >
@@ -1261,10 +1265,10 @@ function getLastUserText(messages: ChatMessage[], beforeMsg?: ChatMessage): stri
           {/* Streaming bubble with typing animation */}
           {streaming && (
             <motion.div
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.1 }}
+              initial={{ opacity: 0, y: 8, scale: 0.96 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.96 }}
+              transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
               className="chat-row flex min-w-0 w-full max-w-full gap-2 sm:gap-3 justify-start"
             >
               <img
@@ -1337,9 +1341,9 @@ function getLastUserText(messages: ChatMessage[], beforeMsg?: ChatMessage): stri
                 <button
                   key={collection.id}
                   onClick={() => toggleCollection(collection.id)}
-                  className={`shrink-0 max-w-36 truncate rounded-full border px-3 py-1 text-[11px] font-medium transition-colors ${
+                  className={`shrink-0 max-w-36 truncate rounded-full border px-3 py-1 text-[11px] font-medium transition-all active:scale-95 ${
                     active
-                      ? 'border-[#006bbd]/50 bg-[#006bbd]/15 text-[#4ea3e0]'
+                      ? 'border-[#006bbd]/50 bg-[#006bbd]/15 text-[#4ea3e0] animate-soft-pulse'
                       : isDark ? 'border-white/[0.08] bg-white/[0.03] text-white/45 hover:text-white/75' : 'border-gray-200 bg-gray-50 text-gray-500 hover:text-gray-800'
                   }`}
                   title={collection.name}
@@ -1426,7 +1430,7 @@ function getLastUserText(messages: ChatMessage[], beforeMsg?: ChatMessage): stri
           onChange={onPickDocs}
         />
         <div
-          className={`flex items-end gap-1 sm:gap-2 rounded-2xl border px-2 sm:px-3 py-2 transition-all duration-300 relative ${
+          className={`flex items-end gap-1 sm:gap-2 rounded-2xl border px-2 sm:px-3 py-2 transition-all duration-300 relative focus-within:animate-border-glow ${
             isDark
               ? 'bg-white/[0.04] border-white/[0.08] focus-within:border-[#006bbd]/40 focus-within:shadow-[0_0_20px_rgba(0,107,189,0.15)]'
               : 'bg-gray-100 border-gray-200 focus-within:border-[#006bbd]/40 focus-within:shadow-[0_0_20px_rgba(0,107,189,0.1)]'
@@ -1534,9 +1538,13 @@ function getLastUserText(messages: ChatMessage[], beforeMsg?: ChatMessage): stri
             <button
               onClick={handleSend}
               disabled={!input.trim() && !attachedImage && attachedDocs.length === 0}
-              className="p-2 rounded-xl bg-[#006bbd] text-white
+              className={`p-2 rounded-xl bg-[#006bbd] text-white
                          hover:bg-[#0059a0] disabled:opacity-30 disabled:cursor-not-allowed
-                         transition-all shrink-0"
+                         transition-all shrink-0 ${
+                           (input.trim() || attachedImage || attachedDocs.length > 0) && !streaming
+                             ? 'animate-soft-pulse'
+                             : ''
+                         }`}
               aria-label={t('send')}
             >
               <MdSend size={18} />

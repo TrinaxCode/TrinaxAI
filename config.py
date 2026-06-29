@@ -20,7 +20,7 @@ try:
     from dotenv import load_dotenv
 
     load_dotenv(os.path.join(BASE_DIR, ".env"))
-except Exception:
+except ImportError:
     pass
 
 PERSIST_DIR = os.path.join(BASE_DIR, "storage")
@@ -581,7 +581,7 @@ def make_reranker():
         except ImportError:
             from llama_index.postprocessor.sbert_rerank import SentenceTransformerRerank
         return SentenceTransformerRerank(model=RERANK_MODEL, top_n=RERANK_TOP_N)
-    except Exception as e:  # torch/sentence-transformers not installed, etc.
+    except (ImportError, ModuleNotFoundError, OSError) as e:  # torch/sentence-transformers not installed, etc.
         print(f"[TrinaxAI] Reranker disabled ({str(e)[:80]})")
         return None
 
@@ -607,8 +607,6 @@ def create_ssl_context(verify: bool | None = None) -> "ssl.SSLContext | None":
     returns a context that skips hostname checking and certificate verification.
     When verify is True, returns None so urllib uses the default secure context.
     """
-    import ssl
-
     if verify is None:
         verify = TLS_VERIFY
     if verify:

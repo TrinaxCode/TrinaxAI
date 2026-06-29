@@ -13,6 +13,7 @@ Características:
 
 import ipaddress
 import json
+import logging
 import os
 import re
 import shutil
@@ -45,7 +46,9 @@ from llama_index.retrievers.bm25 import BM25Retriever
 from pydantic import BaseModel
 
 import config
+from trinaxai_core import sanitize_collection_id
 
+LOG = logging.getLogger("trinaxai.rag_api")
 app = FastAPI(title="TrinaxAI RAG API")
 
 # ── CORS: allowlist en vez de "*" ──
@@ -60,7 +63,7 @@ if _cors == "*":
     cors_origins = ["*"]
 elif _cors == "":
     # Empty env var: fall back to safe defaults (PWA frontend origins)
-    print(
+    LOG.warning(
         "[TrinaxAI] \u26a0\ufe0f  TRINAXAI_CORS_ORIGINS is empty \u2014 using safe localhost defaults"
     )
     cors_origins = [
@@ -78,7 +81,7 @@ else:
     cors_origins = [o.strip() for o in _cors.split(",") if o.strip()]
     if not cors_origins:
         # Split produced empty list: revert to safe defaults
-        print(
+        LOG.warning(
             "[TrinaxAI] \u26a0\ufe0f  TRINAXAI_CORS_ORIGINS parsed to empty \u2014 using safe localhost defaults"
         )
         cors_origins = [
@@ -138,8 +141,8 @@ _llm_cache: dict = {}
 
 # ── Rate limiting (token bucket simple) ──
 _rate_limit_state: dict[str, list[float]] = defaultdict(list)
-_RATE_LIMIT_MAX = 30  # requests per minute
-_RATE_LIMIT_WINDOW = 60.0  # seconds
+_RATE_LIMIT_MAX = int(os.getenv("TRINAXAI_RATE_LIMIT_PER_MINUTE", "30"))
+_RATE_LIMIT_WINDOW = float(os.getenv("TRINAXAI_RATE_LIMIT_WINDOW_SECONDS", "60"))
 _RATE_LIMIT_MAX_CLIENTS = 2000
 _rate_limit_last_prune = 0.0
 _rate_limit_lock = threading.Lock()
@@ -171,6 +174,17 @@ def _check_rate_limit(ip: str) -> bool:
         return True
 
 
+def _client_host(request: Request) -> str:
+    return request.client.host if request.client else "127.0.0.1"
+
+
+def _enforce_rate_limit(request: Request, *, bucket: str = "chat") -> None:
+    key = f"{bucket}:{_client_host(request)}"
+    if not _check_rate_limit(key):
+        LOG.warning("Rate limit exceeded for %s", bucket)
+        raise HTTPException(status_code=429, detail="Too many requests. Slow down.")
+
+
 def _prune_old_jobs() -> None:
     """Remove completed/cancelled/failed index jobs older than 1 hour."""
     now = time.time()
@@ -187,7 +201,7 @@ def _prune_old_jobs() -> None:
 # ── Reranker cross-encoder ── (se carga una vez; None si está desactivado).
 _reranker = config.make_reranker()
 if _reranker is not None:
-    print(f"[TrinaxAI] ✓ Reranker activo: {config.RERANK_MODEL}")
+    LOG.info("Reranker enabled: %s", config.RERANK_MODEL)
 NO_INDEX_MSG = (
     "Aún no hay índice. Ejecuta `python index.py` para indexar "
     "tu carpeta de proyectos y luego recarga desde Configuración o con "
@@ -226,8 +240,7 @@ def _safe_label(label: str) -> str:
 
 
 def _collection_slug(name: str) -> str:
-    slug = re.sub(r"[^a-z0-9_-]+", "-", (name or "").strip().lower()).strip("-_")
-    return (slug or "collection")[:48]
+    return sanitize_collection_id(name)
 
 
 def _collection_public(item: dict) -> dict:
@@ -472,7 +485,7 @@ def _run_index_job(
     env = {
         **os.environ,
         "TRINAXAI_INDEX_DIR": target,
-        "TRINAXAI_COLLECTION_ID": collection_id,
+        "TRINAXAI_COLLECTION_ID": _collection_slug(collection_id),
         "TRINAXAI_COLLECTION_NAME": collection_name,
         "TRINAXAI_INDEX_APPEND": "1",
     }
@@ -786,7 +799,7 @@ class DocumentExtractResponse(BaseModel):
 
 ADMIN_TOKEN = os.getenv("TRINAXAI_ADMIN_TOKEN", "")
 _LOCAL_HOSTS = {"127.0.0.1", "::1", "localhost", "::ffff:127.0.0.1"}
-ALLOW_LAN_SYSTEM = os.getenv("TRINAXAI_ALLOW_LAN_SYSTEM", "1").strip().lower() not in {
+ALLOW_LAN_SYSTEM = os.getenv("TRINAXAI_ALLOW_LAN_SYSTEM", "0").strip().lower() not in {
     "0",
     "false",
     "no",
@@ -798,10 +811,19 @@ def _sse(obj: dict) -> str:
     return f"data: {json.dumps(obj, ensure_ascii=False)}\n\n"
 
 
+def _sse_done() -> str:
+    return "data: [DONE]\n\n"
+
+
+def _sse_error(exc: Exception) -> str:
+    LOG.exception("Streaming RAG response failed")
+    return _sse({"trinaxai_error": str(exc)[:200]})
+
+
 def generate_stream(messages: list[dict], collections: list[str] | None = None):
     if _fusion_retriever is None:
         yield _sse({"choices": [{"delta": {"content": NO_INDEX_MSG}}]})
-        yield "data: [DONE]\n\n"
+        yield _sse_done()
         return
     try:
         response, nodes, model, project = run_rag(
@@ -812,16 +834,13 @@ def generate_stream(messages: list[dict], collections: list[str] | None = None):
             yield _sse({"choices": [{"delta": {"content": token}}]})
         yield _sse({"trinaxai_sources": sources_payload(nodes)})
     except Exception as e:
-        yield _sse({"trinaxai_error": str(e)[:200]})
-    yield "data: [DONE]\n\n"
+        yield _sse_error(e)
+    yield _sse_done()
 
 
 @app.post("/v1/chat/completions")
 async def chat(req: ChatRequest, request: Request):
-    # Rate limiting: protect local CPU from runaway clients
-    client_ip = request.client.host if request.client else "127.0.0.1"
-    if not _check_rate_limit(client_ip):
-        raise HTTPException(status_code=429, detail="Too many requests. Slow down.")
+    _enforce_rate_limit(request, bucket="chat")
 
     if req.stream:
         return StreamingResponse(
@@ -1721,7 +1740,8 @@ async def app_state_get():
 
 
 @app.put("/app-state")
-async def app_state_put(req: AppStateRequest):
+async def app_state_put(req: AppStateRequest, request: Request):
+    _authorize_system(request)
     incoming = {
         k: v
         for k, v in req.values.items()
@@ -1975,7 +1995,7 @@ def _authorize_system(request: Request) -> None:
     # Only trust the actual TCP peer, never X-Forwarded-For.
     # LAN access is enabled by default so the PWA works from phones/tablets
     # on the same WiFi without forcing non-technical users to manage tokens.
-    client_ip = request.client.host if request.client else ""
+    client_ip = _client_host(request)
     if client_ip not in _LOCAL_HOSTS and not (
         ALLOW_LAN_SYSTEM and _is_lan_client(client_ip)
     ):

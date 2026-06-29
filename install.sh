@@ -18,6 +18,7 @@ Usage:
   ./install.sh --no-vision     Skip vision model download
   ./install.sh --no-autostart  Do not enable boot autostart
   ./install.sh --no-start      Do not start TrinaxAI after install
+  ./install.sh --lan-system    Enable LAN system-control endpoints (requires admin token)
   ./install.sh --profile 8gb|16gb|max|ultra
   ./install.sh --help          Show this help
 
@@ -40,6 +41,8 @@ Environment variables:
   TRINAXAI_INSTALL_VISION=0     Skip vision model download
   TRINAXAI_ENABLE_AUTOSTART=0   Skip boot autostart
   TRINAXAI_START_NOW=0          Skip starting TrinaxAI at the end
+  TRINAXAI_ALLOW_LAN_SYSTEM=1   Enable LAN system-control endpoints
+  TRINAXAI_ADMIN_TOKEN=...      Admin token required for sensitive system endpoints
 EOF
   exit 0
 }
@@ -50,6 +53,8 @@ INSTALL_VISION="${TRINAXAI_INSTALL_VISION:-1}"
 ENABLE_AUTOSTART="${TRINAXAI_ENABLE_AUTOSTART:-1}"
 START_NOW="${TRINAXAI_START_NOW:-1}"
 PROFILE_OVERRIDE="${TRINAXAI_PROFILE:-}"
+ENABLE_LAN_SYSTEM="${TRINAXAI_ALLOW_LAN_SYSTEM:-0}"
+ADMIN_TOKEN="${TRINAXAI_ADMIN_TOKEN:-}"
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
@@ -59,6 +64,7 @@ while [ "$#" -gt 0 ]; do
     --no-vision) INSTALL_VISION=0;;
     --no-autostart) ENABLE_AUTOSTART=0;;
     --no-start) START_NOW=0;;
+    --lan-system) ENABLE_LAN_SYSTEM=1;;
     --profile)
       shift
       PROFILE_OVERRIDE="${1:-}"
@@ -124,7 +130,7 @@ ensure_ollama_running() {
   fi
   mkdir -p "$SCRIPT_DIR/logs"
   print_info "Starting Ollama locally..."
-  OLLAMA_HOST="${OLLAMA_HOST:-0.0.0.0}" nohup ollama serve > "$SCRIPT_DIR/logs/ollama.log" 2>&1 &
+  OLLAMA_HOST="${OLLAMA_HOST:-127.0.0.1}" nohup ollama serve > "$SCRIPT_DIR/logs/ollama.log" 2>&1 &
   for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
     curl -fsS http://localhost:11434/api/tags >/dev/null 2>&1 && return 0
     sleep 1
@@ -136,7 +142,16 @@ install_linux_deps() {
   print_info "Installing packages (Python, Node.js, npm, curl, git, unzip)..."
   if command -v apt-get >/dev/null 2>&1; then
     sudo apt-get update -qq
-    sudo apt-get install -y python3 python3-pip python3-venv nodejs npm curl git unzip ufw
+    # npm ships with NodeSource/Node.js, but the distro npm package may conflict.
+    # Try nodejs + npm together; if that fails, install nodejs alone.
+    sudo apt-get install -y python3 python3-pip python3-venv curl git unzip ufw
+    if ! command -v node >/dev/null 2>&1; then
+      sudo apt-get install -y nodejs npm 2>/dev/null || sudo apt-get install -y nodejs || true
+    fi
+    if ! command -v npm >/dev/null 2>&1; then
+      print_warn "npm was not installed. Node.js may be missing or installed from NodeSource."
+      print_info "Install Node.js 18+ with npm from https://nodejs.org or use your package manager."
+    fi
   elif command -v dnf >/dev/null 2>&1; then
     sudo dnf install -y python3 python3-pip nodejs npm curl git unzip
   elif command -v pacman >/dev/null 2>&1; then
@@ -164,6 +179,7 @@ if [ "$OS" = "windows" ] && [ -f "install.ps1" ] && command -v powershell.exe >/
   [ "$INSTALL_VISION" = "1" ] || PS_ARGS+=("-NoVision")
   [ "$ENABLE_AUTOSTART" = "1" ] || PS_ARGS+=("-NoAutostart")
   [ "$START_NOW" = "1" ] || PS_ARGS+=("-NoStart")
+  [ "$ENABLE_LAN_SYSTEM" = "1" ] && PS_ARGS+=("-LanSystem")
   [ -z "$PROFILE_OVERRIDE" ] || PS_ARGS+=("-Profile" "$PROFILE_OVERRIDE")
   exec powershell.exe "${PS_ARGS[@]}"
 fi
@@ -209,6 +225,7 @@ if [ "$OS" = "windows" ] && [ -f "install.ps1" ] && command -v powershell.exe >/
   [ "$INSTALL_VISION" = "1" ] || PS_ARGS+=("-NoVision")
   [ "$ENABLE_AUTOSTART" = "1" ] || PS_ARGS+=("-NoAutostart")
   [ "$START_NOW" = "1" ] || PS_ARGS+=("-NoStart")
+  [ "$ENABLE_LAN_SYSTEM" = "1" ] && PS_ARGS+=("-LanSystem")
   [ -z "$PROFILE_OVERRIDE" ] || PS_ARGS+=("-Profile" "$PROFILE_OVERRIDE")
   exec powershell.exe "${PS_ARGS[@]}"
 fi
@@ -270,6 +287,35 @@ else
 fi
 print_ok "Automatic setup selected: profile=$PROFILE"
 
+# ── LAN System Control ──
+if [ "$ENABLE_LAN_SYSTEM" != "1" ]; then
+  echo ""
+  echo -e "${YELLOW}Security option: LAN system control${NC}"
+  echo "This allows devices on your local network to call sensitive system endpoints"
+  echo "(shutdown, startup, reload, indexing, file watchers, collection management)."
+  echo "Only enable this if you trust your local network and use a strong admin token."
+  if [ "$INTERACTIVE" = "1" ]; then
+    reply=$(ask "Enable LAN system control? [y/N]")
+  else
+    echo -e "  ${CYAN}Default: disabled.${NC} Use --lan-system to enable non-interactively, or answer below."
+    read -r -p "$(echo -e "${GREEN}[?]${NC} Enable LAN system control? [y/N] ")" -t 15 reply || reply="n"
+  fi
+  if [[ "$reply" =~ ^[Yy]$ ]]; then
+    ENABLE_LAN_SYSTEM=1
+  else
+    ENABLE_LAN_SYSTEM=0
+  fi
+fi
+
+if [ "$ENABLE_LAN_SYSTEM" = "1" ] && [ -z "$ADMIN_TOKEN" ]; then
+  ADMIN_TOKEN="$(openssl rand -hex 32 2>/dev/null || python3 -c 'import secrets; print(secrets.token_hex(32))' 2>/dev/null || true)"
+  if [ -z "$ADMIN_TOKEN" ]; then
+    print_err "Could not generate admin token. Install openssl or Python 3.6+."
+    exit 1
+  fi
+  print_ok "Admin token generated and saved to .env"
+fi
+
 LAN_IP="$(lan_ip)"
 cat > .env <<EOF
 # TrinaxAI — Generated configuration ($(date +%Y-%m-%d))
@@ -300,7 +346,8 @@ TRINAXAI_RERANK=0
 
 # Security
 TRINAXAI_CORS_ORIGINS=https://localhost:3334,http://localhost:3334,https://127.0.0.1:3334,http://127.0.0.1:3334,https://localhost:3335,http://localhost:3335,https://127.0.0.1:3335,http://127.0.0.1:3335${LAN_IP:+,https://$LAN_IP:3334,http://$LAN_IP:3334,https://$LAN_IP:3335,http://$LAN_IP:3335}
-TRINAXAI_ALLOW_LAN_SYSTEM=1
+TRINAXAI_ALLOW_LAN_SYSTEM=$ENABLE_LAN_SYSTEM
+TRINAXAI_ADMIN_TOKEN=$ADMIN_TOKEN
 
 # Indexing
 TRINAXAI_INDEX_DIR=~/Documents
@@ -370,6 +417,24 @@ if [ -f "requirements.txt" ]; then
   print_ok "Python packages installed"
 else
   print_warn "requirements.txt not found — skipping"
+fi
+
+pip install -e .
+print_ok "TrinaxAI CLI installed in editable mode"
+
+if [ "$OS" = "linux" ] || [ "$OS" = "macos" ]; then
+  mkdir -p "$HOME/.local/bin"
+  CLI_TARGET="$SCRIPT_DIR/.venv/bin/trinaxai"
+  if [ -x "$CLI_TARGET" ]; then
+    ln -sfn "$CLI_TARGET" "$HOME/.local/bin/trinaxai"
+    print_ok "CLI command linked: $HOME/.local/bin/trinaxai"
+    case ":$PATH:" in
+      *":$HOME/.local/bin:"*) ;;
+      *) print_warn "Add $HOME/.local/bin to PATH or reload your shell, then run: trinaxai";;
+    esac
+  else
+    print_warn "CLI entry point was not found at $CLI_TARGET"
+  fi
 fi
 
 # ── 4. PWA Frontend ──
@@ -486,13 +551,23 @@ echo -e "  ${BLUE}RAG API:${NC}      https://localhost:3333/health"
 echo -e "  ${BLUE}Ollama API:${NC}    http://localhost:11434"
 echo ""
 echo -e "  ${BLUE}Quick start:${NC}   ./startup_ai.sh"
+echo -e "  ${BLUE}CLI:${NC}           trinaxai"
 echo -e "  ${BLUE}Shutdown:${NC}     ./shutdown_ai.sh"
 echo -e "  ${BLUE}System test:${NC}   python test_system.py --verbose"
 echo -e "  ${BLUE}Docs:${NC}         https://github.com/TrinaxCode/TrinaxAI"
 echo ""
 echo -e "  ${YELLOW}From your phone:${NC} https://[YOUR-LAN-IP]:3334"
-echo -e "  (Same WiFi network required. Check firewall: ports 3333, 3334, 11434)"
+echo -e "  (Same WiFi network required. Check firewall: ports 3333, 3334)"
 echo ""
+if [ "$ENABLE_LAN_SYSTEM" = "1" ]; then
+  echo -e "  ${YELLOW}LAN system control:${NC} enabled"
+  echo -e "  ${YELLOW}Admin token:${NC} saved in .env (TRINAXAI_ADMIN_TOKEN)"
+  echo ""
+else
+  echo -e "  ${YELLOW}LAN system control:${NC} disabled by default"
+  echo -e "  To enable later: set TRINAXAI_ALLOW_LAN_SYSTEM=1 and TRINAXAI_ADMIN_TOKEN in .env"
+  echo ""
+fi
 echo -e "  ${YELLOW}⭐ Star the repo:${NC} github.com/TrinaxCode/TrinaxAI"
 echo -e "  ${GREEN}100% open source — AGPL-3.0-or-later${NC}"
 echo ""

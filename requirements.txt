@@ -3,7 +3,6 @@ uvicorn[standard]>=0.30
 pydantic>=2.8
 python-dotenv>=1.0
 python-multipart>=0.0.9
-requests>=2.32
 
 llama-index>=0.12
 llama-index-llms-ollama>=0.5

@@ -5,6 +5,7 @@ param(
   [switch]$NoVision,
   [switch]$NoAutostart,
   [switch]$NoStart,
+  [switch]$LanSystem,
   [ValidateSet("8gb", "16gb", "max", "ultra")]
   [string]$Profile = ""
 )
@@ -111,6 +112,41 @@ $LanIp = (Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
   Where-Object { $_.IPAddress -match "^(192\.168|10\.|172\.(1[6-9]|2[0-9]|3[0-1]))" } |
   Select-Object -First 1 -ExpandProperty IPAddress)
 
+$EnableLanSystem = if ($env:TRINAXAI_ALLOW_LAN_SYSTEM) {
+  [int]$env:TRINAXAI_ALLOW_LAN_SYSTEM
+} elseif ($LanSystem) {
+  1
+} else {
+  0
+}
+$AdminToken = $env:TRINAXAI_ADMIN_TOKEN
+
+if ($EnableLanSystem -ne 1) {
+  Write-Host ""
+  Write-Host "Security option: LAN system control" -ForegroundColor Yellow
+  Write-Host "This allows devices on your local network to call sensitive system endpoints"
+  Write-Host "(shutdown, startup, reload, indexing, file watchers, collection management)."
+  Write-Host "Only enable this if you trust your local network and use a strong admin token."
+  if ($Interactive) {
+    $Reply = Read-Host "Enable LAN system control? [y/N]"
+  } else {
+    Write-Host "  Default: disabled. Use -LanSystem to enable non-interactively, or answer below." -ForegroundColor Cyan
+    $Reply = Read-Host "Enable LAN system control? [y/N]"
+  }
+  if ($Reply -match "^[Yy]") { $EnableLanSystem = 1 } else { $EnableLanSystem = 0 }
+}
+
+if ($EnableLanSystem -eq 1 -and [string]::IsNullOrWhiteSpace($AdminToken)) {
+  $TokenBytes = New-Object byte[] 32
+  [Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($TokenBytes)
+  $AdminToken = [BitConverter]::ToString($TokenBytes) -replace '-','' | ForEach-Object { $_.ToLower() }
+  if ([string]::IsNullOrWhiteSpace($AdminToken)) {
+    Write-Host "Could not generate admin token. Ensure .NET cryptography is available." -ForegroundColor Red
+    exit 1
+  }
+  Write-Ok "Admin token generated and saved to .env"
+}
+
 $Cors = "https://localhost:3334,http://localhost:3334,https://127.0.0.1:3334,http://127.0.0.1:3334,https://localhost:3335,http://localhost:3335,https://127.0.0.1:3335,http://127.0.0.1:3335"
 if ($LanIp) { $Cors += ",https://$($LanIp):3334,http://$($LanIp):3334,https://$($LanIp):3335,http://$($LanIp):3335" }
 
@@ -129,7 +165,8 @@ $EnvLines = @(
   "TRINAXAI_EMBED=bge-m3",
   "TRINAXAI_EMBED_DIMS=1024",
   "TRINAXAI_RERANK=0",
-  "TRINAXAI_ALLOW_LAN_SYSTEM=1",
+  "TRINAXAI_ALLOW_LAN_SYSTEM=$EnableLanSystem",
+  "TRINAXAI_ADMIN_TOKEN=$AdminToken",
   "TRINAXAI_CORS_ORIGINS=$Cors",
   "TRINAXAI_INDEX_DIR=$($env:USERPROFILE)\Documents"
 )
@@ -187,7 +224,10 @@ if (Test-Cmd python) {
   if (-not (Test-Path ".venv")) { python -m venv .venv }
   & ".\.venv\Scripts\python.exe" -m pip install --upgrade pip
   & ".\.venv\Scripts\python.exe" -m pip install -r requirements.txt
+  & ".\.venv\Scripts\python.exe" -m pip install -e .
   Write-Ok "Python packages installed"
+  Write-Ok "TrinaxAI CLI installed: .\.venv\Scripts\trinaxai.exe"
+  Write-Warn "If 'trinaxai' is not available globally, run it from this shell after activating .\.venv\Scripts\Activate.ps1 or add .\.venv\Scripts to PATH."
 }
 
 Write-Step "4/6 PWA frontend"
@@ -246,6 +286,16 @@ if (-not $NoAutostart) {
 }
 Write-Host "Then open:" -ForegroundColor Cyan
 Write-Host "  https://localhost:3334"
+Write-Host "CLI:" -ForegroundColor Cyan
+Write-Host "  trinaxai"
 if ($LanIp) { Write-Host "  https://$($LanIp):3334" }
+Write-Host ""
+if ($EnableLanSystem -eq 1) {
+  Write-Host "  LAN system control: enabled" -ForegroundColor Yellow
+  Write-Host "  Admin token: saved in .env (TRINAXAI_ADMIN_TOKEN)" -ForegroundColor Yellow
+} else {
+  Write-Host "  LAN system control: disabled by default" -ForegroundColor Yellow
+  Write-Host "  To enable later: set TRINAXAI_ALLOW_LAN_SYSTEM=1 and TRINAXAI_ADMIN_TOKEN in .env" -ForegroundColor Yellow
+}
 Write-Host ""
 Write-Ok "TrinaxAI setup finished"

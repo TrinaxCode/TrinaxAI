@@ -343,7 +343,41 @@ async function apiJson<T>(url: string, init?: RequestInit): Promise<T> {
     const detail = await response.text().catch(() => '');
     throw new ApiError(`${response.status} ${response.statusText}${detail ? `\n${detail.slice(0, 500)}` : ''}`, response.status);
   }
-  return response.json() as Promise<T>;
+  try {
+    return await response.json() as T;
+  } catch {
+    throw new ApiError('Invalid JSON response from local API.', response.status);
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function validateIndexJobStatus(value: unknown): IndexJobStatus {
+  if (!isRecord(value) || typeof value.id !== 'string' || typeof value.status !== 'string') {
+    throw new ApiError('Invalid index job response from local API.', 0);
+  }
+  return {
+    id: value.id,
+    label: typeof value.label === 'string' ? value.label : '',
+    path: typeof value.path === 'string' ? value.path : '',
+    status: value.status,
+    phase: typeof value.phase === 'string' ? value.phase : '',
+    progress: typeof value.progress === 'number' ? value.progress : 0,
+    eta_seconds: typeof value.eta_seconds === 'number' ? value.eta_seconds : null,
+    elapsed_seconds: typeof value.elapsed_seconds === 'number' ? value.elapsed_seconds : 0,
+    saved: typeof value.saved === 'number' ? value.saved : 0,
+    skipped: typeof value.skipped === 'number' ? value.skipped : 0,
+    bytes: typeof value.bytes === 'number' ? value.bytes : 0,
+    indexed: Boolean(value.indexed),
+    projects: Array.isArray(value.projects) ? value.projects.map(String) : [],
+    collection_id: typeof value.collection_id === 'string' ? value.collection_id : undefined,
+    collection_name: typeof value.collection_name === 'string' ? value.collection_name : undefined,
+    output: typeof value.output === 'string' ? value.output : undefined,
+    error: typeof value.error === 'string' ? value.error : undefined,
+    cancel_requested: Boolean(value.cancel_requested),
+  };
 }
 
 export async function getCollections(signal?: AbortSignal): Promise<Collection[]> {
@@ -601,7 +635,8 @@ export async function getIndexJob(jobId: string, signal?: AbortSignal): Promise<
     const detail = await response.text().catch(() => '');
     throw new ApiError(`Index job status failed: ${response.status} ${response.statusText}${detail ? `\n${detail.slice(0, 500)}` : ''}`, response.status);
   }
-  return response.json() as Promise<IndexJobStatus>;
+  const data = await response.json().catch(() => null);
+  return validateIndexJobStatus(data);
 }
 
 export async function cancelIndexJob(jobId: string, signal?: AbortSignal): Promise<IndexJobStatus | null> {
@@ -610,8 +645,9 @@ export async function cancelIndexJob(jobId: string, signal?: AbortSignal): Promi
     signal,
   });
   if (!response.ok) return null;
-  const data = await response.json();
-  return (data.job ?? null) as IndexJobStatus | null;
+  const data = await response.json().catch(() => null);
+  if (!isRecord(data) || !data.job) return null;
+  return validateIndexJobStatus(data.job);
 }
 
 export async function extractDocumentText(file: File, signal?: AbortSignal): Promise<ExtractedDocument> {
@@ -622,20 +658,6 @@ export async function extractDocumentText(file: File, signal?: AbortSignal): Pro
     body: form,
     signal,
   });
-}
-
-export async function importAndIndexFolder(files: FileList | File[], signal?: AbortSignal): Promise<FolderImportResult> {
-  const started = await startFolderIndex(files, { signal });
-  if (!started.job_id) return started;
-  while (true) {
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-    if (signal?.aborted) throw new DOMException('Indexing cancelled', 'AbortError');
-    const job = await getIndexJob(started.job_id, signal);
-    if (job.status === 'completed') return { ...started, indexed: true, projects: job.projects, output: job.output };
-    if (job.status === 'failed' || job.status === 'cancelled') {
-      return { ...started, indexed: false, output: job.error || job.output || job.status };
-    }
-  }
 }
 
 /** System prompt for Ollama — gives TrinaxAI identity and purpose */
@@ -759,13 +781,79 @@ function textMessagesForOllama(messages: ChatMessage[]) {
   ];
 }
 
+async function readStreamLines(
+  response: Response,
+  signal: AbortSignal | undefined,
+  onLine: (line: string) => void,
+): Promise<void> {
+  const reader = response.body?.getReader();
+  if (!reader) throw new Error('No response body');
+  const decoder = new TextDecoder();
+  let pending = '';
+
+  try {
+    while (true) {
+      if (signal?.aborted) break;
+      const { done, value } = await reader.read();
+      if (done) {
+        if (pending.trim()) onLine(pending);
+        break;
+      }
+      pending += decoder.decode(value, { stream: true });
+      const lines = pending.split('\n');
+      pending = lines.pop() ?? '';
+      for (const line of lines) onLine(line);
+    }
+  } finally {
+    if (signal?.aborted) await reader.cancel().catch(() => undefined);
+    reader.releaseLock();
+  }
+}
+
+function appendOllamaJsonLine(line: string, onToken: (token: string) => void): string {
+  const trimmed = line.trim();
+  if (!trimmed) return '';
+  try {
+    const parsed = JSON.parse(trimmed);
+    const token = typeof parsed?.message?.content === 'string' ? parsed.message.content : '';
+    if (token) onToken(token);
+    return token;
+  } catch {
+    return '';
+  }
+}
+
+export function parseRagSseLine(line: string): {
+  token?: string;
+  meta?: StreamMeta;
+  done?: boolean;
+} {
+  const trimmed = line.trim();
+  if (!trimmed || !trimmed.startsWith('data: ')) return {};
+  const data = trimmed.slice(6);
+  if (data === '[DONE]') return { done: true };
+  try {
+    const parsed = JSON.parse(data);
+    if (parsed.trinaxai) {
+      return { meta: { model: parsed.trinaxai.model, project: parsed.trinaxai.project } };
+    }
+    if (parsed.trinaxai_sources) {
+      return { meta: { sources: parsed.trinaxai_sources as Source[] } };
+    }
+    const token = parsed.choices?.[0]?.delta?.content;
+    return typeof token === 'string' && token ? { token } : {};
+  } catch {
+    return {};
+  }
+}
+
 /** Stream a chat completion from Ollama (OpenAI-compatible endpoint) */
 export async function streamOllama(
   messages: ChatMessage[],
   onToken: (token: string) => void,
   signal?: AbortSignal,
   onMeta?: (m: StreamMeta) => void,
-  _options: StreamOptions = {},
+  _unused?: StreamOptions,  // kept for backward compat; not read by Ollama path
 ): Promise<string> {
   const lastMessage = messages[messages.length - 1];
   const last = lastMessage?.content ?? '';
@@ -801,39 +889,13 @@ export async function streamOllama(
     );
   }
 
-  const reader = response.body?.getReader();
-  if (!reader) throw new Error('No response body');
-
-  const decoder = new TextDecoder();
   let fullContent = '';
-  let pending = '';
 
   try {
-    while (true) {
-      if (signal?.aborted) break;
-      const { done, value } = await reader.read();
-      if (done) break;
-      pending += decoder.decode(value, { stream: true });
-      const lines = pending.split('\n');
-      pending = lines.pop() ?? '';
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed) continue;
-        try {
-          const parsed = JSON.parse(trimmed);
-          const token = parsed.message?.content ?? '';
-          if (token) {
-            fullContent += token;
-            onToken(token);
-          }
-        } catch {
-          // Ollama streams JSON lines; ignore incomplete/malformed lines.
-        }
-      }
-    }
+    await readStreamLines(response, signal, (line) => {
+      fullContent += appendOllamaJsonLine(line, onToken);
+    });
   } finally {
-    if (signal?.aborted) await reader.cancel().catch(() => undefined);
-    reader.releaseLock();
     unloadOllamaModel(model);
   }
   if (!signal?.aborted) recordUsage('ollama', model, messages, fullContent);
@@ -900,36 +962,12 @@ async function streamOllamaVision(
     );
   }
 
-  const reader = response.body?.getReader();
-  if (!reader) throw new Error('No response body');
-
-  const decoder = new TextDecoder();
   let fullContent = '';
-  let pending = '';
 
   try {
-    while (true) {
-      if (signal?.aborted) break;
-      const { done, value } = await reader.read();
-      if (done) break;
-      pending += decoder.decode(value, { stream: true });
-      const lines = pending.split('\n');
-      pending = lines.pop() ?? '';
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed) continue;
-        try {
-          const parsed = JSON.parse(trimmed);
-          const token = parsed.message?.content ?? '';
-          if (token) {
-            fullContent += token;
-            onToken(token);
-          }
-        } catch {
-          // Ollama streams JSON lines; ignore incomplete/malformed lines.
-        }
-      }
-    }
+    await readStreamLines(response, signal, (line) => {
+      fullContent += appendOllamaJsonLine(line, onToken);
+    });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     if (/unexpected EOF|terminated|network|Failed to fetch/i.test(msg)) {
@@ -940,8 +978,6 @@ async function streamOllamaVision(
     }
     throw err;
   } finally {
-    if (signal?.aborted) await reader.cancel().catch(() => undefined);
-    reader.releaseLock();
     unloadOllamaModel(model);
   }
   if (!signal?.aborted) recordUsage('ollama-vision', model, messages, fullContent);
@@ -989,56 +1025,14 @@ export async function streamRag(
     );
   }
 
-  const reader = response.body?.getReader();
-  if (!reader) throw new Error('No response body');
-
-  const decoder = new TextDecoder();
   let fullContent = '';
-  let pending = '';
-
-  const processLine = (line: string) => {
-    const trimmed = line.trim();
-    if (!trimmed || !trimmed.startsWith('data: ')) return;
-    const data = trimmed.slice(6);
-    if (data === '[DONE]') return;
-    try {
-      const parsed = JSON.parse(data);
-      if (parsed.trinaxai) {
-        onMeta?.({ model: parsed.trinaxai.model, project: parsed.trinaxai.project });
-        return;
-      }
-      if (parsed.trinaxai_sources) {
-        onMeta?.({ sources: parsed.trinaxai_sources as Source[] });
-        return;
-      }
-      const token = parsed.choices?.[0]?.delta?.content;
-      if (token) {
-        fullContent += token;
-        onToken(token);
-      }
-    } catch {
-      // Skip malformed JSON lines.
+  await readStreamLines(response, signal, (line) => {
+    const event = parseRagSseLine(line);
+    if (event.meta) onMeta?.(event.meta);
+    if (event.token) {
+      fullContent += event.token;
+      onToken(event.token);
     }
-  };
-
-  try {
-    while (true) {
-      if (signal?.aborted) break;
-      const { done, value } = await reader.read();
-      if (done) {
-        if (pending.trim()) processLine(pending);
-        break;
-      }
-      pending += decoder.decode(value, { stream: true });
-      const lines = pending.split('\n');
-      pending = lines.pop() ?? '';
-      for (const line of lines) {
-        processLine(line);
-      }
-    }
-  } finally {
-    if (signal?.aborted) await reader.cancel().catch(() => undefined);
-    reader.releaseLock();
-  }
+  });
   return fullContent;
 }

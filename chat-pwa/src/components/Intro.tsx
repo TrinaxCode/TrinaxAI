@@ -33,12 +33,12 @@ const Intro = memo(function Intro({ onFinish }: IntroProps) {
           exit={{ opacity: 0 }}
           transition={{ duration: 0.4, ease: 'easeInOut' }}
         >
-          {/* Logo — larger & striking */}
+          {/* Logo — larger & striking with glow */}
           <motion.img
             src="/logo-of-app.webp"
             alt="TrinaxAI"
             className="w-32 h-32 md:w-40 md:h-40 mb-10 rounded-2xl shadow-2xl
-                       shadow-[#006bbd]/20"
+                       shadow-[#006bbd]/20 animate-glow"
             initial={{ opacity: 0, scale: 0.6 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{
