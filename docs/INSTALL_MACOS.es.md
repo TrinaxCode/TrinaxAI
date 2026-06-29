@@ -7,7 +7,7 @@ Guía para instalar, configurar, iniciar y dejar listo TrinaxAI en macOS, tanto 
 Al terminar deberias tener:
 
 - Ollama corriendo localmente en `http://localhost:11434`.
-- API RAG de TrinaxAI en `https://localhost:3333`.
+- API RAG de TrinaxAI en `http://localhost:3333`.
 - PWA en `https://localhost:3334`.
 - Entorno Python `.venv` preparado.
 - Dependencias de la PWA instaladas.
@@ -130,7 +130,7 @@ TRINAXAI_ALLOW_LAN_SYSTEM=1
 TRINAXAI_CORS_ORIGINS=https://localhost:3334,http://localhost:3334,https://127.0.0.1:3334,http://127.0.0.1:3334
 OLLAMA_BASE_URL=http://localhost:11434
 OLLAMA_HOST=0.0.0.0
-VITE_TRINAXAI_RAG_TARGET=https://localhost:3333
+VITE_TRINAXAI_RAG_TARGET=http://localhost:3333
 ```
 
 Para usar un telefono en la misma WiFi, busca tu IP:
@@ -287,7 +287,7 @@ Pruebas manuales:
 
 ```bash
 curl http://localhost:11434/api/tags
-curl -k https://localhost:3333/health
+curl http://localhost:3333/health
 ```
 
 La PWA debe abrir en:

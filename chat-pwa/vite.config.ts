@@ -12,9 +12,13 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '..');
 const certKey = path.join(__dirname, 'certs', 'localhost-key.pem');
 const certFile = path.join(__dirname, 'certs', 'localhost.pem');
-const httpsConfig = fs.existsSync(certKey) && fs.existsSync(certFile)
-  ? { key: certKey, cert: certFile }
-  : undefined;
+const certPfx = path.join(__dirname, 'certs', 'trinaxai-local.pfx');
+const pfxPassphrase = process.env.TRINAXAI_CERT_PASSPHRASE || 'trinaxai-local';
+const httpsConfig = fs.existsSync(certPfx)
+  ? { pfx: fs.readFileSync(certPfx), passphrase: pfxPassphrase }
+  : fs.existsSync(certKey) && fs.existsSync(certFile)
+    ? { key: fs.readFileSync(certKey), cert: fs.readFileSync(certFile) }
+    : undefined;
 
 function env(name: string, fallback: string): string {
   return process.env[name] || fallback;
@@ -65,7 +69,7 @@ function postReload(ragTarget: string): void {
 function proxyConfig() {
   return {
     '/api/rag': {
-      target: env('TRINAXAI_RAG_TARGET', env('VITE_TRINAXAI_RAG_TARGET', 'https://localhost:3333')),
+      target: env('TRINAXAI_RAG_TARGET', env('VITE_TRINAXAI_RAG_TARGET', 'http://localhost:3333')),
       changeOrigin: true,
       secure: false,
       xfwd: true,
@@ -80,6 +84,69 @@ function proxyConfig() {
       rewrite: (proxyPath: string) => proxyPath.replace(/^\/api\/ollama/, ''),
     },
   };
+}
+
+function installSystemControl(server: any): void {
+  const ragTarget = env('TRINAXAI_RAG_TARGET', env('VITE_TRINAXAI_RAG_TARGET', 'http://localhost:3333'));
+  server.middlewares.use('/api/system', async (req: any, res: any) => {
+    if (req.method !== 'POST') { res.statusCode = 405; res.end(); return; }
+    const token = req.headers['x-admin-token'] as string | undefined;
+    const adminToken = process.env.TRINAXAI_ADMIN_TOKEN;
+    if (adminToken && token !== adminToken) {
+      res.statusCode = 403;
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify({ ok: false, error: 'Missing or invalid X-Admin-Token.' }));
+      return;
+    }
+    const url = new URL(req.url || '/', 'http://localhost');
+    const action = url.pathname.replace(/^\/+/, '');
+    const sendJson = (status: number, body: unknown) => {
+      res.statusCode = status;
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify(body));
+    };
+    if (action === 'shutdown' || action === 'startup' || action === 'stop-all') {
+      const managerAction = action === 'startup' ? 'start-ai' : action === 'shutdown' ? 'stop-ai' : 'stop-all';
+      if (action === 'stop-all') {
+        sendJson(200, { ok: true, output: 'Full TrinaxAI shutdown initiated.' });
+        setTimeout(() => spawnManager(managerAction), 250);
+        return;
+      }
+      if (action === 'shutdown') {
+        sendJson(200, { ok: true, output: 'AI shutdown initiated. The PWA remains available for restart.' });
+        setTimeout(() => spawnManager(managerAction), 50);
+        return;
+      }
+      execFile(localPython(), [path.join(repoRoot, 'service_manager.py'), managerAction, '--base-dir', repoRoot], { windowsHide: true }, (err, stdout, stderr) => {
+        sendJson(err ? 500 : 200, { ok: !err, output: stdout, error: stderr || (err?.message ?? '') });
+      });
+    } else if (action === 'index') {
+      const dir = url.searchParams.get('dir') || env('TRINAXAI_INDEX_DIR', path.join(userHome(), 'Documents'));
+      execFile(localPython(), [path.join(repoRoot, 'index.py')], {
+        timeout: 600000,
+        env: { ...process.env, TRINAXAI_INDEX_DIR: dir },
+        windowsHide: true,
+      }, (err, stdout, stderr) => {
+        if (!err) postReload(ragTarget);
+        sendJson(err ? 500 : 200, { ok: !err, output: stdout, error: stderr || (err?.message ?? '') });
+      });
+    } else if (action === 'reload') {
+      const reloadUrl = new URL('/system/reload', ragTarget);
+      const client = reloadUrl.protocol === 'https:' ? https : http;
+      const req = client.request({ hostname: reloadUrl.hostname, port: reloadUrl.port, path: reloadUrl.pathname, method: 'POST', rejectUnauthorized: false }, (ragRes: any) => {
+        let body = '';
+        ragRes.on('data', (d: string) => body += d);
+        ragRes.on('end', () => {
+          res.setHeader('Content-Type', 'application/json');
+          res.end(body || JSON.stringify({ ok: true }));
+        });
+      });
+      req.on('error', (e: Error) => sendJson(502, { ok: false, error: e.message }));
+      req.end();
+    } else {
+      sendJson(404, { ok: false, error: `Unknown action: ${action}` });
+    }
+  });
 }
 
 export default defineConfig({
@@ -218,67 +285,8 @@ export default defineConfig({
     }),
     {
       name: 'trinaxai-system-control',
-      configureServer(server) {
-        const ragTarget = env('TRINAXAI_RAG_TARGET', env('VITE_TRINAXAI_RAG_TARGET', 'https://localhost:3333'));
-        server.middlewares.use('/api/system', async (req, res) => {
-          if (req.method !== 'POST') { res.statusCode = 405; res.end(); return; }
-          const token = req.headers['x-admin-token'] as string | undefined;
-          const adminToken = process.env.TRINAXAI_ADMIN_TOKEN;
-          if (adminToken && token !== adminToken) {
-            res.statusCode = 403;
-            res.setHeader('Content-Type', 'application/json');
-            res.end(JSON.stringify({ ok: false, error: 'Missing or invalid X-Admin-Token.' }));
-            return;
-          }
-          const url = new URL(req.url || '/', 'http://localhost');
-          const action = url.pathname.replace(/^\/+/, '');
-          const sendJson = (status: number, body: unknown) => {
-            res.statusCode = status;
-            res.setHeader('Content-Type', 'application/json');
-            res.end(JSON.stringify(body));
-          };
-          if (action === 'shutdown' || action === 'startup' || action === 'stop-all') {
-            const managerAction = action === 'startup' ? 'start-ai' : action === 'shutdown' ? 'stop-ai' : 'stop-all';
-            if (action === 'stop-all') {
-              sendJson(200, { ok: true, output: 'Full TrinaxAI shutdown initiated.' });
-              setTimeout(() => spawnManager(managerAction), 250);
-              return;
-            }
-            if (action === 'shutdown') {
-              sendJson(200, { ok: true, output: 'AI shutdown initiated. The PWA remains available for restart.' });
-              setTimeout(() => spawnManager(managerAction), 50);
-              return;
-            }
-            execFile(localPython(), [path.join(repoRoot, 'service_manager.py'), managerAction, '--base-dir', repoRoot], (err, stdout, stderr) => {
-              sendJson(err ? 500 : 200, { ok: !err, output: stdout, error: stderr || (err?.message ?? '') });
-            });
-          } else if (action === 'index') {
-            const dir = url.searchParams.get('dir') || env('TRINAXAI_INDEX_DIR', path.join(userHome(), 'Documents'));
-            execFile(localPython(), [path.join(repoRoot, 'index.py')], {
-              timeout: 600000,
-              env: { ...process.env, TRINAXAI_INDEX_DIR: dir },
-            }, (err, stdout, stderr) => {
-              if (!err) postReload(ragTarget);
-              sendJson(err ? 500 : 200, { ok: !err, output: stdout, error: stderr || (err?.message ?? '') });
-            });
-          } else if (action === 'reload') {
-            const reloadUrl = new URL('/system/reload', ragTarget);
-            const client = reloadUrl.protocol === 'https:' ? https : http;
-            const req = client.request({ hostname: reloadUrl.hostname, port: reloadUrl.port, path: reloadUrl.pathname, method: 'POST', rejectUnauthorized: false }, (ragRes: any) => {
-              let body = '';
-              ragRes.on('data', (d: string) => body += d);
-              ragRes.on('end', () => {
-                res.setHeader('Content-Type', 'application/json');
-                res.end(body || JSON.stringify({ ok: true }));
-              });
-            });
-            req.on('error', (e: Error) => sendJson(502, { ok: false, error: e.message }));
-            req.end();
-          } else {
-            sendJson(404, { ok: false, error: `Unknown action: ${action}` });
-          }
-        });
-      },
+      configureServer: installSystemControl,
+      configurePreviewServer: installSystemControl,
     },
   ],
   server: {

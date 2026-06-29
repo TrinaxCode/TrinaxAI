@@ -343,6 +343,10 @@ def _start_direct(
         popen_kwargs["creationflags"] = getattr(
             subprocess, "CREATE_NEW_PROCESS_GROUP", 0
         ) | getattr(subprocess, "DETACHED_PROCESS", 0)
+        startupinfo = subprocess.STARTUPINFO()
+        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+        startupinfo.wShowWindow = getattr(subprocess, "SW_HIDE", 0)
+        popen_kwargs["startupinfo"] = startupinfo
     else:
         popen_kwargs["start_new_session"] = True
     try:
@@ -403,24 +407,64 @@ PROCESS_PATTERNS = {
 }
 
 
+def _windows_hidden_python(python: str) -> str:
+    if sys.platform != "win32":
+        return python
+    path = Path(python)
+    if path.name.lower() != "python.exe":
+        return python
+    pythonw = path.with_name("pythonw.exe")
+    return str(pythonw) if pythonw.exists() else python
+
+
+def _read_env_file(base_dir: str) -> dict[str, str]:
+    env_path = Path(base_dir) / ".env"
+    values: dict[str, str] = {}
+    try:
+        for raw_line in env_path.read_text(encoding="utf-8").splitlines():
+            line = raw_line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            key = key.strip()
+            if not key:
+                continue
+            values[key] = value.strip().strip('"').strip("'")
+    except OSError:
+        pass
+    return values
+
+
+def _service_env(base_dir: str) -> dict[str, str]:
+    file_env = _read_env_file(base_dir)
+    return {**file_env, **os.environ}
+
+
+def _frontend_script(env: dict[str, str]) -> str:
+    mode = env.get("TRINAXAI_FRONTEND_MODE", "preview").strip().lower()
+    return "dev" if mode == "dev" else "preview"
+
+
 def _service_specs(base_dir: str) -> dict[str, dict]:
-    python = os.getenv("TRINAXAI_PYTHON", sys.executable)
+    service_env = _service_env(base_dir)
+    python = _windows_hidden_python(service_env.get("TRINAXAI_PYTHON", sys.executable))
     npm = shutil.which("npm") or "npm"
     return {
         "ollama": {
             "command": ["ollama", "serve"],
+            "env": service_env,
             "log_file": os.path.join(base_dir, "logs", "ollama.log"),
         },
         "rag_api": {
             "command": [python, os.path.join(base_dir, "rag_api.py")],
             "cwd": base_dir,
+            "env": service_env,
             "log_file": os.path.join(base_dir, "logs", "rag_api.log"),
         },
         "trinaxai-frontend": {
-            # The dev server owns /api/system/* controls. Preview does not run
-            # Vite middleware, so it cannot restart AI when RAG is offline.
-            "command": [npm, "run", "dev"],
+            "command": [npm, "run", _frontend_script(service_env)],
             "cwd": os.path.join(base_dir, "chat-pwa"),
+            "env": service_env,
             "log_file": os.path.join(base_dir, "logs", "frontend.log"),
         },
     }
@@ -535,7 +579,11 @@ def _start_named(base_dir: str, name: str) -> ProcessState:
     services = _service_specs(base_dir)
     svc = services[name]
     return _backend.start(
-        name, command=svc["command"], cwd=svc.get("cwd"), log_file=svc.get("log_file")
+        name,
+        command=svc["command"],
+        cwd=svc.get("cwd"),
+        env=svc.get("env"),
+        log_file=svc.get("log_file"),
     )
 
 
@@ -713,6 +761,7 @@ def enable_autostart(base_dir: str) -> ProcessState:
             )
         return ProcessState("autostart", True, detail=f"enabled launch agent: {plist}")
     if system == "Windows":
+        python = _windows_hidden_python(python)
         startup = (
             Path(os.environ.get("APPDATA", str(Path.home())))
             / "Microsoft"
@@ -722,14 +771,21 @@ def enable_autostart(base_dir: str) -> ProcessState:
             / "Startup"
         )
         startup.mkdir(parents=True, exist_ok=True)
-        cmd = startup / "TrinaxAI.cmd"
-        cmd.write_text(
-            "@echo off\r\n"
-            f"cd /d {_quote_cmd_arg(base_dir)}\r\n"
-            f'start "TrinaxAI" /min {_quote_cmd_arg(python)} {_quote_cmd_arg(str(Path(base_dir) / "service_manager.py"))} watch --base-dir {_quote_cmd_arg(base_dir)}\r\n',
+        old_cmd = startup / "TrinaxAI.cmd"
+        old_cmd.unlink(missing_ok=True)
+        vbs = startup / "TrinaxAI.vbs"
+        command = (
+            f"{_quote_cmd_arg(python)} "
+            f"{_quote_cmd_arg(str(Path(base_dir) / 'service_manager.py'))} "
+            f"watch --base-dir {_quote_cmd_arg(base_dir)}"
+        )
+        vbs.write_text(
+            'Set shell = CreateObject("WScript.Shell")\r\n'
+            f'shell.CurrentDirectory = "{str(base_dir).replace(chr(34), chr(34) + chr(34))}"\r\n'
+            f'shell.Run "{command.replace(chr(34), chr(34) + chr(34))}", 0, False\r\n',
             encoding="utf-8",
         )
-        return ProcessState("autostart", True, detail=f"enabled Windows Startup: {cmd}")
+        return ProcessState("autostart", True, detail=f"enabled Windows Startup: {vbs}")
     return ProcessState("autostart", False, detail="autostart backend unavailable")
 
 
@@ -753,16 +809,16 @@ def disable_autostart(base_dir: str) -> ProcessState:
             plist.unlink(missing_ok=True)
         return ProcessState("autostart", False, detail="disabled launch agent")
     if system == "Windows":
-        cmd = (
+        startup = (
             Path(os.environ.get("APPDATA", str(Path.home())))
             / "Microsoft"
             / "Windows"
             / "Start Menu"
             / "Programs"
             / "Startup"
-            / "TrinaxAI.cmd"
         )
-        cmd.unlink(missing_ok=True)
+        for name in ("TrinaxAI.cmd", "TrinaxAI.vbs"):
+            (startup / name).unlink(missing_ok=True)
         return ProcessState("autostart", False, detail="disabled Windows Startup")
     return ProcessState("autostart", False, detail="autostart backend unavailable")
 

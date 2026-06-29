@@ -7,7 +7,7 @@ Guía para instalar, configurar, iniciar y dejar listo TrinaxAI en Linux. Aplica
 Al terminar deberias tener:
 
 - Ollama corriendo localmente en `http://localhost:11434`.
-- API RAG de TrinaxAI en `https://localhost:3333`.
+- API RAG de TrinaxAI en `http://localhost:3333`.
 - PWA de TrinaxAI en `https://localhost:3334`.
 - Modelos base descargados.
 - Entorno Python `.venv` instalado.
@@ -141,7 +141,7 @@ TRINAXAI_ALLOW_LAN_SYSTEM=1
 TRINAXAI_CORS_ORIGINS=https://localhost:3334,http://localhost:3334,https://127.0.0.1:3334,http://127.0.0.1:3334
 OLLAMA_BASE_URL=http://localhost:11434
 OLLAMA_HOST=0.0.0.0
-VITE_TRINAXAI_RAG_TARGET=https://localhost:3333
+VITE_TRINAXAI_RAG_TARGET=http://localhost:3333
 ```
 
 Si vas a abrir TrinaxAI desde un telefono en la misma red, agrega tu IP local a `TRINAXAI_CORS_ORIGINS`:
@@ -310,7 +310,7 @@ Tambien puedes revisar manualmente:
 
 ```bash
 curl http://localhost:11434/api/tags
-curl -k https://localhost:3333/health
+curl http://localhost:3333/health
 ```
 
 La PWA debe abrir en:

@@ -179,7 +179,7 @@ npx vite --host 0.0.0.0 --port 3334
 # Re-indexación completa (opción nuclear)
 rm -rf storage/docstore.json storage/index_store.json storage/manifest.json
 python index.py
-curl -k -X POST https://localhost:3333/system/reload
+curl -k -X POST http://localhost:3333/system/reload
 ```
 
 ---

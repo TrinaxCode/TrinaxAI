@@ -149,8 +149,10 @@ export default function ChatInterface({
     customPrompts.current = [...BUILTIN_COMMANDS, ...op, ...rp]
       .filter((p: any) => p?.name && p.name !== 'system')
       .map((p: any) => ({ name: String(p.name), text: String(p.text || ''), builtin: false }));
-    setUserAvatar(getUserAvatar());
-    setUserDisplayName(getPreferredUserName(lang));
+    const nextAvatar = getUserAvatar();
+    const nextName = getPreferredUserName(lang);
+    setUserAvatar((current) => (current === nextAvatar ? current : nextAvatar));
+    setUserDisplayName((current) => (current === nextName ? current : nextName));
   }, [lang]);
 
   useEffect(() => {
@@ -1101,12 +1103,13 @@ function getLastUserText(messages: ChatMessage[], beforeMsg?: ChatMessage): stri
       )}
 
       {/* Messages */}
-      <div
-        ref={messagesRef}
-        onScroll={updateScrollState}
-        className={`${messages.length === 0 && !streaming ? 'hidden' : 'flex-1'} chat-messages min-h-0 min-w-0 max-w-full overflow-y-auto overflow-x-hidden px-2 sm:px-4 py-4 space-y-4`}
-        style={{ overscrollBehavior: 'contain', WebkitOverflowScrolling: 'touch' }}
-      >
+      <div className={`${messages.length === 0 && !streaming ? 'hidden' : 'relative flex-1'} min-h-0 min-w-0 max-w-full`}>
+        <div
+          ref={messagesRef}
+          onScroll={updateScrollState}
+          className="chat-messages h-full min-h-0 min-w-0 max-w-full overflow-y-auto overflow-x-hidden px-2 sm:px-4 py-4 space-y-4"
+          style={{ overscrollBehavior: 'contain', WebkitOverflowScrolling: 'touch' }}
+        >
           {messages.map((msg, i) => (
             <motion.div
               key={`${i}-${msg.role}`}
@@ -1276,7 +1279,7 @@ function getLastUserText(messages: ChatMessage[], beforeMsg?: ChatMessage): stri
                   />
                 ) : (
                   <div
-                    className="w-7 h-7 rounded-full shrink-0 mt-0.5 grid place-items-center bg-[#006bbd] text-white text-xs font-semibold animate-soft-pulse"
+                    className="w-7 h-7 rounded-full shrink-0 mt-0.5 grid place-items-center bg-[#006bbd] text-white text-xs font-semibold"
                     aria-label={t('userAvatar')}
                     title={userDisplayName}
                   >
@@ -1323,6 +1326,29 @@ function getLastUserText(messages: ChatMessage[], beforeMsg?: ChatMessage): stri
               </div>
             </motion.div>
           )}
+        </div>
+
+        <AnimatePresence>
+          {showScrollButton && (
+            <motion.button
+              type="button"
+              onClick={() => scrollToBottom('smooth')}
+              initial={{ opacity: 0, scale: 0.94 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.94 }}
+              transition={{ duration: 0.16, ease: 'easeOut' }}
+              className={`fixed bottom-[calc(env(safe-area-inset-bottom,0px)+6rem)] left-1/2 ${sidebarOpen ? 'z-20 pointer-events-none' : 'z-30'} grid h-11 w-11 -translate-x-1/2 place-items-center rounded-full border shadow-lg backdrop-blur-xl transition-colors active:scale-95 ${
+                isDark
+                  ? 'border-white/[0.08] bg-black/85 text-white/80 hover:bg-[#006bbd] hover:text-white'
+                  : 'border-gray-200 bg-white/95 text-gray-600 hover:bg-[#006bbd] hover:text-white'
+              }`}
+              aria-label={lang === 'en' ? 'Scroll to bottom' : 'Ir al final del chat'}
+              title={lang === 'en' ? 'Scroll to bottom' : 'Ir al final del chat'}
+            >
+              <MdKeyboardArrowDown size={30} />
+            </motion.button>
+          )}
+        </AnimatePresence>
       </div>
 
       {/* ── Speaking indicator bar ── */}
@@ -1352,30 +1378,9 @@ function getLastUserText(messages: ChatMessage[], beforeMsg?: ChatMessage): stri
 
       {/* Input Area */}
       <div
-        className={`relative shrink-0 px-2 sm:px-4 pt-2 border-t ${isDark ? 'border-white/[0.06]' : 'border-gray-200'}`}
+        className={`shrink-0 px-2 sm:px-4 pt-2 border-t ${isDark ? 'border-white/[0.06]' : 'border-gray-200'}`}
         style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 12px)' }}
       >
-        <AnimatePresence>
-          {showScrollButton && (
-            <motion.button
-              type="button"
-              onClick={() => scrollToBottom('smooth')}
-              initial={{ opacity: 0, scale: 0.94 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.94 }}
-              transition={{ duration: 0.16, ease: 'easeOut' }}
-              className={`absolute -top-14 left-1/2 z-30 grid h-11 w-11 -translate-x-1/2 place-items-center rounded-full border shadow-lg backdrop-blur-xl transition-colors active:scale-95 ${
-                isDark
-                  ? 'border-white/[0.08] bg-black/85 text-white/80 hover:bg-[#006bbd] hover:text-white'
-                  : 'border-gray-200 bg-white/95 text-gray-600 hover:bg-[#006bbd] hover:text-white'
-              }`}
-              aria-label={lang === 'en' ? 'Scroll to bottom' : 'Ir al final del chat'}
-              title={lang === 'en' ? 'Scroll to bottom' : 'Ir al final del chat'}
-            >
-              <MdKeyboardArrowDown size={30} />
-            </motion.button>
-          )}
-        </AnimatePresence>
         {engine === 'rag' && collections.length > 0 && (
           <div className="mb-2 flex items-center gap-2 overflow-x-auto pb-1">
             <span className={`shrink-0 text-[10px] uppercase tracking-wider ${isDark ? 'text-white/35' : 'text-gray-400'}`}>

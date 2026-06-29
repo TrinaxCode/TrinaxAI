@@ -9,12 +9,31 @@ const META_KEY = 'tc-sync-meta';
 const CHAT_SESSIONS_KEY = 'tc-chat-sessions';
 const CHAT_DELETED_KEY = 'tc-chat-deleted-ids';
 const EXCLUDED_KEYS = new Set(['tc-chat-sessions-backup']);
+const CRITICAL_KEYS = new Set([
+  'tc-onboarding-complete',
+  'tc-user-nickname',
+  'tc-user-name',
+  'tc-user-avatar',
+  'tc-lang',
+  'tc-theme',
+  'tc-models-chat',
+  'tc-models-deep',
+  'tc-models-vision',
+  'tc-models-vision-quality',
+  'tc-models-embed',
+  'tc-models-code',
+  'tc-models-fast',
+  'tc-aggressive-quant',
+  'tc-keep-alive',
+]);
 let syncStarted = false;
 let storageHooksInstalled = false;
 let syncInFlight = false;
 let syncAgain = false;
 let syncTimer: number | undefined;
 let applyingRemote = false;
+let syncBackoffUntil = 0;
+let syncFailureCount = 0;
 
 type SyncMeta = Record<string, { updatedAt: number; hash: string }>;
 type ChatDeleted = Record<string, number>;
@@ -173,12 +192,30 @@ async function fetchRemoteState(signal?: AbortSignal): Promise<Record<string, st
 }
 
 async function pushRemoteState(values: Record<string, string>, signal?: AbortSignal): Promise<void> {
-  await fetch(`${APP_CONFIG.ragBase}/app-state`, {
+  const response = await fetch(`${APP_CONFIG.ragBase}/app-state`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ values }),
     signal,
-  }).catch(() => undefined);
+  });
+  if (!response.ok) throw new Error(`Shared state sync failed: ${response.status}`);
+}
+
+function criticalLocalState(): Record<string, string> {
+  refreshLocalMeta();
+  const out: Record<string, string> = {};
+  for (const key of localKeys()) {
+    if (!CRITICAL_KEYS.has(key) && key !== META_KEY) continue;
+    const value = localStorage.getItem(key);
+    if (typeof value === 'string') out[key] = value;
+  }
+  const meta = readLocalMeta();
+  const criticalMeta: SyncMeta = {};
+  for (const key of Object.keys(out)) {
+    if (meta[key]) criticalMeta[key] = meta[key];
+  }
+  if (Object.keys(criticalMeta).length) out[META_KEY] = JSON.stringify(criticalMeta);
+  return out;
 }
 
 function applyRemoteState(remote: Record<string, string>): boolean {
@@ -232,7 +269,8 @@ function applyRemoteState(remote: Record<string, string>): boolean {
   return changed;
 }
 
-export async function syncSharedStateOnce(timeoutMs = 1800): Promise<void> {
+export async function syncSharedStateOnce(timeoutMs = 1800, force = false): Promise<void> {
+  if (!force && Date.now() < syncBackoffUntil) return;
   if (syncInFlight) {
     syncAgain = true;
     return;
@@ -243,9 +281,17 @@ export async function syncSharedStateOnce(timeoutMs = 1800): Promise<void> {
   try {
     const remote = await fetchRemoteState(controller.signal);
     applyRemoteState(remote);
-    await pushRemoteState(snapshotLocalState(), controller.signal);
+    try {
+      await pushRemoteState(snapshotLocalState(), controller.signal);
+    } catch {
+      await pushRemoteState(criticalLocalState(), controller.signal);
+    }
+    syncFailureCount = 0;
+    syncBackoffUntil = 0;
   } catch {
     // Offline or RAG API down: localStorage remains the source of truth.
+    syncFailureCount += 1;
+    syncBackoffUntil = Date.now() + Math.min(60_000, 2_000 * syncFailureCount);
   } finally {
     window.clearTimeout(timeout);
     syncInFlight = false;

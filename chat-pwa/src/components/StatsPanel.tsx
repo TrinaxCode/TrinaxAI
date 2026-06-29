@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { MdRefresh } from 'react-icons/md';
 import { useI18n } from '../i18n/I18nContext';
@@ -23,18 +23,27 @@ export default function StatsPanel() {
   const toast = useToast();
   const [stats, setStats] = useState<UsageStats | null>(null);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState('');
+  const connectionToastShownRef = useRef(false);
 
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
       const s = await getUsageStats();
       setStats(s);
+      setLoadError('');
+      connectionToastShownRef.current = false;
     } catch (err) {
-      toast.toast(err instanceof Error ? err.message.slice(0, 180) : t('noStatsAvailable'), 'error');
+      const msg = err instanceof Error ? err.message.slice(0, 180) : t('noStatsAvailable');
+      setLoadError(msg);
+      if (!connectionToastShownRef.current) {
+        connectionToastShownRef.current = true;
+        toast.toast(msg, 'error');
+      }
     } finally {
       setLoading(false);
     }
-  }, [toast]);
+  }, [toast, t]);
 
   useEffect(() => { void refresh(); }, [refresh]);
 
@@ -62,7 +71,11 @@ export default function StatsPanel() {
       </div>
 
       {!stats ? (
-        <p className={`text-[11px] ${muted}`}>{lang === 'en' ? 'Loading...' : 'Cargando...'}</p>
+        <p className={`text-[11px] ${muted}`}>
+          {loadError
+            ? (lang === 'en' ? 'Stats are unavailable while the local RAG API is offline.' : 'Las estadísticas no están disponibles mientras la API RAG local está apagada.')
+            : (lang === 'en' ? 'Loading...' : 'Cargando...')}
+        </p>
       ) : (
         <>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

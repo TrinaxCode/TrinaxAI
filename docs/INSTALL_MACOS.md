@@ -7,7 +7,7 @@ Guide to install, configure, start, and get TrinaxAI running on macOS, both Appl
 When done, you should have:
 
 - Ollama running locally at `http://localhost:11434`.
-- TrinaxAI RAG API at `https://localhost:3333`.
+- TrinaxAI RAG API at `http://localhost:3333`.
 - PWA at `https://localhost:3334`.
 - Python `.venv` environment ready.
 - PWA dependencies installed.
@@ -130,7 +130,7 @@ TRINAXAI_ALLOW_LAN_SYSTEM=1
 TRINAXAI_CORS_ORIGINS=https://localhost:3334,http://localhost:3334,https://127.0.0.1:3334,http://127.0.0.1:3334
 OLLAMA_BASE_URL=http://localhost:11434
 OLLAMA_HOST=0.0.0.0
-VITE_TRINAXAI_RAG_TARGET=https://localhost:3333
+VITE_TRINAXAI_RAG_TARGET=http://localhost:3333
 ```
 
 To use a phone on the same Wi-Fi, find your IP:
@@ -287,7 +287,7 @@ Manual checks:
 
 ```bash
 curl http://localhost:11434/api/tags
-curl -k https://localhost:3333/health
+curl http://localhost:3333/health
 ```
 
 The PWA should open at:

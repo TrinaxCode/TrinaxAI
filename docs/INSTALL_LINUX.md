@@ -7,7 +7,7 @@ Guide to install, configure, start, and get TrinaxAI running on Linux. Applies t
 When done, you should have:
 
 - Ollama running locally at `http://localhost:11434`.
-- TrinaxAI RAG API at `https://localhost:3333`.
+- TrinaxAI RAG API at `http://localhost:3333`.
 - TrinaxAI PWA at `https://localhost:3334`.
 - Base models downloaded.
 - Python `.venv` environment installed.
@@ -141,7 +141,7 @@ TRINAXAI_ALLOW_LAN_SYSTEM=1
 TRINAXAI_CORS_ORIGINS=https://localhost:3334,http://localhost:3334,https://127.0.0.1:3334,http://127.0.0.1:3334
 OLLAMA_BASE_URL=http://localhost:11434
 OLLAMA_HOST=0.0.0.0
-VITE_TRINAXAI_RAG_TARGET=https://localhost:3333
+VITE_TRINAXAI_RAG_TARGET=http://localhost:3333
 ```
 
 If you want to access TrinaxAI from a phone on the same network, add your local IP to `TRINAXAI_CORS_ORIGINS`:
@@ -310,7 +310,7 @@ You can also check manually:
 
 ```bash
 curl http://localhost:11434/api/tags
-curl -k https://localhost:3333/health
+curl http://localhost:3333/health
 ```
 
 The PWA should open at:

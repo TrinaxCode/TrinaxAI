@@ -189,7 +189,7 @@ TrinaxAI is **local-first by design**. Here's what that means in practice:
 | **RAG API** | Binds to `0.0.0.0:3333` for LAN PWA/phone access | Set `TRINAXAI_HOST=127.0.0.1` for localhost-only |
 | **System endpoints** | Require localhost or admin token | Set `TRINAXAI_ADMIN_TOKEN` and `TRINAXAI_ALLOW_LAN_SYSTEM=1` if exposing to LAN |
 | **Ollama** | Binds to `127.0.0.1` by default | Firewall port 11434 if you expose it |
-| **PWA** | Served over self-signed HTTPS | Put behind nginx/Caddy with Let's Encrypt for trusted certs |
+| **PWA** | Served over HTTPS with a generated local certificate | Trust the generated cert on each device, or use nginx/Caddy with Let's Encrypt for public-domain access |
 | **File uploads** | Sanitized, sandboxed to `local_sources/collections/` | Adjust `TRINAXAI_UPLOAD_MAX_BYTES` |
 | **CORS** | localhost + your LAN IP by default | Customize via `TRINAXAI_CORS_ORIGINS` |
 

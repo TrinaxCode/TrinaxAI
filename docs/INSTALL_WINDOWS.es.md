@@ -7,7 +7,7 @@ Guía para instalar, configurar, iniciar y dejar listo TrinaxAI en Windows 10/11
 Al terminar deberias tener:
 
 - Ollama instalado y respondiendo en `http://localhost:11434`.
-- API RAG en `https://localhost:3333`.
+- API RAG en `http://localhost:3333`.
 - PWA en `https://localhost:3334`.
 - Entorno Python `.venv`.
 - Dependencias de la PWA.
@@ -145,7 +145,7 @@ TRINAXAI_ALLOW_LAN_SYSTEM=1
 TRINAXAI_CORS_ORIGINS=https://localhost:3334,http://localhost:3334,https://127.0.0.1:3334,http://127.0.0.1:3334
 OLLAMA_BASE_URL=http://localhost:11434
 OLLAMA_HOST=0.0.0.0
-VITE_TRINAXAI_RAG_TARGET=https://localhost:3333
+VITE_TRINAXAI_RAG_TARGET=http://localhost:3333
 ```
 
 Para usar telefono/tablet, busca tu IP LAN:
@@ -283,13 +283,13 @@ Pruebas manuales:
 
 ```powershell
 Invoke-RestMethod http://localhost:11434/api/tags
-Invoke-RestMethod https://localhost:3333/health -SkipCertificateCheck
+Invoke-RestMethod http://localhost:3333/health
 ```
 
 Si tu PowerShell no soporta `-SkipCertificateCheck`, abre en navegador:
 
 ```text
-https://localhost:3333/health
+http://localhost:3333/health
 ```
 
 ## Uso diario

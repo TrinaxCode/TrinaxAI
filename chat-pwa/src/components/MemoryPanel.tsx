@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { MdAdd, MdDelete, MdAutoFixHigh, MdRefresh } from 'react-icons/md';
 import { useI18n } from '../i18n/I18nContext';
@@ -22,16 +22,24 @@ export default function MemoryPanel() {
   const [newTags, setNewTags] = useState('');
   const [projectNotes, setProjectNotes] = useState<string>(loadProjectMemory);
   const [refreshing, setRefreshing] = useState(false);
+  const connectionToastShownRef = useRef(false);
+
+  const showConnectionErrorOnce = useCallback((err: unknown) => {
+    if (connectionToastShownRef.current) return;
+    connectionToastShownRef.current = true;
+    toast.toast(err instanceof Error ? err.message.slice(0, 180) : t('noConnection'), 'error');
+  }, [toast, t]);
 
   const refresh = useCallback(async () => {
     try {
       const [list, sum] = await Promise.all([listMemories(), getMemorySummary()]);
       setMems(list);
       setSummary(sum);
+      connectionToastShownRef.current = false;
     } catch (err) {
-      toast.toast(err instanceof Error ? err.message.slice(0, 180) : t('noConnection'), 'error');
+      showConnectionErrorOnce(err);
     }
-  }, [toast, t]);
+  }, [showConnectionErrorOnce]);
 
   useEffect(() => { void refresh(); }, [refresh]);
 
@@ -56,9 +64,9 @@ export default function MemoryPanel() {
       invalidateCache();
       await refresh();
     } catch (err) {
-      toast.toast(err instanceof Error ? err.message.slice(0, 180) : t('noConnection'), 'error');
+      showConnectionErrorOnce(err);
     }
-  }, [newText, newTags, toast, lang, t, refresh, invalidateCache]);
+  }, [newText, newTags, toast, lang, refresh, invalidateCache, showConnectionErrorOnce]);
 
   const del = useCallback(async (id: string) => {
     try {
@@ -66,9 +74,9 @@ export default function MemoryPanel() {
       invalidateCache();
       await refresh();
     } catch (err) {
-      toast.toast(err instanceof Error ? err.message.slice(0, 180) : t('noConnection'), 'error');
+      showConnectionErrorOnce(err);
     }
-  }, [refresh, toast, t, invalidateCache]);
+  }, [refresh, invalidateCache, showConnectionErrorOnce]);
 
   const doRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -78,11 +86,11 @@ export default function MemoryPanel() {
       invalidateCache();
       toast.toast(lang === 'en' ? 'Summary refreshed' : 'Resumen actualizado', 'success');
     } catch (err) {
-      toast.toast(err instanceof Error ? err.message.slice(0, 180) : t('noConnection'), 'error');
+      showConnectionErrorOnce(err);
     } finally {
       setRefreshing(false);
     }
-  }, [refresh, toast, lang, t, invalidateCache]);
+  }, [refresh, toast, lang, invalidateCache, showConnectionErrorOnce]);
 
   const cardBg = isDark ? 'bg-white/[0.03] border-white/[0.06]' : 'bg-gray-50 border-gray-200';
   const muted = isDark ? 'text-white/45' : 'text-gray-500';

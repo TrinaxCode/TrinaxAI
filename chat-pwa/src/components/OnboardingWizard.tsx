@@ -75,7 +75,7 @@ export default function OnboardingWizard({ onComplete }: Props) {
     localStorage.setItem('tc-models-embed', models.embed);
     localStorage.setItem('tc-models-code', models.code);
     localStorage.setItem('tc-models-fast', models.fast);
-    syncSharedStateOnce(2500).finally(() => {
+    syncSharedStateOnce(2500, true).finally(() => {
       setFinishing(false);
       onComplete();
     });

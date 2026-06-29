@@ -282,7 +282,7 @@ python service_manager.py start`}</pre>
                 <pre className={`text-xs font-mono p-3 rounded-lg ${codeBg}`}>{`TRINAXAI_CORS_ORIGINS=https://localhost:3334,https://YOUR-LAN-IP:3334
 TRINAXAI_INDEX_DIR=~/Documents
 TRINAXAI_PROFILE=ultra  # low, medium, high, ultra
-VITE_TRINAXAI_RAG_TARGET=https://localhost:3333
+VITE_TRINAXAI_RAG_TARGET=http://localhost:3333
 VITE_TRINAXAI_VISION_MODEL=qwen2.5vl:3b
 VITE_TRINAXAI_VISION_QUALITY_MODEL=qwen2.5vl:7b`}</pre>
                 <p className={`text-xs ${textMuted}`}>
@@ -356,14 +356,14 @@ VITE_TRINAXAI_VISION_QUALITY_MODEL=qwen2.5vl:7b`}</pre>
 python index.py
 
 # Recargar el indice en la API
-curl -k -X POST https://localhost:3333/system/reload
+curl -X POST http://localhost:3333/system/reload
 
 # TrinaxAI CLI interactivo
 python trinaxai_cli.py --engine rag` : `# Full indexing
 python index.py
 
 # Reload index in the API
-curl -k -X POST https://localhost:3333/system/reload
+curl -X POST http://localhost:3333/system/reload
 
 # Interactive TrinaxAI CLI
 python trinaxai_cli.py --engine rag`}</pre>
@@ -516,11 +516,11 @@ data: [DONE]`}</pre>
                   <li>{isEs ? 'Abre https://[TU_IP_LOCAL]:3334 en el navegador del teléfono' : 'Open https://[YOUR_LOCAL_IP]:3334 in your phone browser'}</li>
                   <li>{isEs ? 'Si no conecta, verifica el firewall (puertos 3333, 3334, 11434)' : 'If it doesn\'t connect, check your firewall (ports 3333, 3334, 11434)'}</li>
                 </ol>
-                <h3 className={`font-semibold ${textMain}`}>{isEs ? 'Certificado autofirmado' : 'Self-signed certificate'}</h3>
+                <h3 className={`font-semibold ${textMain}`}>{isEs ? 'Certificado HTTPS local' : 'Local HTTPS certificate'}</h3>
                 <p className={`text-sm ${textSub}`}>
                   {isEs
-                    ? 'Como TrinaxAI usa HTTPS con certificado autofirmado, tu navegador mostrará una advertencia de seguridad. Haz clic en "Opciones avanzadas" o "Advanced" y selecciona "Continuar de todos modos" o "Proceed anyway". Esto es seguro — la conexión está encriptada, solo que el certificado no está firmado por una autoridad externa.'
-                    : 'Since TrinaxAI uses HTTPS with a self-signed certificate, your browser will show a security warning. Click "Advanced" or "Advanced options" and select "Proceed anyway" or "Continue to site". This is safe — the connection is encrypted, the certificate just isn\'t signed by an external authority.'}
+                    ? 'El instalador crea un certificado local para HTTPS e intenta confiarlo en la computadora host. En teléfonos o tablets, el sistema no puede confiarlo automáticamente: importa el certificado local en ese dispositivo o usa un dominio/VPN con certificado público si necesitas que el navegador no muestre advertencias.'
+                    : 'The installer creates a local HTTPS certificate and attempts to trust it on the host computer. Phones and tablets cannot trust that certificate automatically: import the local certificate on that device, or use a domain/VPN with a public certificate if you need the browser to show no warnings.'}
                 </p>
                 <h3 className={`font-semibold ${textMain}`}>{isEs ? 'Móviles y tablets' : 'Phones and tablets'}</h3>
                 <p className={`text-sm ${textSub}`}>
@@ -563,8 +563,8 @@ cp continue-config.yaml ~/.continue/config.yaml
 # TrinaxAI models will appear in Continue's model picker`}</pre>
                 <p className={`text-xs ${textMuted}`}>
                   {isEs
-                    ? 'La configuración incluye RAG Local compatible con OpenAI en https://localhost:3333/v1, modelos Ollama para chat/edit/apply/autocomplete y bge-m3 para embeddings.'
-                    : 'The config includes OpenAI-compatible Local RAG at https://localhost:3333/v1, Ollama models for chat/edit/apply/autocomplete, and bge-m3 embeddings.'}
+                    ? 'La configuración incluye RAG Local compatible con OpenAI en http://localhost:3333/v1, modelos Ollama para chat/edit/apply/autocomplete y bge-m3 para embeddings.'
+                    : 'The config includes OpenAI-compatible Local RAG at http://localhost:3333/v1, Ollama models for chat/edit/apply/autocomplete, and bge-m3 embeddings.'}
                 </p>
               </div>
             </div>

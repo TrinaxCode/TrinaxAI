@@ -338,7 +338,12 @@ export function indexableFilesFrom(files: FileList | File[]): File[] {
 }
 
 async function apiJson<T>(url: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(url, init);
+  let response: Response;
+  try {
+    response = await fetch(url, init);
+  } catch {
+    throw new ApiError('La API RAG local no está disponible. Enciende TrinaxAI desde Configuración. / Local RAG API is not available.', 0);
+  }
   if (!response.ok) {
     const detail = await response.text().catch(() => '');
     throw new ApiError(`${response.status} ${response.statusText}${detail ? `\n${detail.slice(0, 500)}` : ''}`, response.status);

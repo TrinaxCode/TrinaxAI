@@ -96,7 +96,7 @@ export default function App() {
 
   const handleOnboardingComplete = useCallback(() => {
     setShowOnboarding(false);
-    void syncSharedStateOnce(2500);
+    void syncSharedStateOnce(2500, true);
   }, []);
 
   const handleIntroFinish = useCallback(() => {

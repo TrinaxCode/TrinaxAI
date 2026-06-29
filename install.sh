@@ -138,13 +138,65 @@ ensure_ollama_running() {
   return 1
 }
 
+ensure_https_certificate() {
+  mkdir -p "$SCRIPT_DIR/chat-pwa/certs"
+  cert_key="$SCRIPT_DIR/chat-pwa/certs/localhost-key.pem"
+  cert_file="$SCRIPT_DIR/chat-pwa/certs/localhost.pem"
+  cert_crt="$SCRIPT_DIR/chat-pwa/certs/trinaxai-local.crt"
+  if [ -f "$cert_key" ] && [ -f "$cert_file" ]; then
+    print_ok "HTTPS certificate found"
+    return 0
+  fi
+  if ! command -v openssl >/dev/null 2>&1; then
+    print_warn "OpenSSL was not found. HTTPS certificate generation skipped."
+    print_warn "The PWA may run as HTTP or show a browser security warning."
+    return 0
+  fi
+  print_info "Creating local HTTPS certificate for TrinaxAI..."
+  san_entries="DNS:localhost,DNS:$(hostname 2>/dev/null || echo trinaxai),IP:127.0.0.1,IP:::1"
+  if [ -n "${LAN_IP:-}" ]; then
+    san_entries="$san_entries,IP:$LAN_IP"
+  fi
+  openssl req -x509 -newkey rsa:2048 -sha256 -days 1825 -nodes \
+    -keyout "$cert_key" \
+    -out "$cert_file" \
+    -subj "/CN=TrinaxAI Local HTTPS" \
+    -addext "subjectAltName=$san_entries" >/dev/null 2>&1 || {
+      print_warn "Could not generate HTTPS certificate."
+      return 0
+    }
+  cp "$cert_file" "$cert_crt"
+  chmod 600 "$cert_key" 2>/dev/null || true
+  print_ok "HTTPS certificate generated"
+
+  if [ "$OS" = "macos" ]; then
+    security add-trusted-cert -d -r trustRoot -k "$HOME/Library/Keychains/login.keychain-db" "$cert_crt" >/dev/null 2>&1 && \
+      print_ok "HTTPS certificate trusted in macOS login keychain" || \
+      print_warn "Could not auto-trust the certificate. Add $cert_crt to Keychain Access and trust it."
+  elif [ "$OS" = "linux" ]; then
+    if command -v update-ca-certificates >/dev/null 2>&1; then
+      sudo cp "$cert_crt" /usr/local/share/ca-certificates/trinaxai-local.crt >/dev/null 2>&1 && \
+      sudo update-ca-certificates >/dev/null 2>&1 && \
+        print_ok "HTTPS certificate trusted in system CA store" || \
+        print_warn "Could not auto-trust the certificate. Import $cert_crt manually in your browser/system."
+    elif command -v update-ca-trust >/dev/null 2>&1; then
+      sudo cp "$cert_crt" /etc/pki/ca-trust/source/anchors/trinaxai-local.crt >/dev/null 2>&1 && \
+      sudo update-ca-trust >/dev/null 2>&1 && \
+        print_ok "HTTPS certificate trusted in system CA store" || \
+        print_warn "Could not auto-trust the certificate. Import $cert_crt manually in your browser/system."
+    else
+      print_warn "No supported CA trust updater found. Import $cert_crt manually in your browser/system."
+    fi
+  fi
+}
+
 install_linux_deps() {
   print_info "Installing packages (Python, Node.js, npm, curl, git, unzip)..."
   if command -v apt-get >/dev/null 2>&1; then
     sudo apt-get update -qq
     # npm ships with NodeSource/Node.js, but the distro npm package may conflict.
     # Try nodejs + npm together; if that fails, install nodejs alone.
-    sudo apt-get install -y python3 python3-pip python3-venv curl git unzip ufw
+    sudo apt-get install -y python3 python3-pip python3-venv curl git unzip ufw openssl
     if ! command -v node >/dev/null 2>&1; then
       sudo apt-get install -y nodejs npm 2>/dev/null || sudo apt-get install -y nodejs || true
     fi
@@ -153,13 +205,13 @@ install_linux_deps() {
       print_info "Install Node.js 18+ with npm from https://nodejs.org or use your package manager."
     fi
   elif command -v dnf >/dev/null 2>&1; then
-    sudo dnf install -y python3 python3-pip nodejs npm curl git unzip
+    sudo dnf install -y python3 python3-pip nodejs npm curl git unzip openssl
   elif command -v pacman >/dev/null 2>&1; then
-    sudo pacman -Sy --needed --noconfirm python python-pip nodejs npm curl git unzip
+    sudo pacman -Sy --needed --noconfirm python python-pip nodejs npm curl git unzip openssl
   elif command -v zypper >/dev/null 2>&1; then
-    sudo zypper --non-interactive install python3 python3-pip nodejs npm curl git unzip
+    sudo zypper --non-interactive install python3 python3-pip nodejs npm curl git unzip openssl
   elif command -v apk >/dev/null 2>&1; then
-    sudo apk add python3 py3-pip py3-virtualenv nodejs npm curl git unzip
+    sudo apk add python3 py3-pip py3-virtualenv nodejs npm curl git unzip openssl
   else
     print_warn "Unknown Linux package manager. Install Python 3.10+, pip, venv, Node.js 18+, npm, curl, git, unzip manually."
   fi
@@ -240,7 +292,7 @@ elif [ "$OS" = "macos" ]; then
     print_info "Installing Homebrew..."
     /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" || true
   fi
-  brew install python@3.11 node curl git 2>/dev/null || true
+  brew install python@3.11 node curl git openssl 2>/dev/null || true
   print_ok "macOS dependencies ready"
 elif [ "$OS" = "windows" ]; then
   print_warn "Windows detected. Please ensure you have:"
@@ -328,6 +380,8 @@ TRINAXAI_PROFILE=$PROFILE
 TRINAXAI_HOST=0.0.0.0
 TRINAXAI_PORT=3333
 OLLAMA_BASE_URL=http://localhost:11434
+TRINAXAI_FRONTEND_URL=https://localhost:3334
+TRINAXAI_FRONTEND_MODE=preview
 
 # Model fleet (auto-router enabled by default)
 TRINAXAI_MODEL_GENERAL=llama3.2:3b
@@ -367,6 +421,8 @@ TRINAXAI_MODEL_DEEP=qwen2.5-coder:7b
 EOF
 fi
 print_ok ".env written with profile=$PROFILE"
+
+ensure_https_certificate
 
 # ── 2. Ollama ──
 print_header "2/6 Ollama (Local AI Engine)"
@@ -547,7 +603,7 @@ echo -e "${GREEN}${BOLD}║      TrinaxAI is ready!                  ║${NC}"
 echo -e "${GREEN}${BOLD}╚══════════════════════════════════════════╝${NC}"
 echo ""
 echo -e "  ${BLUE}PWA Frontend:${NC}  https://localhost:3334"
-echo -e "  ${BLUE}RAG API:${NC}      https://localhost:3333/health"
+echo -e "  ${BLUE}RAG API:${NC}      http://localhost:3333/health"
 echo -e "  ${BLUE}Ollama API:${NC}    http://localhost:11434"
 echo ""
 echo -e "  ${BLUE}Quick start:${NC}   ./startup_ai.sh"

@@ -156,6 +156,43 @@ function Ensure-OllamaRunning {
   }
   return $false
 }
+function Ensure-TrinaxAICertificate($Repo, $LanIp) {
+  $CertDir = Join-Path $Repo "chat-pwa\certs"
+  New-Item -ItemType Directory -Force -Path $CertDir | Out-Null
+  $PfxPath = Join-Path $CertDir "trinaxai-local.pfx"
+  $Passphrase = "trinaxai-local"
+  if (Test-Path $PfxPath) {
+    Write-Ok "HTTPS certificate found"
+    return
+  }
+  Write-Host "  Creating trusted HTTPS certificate for TrinaxAI..."
+  try {
+    Get-ChildItem Cert:\CurrentUser\My | Where-Object { $_.FriendlyName -eq "TrinaxAI Local HTTPS" } | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Cert:\CurrentUser\Root | Where-Object { $_.FriendlyName -eq "TrinaxAI Local HTTPS" } | Remove-Item -ErrorAction SilentlyContinue
+    $San = "2.5.29.17={text}DNS=localhost&DNS=$env:COMPUTERNAME&IPAddress=127.0.0.1&IPAddress=::1"
+    if ($LanIp) { $San = "$San&IPAddress=$LanIp" }
+    $Cert = New-SelfSignedCertificate `
+      -Subject "CN=TrinaxAI Local HTTPS" `
+      -FriendlyName "TrinaxAI Local HTTPS" `
+      -CertStoreLocation "Cert:\CurrentUser\My" `
+      -KeyAlgorithm RSA `
+      -KeyLength 2048 `
+      -HashAlgorithm SHA256 `
+      -KeyExportPolicy Exportable `
+      -NotAfter (Get-Date).AddYears(5) `
+      -TextExtension @($San)
+    $RootStore = New-Object System.Security.Cryptography.X509Certificates.X509Store("Root", "CurrentUser")
+    $RootStore.Open("ReadWrite")
+    $RootStore.Add($Cert)
+    $RootStore.Close()
+    $SecurePass = ConvertTo-SecureString -String $Passphrase -Force -AsPlainText
+    Export-PfxCertificate -Cert $Cert -FilePath $PfxPath -Password $SecurePass | Out-Null
+    Write-Ok "Trusted HTTPS certificate installed"
+  } catch {
+    Write-Warn "Could not create a trusted HTTPS certificate automatically: $($_.Exception.Message)"
+    Write-Warn "TrinaxAI will still run, but your browser may show 'Not secure' until you trust a local certificate."
+  }
+}
 
 Write-Host ""
 Write-Host "==========================================" -ForegroundColor Blue
@@ -244,7 +281,9 @@ $EnvLines = @(
   "TRINAXAI_HOST=0.0.0.0",
   "TRINAXAI_PORT=3333",
   "TRINAXAI_HEALTH_URL=http://localhost:3333",
-  "TRINAXAI_FRONTEND_URL=http://localhost:3334",
+  "TRINAXAI_FRONTEND_URL=https://localhost:3334",
+  "TRINAXAI_FRONTEND_MODE=preview",
+  "TRINAXAI_CERT_PASSPHRASE=trinaxai-local",
   "TRINAXAI_RAG_TARGET=http://localhost:3333",
   "VITE_TRINAXAI_RAG_TARGET=http://localhost:3333",
   "OLLAMA_BASE_URL=http://localhost:11434",
@@ -311,6 +350,8 @@ if ($null -eq $PythonCommand) {
 Require-Command "git" "Git.Git" "Git" "https://git-scm.com/download/win"
 Require-Command "node" "OpenJS.NodeJS.LTS" "Node.js" "https://nodejs.org"
 Require-Command "ollama" "Ollama.Ollama" "Ollama" "https://ollama.com/download/windows"
+
+Ensure-TrinaxAICertificate -Repo $Repo -LanIp $LanIp
 
 $FreeGb = [math]::Round((Get-PSDrive -Name ((Get-Location).Path.Substring(0,1))).Free / 1GB)
 if ($FreeGb -lt 12) {
@@ -393,10 +434,10 @@ if (-not $NoAutostart) {
   Write-Ok "Auto-start enabled"
 }
 Write-Host "Then open:" -ForegroundColor Cyan
-Write-Host "  http://localhost:3334"
+Write-Host "  https://localhost:3334"
 Write-Host "CLI:" -ForegroundColor Cyan
 Write-Host "  trinaxai"
-if ($LanIp) { Write-Host "  http://$($LanIp):3334" }
+if ($LanIp) { Write-Host "  https://$($LanIp):3334" }
 Write-Host ""
 if ($EnableLanSystem -eq 1) {
   Write-Host "  LAN system control: enabled" -ForegroundColor Yellow
