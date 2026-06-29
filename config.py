@@ -6,16 +6,19 @@ index.py, rag_api.py, and query.py import from here to stay in sync.
 
 Everything is overridable via environment variables (useful for systemd).
 """
-import os
 
-from llama_index.llms.ollama import Ollama
+import os
+import ssl
+
 from llama_index.embeddings.ollama import OllamaEmbedding
+from llama_index.llms.ollama import Ollama
 
 # ==================== PATHS ====================
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 try:
     from dotenv import load_dotenv
+
     load_dotenv(os.path.join(BASE_DIR, ".env"))
 except Exception:
     pass
@@ -31,7 +34,9 @@ DEFAULT_COLLECTION_NAME = "General"
 # Directory to index recursively (with subdirectories).
 # Override with TRINAXAI_INDEX_DIR (e.g. ~/Documents or ~/Projects).
 PROJECTS_DIRS = [
-    os.path.abspath(os.path.expanduser(os.getenv("TRINAXAI_INDEX_DIR", os.path.dirname(BASE_DIR)))),
+    os.path.abspath(
+        os.path.expanduser(os.getenv("TRINAXAI_INDEX_DIR", os.path.dirname(BASE_DIR)))
+    ),
 ]
 
 # ==================== MODELS ====================
@@ -39,25 +44,79 @@ OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 TRINAXAI_PROFILE = os.getenv("TRINAXAI_PROFILE", "16gb").strip().lower()
 
 # Validate profile — warn on unknown values but don't crash.
-_VALID_PROFILES = {"4gb", "8gb", "16gb", "max", "high", "ultra", "gpu", "64gb", "64g", "4090", "rtx", "workstation", "max_quality", "quality", "potente", "32gb", "32g", "alto", "low", "min", "minimo", "lite", "light", "bajo"}
+_VALID_PROFILES = {
+    "4gb",
+    "8gb",
+    "16gb",
+    "max",
+    "high",
+    "ultra",
+    "gpu",
+    "64gb",
+    "64g",
+    "4090",
+    "rtx",
+    "workstation",
+    "max_quality",
+    "quality",
+    "potente",
+    "32gb",
+    "32g",
+    "alto",
+    "low",
+    "min",
+    "minimo",
+    "lite",
+    "light",
+    "bajo",
+}
 if TRINAXAI_PROFILE not in _VALID_PROFILES:
-    print(f"[TrinaxAI] Unknown TRINAXAI_PROFILE='{TRINAXAI_PROFILE}'. Falling back to '16gb'.")
+    print(
+        f"[TrinaxAI] Unknown TRINAXAI_PROFILE='{TRINAXAI_PROFILE}'. Falling back to '16gb'."
+    )
     TRINAXAI_PROFILE = "16gb"
 
-_ULTRA_PROFILE = TRINAXAI_PROFILE in {"ultra", "gpu", "64gb", "64g", "4090", "rtx", "workstation"}
-_MAX_QUALITY_PROFILE = TRINAXAI_PROFILE in {"max", "high", "max_quality", "quality", "potente", "32gb", "32g", "alto"} or _ULTRA_PROFILE
-_LOW_RESOURCE_PROFILE = TRINAXAI_PROFILE in {"4gb", "4g", "8gb", "8g", "low", "min", "minimo", "lite", "light", "bajo"}
+_ULTRA_PROFILE = TRINAXAI_PROFILE in {
+    "ultra",
+    "gpu",
+    "64gb",
+    "64g",
+    "4090",
+    "rtx",
+    "workstation",
+}
+_MAX_QUALITY_PROFILE = (
+    TRINAXAI_PROFILE
+    in {"max", "high", "max_quality", "quality", "potente", "32gb", "32g", "alto"}
+    or _ULTRA_PROFILE
+)
+_LOW_RESOURCE_PROFILE = TRINAXAI_PROFILE in {
+    "4gb",
+    "4g",
+    "8gb",
+    "8g",
+    "low",
+    "min",
+    "minimo",
+    "lite",
+    "light",
+    "bajo",
+}
 
 # ── Model fleet for AUTO-ROUTING ──
 # The router selects the model based on the query: chat -> general, code -> coder,
 # complex -> 3b on 16gb profile or 7b on powerful profile. All NON-thinking.
-MODEL_GENERAL = os.getenv("TRINAXAI_MODEL_GENERAL", "llama3.2:3b")      # non-code chat
-MODEL_CODE = os.getenv("TRINAXAI_MODEL_CODE", "qwen2.5-coder:3b")        # regular code
+MODEL_GENERAL = os.getenv("TRINAXAI_MODEL_GENERAL", "llama3.2:3b")  # non-code chat
+MODEL_CODE = os.getenv("TRINAXAI_MODEL_CODE", "qwen2.5-coder:3b")  # regular code
 MODEL_DEEP = os.getenv(
     "TRINAXAI_MODEL_DEEP",
-    "qwen2.5-coder:14b" if _ULTRA_PROFILE else "qwen2.5-coder:7b" if _MAX_QUALITY_PROFILE else MODEL_CODE,
+    "qwen2.5-coder:14b"
+    if _ULTRA_PROFILE
+    else "qwen2.5-coder:7b"
+    if _MAX_QUALITY_PROFILE
+    else MODEL_CODE,
 )  # complex code (14b on ultra, 7b on powerful profile, 3b default)
-MODEL_FAST = os.getenv("TRINAXAI_MODEL_FAST", MODEL_GENERAL)            # trivial / ultra-fast
+MODEL_FAST = os.getenv("TRINAXAI_MODEL_FAST", MODEL_GENERAL)  # trivial / ultra-fast
 
 # Default model (when auto-router is disabled).
 LLM_MODEL = os.getenv("TRINAXAI_LLM", MODEL_CODE)
@@ -73,52 +132,100 @@ MODEL_FLEET = list(dict.fromkeys([MODEL_CODE, MODEL_DEEP, MODEL_GENERAL, MODEL_F
 # - lite:     nomic-embed-text (smaller, faster, English-leaning)
 # - fast:     all-minilm (very small, English-only, fastest)
 EMBED_PRESETS = {
-    "balanced": {"model": "bge-m3",          "dims": 1024, "ctx": 8192, "label": "Balanced (bge-m3, multilingual)"},
-    "lite":     {"model": "nomic-embed-text", "dims": 768,  "ctx": 2048, "label": "Lite (nomic-embed-text, fast)"},
-    "fast":     {"model": "all-minilm",      "dims": 384,  "ctx": 512,  "label": "Fast (all-minilm, smallest)"},
+    "balanced": {
+        "model": "bge-m3",
+        "dims": 1024,
+        "ctx": 8192,
+        "label": "Balanced (bge-m3, multilingual)",
+    },
+    "lite": {
+        "model": "nomic-embed-text",
+        "dims": 768,
+        "ctx": 2048,
+        "label": "Lite (nomic-embed-text, fast)",
+    },
+    "fast": {
+        "model": "all-minilm",
+        "dims": 384,
+        "ctx": 512,
+        "label": "Fast (all-minilm, smallest)",
+    },
 }
 _EMBED_PRESET = os.getenv("TRINAXAI_EMBED_PRESET", "balanced").strip().lower()
 EMBED_PRESET = _EMBED_PRESET if _EMBED_PRESET in EMBED_PRESETS else "balanced"
 EMBED_MODEL = os.getenv("TRINAXAI_EMBED", EMBED_PRESETS[EMBED_PRESET]["model"])
-EMBED_DIMS = int(os.getenv("TRINAXAI_EMBED_DIMS", str(EMBED_PRESETS[EMBED_PRESET]["dims"])))
+EMBED_DIMS = int(
+    os.getenv("TRINAXAI_EMBED_DIMS", str(EMBED_PRESETS[EMBED_PRESET]["dims"]))
+)
 
 # Quantization hints (Phase 4.2). Ollama respects OLLAMA_NUM_GPU at runtime.
 # We just expose the env var and a profile tag for the /health endpoint.
 OLLAMA_NUM_GPU = os.getenv("OLLAMA_NUM_GPU", "").strip()
 # Aggressive quantization toggle: 1 enables Q4_K_M-style offloading profile.
-TRINAXAI_AGGRESSIVE_QUANT = os.getenv("TRINAXAI_AGGRESSIVE_QUANT", "0").strip() in {"1", "true", "yes", "on"}
+TRINAXAI_AGGRESSIVE_QUANT = os.getenv("TRINAXAI_AGGRESSIVE_QUANT", "0").strip() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
 
 # OCR for scanned PDFs (Phase 5.1). Off by default; tesseract is a heavy system dep.
 TRINAXAI_OCR = os.getenv("TRINAXAI_OCR", "0").strip() in {"1", "true", "yes", "on"}
 
 # Context window. Must fit: prompt + top_k chunks + response.
-NUM_CTX = int(os.getenv("TRINAXAI_NUM_CTX",
-    "16384" if _ULTRA_PROFILE else
-    "8192" if _MAX_QUALITY_PROFILE else
-    "2048" if _LOW_RESOURCE_PROFILE else "4096"))
+NUM_CTX = int(
+    os.getenv(
+        "TRINAXAI_NUM_CTX",
+        "16384"
+        if _ULTRA_PROFILE
+        else "8192"
+        if _MAX_QUALITY_PROFILE
+        else "2048"
+        if _LOW_RESOURCE_PROFILE
+        else "4096",
+    )
+)
 # Threads per request. 8 (not 16) avoids oversubscription: with several concurrent
 # embeddings, 16 threads/req makes slots fight for the CPU and everything goes
 # SLOWER on modest hardware. 8 threads/req is usually a balanced value.
 NUM_THREAD = int(os.getenv("TRINAXAI_NUM_THREAD", "8"))
 # Concurrent embeddings. On 16 GB we use 2 workers to avoid competing with the
 # LLM; the powerful profile bumps to 4 if RAM is free.
-EMBED_WORKERS = int(os.getenv("TRINAXAI_EMBED_WORKERS",
-    "6" if _ULTRA_PROFILE else
-    "4" if _MAX_QUALITY_PROFILE else
-    "1" if _LOW_RESOURCE_PROFILE else "2"))
-EMBED_BATCH_SIZE = int(os.getenv("TRINAXAI_EMBED_BATCH", "4" if _ULTRA_PROFILE else "1"))
+EMBED_WORKERS = int(
+    os.getenv(
+        "TRINAXAI_EMBED_WORKERS",
+        "6"
+        if _ULTRA_PROFILE
+        else "4"
+        if _MAX_QUALITY_PROFILE
+        else "1"
+        if _LOW_RESOURCE_PROFILE
+        else "2",
+    )
+)
+EMBED_BATCH_SIZE = int(
+    os.getenv("TRINAXAI_EMBED_BATCH", "4" if _ULTRA_PROFILE else "1")
+)
 # On 16 GB we unload models after each request. The powerful profile can keep
 # them warm for lower latency.
-KEEP_ALIVE = os.getenv("TRINAXAI_KEEP_ALIVE",
-    "60m" if _ULTRA_PROFILE else
-    "30m" if _MAX_QUALITY_PROFILE else
-    "0s" if _LOW_RESOURCE_PROFILE else "0s")
+KEEP_ALIVE = os.getenv(
+    "TRINAXAI_KEEP_ALIVE",
+    "60m"
+    if _ULTRA_PROFILE
+    else "30m"
+    if _MAX_QUALITY_PROFILE
+    else "0s"
+    if _LOW_RESOURCE_PROFILE
+    else "0s",
+)
 REQUEST_TIMEOUT = float(os.getenv("TRINAXAI_TIMEOUT", "300"))
 
 # ==================== CHUNKING ====================
 # Prose (md, txt, pdf, configs): token-based chunking.
 CHUNK_SIZE = int(os.getenv("TRINAXAI_CHUNK_SIZE", "1536" if _ULTRA_PROFILE else "1024"))
-CHUNK_OVERLAP = int(os.getenv("TRINAXAI_CHUNK_OVERLAP", "220" if _ULTRA_PROFILE else "150"))
+CHUNK_OVERLAP = int(
+    os.getenv("TRINAXAI_CHUNK_OVERLAP", "220" if _ULTRA_PROFILE else "150")
+)
 # Code: AST-based chunking (respects functions/classes), measured in lines.
 CODE_CHUNK_LINES = int(os.getenv("TRINAXAI_CODE_CHUNK_LINES", "60"))
 CODE_CHUNK_LINES_OVERLAP = int(os.getenv("TRINAXAI_CODE_CHUNK_LINES_OVERLAP", "12"))
@@ -126,13 +233,23 @@ CODE_MAX_CHARS = int(os.getenv("TRINAXAI_CODE_MAX_CHARS", "2000"))
 
 # ==================== RETRIEVAL ====================
 # Final chunks injected into the LLM as context.
-SIMILARITY_TOP_K = int(os.getenv("TRINAXAI_SIMILARITY_TOP_K", "8" if _ULTRA_PROFILE else "5"))
+SIMILARITY_TOP_K = int(
+    os.getenv("TRINAXAI_SIMILARITY_TOP_K", "8" if _ULTRA_PROFILE else "5")
+)
 # Candidates each retriever (vector / BM25) contributes before fusion.
 # With reranking we ask for MORE candidates (the reranker narrows to the best).
-FUSION_CANDIDATES = int(os.getenv("TRINAXAI_FUSION_CANDIDATES",
-    "32" if _ULTRA_PROFILE else
-    "20" if _MAX_QUALITY_PROFILE else
-    "8" if _LOW_RESOURCE_PROFILE else "12"))
+FUSION_CANDIDATES = int(
+    os.getenv(
+        "TRINAXAI_FUSION_CANDIDATES",
+        "32"
+        if _ULTRA_PROFILE
+        else "20"
+        if _MAX_QUALITY_PROFILE
+        else "8"
+        if _LOW_RESOURCE_PROFILE
+        else "12",
+    )
+)
 
 # ── RERANKING (cross-encoder, big precision boost) ──
 # Reorders candidates by real relevance to the query before passing them
@@ -164,7 +281,10 @@ def make_embed() -> OllamaEmbedding:
         embed_batch_size=EMBED_BATCH_SIZE,
         num_workers=EMBED_WORKERS,  # concurrent requests to Ollama
         # Ultra uses larger chunks; the rest keep context bounded for RAM.
-        ollama_additional_kwargs={"num_thread": NUM_THREAD, "num_ctx": 4096 if _ULTRA_PROFILE else 2048},
+        ollama_additional_kwargs={
+            "num_thread": NUM_THREAD,
+            "num_ctx": 4096 if _ULTRA_PROFILE else 2048,
+        },
     )
 
 
@@ -172,29 +292,76 @@ def make_embed() -> OllamaEmbedding:
 # Extensions with a reliable AST parser. The rest fall back to token chunking.
 CODE_LANG_BY_EXT = {
     ".py": "python",
-    ".js": "javascript", ".jsx": "javascript", ".cjs": "javascript", ".mjs": "javascript",
-    ".ts": "typescript", ".tsx": "tsx",
+    ".js": "javascript",
+    ".jsx": "javascript",
+    ".cjs": "javascript",
+    ".mjs": "javascript",
+    ".ts": "typescript",
+    ".tsx": "tsx",
     ".html": "html",
-    ".css": "css", ".scss": "css", ".sass": "css",
+    ".css": "css",
+    ".scss": "css",
+    ".sass": "css",
     ".sh": "bash",
     ".sql": "sql",
-    ".c": "c", ".h": "c", ".cpp": "cpp",
-    ".cs": "csharp", ".java": "java", ".go": "go",
-    ".rb": "ruby", ".php": "php", ".rs": "rust",
-    ".vue": "html", ".svelte": "html",
+    ".c": "c",
+    ".h": "c",
+    ".cpp": "cpp",
+    ".cs": "csharp",
+    ".java": "java",
+    ".go": "go",
+    ".rb": "ruby",
+    ".php": "php",
+    ".rs": "rust",
+    ".vue": "html",
+    ".svelte": "html",
 }
 
 # Extensions to index (code + prose + documents).
 REQUIRED_EXTS = [
     # code
-    ".py", ".js", ".jsx", ".ts", ".tsx", ".vue", ".svelte",
-    ".html", ".css", ".scss", ".sass",
-    ".c", ".h", ".cpp", ".cs", ".java", ".go", ".rb", ".php", ".rs",
-    ".sh", ".ps1", ".dockerfile", ".sql", ".graphql", ".cjs", ".mjs",
+    ".py",
+    ".js",
+    ".jsx",
+    ".ts",
+    ".tsx",
+    ".vue",
+    ".svelte",
+    ".html",
+    ".css",
+    ".scss",
+    ".sass",
+    ".c",
+    ".h",
+    ".cpp",
+    ".cs",
+    ".java",
+    ".go",
+    ".rb",
+    ".php",
+    ".rs",
+    ".sh",
+    ".ps1",
+    ".dockerfile",
+    ".sql",
+    ".graphql",
+    ".cjs",
+    ".mjs",
     # config / data
-    ".json", ".yml", ".yaml", ".toml", ".xml", ".ini", ".csv",
+    ".json",
+    ".yml",
+    ".yaml",
+    ".toml",
+    ".xml",
+    ".ini",
+    ".csv",
     # prose / documents
-    ".md", ".mdx", ".txt", ".rst", ".pdf", ".docx",
+    ".md",
+    ".mdx",
+    ".txt",
+    ".rst",
+    ".pdf",
+    ".docx",
 ]
 
 # Aggressive exclusion: third-party deps, builds, binaries, caches.
@@ -203,40 +370,95 @@ REQUIRED_EXTS = [
 # in index.py (load_docs function) to skip matching files at the reader level.
 EXCLUDE_PATTERNS = [
     # dependencies and environments
-    "**/node_modules/**", "**/.git/**", "**/.svn/**",
-    "**/venv/**", "**/.venv/**", "**/env/**",
-    "**/site-packages/**", "**/Lib/**", "**/lib/python*/**",
-    "**/.tox/**", "**/.nox/**", "**/*.egg-info/**", "**/*.dist-info/**",
+    "**/node_modules/**",
+    "**/.git/**",
+    "**/.svn/**",
+    "**/venv/**",
+    "**/.venv/**",
+    "**/env/**",
+    "**/site-packages/**",
+    "**/Lib/**",
+    "**/lib/python*/**",
+    "**/.tox/**",
+    "**/.nox/**",
+    "**/*.egg-info/**",
+    "**/*.dist-info/**",
     # builds and outputs
-    "**/dist/**", "**/build/**", "**/.next/**", "**/.nuxt/**",
-    "**/out/**", "**/.output/**", "**/.firebase/**", "**/.vercel/**",
-    "**/coverage/**", "**/.cache/**", "**/__pycache__/**",
-    "**/.pytest_cache/**", "**/.mypy_cache/**", "**/.ruff_cache/**",
+    "**/dist/**",
+    "**/build/**",
+    "**/.next/**",
+    "**/.nuxt/**",
+    "**/out/**",
+    "**/.output/**",
+    "**/.firebase/**",
+    "**/.vercel/**",
+    "**/coverage/**",
+    "**/.cache/**",
+    "**/__pycache__/**",
+    "**/.pytest_cache/**",
+    "**/.mypy_cache/**",
+    "**/.ruff_cache/**",
     # editors / tools
-    "**/.idea/**", "**/.vscode/**", "**/.continue/**", "**/.github/**",
+    "**/.idea/**",
+    "**/.vscode/**",
+    "**/.continue/**",
+    "**/.github/**",
     # the index itself and backups
-    "**/storage/**", "**/storage.bak*/**",
+    "**/storage/**",
+    "**/storage.bak*/**",
     # logs and runtime artifacts
     "**/logs/**",
     # generated / minified / lockfiles
-    "**/*.min.js", "**/*.min.css", "**/*.map",
-    "**/*.log", "**/package-lock.json", "**/yarn.lock", "**/pnpm-lock.yaml",
-    "**/poetry.lock", "**/composer.lock",
+    "**/*.min.js",
+    "**/*.min.css",
+    "**/*.map",
+    "**/*.log",
+    "**/package-lock.json",
+    "**/yarn.lock",
+    "**/pnpm-lock.yaml",
+    "**/poetry.lock",
+    "**/composer.lock",
 ]
 
 # Folder names to PRUNE during traversal (do not descend into them).
 # Much faster than enumerating everything and filtering afterwards.
 EXCLUDE_DIR_NAMES = {
-    "node_modules", ".git", ".svn", ".hg",
-    "venv", ".venv", "env", ".env",
-    "site-packages", "Lib", "lib64",
-    ".tox", ".nox", "__pycache__",
-    ".pytest_cache", ".mypy_cache", ".ruff_cache",
-    "dist", "build", ".next", ".nuxt", "out", ".output",
-    ".firebase", ".vercel", "coverage", ".cache",
-    ".idea", ".vscode", ".continue", ".github",
-    "storage", "storage.bak.nomic",
-    "logs", "certs", "backups",
+    "node_modules",
+    ".git",
+    ".svn",
+    ".hg",
+    "venv",
+    ".venv",
+    "env",
+    ".env",
+    "site-packages",
+    "Lib",
+    "lib64",
+    ".tox",
+    ".nox",
+    "__pycache__",
+    ".pytest_cache",
+    ".mypy_cache",
+    ".ruff_cache",
+    "dist",
+    "build",
+    ".next",
+    ".nuxt",
+    "out",
+    ".output",
+    ".firebase",
+    ".vercel",
+    "coverage",
+    ".cache",
+    ".idea",
+    ".vscode",
+    ".continue",
+    ".github",
+    "storage",
+    "storage.bak.nomic",
+    "logs",
+    "certs",
+    "backups",
 }
 
 # Max size per file. Avoids giant generated CSV/HTML that would produce
@@ -249,20 +471,80 @@ UPLOAD_MAX_BYTES = int(os.getenv("TRINAXAI_UPLOAD_MAX_BYTES", str(512 * 1024 * 1
 # ==================== MODEL AUTO-ROUTER ====================
 # Hints that the query is CODE-related.
 _CODE_HINTS = (
-    "código", "codigo", "function", "función", "funcion", "def ", "class ",
-    "import", "const ", "let ", "var ", "react", "python", "javascript",
-    "typescript", "html", "css", "api", "endpoint", "sql", "query", "regex",
-    "bug", "error", "traceback", "exception", "compil", "deploy", "docker",
-    "git", "npm", "vite", "tailwind", "componente", "librería", "libreria",
-    "dependencia", "framework", "archivo", "script", ".py", ".js", ".ts",
-    ".tsx", ".jsx", ".html", ".css", ".json", "package.json",
+    "código",
+    "codigo",
+    "function",
+    "función",
+    "funcion",
+    "def ",
+    "class ",
+    "import",
+    "const ",
+    "let ",
+    "var ",
+    "react",
+    "python",
+    "javascript",
+    "typescript",
+    "html",
+    "css",
+    "api",
+    "endpoint",
+    "sql",
+    "query",
+    "regex",
+    "bug",
+    "error",
+    "traceback",
+    "exception",
+    "compil",
+    "deploy",
+    "docker",
+    "git",
+    "npm",
+    "vite",
+    "tailwind",
+    "componente",
+    "librería",
+    "libreria",
+    "dependencia",
+    "framework",
+    "archivo",
+    "script",
+    ".py",
+    ".js",
+    ".ts",
+    ".tsx",
+    ".jsx",
+    ".html",
+    ".css",
+    ".json",
+    "package.json",
 )
 # Hints the query is COMPLEX (deserves the larger 7b/14b model).
 _DEEP_HINTS = (
-    "refactor", "optimiz", "arquitect", "architecture", "depura", "debug",
-    "por qué", "porque falla", "explica a fondo", "paso a paso", "detalle",
-    "rendimiento", "performance", "seguridad", "security", "diseña", "implementa",
-    "completo", "varios archivos", "compara", "analiza", "revisa",
+    "refactor",
+    "optimiz",
+    "arquitect",
+    "architecture",
+    "depura",
+    "debug",
+    "por qué",
+    "porque falla",
+    "explica a fondo",
+    "paso a paso",
+    "detalle",
+    "rendimiento",
+    "performance",
+    "seguridad",
+    "security",
+    "diseña",
+    "implementa",
+    "completo",
+    "varios archivos",
+    "compara",
+    "analiza",
+    "revisa",
 )
 
 
@@ -277,12 +559,12 @@ def route_model(text: str) -> str:
     is_code = ("`" in text) or any(h in t for h in _CODE_HINTS)
     is_deep = len(text) > 600 or any(h in t for h in _DEEP_HINTS)
     if is_deep:
-        return MODEL_DEEP          # complex (code or not) -> large model
+        return MODEL_DEEP  # complex (code or not) -> large model
     if is_code:
-        return MODEL_CODE          # regular code -> coder 3b
+        return MODEL_CODE  # regular code -> coder 3b
     if len(text.strip()) < 25:
-        return MODEL_FAST          # greeting / trivial -> ultra-fast
-    return MODEL_GENERAL           # general chat -> llama3.2
+        return MODEL_FAST  # greeting / trivial -> ultra-fast
+    return MODEL_GENERAL  # general chat -> llama3.2
 
 
 def make_reranker():
@@ -326,6 +608,7 @@ def create_ssl_context(verify: bool | None = None) -> "ssl.SSLContext | None":
     When verify is True, returns None so urllib uses the default secure context.
     """
     import ssl
+
     if verify is None:
         verify = TLS_VERIFY
     if verify:

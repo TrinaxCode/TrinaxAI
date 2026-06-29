@@ -2,6 +2,7 @@
 
 Deprecated — use ``python -m trinaxai_cli`` or ``python trinaxai_cli.py`` instead.
 """
+
 import warnings
 
 warnings.warn(
@@ -10,8 +11,7 @@ warnings.warn(
     stacklevel=2,
 )
 
-from trinaxai_cli.app import main
-
+from trinaxai_cli.app import main  # noqa: E402
 
 if __name__ == "__main__":
     raise SystemExit(main())

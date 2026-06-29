@@ -24,7 +24,7 @@ import time
 import uuid
 from collections import defaultdict
 from io import BytesIO
-from typing import Any, Optional
+from typing import Any
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware

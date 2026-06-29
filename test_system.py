@@ -10,7 +10,6 @@ import os
 import shutil
 import ssl
 import sys
-import time
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -198,11 +197,9 @@ def main():
         meminfo_path = Path("/proc/meminfo")
         if meminfo_path.exists():
             mem = meminfo_path.read_text()
-            mem_total = mem_avail = 0
+            mem_avail = 0
             for line in mem.split("\n"):
-                if line.startswith("MemTotal:"):
-                    mem_total = int(line.split()[1])
-                elif line.startswith("MemAvailable:"):
+                if line.startswith("MemAvailable:"):
                     mem_avail = int(line.split()[1])
             if mem_avail > 0:
                 avail_gb = mem_avail / (1024**2)
