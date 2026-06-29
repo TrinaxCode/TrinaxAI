@@ -22,4 +22,4 @@ Los mantenedores pueden editar, ocultar o eliminar comentarios, issues, pull req
 
 ## Reportar una infracción
 
-Para asuntos que sea seguro tratar públicamente, abre un GitHub issue. Para violaciones de conducta privadas o reportes sensibles, envía un correo directamente a [security@trinaxcode.com](mailto:security@trinaxcode.com) en lugar de usar un issue público. Para vulnerabilidades de seguridad, sigue las instrucciones de `SECURITY.md`.
+Para asuntos que sea seguro tratar públicamente, abre un GitHub issue. Para violaciones de conducta privadas o reportes sensibles, envía un correo directamente a [trinaxcode@gmail.com](mailto:trinaxcode@gmail.com) en lugar de usar un issue público. Para vulnerabilidades de seguridad, sigue las instrucciones de `SECURITY.md`.

@@ -22,4 +22,4 @@ Maintainers may edit, hide, or remove comments, issues, pull requests, or other 
 
 ## Reporting
 
-For concerns safe to discuss publicly, open a GitHub issue. For private conduct violations or sensitive reports, email [security@trinaxcode.com](mailto:security@trinaxcode.com) directly instead of using a public issue. For security vulnerabilities, follow `SECURITY.md`.
+For concerns safe to discuss publicly, open a GitHub issue. For private conduct violations or sensitive reports, email [trinaxcode@gmail.com](mailto:trinaxcode@gmail.com) directly instead of using a public issue. For security vulnerabilities, follow `SECURITY.md`.

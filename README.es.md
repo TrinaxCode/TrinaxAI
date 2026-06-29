@@ -1,6 +1,10 @@
 # 🚀 TrinaxAI — Asistente de IA 100% Local
 
 <p align="center">
+  <img src="chat-pwa/public/logo-of-app.webp" alt="TrinaxAI Logo" width="180" />
+</p>
+
+<p align="center">
   <strong>Asistente de IA open-source, local-first con RAG, visión, voz, CLI y PWA.</strong><br>
   Corre completamente en tu máquina. Sin nube. Sin suscripciones. Sin límites.
 </p>

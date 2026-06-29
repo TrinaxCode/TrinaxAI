@@ -13,7 +13,7 @@ Only the latest commit on `main` receives security patches.
 
 **Do not open a public issue.** Instead, email:
 
-> **security@trinaxcode.com**
+> **trinaxcode@gmail.com**
 
 We aim to respond within **72 hours** and publish a fix within **7 days** of confirmation.
 
