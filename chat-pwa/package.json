@@ -11,7 +11,7 @@
     "test": "echo 'No frontend unit tests yet. Run: python test_system.py --verbose' && exit 0"
   },
   "dependencies": {
-    "framer-motion": "^11.15.0",
+    "framer-motion": "^12.42.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-icons": "^5.4.0",
