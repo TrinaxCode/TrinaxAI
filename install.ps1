@@ -23,32 +23,57 @@ function Write-Step($Text) { Write-Host "`n=== $Text ===`n" -ForegroundColor Blu
 function Write-Ok($Text) { Write-Host "  [OK] $Text" -ForegroundColor Green }
 function Write-Warn($Text) { Write-Host "  [!] $Text" -ForegroundColor Yellow }
 function Test-Cmd($Name) { return $null -ne (Get-Command $Name -ErrorAction SilentlyContinue) }
-function Test-PythonCandidate($Exe, [string[]]$Args = @()) {
+function Update-ProcessPath {
+  $MachinePath = [Environment]::GetEnvironmentVariable("Path", "Machine")
+  $UserPath = [Environment]::GetEnvironmentVariable("Path", "User")
+  $ExtraPaths = @(
+    (Join-Path $env:LOCALAPPDATA "Programs\Python\Python312"),
+    (Join-Path $env:LOCALAPPDATA "Programs\Python\Python312\Scripts"),
+    (Join-Path $env:LOCALAPPDATA "Programs\Python\Python311"),
+    (Join-Path $env:LOCALAPPDATA "Programs\Python\Python311\Scripts"),
+    (Join-Path $env:ProgramFiles "Python312"),
+    (Join-Path $env:ProgramFiles "Python312\Scripts"),
+    (Join-Path $env:ProgramFiles "Python311"),
+    (Join-Path $env:ProgramFiles "Python311\Scripts")
+  ) | Where-Object { $_ -and (Test-Path $_) }
+  $env:Path = (@($MachinePath, $UserPath) + $ExtraPaths) -join ";"
+}
+function Test-PythonCandidate($Exe, [string[]]$PythonArgs = @()) {
   try {
-    $Output = & $Exe @Args -c "import sys; print(sys.executable)" 2>$null
+    $InvocationArgs = @($PythonArgs) + @("-c", "import sys; print(sys.executable)")
+    $Output = & $Exe @InvocationArgs 2>$null
     return ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace(($Output | Select-Object -First 1)))
   } catch {
     return $false
   }
 }
 function Get-PythonCommand {
+  $LocalPython312 = Join-Path $env:LOCALAPPDATA "Programs\Python\Python312\python.exe"
+  $LocalPython311 = Join-Path $env:LOCALAPPDATA "Programs\Python\Python311\python.exe"
+  $ProgramPython312 = Join-Path $env:ProgramFiles "Python312\python.exe"
+  $ProgramPython311 = Join-Path $env:ProgramFiles "Python311\python.exe"
   $Candidates = @(
     @{ Exe = "py"; Args = @("-3.12") },
     @{ Exe = "py"; Args = @("-3.11") },
     @{ Exe = "py"; Args = @("-3") },
+    @{ Exe = $LocalPython312; Args = @() },
+    @{ Exe = $LocalPython311; Args = @() },
+    @{ Exe = $ProgramPython312; Args = @() },
+    @{ Exe = $ProgramPython311; Args = @() },
     @{ Exe = "python"; Args = @() },
     @{ Exe = "python3"; Args = @() }
   )
   foreach ($Candidate in $Candidates) {
-    if ((Test-Cmd $Candidate.Exe) -and (Test-PythonCandidate $Candidate.Exe $Candidate.Args)) {
+    if ((Test-Cmd $Candidate.Exe) -and (Test-PythonCandidate -Exe $Candidate.Exe -PythonArgs $Candidate.Args)) {
       return $Candidate
     }
   }
   return $null
 }
-function Invoke-Python($PythonCommand, [string[]]$Args) {
+function Invoke-Python($PythonCommand, [string[]]$PythonArgs) {
   $Exe = $PythonCommand.Exe
-  & $Exe @($PythonCommand.Args + $Args)
+  $InvocationArgs = @($PythonCommand.Args) + @($PythonArgs)
+  & $Exe @InvocationArgs
 }
 function Normalize-Profile($Value, $Fallback) {
   $Text = ""
@@ -67,10 +92,31 @@ function Normalize-Profile($Value, $Fallback) {
   }
 }
 function Install-WingetPackage($Id, $Name) {
-  if (-not (Test-Cmd winget)) { return }
-  if (Test-Cmd $Name) { return }
+  if (-not (Test-Cmd winget)) { return $false }
+  if (Test-Cmd $Name) { return $true }
   Write-Host "  Installing $Id with winget..."
   winget install --id $Id --silent --accept-package-agreements --accept-source-agreements
+  if ($LASTEXITCODE -ne 0) {
+    Write-Warn "winget could not install $Id automatically."
+    return $false
+  }
+  Update-ProcessPath
+  return $true
+}
+function Require-Command($Command, $WingetId, $InstallName, $ManualUrl) {
+  if (Test-Cmd $Command) {
+    Write-Ok "$InstallName found"
+    return
+  }
+  if (Install-WingetPackage $WingetId $Command) {
+    if (Test-Cmd $Command) {
+      Write-Ok "$InstallName installed"
+      return
+    }
+  }
+  Write-Warn "$InstallName was not found and could not be installed automatically."
+  Write-Warn "Install it manually from $ManualUrl, reopen PowerShell, and re-run install.ps1."
+  exit 1
 }
 function Test-OllamaReady {
   try {
@@ -215,39 +261,41 @@ $EnvLines | Set-Content -Encoding UTF8 ".env"
 Write-Ok ".env written with profile=$Profile"
 
 Write-Step "2/6 Dependencies"
+Update-ProcessPath
 if (Test-Cmd winget) {
-  Install-WingetPackage "Python.Python.3.12" "python"
-  Install-WingetPackage "Git.Git" "git"
-  Install-WingetPackage "OpenJS.NodeJS.LTS" "node"
-  Install-WingetPackage "Ollama.Ollama" "ollama"
-  $env:Path = [Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [Environment]::GetEnvironmentVariable("Path", "User")
+  $PythonCommand = Get-PythonCommand
+  if ($null -eq $PythonCommand) {
+    Write-Host "  Installing Python.Python.3.12 with winget..."
+    winget install --id Python.Python.3.12 --silent --accept-package-agreements --accept-source-agreements
+    if ($LASTEXITCODE -ne 0) {
+      Write-Warn "winget could not install Python automatically."
+      Write-Warn "Install Python 3.12 from https://python.org, reopen PowerShell, and re-run install.ps1."
+      exit 1
+    }
+    Update-ProcessPath
+    $PythonCommand = Get-PythonCommand
+  }
+} else {
+  Write-Warn "winget was not found. Automatic dependency installation is not available on this Windows image."
+  $PythonCommand = Get-PythonCommand
 }
-$PythonCommand = Get-PythonCommand
 if ($null -eq $PythonCommand) {
   Write-Warn "Python 3.10+ was not found or only the Microsoft Store alias is available."
-  Write-Warn "Install Python from winget/python.org, reopen PowerShell, and re-run this script:"
+  Write-Warn "Install Python from winget/python.org, reopen PowerShell, and re-run this script."
+  Write-Warn "Recommended command:"
   Write-Warn "  winget install --id Python.Python.3.12 --source winget"
   exit 1
 } else {
-  $PythonExe = Invoke-Python $PythonCommand @("-c", "import sys; print(sys.executable)")
+  $PythonExe = Invoke-Python -PythonCommand $PythonCommand -PythonArgs @("-c", "import sys; print(sys.executable)")
   Write-Ok "Python found: $($PythonExe | Select-Object -First 1)"
 }
+Require-Command "git" "Git.Git" "Git" "https://git-scm.com/download/win"
+Require-Command "node" "OpenJS.NodeJS.LTS" "Node.js" "https://nodejs.org"
+Require-Command "ollama" "Ollama.Ollama" "Ollama" "https://ollama.com/download/windows"
 
 $FreeGb = [math]::Round((Get-PSDrive -Name ((Get-Location).Path.Substring(0,1))).Free / 1GB)
 if ($FreeGb -lt 12) {
   Write-Warn "Only $FreeGb GB free on this drive. Model downloads may fail."
-}
-if (-not (Test-Cmd node)) {
-  Write-Warn "Node.js was not found. Install Node.js 18+ from https://nodejs.org and re-run this script."
-  exit 1
-} else {
-  Write-Ok "Node.js found"
-}
-if (-not (Test-Cmd ollama)) {
-  Write-Warn "Ollama was not found. Download it from https://ollama.com/download/windows, start Ollama, then re-run this script."
-  exit 1
-} else {
-  Write-Ok "Ollama found"
 }
 
 Write-Step "3/6 Python environment"
@@ -256,7 +304,7 @@ if (-not (Test-Path ".venv\Scripts\python.exe")) {
     Write-Warn "Existing .venv is incomplete. Recreating it."
     Remove-Item -Recurse -Force ".venv"
   }
-  Invoke-Python $PythonCommand @("-m", "venv", ".venv")
+  Invoke-Python -PythonCommand $PythonCommand -PythonArgs @("-m", "venv", ".venv")
 }
 if (-not (Test-Path ".venv\Scripts\python.exe")) {
   Write-Warn "Could not create .venv\Scripts\python.exe. Reopen PowerShell after Python installation and re-run install.ps1."
