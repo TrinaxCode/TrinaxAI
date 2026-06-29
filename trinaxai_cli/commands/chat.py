@@ -146,8 +146,30 @@ def run(args: Any, client: Any, ui: Any, config: Any) -> int:
             ui.markdown(answer)
             return 0
 
-        ui.print("TrinaxAI")
-        ui.info(f"Local chat session: {session_name}. Type /help for commands, /exit or Ctrl-D to quit.")
+        ui.panel(
+            "\n".join(
+                [
+                    "TrinaxAI CLI — your local-first AI assistant.",
+                    "",
+                    "Type a question to chat with the AI, or use these commands:",
+                    "",
+                    "  /help              Show slash commands",
+                    "  /exit              Exit chat",
+                    "  /clear             Clear conversation history",
+                    "  /model [name]      Show or set the model to use",
+                    "  /index [path]      Index a folder into RAG (default: current dir)",
+                    "  /status            Show local service status",
+                    "",
+                    "[bold]Quick start:[/]  trinaxai start   → starts services",
+                    "               trinaxai index .  → indexes current folder",
+                    "               trinaxai doctor   → health check",
+                    "               trinaxai help     → full command list",
+                ]
+            ),
+            title="Welcome to TrinaxAI",
+        )
+        ui.print("")
+        ui.info(f"Session: {session_name} | Type /help for commands, /exit or Ctrl-D to quit.")
         while True:
             try:
                 user = ui.prompt("you")
@@ -182,6 +204,5 @@ def run(args: Any, client: Any, ui: Any, config: Any) -> int:
                 continue
             session.append("assistant", answer)
             messages.append({"role": "assistant", "content": answer})
-            ui.markdown(answer)
             ui.print("")
     return 0
