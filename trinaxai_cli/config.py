@@ -26,7 +26,7 @@ else:  # pragma: no cover - project requires py>=3.10 but be defensive
 
 LOG = logging.getLogger(__name__)
 
-DEFAULT_BASE_URL = "https://localhost:3333"
+DEFAULT_BASE_URL = "http://localhost:3333"
 
 
 def _default_config_path() -> Path:
