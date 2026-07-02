@@ -9,6 +9,9 @@ Ejecuta desde la raiz del repositorio:
 ```bash
 python3 scripts/public_readiness.py
 python3 -m py_compile rag_api.py index.py config.py trinaxai_cli.py service_manager.py test_system.py scripts/public_readiness.py
+# En Windows/PowerShell, tambien valida:
+# powershell -NoProfile -ExecutionPolicy Bypass -File .\update.ps1 -NonInteractive -NoPull -NoBackup -NoRestart -NoAudit
+# powershell -NoProfile -ExecutionPolicy Bypass -File .\uninstall.ps1 -Yes -KeepServices -KeepAutostart -KeepVenv -KeepFrontend -KeepLogs -KeepEnv -KeepFirewall
 cd chat-pwa && npm run build
 ```
 
@@ -50,7 +53,7 @@ Antes de publicar, verifica estos flujos en una instalacion limpia:
 
 Manten defaults conservadores para equipos locales:
 
-- Perfil 8 GB: contexto pequeno, un worker de embeddings, LLM `keep_alive=0s`, embeddings `keep_alive=10m`, batch de embeddings 2.
+- Perfil 8 GB: modelos 1B/1.5B, embeddings lite, contexto pequeno, un worker de embeddings, LLM `keep_alive=0s`, embeddings `keep_alive=5m`, batch de embeddings 1.
 - Perfil 16 GB: contexto balanceado, dos workers de embeddings, LLM `keep_alive=0s`, embeddings `keep_alive=15m`, batch de embeddings 8.
 - Perfil max: contexto mas grande, cuatro workers de embeddings, LLM `keep_alive=30m`, embeddings `keep_alive=30m`, batch de embeddings 8.
 - Perfil ultra: contexto maximo, seis workers de embeddings, LLM `keep_alive=60m`, embeddings `keep_alive=30m`, batch de embeddings 16.

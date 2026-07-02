@@ -23,6 +23,15 @@ function Write-Step($Text) { Write-Host "`n=== $Text ===`n" -ForegroundColor Blu
 function Write-Ok($Text) { Write-Host "  [OK] $Text" -ForegroundColor Green }
 function Write-Warn($Text) { Write-Host "  [!] $Text" -ForegroundColor Yellow }
 function Test-Cmd($Name) { return $null -ne (Get-Command $Name -ErrorAction SilentlyContinue) }
+function Test-IsAdmin {
+  try {
+    $Identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+    $Principal = New-Object Security.Principal.WindowsPrincipal($Identity)
+    return $Principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+  } catch {
+    return $false
+  }
+}
 function Update-ProcessPath {
   $MachinePath = [Environment]::GetEnvironmentVariable("Path", "Machine")
   $UserPath = [Environment]::GetEnvironmentVariable("Path", "User")
@@ -39,6 +48,25 @@ function Update-ProcessPath {
     (Join-Path $env:ProgramFiles "Ollama")
   ) | Where-Object { $_ -and (Test-Path $_) }
   $env:Path = (@($MachinePath, $UserPath) + $ExtraPaths) -join ";"
+}
+function Set-EnvFileValue($Path, $Key, $Value) {
+  $Line = "$Key=$Value"
+  $Lines = @()
+  if (Test-Path $Path) {
+    $Lines = Get-Content -LiteralPath $Path
+  }
+  $Updated = $false
+  $Next = @()
+  foreach ($Existing in $Lines) {
+    if ($Existing -match "^\s*$([regex]::Escape($Key))=") {
+      $Next += $Line
+      $Updated = $true
+    } else {
+      $Next += $Existing
+    }
+  }
+  if (-not $Updated) { $Next += $Line }
+  $Next | Set-Content -Encoding UTF8 -LiteralPath $Path
 }
 function Test-PythonCandidate($Exe, [string[]]$PythonArgs = @()) {
   try {
@@ -255,6 +283,20 @@ function Add-UserPath($PathToAdd) {
     $env:Path = "$env:Path;$PathToAdd"
   }
 }
+function Get-OpenSslCommand {
+  $ProgramFilesX86 = ${env:ProgramFiles(x86)}
+  $Candidates = @(
+    "openssl",
+    (Join-Path $env:ProgramFiles "Git\usr\bin\openssl.exe")
+  )
+  if ($ProgramFilesX86) {
+    $Candidates += (Join-Path $ProgramFilesX86 "Git\usr\bin\openssl.exe")
+  }
+  foreach ($Candidate in $Candidates) {
+    if ($Candidate -and (Test-Cmd $Candidate)) { return $Candidate }
+  }
+  return $null
+}
 function Test-OllamaReady {
   try {
     Invoke-RestMethod -Uri "http://localhost:11434/api/tags" -TimeoutSec 3 | Out-Null
@@ -282,13 +324,43 @@ function Ensure-OllamaRunning {
 function Ensure-TrinaxAICertificate($Repo, $LanIp) {
   $CertDir = Join-Path $Repo "chat-pwa\certs"
   New-Item -ItemType Directory -Force -Path $CertDir | Out-Null
+  $KeyPath = Join-Path $CertDir "localhost-key.pem"
+  $CertPath = Join-Path $CertDir "localhost.pem"
+  $CrtPath = Join-Path $CertDir "trinaxai-local.crt"
   $PfxPath = Join-Path $CertDir "trinaxai-local.pfx"
   $Passphrase = "trinaxai-local"
-  if (Test-Path $PfxPath) {
+  if ((Test-Path $KeyPath) -and (Test-Path $CertPath) -and (Test-Path $PfxPath)) {
     Write-Ok "HTTPS certificate found"
     return
   }
   Write-Host "  Creating trusted HTTPS certificate for TrinaxAI..."
+  $OpenSsl = Get-OpenSslCommand
+  if ($OpenSsl) {
+    try {
+      $SanParts = @("DNS:localhost", "DNS:$env:COMPUTERNAME", "IP:127.0.0.1")
+      if ($LanIp) { $SanParts += "IP:$LanIp" }
+      $San = "subjectAltName=$($SanParts -join ',')"
+      & $OpenSsl req -x509 -newkey rsa:2048 -sha256 -days 1825 -nodes `
+        -keyout $KeyPath `
+        -out $CertPath `
+        -subj "/CN=TrinaxAI Local HTTPS" `
+        -addext $San | Out-Null
+      if ($LASTEXITCODE -ne 0) { throw "openssl certificate generation failed" }
+      Copy-Item -Force $CertPath $CrtPath
+      & $OpenSsl pkcs12 -export -out $PfxPath -inkey $KeyPath -in $CertPath -passout "pass:$Passphrase" | Out-Null
+      if ($LASTEXITCODE -ne 0) { throw "openssl pfx export failed" }
+      try {
+        Import-Certificate -FilePath $CertPath -CertStoreLocation Cert:\CurrentUser\Root | Out-Null
+        Write-Ok "Trusted HTTPS certificate installed"
+      } catch {
+        Write-Warn "Certificate generated but could not be trusted automatically: $($_.Exception.Message)"
+      }
+      return
+    } catch {
+      Write-Warn "OpenSSL certificate generation failed: $($_.Exception.Message)"
+      Remove-Item -Force -ErrorAction SilentlyContinue $KeyPath, $CertPath, $CrtPath, $PfxPath
+    }
+  }
   try {
     Get-ChildItem Cert:\CurrentUser\My | Where-Object { $_.FriendlyName -eq "TrinaxAI Local HTTPS" } | Remove-Item -ErrorAction SilentlyContinue
     Get-ChildItem Cert:\CurrentUser\Root | Where-Object { $_.FriendlyName -eq "TrinaxAI Local HTTPS" } | Remove-Item -ErrorAction SilentlyContinue
@@ -310,11 +382,55 @@ function Ensure-TrinaxAICertificate($Repo, $LanIp) {
     $RootStore.Close()
     $SecurePass = ConvertTo-SecureString -String $Passphrase -Force -AsPlainText
     Export-PfxCertificate -Cert $Cert -FilePath $PfxPath -Password $SecurePass | Out-Null
-    Write-Ok "Trusted HTTPS certificate installed"
+    Write-Ok "Trusted HTTPS certificate installed for frontend"
+    Write-Warn "PEM files were not generated. RAG API will use HTTP behind the local PWA proxy."
   } catch {
     Write-Warn "Could not create a trusted HTTPS certificate automatically: $($_.Exception.Message)"
     Write-Warn "TrinaxAI will still run, but your browser may show 'Not secure' until you trust a local certificate."
   }
+}
+function Sync-RagTransportFromCertificate($Repo) {
+  $EnvPath = Join-Path $Repo ".env"
+  $KeyPath = Join-Path $Repo "chat-pwa\certs\localhost-key.pem"
+  $CertPath = Join-Path $Repo "chat-pwa\certs\localhost.pem"
+  if ((Test-Path $KeyPath) -and (Test-Path $CertPath)) {
+    Set-EnvFileValue $EnvPath "TRINAXAI_RAG_HTTPS" "1"
+    Set-EnvFileValue $EnvPath "TRINAXAI_RAG_TARGET" "https://127.0.0.1:3333"
+    Set-EnvFileValue $EnvPath "VITE_TRINAXAI_RAG_TARGET" "https://127.0.0.1:3333"
+    Set-EnvFileValue $EnvPath "TRINAXAI_HEALTH_URL" "https://localhost:3333"
+    Write-Ok "RAG API configured for HTTPS"
+  } else {
+    Set-EnvFileValue $EnvPath "TRINAXAI_RAG_HTTPS" "0"
+    Set-EnvFileValue $EnvPath "TRINAXAI_RAG_TARGET" "http://127.0.0.1:3333"
+    Set-EnvFileValue $EnvPath "VITE_TRINAXAI_RAG_TARGET" "http://127.0.0.1:3333"
+    Set-EnvFileValue $EnvPath "TRINAXAI_HEALTH_URL" "http://localhost:3333"
+    Write-Warn "RAG API configured for HTTP because PEM certificate files are unavailable."
+  }
+}
+function Enable-TrinaxAIFirewallRules {
+  if (-not (Get-Command New-NetFirewallRule -ErrorAction SilentlyContinue)) {
+    Write-Warn "Windows Firewall cmdlets not available; skipping firewall rules."
+    return
+  }
+  if (-not (Test-IsAdmin)) {
+    Write-Warn "Not running as Administrator. If LAN IP does not open, allow TCP 3333 and 3334 on Private networks."
+    return
+  }
+  $Rules = @(
+    @{ Name = "TrinaxAI RAG API"; Port = "3333" },
+    @{ Name = "TrinaxAI PWA"; Port = "3334" }
+  )
+  foreach ($Rule in $Rules) {
+    try {
+      $Existing = Get-NetFirewallRule -DisplayName $Rule.Name -ErrorAction SilentlyContinue
+      if (-not $Existing) {
+        New-NetFirewallRule -DisplayName $Rule.Name -Direction Inbound -Action Allow -Protocol TCP -LocalPort $Rule.Port -Profile Private | Out-Null
+      }
+    } catch {
+      Write-Warn "Could not configure firewall rule $($Rule.Name): $($_.Exception.Message)"
+    }
+  }
+  Write-Ok "Windows Firewall rules configured for Private networks"
 }
 
 Write-Host ""
@@ -368,8 +484,17 @@ $EmbedKeepAlive = "15m"
 $VisionModel = "qwen2.5vl:3b"
 $VisionQualityModel = "qwen2.5vl:7b"
 if ($Profile -eq "8gb") {
-  $EmbedBatch = "2"
-  $EmbedKeepAlive = "10m"
+  $ModelGeneral = "llama3.2:1b"
+  $ModelCode = "qwen2.5-coder:1.5b"
+  $ModelDeep = "qwen2.5-coder:1.5b"
+  $ModelFast = "llama3.2:1b"
+  $EmbedPreset = "lite"
+  $EmbedModel = "nomic-embed-text"
+  $EmbedDims = "768"
+  $EmbedBatch = "1"
+  $EmbedKeepAlive = "5m"
+  $VisionModel = "moondream"
+  $VisionQualityModel = "qwen2.5vl:3b"
 } elseif ($Profile -eq "max") {
   $ModelDeep = "qwen2.5-coder:7b"
   $VisionModel = "qwen2.5vl:7b"
@@ -519,6 +644,8 @@ Require-Command "node" "OpenJS.NodeJS.LTS" "Node.js" "https://nodejs.org"
 Require-Ollama
 
 Ensure-TrinaxAICertificate -Repo $Repo -LanIp $LanIp
+Sync-RagTransportFromCertificate -Repo $Repo
+Enable-TrinaxAIFirewallRules
 
 $FreeGb = [math]::Round((Get-PSDrive -Name ((Get-Location).Path.Substring(0,1))).Free / 1GB)
 if ($FreeGb -lt 12) {

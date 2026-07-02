@@ -17,6 +17,7 @@ import shutil
 import subprocess
 import sys
 import time
+import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -444,6 +445,29 @@ def _windows_hidden_python(python: str) -> str:
     return str(pythonw) if pythonw.exists() else python
 
 
+def _known_windows_executable(name: str) -> str | None:
+    if sys.platform != "win32":
+        return shutil.which(name)
+    local_appdata = os.environ.get("LOCALAPPDATA", "")
+    program_files = os.environ.get("ProgramFiles", "")
+    candidates = {
+        "ollama": [
+            Path(local_appdata) / "Programs" / "Ollama" / "ollama.exe",
+            Path(program_files) / "Ollama" / "ollama.exe",
+        ],
+        "node": [
+            Path(program_files) / "nodejs" / "node.exe",
+        ],
+    }.get(name.lower(), [])
+    found = shutil.which(name) or shutil.which(f"{name}.exe")
+    if found:
+        return found
+    for candidate in candidates:
+        if candidate.is_file():
+            return str(candidate)
+    return None
+
+
 def _read_env_file(base_dir: str) -> dict[str, str]:
     env_path = Path(base_dir) / ".env"
     values: dict[str, str] = {}
@@ -481,6 +505,39 @@ def _rag_https_files(base_dir: str) -> tuple[str, str] | None:
     return None
 
 
+def _rag_uses_https(base_dir: str, env: dict[str, str]) -> bool:
+    requested = env.get("TRINAXAI_RAG_HTTPS", "1").strip().lower() not in {
+        "0",
+        "false",
+        "no",
+        "off",
+    }
+    return requested and _rag_https_files(base_dir) is not None
+
+
+def _wait_for_http(url: str, timeout_seconds: float = 20.0) -> bool:
+    deadline = time.time() + timeout_seconds
+    context = None
+    if url.startswith("https://"):
+        import ssl
+
+        context = ssl._create_unverified_context()
+    while time.time() < deadline:
+        try:
+            with urllib.request.urlopen(url, timeout=2, context=context) as response:
+                if 200 <= int(response.status) < 500:
+                    return True
+        except Exception:
+            time.sleep(0.75)
+    return False
+
+
+def _rag_health_url(base_dir: str, env: dict[str, str]) -> str:
+    scheme = "https" if _rag_uses_https(base_dir, env) else "http"
+    port = env.get("TRINAXAI_PORT", "3333")
+    return f"{scheme}://127.0.0.1:{port}/health"
+
+
 def _rag_command(python: str, base_dir: str, env: dict[str, str]) -> list[str]:
     host = env.get("TRINAXAI_HOST", "0.0.0.0")
     port = env.get("TRINAXAI_PORT", "3333")
@@ -494,13 +551,7 @@ def _rag_command(python: str, base_dir: str, env: dict[str, str]) -> list[str]:
         "--port",
         port,
     ]
-    use_https = env.get("TRINAXAI_RAG_HTTPS", "1").strip().lower() not in {
-        "0",
-        "false",
-        "no",
-        "off",
-    }
-    ssl_files = _rag_https_files(base_dir) if use_https else None
+    ssl_files = _rag_https_files(base_dir) if _rag_uses_https(base_dir, env) else None
     if ssl_files:
         key_file, cert_file = ssl_files
         command.extend(["--ssl-keyfile", key_file, "--ssl-certfile", cert_file])
@@ -514,20 +565,26 @@ def _service_specs(base_dir: str) -> dict[str, dict]:
     mode = _frontend_script(service_env)
 
     if sys.platform == "win32":
-        node = shutil.which("node") or "node.exe"
+        node = _known_windows_executable("node") or "node.exe"
         frontend_cmd = [
             node,
-            os.path.abspath(os.path.join(base_dir, "chat-pwa", "node_modules", "vite", "bin", "vite.js")),
+            os.path.abspath(
+                os.path.join(
+                    base_dir, "chat-pwa", "node_modules", "vite", "bin", "vite.js"
+                )
+            ),
             mode,
-            "--host", "0.0.0.0",
-            "--port", "3334",
+            "--host",
+            "0.0.0.0",
+            "--port",
+            "3334",
         ]
     else:
         frontend_cmd = [npm, "run", mode]
 
     return {
         "ollama": {
-            "command": ["ollama", "serve"],
+            "command": [_known_windows_executable("ollama") or "ollama", "serve"],
             "env": service_env,
             "log_file": os.path.join(base_dir, "logs", "ollama.log"),
         },
@@ -654,13 +711,36 @@ def _start_named(base_dir: str, name: str) -> ProcessState:
         )
     services = _service_specs(base_dir)
     svc = services[name]
-    return _backend.start(
+    state = _backend.start(
         name,
         command=svc["command"],
         cwd=svc.get("cwd"),
         env=svc.get("env"),
         log_file=svc.get("log_file"),
     )
+    if name == "rag_api" and state.running:
+        url = _rag_health_url(base_dir, svc.get("env") or {})
+        if _wait_for_http(url, timeout_seconds=20):
+            return ProcessState(
+                name=name,
+                running=True,
+                pid=state.pid,
+                detail=f"{state.detail}; health ok ({url})",
+            )
+        current = _backend.status(name)
+        if not current.running:
+            return ProcessState(
+                name=name,
+                running=False,
+                detail=f"started but exited before health check. See logs/rag_api.log ({url})",
+            )
+        return ProcessState(
+            name=name,
+            running=True,
+            pid=current.pid or state.pid,
+            detail=f"{state.detail}; health not ready yet. See logs/rag_api.log ({url})",
+        )
+    return state
 
 
 def _stop_named(name: str) -> ProcessState:

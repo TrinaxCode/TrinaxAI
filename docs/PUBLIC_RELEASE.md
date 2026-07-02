@@ -16,6 +16,9 @@ pytest -q
 bash -n install.sh
 bash -n backup.sh
 bash -n uninstall.sh
+# On Windows/PowerShell, also parse or run:
+# powershell -NoProfile -ExecutionPolicy Bypass -File .\update.ps1 -NonInteractive -NoPull -NoBackup -NoRestart -NoAudit
+# powershell -NoProfile -ExecutionPolicy Bypass -File .\uninstall.ps1 -Yes -KeepServices -KeepAutostart -KeepVenv -KeepFrontend -KeepLogs -KeepEnv -KeepFirewall
 cd chat-pwa && npm run build
 cd chat-pwa && npm test
 cd chat-pwa && npm audit --audit-level=high
@@ -96,7 +99,7 @@ Before release, verify these workflows on a clean install:
 
 Keep local-first defaults conservative:
 
-- 8 GB profile: small context, one embedding worker, LLM `keep_alive=0s`, embedding `keep_alive=10m`, embedding batch 2.
+- 8 GB profile: 1B/1.5B models, lite embeddings, small context, one embedding worker, LLM `keep_alive=0s`, embedding `keep_alive=5m`, embedding batch 1.
 - 16 GB profile: balanced context, two embedding workers, LLM `keep_alive=0s`, embedding `keep_alive=15m`, embedding batch 8.
 - max profile: larger context, four embedding workers, LLM `keep_alive=30m`, embedding `keep_alive=30m`, embedding batch 8.
 - ultra profile: largest context, six embedding workers, LLM `keep_alive=60m`, embedding `keep_alive=30m`, embedding batch 16.

@@ -133,10 +133,12 @@ _FAST_MODE = TRINAXAI_PERFORMANCE_MODE == "fast"
 _QUALITY_MODE = TRINAXAI_PERFORMANCE_MODE == "quality"
 
 # ── Model fleet for AUTO-ROUTING ──
-# The router selects the model based on the query: chat -> general, code -> coder,
-# complex -> 3b on 16gb profile or 7b on powerful profile. All NON-thinking.
-MODEL_GENERAL = os.getenv("TRINAXAI_MODEL_GENERAL", "llama3.2:3b")  # non-code chat
-MODEL_CODE = os.getenv("TRINAXAI_MODEL_CODE", "qwen2.5-coder:3b")  # regular code
+# The router selects the model based on the query. Low-resource profiles default
+# to 1B/1.5B models so Windows laptops with 8 GB RAM do not pull the 16 GB set.
+_DEFAULT_MODEL_GENERAL = "llama3.2:1b" if _LOW_RESOURCE_PROFILE else "llama3.2:3b"
+_DEFAULT_MODEL_CODE = "qwen2.5-coder:1.5b" if _LOW_RESOURCE_PROFILE else "qwen2.5-coder:3b"
+MODEL_GENERAL = os.getenv("TRINAXAI_MODEL_GENERAL", _DEFAULT_MODEL_GENERAL)  # non-code chat
+MODEL_CODE = os.getenv("TRINAXAI_MODEL_CODE", _DEFAULT_MODEL_CODE)  # regular code
 MODEL_DEEP = os.getenv(
     "TRINAXAI_MODEL_DEEP",
     "qwen2.5-coder:14b"
@@ -180,7 +182,8 @@ EMBED_PRESETS = {
         "label": "Fast (all-minilm, smallest)",
     },
 }
-_EMBED_PRESET = os.getenv("TRINAXAI_EMBED_PRESET", "balanced").strip().lower()
+_EMBED_PRESET_DEFAULT = "lite" if _LOW_RESOURCE_PROFILE else "balanced"
+_EMBED_PRESET = os.getenv("TRINAXAI_EMBED_PRESET", _EMBED_PRESET_DEFAULT).strip().lower()
 EMBED_PRESET = _EMBED_PRESET if _EMBED_PRESET in EMBED_PRESETS else "balanced"
 EMBED_MODEL = os.getenv("TRINAXAI_EMBED", EMBED_PRESETS[EMBED_PRESET]["model"])
 EMBED_DIMS = int(
@@ -234,7 +237,7 @@ EMBED_WORKERS = _env_int(
 )
 EMBED_BATCH_SIZE = _env_int(
     "TRINAXAI_EMBED_BATCH",
-    16 if _ULTRA_PROFILE else 8 if not _LOW_RESOURCE_PROFILE else 2,
+    16 if _ULTRA_PROFILE else 8 if not _LOW_RESOURCE_PROFILE else 1,
     minimum=1,
     maximum=64,
 )

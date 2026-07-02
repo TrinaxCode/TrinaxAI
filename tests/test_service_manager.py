@@ -29,6 +29,24 @@ class _FakeBackend:
 
 
 class ServiceManagerPersistenceTests(unittest.TestCase):
+    def test_rag_command_uses_https_only_when_pem_files_exist(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            base_dir = Path(tmp)
+            env = {"TRINAXAI_RAG_HTTPS": "1", "TRINAXAI_PORT": "3333"}
+
+            command = sm._rag_command("python", str(base_dir), env)
+            self.assertNotIn("--ssl-keyfile", command)
+            self.assertEqual(sm._rag_health_url(str(base_dir), env), "http://127.0.0.1:3333/health")
+
+            cert_dir = base_dir / "chat-pwa" / "certs"
+            cert_dir.mkdir(parents=True)
+            (cert_dir / "localhost-key.pem").write_text("key", encoding="utf-8")
+            (cert_dir / "localhost.pem").write_text("cert", encoding="utf-8")
+
+            command = sm._rag_command("python", str(base_dir), env)
+            self.assertIn("--ssl-keyfile", command)
+            self.assertEqual(sm._rag_health_url(str(base_dir), env), "https://127.0.0.1:3333/health")
+
     def test_stop_ai_disables_boot_and_start_ai_reenables_it(self) -> None:
         fake_backend = _FakeBackend()
         systemctl_calls: list[list[str]] = []

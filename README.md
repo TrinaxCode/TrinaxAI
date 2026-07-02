@@ -126,6 +126,13 @@ By default, **LAN system control is disabled** — no device on your network can
 ./uninstall.sh   # Guided uninstall; asks each removable item
 ```
 
+On Windows, use PowerShell-native scripts:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\update.ps1
+powershell -ExecutionPolicy Bypass -File .\uninstall.ps1
+```
+
 Required dependencies still install/update automatically. Optional choices such as model downloads, boot auto-start, data removal, and restarts are prompted by default.
 
 ### Open the PWA
@@ -291,7 +298,8 @@ python3 test_system.py --verbose
 | `service_manager.py` | Cross-platform start/stop/status/watch supervisor |
 | `startup_ai.sh` | Start all services |
 | `shutdown_ai.sh` | Graceful shutdown |
-| `backup.sh` / `update.sh` / `uninstall.sh` | Maintenance scripts |
+| `backup.sh` / `update.sh` / `uninstall.sh` | Linux/macOS maintenance scripts |
+| `update.ps1` / `uninstall.ps1` | Windows maintenance scripts |
 | `install.sh` / `install.ps1` | One-command installers |
 | `chat-pwa/` | React PWA frontend |
 | `scripts/public_readiness.py` | Pre-release audit tool |
@@ -305,7 +313,7 @@ python3 test_system.py --verbose
 A: No. Everything runs locally. The only network calls are to Ollama (localhost:11434), the RAG API (localhost:3333), and Google Fonts (in the PWA). No chat data, code, or documents leave your machine.
 
 **Q: What models are recommended?**  
-A: The installer auto-detects your RAM and picks a profile. Default: `qwen2.5-coder:3b` (code), `llama3.2:3b` (chat), `bge-m3` (embeddings). Visit [canirun.ai](https://www.canirun.ai) to check what your hardware supports.
+A: The installer auto-detects RAM. 8 GB uses `llama3.2:1b`, `qwen2.5-coder:1.5b`, and `nomic-embed-text`. 16 GB uses `llama3.2:3b`, `qwen2.5-coder:3b`, and `bge-m3`. Visit [canirun.ai](https://www.canirun.ai) to check what your hardware supports.
 
 **Q: Can I use it from my phone?**  
 A: Yes. Open `https://[YOUR-LAN-IP]:3334` from any device on the same WiFi. The PWA is installable on iOS and Android.

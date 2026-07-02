@@ -116,6 +116,20 @@ cd TrinaxAI
 
 Por defecto, el **control de sistema desde LAN está desactivado** — ningún dispositivo en tu red puede llamar endpoints sensibles. Actívalo explícitamente con `--lan-system` o configura `TRINAXAI_ALLOW_LAN_SYSTEM=1` y `TRINAXAI_ADMIN_TOKEN` en `.env`.
 
+### Actualizar y desinstalar
+
+```bash
+./update.sh      # Actualizador guiado
+./uninstall.sh   # Desinstalador guiado
+```
+
+En Windows usa scripts nativos de PowerShell:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\update.ps1
+powershell -ExecutionPolicy Bypass -File .\uninstall.ps1
+```
+
 ### Abrir la PWA
 
 ```
@@ -269,7 +283,8 @@ python3 test_system.py --verbose
 | `service_manager.py` | Supervisor cross-platform start/stop/status/watch |
 | `startup_ai.sh` | Iniciar todos los servicios |
 | `shutdown_ai.sh` | Apagado controlado |
-| `backup.sh` / `update.sh` / `uninstall.sh` | Scripts de mantenimiento |
+| `backup.sh` / `update.sh` / `uninstall.sh` | Scripts de mantenimiento Linux/macOS |
+| `update.ps1` / `uninstall.ps1` | Scripts de mantenimiento Windows |
 | `install.sh` / `install.ps1` | Instaladores en un comando |
 | `chat-pwa/` | Frontend React PWA |
 | `scripts/public_readiness.py` | Auditoría pre-release |
@@ -283,7 +298,7 @@ python3 test_system.py --verbose
 R: No. Todo corre localmente. Las únicas llamadas de red son a Ollama (localhost:11434), la API RAG (localhost:3333) y Google Fonts (en la PWA). Ningún chat, código o documento sale de tu máquina.
 
 **P: ¿Qué modelos se recomiendan?**  
-R: El instalador auto-detecta tu RAM y elige un perfil. Por defecto: `qwen2.5-coder:3b` (código), `llama3.2:3b` (chat), `bge-m3` (embeddings). Visita [canirun.ai](https://www.canirun.ai) para ver qué soporta tu hardware.
+R: El instalador auto-detecta la RAM. 8 GB usa `llama3.2:1b`, `qwen2.5-coder:1.5b` y `nomic-embed-text`. 16 GB usa `llama3.2:3b`, `qwen2.5-coder:3b` y `bge-m3`. Visita [canirun.ai](https://www.canirun.ai) para ver qué soporta tu hardware.
 
 **P: ¿Puedo usarlo desde mi teléfono?**  
 R: Sí. Abre `https://[TU-IP-LOCAL]:3334` desde cualquier dispositivo en la misma WiFi. La PWA es instalable en iOS y Android.

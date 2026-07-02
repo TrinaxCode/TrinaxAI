@@ -147,7 +147,9 @@ TRINAXAI_ALLOW_LAN_SYSTEM=1
 TRINAXAI_CORS_ORIGINS=https://localhost:3334,http://localhost:3334,https://127.0.0.1:3334,http://127.0.0.1:3334
 OLLAMA_BASE_URL=http://localhost:11434
 OLLAMA_HOST=0.0.0.0
-VITE_TRINAXAI_RAG_TARGET=http://localhost:3333
+TRINAXAI_RAG_HTTPS=1
+TRINAXAI_RAG_TARGET=https://127.0.0.1:3333
+VITE_TRINAXAI_RAG_TARGET=https://127.0.0.1:3333
 ```
 
 To use a phone/tablet, find your LAN IP:
@@ -260,7 +262,7 @@ cd $env:USERPROFILE\trinaxai
 .\.venv\Scripts\python.exe service_manager.py enable-autostart --base-dir "$PWD"
 ```
 
-This creates `TrinaxAI.cmd` in the Windows Startup folder.
+This creates `TrinaxAI.vbs` in the Windows Startup folder so no console window stays visible.
 
 Disable:
 
@@ -304,25 +306,14 @@ http://localhost:3333/health
 
 ## Update
 
-If you use scripts from Git Bash or WSL:
-
-```bash
-./update.sh
-```
-
-The updater asks whether to create a backup, pull latest code, update models, change autostart, restart services, and run the readiness audit. Python/npm dependencies and the PWA build still run automatically.
-
-Manual update in PowerShell:
+Use the native Windows updater:
 
 ```powershell
 cd $env:USERPROFILE\trinaxai
-git pull
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
-cd chat-pwa
-npm install
-npm run build
-cd ..
+powershell -ExecutionPolicy Bypass -File .\update.ps1
 ```
+
+The updater asks whether to create a backup, pull latest code, update models, change autostart, restart services, and run the readiness audit. Python/npm dependencies and the PWA build still run automatically.
 
 ## Backups
 
@@ -340,34 +331,14 @@ If you have Git Bash:
 
 ## Uninstall
 
-From Git Bash or WSL, use the guided uninstaller:
+Use the native Windows uninstaller:
 
-```bash
-./uninstall.sh
+```powershell
+cd $env:USERPROFILE\trinaxai
+powershell -ExecutionPolicy Bypass -File .\uninstall.ps1
 ```
 
 It asks which runtime files to remove. RAG data and Ollama models are kept unless you choose to remove them.
-
-Manual PowerShell cleanup:
-
-```powershell
-.\.venv\Scripts\python.exe service_manager.py disable-autostart --base-dir "$PWD"
-```
-
-Stop services:
-
-```powershell
-.\.venv\Scripts\python.exe service_manager.py stop-all --base-dir "$PWD"
-```
-
-Then you can delete the project folder. Ollama models are managed separately:
-
-```powershell
-ollama list
-ollama rm qwen2.5-coder:3b
-ollama rm llama3.2:3b
-ollama rm bge-m3
-```
 
 ## Firewall and local network
 
@@ -387,9 +358,9 @@ To access from a phone/tablet, Windows Defender Firewall must allow Node/Python 
 | `npm` not recognized | Install Node.js LTS and open a new terminal. |
 | `ollama` not recognized | Re-run `install.ps1`; it refreshes PATH and installs Ollama with the official silent installer if `winget` fails. |
 | PowerShell permission error | Run with `-ExecutionPolicy Bypass`. |
-| PWA cannot open from phone | Check firewall, same Wi-Fi, and LAN IP in `TRINAXAI_CORS_ORIGINS`. |
+| PWA cannot open from phone | Run PowerShell as Administrator and re-run `install.ps1` so it can add Private-network firewall rules for TCP 3333/3334. Also verify same Wi-Fi. |
 | HTTPS API shows invalid certificate | Normal with a local certificate; accept the warning. |
-| Out of memory | Use the `8gb` profile or 3B models. |
+| Out of memory | Use the `8gb` profile. It installs `llama3.2:1b`, `qwen2.5-coder:1.5b`, and `nomic-embed-text` by default. |
 
 ## Note on WSL
 

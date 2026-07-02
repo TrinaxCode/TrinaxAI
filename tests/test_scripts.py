@@ -53,3 +53,34 @@ def test_windows_installer_has_automatic_ollama_fallback() -> None:
     assert "https://ollama.com/download/OllamaSetup.exe" in script
     assert "/VERYSILENT /NORESTART /SUPPRESSMSGBOXES" in script
     assert "O=Ollama Inc\\." in script
+
+
+def test_windows_installer_configures_rag_transport_and_lan_firewall() -> None:
+    script = (ROOT / "install.ps1").read_text(encoding="utf-8")
+
+    assert "function Sync-RagTransportFromCertificate" in script
+    assert "TRINAXAI_RAG_HTTPS" in script
+    assert "http://127.0.0.1:3333" in script
+    assert "New-NetFirewallRule" in script
+    assert "3333" in script and "3334" in script
+
+
+def test_installers_use_light_models_for_8gb_profile() -> None:
+    for script_name in ("install.ps1", "install.sh"):
+        script = (ROOT / script_name).read_text(encoding="utf-8")
+        assert "llama3.2:1b" in script
+        assert "qwen2.5-coder:1.5b" in script
+        assert "nomic-embed-text" in script
+        assert "moondream" in script
+
+
+def test_windows_update_and_uninstall_scripts_exist() -> None:
+    update = (ROOT / "update.ps1").read_text(encoding="utf-8")
+    uninstall = (ROOT / "uninstall.ps1").read_text(encoding="utf-8")
+
+    assert "git pull --ff-only" in update
+    assert "npm run build" in update
+    assert "service_manager.py" in update
+    assert "Type UNINSTALL to continue" in uninstall
+    assert "Remove-TrinaxAIFirewallRules" in uninstall
+    assert "service_manager.py" in uninstall
