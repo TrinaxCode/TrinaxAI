@@ -42,7 +42,7 @@ El instalador:
 
 - Detecta RAM y elige perfil.
 - Crea `.env`.
-- Instala dependencias con `winget` si esta disponible.
+- Instala dependencias automaticamente. Ollama usa `winget` primero y luego el instalador oficial silencioso si hace falta.
 - Crea `.venv`.
 - Instala paquetes Python.
 - Instala y compila la PWA.
@@ -50,7 +50,7 @@ El instalador:
 - Pregunta si quieres habilitar inicio con Windows.
 - Pregunta si quieres iniciar los servicios ahora.
 
-Las dependencias necesarias se instalan automaticamente. Las opciones como modelos, control LAN, inicio con Windows e inicio de servicios se preguntan por defecto. Usa `-NonInteractive` para instalaciones automatizadas.
+Las dependencias necesarias se instalan automaticamente. Las opciones como modelos, control LAN, inicio con Windows e inicio de servicios se preguntan por defecto. Usa `-NonInteractive` para instalaciones automatizadas. El instalador no deberia mandarte al navegador para descargar Ollama manualmente.
 
 Si todavia no tienes el proyecto:
 
@@ -385,7 +385,7 @@ Para abrir desde telefono/tablet, Windows Defender Firewall debe permitir Node/P
 |---|---|
 | `python` no se reconoce | Reinstala Python marcando `Add python.exe to PATH`. |
 | `npm` no se reconoce | Instala Node.js LTS y abre una terminal nueva. |
-| `ollama` no se reconoce | Instala Ollama para Windows y reinicia PowerShell. |
+| `ollama` no se reconoce | Vuelve a correr `install.ps1`; refresca PATH e instala Ollama con el instalador oficial silencioso si `winget` falla. |
 | Error de permisos PowerShell | Ejecuta con `-ExecutionPolicy Bypass`. |
 | PWA no abre desde telefono | Revisa firewall, misma WiFi e IP LAN en `TRINAXAI_CORS_ORIGINS`. |
 | API HTTPS muestra certificado no valido | Es normal con certificado local; acepta la advertencia. |

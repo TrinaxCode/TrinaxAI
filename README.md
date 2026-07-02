@@ -89,6 +89,8 @@ cd TrinaxAI
 powershell -ExecutionPolicy Bypass -File .\install.ps1
 ```
 
+The Windows installer configures required dependencies automatically; Ollama is installed through `winget` or the official silent installer fallback.
+
 ### Manual install
 
 ```bash

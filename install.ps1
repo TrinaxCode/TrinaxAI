@@ -34,7 +34,9 @@ function Update-ProcessPath {
     (Join-Path $env:ProgramFiles "Python312"),
     (Join-Path $env:ProgramFiles "Python312\Scripts"),
     (Join-Path $env:ProgramFiles "Python311"),
-    (Join-Path $env:ProgramFiles "Python311\Scripts")
+    (Join-Path $env:ProgramFiles "Python311\Scripts"),
+    (Join-Path $env:LOCALAPPDATA "Programs\Ollama"),
+    (Join-Path $env:ProgramFiles "Ollama")
   ) | Where-Object { $_ -and (Test-Path $_) }
   $env:Path = (@($MachinePath, $UserPath) + $ExtraPaths) -join ";"
 }
@@ -115,6 +117,114 @@ function Install-WingetPackage($Id, $Name) {
   Update-ProcessPath
   return $true
 }
+function Get-OllamaCommand {
+  Update-ProcessPath
+  $Candidates = @(
+    "ollama",
+    (Join-Path $env:LOCALAPPDATA "Programs\Ollama\ollama.exe"),
+    (Join-Path $env:ProgramFiles "Ollama\ollama.exe")
+  )
+  foreach ($Candidate in $Candidates) {
+    if ($Candidate -and (Test-Cmd $Candidate)) {
+      return $Candidate
+    }
+  }
+  return $null
+}
+function Invoke-DownloadFile($Url, $OutFile) {
+  $Parent = Split-Path -Parent $OutFile
+  if ($Parent -and -not (Test-Path $Parent)) {
+    New-Item -ItemType Directory -Force -Path $Parent | Out-Null
+  }
+  try {
+    Invoke-WebRequest -Uri $Url -OutFile $OutFile -UseBasicParsing
+    return $true
+  } catch {
+    Write-Warn "Download failed: $Url"
+    Write-Warn $_.Exception.Message
+    return $false
+  }
+}
+function Test-OllamaInstallerSignature($InstallerPath) {
+  try {
+    $Signature = Get-AuthenticodeSignature -FilePath $InstallerPath
+    if ($Signature.Status -ne "Valid") {
+      Write-Warn "Ollama installer signature is not valid: $($Signature.Status)"
+      return $false
+    }
+    if ($Signature.SignerCertificate.Subject -notmatch "(^|, )O=Ollama Inc\.(,|$)") {
+      Write-Warn "Ollama installer signer was not expected: $($Signature.SignerCertificate.Subject)"
+      return $false
+    }
+    return $true
+  } catch {
+    Write-Warn "Could not verify Ollama installer signature: $($_.Exception.Message)"
+    return $false
+  }
+}
+function Install-OllamaOfficial {
+  if (Get-OllamaCommand) { return $true }
+
+  $TempDir = Join-Path $env:TEMP "trinaxai-install"
+  $OfficialScript = Join-Path $TempDir "ollama-install.ps1"
+  Write-Host "  Installing Ollama with the official installer script..."
+  if (Invoke-DownloadFile "https://ollama.com/install.ps1" $OfficialScript) {
+    try {
+      $PowerShellExe = (Get-Command powershell.exe -ErrorAction SilentlyContinue).Source
+      if (-not $PowerShellExe) { $PowerShellExe = "powershell.exe" }
+      & $PowerShellExe -NoProfile -ExecutionPolicy Bypass -File $OfficialScript
+      Update-ProcessPath
+      if ($LASTEXITCODE -eq 0 -and (Get-OllamaCommand)) {
+        return $true
+      }
+      Write-Warn "The official Ollama install script finished but ollama.exe was not found yet."
+    } catch {
+      Write-Warn "Official Ollama install script failed: $($_.Exception.Message)"
+    }
+  }
+
+  $Installer = Join-Path $TempDir "OllamaSetup.exe"
+  Write-Host "  Downloading OllamaSetup.exe directly..."
+  if (-not (Invoke-DownloadFile "https://ollama.com/download/OllamaSetup.exe" $Installer)) {
+    return $false
+  }
+  if (-not (Test-OllamaInstallerSignature $Installer)) {
+    return $false
+  }
+  try {
+    $Args = "/VERYSILENT /NORESTART /SUPPRESSMSGBOXES"
+    $Proc = Start-Process -FilePath $Installer -ArgumentList $Args -Wait -PassThru
+    if ($Proc.ExitCode -ne 0) {
+      Write-Warn "Ollama installer exited with code $($Proc.ExitCode)."
+      return $false
+    }
+    Update-ProcessPath
+    return [bool](Get-OllamaCommand)
+  } catch {
+    Write-Warn "Could not run Ollama installer automatically: $($_.Exception.Message)"
+    return $false
+  }
+}
+function Require-Ollama {
+  if (Get-OllamaCommand) {
+    Write-Ok "Ollama found"
+    return
+  }
+  if (Install-WingetPackage "Ollama.Ollama" "ollama") {
+    Update-ProcessPath
+    if (Get-OllamaCommand) {
+      Write-Ok "Ollama installed"
+      return
+    }
+  }
+  if (Install-OllamaOfficial) {
+    Write-Ok "Ollama installed"
+    return
+  }
+  Write-Warn "Ollama was not found and could not be installed automatically."
+  Write-Warn "Check your internet connection and re-run install.ps1. No browser download should be required."
+  exit 1
+}
 function Require-Command($Command, $WingetId, $InstallName, $ManualUrl) {
   if (Test-Cmd $Command) {
     Write-Ok "$InstallName found"
@@ -154,11 +264,12 @@ function Test-OllamaReady {
   }
 }
 function Ensure-OllamaRunning {
-  if (-not (Test-Cmd ollama)) { return $false }
+  $OllamaExe = Get-OllamaCommand
+  if (-not $OllamaExe) { return $false }
   if (Test-OllamaReady) { return $true }
   Write-Host "  Starting Ollama..."
   try {
-    Start-Process -FilePath "ollama" -ArgumentList "serve" -WindowStyle Hidden | Out-Null
+    Start-Process -FilePath $OllamaExe -ArgumentList "serve" -WindowStyle Hidden | Out-Null
   } catch {
     return $false
   }
@@ -405,7 +516,7 @@ if ($null -eq $PythonCommand) {
 }
 Require-Command "git" "Git.Git" "Git" "https://git-scm.com/download/win"
 Require-Command "node" "OpenJS.NodeJS.LTS" "Node.js" "https://nodejs.org"
-Require-Command "ollama" "Ollama.Ollama" "Ollama" "https://ollama.com/download/windows"
+Require-Ollama
 
 Ensure-TrinaxAICertificate -Repo $Repo -LanIp $LanIp
 
@@ -465,13 +576,14 @@ if (-not $NonInteractive) {
   }
 }
 if (-not $NoModels -and (Ensure-OllamaRunning)) {
+  $OllamaExe = Get-OllamaCommand
   foreach ($Model in $Models) {
     Write-Host "  Pulling $Model..."
-    ollama pull $Model
+    & $OllamaExe pull $Model
   }
   if (-not $NoVision) {
     Write-Host "  Pulling $VisionModel..."
-    ollama pull $VisionModel
+    & $OllamaExe pull $VisionModel
   }
   Write-Ok "Models ready"
 } elseif ($NoModels) {

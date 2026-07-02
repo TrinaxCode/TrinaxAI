@@ -42,7 +42,7 @@ The installer:
 
 - Detects RAM and selects a profile.
 - Creates `.env`.
-- Installs dependencies with `winget` if available.
+- Installs dependencies automatically. Ollama uses `winget` first, then the official silent installer fallback if needed.
 - Creates `.venv`.
 - Installs Python packages.
 - Installs and builds the PWA.
@@ -50,7 +50,7 @@ The installer:
 - Asks whether to enable Windows startup.
 - Asks whether to start services now.
 
-Required dependencies are installed automatically. Optional choices such as models, LAN system control, startup, and service start are prompted by default. Use `-NonInteractive` for scripted installs.
+Required dependencies are installed automatically. Optional choices such as models, LAN system control, startup, and service start are prompted by default. Use `-NonInteractive` for scripted installs. The installer should not send you to a browser to download Ollama manually.
 
 If you don't have the project yet:
 
@@ -385,7 +385,7 @@ To access from a phone/tablet, Windows Defender Firewall must allow Node/Python 
 |---|---|
 | `python` not recognized | Reinstall Python with `Add python.exe to PATH` checked. |
 | `npm` not recognized | Install Node.js LTS and open a new terminal. |
-| `ollama` not recognized | Install Ollama for Windows and restart PowerShell. |
+| `ollama` not recognized | Re-run `install.ps1`; it refreshes PATH and installs Ollama with the official silent installer if `winget` fails. |
 | PowerShell permission error | Run with `-ExecutionPolicy Bypass`. |
 | PWA cannot open from phone | Check firewall, same Wi-Fi, and LAN IP in `TRINAXAI_CORS_ORIGINS`. |
 | HTTPS API shows invalid certificate | Normal with a local certificate; accept the warning. |
