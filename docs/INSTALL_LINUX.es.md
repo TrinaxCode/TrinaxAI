@@ -9,11 +9,11 @@ Al terminar deberias tener:
 - Ollama corriendo localmente en `http://localhost:11434`.
 - API RAG de TrinaxAI en `http://localhost:3333`.
 - PWA de TrinaxAI en `https://localhost:3334`.
-- Modelos base descargados.
+- Modelos base descargados si eliges esa opcion.
 - Entorno Python `.venv` instalado.
 - Dependencias del frontend instaladas.
 - `.env` generado con el perfil de tu equipo.
-- Autoarranque de usuario con systemd: la PWA vuelve al iniciar el equipo y la IA respeta si quedo encendida o apagada.
+- Autoarranque opcional de usuario con systemd: la PWA vuelve al iniciar el equipo y la IA respeta si quedo encendida o apagada.
 
 ## Requisitos
 
@@ -28,7 +28,7 @@ Al terminar deberias tener:
 
 Si usas NVIDIA, instala los drivers antes de descargar modelos grandes. TrinaxAI tambien funciona solo con CPU, pero las respuestas seran mas lentas.
 
-## Instalacion automatica recomendada
+## Instalacion guiada recomendada
 
 Desde una terminal:
 
@@ -36,7 +36,7 @@ Desde una terminal:
 curl -fsSL https://raw.githubusercontent.com/TrinaxCode/TrinaxAI/main/install.sh | bash
 ```
 
-El instalador clona el proyecto en `~/trinaxai` si todavia no existe, detecta tu RAM, crea `.env`, instala dependencias, prepara la PWA, descarga los modelos recomendados, habilita autoarranque e inicia TrinaxAI. Usa `./install.sh --interactive` si quieres preguntas manuales.
+El instalador clona el proyecto en `~/trinaxai` si todavia no existe, detecta tu RAM, crea `.env`, instala dependencias necesarias y prepara la PWA automaticamente. Las opciones como descargar modelos, control LAN, autoarranque e iniciar servicios se preguntan por defecto. Usa `./install.sh --non-interactive` para instalaciones automatizadas.
 
 Si ya clonaste el repositorio:
 
@@ -333,9 +333,10 @@ https://localhost:3334
 
 ```bash
 cd ~/trinaxai
-./backup.sh create
 ./update.sh
 ```
+
+El actualizador pregunta si quieres crear backup, descargar codigo nuevo, actualizar modelos, cambiar autoarranque, reiniciar servicios y correr la auditoria. Las dependencias Python/npm y el build de la PWA siguen siendo automaticos.
 
 Si actualizas manualmente:
 
@@ -369,7 +370,9 @@ Respaldar manualmente lo importante:
 ./uninstall.sh
 ```
 
-Tambien quitar modelos de Ollama:
+El desinstalador pregunta que archivos runtime quieres quitar. Los datos RAG y modelos de Ollama se conservan salvo que elijas borrarlos.
+
+Para dejar preseleccionada la opcion de quitar modelos de Ollama:
 
 ```bash
 ./uninstall.sh --remove-models

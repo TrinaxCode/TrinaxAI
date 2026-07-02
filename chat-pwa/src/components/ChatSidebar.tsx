@@ -27,7 +27,7 @@ const sidebarVariants = {
     transition: { type: 'spring', stiffness: 300, damping: 30 },
   },
   closed: {
-    x: '100%',
+    x: '-100%',
     transition: { type: 'spring', stiffness: 300, damping: 30 },
   },
 };
@@ -85,7 +85,7 @@ export default function ChatSidebar({
 
       {/* Sidebar */}
       <motion.aside
-        className={`fixed right-0 top-0 z-40 h-dvh w-[85vw] max-w-[300px] sm:w-72 ${sidebarBg} border-l flex flex-col`}
+        className={`fixed left-0 top-0 z-40 h-dvh w-[85vw] max-w-[300px] sm:w-72 ${sidebarBg} border-r flex flex-col`}
         style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
         variants={sidebarVariants}
         initial="closed"
@@ -202,7 +202,14 @@ export default function ChatSidebar({
                     size={16}
                     className="shrink-0 opacity-60"
                   />
-                  <span className="truncate flex-1">{session.title}</span>
+                  <div className="min-w-0 flex-1">
+                    <span className="block truncate text-sm">{session.title}</span>
+                    {session.messages.length > 0 && (
+                      <span className={`block truncate text-[11px] mt-0.5 ${isDark ? 'text-white/30' : 'text-gray-400'}`}>
+                        {session.messages[session.messages.length - 1].content.replace(/\n/g, ' ').slice(0, 60)}
+                      </span>
+                    )}
+                  </div>
                   <button
                     onClick={(e) => {
                       e.stopPropagation();

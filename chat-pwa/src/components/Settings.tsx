@@ -112,8 +112,10 @@ export default function Settings({ onBack, initialSection = 'general' }: Props) 
   const [collections, setCollections] = useState<Collection[]>([]);
   const [newCollectionName, setNewCollectionName] = useState('');
   const [indexCollectionId, setIndexCollectionId] = useState(() => localStorage.getItem('tc-index-collection') || 'default');
+  const [lastIndexedLabel, setLastIndexedLabel] = useState('');
   const folderInputRef = useRef<HTMLInputElement>(null);
   const indexAbortRef = useRef<AbortController | null>(null);
+  const clearJobTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [, refreshLocalSettings] = useState(0);
 
   const setLocalSetting = (key: string, value: string) => {
@@ -195,6 +197,8 @@ export default function Settings({ onBack, initialSection = 'general' }: Props) 
     setIndexing(true); setConfirmIndex(false);
     setUploadProgress(0);
     setIndexJob(null);
+    // Cancel any pending clear-job timer from a previous run
+    if (clearJobTimerRef.current) { clearTimeout(clearJobTimerRef.current); clearJobTimerRef.current = null; }
     const controller = new AbortController();
     indexAbortRef.current = controller;
     try {
@@ -213,7 +217,9 @@ export default function Settings({ onBack, initialSection = 'general' }: Props) 
         const job = await getIndexJob(started.job_id, controller.signal);
         setIndexJob(job);
         if (job.status === 'completed') {
+          const label = selectedFolderFiles ? folderLabelFromFiles(selectedFolderFiles) : '';
           toast.toast(t('indexImportComplete').replace('{count}', String(job.saved)), 'success');
+          setLastIndexedLabel(label);
           setSelectedFolderFiles(null);
           setSelectedFolderTotal(0);
           done = true;
@@ -243,7 +249,15 @@ export default function Settings({ onBack, initialSection = 'general' }: Props) 
         toast.toast(friendly, 'error');
       }
     }
-    finally { setIndexing(false); indexAbortRef.current = null; }
+    finally {
+      setIndexing(false);
+      indexAbortRef.current = null;
+      // Clear progress bar after a short delay so user sees the completion
+      clearJobTimerRef.current = setTimeout(() => {
+        clearJobTimerRef.current = null;
+        setIndexJob(null);
+      }, 2000);
+    }
   };
 
   const cancelIndex = async () => {
@@ -696,7 +710,9 @@ export default function Settings({ onBack, initialSection = 'general' }: Props) 
           <button onClick={() => folderInputRef.current?.click()} disabled={indexing}
             className={`min-w-0 flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl border text-sm font-medium text-center transition-all ${btnBase} disabled:opacity-50 active:scale-95`}>
             <MdStorage className="shrink-0" size={16} />
-            <span className="min-w-0 break-words">{indexing ? t('indexing') : t('chooseFolderIndex')}</span>
+            <span className="min-w-0 break-words">
+              {indexing ? t('indexing') : lastIndexedLabel ? t('indexFolderSelected').replace('{folder}', lastIndexedLabel).replace('{count}', '—') : t('chooseFolderIndex')}
+            </span>
           </button>
           {indexing && (
             <button
@@ -712,21 +728,41 @@ export default function Settings({ onBack, initialSection = 'general' }: Props) 
         <p className={`mt-2 text-[11px] ${textHeading}`}>{t('indexFolderBrowserHint')}</p>
         {(indexing || indexJob) && (
           <div className={`mt-3 rounded-xl border p-3 space-y-2 ${bgCard}`}>
-            <div className="flex items-center justify-between gap-3">
-              <span className={`text-xs font-medium ${textLabel}`}>{phaseLabel(indexJob?.phase || (uploadProgress > 0 ? 'saving' : 'queued'))}</span>
-              <span className={`text-xs tabular-nums ${textHeading}`}>{progress}%</span>
-            </div>
-            <div className={`h-2 w-full overflow-hidden rounded-full ${isDark ? 'bg-white/[0.08]' : 'bg-gray-200'}`}>
-              <div
-                className="h-full rounded-full bg-[#006bbd] transition-all duration-500"
-                style={{ width: `${Math.min(100, Math.max(0, progress))}%` }}
-              />
-            </div>
-            <div className={`flex flex-wrap items-center justify-between gap-2 text-[11px] ${textHeading}`}>
-              <span>{t('indexEta')}: {formatEta(indexJob?.eta_seconds)}</span>
-              <span>{t('indexFiles')}: {indexJob?.saved ?? 0} / {selectedFolderFiles?.length ?? indexJob?.saved ?? 0}</span>
-              {!!indexJob?.skipped && <span>{t('indexSkipped')}: {indexJob.skipped}</span>}
-            </div>
+            {indexing ? (
+              <>
+                <div className="flex items-center justify-between gap-3">
+                  <span className={`text-xs font-medium ${textLabel}`}>{phaseLabel(indexJob?.phase || (uploadProgress > 0 ? 'saving' : 'queued'))}</span>
+                  <span className={`text-xs tabular-nums ${textHeading}`}>{progress}%</span>
+                </div>
+                <div className={`h-2 w-full overflow-hidden rounded-full ${isDark ? 'bg-white/[0.08]' : 'bg-gray-200'}`}>
+                  <div
+                    className="h-full rounded-full bg-[#006bbd] transition-all duration-500"
+                    style={{ width: `${Math.min(100, Math.max(0, progress))}%` }}
+                  />
+                </div>
+                <div className={`flex flex-wrap items-center justify-between gap-2 text-[11px] ${textHeading}`}>
+                  <span>{t('indexEta')}: {formatEta(indexJob?.eta_seconds)}</span>
+                  <span>{t('indexFiles')}: {indexJob?.saved ?? 0} / {selectedFolderFiles?.length ?? indexJob?.saved ?? 0}</span>
+                  {!!indexJob?.skipped && <span>{t('indexSkipped')}: {indexJob.skipped}</span>}
+                </div>
+              </>
+            ) : indexJob?.status === 'completed' ? (
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 text-sm min-w-0">
+                  <span className="text-green-400 text-base shrink-0">✅</span>
+                  <span className={`font-medium ${textLabel} truncate`}>{t('indexComplete')}</span>
+                  <span className={`${textHeading} shrink-0`}>({indexJob.saved} {t('indexFiles').toLowerCase()})</span>
+                </div>
+                <button
+                  onClick={() => folderInputRef.current?.click()}
+                  className="shrink-0 flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-[#006bbd]/15 text-[#006bbd] hover:bg-[#006bbd]/25 active:scale-95 transition-all"
+                  title={t('chooseFolderIndex')}
+                >
+                  <MdRefresh size={14} />
+                  <span className="hidden sm:inline">{t('indexAgain')}</span>
+                </button>
+              </div>
+            ) : null}
           </div>
         )}
       </section>

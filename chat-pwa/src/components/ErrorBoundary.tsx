@@ -1,4 +1,5 @@
 import { Component, type ReactNode } from 'react';
+import { motion } from 'framer-motion';
 
 const ES = { title: '⚠️ Algo salió mal', reload: 'Recargar' };
 const EN = { title: '⚠️ Something went wrong', reload: 'Reload' };
@@ -18,16 +19,21 @@ export default class ErrorBoundary extends Component<Props, State> {
       const isDark = document.documentElement.classList.contains('dark');
       const strings = lang() === 'en' ? EN : ES;
       return (
-        <div className={`h-full flex flex-col items-center justify-center gap-4 px-6 text-center ${isDark ? 'bg-black' : 'bg-white'}`}>
+        <motion.div
+          initial={{ opacity: 0, scale: 0.96 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ duration: 0.3 }}
+          className={`h-full flex flex-col items-center justify-center gap-4 px-6 text-center transition-colors duration-300 ${isDark ? 'bg-black' : 'bg-white'}`}
+        >
           <p className={`text-sm ${isDark ? 'text-white/50' : 'text-gray-500'}`}>{strings.title}</p>
           <p className={`text-xs ${isDark ? 'text-white/20' : 'text-gray-400'}`}>{this.state.error?.message}</p>
           <button
             onClick={() => { this.setState({ hasError: false, error: null }); window.location.reload(); }}
-            className="px-4 py-2 rounded-xl bg-[#006bbd]/20 text-[#006bbd] text-sm"
+            className="px-4 py-2 rounded-xl bg-[#006bbd]/20 text-[#006bbd] text-sm hover:bg-[#006bbd]/30 transition-colors"
           >
             {strings.reload}
           </button>
-        </div>
+        </motion.div>
       );
     }
     return this.props.children;

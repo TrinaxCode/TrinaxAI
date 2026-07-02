@@ -11,9 +11,9 @@ Al terminar deberias tener:
 - PWA en `https://localhost:3334`.
 - Entorno Python `.venv` preparado.
 - Dependencias de la PWA instaladas.
-- Modelos base descargados.
+- Modelos base descargados si eliges esa opcion.
 - `.env` generado.
-- Autoarranque con LaunchAgent: la PWA vuelve al iniciar el equipo y la IA respeta si quedo encendida o apagada.
+- Autoarranque opcional con LaunchAgent: la PWA vuelve al iniciar el equipo y la IA respeta si quedo encendida o apagada.
 
 ## Requisitos
 
@@ -68,7 +68,7 @@ cd ~/trinaxai
 bash install.sh
 ```
 
-El instalador detecta RAM, crea `.env`, prepara Python, instala la PWA, descarga modelos recomendados, habilita autoarranque e inicia TrinaxAI. Usa `bash install.sh --interactive` si quieres preguntas manuales.
+El instalador detecta RAM, crea `.env`, prepara Python e instala la PWA automaticamente. Las opciones como descargar modelos, control LAN, autoarranque e iniciar servicios se preguntan por defecto. Usa `bash install.sh --non-interactive` para instalaciones automatizadas.
 
 El perfil se elige automaticamente. En modo interactivo, elige `Normal` para usar el perfil recomendado. Usa `Advanced` solo si quieres forzar `8gb`, `16gb`, `max` o `ultra`.
 
@@ -307,9 +307,10 @@ https://localhost:3334
 
 ```bash
 cd ~/trinaxai
-./backup.sh create
 ./update.sh
 ```
+
+El actualizador pregunta si quieres crear backup, descargar codigo nuevo, actualizar modelos, cambiar autoarranque, reiniciar servicios y correr la auditoria. Las dependencias Python/npm y el build de la PWA siguen siendo automaticos.
 
 Actualizacion manual:
 
@@ -341,7 +342,9 @@ Datos importantes:
 ./uninstall.sh
 ```
 
-Si quieres quitar tambien los modelos:
+El desinstalador pregunta que archivos runtime quieres quitar. Los datos RAG y modelos de Ollama se conservan salvo que elijas borrarlos.
+
+Para dejar preseleccionada la opcion de quitar tambien los modelos:
 
 ```bash
 ./uninstall.sh --remove-models

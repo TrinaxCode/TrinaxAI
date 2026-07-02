@@ -6,7 +6,7 @@ modules call this client and never touch HTTP directly.
 from __future__ import annotations
 
 from typing import Any, Iterable
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlparse, urlunparse
 
 try:
     import httpx  # type: ignore
@@ -31,6 +31,7 @@ class TrinaxAPIClient:
         self.verify_tls = bool(verify_tls)
         self.timeout = timeout
         self._client = httpx.Client(base_url=self.base_url, verify=self.verify_tls, timeout=timeout)
+        self._prefer_local_https_if_needed()
 
     def close(self) -> None:
         try:
@@ -43,6 +44,42 @@ class TrinaxAPIClient:
 
     def __exit__(self, *exc: Any) -> None:
         self.close()
+
+    def _local_https_candidate(self) -> str | None:
+        parsed = urlparse(self.base_url)
+        if parsed.scheme != "http" or parsed.hostname not in {"localhost", "127.0.0.1"}:
+            return None
+        return urlunparse(parsed._replace(scheme="https"))
+
+    def _switch_base_url(self, base_url: str, *, verify_tls: bool | None = None) -> None:
+        self.close()
+        self.base_url = base_url.rstrip("/")
+        if verify_tls is not None:
+            self.verify_tls = verify_tls
+        self._client = httpx.Client(
+            base_url=self.base_url,
+            verify=self.verify_tls,
+            timeout=self.timeout,
+        )
+
+    def _prefer_local_https_if_needed(self) -> None:
+        candidate = self._local_https_candidate()
+        if not candidate:
+            return
+        probe_timeout = min(float(self.timeout), 1.5)
+        try:
+            r = self._client.get("/health", timeout=probe_timeout)
+            if r.status_code < 500:
+                return
+        except Exception:
+            pass
+        try:
+            with httpx.Client(base_url=candidate, verify=False, timeout=probe_timeout) as probe:
+                r = probe.get("/health")
+                if r.status_code < 500:
+                    self._switch_base_url(candidate, verify_tls=False)
+        except Exception:
+            pass
 
     # ── low-level ──
     def _get(self, path: str, params: Iterable[tuple[str, str]] | None = None) -> Any:

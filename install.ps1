@@ -14,7 +14,7 @@ param(
 TrinaxAI - Windows one-command installer
 Run in PowerShell:
   powershell -ExecutionPolicy Bypass -File .\install.ps1
-  powershell -ExecutionPolicy Bypass -File .\install.ps1 -Interactive
+  powershell -ExecutionPolicy Bypass -File .\install.ps1 -NonInteractive
 #>
 
 $ErrorActionPreference = "Stop"
@@ -95,6 +95,13 @@ function Read-ModelValue($Label, $Default) {
   $Value = Read-Host "$Label [$Default]"
   if ([string]::IsNullOrWhiteSpace($Value)) { return $Default }
   return $Value.Trim()
+}
+function Read-YesNo($Prompt, [bool]$DefaultYes = $true) {
+  if ($NonInteractive) { return $DefaultYes }
+  $Suffix = if ($DefaultYes) { "[Y/n]" } else { "[y/N]" }
+  $Reply = Read-Host "$Prompt $Suffix"
+  if ([string]::IsNullOrWhiteSpace($Reply)) { return $DefaultYes }
+  return ($Reply -match "^[Yy]")
 }
 function Install-WingetPackage($Id, $Name) {
   if (-not (Test-Cmd winget)) { return $false }
@@ -218,8 +225,8 @@ Write-Host "  Detected RAM: $RamGb GB" -ForegroundColor Cyan
 Write-Host "  Recommended profile: $AutoProfile" -ForegroundColor Green
 Write-Host ""
 $Mode = ""
-if ($Interactive) { $Mode = Read-Host "Setup mode: Normal recommended or Advanced manual? [N/a]" }
-if ($Interactive -and $Mode -match "^[Aa]") {
+if (-not $NonInteractive) { $Mode = Read-Host "Setup mode: Normal recommended or Advanced manual? [N/a]" }
+if ((-not $NonInteractive) -and $Mode -match "^[Aa]") {
   Write-Host "  1) medium  Balanced default (about 16GB RAM)"
   Write-Host "  2) high    Stronger CPU / more RAM"
   Write-Host "  3) ultra   32GB+ RAM + powerful GPU"
@@ -301,13 +308,10 @@ if ($EnableLanSystem -ne 1) {
   Write-Host "This allows devices on your local network to call sensitive system endpoints"
   Write-Host "(shutdown, startup, reload, indexing, file watchers, collection management)."
   Write-Host "Only enable this if you trust your local network and use a strong admin token."
-  if ($Interactive) {
-    $Reply = Read-Host "Enable LAN system control? [y/N]"
-  } else {
-    Write-Host "  Default: disabled. Use -LanSystem to enable non-interactively, or answer below." -ForegroundColor Cyan
-    $Reply = Read-Host "Enable LAN system control? [y/N]"
+  if ($NonInteractive) {
+    Write-Host "  Default: disabled. Use -LanSystem to enable non-interactively." -ForegroundColor Cyan
   }
-  if ($Reply -match "^[Yy]") { $EnableLanSystem = 1 } else { $EnableLanSystem = 0 }
+  if (Read-YesNo "Enable LAN system control?" $false) { $EnableLanSystem = 1 } else { $EnableLanSystem = 0 }
 }
 
 if ($EnableLanSystem -eq 1 -and [string]::IsNullOrWhiteSpace($AdminToken)) {
@@ -327,14 +331,16 @@ if ($LanIp) { $Cors += ",https://$($LanIp):3334,http://$($LanIp):3334,https://$(
 $EnvLines = @(
   "# TrinaxAI generated configuration",
   "TRINAXAI_PROFILE=$Profile",
+  "TRINAXAI_PERFORMANCE_MODE=fast",
   "TRINAXAI_HOST=0.0.0.0",
   "TRINAXAI_PORT=3333",
-  "TRINAXAI_HEALTH_URL=http://localhost:3333",
+  "TRINAXAI_HEALTH_URL=https://localhost:3333",
   "TRINAXAI_FRONTEND_URL=https://localhost:3334",
   "TRINAXAI_FRONTEND_MODE=preview",
   "TRINAXAI_CERT_PASSPHRASE=trinaxai-local",
-  "TRINAXAI_RAG_TARGET=http://127.0.0.1:3333",
-  "VITE_TRINAXAI_RAG_TARGET=http://127.0.0.1:3333",
+  "TRINAXAI_RAG_HTTPS=1",
+  "TRINAXAI_RAG_TARGET=https://127.0.0.1:3333",
+  "VITE_TRINAXAI_RAG_TARGET=https://127.0.0.1:3333",
   "OLLAMA_BASE_URL=http://localhost:11434",
   "TRINAXAI_MODEL_GENERAL=$ModelGeneral",
   "TRINAXAI_MODEL_CODE=$ModelCode",
@@ -476,12 +482,18 @@ if (-not $NoModels -and (Ensure-OllamaRunning)) {
 
 Write-Step "6/6 Start"
 if (-not $NoStart) {
-  & ".\.venv\Scripts\python.exe" "service_manager.py" "start" "--base-dir" $Repo
-  Write-Ok "TrinaxAI started"
+  if (Read-YesNo "Start TrinaxAI now after install?" $true) {
+    & ".\.venv\Scripts\python.exe" "service_manager.py" "start" "--base-dir" $Repo
+    Write-Ok "TrinaxAI started"
+  } else {
+    $NoStart = $true
+    Write-Warn "Start skipped. Run .\.venv\Scripts\trinaxai.exe start when ready."
+  }
 }
-if ($Interactive) {
-  $AutoStart = Read-Host "Start TrinaxAI automatically when Windows starts? [Y/n]"
-  if ($AutoStart -match "^[Nn]") { $NoAutostart = $true }
+if (-not $NoAutostart) {
+  if (-not (Read-YesNo "Start TrinaxAI automatically when Windows starts?" $true)) {
+    $NoAutostart = $true
+  }
 }
 if (-not $NoAutostart) {
   & ".\.venv\Scripts\python.exe" "service_manager.py" "enable-autostart" "--base-dir" $Repo

@@ -462,7 +462,7 @@ TRINAXAI_ADMIN_TOKEN=`}</pre>
                   { method: 'GET', path: '/resources', descEs: 'Telemetría local básica de RAM/VRAM', descEn: 'Basic local RAM/VRAM telemetry' },
                   { method: 'GET', path: '/app-state', descEs: 'Leer configuración e historial compartidos entre dispositivos', descEn: 'Read shared settings and chat history across devices' },
                   { method: 'PUT', path: '/app-state', descEs: 'Guardar configuración e historial compartidos localmente', descEn: 'Save shared local settings and chat history' },
-                  { method: 'DELETE', path: '/app-state', descEs: 'Restaurar configuración compartida del host', descEn: 'Reset shared host configuration' },
+                  { method: 'DELETE', path: '/app-state', descEs: 'Restaurar estado, fuentes e índice del host', descEn: 'Factory reset host state, sources, and index' },
                 ].map((ep) => (
                   <div key={ep.path} className={`p-3 rounded-lg border ${sectionBg}`}>
                     <div className="flex items-center gap-2">

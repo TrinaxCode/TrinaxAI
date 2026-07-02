@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, useCallback } from 'react';
 import { motion } from 'framer-motion';
-import { MdArrowBack, MdSearch, MdFolder, MdDescription, MdContentCopy, MdCheck, MdClose } from 'react-icons/md';
+import { MdArrowBack, MdSearch, MdFolder, MdDescription, MdContentCopy, MdCheck, MdClose, MdFolderOpen } from 'react-icons/md';
 import { useTheme } from '../theme/ThemeContext';
 import { useI18n } from '../i18n/I18nContext';
 import { escapeRegExp } from '../utils/str';
@@ -190,7 +190,10 @@ export default function KnowledgeBrowser({ onBack, initialCollection, initialFil
             {loadingSources ? (
               <p className={`px-3 py-4 text-xs ${muted}`}>{t('loading')}</p>
             ) : filteredSources.length === 0 ? (
-              <p className={`px-3 py-4 text-xs ${muted}`}>{sources.length === 0 ? t('noIndexedFiles') : t('noMatches')}</p>
+              <div className="flex flex-col items-center justify-center gap-2 px-4 py-8 text-center">
+                <MdFolderOpen size={32} className={`opacity-25 ${isDark ? 'text-white' : 'text-gray-900'}`} />
+                <p className={`text-xs ${muted}`}>{sources.length === 0 ? t('noIndexedFiles') : t('noMatches')}</p>
+              </div>
             ) : (
               filteredSources.map((s) => (
                 <button
@@ -216,8 +219,9 @@ export default function KnowledgeBrowser({ onBack, initialCollection, initialFil
         {/* Chunks column */}
         <div className="flex-1 flex flex-col min-h-0 min-w-0">
           {!activeFile ? (
-            <div className={`flex-1 flex items-center justify-center text-sm ${muted}`}>
-              {t('selectFilePrompt')}
+            <div className={`flex-1 flex flex-col items-center justify-center gap-3 text-sm ${muted}`}>
+              <MdDescription size={36} className="opacity-20" />
+              <span className="text-xs">{t('selectFilePrompt')}</span>
             </div>
           ) : (
             <>
@@ -243,7 +247,10 @@ export default function KnowledgeBrowser({ onBack, initialCollection, initialFil
                 {loadingChunks ? (
                   <p className={`text-xs ${muted}`}>{t('loadingChunks')}</p>
                 ) : filteredChunks.length === 0 ? (
-                  <p className={`text-xs ${muted}`}>{chunks.length === 0 ? t('noChunks') : t('noMatches')}</p>
+                  <div className="flex flex-col items-center justify-center gap-2 py-8 text-center">
+                    <MdSearch size={28} className={`opacity-25 ${isDark ? 'text-white' : 'text-gray-900'}`} />
+                    <p className={`text-xs ${muted}`}>{chunks.length === 0 ? t('noChunks') : t('noMatches')}</p>
+                  </div>
                 ) : (
                   filteredChunks.map((chunk, idx) => (
                     <motion.div

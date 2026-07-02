@@ -11,9 +11,9 @@ Al terminar deberias tener:
 - PWA en `https://localhost:3334`.
 - Entorno Python `.venv`.
 - Dependencias de la PWA.
-- Modelos base descargados.
+- Modelos base descargados si eliges esa opcion.
 - `.env` generado.
-- Autoarranque desde la carpeta Startup de Windows: la PWA vuelve al iniciar el equipo y la IA respeta si quedo encendida o apagada.
+- Autoarranque opcional desde la carpeta Startup de Windows: la PWA vuelve al iniciar el equipo y la IA respeta si quedo encendida o apagada.
 
 ## Requisitos
 
@@ -30,7 +30,7 @@ Al terminar deberias tener:
 
 Instala Python marcando la opcion `Add python.exe to PATH`.
 
-## Instalacion automatica recomendada
+## Instalacion guiada recomendada
 
 Abre PowerShell en la carpeta del proyecto y ejecuta:
 
@@ -46,9 +46,11 @@ El instalador:
 - Crea `.venv`.
 - Instala paquetes Python.
 - Instala y compila la PWA.
-- Descarga modelos de Ollama.
-- Habilita inicio con Windows.
-- Inicia los servicios.
+- Pregunta si quieres descargar modelos de Ollama.
+- Pregunta si quieres habilitar inicio con Windows.
+- Pregunta si quieres iniciar los servicios ahora.
+
+Las dependencias necesarias se instalan automaticamente. Las opciones como modelos, control LAN, inicio con Windows e inicio de servicios se preguntan por defecto. Usa `-NonInteractive` para instalaciones automatizadas.
 
 Si todavia no tienes el proyecto:
 
@@ -305,9 +307,10 @@ http://localhost:3333/health
 Si usas los scripts desde Git Bash o WSL:
 
 ```bash
-./backup.sh create
 ./update.sh
 ```
+
+El actualizador pregunta si quieres crear backup, descargar codigo nuevo, actualizar modelos, cambiar autoarranque, reiniciar servicios y correr la auditoria. Las dependencias Python/npm y el build de la PWA siguen siendo automaticos.
 
 En PowerShell manual:
 
@@ -337,7 +340,15 @@ Si tienes Git Bash:
 
 ## Desinstalar
 
-Primero deshabilita autoarranque si lo activaste:
+Desde Git Bash o WSL, usa el desinstalador guiado:
+
+```bash
+./uninstall.sh
+```
+
+Pregunta que archivos runtime quieres quitar. Los datos RAG y modelos de Ollama se conservan salvo que elijas borrarlos.
+
+Limpieza manual en PowerShell:
 
 ```powershell
 .\.venv\Scripts\python.exe service_manager.py disable-autostart --base-dir "$PWD"

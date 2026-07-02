@@ -12,8 +12,9 @@ usage() {
 TrinaxAI One-Command Installer
 
 Usage:
-  ./install.sh                 Automatic install (auto-detects profile)
-  ./install.sh --interactive   Ask before optional choices
+  ./install.sh                 Guided install (asks optional choices)
+  ./install.sh --interactive   Guided install (default)
+  ./install.sh --non-interactive  Automatic install for CI/scripts
   ./install.sh --no-models     Skip model downloads
   ./install.sh --no-vision     Skip vision model download
   ./install.sh --no-autostart  Do not enable boot autostart
@@ -29,14 +30,15 @@ What it does:
   4. Installs Ollama if missing
   5. Creates Python virtual environment and installs dependencies
   6. Builds the PWA frontend (Node.js required)
-  7. Pulls recommended Ollama models (qwen2.5-coder, llama3.2, bge-m3)
-  8. Enables auto-start on boot and starts TrinaxAI
+  7. Asks whether to pull recommended Ollama models
+  8. Asks whether to enable auto-start on boot and start TrinaxAI now
 
 Supported: Linux (apt/dnf/pacman/zypper/apk), macOS (Homebrew), Windows (Git Bash / WSL2)
 
 Environment variables:
   TRINAXAI_PROFILE              Override auto-detected profile (8gb/16gb/max/ultra)
   TRINAXAI_INTERACTIVE=1        Ask before optional choices
+  TRINAXAI_NONINTERACTIVE=1     Do not ask optional choices
   TRINAXAI_INSTALL_MODELS=0     Skip model downloads
   TRINAXAI_INSTALL_VISION=0     Skip vision model download
   TRINAXAI_ENABLE_AUTOSTART=0   Skip boot autostart
@@ -47,7 +49,11 @@ EOF
   exit 0
 }
 
-INTERACTIVE="${TRINAXAI_INTERACTIVE:-0}"
+INTERACTIVE="${TRINAXAI_INTERACTIVE:-1}"
+NONINTERACTIVE="${TRINAXAI_NONINTERACTIVE:-0}"
+if [ "$NONINTERACTIVE" = "1" ]; then
+  INTERACTIVE=0
+fi
 INSTALL_MODELS="${TRINAXAI_INSTALL_MODELS:-1}"
 INSTALL_VISION="${TRINAXAI_INSTALL_VISION:-1}"
 ENABLE_AUTOSTART="${TRINAXAI_ENABLE_AUTOSTART:-1}"
@@ -59,7 +65,8 @@ ADMIN_TOKEN="${TRINAXAI_ADMIN_TOKEN:-}"
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --help|-h) usage;;
-    --interactive) INTERACTIVE=1;;
+    --interactive) INTERACTIVE=1; NONINTERACTIVE=0;;
+    --non-interactive|--yes|-y) INTERACTIVE=0; NONINTERACTIVE=1;;
     --no-models) INSTALL_MODELS=0; INSTALL_VISION=0;;
     --no-vision) INSTALL_VISION=0;;
     --no-autostart) ENABLE_AUTOSTART=0;;
@@ -83,7 +90,21 @@ print_ok()    { echo -e "  ${GREEN}[OK]${NC} $1"; }
 print_warn()  { echo -e "  ${YELLOW}[!]${NC} $1"; }
 print_err()   { echo -e "  ${RED}[X]${NC} $1"; }
 print_info()  { echo -e "  ${CYAN}[i]${NC} $1"; }
-ask()         { read -p "$(echo -e "${GREEN}[?]${NC} $1 ")" -r; echo "$REPLY"; }
+ask() {
+  local prompt="$1" reply=""
+  if [ "${INTERACTIVE:-1}" != "1" ]; then
+    echo ""
+    return 0
+  fi
+  if [ -r /dev/tty ]; then
+    read -r -p "$(echo -e "${GREEN}[?]${NC} $prompt ")" reply </dev/tty || reply=""
+  elif [ -t 0 ]; then
+    read -r -p "$(echo -e "${GREEN}[?]${NC} $prompt ")" reply || reply=""
+  else
+    echo -e "${YELLOW}[!]${NC} No interactive terminal; using default answer for: $prompt" >&2
+  fi
+  echo "$reply"
+}
 ask_default() {
   prompt="$1"
   default="$2"
@@ -93,6 +114,21 @@ ask_default() {
   else
     echo "$reply"
   fi
+}
+ask_yes_no() {
+  local prompt="$1" default="${2:-y}" reply=""
+  if [ "${INTERACTIVE:-1}" != "1" ]; then
+    [[ "$default" =~ ^[Yy]$ ]]
+    return $?
+  fi
+  if [[ "$default" =~ ^[Yy]$ ]]; then
+    reply="$(ask "$prompt [Y/n]")"
+    [[ "$reply" =~ ^[Nn] ]] && return 1
+    return 0
+  fi
+  reply="$(ask "$prompt [y/N]")"
+  [[ "$reply" =~ ^[Yy] ]] && return 0
+  return 1
 }
 
 detect_ram_gb() {
@@ -237,6 +273,7 @@ esac
 if [ "$OS" = "windows" ] && [ -f "install.ps1" ] && command -v powershell.exe >/dev/null 2>&1; then
   PS_ARGS=("-ExecutionPolicy" "Bypass" "-File" "$(pwd -W 2>/dev/null || pwd)/install.ps1")
   [ "$INTERACTIVE" = "1" ] && PS_ARGS+=("-Interactive")
+  [ "$NONINTERACTIVE" = "1" ] && PS_ARGS+=("-NonInteractive")
   [ "$INSTALL_MODELS" = "1" ] || PS_ARGS+=("-NoModels")
   [ "$INSTALL_VISION" = "1" ] || PS_ARGS+=("-NoVision")
   [ "$ENABLE_AUTOSTART" = "1" ] || PS_ARGS+=("-NoAutostart")
@@ -283,6 +320,7 @@ cd "$SCRIPT_DIR"
 if [ "$OS" = "windows" ] && [ -f "install.ps1" ] && command -v powershell.exe >/dev/null 2>&1; then
   PS_ARGS=("-ExecutionPolicy" "Bypass" "-File" "$(pwd -W 2>/dev/null || pwd)/install.ps1")
   [ "$INTERACTIVE" = "1" ] && PS_ARGS+=("-Interactive")
+  [ "$NONINTERACTIVE" = "1" ] && PS_ARGS+=("-NonInteractive")
   [ "$INSTALL_MODELS" = "1" ] || PS_ARGS+=("-NoModels")
   [ "$INSTALL_VISION" = "1" ] || PS_ARGS+=("-NoVision")
   [ "$ENABLE_AUTOSTART" = "1" ] || PS_ARGS+=("-NoAutostart")
@@ -380,10 +418,9 @@ echo "  General chat: conversation and everyday questions"
 echo "  Code/deep:    code, reasoning, refactors, project analysis"
 echo "  Embeddings:   RAG indexing and semantic search"
 echo "  Vision:       image and screenshot analysis"
+reply="r"
 if [ "$INTERACTIVE" = "1" ]; then
   reply=$(ask "Use recommended Ollama models, or configure your own? [R/o]")
-else
-  read -r -p "$(echo -e "${GREEN}[?]${NC} Use recommended Ollama models, or configure your own? [R/o] ")" -t 15 reply || reply="r"
 fi
 if [[ "$reply" =~ ^[Oo]$ ]]; then
   MODEL_GENERAL="$(ask_default "General chat model" "$MODEL_GENERAL")"
@@ -402,13 +439,10 @@ if [ "$ENABLE_LAN_SYSTEM" != "1" ]; then
   echo "This allows devices on your local network to call sensitive system endpoints"
   echo "(shutdown, startup, reload, indexing, file watchers, collection management)."
   echo "Only enable this if you trust your local network and use a strong admin token."
-  if [ "$INTERACTIVE" = "1" ]; then
-    reply=$(ask "Enable LAN system control? [y/N]")
-  else
-    echo -e "  ${CYAN}Default: disabled.${NC} Use --lan-system to enable non-interactively, or answer below."
-    read -r -p "$(echo -e "${GREEN}[?]${NC} Enable LAN system control? [y/N] ")" -t 15 reply || reply="n"
+  if [ "$INTERACTIVE" != "1" ]; then
+    echo -e "  ${CYAN}Default: disabled.${NC} Use --lan-system to enable non-interactively."
   fi
-  if [[ "$reply" =~ ^[Yy]$ ]]; then
+  if ask_yes_no "Enable LAN system control?" n; then
     ENABLE_LAN_SYSTEM=1
   else
     ENABLE_LAN_SYSTEM=0
@@ -431,6 +465,7 @@ cat > .env <<EOF
 
 # Profile (auto-detected: $AUTO_PROFILE, RAM: ${RAM_GB:-unknown} GB)
 TRINAXAI_PROFILE=$PROFILE
+TRINAXAI_PERFORMANCE_MODE=fast
 
 # Network
 TRINAXAI_HOST=0.0.0.0
@@ -438,6 +473,9 @@ TRINAXAI_PORT=3333
 OLLAMA_BASE_URL=http://localhost:11434
 TRINAXAI_FRONTEND_URL=https://localhost:3334
 TRINAXAI_FRONTEND_MODE=preview
+TRINAXAI_RAG_HTTPS=1
+TRINAXAI_RAG_TARGET=https://127.0.0.1:3333
+VITE_TRINAXAI_RAG_TARGET=https://127.0.0.1:3333
 
 # Model fleet (auto-router enabled by default)
 TRINAXAI_MODEL_GENERAL=$MODEL_GENERAL
@@ -596,12 +634,12 @@ echo "  Embeddings:     $EMBED_MODEL"
 echo "  Vision (opt):   $VISION_MODEL"
 echo ""
 
-if [ "$INTERACTIVE" = "1" ]; then
-  reply=$(ask "Download default models now? [Y/n]")
-  [[ "$reply" =~ ^[Nn] ]] && INSTALL_MODELS=0
-else
-  read -r -p "$(echo -e "${GREEN}[?]${NC} Download the configured Ollama models now? Choose N if you will use models you already have. [Y/n] ")" -t 15 reply || reply="y"
-  [[ "$reply" =~ ^[Nn] ]] && INSTALL_MODELS=0
+if [ "$INSTALL_MODELS" = "1" ]; then
+  if ask_yes_no "Download the configured Ollama models now? Choose N if you will use models you already have." y; then
+    INSTALL_MODELS=1
+  else
+    INSTALL_MODELS=0
+  fi
 fi
 
 if [ "$INSTALL_MODELS" = "1" ]; then
@@ -611,9 +649,12 @@ if [ "$INSTALL_MODELS" = "1" ]; then
       ollama pull "$model" && print_ok "$model" || print_err "$model failed"
     done
 
-    if [ "$INTERACTIVE" = "1" ]; then
-      reply=$(ask "Download vision model ($VISION_MODEL)? [Y/n]")
-      [[ "$reply" =~ ^[Nn] ]] && INSTALL_VISION=0
+    if [ "$INSTALL_VISION" = "1" ]; then
+      if ask_yes_no "Download vision model ($VISION_MODEL)?" y; then
+        INSTALL_VISION=1
+      else
+        INSTALL_VISION=0
+      fi
     fi
     if [ "$INSTALL_VISION" = "1" ]; then
       ollama pull "$VISION_MODEL" && print_ok "$VISION_MODEL" || print_err "$VISION_MODEL failed"
@@ -630,17 +671,25 @@ fi
 print_header "6/6 Auto-Start on Boot"
 
 if [ "$START_NOW" = "1" ]; then
-  print_info "Starting TrinaxAI services..."
-  python service_manager.py start --base-dir "$SCRIPT_DIR" && print_ok "TrinaxAI started" || \
-    print_warn "Could not start automatically. Run: ./startup_ai.sh"
+  if ask_yes_no "Start TrinaxAI now after install?" y; then
+    print_info "Starting TrinaxAI services..."
+    python service_manager.py start --base-dir "$SCRIPT_DIR" && print_ok "TrinaxAI started" || \
+      print_warn "Could not start automatically. Run: ./startup_ai.sh"
+  else
+    START_NOW=0
+    print_info "Start skipped. Run ./startup_ai.sh or trinaxai start when ready."
+  fi
 fi
 
-if [ "$INTERACTIVE" = "1" ]; then
+if [ "$ENABLE_AUTOSTART" = "1" ]; then
   echo ""
   echo -e "${YELLOW}Start TrinaxAI automatically when your computer turns on?${NC}"
   echo "You can change this later in the PWA Settings page."
-  reply=$(ask "Enable auto-start on boot? [Y/n]")
-  [[ "$reply" =~ ^[Nn]$ ]] && ENABLE_AUTOSTART=0
+  if ask_yes_no "Enable auto-start on boot?" y; then
+    ENABLE_AUTOSTART=1
+  else
+    ENABLE_AUTOSTART=0
+  fi
 fi
 
 if [ "$ENABLE_AUTOSTART" = "1" ]; then
@@ -658,7 +707,7 @@ echo -e "${GREEN}${BOLD}║      TrinaxAI is ready!                  ║${NC}"
 echo -e "${GREEN}${BOLD}╚══════════════════════════════════════════╝${NC}"
 echo ""
 echo -e "  ${BLUE}PWA Frontend:${NC}  https://localhost:3334"
-echo -e "  ${BLUE}RAG API:${NC}      http://localhost:3333/health"
+echo -e "  ${BLUE}RAG API:${NC}      https://localhost:3333/health"
 echo -e "  ${BLUE}Ollama API:${NC}    http://localhost:11434"
 echo ""
 echo -e "  ${BLUE}Quick start:${NC}   ./startup_ai.sh"

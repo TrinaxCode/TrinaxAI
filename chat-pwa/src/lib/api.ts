@@ -54,6 +54,7 @@ export interface ChatMessage {
 export const VISION_MODEL = import.meta.env.VITE_TRINAXAI_VISION_MODEL || 'qwen2.5vl:3b';
 const VISION_QUALITY_MODEL = import.meta.env.VITE_TRINAXAI_VISION_QUALITY_MODEL || 'qwen2.5vl:7b';
 const OLLAMA_KEEP_ALIVE_KEY = 'tc-keep-alive';
+const OLLAMA_KEEP_ALIVE_DEFAULT = import.meta.env.VITE_TRINAXAI_KEEP_ALIVE || '5m';
 const TEXT_NUM_CTX = 3072;
 const VISION_FAST_NUM_CTX = 1024;
 const VISION_FAST_NUM_PREDICT = 120;
@@ -106,13 +107,13 @@ function modelSetting(key: string, fallback: string): string {
 function ollamaKeepAliveSetting(): string | number {
   try {
     const raw = localStorage.getItem(OLLAMA_KEEP_ALIVE_KEY)?.trim();
-    if (!raw) return 0;
+    if (!raw) return OLLAMA_KEEP_ALIVE_DEFAULT;
     const minutes = Number(raw.replace(/[^0-9.]/g, ''));
     if (!Number.isFinite(minutes) || minutes <= 0) return 0;
     if (/^\d+(?:\.\d+)?[smh]$/.test(raw)) return raw;
     return `${minutes}m`;
   } catch {
-    return 0;
+    return OLLAMA_KEEP_ALIVE_DEFAULT;
   }
 }
 
@@ -247,18 +248,20 @@ function unloadOllamaModel(model?: string): void {
 export async function checkStatus(): Promise<{ ollama: boolean; rag: boolean; indexed: boolean; ramPercent: number | null }> {
   const out = { ollama: false, rag: false, indexed: false, ramPercent: null as number | null };
   try {
-    const r = await fetch(`${OLLAMA_BASE}/api/tags`, { signal: AbortSignal.timeout(3000) });
-    out.ollama = r.ok;
-  } catch { /* down */ }
-  try {
     const r = await fetch(`${RAG_BASE}/health`, { signal: AbortSignal.timeout(3000) });
     if (r.ok) {
       out.rag = true;
       const d = await r.json();
       out.indexed = !!d.indexed;
-      if (!out.ollama && typeof d?.ollama === 'boolean') out.ollama = d.ollama;
+      out.ollama = typeof d?.ollama === 'boolean' ? d.ollama : false;
     }
   } catch { /* down */ }
+  if (!out.rag) {
+    try {
+      const r = await fetch(`${OLLAMA_BASE}/api/tags`, { signal: AbortSignal.timeout(2500) });
+      out.ollama = r.ok;
+    } catch { /* down */ }
+  }
   if (out.rag) {
     try {
       const r = await fetch(`${RAG_BASE}/resources`, { signal: AbortSignal.timeout(2500) });

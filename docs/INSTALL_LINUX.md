@@ -9,11 +9,11 @@ When done, you should have:
 - Ollama running locally at `http://localhost:11434`.
 - TrinaxAI RAG API at `http://localhost:3333`.
 - TrinaxAI PWA at `https://localhost:3334`.
-- Base models downloaded.
+- Base models downloaded if you choose that option.
 - Python `.venv` environment installed.
 - Frontend dependencies installed.
 - `.env` generated with your machine's profile.
-- User autostart with systemd: the PWA comes back on boot and the AI respects whether it was left on or off.
+- Optional user autostart with systemd: the PWA comes back on boot and the AI respects whether it was left on or off.
 
 ## Requirements
 
@@ -28,7 +28,7 @@ When done, you should have:
 
 If you use NVIDIA, install the drivers before downloading large models. TrinaxAI also works CPU-only, but responses will be slower.
 
-## Recommended automatic install
+## Recommended guided install
 
 From a terminal:
 
@@ -36,7 +36,7 @@ From a terminal:
 curl -fsSL https://raw.githubusercontent.com/TrinaxCode/TrinaxAI/main/install.sh | bash
 ```
 
-The installer clones the project to `~/trinaxai` if it doesn't exist yet, detects your RAM, creates `.env`, installs dependencies, prepares the PWA, downloads the recommended models, enables autostart, and starts TrinaxAI. Use `./install.sh --interactive` if you want manual prompts.
+The installer clones the project to `~/trinaxai` if it doesn't exist yet, detects your RAM, creates `.env`, installs required dependencies, and prepares the PWA automatically. Optional choices such as model downloads, LAN system control, autostart, and starting services are prompted by default. Use `./install.sh --non-interactive` for scripted installs.
 
 If you already cloned the repository:
 
@@ -333,9 +333,10 @@ https://localhost:3334
 
 ```bash
 cd ~/trinaxai
-./backup.sh create
 ./update.sh
 ```
+
+The updater asks whether to create a backup, pull latest code, update models, change autostart, restart services, and run the readiness audit. Python/npm dependencies and the PWA build still run automatically.
 
 If you update manually:
 
@@ -369,7 +370,9 @@ Manually back up the important files:
 ./uninstall.sh
 ```
 
-Also remove Ollama models:
+The uninstaller asks which runtime files to remove. RAG data and Ollama models are kept unless you choose to remove them.
+
+To preselect removing Ollama models:
 
 ```bash
 ./uninstall.sh --remove-models

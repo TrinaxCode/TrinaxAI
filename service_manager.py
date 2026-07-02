@@ -472,6 +472,41 @@ def _frontend_script(env: dict[str, str]) -> str:
     return "dev" if mode == "dev" else "preview"
 
 
+def _rag_https_files(base_dir: str) -> tuple[str, str] | None:
+    cert_dir = Path(base_dir) / "chat-pwa" / "certs"
+    key_file = cert_dir / "localhost-key.pem"
+    cert_file = cert_dir / "localhost.pem"
+    if key_file.is_file() and cert_file.is_file():
+        return str(key_file), str(cert_file)
+    return None
+
+
+def _rag_command(python: str, base_dir: str, env: dict[str, str]) -> list[str]:
+    host = env.get("TRINAXAI_HOST", "0.0.0.0")
+    port = env.get("TRINAXAI_PORT", "3333")
+    command = [
+        python,
+        "-m",
+        "uvicorn",
+        "rag_api:app",
+        "--host",
+        host,
+        "--port",
+        port,
+    ]
+    use_https = env.get("TRINAXAI_RAG_HTTPS", "1").strip().lower() not in {
+        "0",
+        "false",
+        "no",
+        "off",
+    }
+    ssl_files = _rag_https_files(base_dir) if use_https else None
+    if ssl_files:
+        key_file, cert_file = ssl_files
+        command.extend(["--ssl-keyfile", key_file, "--ssl-certfile", cert_file])
+    return command
+
+
 def _service_specs(base_dir: str) -> dict[str, dict]:
     service_env = _service_env(base_dir)
     python = _windows_hidden_python(service_env.get("TRINAXAI_PYTHON", sys.executable))
@@ -497,7 +532,7 @@ def _service_specs(base_dir: str) -> dict[str, dict]:
             "log_file": os.path.join(base_dir, "logs", "ollama.log"),
         },
         "rag_api": {
-            "command": [python, os.path.join(base_dir, "rag_api.py")],
+            "command": _rag_command(python, base_dir, service_env),
             "cwd": base_dir,
             "env": service_env,
             "log_file": os.path.join(base_dir, "logs", "rag_api.log"),

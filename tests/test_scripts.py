@@ -9,8 +9,21 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_bash_scripts_parse() -> None:
-    for script in ["install.sh", "backup.sh", "uninstall.sh", "startup_ai.sh", "shutdown_ai.sh"]:
-        result = subprocess.run(["bash", "-n", str(ROOT / script)], capture_output=True, text=True, check=False)
+    for script in [
+        "install.sh",
+        "backup.sh",
+        "update.sh",
+        "uninstall.sh",
+        "unistall.sh",
+        "startup_ai.sh",
+        "shutdown_ai.sh",
+    ]:
+        result = subprocess.run(
+            ["bash", "-n", str(ROOT / script)],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
         assert result.returncode == 0, f"{script}: {result.stderr}"
 
 

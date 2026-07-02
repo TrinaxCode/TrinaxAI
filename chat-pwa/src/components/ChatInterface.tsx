@@ -7,6 +7,7 @@ import { useI18n } from '../i18n/I18nContext';
 import { useTheme } from '../theme/ThemeContext';
 import ToggleSwitch from './ToggleSwitch';
 import Sources from './Sources';
+import { useToast } from './Toast';
 import type { ChatMessage, ChatEngine, Collection } from '../lib/api';
 import { extractDocumentText, getCollections, getIndexJob, indexableFilesFrom, prepareImageForVision, runResearch, startFolderIndex, getMemorySummary } from '../lib/api';
 import { getPreferredUserName, rememberFromMessage } from '../lib/userProfile';
@@ -103,6 +104,7 @@ export default function ChatInterface({
 }: ChatInterfaceProps) {
   const { t, lang } = useI18n();
   const { isDark } = useTheme();
+  const toast = useToast();
   const [input, setInput] = useState('');
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [editingText, setEditingText] = useState('');
@@ -397,9 +399,20 @@ function getLastUserText(messages: ChatMessage[], beforeMsg?: ChatMessage): stri
   const ttsTailRef = useRef('');
   const ttsSpeakingRef = useRef(false);
   const ttsEndRef = useRef<(() => void) | null>(null);
+  const ttsPumpRef = useRef<number | null>(null);
+  const voiceToastAtRef = useRef(0);
   const flushVoiceTtsRef = useRef<(force?: boolean, onDone?: () => void) => void>(() => {});
   const voiceSupported = typeof window !== 'undefined' &&
     !!((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition);
+  const secureVoiceContext = typeof window !== 'undefined' &&
+    (window.isSecureContext || ['localhost', '127.0.0.1', '::1'].includes(window.location.hostname));
+
+  const showVoiceToast = useCallback((message: string, type: 'warning' | 'error' = 'warning') => {
+    const now = Date.now();
+    if (now - voiceToastAtRef.current < 1800) return;
+    voiceToastAtRef.current = now;
+    toast.toast(message, type);
+  }, [toast]);
 
   useEffect(() => {
     callModeRef.current = callMode;
@@ -466,23 +479,49 @@ function getLastUserText(messages: ChatMessage[], beforeMsg?: ChatMessage): stri
     ttsEndRef.current = null;
   }, []);
 
+  const stopTtsPump = useCallback(() => {
+    if (ttsPumpRef.current != null) {
+      window.clearInterval(ttsPumpRef.current);
+      ttsPumpRef.current = null;
+    }
+  }, []);
+
+  const startTtsPump = useCallback(() => {
+    stopTtsPump();
+    ttsPumpRef.current = window.setInterval(() => {
+      if (!ttsSupported || !ttsSpeakingRef.current) {
+        stopTtsPump();
+        return;
+      }
+      window.speechSynthesis.resume();
+    }, 7000);
+  }, [stopTtsPump, ttsSupported]);
+
+  useEffect(() => () => stopTtsPump(), [stopTtsPump]);
+
   const stopSpeak = useCallback(() => {
     if (ttsSupported) window.speechSynthesis.cancel();
+    stopTtsPump();
     clearTtsState();
-  }, [clearTtsState, ttsSupported]);
+  }, [clearTtsState, stopTtsPump, ttsSupported]);
 
   const unlockSpeech = useCallback(() => {
     if (!ttsSupported) return;
-    window.speechSynthesis.resume();
-    const u = new SpeechSynthesisUtterance('.');
-    u.lang = voiceLang;
-    u.volume = 0;
-    window.speechSynthesis.speak(u);
-    window.setTimeout(() => {
-      if (!ttsSpeakingRef.current) window.speechSynthesis.cancel();
+    try {
       window.speechSynthesis.resume();
-    }, 60);
-  }, [ttsSupported, voiceLang]);
+      const u = new SpeechSynthesisUtterance('.');
+      u.lang = voiceLang;
+      u.volume = 0.01;
+      u.rate = 1.2;
+      window.speechSynthesis.speak(u);
+      window.setTimeout(() => {
+        if (!ttsSpeakingRef.current) window.speechSynthesis.cancel();
+        window.speechSynthesis.resume();
+      }, 120);
+    } catch {
+      showVoiceToast(t('ttsUnavailable'));
+    }
+  }, [showVoiceToast, t, ttsSupported, voiceLang]);
 
   const speak = useCallback((text: string, onDone?: () => void, key?: string) => {
     if (!ttsSupported || !text) {
@@ -506,9 +545,11 @@ function getLastUserText(messages: ChatMessage[], beforeMsg?: ChatMessage): stri
     setTtsActiveKey(key ?? null);
     ttsSpeakingRef.current = true;
     setTtsSpeaking(true);
+    startTtsPump();
     const v = pickVoice();
     const parts = splitSpeech(clean);
     if (parts.length === 0) {
+      stopTtsPump();
       clearTtsState();
       onDone?.();
       return;
@@ -521,12 +562,24 @@ function getLastUserText(messages: ChatMessage[], beforeMsg?: ChatMessage): stri
       u.volume = 1;
       if (v) u.voice = v;
       if (index === parts.length - 1) {
-        u.onend = () => { clearTtsState(); onDone?.(); };
-        u.onerror = () => { clearTtsState(); onDone?.(); };
+        u.onend = () => { stopTtsPump(); clearTtsState(); onDone?.(); };
       }
-      window.speechSynthesis.speak(u);
+      u.onerror = () => {
+        stopTtsPump();
+        clearTtsState();
+        showVoiceToast(t('ttsUnavailable'));
+        onDone?.();
+      };
+      try {
+        window.speechSynthesis.speak(u);
+      } catch {
+        stopTtsPump();
+        clearTtsState();
+        showVoiceToast(t('ttsUnavailable'));
+        onDone?.();
+      }
     });
-  }, [clearTtsState, pickVoice, splitSpeech, stopSpeak, ttsSupported, voiceLang]);
+  }, [clearTtsState, pickVoice, showVoiceToast, splitSpeech, startTtsPump, stopSpeak, stopTtsPump, t, ttsSupported, voiceLang]);
 
   const cleanSpeechText = useCallback((text: string) => text
     .replace(/```[\s\S]*?```/g, ' bloque de código. ')
@@ -549,6 +602,7 @@ function getLastUserText(messages: ChatMessage[], beforeMsg?: ChatMessage): stri
     u.volume = 1;
     if (v) u.voice = v;
     u.onend = () => {
+      stopTtsPump();
       ttsSpeakingRef.current = false;
       setTtsSpeaking(false);
       const done = ttsEndRef.current ?? onDone;
@@ -560,17 +614,28 @@ function getLastUserText(messages: ChatMessage[], beforeMsg?: ChatMessage): stri
       }
     };
     u.onerror = () => {
+      stopTtsPump();
       ttsSpeakingRef.current = false;
       setTtsSpeaking(false);
       const done = ttsEndRef.current ?? onDone;
       ttsEndRef.current = null;
+      showVoiceToast(t('ttsUnavailable'));
       done?.();
     };
     ttsSpeakingRef.current = true;
     setTtsSpeaking(true);
-    window.speechSynthesis.resume();
-    window.speechSynthesis.speak(u);
-  }, [cleanSpeechText, pickVoice, ttsSupported, voiceLang]);
+    startTtsPump();
+    try {
+      window.speechSynthesis.resume();
+      window.speechSynthesis.speak(u);
+    } catch {
+      stopTtsPump();
+      ttsSpeakingRef.current = false;
+      setTtsSpeaking(false);
+      showVoiceToast(t('ttsUnavailable'));
+      onDone?.();
+    }
+  }, [cleanSpeechText, pickVoice, showVoiceToast, startTtsPump, stopTtsPump, t, ttsSupported, voiceLang]);
 
   const flushVoiceTts = useCallback((force = false, onDone?: () => void) => {
     const clean = cleanSpeechText(ttsTailRef.current);
@@ -848,7 +913,21 @@ function getLastUserText(messages: ChatMessage[], beforeMsg?: ChatMessage): stri
   }, [abort, stopSpeak]);
 
   const startVoiceCapture = useCallback((continuous: boolean) => {
-    if (!voiceSupported || streaming) return;
+    if (streaming) return;
+    if (!secureVoiceContext) {
+      showVoiceToast(t('voiceNeedsSecureContext'), 'error');
+      setCallMode(false);
+      callModeRef.current = false;
+      setListening(false);
+      return;
+    }
+    if (!voiceSupported) {
+      showVoiceToast(t('voiceRecognitionUnsupported'), 'warning');
+      setCallMode(false);
+      callModeRef.current = false;
+      setListening(false);
+      return;
+    }
     recognitionRef.current?.abort?.();
     const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     const rec = new SR();
@@ -856,6 +935,7 @@ function getLastUserText(messages: ChatMessage[], beforeMsg?: ChatMessage): stri
     rec.interimResults = true;
     rec.continuous = false;
     let finalText = '';
+    let stopAfterError = false;
     rec.onresult = (e: any) => {
       let interim = '';
       for (let i = e.resultIndex; i < e.results.length; i++) {
@@ -867,6 +947,7 @@ function getLastUserText(messages: ChatMessage[], beforeMsg?: ChatMessage): stri
     rec.onend = () => {
       setListening(false);
       recognitionRef.current = null;
+      if (stopAfterError) return;
       const text = finalText.trim();
       if (text) {
         handleSendText(text, { viaVoice: true, continueCall: continuous });
@@ -876,17 +957,41 @@ function getLastUserText(messages: ChatMessage[], beforeMsg?: ChatMessage): stri
         inputRef.current?.focus();
       }
     };
-    rec.onerror = () => {
+    rec.onerror = (event: any) => {
       setListening(false);
       recognitionRef.current = null;
-      if (continuous && callModeRef.current) {
+      const error = String(event?.error || 'unknown');
+      const permanent = ['not-allowed', 'service-not-allowed', 'audio-capture', 'network', 'language-not-supported'].includes(error);
+      if (permanent) {
+        stopAfterError = true;
+        setCallMode(false);
+        callModeRef.current = false;
+        const message = error === 'not-allowed'
+          ? t('voiceMicPermissionDenied')
+          : error === 'audio-capture'
+          ? t('voiceNoMicrophone')
+          : error === 'network' || error === 'service-not-allowed'
+          ? t('voiceRecognitionUnsupported')
+          : t('voiceRecognitionFailed');
+        showVoiceToast(message, error === 'not-allowed' ? 'error' : 'warning');
+        return;
+      }
+      if (continuous && callModeRef.current && error === 'no-speech') {
         window.setTimeout(() => startVoiceRef.current(true), 900);
       }
     };
     recognitionRef.current = rec;
     setListening(true);
-    rec.start();
-  }, [handleSendText, streaming, voiceSupported]);
+    try {
+      rec.start();
+    } catch {
+      recognitionRef.current = null;
+      setListening(false);
+      setCallMode(false);
+      callModeRef.current = false;
+      showVoiceToast(t('voiceRecognitionFailed'), 'warning');
+    }
+  }, [handleSendText, secureVoiceContext, showVoiceToast, streaming, t, voiceLang, voiceSupported]);
 
   useEffect(() => {
     startVoiceRef.current = startVoiceCapture;
@@ -894,7 +999,14 @@ function getLastUserText(messages: ChatMessage[], beforeMsg?: ChatMessage): stri
 
   // ── Dictado por voz → auto-envío → respuesta hablada (TTS) ──
   const toggleVoice = useCallback(() => {
-    if (!voiceSupported) return;
+    if (!voiceSupported) {
+      showVoiceToast(t('voiceRecognitionUnsupported'), 'warning');
+      return;
+    }
+    if (!secureVoiceContext) {
+      showVoiceToast(t('voiceNeedsSecureContext'), 'error');
+      return;
+    }
     if (callMode) {
       setCallMode(false);
       callModeRef.current = false;
@@ -907,7 +1019,7 @@ function getLastUserText(messages: ChatMessage[], beforeMsg?: ChatMessage): stri
     callModeRef.current = true;
     unlockSpeech();
     startVoiceCapture(true);
-  }, [callMode, startVoiceCapture, stopSpeak, unlockSpeech, voiceSupported]);
+  }, [callMode, secureVoiceContext, showVoiceToast, startVoiceCapture, stopSpeak, t, unlockSpeech, voiceSupported]);
 
   // Start editing a user message
   const startEdit = useCallback(
@@ -999,8 +1111,17 @@ function getLastUserText(messages: ChatMessage[], beforeMsg?: ChatMessage): stri
       {/* Navbar — items centered vertically with proper safe-area padding */}
       <nav className={`shrink-0 flex items-center px-2 sm:px-3 border-b ${isDark ? 'bg-black/80 border-white/[0.06]' : 'bg-white/90 border-gray-200'} backdrop-blur-xl`}
            style={{ minHeight: '44px', paddingTop: 'env(safe-area-inset-top, 0px)' }}>
-        {/* Left: animated branding */}
-        <div className="flex items-center shrink-0">
+        {/* Left: menu button + animated branding */}
+        <div className="flex items-center shrink-0 gap-1">
+          <button
+            onClick={onMenuToggle}
+            className={`p-2 rounded-xl transition-all ${
+              isDark ? 'text-white/60 hover:text-white hover:bg-white/[0.06]' : 'text-gray-500 hover:text-gray-800 hover:bg-gray-100'
+            }`}
+            aria-label={sidebarOpen ? t('closeMenu') : t('openMenu')}
+          >
+            <MdMenu size={20} />
+          </button>
           <span
             className="text-lg sm:text-xl md:text-xl font-bold tracking-normal animate-brand"
           >
@@ -1008,7 +1129,7 @@ function getLastUserText(messages: ChatMessage[], beforeMsg?: ChatMessage): stri
           </span>
         </div>
 
-        {/* Right: toggle + menu */}
+        {/* Right: toggle + actions */}
         <div className="flex items-center gap-1 sm:gap-2 md:gap-3 ml-auto">
           <div className="flex items-center gap-0.5 sm:gap-1">
             <button
@@ -1051,22 +1172,13 @@ function getLastUserText(messages: ChatMessage[], beforeMsg?: ChatMessage): stri
             </button>
           </div>
           <ToggleSwitch engine={engine} onChange={onEngineChange} />
-          <button
-            onClick={onMenuToggle}
-            className={`p-2 rounded-xl transition-all ${
-              isDark ? 'text-white/60 hover:text-white hover:bg-white/[0.06]' : 'text-gray-500 hover:text-gray-800 hover:bg-gray-100'
-            }`}
-            aria-label={sidebarOpen ? t('closeMenu') : t('openMenu')}
-          >
-            <MdMenu size={20} />
-          </button>
         </div>
       </nav>
 
-      {/* Empty state — logo + rotating motivational message */}
+      {/* Empty state — logo + rotating motivational message + quick-start chips */}
       {messages.length === 0 && !streaming && (
         <motion.div
-          className="flex-1 flex flex-col items-center justify-center gap-4 px-6"
+          className="flex-1 flex flex-col items-center justify-center gap-6 px-6"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
@@ -1093,6 +1205,29 @@ function getLastUserText(messages: ChatMessage[], beforeMsg?: ChatMessage): stri
               {motd}
             </motion.p>
           </AnimatePresence>
+          {/* Quick-start chips */}
+          <div className="flex flex-wrap items-center justify-center gap-2 max-w-sm">
+            {[
+              { label: t('quickChipIndex'), icon: '📂', action: () => onNavigate?.('indexing') },
+              { label: t('quickChipExplain'), icon: '💡', action: () => { setInput(t('quickChipExplainPrompt')); inputRef.current?.focus(); } },
+              { label: t('quickChipSummarize'), icon: '📝', action: () => { setInput('/summarize'); inputRef.current?.focus(); } },
+              { label: t('quickChipResearch'), icon: '🔬', action: () => { setInput('/research '); inputRef.current?.focus(); } },
+            ].map((chip) => (
+              <motion.button
+                key={chip.label}
+                whileTap={{ scale: 0.95 }}
+                onClick={chip.action}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
+                  isDark
+                    ? 'bg-white/[0.04] border-white/[0.08] text-white/60 hover:bg-white/[0.08] hover:text-white/80'
+                    : 'bg-gray-100 border-gray-200 text-gray-600 hover:bg-gray-200 hover:text-gray-800'
+                }`}
+              >
+                <span className="text-sm">{chip.icon}</span>
+                <span>{chip.label}</span>
+              </motion.button>
+            ))}
+          </div>
         </motion.div>
       )}
 
@@ -1321,11 +1456,11 @@ function getLastUserText(messages: ChatMessage[], beforeMsg?: ChatMessage): stri
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.94 }}
               transition={{ duration: 0.16, ease: 'easeOut' }}
-              className={`fixed bottom-[calc(env(safe-area-inset-bottom,0px)+6rem)] left-1/2 ${sidebarOpen ? 'z-20 pointer-events-none' : 'z-30'} grid h-11 w-11 -translate-x-1/2 place-items-center rounded-full border shadow-lg backdrop-blur-xl transition-colors active:scale-95 ${
+              className={`fixed bottom-[calc(env(safe-area-inset-bottom,0px)+6rem)] left-1/2 ${sidebarOpen ? 'md:left-[calc(50%+9rem)] z-20 pointer-events-none' : 'z-30'} grid h-11 w-11 -translate-x-1/2 place-items-center rounded-full border shadow-lg backdrop-blur-xl transition-all active:scale-95 ${
                 isDark
                   ? 'border-white/[0.08] bg-black/85 text-white/80 hover:bg-[#006bbd] hover:text-white'
                   : 'border-gray-200 bg-white/95 text-gray-600 hover:bg-[#006bbd] hover:text-white'
-              }`}
+              } ${streaming ? 'animate-bounce' : ''}`}
               aria-label={t('scrollToBottom')}
               title={t('scrollToBottom')}
             >
@@ -1473,34 +1608,36 @@ function getLastUserText(messages: ChatMessage[], beforeMsg?: ChatMessage): stri
         >
           {slashOpen && customPrompts.current.filter(p => p.name.includes(slashFilter)).length > 0 && (
             <div className={`absolute bottom-full left-0 right-0 mb-2 rounded-xl overflow-hidden z-30 max-h-48 overflow-y-auto ${isDark ? 'bg-black/95 border-white/[0.08]' : 'bg-white border-gray-200 shadow-lg'}`}>
-              {customPrompts.current.filter(p => p.name.includes(slashFilter)).map(p => (
-                <button key={p.name} onClick={() => {
-                  if (p.builtin) {
-                    // Send as-is so handleSendText intercepts the built-in.
-                    setInput('/' + p.name + ' ');
-                    setSlashOpen(false);
-                    inputRef.current?.focus();
-                    window.setTimeout(() => {
-                      const ta = inputRef.current;
-                      if (!ta) return;
-                      ta.focus();
-                      // Trigger Enter via form: easier — just call handleSend.
-                      handleSend();
-                    }, 30);
-                  } else {
-                    setInput('/'+p.name+' '); setSlashOpen(false); inputRef.current?.focus();
-                  }
-                }}
-                  className={`w-full text-left px-4 py-2.5 text-sm flex items-center gap-3 ${isDark ? 'text-white/60 hover:text-white hover:bg-white/[0.04]' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'}`}>
-                  <span className="text-[10px] text-[#006bbd] font-mono">/{p.name}</span>
-                  {p.builtin && (
-                    <span className="text-[8px] font-bold uppercase tracking-wider px-1 py-0.5 rounded bg-[#006bbd]/15 text-[#006bbd]">{t('builtInCommand')}</span>
-                  )}
-                  <span className={`truncate ${isDark ? 'text-white/30' : 'text-gray-400'}`}>
-                    {p.builtin ? (getBuiltinHint(p.name, lang)) : (p.text || '').slice(0, 50) + '…'}
-                  </span>
-                </button>
-              ))}
+              <div className="relative">
+                {customPrompts.current.filter(p => p.name.includes(slashFilter)).map(p => (
+                  <button key={p.name} onClick={() => {
+                    if (p.builtin) {
+                      setInput('/' + p.name + ' ');
+                      setSlashOpen(false);
+                      inputRef.current?.focus();
+                      window.setTimeout(() => {
+                        const ta = inputRef.current;
+                        if (!ta) return;
+                        ta.focus();
+                        handleSend();
+                      }, 30);
+                    } else {
+                      setInput('/'+p.name+' '); setSlashOpen(false); inputRef.current?.focus();
+                    }
+                  }}
+                    className={`w-full text-left px-4 py-2.5 text-sm flex items-center gap-3 ${isDark ? 'text-white/60 hover:text-white hover:bg-white/[0.04]' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'}`}>
+                    <span className="text-[10px] text-[#006bbd] font-mono">/{p.name}</span>
+                    {p.builtin && (
+                      <span className="text-[8px] font-bold uppercase tracking-wider px-1 py-0.5 rounded bg-[#006bbd]/15 text-[#006bbd]">{t('builtInCommand')}</span>
+                    )}
+                    <span className={`truncate ${isDark ? 'text-white/30' : 'text-gray-400'}`}>
+                      {p.builtin ? (getBuiltinHint(p.name, lang)) : (p.text || '').slice(0, 50) + '…'}
+                    </span>
+                  </button>
+                ))}
+                {/* Fade-out mask at bottom when scrollable */}
+                <div className={`sticky bottom-0 left-0 right-0 h-6 pointer-events-none bg-gradient-to-t ${isDark ? 'from-black/95' : 'from-white'} to-transparent`} />
+              </div>
             </div>
           )}
           <textarea
@@ -1539,13 +1676,12 @@ function getLastUserText(messages: ChatMessage[], beforeMsg?: ChatMessage): stri
 
           {!streaming && (
             <button
-              onClick={voiceSupported ? toggleVoice : undefined}
-              disabled={!voiceSupported}
+              onClick={toggleVoice}
               className={`p-2 rounded-xl shrink-0 transition-colors ${
                 !voiceSupported
                   ? isDark
-                    ? 'bg-white/[0.03] text-white/20 cursor-not-allowed'
-                    : 'bg-gray-100 text-gray-300 cursor-not-allowed'
+                    ? 'bg-white/[0.03] text-white/25 hover:text-white/45'
+                    : 'bg-gray-100 text-gray-300 hover:text-gray-500'
                 : callMode
                   ? 'bg-[#006bbd]/30 text-white ring-1 ring-[#006bbd]/50'
                   : listening

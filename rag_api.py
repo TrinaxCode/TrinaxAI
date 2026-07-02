@@ -147,8 +147,13 @@ qa_prompt_tmpl = PromptTemplate(
 
 # ── Estado global del motor ──
 _fusion_retriever = None
+_index_docstore = None
 KNOWN_PROJECTS: list[str] = []
 _llm_cache: dict = {}
+_retrieval_cache: dict[tuple, tuple[float, list]] = {}
+_retrieval_cache_lock = threading.Lock()
+_sources_cache: dict[tuple, tuple[float, Any]] = {}
+_sources_cache_lock = threading.Lock()
 
 # ── Rate limiting (token bucket simple) ──
 _rate_limit_state: dict[str, list[float]] = defaultdict(list)
@@ -229,6 +234,125 @@ APP_STATE_PATH = os.path.join(config.PERSIST_DIR, "app_state.json")
 APP_STATE_MAX_BYTES = int(
     os.getenv("TRINAXAI_APP_STATE_MAX_BYTES", str(6 * 1024 * 1024))
 )
+
+
+def _clear_index_runtime_caches() -> None:
+    with _retrieval_cache_lock:
+        _retrieval_cache.clear()
+    with _sources_cache_lock:
+        _sources_cache.clear()
+
+
+def _clear_directory_contents(path: str) -> list[str]:
+    """Remove generated runtime contents from a project-owned directory."""
+    removed: list[str] = []
+    base = os.path.abspath(config.BASE_DIR)
+    target = os.path.abspath(path)
+    if target == base or not target.startswith(base + os.sep):
+        raise HTTPException(status_code=500, detail=f"Refusing to clear unsafe path: {path}")
+    if not os.path.isdir(target):
+        return removed
+    for name in os.listdir(target):
+        item = os.path.join(target, name)
+        try:
+            if os.path.isdir(item) and not os.path.islink(item):
+                shutil.rmtree(item)
+            else:
+                os.remove(item)
+            removed.append(os.path.relpath(item, config.BASE_DIR))
+        except OSError as exc:
+            LOG.warning("Could not remove reset target %s: %s", item, exc)
+    return removed
+
+
+def _stop_watcher_for_reset() -> None:
+    try:
+        state = _watcher_state
+    except NameError:
+        return
+    with state["lock"]:
+        observer = state.get("observer")
+        if observer is not None:
+            try:
+                observer.stop()
+                observer.join(timeout=2)
+            except Exception:
+                pass
+        state["observer"] = None
+        state["handler"] = None
+        state["paths"] = []
+        state["started_at"] = None
+        state["events_seen"] = 0
+
+
+def _cancel_index_jobs_for_reset() -> None:
+    with _index_jobs_lock:
+        for job in _index_jobs.values():
+            process = job.get("process")
+            if process and process.poll() is None:
+                try:
+                    process.terminate()
+                except Exception:
+                    pass
+        _index_jobs.clear()
+
+
+def _factory_reset_runtime_state(reset_state: dict[str, str]) -> dict[str, Any]:
+    """Reset TrinaxAI to a fresh-installed local state without deleting code/.env."""
+    global _fusion_retriever, _index_docstore, KNOWN_PROJECTS
+
+    _stop_watcher_for_reset()
+    _cancel_index_jobs_for_reset()
+    with _engine_lock:
+        _fusion_retriever = None
+        _index_docstore = None
+        KNOWN_PROJECTS = []
+        _clear_index_runtime_caches()
+
+    removed = []
+    removed.extend(_clear_directory_contents(config.LOCAL_SOURCES_DIR))
+    removed.extend(_clear_directory_contents(config.PERSIST_DIR))
+
+    os.makedirs(config.PERSIST_DIR, exist_ok=True)
+    with _collections_lock:
+        _write_collections_unlocked([_default_collection()])
+    with _app_state_lock:
+        _write_app_state(reset_state)
+
+    return {
+        "removed": removed,
+        "indexed": False,
+        "collections": [_default_collection()],
+    }
+
+
+def _cache_get(cache: dict[tuple, tuple[float, Any]], lock: threading.Lock, key: tuple, ttl: int):
+    if ttl <= 0:
+        return None
+    now = time.time()
+    with lock:
+        cached = cache.get(key)
+        if cached and now - cached[0] <= ttl:
+            return cached[1]
+        if cached:
+            cache.pop(key, None)
+    return None
+
+
+def _cache_set(
+    cache: dict[tuple, tuple[float, Any]],
+    lock: threading.Lock,
+    key: tuple,
+    value: Any,
+    *,
+    max_entries: int = 256,
+) -> None:
+    with lock:
+        if len(cache) > max_entries:
+            oldest = sorted(cache.items(), key=lambda item: item[1][0])[: max_entries // 4]
+            for stale_key, _ in oldest:
+                cache.pop(stale_key, None)
+        cache[key] = (time.time(), value)
 
 
 def _safe_rel_path(filename: str) -> str | None:
@@ -594,7 +718,7 @@ def get_llm(model: str):
 
 def build_engine() -> bool:
     """Carga el índice y arma el retriever híbrido. False si aún no hay índice."""
-    global _fusion_retriever, KNOWN_PROJECTS
+    global _fusion_retriever, _index_docstore, KNOWN_PROJECTS
     with _engine_lock:
         try:
             storage_context = StorageContext.from_defaults(
@@ -616,6 +740,7 @@ def build_engine() -> bool:
                 use_async=False,
                 llm=get_llm(config.LLM_MODEL),
             )
+            _index_docstore = index.docstore
             KNOWN_PROJECTS = sorted(
                 {
                     n.metadata.get("project", "")
@@ -623,6 +748,7 @@ def build_engine() -> bool:
                     if n.metadata.get("project")
                 }
             )
+            _clear_index_runtime_caches()
             print(
                 f"[TrinaxAI] \u2713 \u00cdndice: {len(index.docstore.docs)} chunks, "
                 f"{len(KNOWN_PROJECTS)} proyectos"
@@ -630,11 +756,13 @@ def build_engine() -> bool:
             return True
         except Exception as e:
             _fusion_retriever = None
+            _index_docstore = None
             KNOWN_PROJECTS = []
+            _clear_index_runtime_caches()
             try:
                 print(f"[TrinaxAI] \u26a0\ufe0f  Sin \u00edndice ({e}). Ejecuta: python index.py")
             except UnicodeEncodeError:
-                print(f"[TrinaxAI] WARN: No index. Run: python index.py")
+                print("[TrinaxAI] WARN: No index. Run: python index.py")
             return False
 
 
@@ -698,22 +826,35 @@ def prepare_query(messages: list[dict]) -> tuple[str, str]:
     return retrieval_q, synth_q
 
 
-def run_rag(messages: list[dict], stream: bool, collections: list[str] | None = None):
-    """Recupera (con filtro de proyecto), elige modelo y sintetiza.
-
-    Devuelve (response, source_nodes, model, project)."""
-    chat = _chat_messages(messages)
-    current = chat[-1].get("content", "") if chat else messages[-1].get("content", "")
-    model = config.route_model(current)
-    llm = get_llm(model)
-
-    retrieval_q, synth_q = prepare_query(messages)
-    project = detect_project(retrieval_q)
+def _cached_retrieve(
+    retrieval_q: str,
+    current: str,
+    collections: list[str] | None,
+    project: str | None,
+):
+    active_collections = tuple(
+        sorted(c.strip() for c in (collections or []) if isinstance(c, str) and c.strip())
+    )
+    cache_key = (
+        retrieval_q,
+        current,
+        active_collections,
+        project,
+        config.SIMILARITY_TOP_K,
+        config.FUSION_CANDIDATES,
+        bool(_reranker),
+    )
+    if config.RETRIEVAL_CACHE_SECONDS > 0:
+        cached = _cache_get(
+            _retrieval_cache,
+            _retrieval_cache_lock,
+            cache_key,
+            config.RETRIEVAL_CACHE_SECONDS,
+        )
+        if cached is not None:
+            return list(cached)
 
     nodes = _fusion_retriever.retrieve(retrieval_q)
-    active_collections = {
-        c for c in (collections or []) if isinstance(c, str) and c.strip()
-    }
     if active_collections or project:
         filtered = list(nodes)
         if active_collections:
@@ -733,6 +874,26 @@ def run_rag(messages: list[dict], stream: bool, collections: list[str] | None = 
         nodes = _reranker.postprocess_nodes(nodes, query_bundle=QueryBundle(current))
     else:
         nodes = nodes[: config.SIMILARITY_TOP_K]
+
+    nodes = list(nodes)
+    if config.RETRIEVAL_CACHE_SECONDS > 0:
+        _cache_set(_retrieval_cache, _retrieval_cache_lock, cache_key, nodes)
+    return list(nodes)
+
+
+def run_rag(messages: list[dict], stream: bool, collections: list[str] | None = None):
+    """Recupera (con filtro de proyecto), elige modelo y sintetiza.
+
+    Devuelve (response, source_nodes, model, project)."""
+    chat = _chat_messages(messages)
+    current = chat[-1].get("content", "") if chat else messages[-1].get("content", "")
+    model = config.route_model(current)
+    llm = get_llm(model)
+
+    retrieval_q, synth_q = prepare_query(messages)
+    project = detect_project(retrieval_q)
+
+    nodes = _cached_retrieve(retrieval_q, current, collections, project)
 
     synth = get_response_synthesizer(
         llm=llm,
@@ -940,9 +1101,7 @@ USER_MEMORY_PATH = os.path.join(config.PERSIST_DIR, "user_memory.json")
 
 def _research_iter_nodes(collection: str | None = None):
     """Yield (node_id, node) pairs from the docstore, optionally filtered by collection."""
-    if _fusion_retriever is None:
-        return
-    docstore = getattr(_fusion_retriever, "_docstore", None)
+    docstore = _index_docstore
     if docstore is None:
         return
     docs = getattr(docstore, "docs", None)
@@ -1238,6 +1397,15 @@ async def sources_list(collection: str | None = None, request: Request = None):
     """
     _authorize_system(request)
     target = (collection or "").strip() or config.DEFAULT_COLLECTION_ID
+    cache_key = ("sources:list", target)
+    cached = _cache_get(
+        _sources_cache,
+        _sources_cache_lock,
+        cache_key,
+        config.SOURCES_CACHE_SECONDS,
+    )
+    if cached is not None:
+        return {"collection": target, "sources": cached}
     grouped: dict[str, dict] = {}
     if _fusion_retriever is None:
         return {"collection": target, "sources": []}
@@ -1264,6 +1432,7 @@ async def sources_list(collection: str | None = None, request: Request = None):
         if not bucket["preview"]:
             bucket["preview"] = text[:200].strip()
     sources = sorted(grouped.values(), key=lambda b: (-b["chunks"], b["file"]))
+    _cache_set(_sources_cache, _sources_cache_lock, cache_key, sources, max_entries=64)
     return {"collection": target, "sources": sources}
 
 
@@ -1290,14 +1459,25 @@ async def sources_chunks(
     limit = max(1, min(500, int(limit)))
     offset = max(0, int(offset))
     rel_path = file  # FastAPI already URL-decodes {file:path}.
-    chunks: list[dict] = []
-    if _fusion_retriever is not None:
-        for _nid, node in _research_iter_nodes(collection):
-            meta = getattr(node, "metadata", {}) or {}
-            rel = meta.get("rel_path") or meta.get("file_path") or ""
-            if rel != rel_path:
-                continue
-            chunks.append(_research_serialize_node(node))
+    cache_key = ("sources:chunks", collection, rel_path)
+    cached = _cache_get(
+        _sources_cache,
+        _sources_cache_lock,
+        cache_key,
+        config.SOURCES_CACHE_SECONDS,
+    )
+    if cached is not None:
+        chunks = list(cached)
+    else:
+        chunks: list[dict] = []
+        if _fusion_retriever is not None:
+            for _nid, node in _research_iter_nodes(collection):
+                meta = getattr(node, "metadata", {}) or {}
+                rel = meta.get("rel_path") or meta.get("file_path") or ""
+                if rel != rel_path:
+                    continue
+                chunks.append(_research_serialize_node(node))
+        _cache_set(_sources_cache, _sources_cache_lock, cache_key, chunks, max_entries=128)
     query = (q or "").strip()
     if query:
         needle = query.lower()
@@ -1573,7 +1753,115 @@ async def memory_summary(request: Request):
 
 # ── 4f. Usage stats: GET /v1/stats ──
 USAGE_PATH = os.path.join(config.PERSIST_DIR, "usage.jsonl")
+USAGE_SUMMARY_PATH = os.path.join(config.PERSIST_DIR, "usage_summary.json")
 USAGE_LOCK = threading.Lock()
+
+
+def _empty_usage_summary() -> dict:
+    return {
+        "messages_total": 0,
+        "messages_by_engine": {},
+        "tokens_estimated": 0,
+        "model_counts": {},
+        "collection_counts": {},
+        "index_runs": 0,
+        "first_seen": 0.0,
+        "last_seen": 0.0,
+    }
+
+
+def _apply_usage_record(summary: dict, rec: dict) -> None:
+    summary["messages_total"] = int(summary.get("messages_total") or 0) + 1
+    summary["tokens_estimated"] = int(summary.get("tokens_estimated") or 0) + int(
+        rec.get("est_tokens") or 0
+    )
+
+    by_engine = summary.setdefault("messages_by_engine", {})
+    engine = str(rec.get("engine") or "unknown")
+    by_engine[engine] = int(by_engine.get(engine) or 0) + 1
+
+    by_model = summary.setdefault("model_counts", {})
+    model = str(rec.get("model") or "unknown")
+    by_model[model] = int(by_model.get(model) or 0) + 1
+
+    by_col = summary.setdefault("collection_counts", {})
+    for cid in rec.get("collections") or []:
+        key = str(cid)
+        by_col[key] = int(by_col.get(key) or 0) + 1
+
+    ts = float(rec.get("ts") or 0.0)
+    if ts:
+        first_seen = float(summary.get("first_seen") or 0.0)
+        summary["first_seen"] = ts if first_seen == 0.0 else min(first_seen, ts)
+        summary["last_seen"] = max(float(summary.get("last_seen") or 0.0), ts)
+
+
+def _usage_summary_response(summary: dict) -> dict:
+    by_engine = {
+        str(k): int(v)
+        for k, v in (summary.get("messages_by_engine") or {}).items()
+    }
+    by_model = {
+        str(k): int(v) for k, v in (summary.get("model_counts") or {}).items()
+    }
+    by_col = {
+        str(k): int(v) for k, v in (summary.get("collection_counts") or {}).items()
+    }
+    return {
+        "messages_total": int(summary.get("messages_total") or 0),
+        "messages_by_engine": dict(sorted(by_engine.items(), key=lambda kv: -kv[1])),
+        "tokens_estimated": int(summary.get("tokens_estimated") or 0),
+        "top_collections": [
+            {"id": k, "count": v}
+            for k, v in sorted(by_col.items(), key=lambda kv: -kv[1])[:10]
+        ],
+        "top_models": [
+            {"model": k, "count": v}
+            for k, v in sorted(by_model.items(), key=lambda kv: -kv[1])[:10]
+        ],
+        "index_runs": int(summary.get("index_runs") or 0),
+        "first_seen": float(summary.get("first_seen") or 0.0),
+        "last_seen": float(summary.get("last_seen") or 0.0),
+    }
+
+
+def _read_usage_summary_unlocked() -> dict | None:
+    try:
+        with open(USAGE_SUMMARY_PATH, encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else None
+    except (OSError, ValueError):
+        return None
+
+
+def _write_usage_summary_unlocked(summary: dict) -> None:
+    os.makedirs(config.PERSIST_DIR, exist_ok=True)
+    tmp = f"{USAGE_SUMMARY_PATH}.tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(summary, f, ensure_ascii=False)
+    os.replace(tmp, USAGE_SUMMARY_PATH)
+
+
+def _build_usage_summary_from_log_unlocked() -> dict:
+    summary = _empty_usage_summary()
+    if not os.path.isfile(USAGE_PATH):
+        return summary
+    try:
+        with open(USAGE_PATH, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    rec = json.loads(line)
+                except Exception:
+                    continue
+                if isinstance(rec, dict):
+                    _apply_usage_record(summary, rec)
+        _write_usage_summary_unlocked(summary)
+    except Exception:
+        pass
+    return summary
 
 
 def _record_usage(
@@ -1597,6 +1885,9 @@ def _record_usage(
         with USAGE_LOCK:
             with open(USAGE_PATH, "a", encoding="utf-8") as f:
                 f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+            summary = _read_usage_summary_unlocked() or _empty_usage_summary()
+            _apply_usage_record(summary, rec)
+            _write_usage_summary_unlocked(summary)
     except Exception:
         pass
 
@@ -1626,64 +1917,11 @@ async def usage_record(req: UsageRecordRequest, request: Request):
 async def usage_stats(request: Request):
     """Aggregate local usage stats from storage/usage.jsonl."""
     _authorize_system(request)
-    out = {
-        "messages_total": 0,
-        "messages_by_engine": {},
-        "tokens_estimated": 0,
-        "top_collections": [],
-        "top_models": [],
-        "index_runs": 0,
-        "first_seen": 0.0,
-        "last_seen": 0.0,
-    }
-    if not os.path.isfile(USAGE_PATH):
-        return out
-    by_engine: dict[str, int] = {}
-    by_model: dict[str, int] = {}
-    by_col: dict[str, int] = {}
-    total_tokens = 0
-    total_msgs = 0
-    first_seen = 0.0
-    last_seen = 0.0
-    try:
-        with open(USAGE_PATH, encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    rec = json.loads(line)
-                except Exception:
-                    continue
-                total_msgs += 1
-                total_tokens += int(rec.get("est_tokens") or 0)
-                eng = str(rec.get("engine") or "unknown")
-                by_engine[eng] = by_engine.get(eng, 0) + 1
-                mdl = str(rec.get("model") or "unknown")
-                by_model[mdl] = by_model.get(mdl, 0) + 1
-                for cid in rec.get("collections") or []:
-                    by_col[str(cid)] = by_col.get(str(cid), 0) + 1
-                ts = float(rec.get("ts") or 0.0)
-                if first_seen == 0.0 or (ts and ts < first_seen):
-                    first_seen = ts
-                if ts and ts > last_seen:
-                    last_seen = ts
-    except Exception:
-        pass
-    out["messages_total"] = total_msgs
-    out["messages_by_engine"] = dict(sorted(by_engine.items(), key=lambda kv: -kv[1]))
-    out["tokens_estimated"] = total_tokens
-    out["top_collections"] = [
-        {"id": k, "count": v}
-        for k, v in sorted(by_col.items(), key=lambda kv: -kv[1])[:10]
-    ]
-    out["top_models"] = [
-        {"model": k, "count": v}
-        for k, v in sorted(by_model.items(), key=lambda kv: -kv[1])[:10]
-    ]
-    out["first_seen"] = first_seen
-    out["last_seen"] = last_seen
-    return out
+    with USAGE_LOCK:
+        summary = _read_usage_summary_unlocked()
+        if summary is None:
+            summary = _build_usage_summary_from_log_unlocked()
+        return _usage_summary_response(summary)
 
 
 @app.get("/health")
@@ -1703,8 +1941,10 @@ async def health():
         "embed_workers": config.EMBED_WORKERS,
         "embed_batch_size": config.EMBED_BATCH_SIZE,
         "embed_keep_alive": config.EMBED_KEEP_ALIVE,
+        "performance_mode": config.TRINAXAI_PERFORMANCE_MODE,
         "fusion_candidates": config.FUSION_CANDIDATES,
         "similarity_top_k": config.SIMILARITY_TOP_K,
+        "retrieval_cache_seconds": config.RETRIEVAL_CACHE_SECONDS,
         "rerank": config.RERANK_ENABLED,
         "features": {
             "folder_upload_indexing": True,
@@ -1802,7 +2042,7 @@ async def app_state_put(req: AppStateRequest, request: Request):
 
 @app.delete("/app-state")
 async def app_state_delete(request: Request):
-    """Clear shared local PWA state from the host machine."""
+    """Factory-reset local TrinaxAI runtime state from the host machine."""
     _authorize_system(request)
     if request.headers.get("X-TrinaxAI-Confirm") != "reset-app-state":
         raise HTTPException(
@@ -1810,9 +2050,8 @@ async def app_state_delete(request: Request):
             detail="Reset requires X-TrinaxAI-Confirm: reset-app-state.",
         )
     reset_state = {"tc-reset-at": str(time.time())}
-    with _app_state_lock:
-        _write_app_state(reset_state)
-    return {"ok": True, "values": reset_state}
+    result = _factory_reset_runtime_state(reset_state)
+    return {"ok": True, "values": reset_state, **result}
 
 
 DOC_EXTRACT_MAX_BYTES = int(

@@ -11,9 +11,9 @@ When done, you should have:
 - PWA at `https://localhost:3334`.
 - Python `.venv` environment ready.
 - PWA dependencies installed.
-- Base models downloaded.
+- Base models downloaded if you choose that option.
 - `.env` generated.
-- Autostart with LaunchAgent: the PWA comes back on boot and the AI respects whether it was left on or off.
+- Optional autostart with LaunchAgent: the PWA comes back on boot and the AI respects whether it was left on or off.
 
 ## Requirements
 
@@ -51,7 +51,7 @@ brew install python@3.12 node git curl ollama
 
 You can also install Ollama from the official macOS app and keep it open.
 
-## Recommended automatic install
+## Recommended guided install
 
 If you already have the repository:
 
@@ -68,7 +68,7 @@ cd ~/trinaxai
 bash install.sh
 ```
 
-The installer detects RAM, creates `.env`, sets up Python, installs the PWA, downloads the recommended models, enables autostart, and starts TrinaxAI. Use `bash install.sh --interactive` if you want manual prompts.
+The installer detects RAM, creates `.env`, sets up Python, and installs the PWA automatically. Optional choices such as model downloads, LAN system control, autostart, and starting services are prompted by default. Use `bash install.sh --non-interactive` for scripted installs.
 
 The profile is chosen automatically. In interactive mode, choose `Normal` to use the recommended profile. Use `Advanced` only if you want to force `8gb`, `16gb`, `max`, or `ultra`.
 
@@ -307,9 +307,10 @@ https://localhost:3334
 
 ```bash
 cd ~/trinaxai
-./backup.sh create
 ./update.sh
 ```
+
+The updater asks whether to create a backup, pull latest code, update models, change autostart, restart services, and run the readiness audit. Python/npm dependencies and the PWA build still run automatically.
 
 Manual update:
 
@@ -341,7 +342,9 @@ Important data:
 ./uninstall.sh
 ```
 
-To also remove models:
+The uninstaller asks which runtime files to remove. RAG data and Ollama models are kept unless you choose to remove them.
+
+To preselect removing models:
 
 ```bash
 ./uninstall.sh --remove-models

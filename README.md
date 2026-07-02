@@ -97,7 +97,7 @@ cd TrinaxAI
 ./install.sh
 
 # Or for more control:
-./install.sh --interactive     # Ask before model downloads, auto-start, LAN access
+./install.sh --non-interactive # Automatic install for CI/scripts
 ./install.sh --no-models       # Skip model downloads
 ./install.sh --profile ultra   # Force profile (8gb, 16gb, max, ultra)
 ```
@@ -106,7 +106,8 @@ cd TrinaxAI
 
 | Flag | Description |
 |------|-------------|
-| `--interactive` | Ask before each optional step |
+| `--interactive` | Guided install; asks optional choices (default) |
+| `--non-interactive` | Automatic install for CI/scripts |
 | `--no-models` | Skip downloading Ollama models |
 | `--no-vision` | Skip vision model download |
 | `--no-autostart` | Do not enable boot auto-start |
@@ -115,6 +116,15 @@ cd TrinaxAI
 | `--lan-system` | Enable LAN system-control endpoints (generate admin token) |
 
 By default, **LAN system control is disabled** — no device on your network can call sensitive endpoints. Enable it explicitly with `--lan-system` or set `TRINAXAI_ALLOW_LAN_SYSTEM=1` and `TRINAXAI_ADMIN_TOKEN` in `.env`.
+
+### Update and uninstall
+
+```bash
+./update.sh      # Guided update; asks backup, models, autostart, restart, audit
+./uninstall.sh   # Guided uninstall; asks each removable item
+```
+
+Required dependencies still install/update automatically. Optional choices such as model downloads, boot auto-start, data removal, and restarts are prompted by default.
 
 ### Open the PWA
 

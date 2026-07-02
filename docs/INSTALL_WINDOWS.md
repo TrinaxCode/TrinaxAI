@@ -11,9 +11,9 @@ When done, you should have:
 - PWA at `https://localhost:3334`.
 - Python `.venv` environment.
 - PWA dependencies installed.
-- Base models downloaded.
+- Base models downloaded if you choose that option.
 - `.env` generated.
-- Autostart from the Windows Startup folder: the PWA comes back on boot and the AI respects whether it was left on or off.
+- Optional autostart from the Windows Startup folder: the PWA comes back on boot and the AI respects whether it was left on or off.
 
 ## Requirements
 
@@ -30,7 +30,7 @@ When done, you should have:
 
 Install Python with the `Add python.exe to PATH` option checked.
 
-## Recommended automatic install
+## Recommended guided install
 
 Open PowerShell in the project folder and run:
 
@@ -46,9 +46,11 @@ The installer:
 - Creates `.venv`.
 - Installs Python packages.
 - Installs and builds the PWA.
-- Downloads Ollama models.
-- Enables Windows startup.
-- Starts services.
+- Asks whether to download Ollama models.
+- Asks whether to enable Windows startup.
+- Asks whether to start services now.
+
+Required dependencies are installed automatically. Optional choices such as models, LAN system control, startup, and service start are prompted by default. Use `-NonInteractive` for scripted installs.
 
 If you don't have the project yet:
 
@@ -305,9 +307,10 @@ http://localhost:3333/health
 If you use scripts from Git Bash or WSL:
 
 ```bash
-./backup.sh create
 ./update.sh
 ```
+
+The updater asks whether to create a backup, pull latest code, update models, change autostart, restart services, and run the readiness audit. Python/npm dependencies and the PWA build still run automatically.
 
 Manual update in PowerShell:
 
@@ -337,7 +340,15 @@ If you have Git Bash:
 
 ## Uninstall
 
-First disable autostart if you enabled it:
+From Git Bash or WSL, use the guided uninstaller:
+
+```bash
+./uninstall.sh
+```
+
+It asks which runtime files to remove. RAG data and Ollama models are kept unless you choose to remove them.
+
+Manual PowerShell cleanup:
 
 ```powershell
 .\.venv\Scripts\python.exe service_manager.py disable-autostart --base-dir "$PWD"

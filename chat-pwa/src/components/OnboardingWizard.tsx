@@ -1,5 +1,6 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { MdContentCopy, MdCheck } from 'react-icons/md';
 import { useI18n } from '../i18n/I18nContext';
 import { useTheme } from '../theme/ThemeContext';
 import { APP_CONFIG } from '../lib/config';
@@ -46,7 +47,16 @@ export default function OnboardingWizard({ onComplete }: Props) {
   const [indexJob, setIndexJob] = useState<IndexJobStatus | null>(null);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [testResults, setTestResults] = useState<Record<string, boolean> | null>(null);
+  const [copiedCmd, setCopiedCmd] = useState<string | null>(null);
   const indexAbortRef = useRef<AbortController | null>(null);
+
+  const copyToClipboard = useCallback(async (text: string, key: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedCmd(key);
+      setTimeout(() => setCopiedCmd(null), 1800);
+    } catch { /* ignore */ }
+  }, []);
 
   const saveAndNext = useCallback(() => {
     if (step < 6) setStep((s) => (s + 1) as Step);
@@ -125,12 +135,24 @@ export default function OnboardingWizard({ onComplete }: Props) {
         if (['completed', 'failed', 'cancelled'].includes(job.status)) break;
         await new Promise((resolve) => setTimeout(resolve, 1000));
       }
+      // Completion state clearing & auto-advance handled by the useEffect below
     } catch { /* user can continue and retry later from Settings */ }
     finally {
       setIndexing(false);
       indexAbortRef.current = null;
     }
   }, []);
+
+  // Auto-advance to next step after successful indexing
+  useEffect(() => {
+    if (!indexing && indexJob?.status === 'completed' && step === 5) {
+      const timer = setTimeout(() => {
+        setIndexJob(null);
+        setStep(6);
+      }, 2500);
+      return () => clearTimeout(timer);
+    }
+  }, [indexing, indexJob?.status, indexJob?.id, step]);
 
   const cancelIndex = useCallback(async () => {
     indexAbortRef.current?.abort();
@@ -359,11 +381,29 @@ export default function OnboardingWizard({ onComplete }: Props) {
                     <div className="space-y-2 text-xs">
                       <details className={`p-2 rounded-lg ${cardBg}`}>
                         <summary className="font-medium cursor-pointer">{t('platformLinux')}</summary>
-                        <pre className="mt-1 p-2 rounded text-[11px] bg-black/20">curl -fsSL https://ollama.com/install.sh | sh</pre>
+                        <div className="mt-1 flex items-center gap-2">
+                          <pre className="flex-1 p-2 rounded text-[11px] bg-black/20 overflow-x-auto">curl -fsSL https://ollama.com/install.sh | sh</pre>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); copyToClipboard('curl -fsSL https://ollama.com/install.sh | sh', 'linux'); }}
+                            className={`shrink-0 p-1.5 rounded-md transition-colors ${copiedCmd === 'linux' ? 'text-green-400 bg-green-400/10' : isDark ? 'text-white/30 hover:text-white/70 hover:bg-white/[0.06]' : 'text-gray-400 hover:text-gray-700 hover:bg-gray-100'}`}
+                            title={t('copy')}
+                          >
+                            {copiedCmd === 'linux' ? <MdCheck size={14} /> : <MdContentCopy size={14} />}
+                          </button>
+                        </div>
                       </details>
                       <details className={`p-2 rounded-lg ${cardBg}`}>
                         <summary className="font-medium cursor-pointer">{t('platformMac')}</summary>
-                        <pre className="mt-1 p-2 rounded text-[11px] bg-black/20">brew install ollama</pre>
+                        <div className="mt-1 flex items-center gap-2">
+                          <pre className="flex-1 p-2 rounded text-[11px] bg-black/20 overflow-x-auto">brew install ollama</pre>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); copyToClipboard('brew install ollama', 'mac'); }}
+                            className={`shrink-0 p-1.5 rounded-md transition-colors ${copiedCmd === 'mac' ? 'text-green-400 bg-green-400/10' : isDark ? 'text-white/30 hover:text-white/70 hover:bg-white/[0.06]' : 'text-gray-400 hover:text-gray-700 hover:bg-gray-100'}`}
+                            title={t('copy')}
+                          >
+                            {copiedCmd === 'mac' ? <MdCheck size={14} /> : <MdContentCopy size={14} />}
+                          </button>
+                        </div>
                       </details>
                       <details className={`p-2 rounded-lg ${cardBg}`}>
                         <summary className="font-medium cursor-pointer">{t('platformWindows')}</summary>
@@ -406,18 +446,26 @@ export default function OnboardingWizard({ onComplete }: Props) {
                 </motion.button>
                 {(indexing || indexJob) && (
                   <div className={`p-3 rounded-xl ${cardBg} space-y-2`}>
-                    <div className="flex items-center justify-between text-xs">
-                      <span className={textSub}>{indexJob?.phase ? t('indexing') : t('loading')}</span>
-                      <span className={textSub}>{indexProgress}%</span>
-                    </div>
-                    <div className={`h-2 w-full overflow-hidden rounded-full ${isDark ? 'bg-white/[0.08]' : 'bg-gray-200'}`}>
-                      <div className="h-full rounded-full bg-[#006bbd] transition-all duration-500" style={{ width: `${Math.min(100, indexProgress)}%` }} />
-                    </div>
-                    {indexing && (
-                      <button onClick={cancelIndex} className="w-full py-2 rounded-lg text-xs font-medium bg-red-500/10 text-red-400 hover:bg-red-500/20">
-                        {t('indexCancel')}
-                      </button>
-                    )}
+                    {indexing ? (
+                      <>
+                        <div className="flex items-center justify-between text-xs">
+                          <span className={textSub}>{indexJob?.phase ? t('indexing') : t('loading')}</span>
+                          <span className={textSub}>{indexProgress}%</span>
+                        </div>
+                        <div className={`h-2 w-full overflow-hidden rounded-full ${isDark ? 'bg-white/[0.08]' : 'bg-gray-200'}`}>
+                          <div className="h-full rounded-full bg-[#006bbd] transition-all duration-500" style={{ width: `${Math.min(100, indexProgress)}%` }} />
+                        </div>
+                        <button onClick={cancelIndex} className="w-full py-2 rounded-lg text-xs font-medium bg-red-500/10 text-red-400 hover:bg-red-500/20">
+                          {t('indexCancel')}
+                        </button>
+                      </>
+                    ) : indexJob?.status === 'completed' ? (
+                      <div className="flex items-center gap-2 text-sm">
+                        <span className="text-green-400">✅</span>
+                        <span className={`font-medium ${textMain}`}>{t('indexComplete')}</span>
+                        <span className={textSub}>({indexJob.saved} {t('indexFiles').toLowerCase()})</span>
+                      </div>
+                    ) : null}
                   </div>
                 )}
                 <p className={`text-[11px] text-center text-amber-400/80`}>{t('onboardingStep6Warning')}</p>

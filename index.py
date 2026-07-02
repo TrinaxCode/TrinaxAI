@@ -16,6 +16,11 @@ from __future__ import annotations
 import json
 import os
 import sys
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from llama_index.core import VectorStoreIndex
+    from llama_index.core.schema import Document
 
 # On Windows, stdout defaults to cp1252 which can't encode emoji/Unicode.
 # Wrap it so the indexer doesn't crash mid-job on a harmless print.
@@ -26,7 +31,7 @@ if sys.platform == "win32" and hasattr(sys.stdout, "buffer"):
 import config
 
 EXTRACTOR_EXTS = {".pdf", ".docx"}
-TEXT_ENCODINGS = ("utf-8-sig", "utf-8", "utf-16", "cp1252", "latin-1")
+TEXT_ENCODINGS = ("utf-8-sig", "utf-8", "cp1252", "latin-1")
 
 
 def _env_int(name: str, default: int, *, minimum: int = 1, maximum: int | None = None) -> int:
@@ -169,7 +174,7 @@ def _decode_text_bytes(data: bytes) -> str:
     bytes that are valid in other encodings. Latin-1 is the final fallback
     because it maps every byte and keeps indexing from aborting.
     """
-    if b"\x00" in data[:200]:
+    if data.startswith((b"\xff\xfe", b"\xfe\xff")) or b"\x00" in data[:200]:
         try:
             return data.decode("utf-16")
         except UnicodeDecodeError:
@@ -210,6 +215,12 @@ def _load_file_documents(path: str) -> list[Document]:
     return [_load_text_document(path)]
 
 
+def iter_batches(items: list[str], batch_size: int = INDEX_BATCH_SIZE):
+    """Yield stable batches without copying the full indexing workload again."""
+    for batch_start in range(0, len(items), batch_size):
+        yield items[batch_start : batch_start + batch_size]
+
+
 def load_docs(paths: list[str]) -> list[Document]:
     """Carga documentos y les pone metadata limpia (proyecto, ruta, archivo).
 
@@ -221,8 +232,7 @@ def load_docs(paths: list[str]) -> list[Document]:
     if not paths:
         return []
     out: list[Document] = []
-    for batch_start in range(0, len(paths), INDEX_BATCH_SIZE):
-        batch = paths[batch_start : batch_start + INDEX_BATCH_SIZE]
+    for batch in iter_batches(paths):
         docs: list[Document] = []
         for path in batch:
             try:
@@ -281,6 +291,20 @@ def build_nodes(documents: list[Document]) -> list:
         f"({fallback} con fallback) → {len(nodes)} chunks"
     )
     return nodes
+
+
+def iter_node_batches(paths: list[str]):
+    for batch_number, batch in enumerate(iter_batches(paths), start=1):
+        docs = load_docs(batch)
+        if not docs:
+            continue
+        print(
+            f"   📦 Lote {batch_number}: {len(docs)} documentos, "
+            f"{len(batch)} archivos"
+        )
+        nodes = build_nodes(docs)
+        if nodes:
+            yield nodes
 
 
 # ==================== MANIFIESTO (incremental) ====================
@@ -355,11 +379,12 @@ def insert_files(index: VectorStoreIndex, paths: list[str]) -> int:
     if not paths:
         return 0
     print("✂️  Troceando cambios...")
-    nodes = build_nodes(load_docs(paths))
-    if nodes:
-        print(f"🔨 Embeddings de {len(nodes)} chunks (bge-m3)...")
+    total_nodes = 0
+    for nodes in iter_node_batches(paths):
+        total_nodes += len(nodes)
+        print(f"🔨 Embeddings de {len(nodes)} chunks (total {total_nodes})...")
         index.insert_nodes(nodes, show_progress=True)
-    return len(nodes)
+    return total_nodes
 
 
 def persist_final_state(old_state: dict, new_state: dict, *, incremental: bool) -> int:
@@ -406,9 +431,18 @@ def run_full_index(paths: list[str], new_state: dict) -> int:
         print("❌ No se encontraron documentos para indexar.")
         return 1
     print("✂️  Troceando (chunking consciente del lenguaje)...")
-    nodes = build_nodes(load_docs(paths))
-    print(f"🔨 Embeddings de {len(nodes)} chunks (bge-m3)...")
-    index = VectorStoreIndex(nodes, show_progress=True)
+    index = None
+    total_nodes = 0
+    for nodes in iter_node_batches(paths):
+        total_nodes += len(nodes)
+        print(f"🔨 Embeddings de {len(nodes)} chunks (total {total_nodes})...")
+        if index is None:
+            index = VectorStoreIndex(nodes, show_progress=True)
+        else:
+            index.insert_nodes(nodes, show_progress=True)
+    if index is None:
+        print("❌ No se pudieron generar chunks para indexar.")
+        return 1
     index.storage_context.persist(persist_dir=config.PERSIST_DIR)
     final_count = persist_final_state({}, new_state, incremental=False)
     print_summary(final_count)

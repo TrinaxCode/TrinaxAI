@@ -40,7 +40,8 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   return (
     <ToastContext.Provider value={{ toast }}>
       {children}
-      <div className="fixed top-0 left-1/2 -translate-x-1/2 z-[100] flex flex-col items-center gap-2 pointer-events-none"
+      {/* Desktop: top-center toasts */}
+      <div className="hidden sm:flex fixed top-0 left-1/2 -translate-x-1/2 z-[100] flex-col items-center gap-2 pointer-events-none"
            style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 12px)' }}
            role="alert"
            aria-live="polite">
@@ -51,6 +52,28 @@ export function ToastProvider({ children }: { children: ReactNode }) {
               initial={{ opacity: 0, y: 20, scale: 0.95 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: -10, scale: 0.95 }}
+              className={`pointer-events-auto flex items-center gap-2 px-4 py-2.5 rounded-xl border text-xs font-medium shadow-lg ${typeStyles[t.type]}`}
+            >
+              <span>{t.message}</span>
+              <button onClick={() => dismiss(t.id)} className="opacity-50 hover:opacity-100 transition-opacity">
+                <MdClose size={14} />
+              </button>
+            </motion.div>
+          ))}
+        </AnimatePresence>
+      </div>
+      {/* Mobile: bottom toasts (avoids notch overlap) */}
+      <div className="flex sm:hidden fixed bottom-0 left-1/2 -translate-x-1/2 z-[100] flex-col-reverse items-center gap-2 pointer-events-none"
+           style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 16px)' }}
+           role="alert"
+           aria-live="polite">
+        <AnimatePresence>
+          {toasts.map((t) => (
+            <motion.div
+              key={t.id}
+              initial={{ opacity: 0, y: -20, scale: 0.95 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 10, scale: 0.95 }}
               className={`pointer-events-auto flex items-center gap-2 px-4 py-2.5 rounded-xl border text-xs font-medium shadow-lg ${typeStyles[t.type]}`}
             >
               <span>{t.message}</span>

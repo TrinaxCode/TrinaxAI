@@ -11,6 +11,11 @@ from __future__ import annotations
 
 import os
 import ssl
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from llama_index.embeddings.ollama import OllamaEmbedding
+    from llama_index.llms.ollama import Ollama
 
 
 def _env_int(name: str, default: int, *, minimum: int = 1, maximum: int | None = None) -> int:
@@ -53,6 +58,15 @@ PROJECTS_DIRS = [
 # ==================== MODELS ====================
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 TRINAXAI_PROFILE = os.getenv("TRINAXAI_PROFILE", "16gb").strip().lower()
+TRINAXAI_PERFORMANCE_MODE = (
+    os.getenv("TRINAXAI_PERFORMANCE_MODE", "fast").strip().lower() or "fast"
+)
+if TRINAXAI_PERFORMANCE_MODE not in {"fast", "balanced", "quality"}:
+    print(
+        "[TrinaxAI] Unknown TRINAXAI_PERFORMANCE_MODE="
+        f"'{TRINAXAI_PERFORMANCE_MODE}'. Falling back to 'fast'."
+    )
+    TRINAXAI_PERFORMANCE_MODE = "fast"
 
 # Validate profile — warn on unknown values but don't crash.
 _VALID_PROFILES = {
@@ -115,6 +129,8 @@ _LOW_RESOURCE_PROFILE = TRINAXAI_PROFILE in {
     "light",
     "bajo",
 }
+_FAST_MODE = TRINAXAI_PERFORMANCE_MODE == "fast"
+_QUALITY_MODE = TRINAXAI_PERFORMANCE_MODE == "quality"
 
 # ── Model fleet for AUTO-ROUTING ──
 # The router selects the model based on the query: chat -> general, code -> coder,
@@ -222,9 +238,17 @@ EMBED_BATCH_SIZE = _env_int(
     minimum=1,
     maximum=64,
 )
-# On 16 GB we unload models after each request. The powerful profile can keep
-# them warm for lower latency.
-_KEEP_ALIVE_DEFAULT = "60m" if _ULTRA_PROFILE else "30m" if _MAX_QUALITY_PROFILE else "0s"
+# Fast mode keeps the local model warm so the next response does not pay the
+# Ollama load cost again. Low-memory users can still set TRINAXAI_KEEP_ALIVE=0s.
+_KEEP_ALIVE_DEFAULT = (
+    "60m"
+    if _ULTRA_PROFILE
+    else "30m"
+    if _MAX_QUALITY_PROFILE
+    else "10m"
+    if _FAST_MODE and not _LOW_RESOURCE_PROFILE
+    else "0s"
+)
 KEEP_ALIVE = os.getenv("TRINAXAI_KEEP_ALIVE", _KEEP_ALIVE_DEFAULT)
 # Embeddings are many short requests during indexing/search. Keeping only the
 # embedding model warm prevents Ollama from unloading/reloading it every batch,
@@ -243,33 +267,62 @@ REQUEST_TIMEOUT = float(os.getenv("TRINAXAI_TIMEOUT", "300"))
 
 # ==================== CHUNKING ====================
 # Prose (md, txt, pdf, configs): token-based chunking.
-CHUNK_SIZE = int(os.getenv("TRINAXAI_CHUNK_SIZE", "1536" if _ULTRA_PROFILE else "1024"))
+_CHUNK_SIZE_DEFAULT = "1536" if _ULTRA_PROFILE else "896" if _FAST_MODE else "1024"
+CHUNK_SIZE = int(os.getenv("TRINAXAI_CHUNK_SIZE", _CHUNK_SIZE_DEFAULT))
 CHUNK_OVERLAP = int(
-    os.getenv("TRINAXAI_CHUNK_OVERLAP", "220" if _ULTRA_PROFILE else "150")
+    os.getenv(
+        "TRINAXAI_CHUNK_OVERLAP",
+        "220" if _ULTRA_PROFILE else "96" if _FAST_MODE else "150",
+    )
 )
 # Code: AST-based chunking (respects functions/classes), measured in lines.
 CODE_CHUNK_LINES = int(os.getenv("TRINAXAI_CODE_CHUNK_LINES", "60"))
-CODE_CHUNK_LINES_OVERLAP = int(os.getenv("TRINAXAI_CODE_CHUNK_LINES_OVERLAP", "12"))
+CODE_CHUNK_LINES_OVERLAP = int(
+    os.getenv("TRINAXAI_CODE_CHUNK_LINES_OVERLAP", "8" if _FAST_MODE else "12")
+)
 CODE_MAX_CHARS = int(os.getenv("TRINAXAI_CODE_MAX_CHARS", "2000"))
 
 # ==================== RETRIEVAL ====================
 # Final chunks injected into the LLM as context.
+_TOP_K_DEFAULT = (
+    "8"
+    if _ULTRA_PROFILE and _QUALITY_MODE
+    else "6"
+    if _ULTRA_PROFILE
+    else "5"
+    if _MAX_QUALITY_PROFILE
+    else "3"
+    if _LOW_RESOURCE_PROFILE and _FAST_MODE
+    else "4"
+    if _FAST_MODE
+    else "5"
+)
 SIMILARITY_TOP_K = int(
-    os.getenv("TRINAXAI_SIMILARITY_TOP_K", "8" if _ULTRA_PROFILE else "5")
+    os.getenv("TRINAXAI_SIMILARITY_TOP_K", _TOP_K_DEFAULT)
 )
 # Candidates each retriever (vector / BM25) contributes before fusion.
 # With reranking we ask for MORE candidates (the reranker narrows to the best).
+_FUSION_CANDIDATES_DEFAULT = (
+    "32"
+    if _ULTRA_PROFILE and _QUALITY_MODE
+    else "20"
+    if _ULTRA_PROFILE
+    else "12"
+    if _MAX_QUALITY_PROFILE
+    else "6"
+    if _LOW_RESOURCE_PROFILE and _FAST_MODE
+    else "8"
+    if _FAST_MODE
+    else "12"
+)
 FUSION_CANDIDATES = int(
-    os.getenv(
-        "TRINAXAI_FUSION_CANDIDATES",
-        "32"
-        if _ULTRA_PROFILE
-        else "20"
-        if _MAX_QUALITY_PROFILE
-        else "8"
-        if _LOW_RESOURCE_PROFILE
-        else "12",
-    )
+    os.getenv("TRINAXAI_FUSION_CANDIDATES", _FUSION_CANDIDATES_DEFAULT)
+)
+RETRIEVAL_CACHE_SECONDS = _env_int(
+    "TRINAXAI_RETRIEVAL_CACHE_SECONDS", 20 if _FAST_MODE else 10, minimum=0, maximum=3600
+)
+SOURCES_CACHE_SECONDS = _env_int(
+    "TRINAXAI_SOURCES_CACHE_SECONDS", 30 if _FAST_MODE else 15, minimum=0, maximum=3600
 )
 
 # ── RERANKING (cross-encoder, big precision boost) ──

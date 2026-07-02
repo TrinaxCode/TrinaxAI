@@ -201,7 +201,7 @@ export default function App() {
           {/* Main Area */}
           <main
             className={`flex-1 h-full min-h-0 transition-all duration-300 ${
-              sidebarOpen ? 'md:mr-72' : ''
+              sidebarOpen ? 'md:ml-72' : ''
             }`}
           >
             <ErrorBoundary>

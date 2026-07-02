@@ -82,10 +82,12 @@
   html.dark body {
     background: #000000;
     color: #ffffff;
+    transition: background-color 0.3s ease, color 0.3s ease;
   }
   html.light body {
     background: #ffffff;
     color: #1a1a1a;
+    transition: background-color 0.3s ease, color 0.3s ease;
   }
 
   #root {

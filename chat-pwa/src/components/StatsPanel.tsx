@@ -71,11 +71,22 @@ export default function StatsPanel() {
       </div>
 
       {!stats ? (
-        <p className={`text-[11px] ${muted}`}>
-          {loadError
-            ? t('statsUnavailableOffline')
-            : t('loading')}
-        </p>
+        loading ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 animate-pulse">
+            {[1,2,3,4].map((i) => (
+              <div key={i} className={`min-w-0 rounded-xl border p-3 ${cardBg}`}>
+                <div className={`h-3 w-16 rounded ${isDark ? 'bg-white/[0.08]' : 'bg-gray-200'}`} />
+                <div className={`mt-2 h-6 w-20 rounded ${isDark ? 'bg-white/[0.06]' : 'bg-gray-200'}`} />
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className={`text-[11px] ${muted}`}>
+            {loadError
+              ? t('statsUnavailableOffline')
+              : t('loading')}
+          </p>
+        )
       ) : (
         <>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
