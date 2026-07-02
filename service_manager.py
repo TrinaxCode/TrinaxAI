@@ -411,6 +411,8 @@ SHUTDOWN_ORDER = ["trinaxai-frontend", "ollama", "rag_api"]
 AI_SERVICES = ["ollama", "rag_api"]
 AI_SHUTDOWN_ORDER = ["ollama", "rag_api"]
 FRONTEND_SERVICE = "trinaxai-frontend"
+SUPERVISOR_SERVICE = "trinaxai-supervisor"
+FULL_SHUTDOWN_ORDER = [SUPERVISOR_SERVICE, *SHUTDOWN_ORDER]
 PROCESS_PATTERNS = {
     "ollama": ["ollama serve", "ollama"],
     "rag_api": ["uvicorn rag_api:app", "rag_api.py", "rag_api"],
@@ -423,6 +425,11 @@ PROCESS_PATTERNS = {
         "npm run dev",
         "npm run preview",
         "trinaxai-frontend",
+    ],
+    "trinaxai-supervisor": [
+        'service_manager.py" watch',
+        "service_manager.py watch",
+        "service_manager.py' watch",
     ],
 }
 
@@ -680,7 +687,7 @@ def start_ai(base_dir: str) -> list[ProcessState]:
 def stop_all() -> list[ProcessState]:
     """Stop the full TrinaxAI stack in reverse dependency order."""
     results: list[ProcessState] = []
-    for name in SHUTDOWN_ORDER:
+    for name in FULL_SHUTDOWN_ORDER:
         results.append(_backend.stop(name))
     return results
 

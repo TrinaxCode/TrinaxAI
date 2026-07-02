@@ -350,6 +350,8 @@ export const translations = {
     recentReindex: 'Re-indexar',
     recentReindexTitle: 'Re-indexar (vuelve a elegir la carpeta si hace falta)',
     removeFromHistory: 'Quitar del historial',
+    recentDeleteTitle: 'Quitar indexado reciente',
+    recentDeleteConfirm: '¿Quitar "{label}" de indexados recientes? Esto no borra archivos ni colecciones.',
 
     // ── Watcher ──
     watcherTitle: 'Watcher de archivos',
@@ -737,6 +739,8 @@ export const translations = {
     recentReindex: 'Re-index',
     recentReindexTitle: 'Re-index (re-pick folder if needed)',
     removeFromHistory: 'Remove from history',
+    recentDeleteTitle: 'Remove recent index',
+    recentDeleteConfirm: 'Remove "{label}" from recent indexes? This does not delete files or collections.',
 
     // ── Watcher ──
     watcherTitle: 'File Watcher',

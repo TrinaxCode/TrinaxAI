@@ -4,6 +4,7 @@ import { MdRefresh, MdDelete, MdStorage } from 'react-icons/md';
 import { useI18n } from '../i18n/I18nContext';
 import { useTheme } from '../theme/ThemeContext';
 import { useToast } from './Toast';
+import ConfirmModal from './ConfirmModal';
 import { startWatch, type Collection } from '../lib/api';
 
 interface RecentIndex {
@@ -18,14 +19,42 @@ interface RecentIndex {
 }
 
 const STORAGE_KEY = 'tc-recent-indexes';
+const LAST_INDEX_KEY = 'tc-last-index-import';
+const DELETED_KEY = 'tc-recent-index-deleted';
 const MAX_ENTRIES = 20;
+const MAX_DELETED = 100;
+
+function recentKey(item: RecentIndex): string {
+  return [
+    item.collectionId || '',
+    item.jobId || '',
+    item.indexedAt || 0,
+    item.label || '',
+  ].join('|');
+}
+
+function loadDeletedRecent(): Set<string> {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(DELETED_KEY) || '[]');
+    return new Set(Array.isArray(parsed) ? parsed.filter((key) => typeof key === 'string') : []);
+  } catch {
+    return new Set();
+  }
+}
+
+function saveDeletedRecent(keys: Set<string>) {
+  try {
+    localStorage.setItem(DELETED_KEY, JSON.stringify(Array.from(keys).slice(-MAX_DELETED)));
+  } catch { /* ignore */ }
+}
 
 function loadRecent(): RecentIndex[] {
   try {
+    const deleted = loadDeletedRecent();
     const raw = localStorage.getItem(STORAGE_KEY);
     const arr = raw ? JSON.parse(raw) : [];
     const last = (() => {
-      try { const r = localStorage.getItem('tc-last-index-import'); return r ? JSON.parse(r) : null; } catch { return null; }
+      try { const r = localStorage.getItem(LAST_INDEX_KEY); return r ? JSON.parse(r) : null; } catch { return null; }
     })();
     const items: RecentIndex[] = Array.isArray(arr) ? arr : [];
     if (last && last.label && last.indexedAt) {
@@ -33,7 +62,7 @@ function loadRecent(): RecentIndex[] {
       const exists = items.some((i) => i.indexedAt === last.indexedAt && i.label === last.label);
       if (!exists) items.unshift(last as RecentIndex);
     }
-    return items.slice(0, MAX_ENTRIES);
+    return items.filter((item) => !deleted.has(recentKey(item))).slice(0, MAX_ENTRIES);
   } catch {
     return [];
   }
@@ -50,6 +79,7 @@ export default function RecentIndexes({ collections }: Props) {
   const { isDark } = useTheme();
   const toast = useToast();
   const [items, setItems] = useState<RecentIndex[]>(() => loadRecent());
+  const [deleteIndex, setDeleteIndex] = useState<number | null>(null);
 
   // Refresh after each successful index — poll localStorage every 3s while mounted.
   useEffect(() => {
@@ -79,8 +109,19 @@ export default function RecentIndexes({ collections }: Props) {
 
   const remove = useCallback((idx: number) => {
     setItems((prev) => {
+      const target = prev[idx];
+      if (!target) return prev;
+      const key = recentKey(target);
+      const deleted = loadDeletedRecent();
+      deleted.add(key);
+      saveDeletedRecent(deleted);
       const next = prev.filter((_, i) => i !== idx);
       saveRecent(next);
+      try {
+        const lastRaw = localStorage.getItem(LAST_INDEX_KEY);
+        const last = lastRaw ? JSON.parse(lastRaw) as RecentIndex : null;
+        if (last && recentKey(last) === key) localStorage.removeItem(LAST_INDEX_KEY);
+      } catch { /* ignore */ }
       return next;
     });
   }, []);
@@ -129,15 +170,28 @@ export default function RecentIndexes({ collections }: Props) {
               <MdRefresh size={14} />
             </button>
             <button
-              onClick={() => remove(i)}
+              onClick={() => setDeleteIndex(i)}
               className={`shrink-0 p-1.5 rounded-lg ${isDark ? 'text-white/25 hover:text-red-400 hover:bg-white/[0.05]' : 'text-gray-300 hover:text-red-500 hover:bg-gray-100'}`}
               aria-label={t('removeFromHistory')}
+              title={t('removeFromHistory')}
             >
               <MdDelete size={14} />
             </button>
           </motion.div>
         ))}
       </div>
+      <ConfirmModal
+        open={deleteIndex !== null}
+        title={t('recentDeleteTitle')}
+        message={t('recentDeleteConfirm').replace('{label}', items[deleteIndex ?? -1]?.label || t('recentIndexesTitle'))}
+        confirmLabel={t('removeFromHistory')}
+        danger
+        onConfirm={() => {
+          if (deleteIndex !== null) remove(deleteIndex);
+          setDeleteIndex(null);
+        }}
+        onCancel={() => setDeleteIndex(null)}
+      />
     </section>
   );
 }
