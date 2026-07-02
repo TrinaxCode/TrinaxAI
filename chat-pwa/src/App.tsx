@@ -17,6 +17,8 @@ const Docs = lazy(() => import('./components/Docs'));
 const KnowledgeBrowser = lazy(() => import('./components/KnowledgeBrowser'));
 
 type Page = 'chat' | 'settings' | 'docs' | 'browser';
+type NavigateTarget = 'settings' | 'indexing' | 'browser' | 'memory' | 'docs';
+type SettingsSection = 'general' | 'indexing' | 'prompts' | 'memory' | 'stats';
 
 function hasCompletedOnboarding(): boolean {
   try { return localStorage.getItem('tc-onboarding-complete') === 'true'; } catch { return false; }
@@ -27,10 +29,15 @@ export default function App() {
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [page, setPage] = useState<Page>('chat');
+  const [settingsSection, setSettingsSection] = useState<SettingsSection>('general');
   const [sharedReady, setSharedReady] = useState(false);
   const { isDark } = useTheme();
   const { t } = useI18n();
   const resizeTimerRef = useRef<number>(0);
+
+  useEffect(() => {
+    try { sessionStorage.removeItem('trinaxai-resetting'); } catch { /* ignore */ }
+  }, []);
 
   useEffect(() => {
     const root = document.documentElement;
@@ -135,6 +142,20 @@ export default function App() {
     createSession(engine, t('newChat'));
   }, [createSession, t]);
 
+  const handleNavigate = useCallback((target: NavigateTarget) => {
+    setSidebarOpen(false);
+    if (target === 'browser') {
+      setPage('browser');
+      return;
+    }
+    if (target === 'docs') {
+      setPage('docs');
+      return;
+    }
+    setSettingsSection(target === 'memory' ? 'memory' : target === 'indexing' ? 'indexing' : 'general');
+    setPage('settings');
+  }, []);
+
   return (
     <div className="app-shell w-full max-w-full min-w-0 overflow-hidden relative transition-colors duration-300">
       {/* Ocean Waves Background (always visible, behind everything) */}
@@ -186,7 +207,7 @@ export default function App() {
             <ErrorBoundary>
             {page === 'settings' ? (
               <Suspense fallback={<div className="h-full flex items-center justify-center text-black/20 dark:text-white/20 text-sm">{t('loading')}</div>}>
-                <Settings key="settings" onBack={() => setPage('chat')} />
+                <Settings key="settings" onBack={() => setPage('chat')} initialSection={settingsSection} />
               </Suspense>
             ) : page === 'docs' ? (
               <Suspense fallback={<div className="h-full flex items-center justify-center text-black/20 dark:text-white/20 text-sm">{t('loading')}</div>}>
@@ -205,6 +226,7 @@ export default function App() {
                 onEngineChange={handleEngineChange}
                 onMenuToggle={() => setSidebarOpen((v) => !v)}
                 sidebarOpen={sidebarOpen}
+                onNavigate={handleNavigate}
               />
             ) : (
               <>

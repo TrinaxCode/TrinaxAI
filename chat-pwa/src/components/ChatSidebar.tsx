@@ -45,7 +45,7 @@ export default function ChatSidebar({
   onDocs,
   onBrowser,
 }: ChatSidebarProps) {
-  const { t, lang } = useI18n();
+  const { t } = useI18n();
   const { isDark } = useTheme();
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [query, setQuery] = useState('');
@@ -256,7 +256,7 @@ export default function ChatSidebar({
       <ConfirmModal
         open={deleteId !== null}
         title={t('deleteChat')}
-        message={lang === 'en' ? 'Delete this chat? This action cannot be undone.' : '¿Eliminar este chat? Esta acción no se puede deshacer.'}
+        message={t('deleteChatConfirm')}
         confirmLabel={t('delete')}
         danger
         onConfirm={() => { if (deleteId) { onDelete(deleteId); setDeleteId(null); } }}

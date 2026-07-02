@@ -46,7 +46,7 @@ function saveRecent(items: RecentIndex[]) {
 interface Props { collections: Collection[] }
 
 export default function RecentIndexes({ collections }: Props) {
-  const { t, lang } = useI18n();
+  const { t } = useI18n();
   const { isDark } = useTheme();
   const toast = useToast();
   const [items, setItems] = useState<RecentIndex[]>(() => loadRecent());
@@ -59,7 +59,7 @@ export default function RecentIndexes({ collections }: Props) {
 
   const reindex = useCallback(async (it: RecentIndex) => {
     if (!it.collectionId) {
-      toast.toast(lang === 'en' ? 'No collection info — pick the folder again' : 'Sin info de colección — vuelve a elegir la carpeta', 'warning');
+      toast.toast(t('recentNoCollectionInfo'), 'warning');
       return;
     }
     try {
@@ -69,13 +69,13 @@ export default function RecentIndexes({ collections }: Props) {
       // event (touch the directory mtime) by writing a noop file and removing it.
       await startWatch({ paths: [`local_sources/collections/${it.collectionId}`] });
       toast.toast(
-        lang === 'en' ? `Watcher running on ${it.collectionName || it.collectionId}. Edit any file to re-index.` : `Watcher activo en ${it.collectionName || it.collectionId}. Edita cualquier archivo para re-indexar.`,
+        t('recentWatcherRunning').replace('{collection}', it.collectionName || it.collectionId),
         'success',
       );
     } catch (err) {
-      toast.toast(err instanceof Error ? err.message.slice(0, 180) : (lang === 'en' ? 'Failed to start watcher' : 'No se pudo iniciar el watcher'), 'error');
+      toast.toast(err instanceof Error ? err.message.slice(0, 180) : t('recentWatcherStartFailed'), 'error');
     }
-  }, [toast, lang]);
+  }, [toast, t]);
 
   const remove = useCallback((idx: number) => {
     setItems((prev) => {
@@ -92,9 +92,9 @@ export default function RecentIndexes({ collections }: Props) {
   if (items.length === 0) {
     return (
       <section className={`rounded-xl border p-4 ${cardBg}`}>
-        <div className={`text-sm font-medium ${label}`}>{lang === 'en' ? 'Recent indexes' : 'Indexados recientes'}</div>
+        <div className={`text-sm font-medium ${label}`}>{t('recentIndexesTitle')}</div>
         <p className={`text-[11px] ${muted} mt-1`}>
-          {lang === 'en' ? 'After you index a folder it will appear here for quick re-indexing.' : 'Después de indexar una carpeta aparecerá aquí para re-indexar rápidamente.'}
+          {t('recentIndexesEmpty')}
         </p>
       </section>
     );
@@ -102,7 +102,7 @@ export default function RecentIndexes({ collections }: Props) {
 
   return (
     <section className={`rounded-xl border p-4 space-y-2 ${cardBg}`}>
-      <div className={`text-sm font-medium ${label}`}>{lang === 'en' ? 'Recent indexes' : 'Indexados recientes'}</div>
+      <div className={`text-sm font-medium ${label}`}>{t('recentIndexesTitle')}</div>
       <div className="space-y-1.5">
         {items.map((it, i) => (
           <motion.div
@@ -123,15 +123,15 @@ export default function RecentIndexes({ collections }: Props) {
             <button
               onClick={() => reindex(it)}
               className={`shrink-0 p-1.5 rounded-lg ${isDark ? 'text-white/45 hover:text-white hover:bg-white/[0.06]' : 'text-gray-500 hover:text-gray-800 hover:bg-gray-100'}`}
-              aria-label={lang === 'en' ? 'Re-index' : 'Re-indexar'}
-              title={lang === 'en' ? 'Re-index (re-pick folder if needed)' : 'Re-indexar (vuelve a elegir la carpeta si hace falta)'}
+              aria-label={t('recentReindex')}
+              title={t('recentReindexTitle')}
             >
               <MdRefresh size={14} />
             </button>
             <button
               onClick={() => remove(i)}
               className={`shrink-0 p-1.5 rounded-lg ${isDark ? 'text-white/25 hover:text-red-400 hover:bg-white/[0.05]' : 'text-gray-300 hover:text-red-500 hover:bg-gray-100'}`}
-              aria-label={lang === 'en' ? 'Remove from history' : 'Quitar del historial'}
+              aria-label={t('removeFromHistory')}
             >
               <MdDelete size={14} />
             </button>

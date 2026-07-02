@@ -9,7 +9,7 @@ import ToggleSwitch from './ToggleSwitch';
 import Sources from './Sources';
 import type { ChatMessage, ChatEngine, Collection } from '../lib/api';
 import { extractDocumentText, getCollections, getIndexJob, indexableFilesFrom, prepareImageForVision, runResearch, startFolderIndex, getMemorySummary } from '../lib/api';
-import { getPreferredUserName, getUserAvatar, rememberFromMessage } from '../lib/userProfile';
+import { getPreferredUserName, rememberFromMessage } from '../lib/userProfile';
 import { useStreamChat } from '../hooks/useStreamChat';
 import { onSharedStateUpdated } from '../lib/sharedState';
 
@@ -20,7 +20,7 @@ interface ChatInterfaceProps {
   onEngineChange: (engine: ChatEngine) => void;
   onMenuToggle: () => void;
   sidebarOpen: boolean;
-  onNavigate?: (page: 'settings' | 'browser' | 'memory' | 'docs') => void;
+  onNavigate?: (page: 'settings' | 'indexing' | 'browser' | 'memory' | 'docs') => void;
   onRequestExport?: (kind: 'markdown') => void;
 }
 
@@ -43,16 +43,16 @@ const DOC_TOTAL_MAX_CHARS = 220_000;
  * - export_* — trigger a download via the parent's onRequestExport callback.
  */
 type BuiltinKind =
-  | 'navigate_settings' | 'navigate_browser' | 'navigate_memory' | 'navigate_docs'
+  | 'navigate_settings' | 'navigate_indexing' | 'navigate_browser' | 'navigate_memory' | 'navigate_docs'
   | 'deep_research' | 'summarize' | 'export_markdown' | 'noop';
 
 interface BuiltinCommand { name: string; text: string; builtin: true; kind: BuiltinKind; hint: string }
 
 const BUILTIN_COMMANDS: BuiltinCommand[] = [
-  { name: 'index',     text: '',                builtin: true, kind: 'navigate_settings', hint: 'Ajustes → Indexar carpeta' },
+  { name: 'index',     text: '',                builtin: true, kind: 'navigate_indexing', hint: 'Ajustes → Indexar carpeta' },
   { name: 'browse',    text: '',                builtin: true, kind: 'navigate_browser',  hint: 'Knowledge Browser' },
   { name: 'memory',    text: '',                builtin: true, kind: 'navigate_memory',  hint: 'Notas persistentes' },
-  { name: 'watch',     text: '',                builtin: true, kind: 'navigate_settings', hint: 'Watcher de archivos' },
+  { name: 'watch',     text: '',                builtin: true, kind: 'navigate_indexing', hint: 'Watcher de archivos' },
   { name: 'research',  text: '',                builtin: true, kind: 'deep_research',    hint: 'Multi-pass deep research' },
   { name: 'summarize', text: '',                builtin: true, kind: 'summarize',        hint: 'Resumir conversación' },
   { name: 'export',    text: '',                builtin: true, kind: 'export_markdown',  hint: 'Exportar como Markdown' },
@@ -71,10 +71,6 @@ function getBuiltinHint(name: string, lang: 'es' | 'en'): string {
     sources:   { es: 'Ver fuentes indexadas', en: 'View indexed sources' },
   };
   return hints[name]?.[lang] ?? '';
-}
-
-function builtinBadgeLabel(lang: 'es' | 'en'): string {
-  return lang === 'en' ? 'built-in' : 'integrado';
 }
 
 function findBuiltin(name: string): BuiltinCommand | undefined {
@@ -115,7 +111,6 @@ export default function ChatInterface({
   const messagesRef = useRef<HTMLDivElement>(null);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [showScrollButton, setShowScrollButton] = useState(false);
-  const [userAvatar, setUserAvatar] = useState('');
   const [userDisplayName, setUserDisplayName] = useState(() => getPreferredUserName(lang));
   const [collections, setCollections] = useState<Collection[]>([]);
   const [activeCollectionIds, setActiveCollectionIds] = useState<string[]>(() => {
@@ -149,9 +144,7 @@ export default function ChatInterface({
     customPrompts.current = [...BUILTIN_COMMANDS, ...op, ...rp]
       .filter((p: any) => p?.name && p.name !== 'system')
       .map((p: any) => ({ name: String(p.name), text: String(p.text || ''), builtin: false }));
-    const nextAvatar = getUserAvatar();
     const nextName = getPreferredUserName(lang);
-    setUserAvatar((current) => (current === nextAvatar ? current : nextAvatar));
     setUserDisplayName((current) => (current === nextName ? current : nextName));
   }, [lang]);
 
@@ -690,6 +683,7 @@ function getLastUserText(messages: ChatMessage[], beforeMsg?: ChatMessage): stri
         resetInputHeight();
         switch (builtin.kind) {
           case 'navigate_settings': onNavigate?.('settings'); return;
+          case 'navigate_indexing': onNavigate?.('indexing'); return;
           case 'navigate_browser':  onNavigate?.('browser');  return;
           case 'navigate_memory':   onNavigate?.('memory');   return;
           case 'navigate_docs':     onNavigate?.('docs');     return;
@@ -1050,8 +1044,8 @@ function getLastUserText(messages: ChatMessage[], beforeMsg?: ChatMessage): stri
                   ? 'bg-[#006bbd]/20 text-[#006bbd] ring-1 ring-[#006bbd]/40 animate-soft-pulse'
                   : isDark ? 'text-white/55 hover:text-white hover:bg-white/[0.06]' : 'text-gray-600 hover:text-gray-800 hover:bg-gray-100'
               }`}
-              aria-label={lang === 'en' ? 'Toggle Deep Research' : 'Activar Deep Research'}
-              title={lang === 'en' ? 'Deep Research (multi-pass)' : 'Deep Research (multi-pass)'}
+              aria-label={t('toggleDeepResearch')}
+              title={t('deepResearchTitle')}
             >
               <MdScience size={18} />
             </button>
@@ -1269,23 +1263,13 @@ function getLastUserText(messages: ChatMessage[], beforeMsg?: ChatMessage): stri
 
               {/* Avatar (user) */}
               {msg.role === 'user' && (
-                userAvatar ? (
-                  <img
-                    src={userAvatar}
-                    alt={t('userAvatar')}
-                    className="w-7 h-7 rounded-full shrink-0 mt-0.5 object-cover"
-                    width={28}
-                    height={28}
-                  />
-                ) : (
-                  <div
-                    className="w-7 h-7 rounded-full shrink-0 mt-0.5 grid place-items-center bg-[#006bbd] text-white text-xs font-semibold"
-                    aria-label={t('userAvatar')}
-                    title={userDisplayName}
-                  >
-                    {(userDisplayName.trim()[0] || 'U').toUpperCase()}
-                  </div>
-                )
+                <div
+                  className="w-7 h-7 rounded-full shrink-0 mt-0.5 grid place-items-center bg-[#006bbd] text-white text-xs font-semibold"
+                  aria-label={t('userAvatar')}
+                  title={userDisplayName}
+                >
+                  {(userDisplayName.trim()[0] || 'U').toUpperCase()}
+                </div>
               )}
             </motion.div>
           ))}
@@ -1342,8 +1326,8 @@ function getLastUserText(messages: ChatMessage[], beforeMsg?: ChatMessage): stri
                   ? 'border-white/[0.08] bg-black/85 text-white/80 hover:bg-[#006bbd] hover:text-white'
                   : 'border-gray-200 bg-white/95 text-gray-600 hover:bg-[#006bbd] hover:text-white'
               }`}
-              aria-label={lang === 'en' ? 'Scroll to bottom' : 'Ir al final del chat'}
-              title={lang === 'en' ? 'Scroll to bottom' : 'Ir al final del chat'}
+              aria-label={t('scrollToBottom')}
+              title={t('scrollToBottom')}
             >
               <MdKeyboardArrowDown size={30} />
             </motion.button>
@@ -1510,7 +1494,7 @@ function getLastUserText(messages: ChatMessage[], beforeMsg?: ChatMessage): stri
                   className={`w-full text-left px-4 py-2.5 text-sm flex items-center gap-3 ${isDark ? 'text-white/60 hover:text-white hover:bg-white/[0.04]' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'}`}>
                   <span className="text-[10px] text-[#006bbd] font-mono">/{p.name}</span>
                   {p.builtin && (
-                    <span className="text-[8px] font-bold uppercase tracking-wider px-1 py-0.5 rounded bg-[#006bbd]/15 text-[#006bbd]">{builtinBadgeLabel(lang)}</span>
+                    <span className="text-[8px] font-bold uppercase tracking-wider px-1 py-0.5 rounded bg-[#006bbd]/15 text-[#006bbd]">{t('builtInCommand')}</span>
                   )}
                   <span className={`truncate ${isDark ? 'text-white/30' : 'text-gray-400'}`}>
                     {p.builtin ? (getBuiltinHint(p.name, lang)) : (p.text || '').slice(0, 50) + '…'}

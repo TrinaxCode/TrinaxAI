@@ -17,7 +17,9 @@ SAFE_DEFAULTS = {
 
 _VALID_PROFILES = {
     "4gb",
+    "4g",
     "8gb",
+    "8g",
     "16gb",
     "max",
     "high",

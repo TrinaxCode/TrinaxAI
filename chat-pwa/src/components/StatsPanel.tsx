@@ -18,7 +18,7 @@ function fmtNumber(n: number): string {
 }
 
 export default function StatsPanel() {
-  const { t, lang } = useI18n();
+  const { t } = useI18n();
   const { isDark } = useTheme();
   const toast = useToast();
   const [stats, setStats] = useState<UsageStats | null>(null);
@@ -56,9 +56,9 @@ export default function StatsPanel() {
     <section className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="min-w-0">
-          <div className={`text-sm font-medium ${label}`}>{lang === 'en' ? 'Usage statistics' : 'Estadísticas de uso'}</div>
+          <div className={`text-sm font-medium ${label}`}>{t('usageStatsTitle')}</div>
           <div className={`text-[11px] break-words ${muted}`}>
-            {lang === 'en' ? 'Local aggregate from this device. No data leaves your machine.' : 'Agregado local. Ningún dato sale de tu equipo.'}
+            {t('usageStatsDesc')}
           </div>
         </div>
         <button
@@ -66,29 +66,29 @@ export default function StatsPanel() {
           disabled={loading}
           className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${isDark ? 'bg-white/[0.06] text-white/70 hover:bg-white/[0.1]' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'} disabled:opacity-50`}
         >
-          <MdRefresh size={14} /> {lang === 'en' ? 'Refresh' : 'Refrescar'}
+          <MdRefresh size={14} /> {t('refresh')}
         </button>
       </div>
 
       {!stats ? (
         <p className={`text-[11px] ${muted}`}>
           {loadError
-            ? (lang === 'en' ? 'Stats are unavailable while the local RAG API is offline.' : 'Las estadísticas no están disponibles mientras la API RAG local está apagada.')
-            : (lang === 'en' ? 'Loading...' : 'Cargando...')}
+            ? t('statsUnavailableOffline')
+            : t('loading')}
         </p>
       ) : (
         <>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <StatCard label={lang === 'en' ? 'Total messages' : 'Mensajes totales'} value={fmtNumber(stats.messages_total)} cardBg={cardBg} valueCls={value} labelCls={muted} />
-            <StatCard label={lang === 'en' ? 'Estimated tokens' : 'Tokens estimados'} value={fmtNumber(stats.tokens_estimated)} cardBg={cardBg} valueCls={value} labelCls={muted} />
-            <StatCard label={lang === 'en' ? 'First seen' : 'Primer uso'} value={fmtDate(stats.first_seen)} cardBg={cardBg} valueCls={value} labelCls={muted} small />
-            <StatCard label={lang === 'en' ? 'Last seen' : 'Último uso'} value={fmtDate(stats.last_seen)} cardBg={cardBg} valueCls={value} labelCls={muted} small />
+            <StatCard label={t('statsTotalMessages')} value={fmtNumber(stats.messages_total)} cardBg={cardBg} valueCls={value} labelCls={muted} />
+            <StatCard label={t('statsEstimatedTokens')} value={fmtNumber(stats.tokens_estimated)} cardBg={cardBg} valueCls={value} labelCls={muted} />
+            <StatCard label={t('statsFirstSeen')} value={fmtDate(stats.first_seen)} cardBg={cardBg} valueCls={value} labelCls={muted} small />
+            <StatCard label={t('statsLastSeen')} value={fmtDate(stats.last_seen)} cardBg={cardBg} valueCls={value} labelCls={muted} small />
           </div>
 
           {/* Top models bar */}
           {stats.top_models.length > 0 && (
             <div className={`rounded-xl border p-3 space-y-2 ${cardBg}`}>
-              <div className={`text-[10px] uppercase tracking-widest ${muted}`}>{lang === 'en' ? 'Top models' : 'Modelos más usados'}</div>
+              <div className={`text-[10px] uppercase tracking-widest ${muted}`}>{t('statsTopModels')}</div>
               <BarList items={stats.top_models.map((m) => ({ key: m.model, count: m.count }))} total={stats.messages_total} isDark={isDark} />
             </div>
           )}
@@ -96,7 +96,7 @@ export default function StatsPanel() {
           {/* Top collections bar */}
           {stats.top_collections.length > 0 && (
             <div className={`rounded-xl border p-3 space-y-2 ${cardBg}`}>
-              <div className={`text-[10px] uppercase tracking-widest ${muted}`}>{lang === 'en' ? 'Top collections' : 'Colecciones más usadas'}</div>
+              <div className={`text-[10px] uppercase tracking-widest ${muted}`}>{t('statsTopCollections')}</div>
               <BarList items={stats.top_collections.map((c) => ({ key: c.id, count: c.count }))} total={stats.messages_total} isDark={isDark} />
             </div>
           )}
@@ -104,7 +104,7 @@ export default function StatsPanel() {
           {/* Engine split */}
           {Object.keys(stats.messages_by_engine).length > 0 && (
             <div className={`rounded-xl border p-3 space-y-2 ${cardBg}`}>
-              <div className={`text-[10px] uppercase tracking-widest ${muted}`}>{lang === 'en' ? 'Engine split' : 'Distribución por motor'}</div>
+              <div className={`text-[10px] uppercase tracking-widest ${muted}`}>{t('statsEngineSplit')}</div>
               <BarList items={Object.entries(stats.messages_by_engine).map(([k, v]) => ({ key: k, count: v }))} total={stats.messages_total} isDark={isDark} />
             </div>
           )}

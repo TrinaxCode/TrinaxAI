@@ -42,6 +42,56 @@ done
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT"
 
+is_windows() {
+  case "$(uname -s 2>/dev/null || echo unknown)" in
+    MINGW*|MSYS*|CYGWIN*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+PYTHON_CMD=()
+if [ -n "${TRINAXAI_PYTHON:-}" ]; then
+  PYTHON_CMD=("$TRINAXAI_PYTHON")
+elif [ -x ".venv/bin/python" ]; then
+  PYTHON_CMD=(".venv/bin/python")
+elif [ -x ".venv/Scripts/python.exe" ]; then
+  PYTHON_CMD=(".venv/Scripts/python.exe")
+elif is_windows && command -v py.exe >/dev/null 2>&1; then
+  PYTHON_CMD=(py.exe -3)
+elif command -v python3 >/dev/null 2>&1; then
+  PYTHON_CMD=(python3)
+elif command -v python >/dev/null 2>&1; then
+  PYTHON_CMD=(python)
+fi
+
+abs_path() {
+  if command -v realpath >/dev/null 2>&1; then
+    realpath -m "$1"
+  else
+    (cd "$(dirname "$1")" 2>/dev/null && printf '%s/%s\n' "$(pwd)" "$(basename "$1")")
+  fi
+}
+
+safe_remove() {
+  local target abs win_path
+  for target in "$@"; do
+    [ -e "$target" ] || continue
+    abs="$(abs_path "$target")"
+    case "$abs" in
+      "$ROOT"/*|"$ROOT") ;;
+      *) echo "Refusing to remove path outside project: $abs" >&2; exit 1 ;;
+    esac
+    if is_windows && command -v powershell.exe >/dev/null 2>&1; then
+      win_path="$(cygpath -w "$abs" 2>/dev/null || printf '%s' "$abs")"
+      powershell.exe -NoProfile -ExecutionPolicy Bypass -Command \
+        'param([string]$Path) if (Test-Path -LiteralPath $Path) { Remove-Item -LiteralPath $Path -Recurse -Force -ErrorAction Stop }' \
+        "$win_path"
+    else
+      rm -rf -- "$abs"
+    fi
+  done
+}
+
 echo "This will stop TrinaxAI and remove local runtime data from:"
 echo "  $ROOT"
 echo ""
@@ -54,11 +104,14 @@ if [ "$confirm" != "UNINSTALL" ]; then
   exit 0
 fi
 
-if [ -x "./shutdown_ai.sh" ]; then
-  ./shutdown_ai.sh || true
+if [ "${#PYTHON_CMD[@]}" -gt 0 ] && [ -f "$ROOT/service_manager.py" ]; then
+  TRINAXAI_PRIVILEGED_WRAPPER=1 "${PYTHON_CMD[@]}" "$ROOT/service_manager.py" stop-all --base-dir "$ROOT" || true
+  TRINAXAI_PRIVILEGED_WRAPPER=1 "${PYTHON_CMD[@]}" "$ROOT/service_manager.py" disable-autostart --base-dir "$ROOT" || true
+elif [ -f "./shutdown_ai.sh" ]; then
+  bash ./shutdown_ai.sh || true
 fi
 
-rm -rf .venv chat-pwa/node_modules chat-pwa/dist storage local_sources logs .env
+safe_remove .venv chat-pwa/node_modules chat-pwa/dist storage local_sources logs .env
 
 if command -v systemctl >/dev/null 2>&1; then
   systemctl --user disable --now trinaxai.service 2>/dev/null || true

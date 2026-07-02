@@ -84,6 +84,16 @@ print_warn()  { echo -e "  ${YELLOW}[!]${NC} $1"; }
 print_err()   { echo -e "  ${RED}[X]${NC} $1"; }
 print_info()  { echo -e "  ${CYAN}[i]${NC} $1"; }
 ask()         { read -p "$(echo -e "${GREEN}[?]${NC} $1 ")" -r; echo "$REPLY"; }
+ask_default() {
+  prompt="$1"
+  default="$2"
+  reply=$(ask "$prompt [$default]")
+  if [ -z "$reply" ]; then
+    echo "$default"
+  else
+    echo "$reply"
+  fi
+}
 
 detect_ram_gb() {
   if [ "$OS" = "linux" ] && command -v awk >/dev/null 2>&1; then
@@ -339,6 +349,52 @@ else
 fi
 print_ok "Automatic setup selected: profile=$PROFILE"
 
+MODEL_GENERAL="llama3.2:3b"
+MODEL_CODE="qwen2.5-coder:3b"
+MODEL_DEEP="qwen2.5-coder:3b"
+MODEL_FAST="llama3.2:3b"
+EMBED_PRESET="balanced"
+EMBED_MODEL="bge-m3"
+EMBED_DIMS="1024"
+EMBED_BATCH="8"
+EMBED_KEEP_ALIVE="15m"
+VISION_MODEL="qwen2.5vl:3b"
+VISION_QUALITY_MODEL="qwen2.5vl:7b"
+if [ "$PROFILE" = "8gb" ]; then
+  EMBED_BATCH="2"
+  EMBED_KEEP_ALIVE="10m"
+elif [ "$PROFILE" = "max" ]; then
+  MODEL_DEEP="qwen2.5-coder:7b"
+  VISION_MODEL="qwen2.5vl:7b"
+  EMBED_KEEP_ALIVE="30m"
+elif [ "$PROFILE" = "ultra" ]; then
+  MODEL_DEEP="qwen2.5-coder:14b"
+  VISION_MODEL="qwen2.5vl:7b"
+  EMBED_BATCH="16"
+  EMBED_KEEP_ALIVE="30m"
+fi
+
+echo ""
+echo -e "${CYAN}Model roles TrinaxAI needs:${NC}"
+echo "  General chat: conversation and everyday questions"
+echo "  Code/deep:    code, reasoning, refactors, project analysis"
+echo "  Embeddings:   RAG indexing and semantic search"
+echo "  Vision:       image and screenshot analysis"
+if [ "$INTERACTIVE" = "1" ]; then
+  reply=$(ask "Use recommended Ollama models, or configure your own? [R/o]")
+else
+  read -r -p "$(echo -e "${GREEN}[?]${NC} Use recommended Ollama models, or configure your own? [R/o] ")" -t 15 reply || reply="r"
+fi
+if [[ "$reply" =~ ^[Oo]$ ]]; then
+  MODEL_GENERAL="$(ask_default "General chat model" "$MODEL_GENERAL")"
+  MODEL_CODE="$(ask_default "Code model" "$MODEL_CODE")"
+  MODEL_DEEP="$(ask_default "Deep analysis model" "$MODEL_DEEP")"
+  MODEL_FAST="$(ask_default "Fast model" "$MODEL_FAST")"
+  EMBED_MODEL="$(ask_default "Embedding model for RAG" "$EMBED_MODEL")"
+  VISION_MODEL="$(ask_default "Vision/image model" "$VISION_MODEL")"
+  VISION_QUALITY_MODEL="$(ask_default "High-quality vision model" "$VISION_QUALITY_MODEL")"
+fi
+
 # ── LAN System Control ──
 if [ "$ENABLE_LAN_SYSTEM" != "1" ]; then
   echo ""
@@ -384,16 +440,22 @@ TRINAXAI_FRONTEND_URL=https://localhost:3334
 TRINAXAI_FRONTEND_MODE=preview
 
 # Model fleet (auto-router enabled by default)
-TRINAXAI_MODEL_GENERAL=llama3.2:3b
-TRINAXAI_MODEL_CODE=qwen2.5-coder:3b
-TRINAXAI_MODEL_DEEP=qwen2.5-coder:3b
-TRINAXAI_MODEL_FAST=llama3.2:3b
+TRINAXAI_MODEL_GENERAL=$MODEL_GENERAL
+TRINAXAI_MODEL_CODE=$MODEL_CODE
+TRINAXAI_MODEL_DEEP=$MODEL_DEEP
+TRINAXAI_MODEL_FAST=$MODEL_FAST
 TRINAXAI_AUTO_ROUTE=1
 
 # Embeddings
-TRINAXAI_EMBED_PRESET=balanced
-TRINAXAI_EMBED=bge-m3
-TRINAXAI_EMBED_DIMS=1024
+TRINAXAI_EMBED_PRESET=$EMBED_PRESET
+TRINAXAI_EMBED=$EMBED_MODEL
+TRINAXAI_EMBED_DIMS=$EMBED_DIMS
+TRINAXAI_EMBED_BATCH=$EMBED_BATCH
+TRINAXAI_EMBED_KEEP_ALIVE=$EMBED_KEEP_ALIVE
+
+# Vision
+VITE_TRINAXAI_VISION_MODEL=$VISION_MODEL
+VITE_TRINAXAI_VISION_QUALITY_MODEL=$VISION_QUALITY_MODEL
 
 # Reranking (off by default — enable for better precision)
 TRINAXAI_RERANK=0
@@ -410,14 +472,11 @@ if [ "$PROFILE" = "ultra" ]; then
   cat >> .env <<'EOF'
 TRINAXAI_NUM_CTX=16384
 TRINAXAI_EMBED_WORKERS=6
-TRINAXAI_MODEL_DEEP=qwen2.5-coder:14b
-VITE_TRINAXAI_VISION_QUALITY_MODEL=qwen2.5vl:7b
 EOF
 elif [ "$PROFILE" = "max" ]; then
   cat >> .env <<'EOF'
 TRINAXAI_NUM_CTX=8192
 TRINAXAI_EMBED_WORKERS=4
-TRINAXAI_MODEL_DEEP=qwen2.5-coder:7b
 EOF
 fi
 print_ok ".env written with profile=$PROFILE"
@@ -519,33 +578,29 @@ if [ "${DISK_GB:-0}" -gt 0 ] && [ "$DISK_GB" -lt 12 ]; then
   print_warn "Only ${DISK_GB}GB free. Model downloads may fail; free disk space before pulling large models."
 fi
 
-DEFAULT_MODELS=(
-  "qwen2.5-coder:3b"
-  "llama3.2:3b"
-  "bge-m3"
-)
-VISION_MODEL="qwen2.5vl:3b"
-if [ "${PROFILE:-16gb}" = "max" ]; then
-  DEFAULT_MODELS+=("qwen2.5-coder:7b")
-  VISION_MODEL="qwen2.5vl:7b"
-elif [ "${PROFILE:-16gb}" = "ultra" ]; then
-  DEFAULT_MODELS+=("qwen2.5-coder:7b" "qwen2.5-coder:14b")
-  VISION_MODEL="qwen2.5vl:7b"
-fi
+DEFAULT_MODELS=()
+for model in "$MODEL_CODE" "$MODEL_DEEP" "$MODEL_GENERAL" "$MODEL_FAST" "$EMBED_MODEL"; do
+  [ -n "$model" ] || continue
+  case " ${DEFAULT_MODELS[*]} " in
+    *" $model "*) ;;
+    *) DEFAULT_MODELS+=("$model");;
+  esac
+done
 
 echo ""
 echo -e "${YELLOW}TrinaxAI works best with these models:${NC}"
-echo "  General chat:   llama3.2:3b       (~2 GB)"
-echo "  Code/router:    qwen2.5-coder:3b  (~2 GB)"
-echo "  Embeddings:     bge-m3            (~1.2 GB)"
-echo "  Vision (opt):   qwen2.5vl:3b      (~2 GB)"
-if [ "${PROFILE:-16gb}" = "ultra" ]; then
-  echo "  Ultra deep:     qwen2.5-coder:14b (~9 GB)"
-fi
+echo "  General chat:   $MODEL_GENERAL"
+echo "  Code/router:    $MODEL_CODE"
+echo "  Deep analysis:  $MODEL_DEEP"
+echo "  Embeddings:     $EMBED_MODEL"
+echo "  Vision (opt):   $VISION_MODEL"
 echo ""
 
 if [ "$INTERACTIVE" = "1" ]; then
   reply=$(ask "Download default models now? [Y/n]")
+  [[ "$reply" =~ ^[Nn] ]] && INSTALL_MODELS=0
+else
+  read -r -p "$(echo -e "${GREEN}[?]${NC} Download the configured Ollama models now? Choose N if you will use models you already have. [Y/n] ")" -t 15 reply || reply="y"
   [[ "$reply" =~ ^[Nn] ]] && INSTALL_MODELS=0
 fi
 

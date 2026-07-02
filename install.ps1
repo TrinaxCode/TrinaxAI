@@ -91,6 +91,11 @@ function Normalize-Profile($Value, $Fallback) {
     default { return $Fallback }
   }
 }
+function Read-ModelValue($Label, $Default) {
+  $Value = Read-Host "$Label [$Default]"
+  if ([string]::IsNullOrWhiteSpace($Value)) { return $Default }
+  return $Value.Trim()
+}
 function Install-WingetPackage($Id, $Name) {
   if (-not (Test-Cmd winget)) { return $false }
   if (Test-Cmd $Name) { return $true }
@@ -233,6 +238,50 @@ if ($Interactive -and $Mode -match "^[Aa]") {
   Write-Ok "Automatic setup selected: profile=$Profile"
 }
 
+$ModelGeneral = "llama3.2:3b"
+$ModelCode = "qwen2.5-coder:3b"
+$ModelDeep = "qwen2.5-coder:3b"
+$ModelFast = "llama3.2:3b"
+$EmbedPreset = "balanced"
+$EmbedModel = "bge-m3"
+$EmbedDims = "1024"
+$EmbedBatch = "8"
+$EmbedKeepAlive = "15m"
+$VisionModel = "qwen2.5vl:3b"
+$VisionQualityModel = "qwen2.5vl:7b"
+if ($Profile -eq "8gb") {
+  $EmbedBatch = "2"
+  $EmbedKeepAlive = "10m"
+} elseif ($Profile -eq "max") {
+  $ModelDeep = "qwen2.5-coder:7b"
+  $VisionModel = "qwen2.5vl:7b"
+  $EmbedKeepAlive = "30m"
+} elseif ($Profile -eq "ultra") {
+  $ModelDeep = "qwen2.5-coder:14b"
+  $VisionModel = "qwen2.5vl:7b"
+  $EmbedBatch = "16"
+  $EmbedKeepAlive = "30m"
+}
+
+Write-Host ""
+Write-Host "Model roles TrinaxAI needs:" -ForegroundColor Cyan
+Write-Host "  General chat: conversation and everyday questions"
+Write-Host "  Code/deep: code, reasoning, refactors, project analysis"
+Write-Host "  Embeddings: RAG indexing and semantic search"
+Write-Host "  Vision: image and screenshot analysis"
+if (-not $NonInteractive) {
+  $ModelMode = Read-Host "Use recommended Ollama models, or configure your own? [R/o]"
+  if ($ModelMode -match "^[Oo]") {
+    $ModelGeneral = Read-ModelValue "General chat model" $ModelGeneral
+    $ModelCode = Read-ModelValue "Code model" $ModelCode
+    $ModelDeep = Read-ModelValue "Deep analysis model" $ModelDeep
+    $ModelFast = Read-ModelValue "Fast model" $ModelFast
+    $EmbedModel = Read-ModelValue "Embedding model for RAG" $EmbedModel
+    $VisionModel = Read-ModelValue "Vision/image model" $VisionModel
+    $VisionQualityModel = Read-ModelValue "High-quality vision model" $VisionQualityModel
+  }
+}
+
 $LanIp = (Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
   Where-Object { $_.IPAddress -match "^(192\.168|10\.|172\.(1[6-9]|2[0-9]|3[0-1]))" } |
   Select-Object -First 1 -ExpandProperty IPAddress)
@@ -287,14 +336,18 @@ $EnvLines = @(
   "TRINAXAI_RAG_TARGET=http://127.0.0.1:3333",
   "VITE_TRINAXAI_RAG_TARGET=http://127.0.0.1:3333",
   "OLLAMA_BASE_URL=http://localhost:11434",
-  "TRINAXAI_MODEL_GENERAL=llama3.2:3b",
-  "TRINAXAI_MODEL_CODE=qwen2.5-coder:3b",
-  "TRINAXAI_MODEL_DEEP=qwen2.5-coder:3b",
-  "TRINAXAI_MODEL_FAST=llama3.2:3b",
+  "TRINAXAI_MODEL_GENERAL=$ModelGeneral",
+  "TRINAXAI_MODEL_CODE=$ModelCode",
+  "TRINAXAI_MODEL_DEEP=$ModelDeep",
+  "TRINAXAI_MODEL_FAST=$ModelFast",
   "TRINAXAI_AUTO_ROUTE=1",
-  "TRINAXAI_EMBED_PRESET=balanced",
-  "TRINAXAI_EMBED=bge-m3",
-  "TRINAXAI_EMBED_DIMS=1024",
+  "TRINAXAI_EMBED_PRESET=$EmbedPreset",
+  "TRINAXAI_EMBED=$EmbedModel",
+  "TRINAXAI_EMBED_DIMS=$EmbedDims",
+  "TRINAXAI_EMBED_BATCH=$EmbedBatch",
+  "TRINAXAI_EMBED_KEEP_ALIVE=$EmbedKeepAlive",
+  "VITE_TRINAXAI_VISION_MODEL=$VisionModel",
+  "VITE_TRINAXAI_VISION_QUALITY_MODEL=$VisionQualityModel",
   "TRINAXAI_RERANK=0",
   "TRINAXAI_ALLOW_LAN_SYSTEM=$EnableLanSystem",
   "TRINAXAI_ADMIN_TOKEN=$AdminToken",
@@ -304,15 +357,12 @@ $EnvLines = @(
 if ($Profile -eq "ultra") {
   $EnvLines += @(
     "TRINAXAI_NUM_CTX=16384",
-    "TRINAXAI_EMBED_WORKERS=6",
-    "TRINAXAI_MODEL_DEEP=qwen2.5-coder:14b",
-    "VITE_TRINAXAI_VISION_QUALITY_MODEL=qwen2.5vl:7b"
+    "TRINAXAI_EMBED_WORKERS=6"
   )
 } elseif ($Profile -eq "max") {
   $EnvLines += @(
     "TRINAXAI_NUM_CTX=8192",
-    "TRINAXAI_EMBED_WORKERS=4",
-    "TRINAXAI_MODEL_DEEP=qwen2.5-coder:7b"
+    "TRINAXAI_EMBED_WORKERS=4"
   )
 }
 $EnvLines | Set-Content -Encoding UTF8 ".env"
@@ -389,16 +439,20 @@ if ((Test-Cmd npm) -and (Test-Path "chat-pwa")) {
 }
 
 Write-Step "5/6 AI models"
-$Models = @("qwen2.5-coder:3b", "llama3.2:3b", "bge-m3")
-$VisionModel = "qwen2.5vl:3b"
-if (($Profile -eq "max") -or ($Profile -eq "ultra")) {
-  $Models += "qwen2.5-coder:7b"
-  $VisionModel = "qwen2.5vl:7b"
-}
-if ($Profile -eq "ultra") { $Models += "qwen2.5-coder:14b" }
-if ($Interactive) {
-  $SkipModels = Read-Host "Download default models now? [Y/n]"
-  if ($SkipModels -match "^[Nn]") { $NoModels = $true }
+$Models = @($ModelCode, $ModelDeep, $ModelGeneral, $ModelFast, $EmbedModel) |
+  Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
+  Select-Object -Unique
+Write-Host "  General chat: $ModelGeneral"
+Write-Host "  Code:         $ModelCode"
+Write-Host "  Deep:         $ModelDeep"
+Write-Host "  Embeddings:   $EmbedModel"
+Write-Host "  Vision:       $VisionModel"
+if (-not $NonInteractive) {
+  $SkipModels = Read-Host "Download these Ollama models now? Choose N if you already have your own. [Y/n]"
+  if ($SkipModels -match "^[Nn]") {
+    $NoModels = $true
+    Write-Warn "Model download skipped. The configured model names were still saved to .env."
+  }
   if (-not $NoModels) {
     $SkipVision = Read-Host "Download vision model ($VisionModel)? [Y/n]"
     if ($SkipVision -match "^[Nn]") { $NoVision = $true }

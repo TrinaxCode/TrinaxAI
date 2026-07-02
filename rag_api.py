@@ -23,6 +23,12 @@ import tempfile
 import threading
 import time
 import uuid
+
+# On Windows, stdout defaults to cp1252 which can't encode emoji/Unicode.
+# Wrap it so startup prints don't crash uvicorn before it even binds.
+if sys.platform == "win32" and hasattr(sys.stdout, "buffer"):
+    import codecs
+    sys.stdout = codecs.getwriter("utf-8")(sys.stdout.buffer, "replace")  # type: ignore[assignment]
 from collections import defaultdict
 from io import BytesIO
 from typing import Any
@@ -64,7 +70,7 @@ if _cors == "*":
 elif _cors == "":
     # Empty env var: fall back to safe defaults (PWA frontend origins)
     LOG.warning(
-        "[TrinaxAI] WARN: TRINAXAI_CORS_ORIGINS is empty -- using safe localhost defaults"
+        "[TrinaxAI] \u26a0\ufe0f  TRINAXAI_CORS_ORIGINS is empty \u2014 using safe localhost defaults"
     )
     cors_origins = [
         "https://localhost:3334",
@@ -82,7 +88,7 @@ else:
     if not cors_origins:
         # Split produced empty list: revert to safe defaults
         LOG.warning(
-            "[TrinaxAI] WARN: TRINAXAI_CORS_ORIGINS parsed to empty -- using safe localhost defaults"
+            "[TrinaxAI] \u26a0\ufe0f  TRINAXAI_CORS_ORIGINS parsed to empty \u2014 using safe localhost defaults"
         )
         cors_origins = [
             "https://localhost:3334",
@@ -502,6 +508,7 @@ def _run_index_job(
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
+        encoding="utf-8",
         bufsize=1,
         env=env,
     )
@@ -616,22 +623,16 @@ def build_engine() -> bool:
                     if n.metadata.get("project")
                 }
             )
-            try:
-                print(
-                    f"[TrinaxAI] OK: {len(index.docstore.docs)} chunks, "
-                    f"{len(KNOWN_PROJECTS)} projects"
-                )
-            except UnicodeEncodeError:
-                print(
-                    f"[TrinaxAI] OK: {len(index.docstore.docs)} chunks, "
-                    f"{len(KNOWN_PROJECTS)} projects (index loaded)"
-                )
+            print(
+                f"[TrinaxAI] \u2713 \u00cdndice: {len(index.docstore.docs)} chunks, "
+                f"{len(KNOWN_PROJECTS)} proyectos"
+            )
             return True
         except Exception as e:
             _fusion_retriever = None
             KNOWN_PROJECTS = []
             try:
-                print(f"[TrinaxAI] WARN: No index ({e}). Run: python index.py")
+                print(f"[TrinaxAI] \u26a0\ufe0f  Sin \u00edndice ({e}). Ejecuta: python index.py")
             except UnicodeEncodeError:
                 print(f"[TrinaxAI] WARN: No index. Run: python index.py")
             return False
@@ -819,6 +820,26 @@ ALLOW_LAN_SYSTEM = os.getenv("TRINAXAI_ALLOW_LAN_SYSTEM", "0").strip().lower() n
     "no",
     "off",
 }
+_health_ollama_ok = False
+_health_ollama_checked_at = 0.0
+
+
+def _ollama_available_cached() -> bool:
+    """Fast best-effort Ollama reachability for status indicators."""
+    global _health_ollama_ok, _health_ollama_checked_at
+    now = time.time()
+    if now - _health_ollama_checked_at < 5:
+        return _health_ollama_ok
+    try:
+        import urllib.request as _ureq
+
+        url = f"{config.OLLAMA_BASE_URL.rstrip('/')}/api/tags"
+        with _ureq.urlopen(_ureq.Request(url), timeout=0.8) as response:
+            _health_ollama_ok = 200 <= int(response.status) < 300
+    except Exception:
+        _health_ollama_ok = False
+    _health_ollama_checked_at = now
+    return _health_ollama_ok
 
 
 def _sse(obj: dict) -> str:
@@ -1676,9 +1697,12 @@ async def health():
         "projects": KNOWN_PROJECTS,
         "collections": collections,
         "models": config.MODEL_FLEET,
+        "ollama": _ollama_available_cached(),
         "profile": config.TRINAXAI_PROFILE,
         "num_ctx": config.NUM_CTX,
         "embed_workers": config.EMBED_WORKERS,
+        "embed_batch_size": config.EMBED_BATCH_SIZE,
+        "embed_keep_alive": config.EMBED_KEEP_ALIVE,
         "fusion_candidates": config.FUSION_CANDIDATES,
         "similarity_top_k": config.SIMILARITY_TOP_K,
         "rerank": config.RERANK_ENABLED,

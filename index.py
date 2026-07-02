@@ -11,21 +11,22 @@ Características:
   • Sin LLM cargado al indexar (solo hace falta el embedder).
 """
 
+from __future__ import annotations
+
 import json
 import os
 import sys
 
-from llama_index.core import (
-    Settings,
-    SimpleDirectoryReader,
-    StorageContext,
-    VectorStoreIndex,
-    load_index_from_storage,
-)
-from llama_index.core.node_parser import CodeSplitter, SentenceSplitter
-from llama_index.core.schema import Document
+# On Windows, stdout defaults to cp1252 which can't encode emoji/Unicode.
+# Wrap it so the indexer doesn't crash mid-job on a harmless print.
+if sys.platform == "win32" and hasattr(sys.stdout, "buffer"):
+    import codecs
+    sys.stdout = codecs.getwriter("utf-8")(sys.stdout.buffer, "replace")  # type: ignore[assignment]
 
 import config
+
+EXTRACTOR_EXTS = {".pdf", ".docx"}
+TEXT_ENCODINGS = ("utf-8-sig", "utf-8", "utf-16", "cp1252", "latin-1")
 
 
 def _env_int(name: str, default: int, *, minimum: int = 1, maximum: int | None = None) -> int:
@@ -40,7 +41,6 @@ def _env_int(name: str, default: int, *, minimum: int = 1, maximum: int | None =
 
 
 # ==================== SETTINGS ====================
-Settings.embed_model = config.make_embed()
 # NO se define Settings.llm: indexar solo necesita embeddings.
 COLLECTION_ID = (
     os.getenv("TRINAXAI_COLLECTION_ID", config.DEFAULT_COLLECTION_ID).strip()
@@ -59,18 +59,26 @@ APPEND_ONLY = os.getenv("TRINAXAI_INDEX_APPEND", "0").strip().lower() in {
     "on",
 }
 
-# Splitter de prosa (md, txt, json, yaml, configs, etc.)
-prose_splitter = SentenceSplitter(
-    chunk_size=config.CHUNK_SIZE,
-    chunk_overlap=config.CHUNK_OVERLAP,
-)
-
 # Cache de CodeSplitters por lenguaje (crearlos es caro).
-_code_splitters: dict[str, CodeSplitter] = {}
+_code_splitters: dict[str, object] = {}
+_prose_splitter = None
+_embed_configured = False
 
 
-def _code_splitter(language: str) -> CodeSplitter:
+def ensure_embed_settings() -> None:
+    """Initialize Ollama embeddings only when an actual index run starts."""
+    global _embed_configured
+    if not _embed_configured:
+        from llama_index.core import Settings
+
+        Settings.embed_model = config.make_embed()
+        _embed_configured = True
+
+
+def _code_splitter(language: str):
     if language not in _code_splitters:
+        from llama_index.core.node_parser import CodeSplitter
+
         _code_splitters[language] = CodeSplitter(
             language=language,
             chunk_lines=config.CODE_CHUNK_LINES,
@@ -78,6 +86,18 @@ def _code_splitter(language: str) -> CodeSplitter:
             max_chars=config.CODE_MAX_CHARS,
         )
     return _code_splitters[language]
+
+
+def _sentence_splitter():
+    global _prose_splitter
+    if _prose_splitter is None:
+        from llama_index.core.node_parser import SentenceSplitter
+
+        _prose_splitter = SentenceSplitter(
+            chunk_size=config.CHUNK_SIZE,
+            chunk_overlap=config.CHUNK_OVERLAP,
+        )
+    return _prose_splitter
 
 
 # ==================== LECTOR DE ARCHIVOS ====================
@@ -142,6 +162,54 @@ def _source_key(path: str) -> str:
     return f"{COLLECTION_ID}:{_rel(path)}"
 
 
+def _decode_text_bytes(data: bytes) -> str:
+    """Decode source files without depending on the OS locale.
+
+    Windows often defaults to cp1252, which can raise ``charmap`` errors on
+    bytes that are valid in other encodings. Latin-1 is the final fallback
+    because it maps every byte and keeps indexing from aborting.
+    """
+    if b"\x00" in data[:200]:
+        try:
+            return data.decode("utf-16")
+        except UnicodeDecodeError:
+            pass
+    for encoding in TEXT_ENCODINGS:
+        try:
+            return data.decode(encoding)
+        except UnicodeDecodeError:
+            continue
+    return data.decode("utf-8", errors="replace")
+
+
+def _load_text_document(path: str) -> Document:
+    from llama_index.core.schema import Document
+
+    with open(path, "rb") as f:
+        text = _decode_text_bytes(f.read())
+    return Document(text=text, metadata={"file_path": path})
+
+
+def _load_extracted_documents(path: str) -> list[Document]:
+    from llama_index.core import SimpleDirectoryReader
+
+    return SimpleDirectoryReader(
+        input_files=[path],
+        exclude_hidden=False,
+        exclude=config.EXCLUDE_PATTERNS,
+        encoding="utf-8",
+        errors="replace",
+        raise_on_error=False,
+    ).load_data()
+
+
+def _load_file_documents(path: str) -> list[Document]:
+    ext = os.path.splitext(path)[1].lower()
+    if ext in EXTRACTOR_EXTS:
+        return _load_extracted_documents(path)
+    return [_load_text_document(path)]
+
+
 def load_docs(paths: list[str]) -> list[Document]:
     """Carga documentos y les pone metadata limpia (proyecto, ruta, archivo).
 
@@ -155,15 +223,12 @@ def load_docs(paths: list[str]) -> list[Document]:
     out: list[Document] = []
     for batch_start in range(0, len(paths), INDEX_BATCH_SIZE):
         batch = paths[batch_start : batch_start + INDEX_BATCH_SIZE]
-        try:
-            docs = SimpleDirectoryReader(
-                input_files=batch,
-                exclude_hidden=False,
-                exclude=config.EXCLUDE_PATTERNS,
-            ).load_data()
-        except Exception as e:
-            print(f"   ⚠️  Error reading batch, skipping: {e}")
-            continue
+        docs: list[Document] = []
+        for path in batch:
+            try:
+                docs.extend(_load_file_documents(path))
+            except Exception as e:
+                print(f"   ⚠️  Error leyendo {os.path.basename(path)}, omitido: {e}")
         by_path: dict[str, list[Document]] = {}
         for d in docs:
             by_path.setdefault(d.metadata.get("file_path", ""), []).append(d)
@@ -207,7 +272,7 @@ def build_nodes(documents: list[Document]) -> list:
                 )
                 fallback += 1
         if doc_nodes is None:
-            doc_nodes = prose_splitter.get_nodes_from_documents([doc])
+            doc_nodes = _sentence_splitter().get_nodes_from_documents([doc])
             prose_count += 1
         nodes.extend(doc_nodes)
 
@@ -271,11 +336,14 @@ def diff_manifest(old_state: dict, new_state: dict, rel_to_path: dict[str, str])
 
 
 def remove_obsolete_nodes(index: VectorStoreIndex, changed: list[str], deleted: list[str]) -> int:
-    rels_to_remove = {_source_key(path) for path in changed} | set(deleted)
+    source_keys_to_remove = {_source_key(path) for path in changed} | set(deleted)
+    rels_to_remove = {
+        key.split(":", 1)[1] if ":" in key else key for key in source_keys_to_remove
+    }
     node_ids = [
         nid
         for nid, node in index.docstore.docs.items()
-        if node.metadata.get("source_key") in rels_to_remove
+        if node.metadata.get("source_key") in source_keys_to_remove
         or node.metadata.get("rel_path") in rels_to_remove
     ]
     if node_ids:
@@ -305,6 +373,8 @@ def persist_final_state(old_state: dict, new_state: dict, *, incremental: bool) 
 
 
 def run_incremental(old_state: dict, new_state: dict, rel_to_path: dict[str, str]) -> int:
+    from llama_index.core import StorageContext, load_index_from_storage
+
     new_files, changed, deleted = diff_manifest(old_state, new_state, rel_to_path)
     if not (new_files or changed or deleted):
         print("\n✅ Todo al día — no hay cambios que indexar.")
@@ -329,6 +399,8 @@ def run_incremental(old_state: dict, new_state: dict, rel_to_path: dict[str, str
 
 
 def run_full_index(paths: list[str], new_state: dict) -> int:
+    from llama_index.core import VectorStoreIndex
+
     print("\n🆕 Indexado completo (primera vez)")
     if not paths:
         print("❌ No se encontraron documentos para indexar.")
@@ -351,6 +423,7 @@ def print_summary(final_count: int) -> None:
 
 
 def run_index(root: str | None = None) -> int:
+    ensure_embed_settings()
     root = root or config.PROJECTS_DIRS[0]
     print("\n🧠 TrinaxAI — Indexador de Documentos")
     print("═" * 45)

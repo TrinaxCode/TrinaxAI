@@ -34,10 +34,44 @@ EOF
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT"
 
+is_windows() {
+  case "$(uname -s 2>/dev/null || echo unknown)" in
+    MINGW*|MSYS*|CYGWIN*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+PYTHON_CMD=()
+if [ -n "${TRINAXAI_PYTHON:-}" ]; then
+  PYTHON_CMD=("$TRINAXAI_PYTHON")
+elif [ -x ".venv/bin/python" ]; then
+  PYTHON_CMD=(".venv/bin/python")
+elif [ -x ".venv/Scripts/python.exe" ]; then
+  PYTHON_CMD=(".venv/Scripts/python.exe")
+elif is_windows && command -v py.exe >/dev/null 2>&1; then
+  PYTHON_CMD=(py.exe -3)
+elif command -v python3 >/dev/null 2>&1; then
+  PYTHON_CMD=(python3)
+elif command -v python >/dev/null 2>&1; then
+  PYTHON_CMD=(python)
+else
+  echo "[!] Python not found. Set TRINAXAI_PYTHON or create .venv first." >&2
+  exit 1
+fi
+
+NPM_CMD=()
+if is_windows && command -v npm.cmd >/dev/null 2>&1; then
+  NPM_CMD=(npm.cmd)
+elif command -v npm >/dev/null 2>&1; then
+  NPM_CMD=(npm)
+fi
+
+export PYTHONDONTWRITEBYTECODE=1
+
 echo "== TrinaxAI update =="
 
-if [ -x "./backup.sh" ]; then
-  ./backup.sh create
+if [ -f "./backup.sh" ]; then
+  bash ./backup.sh create || echo "[!] Backup failed; continuing update."
 fi
 
 if [ -d ".git" ] && command -v git >/dev/null 2>&1; then
@@ -46,20 +80,24 @@ else
   echo "[!] Git repository not detected. Download the latest release manually."
 fi
 
-PYTHON="${TRINAXAI_PYTHON:-}"
-if [ -z "$PYTHON" ]; then
-  if [ -x ".venv/bin/python" ]; then PYTHON=".venv/bin/python";
-  elif [ -x ".venv/Scripts/python.exe" ]; then PYTHON=".venv/Scripts/python.exe";
-  else PYTHON="$(command -v python3 || command -v python)";
+"${PYTHON_CMD[@]}" -m pip install --upgrade pip
+"${PYTHON_CMD[@]}" -m pip install -r requirements.txt
+
+if [ -d "chat-pwa" ] && [ "${#NPM_CMD[@]}" -gt 0 ]; then
+  if ! (cd chat-pwa && "${NPM_CMD[@]}" install && "${NPM_CMD[@]}" run build); then
+    if is_windows; then
+      cat >&2 <<'EOF'
+[!] PWA build failed on Windows.
+    If the error is "spawn EPERM" and the project is under C:\Windows\System32,
+    run this script from an elevated Git Bash/PowerShell or move the repo to a
+    normal user directory such as C:\Users\<you>\TrinaxAI.
+EOF
+    fi
+    exit 1
   fi
+elif [ -d "chat-pwa" ]; then
+  echo "[!] npm not found; skipped PWA rebuild."
 fi
 
-"$PYTHON" -m pip install --upgrade pip
-"$PYTHON" -m pip install -r requirements.txt
-
-if [ -d "chat-pwa" ] && command -v npm >/dev/null 2>&1; then
-  (cd chat-pwa && npm install && npm run build)
-fi
-
-"$PYTHON" scripts/public_readiness.py
+"${PYTHON_CMD[@]}" scripts/public_readiness.py
 echo "Update complete. Restart with ./startup_ai.sh"

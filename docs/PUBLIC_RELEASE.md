@@ -96,16 +96,17 @@ Before release, verify these workflows on a clean install:
 
 Keep local-first defaults conservative:
 
-- 8 GB profile: small context, one embedding worker, `keep_alive=0s`.
-- 16 GB profile: balanced context, two embedding workers, `keep_alive=0s`.
-- max profile: larger context, four embedding workers, `keep_alive=30m`.
-- ultra profile: largest context, six embedding workers, `keep_alive=60m`.
+- 8 GB profile: small context, one embedding worker, LLM `keep_alive=0s`, embedding `keep_alive=10m`, embedding batch 2.
+- 16 GB profile: balanced context, two embedding workers, LLM `keep_alive=0s`, embedding `keep_alive=15m`, embedding batch 8.
+- max profile: larger context, four embedding workers, LLM `keep_alive=30m`, embedding `keep_alive=30m`, embedding batch 8.
+- ultra profile: largest context, six embedding workers, LLM `keep_alive=60m`, embedding `keep_alive=30m`, embedding batch 16.
 
 Useful tuning knobs:
 
 - `TRINAXAI_INDEX_BATCH_SIZE=100` controls document load batch size during indexing.
 - `TRINAXAI_RATE_LIMIT_PER_MINUTE=30` protects local CPU from runaway clients.
 - `TRINAXAI_EMBED_WORKERS` should stay low on 8 GB machines.
+- `TRINAXAI_EMBED_KEEP_ALIVE` should stay above `0s` for indexing; `0s` reloads the embedder between batches.
 
 ## Security Notes
 

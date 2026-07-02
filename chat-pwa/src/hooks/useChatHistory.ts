@@ -28,6 +28,15 @@ const MAX_TOTAL_BYTES = 4 * 1024 * 1024; // 4 MB safe localStorage limit
 const SAVE_DEBOUNCE_MS = 500;
 const IMAGE_OMITTED_ES = '[Imagen adjunta no guardada para proteger el historial]';
 const IMAGE_OMITTED_EN = '[Attached image was not saved to protect chat history]';
+const RESTORE_IN_PROGRESS_KEY = 'trinaxai-resetting';
+
+function isRestoreInProgress(): boolean {
+  try {
+    return sessionStorage.getItem(RESTORE_IN_PROGRESS_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
 
 function imageOmittedText(): string {
   try {
@@ -103,6 +112,7 @@ function compactForStorage(sessions: ChatSession[], stripAllImages = false): Cha
 }
 
 function saveSessions(sessions: ChatSession[]): void {
+  if (isRestoreInProgress()) return;
   let compacted = sessions.filter(s => s.messages.length > 0);
   compacted = compactForStorage(compacted);
   // Progressive compaction: trim until under localStorage quota

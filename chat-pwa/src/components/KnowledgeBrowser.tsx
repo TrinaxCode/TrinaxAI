@@ -13,6 +13,11 @@ interface Props {
   initialFile?: string;
 }
 
+interface PendingBrowserTarget {
+  collection?: unknown;
+  file?: unknown;
+}
+
 function formatBytes(n: number): string {
   if (n < 1024) return `${n} B`;
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
@@ -51,9 +56,20 @@ export default function KnowledgeBrowser({ onBack, initialCollection, initialFil
 
   // Consume any pending open-in-browser target on first render.
   useEffect(() => {
-    const target = (window as any).__tc_browser_open;
+    const target = (window as any).__tc_browser_open as PendingBrowserTarget | undefined;
     if (target) {
       (window as any).__tc_browser_open = null;
+      const collection = typeof target.collection === 'string' && target.collection.trim()
+        ? target.collection.trim()
+        : 'default';
+      const file = typeof target.file === 'string' && target.file.trim()
+        ? target.file.trim()
+        : '';
+      setActiveCollectionId(collection);
+      if (file) {
+        setActiveFile(file);
+        setFileQuery(file.split('/').pop() || file);
+      }
     }
   }, []);
 

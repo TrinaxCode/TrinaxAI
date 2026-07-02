@@ -7,11 +7,22 @@ index.py, rag_api.py, and query.py import from here to stay in sync.
 Everything is overridable via environment variables (useful for systemd).
 """
 
+from __future__ import annotations
+
 import os
 import ssl
 
-from llama_index.embeddings.ollama import OllamaEmbedding
-from llama_index.llms.ollama import Ollama
+
+def _env_int(name: str, default: int, *, minimum: int = 1, maximum: int | None = None) -> int:
+    try:
+        value = int(os.getenv(name, str(default)))
+    except (TypeError, ValueError):
+        return default
+    value = max(minimum, value)
+    if maximum is not None:
+        value = min(maximum, value)
+    return value
+
 
 # ==================== PATHS ====================
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -46,7 +57,9 @@ TRINAXAI_PROFILE = os.getenv("TRINAXAI_PROFILE", "16gb").strip().lower()
 # Validate profile — warn on unknown values but don't crash.
 _VALID_PROFILES = {
     "4gb",
+    "4g",
     "8gb",
+    "8g",
     "16gb",
     "max",
     "high",
@@ -191,32 +204,40 @@ NUM_CTX = int(
 NUM_THREAD = int(os.getenv("TRINAXAI_NUM_THREAD", "8"))
 # Concurrent embeddings. On 16 GB we use 2 workers to avoid competing with the
 # LLM; the powerful profile bumps to 4 if RAM is free.
-EMBED_WORKERS = int(
-    os.getenv(
-        "TRINAXAI_EMBED_WORKERS",
-        "6"
-        if _ULTRA_PROFILE
-        else "4"
-        if _MAX_QUALITY_PROFILE
-        else "1"
-        if _LOW_RESOURCE_PROFILE
-        else "2",
-    )
+EMBED_WORKERS = _env_int(
+    "TRINAXAI_EMBED_WORKERS",
+    6
+    if _ULTRA_PROFILE
+    else 4
+    if _MAX_QUALITY_PROFILE
+    else 1
+    if _LOW_RESOURCE_PROFILE
+    else 2,
+    minimum=1,
+    maximum=16,
 )
-EMBED_BATCH_SIZE = int(
-    os.getenv("TRINAXAI_EMBED_BATCH", "4" if _ULTRA_PROFILE else "1")
+EMBED_BATCH_SIZE = _env_int(
+    "TRINAXAI_EMBED_BATCH",
+    16 if _ULTRA_PROFILE else 8 if not _LOW_RESOURCE_PROFILE else 2,
+    minimum=1,
+    maximum=64,
 )
 # On 16 GB we unload models after each request. The powerful profile can keep
 # them warm for lower latency.
-KEEP_ALIVE = os.getenv(
-    "TRINAXAI_KEEP_ALIVE",
-    "60m"
-    if _ULTRA_PROFILE
-    else "30m"
-    if _MAX_QUALITY_PROFILE
-    else "0s"
-    if _LOW_RESOURCE_PROFILE
-    else "0s",
+_KEEP_ALIVE_DEFAULT = "60m" if _ULTRA_PROFILE else "30m" if _MAX_QUALITY_PROFILE else "0s"
+KEEP_ALIVE = os.getenv("TRINAXAI_KEEP_ALIVE", _KEEP_ALIVE_DEFAULT)
+# Embeddings are many short requests during indexing/search. Keeping only the
+# embedding model warm prevents Ollama from unloading/reloading it every batch,
+# which otherwise causes slow sawtooth CPU/GPU/RAM usage during indexing.
+if _ULTRA_PROFILE or _MAX_QUALITY_PROFILE:
+    _EMBED_KEEP_ALIVE_DEFAULT = "30m"
+elif _LOW_RESOURCE_PROFILE:
+    _EMBED_KEEP_ALIVE_DEFAULT = "10m"
+else:
+    _EMBED_KEEP_ALIVE_DEFAULT = "15m"
+EMBED_KEEP_ALIVE = (
+    os.getenv("TRINAXAI_EMBED_KEEP_ALIVE", _EMBED_KEEP_ALIVE_DEFAULT).strip()
+    or _EMBED_KEEP_ALIVE_DEFAULT
 )
 REQUEST_TIMEOUT = float(os.getenv("TRINAXAI_TIMEOUT", "300"))
 
@@ -261,6 +282,8 @@ RERANK_TOP_N = int(os.getenv("TRINAXAI_RERANK_TOP_N", str(SIMILARITY_TOP_K)))
 
 def make_llm(temperature: float = 0.0, model: str | None = None) -> Ollama:
     """Create the Ollama LLM (qwen2.5-coder: non-thinking, fast on CPU)."""
+    from llama_index.llms.ollama import Ollama
+
     return Ollama(
         model=model or LLM_MODEL,
         base_url=OLLAMA_BASE_URL,
@@ -274,10 +297,12 @@ def make_llm(temperature: float = 0.0, model: str | None = None) -> Ollama:
 
 def make_embed() -> OllamaEmbedding:
     """Create the Ollama embedder using bge-m3's full 8K window."""
+    from llama_index.embeddings.ollama import OllamaEmbedding
+
     return OllamaEmbedding(
         model_name=EMBED_MODEL,
         base_url=OLLAMA_BASE_URL,
-        keep_alive=KEEP_ALIVE,
+        keep_alive=EMBED_KEEP_ALIVE,
         embed_batch_size=EMBED_BATCH_SIZE,
         num_workers=EMBED_WORKERS,  # concurrent requests to Ollama
         # Ultra uses larger chunks; the rest keep context bounded for RAM.

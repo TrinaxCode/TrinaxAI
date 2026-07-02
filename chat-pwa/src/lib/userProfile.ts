@@ -2,7 +2,6 @@ import type { Lang } from '../i18n/translations';
 
 const NAME_KEY = 'tc-user-name';
 const NICKNAME_KEY = 'tc-user-nickname';
-const AVATAR_KEY = 'tc-user-avatar';
 const LANG_KEY = 'tc-lang';
 const MEMORY_KEY = 'tc-user-memory';
 const RESERVED_PROFILE_NAMES = new Set(['trinaxcode', 'trinaxai']);
@@ -40,10 +39,6 @@ export function getPreferredUserName(lang: Lang = detectedLang()): string {
   const name = firstName(cleanProfileName(readLocalStorage(NAME_KEY)));
   if (name) return name;
   return lang === 'en' ? 'User' : 'Usuario';
-}
-
-export function getUserAvatar(): string {
-  return readLocalStorage(AVATAR_KEY);
 }
 
 export function getUserMemory(): string[] {

@@ -21,7 +21,7 @@ const DEFAULT_MODELS = {
   fast: 'llama3.2:3b',
 };
 
-type Step = 1 | 2 | 3 | 4 | 5 | 6 | 7;
+type Step = 1 | 2 | 3 | 4 | 5 | 6;
 
 const stepVariants = {
   enter: { opacity: 0, x: 40, scale: 0.97 },
@@ -35,12 +35,9 @@ export default function OnboardingWizard({ onComplete }: Props) {
   const [step, setStep] = useState<Step>(1);
   const [nickname, setNickname] = useState('');
   const [finishing, setFinishing] = useState(false);
-  const [avatar, setAvatar] = useState<string | null>(null);
-  const [avatarError, setAvatarError] = useState('');
   const [modelChoice, setModelChoice] = useState<'default' | 'custom' | 'test' | null>(null);
   const [customModels, setCustomModels] = useState(DEFAULT_MODELS);
   const [customStep, setCustomStep] = useState(0);
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
   const [ollamaDetected, setOllamaDetected] = useState<boolean | null>(null);
   const [indexing, setIndexing] = useState(false);
@@ -52,7 +49,7 @@ export default function OnboardingWizard({ onComplete }: Props) {
   const indexAbortRef = useRef<AbortController | null>(null);
 
   const saveAndNext = useCallback(() => {
-    if (step < 7) setStep((s) => (s + 1) as Step);
+    if (step < 6) setStep((s) => (s + 1) as Step);
     else finish();
   }, [step]);
 
@@ -66,7 +63,7 @@ export default function OnboardingWizard({ onComplete }: Props) {
     const preferredName = nickname.trim();
     if (preferredName) localStorage.setItem('tc-user-nickname', preferredName);
     localStorage.removeItem('tc-user-name');
-    if (avatar) localStorage.setItem('tc-user-avatar', avatar);
+    localStorage.removeItem('tc-user-avatar');
     const models = modelChoice === 'custom' ? customModels : DEFAULT_MODELS;
     localStorage.setItem('tc-models-chat', models.chat);
     localStorage.setItem('tc-models-deep', models.deep);
@@ -79,32 +76,17 @@ export default function OnboardingWizard({ onComplete }: Props) {
       setFinishing(false);
       onComplete();
     });
-  }, [nickname, avatar, modelChoice, customModels, onComplete]);
-
-  const handleFilePick = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    // Validate file size before reading — large avatars can exceed localStorage quota (~5MB).
-    const MAX_AVATAR_BYTES = 500 * 1024; // 500 KB
-    if (file.size > MAX_AVATAR_BYTES) {
-      setAvatarError('Image too large. Please use an image under 500 KB.');
-      return;
-    }
-    setAvatarError('');
-    const reader = new FileReader();
-    reader.onload = () => setAvatar(String(reader.result));
-    reader.readAsDataURL(file);
-  }, []);
+  }, [nickname, modelChoice, customModels, onComplete]);
 
   const runSystemTest = useCallback(async () => {
     setTestResults(null);
     const results: Record<string, boolean> = {};
     try {
-      const r = await fetch('/api/ollama/api/tags', { signal: AbortSignal.timeout(5000) });
+      const r = await fetch(`${APP_CONFIG.ollamaBase}/api/tags`, { signal: AbortSignal.timeout(5000) });
       results.ollama = r.ok;
     } catch { results.ollama = false; }
     try {
-      const r = await fetch('/api/rag/health', { signal: AbortSignal.timeout(5000) });
+      const r = await fetch(`${APP_CONFIG.ragBase}/health`, { signal: AbortSignal.timeout(5000) });
       if (r.ok) {
         const d = await r.json();
         results.rag = true;
@@ -117,7 +99,7 @@ export default function OnboardingWizard({ onComplete }: Props) {
 
   const checkOllama = useCallback(async () => {
     try {
-      const r = await fetch('/api/ollama/api/tags', { signal: AbortSignal.timeout(5000) });
+      const r = await fetch(`${APP_CONFIG.ollamaBase}/api/tags`, { signal: AbortSignal.timeout(5000) });
       setOllamaDetected(r.ok);
     } catch { setOllamaDetected(false); }
   }, []);
@@ -159,8 +141,6 @@ export default function OnboardingWizard({ onComplete }: Props) {
     setIndexing(false);
   }, [indexJob]);
 
-  const getInitial = () => (nickname || t('onboardingDefaultName')).charAt(0).toUpperCase();
-
   const modelKeys = [
     { key: 'chat' as const, label: t('modelChat') },
     { key: 'deep' as const, label: t('modelDeep') },
@@ -190,7 +170,7 @@ export default function OnboardingWizard({ onComplete }: Props) {
       <div className="w-full max-w-lg flex flex-col gap-5 sm:gap-6 px-1 sm:px-0">
         {/* Progress dots */}
         <div className="flex justify-center gap-2">
-          {([1,2,3,4,5,6,7] as Step[]).map((s) => (
+          {([1,2,3,4,5,6] as Step[]).map((s) => (
             <motion.div
               key={s}
               className={`h-1.5 rounded-full transition-all duration-300 ${stepDot(s)}`}
@@ -263,35 +243,9 @@ export default function OnboardingWizard({ onComplete }: Props) {
             </motion.div>
           )}
 
-          {/* Step 4: Avatar */}
+          {/* Step 4: Models */}
           {step === 4 && (
-            <motion.div key="s4" variants={stepVariants} initial="enter" animate="center" exit="exit" transition={{ duration: 0.25 }} className="flex flex-col gap-5">
-              <h2 className={`text-2xl font-semibold text-center ${textMain}`}>{t('onboardingStep4Title')}</h2>
-              <p className={`text-sm text-center ${textSub}`}>{t('onboardingStep4Desc')}</p>
-              <div className="flex flex-col items-center gap-4">
-                {avatar ? (
-                  <img src={avatar} alt="Avatar" className="w-24 h-24 rounded-full object-cover border-2 border-[#006bbd]" />
-                ) : (
-                  <div className={`w-24 h-24 rounded-full flex items-center justify-center text-3xl font-bold border-2 border-[#006bbd]/30 ${isDark ? 'bg-[#006bbd]/10 text-[#006bbd]' : 'bg-[#006bbd]/10 text-[#006bbd]'}`}>
-                    {getInitial()}
-                  </div>
-                )}
-                <div className="flex gap-3">
-                  <motion.button whileTap={{ scale: 0.96 }} onClick={() => fileInputRef.current?.click()} className={`px-5 py-2.5 rounded-xl text-sm font-medium transition-all ${btnSecondary} active:scale-95`}>
-                    {t('onboardingStep4Upload')}
-                  </motion.button>
-                  <motion.button whileTap={{ scale: 0.96 }} onClick={() => setAvatar(null)} className={`px-5 py-2.5 rounded-xl text-sm font-medium transition-all ${btnSecondary} active:scale-95`}>
-                    {t('onboardingStep4Skip')}
-                  </motion.button>
-                </div>
-                <input ref={fileInputRef} type="file" accept="image/*" onChange={handleFilePick} className="hidden" />
-              </div>
-            </motion.div>
-          )}
-
-          {/* Step 5: Models */}
-          {step === 5 && (
-            <motion.div key="s5" variants={stepVariants} initial="enter" animate="center" exit="exit" transition={{ duration: 0.25 }} className="flex flex-col gap-4">
+            <motion.div key="s4" variants={stepVariants} initial="enter" animate="center" exit="exit" transition={{ duration: 0.25 }} className="flex flex-col gap-4">
               <h2 className={`text-2xl font-semibold text-center ${textMain}`}>{t('onboardingStep5Title')}</h2>
               <p className={`text-sm text-center ${textSub}`}>{t('onboardingStep5Desc')}</p>
 
@@ -383,9 +337,9 @@ export default function OnboardingWizard({ onComplete }: Props) {
             </motion.div>
           )}
 
-          {/* Step 6: Ollama + Indexing */}
-          {step === 6 && (
-            <motion.div key="s6" variants={stepVariants} initial="enter" animate="center" exit="exit" transition={{ duration: 0.25 }} className="flex flex-col gap-5">
+          {/* Step 5: Ollama + Indexing */}
+          {step === 5 && (
+            <motion.div key="s5" variants={stepVariants} initial="enter" animate="center" exit="exit" transition={{ duration: 0.25 }} className="flex flex-col gap-5">
               <h2 className={`text-2xl font-semibold text-center ${textMain}`}>{t('onboardingStep6Title')}</h2>
               <p className={`text-sm text-center ${textSub}`}>{t('onboardingStep6Desc')}</p>
 
@@ -476,9 +430,9 @@ export default function OnboardingWizard({ onComplete }: Props) {
             </motion.div>
           )}
 
-          {/* Step 7: Done */}
-          {step === 7 && (
-            <motion.div key="s7" variants={stepVariants} initial="enter" animate="center" exit="exit" transition={{ duration: 0.25 }} className="flex flex-col gap-5 items-center text-center">
+          {/* Step 6: Done */}
+          {step === 6 && (
+            <motion.div key="s6" variants={stepVariants} initial="enter" animate="center" exit="exit" transition={{ duration: 0.25 }} className="flex flex-col gap-5 items-center text-center">
               <h2 className={`text-2xl font-semibold ${textMain}`}>{t('onboardingStep7Title')}</h2>
               <p className={`text-sm ${textSub}`}>{t('onboardingStep7Desc')}</p>
 
@@ -514,7 +468,7 @@ export default function OnboardingWizard({ onComplete }: Props) {
         </AnimatePresence>
 
         {/* Bottom nav: Skip + Back/Next */}
-        {step < 7 && (
+        {step < 6 && (
           <div className="flex items-center gap-3">
             <motion.button
               whileTap={{ scale: 0.96 }}
@@ -531,7 +485,7 @@ export default function OnboardingWizard({ onComplete }: Props) {
               </motion.button>
             )}
             <motion.button whileTap={{ scale: 0.96 }} onClick={saveAndNext} disabled={finishing} className={`px-5 py-2.5 rounded-xl text-sm font-medium ${btnPrimary} disabled:opacity-50`}>
-              {finishing ? t('onboardingFinish') : step === 6 ? t('onboardingFinish') : t('onboardingNext')}
+              {finishing ? t('onboardingFinish') : step === 5 ? t('onboardingFinish') : t('onboardingNext')}
             </motion.button>
           </div>
         )}

@@ -13,7 +13,6 @@ const CRITICAL_KEYS = new Set([
   'tc-onboarding-complete',
   'tc-user-nickname',
   'tc-user-name',
-  'tc-user-avatar',
   'tc-lang',
   'tc-theme',
   'tc-models-chat',

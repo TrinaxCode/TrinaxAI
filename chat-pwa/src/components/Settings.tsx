@@ -11,24 +11,31 @@ import MemoryPanel from './MemoryPanel';
 import StatsPanel from './StatsPanel';
 import RecentIndexes from './RecentIndexes';
 import { cancelIndexJob, createCollection, deleteCollection, folderLabelFromFiles, getCollections, getIndexJob, indexableFilesFrom, renameCollection, resetSharedAppState, startFolderIndex, type Collection, type IndexJobStatus } from '../lib/api';
+import { APP_CONFIG } from '../lib/config';
 import { syncSharedStateOnce } from '../lib/sharedState';
+import type { TranslationKey } from '../i18n/translations';
 
-interface Props { onBack: () => void; }
+type SettingsSection = 'general' | 'indexing' | 'prompts' | 'memory' | 'stats';
+
+interface Props {
+  onBack: () => void;
+  initialSection?: SettingsSection;
+}
 interface CustomPrompt { name: string; text: string; }
 
-interface QuickTemplate { name: string; label: string; text: string }
+interface QuickTemplate { name: string; labelKey: TranslationKey; textKey: TranslationKey }
 
 const QUICK_ACTION_TEMPLATES: QuickTemplate[] = [
-  { name: 'explain',     label: 'Explain code',      text: 'Explain this code step-by-step in plain language, including the data flow and any subtle gotchas.' },
-  { name: 'tests',       label: 'Generate tests',   text: 'Write unit tests for the following code. Cover edge cases, error paths, and at least 3 happy-path scenarios.' },
-  { name: 'bugs',        label: 'Find bugs',        text: 'Review the following code for bugs, race conditions, security issues, and silent failure modes. List findings by severity.' },
-  { name: 'refactor',    label: 'Refactor',         text: 'Refactor this code for readability and performance while preserving behaviour. Show the new version with brief rationale.' },
-  { name: 'commit',      label: 'Commit message',   text: 'Write a conventional-commit message (type(scope): subject) for the diff below. Include a body when the change is non-trivial.' },
-  { name: 'translate',   label: 'Translate EN',     text: 'Translate the following text to natural, idiomatic English. Preserve technical terms but rewrite idioms.' },
-  { name: 'eli5',        label: 'Explain like 5',    text: 'Explain this like I am five years old. Use short sentences, simple analogies, and avoid jargon.' },
-  { name: 'topython',    label: '→ Python',         text: 'Convert the following code to idiomatic Python 3. Preserve behaviour and add type hints where useful.' },
-  { name: 'summary',     label: 'Meeting notes',    text: 'Convert raw meeting notes into a structured summary: decisions, action items (with owners), open questions, and next steps.' },
-  { name: 'docstring',   label: 'Add docstring',    text: 'Add a high-quality docstring (summary, args, returns, raises, example) to the following function.' },
+  { name: 'explain',     labelKey: 'quickExplainLabel',   textKey: 'quickExplainText' },
+  { name: 'tests',       labelKey: 'quickTestsLabel',     textKey: 'quickTestsText' },
+  { name: 'bugs',        labelKey: 'quickBugsLabel',      textKey: 'quickBugsText' },
+  { name: 'refactor',    labelKey: 'quickRefactorLabel',  textKey: 'quickRefactorText' },
+  { name: 'commit',      labelKey: 'quickCommitLabel',    textKey: 'quickCommitText' },
+  { name: 'translate',   labelKey: 'quickTranslateLabel', textKey: 'quickTranslateText' },
+  { name: 'eli5',        labelKey: 'quickEli5Label',      textKey: 'quickEli5Text' },
+  { name: 'topython',    labelKey: 'quickPythonLabel',    textKey: 'quickPythonText' },
+  { name: 'summary',     labelKey: 'quickSummaryLabel',   textKey: 'quickSummaryText' },
+  { name: 'docstring',   labelKey: 'quickDocstringLabel', textKey: 'quickDocstringText' },
 ];
 
 const OLLAMA_KEY = 'tc-ollama-prompts';
@@ -48,12 +55,16 @@ function load(k: string, d: string): CustomPrompt[] {
 function getDefaultOllama(lang: 'es'|'en') { return lang === 'en' ? DEF_OLLAMA_EN : DEF_OLLAMA_ES; }
 function getDefaultRag(lang: 'es'|'en') { return lang === 'en' ? DEF_RAG_EN : DEF_RAG_ES; }
 
-export default function Settings({ onBack }: Props) {
+export default function Settings({ onBack, initialSection = 'general' }: Props) {
   const { t, lang, setLang } = useI18n();
   const { theme, cycleTheme, isDark } = useTheme();
   const toast = useToast();
   const [tab, setTab] = useState<'ollama' | 'rag'>('ollama');
-  const [section, setSection] = useState<'general' | 'indexing' | 'prompts' | 'memory' | 'stats'>('general');
+  const [section, setSection] = useState<SettingsSection>(initialSection);
+
+  useEffect(() => {
+    setSection(initialSection);
+  }, [initialSection]);
 
   // Allow external callers (e.g. /memory slash command) to jump to a specific section.
   useEffect(() => {
@@ -103,6 +114,12 @@ export default function Settings({ onBack }: Props) {
   const [indexCollectionId, setIndexCollectionId] = useState(() => localStorage.getItem('tc-index-collection') || 'default');
   const folderInputRef = useRef<HTMLInputElement>(null);
   const indexAbortRef = useRef<AbortController | null>(null);
+  const [, refreshLocalSettings] = useState(0);
+
+  const setLocalSetting = (key: string, value: string) => {
+    localStorage.setItem(key, value);
+    refreshLocalSettings((rev) => rev + 1);
+  };
 
   const refreshCollections = async () => {
     try {
@@ -204,7 +221,7 @@ export default function Settings({ onBack }: Props) {
           toast.toast(t('indexCancelled'), 'info');
           done = true;
         } else if (job.status === 'failed') {
-          toast.toast(job.error || (lang === 'en' ? 'Indexing failed.' : 'La indexación falló.'), 'error');
+          toast.toast(job.error || t('indexFailed'), 'error');
           done = true;
         } else {
           await new Promise((resolve) => setTimeout(resolve, 1000));
@@ -242,11 +259,13 @@ export default function Settings({ onBack }: Props) {
 
   const doRestore = async () => {
     if (restoreConfirm !== 'RESTAURAR' && restoreConfirm !== 'RESTORE') return;
-    await resetSharedAppState().catch(() => undefined);
+    // Wipe local first so the push propagates a clean slate to the backend.
     const resetAt = String(Date.now() / 1000);
+    try { sessionStorage.setItem('trinaxai-resetting', '1'); } catch { /* ignore */ }
     const keys = Object.keys(localStorage).filter(k => k.startsWith('tc-'));
     keys.forEach(k => localStorage.removeItem(k));
     localStorage.setItem('tc-reset-at', resetAt);
+    await resetSharedAppState().catch(() => undefined);
     await syncSharedStateOnce(1800).catch(() => undefined);
     window.location.reload();
   };
@@ -291,14 +310,14 @@ export default function Settings({ onBack }: Props) {
         'tc-models-code': 'qwen2.5-coder:3b',
         'tc-models-fast': 'llama3.2:3b',
       };
-    Object.entries(values).forEach(([k, v]) => localStorage.setItem(k, v));
+    Object.entries(values).forEach(([k, v]) => setLocalSetting(k, v));
     toast.toast(t('modelPresetApplied'), 'success');
   };
 
   const getModel = (key: string, fallback: string) => localStorage.getItem(key) || fallback;
   const progress = Math.max(uploadProgress, indexJob?.progress ?? 0);
   const formatEta = (seconds: number | null | undefined) => {
-    if (!seconds) return lang === 'en' ? 'calculating ETA' : 'calculando tiempo';
+    if (!seconds) return t('indexEtaCalculating');
     const min = Math.floor(seconds / 60);
     const sec = seconds % 60;
     return min > 0 ? `${min}m ${sec}s` : `${sec}s`;
@@ -341,11 +360,11 @@ export default function Settings({ onBack }: Props) {
     </div>
     <div className={`shrink-0 flex gap-1 px-2 pt-2 pb-1 border-b ${isDark ? 'border-white/[0.04]' : 'border-gray-100'} overflow-x-auto`}>
       {([
-        ['general', lang === 'en' ? 'General' : 'General'],
-        ['indexing', lang === 'en' ? 'Indexing' : 'Indexado'],
-        ['prompts', lang === 'en' ? 'Prompts' : 'Prompts'],
-        ['memory', lang === 'en' ? 'Memory' : 'Memoria'],
-        ['stats', lang === 'en' ? 'Stats' : 'Stats'],
+        ['general', t('settingsGeneral')],
+        ['indexing', t('settingsIndexing')],
+        ['prompts', t('settingsPrompts')],
+        ['memory', t('settingsMemory')],
+        ['stats', t('settingsStats')],
       ] as const).map(([k, lbl]) => (
         <button
           key={k}
@@ -396,7 +415,7 @@ export default function Settings({ onBack }: Props) {
                 ? 'bg-white/[0.03] border-white/[0.06] text-white/70 hover:bg-white/[0.06]'
                 : 'bg-gray-50 border-gray-200 text-gray-700 hover:bg-gray-100'
             }`}
-            title={lang === 'en' ? 'Toggle black/white theme' : 'Cambiar entre tema negro y blanco'}
+            title={t('toggleTheme')}
           >
             {isDark ? <MdDarkMode size={18} /> : <MdLightMode size={18} />}
             {theme === 'dark' ? t('darkMode') : t('lightMode')}
@@ -442,7 +461,7 @@ export default function Settings({ onBack }: Props) {
                 {isEmbed ? (
                   <select
                     value={localStorage.getItem(k) || def}
-                    onChange={(e) => localStorage.setItem(k, e.target.value)}
+                    onChange={(e) => setLocalSetting(k, e.target.value)}
                     className={`min-w-0 flex-1 text-[11px] font-mono bg-transparent outline-none border-b border-transparent hover:border-[#006bbd]/30 focus:border-[#006bbd] px-1 py-0.5 transition-colors ${isDark ? 'text-white/70' : 'text-gray-700'}`}
                   >
                     <option value="bge-m3">bge-m3 · 1024d · multilingual (recommended)</option>
@@ -452,9 +471,10 @@ export default function Settings({ onBack }: Props) {
                   </select>
                 ) : (
                   <input
-                    defaultValue={getModel(k, def)}
-                    onBlur={(e) => { const v = e.target.value.trim(); if (v) localStorage.setItem(k, v); }}
-                    onKeyDown={(e) => { if (e.key === 'Enter') { const v = (e.target as HTMLInputElement).value.trim(); if (v) localStorage.setItem(k, v); (e.target as HTMLInputElement).blur(); } }}
+                    value={getModel(k, def)}
+                    onChange={(e) => setLocalSetting(k, e.target.value)}
+                    onBlur={(e) => { const v = e.target.value.trim(); if (v && v !== e.target.value) setLocalSetting(k, v); }}
+                    onKeyDown={(e) => { if (e.key === 'Enter') { const v = (e.target as HTMLInputElement).value.trim(); if (v) setLocalSetting(k, v); (e.target as HTMLInputElement).blur(); } }}
                     className={`min-w-0 flex-1 text-[11px] font-mono bg-transparent outline-none border-b border-transparent hover:border-[#006bbd]/30 focus:border-[#006bbd] px-1 py-0.5 transition-colors ${isDark ? 'text-white/70' : 'text-gray-700'}`}
                   />
                 )}
@@ -467,7 +487,7 @@ export default function Settings({ onBack }: Props) {
                   if (!m) continue;
                   toast.toast(t('modelPulling').replace('{model}', m), 'info');
                   try {
-                    await fetch('/api/ollama/api/pull', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({name: m, stream: false}) });
+                    await fetch(`${APP_CONFIG.ollamaBase}/api/pull`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({name: m, stream: false}) });
                     toast.toast(t('modelReady').replace('{model}', m), 'success');
                   } catch { toast.toast(t('modelPullFailed').replace('{model}', m), 'error'); }
                 }
@@ -483,21 +503,21 @@ export default function Settings({ onBack }: Props) {
 
             {/* Performance: aggressive quantization + OLLAMA_KEEP_ALIVE + Unload now */}
             <div className={`mt-3 p-3 rounded-lg border space-y-3 ${bgCard}`}>
-              <div className={`text-[10px] uppercase tracking-widest ${textHeading}`}>{lang === 'en' ? 'Performance' : 'Rendimiento'}</div>
+              <div className={`text-[10px] uppercase tracking-widest ${textHeading}`}>{t('performance')}</div>
 
               <label className="flex items-center justify-between gap-2 cursor-pointer">
-                <span className={`min-w-0 text-xs break-words ${textLabel}`}>{lang === 'en' ? 'Aggressive quantization (Q4_K_M, offload to CPU)' : 'Quantization agresiva (Q4_K_M, offload a CPU)'}</span>
+                <span className={`min-w-0 text-xs break-words ${textLabel}`}>{t('aggressiveQuant')}</span>
                 <input
                   type="checkbox"
                   checked={localStorage.getItem('tc-aggressive-quant') === '1'}
-                  onChange={(e) => localStorage.setItem('tc-aggressive-quant', e.target.checked ? '1' : '0')}
+                  onChange={(e) => setLocalSetting('tc-aggressive-quant', e.target.checked ? '1' : '0')}
                   className="accent-[#006bbd]"
                 />
               </label>
 
               <div className="space-y-1">
                 <div className="flex items-center justify-between gap-2">
-                  <span className={`min-w-0 text-xs break-words ${textLabel}`}>{lang === 'en' ? 'Keep models loaded' : 'Mantener modelos cargados'}</span>
+                  <span className={`min-w-0 text-xs break-words ${textLabel}`}>{t('keepModelsLoaded')}</span>
                   <span className={`text-[10px] font-mono ${textHeading}`}>{localStorage.getItem('tc-keep-alive') || '0s'}</span>
                 </div>
                 <input
@@ -506,11 +526,11 @@ export default function Settings({ onBack }: Props) {
                   max="60"
                   step="5"
                   value={parseInt(localStorage.getItem('tc-keep-alive')?.replace(/[^0-9]/g, '') || '0', 10)}
-                  onChange={(e) => localStorage.setItem('tc-keep-alive', `${e.target.value}m`)}
+                  onChange={(e) => setLocalSetting('tc-keep-alive', e.target.value === '0' ? '0s' : `${e.target.value}m`)}
                   className="w-full accent-[#006bbd]"
                 />
                 <div className={`flex justify-between text-[9px] ${textHeading}`}>
-                  <span>0m (off)</span><span>30m</span><span>60m</span>
+                  <span>{t('keepAliveOff')}</span><span>30m</span><span>60m</span>
                 </div>
               </div>
 
@@ -520,7 +540,7 @@ export default function Settings({ onBack }: Props) {
                   let ok = 0;
                   for (const m of models) {
                     try {
-                      await fetch('/api/ollama/api/generate', {
+                      await fetch(`${APP_CONFIG.ollamaBase}/api/generate`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ model: m, keep_alive: 0, prompt: '' }),
@@ -528,11 +548,11 @@ export default function Settings({ onBack }: Props) {
                       ok++;
                     } catch { /* ignore */ }
                   }
-                  toast.toast(lang === 'en' ? `Unloaded ${ok}/${models.length} models` : `Descargados ${ok}/${models.length} modelos`, 'info');
+                  toast.toast(t('modelsUnloaded').replace('{ok}', String(ok)).replace('{total}', String(models.length)), 'info');
                 }}
                 className={`w-full py-2 rounded-lg text-xs font-medium ${btnBase}`}
               >
-                {lang === 'en' ? 'Unload all models now' : 'Descargar todos los modelos ahora'}
+                {t('unloadAllModelsNow')}
               </button>
             </div>
           </div>
@@ -719,8 +739,8 @@ export default function Settings({ onBack }: Props) {
         {/* ── Quick Action templates ── */}
         <section>
           <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
-            <h3 className={`text-xs font-medium uppercase tracking-widest ${textHeading}`}>{lang === 'en' ? 'Quick Action templates' : 'Plantillas de acción rápida'}</h3>
-            <span className={`text-[10px] ${textHeading}`}>{lang === 'en' ? 'Click to add as slash command' : 'Click para añadir como slash'}</span>
+            <h3 className={`text-xs font-medium uppercase tracking-widest ${textHeading}`}>{t('quickActionTemplates')}</h3>
+            <span className={`text-[10px] ${textHeading}`}>{t('quickActionTemplatesHint')}</span>
           </div>
           <div className="flex flex-wrap gap-1.5">
             {QUICK_ACTION_TEMPLATES.map((tmpl) => {
@@ -729,9 +749,9 @@ export default function Settings({ onBack }: Props) {
                 <button
                   key={tmpl.name}
                   onClick={() => {
-                    if (exists) { toast.toast(lang === 'en' ? 'Already added' : 'Ya existe', 'warning'); return; }
-                    setP([...prompts, { name: tmpl.name, text: tmpl.text }]);
-                    toast.toast(lang === 'en' ? `Added /${tmpl.name}` : `Añadido /${tmpl.name}`, 'success');
+                    if (exists) { toast.toast(t('alreadyAdded'), 'warning'); return; }
+                    setP([...prompts, { name: tmpl.name, text: t(tmpl.textKey) }]);
+                    toast.toast(t('slashCommandAdded').replace('{name}', tmpl.name), 'success');
                   }}
                 className={`min-w-0 flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium border transition-colors ${
                     exists
@@ -741,7 +761,7 @@ export default function Settings({ onBack }: Props) {
                   disabled={exists}
                 >
                   <span className="font-mono text-[10px] text-[#006bbd]">/{tmpl.name}</span>
-                  <span className="min-w-0 break-words opacity-80">{tmpl.label}</span>
+                  <span className="min-w-0 break-words opacity-80">{t(tmpl.labelKey)}</span>
                 </button>
               );
             })}
@@ -775,7 +795,7 @@ export default function Settings({ onBack }: Props) {
       <ConfirmModal
         open={confirmShutdown}
         title={t('shutdownAI')}
-        message={lang === 'en' ? 'Are you sure you want to shut down the AI system? This will stop Ollama and the RAG API.' : '¿Estás seguro de que quieres apagar el sistema IA? Esto detendrá Ollama y la API RAG.'}
+        message={t('shutdownAIConfirm')}
         confirmLabel={t('shutdownAI')}
         danger
         onConfirm={() => { setConfirmShutdown(false); sys('shutdown'); }}
@@ -784,7 +804,7 @@ export default function Settings({ onBack }: Props) {
       <ConfirmModal
         open={confirmStartup}
         title={t('startupAI')}
-        message={lang === 'en' ? 'Start the AI system? This will launch Ollama and the RAG API.' : '¿Iniciar el sistema IA? Esto lanzará Ollama y la API RAG.'}
+        message={t('startupAIConfirm')}
         confirmLabel={t('startupAI')}
         onConfirm={() => { setConfirmStartup(false); sys('startup'); }}
         onCancel={() => setConfirmStartup(false)}

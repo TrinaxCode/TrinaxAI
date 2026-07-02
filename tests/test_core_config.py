@@ -32,3 +32,8 @@ def test_runtime_config_falls_back_on_invalid_values() -> None:
     assert cfg["num_ctx"] == 4096
     assert cfg["embed_workers"] == 16
     assert cfg["default_collection_id"] == "bad-id"
+
+
+def test_runtime_config_accepts_profile_aliases() -> None:
+    assert validate_runtime_config({"TRINAXAI_PROFILE": "8g"})["profile"] == "8g"
+    assert validate_runtime_config({"TRINAXAI_PROFILE": "4g"})["profile"] == "4g"

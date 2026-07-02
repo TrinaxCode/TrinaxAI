@@ -13,7 +13,7 @@ function loadProjectMemory(): string {
 }
 
 export default function MemoryPanel() {
-  const { t, lang } = useI18n();
+  const { t } = useI18n();
   const { isDark } = useTheme();
   const toast = useToast();
   const [mems, setMems] = useState<MemoryEntry[]>([]);
@@ -60,13 +60,13 @@ export default function MemoryPanel() {
       await addMemory(text, tags);
       setNewText('');
       setNewTags('');
-      toast.toast(lang === 'en' ? 'Memory added' : 'Memoria añadida', 'success');
+      toast.toast(t('memoryAdded'), 'success');
       invalidateCache();
       await refresh();
     } catch (err) {
       showConnectionErrorOnce(err);
     }
-  }, [newText, newTags, toast, lang, refresh, invalidateCache, showConnectionErrorOnce]);
+  }, [newText, newTags, toast, t, refresh, invalidateCache, showConnectionErrorOnce]);
 
   const del = useCallback(async (id: string) => {
     try {
@@ -84,13 +84,13 @@ export default function MemoryPanel() {
       await refreshMemorySummary();
       await refresh();
       invalidateCache();
-      toast.toast(lang === 'en' ? 'Summary refreshed' : 'Resumen actualizado', 'success');
+      toast.toast(t('memorySummaryRefreshed'), 'success');
     } catch (err) {
       showConnectionErrorOnce(err);
     } finally {
       setRefreshing(false);
     }
-  }, [refresh, toast, lang, invalidateCache, showConnectionErrorOnce]);
+  }, [refresh, toast, t, invalidateCache, showConnectionErrorOnce]);
 
   const cardBg = isDark ? 'bg-white/[0.03] border-white/[0.06]' : 'bg-gray-50 border-gray-200';
   const muted = isDark ? 'text-white/45' : 'text-gray-500';
@@ -105,9 +105,9 @@ export default function MemoryPanel() {
       <div className={`rounded-xl border p-4 space-y-2 ${cardBg}`}>
         <div className="flex items-center justify-between">
           <div>
-            <div className={`text-sm font-medium ${label}`}>{lang === 'en' ? 'Project Memory' : 'Memoria del proyecto'}</div>
+            <div className={`text-sm font-medium ${label}`}>{t('projectMemoryTitle')}</div>
             <div className={`text-[11px] ${muted}`}>
-              {lang === 'en' ? 'Free-form notes about your main project. Always injected into chat.' : 'Notas libres sobre tu proyecto principal. Siempre se inyectan en el chat.'}
+              {t('projectMemoryDesc')}
             </div>
           </div>
         </div>
@@ -115,7 +115,7 @@ export default function MemoryPanel() {
           value={projectNotes}
           onChange={(e) => setProjectNotes(e.target.value)}
           rows={4}
-          placeholder={lang === 'en' ? 'e.g. main project is TrinaxAI, runs on Ollama + FastAPI...' : 'p.ej. mi proyecto principal es TrinaxAI, corre en Ollama + FastAPI...'}
+          placeholder={t('projectMemoryPlaceholder')}
           className={`w-full rounded-lg border px-3 py-2 text-xs outline-none focus:border-[#006bbd]/40 ${inputStyle}`}
         />
       </div>
@@ -124,11 +124,9 @@ export default function MemoryPanel() {
       <div className={`rounded-xl border p-4 space-y-2 ${cardBg}`}>
         <div className="flex items-center justify-between">
           <div>
-            <div className={`text-sm font-medium ${label}`}>{lang === 'en' ? 'Auto-summary' : 'Resumen automático'}</div>
+            <div className={`text-sm font-medium ${label}`}>{t('memoryAutoSummaryTitle')}</div>
             <div className={`text-[11px] ${muted}`}>
-              {lang === 'en'
-                ? `Generated from your memories below · ${summary.count} entries`
-                : `Generado de tus memorias abajo · ${summary.count} entradas`}
+              {t('memoryAutoSummaryDesc').replace('{count}', String(summary.count))}
             </div>
           </div>
           <button
@@ -136,29 +134,29 @@ export default function MemoryPanel() {
             disabled={refreshing}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#006bbd]/15 text-[#006bbd] text-xs font-medium hover:bg-[#006bbd]/25 disabled:opacity-50 transition-colors"
           >
-            <MdAutoFixHigh size={14} /> {lang === 'en' ? 'Refresh' : 'Refrescar'}
+            <MdAutoFixHigh size={14} /> {t('refresh')}
           </button>
         </div>
         <div className={`rounded-lg border p-3 text-xs ${isDark ? 'bg-black/30 border-white/[0.06] text-white/70' : 'bg-white border-gray-200 text-gray-700'}`}>
           {summary.summary
             ? summary.summary
-            : <span className={muted}>{lang === 'en' ? 'No summary yet — add some memories and click Refresh.' : 'Aún no hay resumen — añade memorias y pulsa Refrescar.'}</span>}
+            : <span className={muted}>{t('memoryNoSummary')}</span>}
         </div>
       </div>
 
       {/* Add new memory */}
       <div className={`rounded-xl border border-dashed p-4 space-y-2 ${cardBg}`}>
-        <div className={`text-sm font-medium ${label}`}>{lang === 'en' ? 'Add memory' : 'Añadir memoria'}</div>
+        <div className={`text-sm font-medium ${label}`}>{t('addMemoryTitle')}</div>
         <input
           value={newText}
           onChange={(e) => setNewText(e.target.value)}
-          placeholder={lang === 'en' ? 'remember that my main project uses Postgres 16...' : 'recuerda que mi proyecto principal usa Postgres 16...'}
+          placeholder={t('memoryTextPlaceholder')}
           className={`w-full rounded-lg border px-3 py-2 text-xs outline-none focus:border-[#006bbd]/40 ${inputStyle}`}
         />
         <input
           value={newTags}
           onChange={(e) => setNewTags(e.target.value)}
-          placeholder={lang === 'en' ? 'tags (comma separated, optional)' : 'tags (separados por comas, opcional)'}
+          placeholder={t('memoryTagsPlaceholder')}
           className={`w-full rounded-lg border px-3 py-2 text-xs outline-none focus:border-[#006bbd]/40 ${inputStyle}`}
         />
         <button
@@ -166,14 +164,14 @@ export default function MemoryPanel() {
           disabled={!newText.trim()}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#006bbd] text-white text-xs font-medium hover:bg-[#0059a0] disabled:opacity-30 transition-colors"
         >
-          <MdAdd size={14} /> {lang === 'en' ? 'Add' : 'Añadir'}
+          <MdAdd size={14} /> {t('add')}
         </button>
       </div>
 
       {/* Memory list */}
       <div className="space-y-2">
         {mems.length === 0 ? (
-          <p className={`text-[11px] ${muted}`}>{lang === 'en' ? 'No memories yet.' : 'Sin memorias todavía.'}</p>
+          <p className={`text-[11px] ${muted}`}>{t('memoryEmpty')}</p>
         ) : (
           mems.map((m) => (
             <motion.div

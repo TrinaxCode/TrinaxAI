@@ -46,6 +46,22 @@ Antes de publicar, verifica estos flujos en una instalacion limpia:
 - Ejecutar una indexacion y confirmar que las fuentes aparecen en respuestas RAG.
 - Abrir Configuracion > Estadisticas y confirmar que los conteos cambian despues de usar la app.
 
+## Defaults de Rendimiento
+
+Manten defaults conservadores para equipos locales:
+
+- Perfil 8 GB: contexto pequeno, un worker de embeddings, LLM `keep_alive=0s`, embeddings `keep_alive=10m`, batch de embeddings 2.
+- Perfil 16 GB: contexto balanceado, dos workers de embeddings, LLM `keep_alive=0s`, embeddings `keep_alive=15m`, batch de embeddings 8.
+- Perfil max: contexto mas grande, cuatro workers de embeddings, LLM `keep_alive=30m`, embeddings `keep_alive=30m`, batch de embeddings 8.
+- Perfil ultra: contexto maximo, seis workers de embeddings, LLM `keep_alive=60m`, embeddings `keep_alive=30m`, batch de embeddings 16.
+
+Variables utiles:
+
+- `TRINAXAI_INDEX_BATCH_SIZE=100` controla el lote de carga de documentos durante la indexacion.
+- `TRINAXAI_RATE_LIMIT_PER_MINUTE=30` protege la CPU local de clientes descontrolados.
+- `TRINAXAI_EMBED_WORKERS` debe mantenerse bajo en maquinas de 8 GB.
+- `TRINAXAI_EMBED_KEEP_ALIVE` debe quedar por encima de `0s` para indexar; `0s` recarga el embedder entre lotes.
+
 ## Notas de Seguridad
 
 Las acciones de sistema estan pensadas para localhost o clientes LAN confiables. Si expones TrinaxAI fuera de una LAN privada, configura `TRINAXAI_ADMIN_TOKEN` y prefiere una VPN como Tailscale o WireGuard.

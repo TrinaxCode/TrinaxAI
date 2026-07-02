@@ -29,7 +29,7 @@ interface Props {
 }
 
 export default function WatcherCard({ collections }: Props) {
-  const { t, lang } = useI18n();
+  const { t } = useI18n();
   const { isDark } = useTheme();
   const toast = useToast();
   const [status, setStatus] = useState<WatchStatus>({ running: false, watching: [], events_seen: 0, started_at: null });
@@ -63,30 +63,30 @@ export default function WatcherCard({ collections }: Props) {
       const paths = watched.map((id) => `local_sources/collections/${id}`);
       const r = await startWatch({ paths });
       if (r.status === 'already_running') {
-        toast.toast(lang === 'en' ? 'Watcher already running' : 'Watcher ya activo', 'info');
+        toast.toast(t('watcherAlreadyRunning'), 'info');
       } else if (r.watching.length === 0) {
-        toast.toast(lang === 'en' ? 'No valid paths to watch — check the collection folders exist' : 'Sin rutas válidas — comprueba que existen las carpetas', 'warning');
+        toast.toast(t('watcherNoValidPaths'), 'warning');
       } else {
-        toast.toast(lang === 'en' ? `Watching ${r.watching.length} path(s)` : `Vigilando ${r.watching.length} ruta(s)`, 'success');
+        toast.toast(t('watcherWatchingCount').replace('{count}', String(r.watching.length)), 'success');
       }
     } catch (err) {
       toast.toast(err instanceof Error ? err.message.slice(0, 180) : t('noConnection'), 'error');
     } finally {
       setBusy(false);
     }
-  }, [watched, toast, t, lang]);
+  }, [watched, toast, t]);
 
   const stop = useCallback(async () => {
     setBusy(true);
     try {
       await stopWatch();
-      toast.toast(lang === 'en' ? 'Watcher stopped' : 'Watcher detenido', 'info');
+      toast.toast(t('watcherStopped'), 'info');
     } catch (err) {
       toast.toast(err instanceof Error ? err.message.slice(0, 180) : t('noConnection'), 'error');
     } finally {
       setBusy(false);
     }
-  }, [toast, t, lang]);
+  }, [toast, t]);
 
   const cardBg = isDark ? 'bg-white/[0.03] border-white/[0.06]' : 'bg-gray-50 border-gray-200';
   const muted = isDark ? 'text-white/45' : 'text-gray-500';
@@ -96,21 +96,21 @@ export default function WatcherCard({ collections }: Props) {
     <section className={`rounded-xl border p-4 space-y-3 ${cardBg}`}>
       <div className="flex items-center justify-between">
         <div>
-          <div className={`text-sm font-medium ${label}`}>{lang === 'en' ? 'File Watcher' : 'Watcher de archivos'}</div>
+          <div className={`text-sm font-medium ${label}`}>{t('watcherTitle')}</div>
           <div className={`text-[11px] ${muted} mt-0.5`}>
             {status.running
-              ? (lang === 'en' ? `Active · ${status.events_seen} events` : `Activo · ${status.events_seen} eventos`)
-              : (lang === 'en' ? 'Inactive — pick collections to monitor' : 'Inactivo — elige colecciones')}
+              ? t('watcherActive').replace('{count}', String(status.events_seen))
+              : t('watcherInactive')}
           </div>
         </div>
         <div className="flex items-center gap-2">
           {status.running ? (
             <button onClick={stop} disabled={busy} className="px-3 py-1.5 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-xs font-medium hover:bg-red-500/20 disabled:opacity-50 transition-colors flex items-center gap-1.5">
-              <MdVisibilityOff size={14} /> {lang === 'en' ? 'Stop' : 'Detener'}
+              <MdVisibilityOff size={14} /> {t('stop')}
             </button>
           ) : (
             <button onClick={applyWatch} disabled={busy || watched.length === 0} className="px-3 py-1.5 rounded-lg bg-[#006bbd] text-white text-xs font-medium hover:bg-[#0059a0] disabled:opacity-30 transition-colors flex items-center gap-1.5">
-              <MdVisibility size={14} /> {lang === 'en' ? 'Start' : 'Iniciar'}
+              <MdVisibility size={14} /> {t('start')}
             </button>
           )}
         </div>
@@ -141,15 +141,13 @@ export default function WatcherCard({ collections }: Props) {
 
       {status.watching.length > 0 && (
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className={`text-[10px] font-mono ${muted} break-all`}>
-          {lang === 'en' ? 'Watching:' : 'Vigilando:'} {status.watching.join('  ·  ')}
+          {t('watcherWatchingLabel')} {status.watching.join('  ·  ')}
         </motion.div>
       )}
 
       <p className={`text-[11px] ${muted} flex items-center gap-1.5`}>
         <MdRefresh size={12} className="opacity-60" />
-        {lang === 'en'
-          ? 'Changed files in watched folders trigger an incremental reindex automatically.'
-          : 'Los archivos modificados en carpetas vigiladas disparan reindexado automático.'}
+        {t('watcherAutoReindexDesc')}
       </p>
     </section>
   );

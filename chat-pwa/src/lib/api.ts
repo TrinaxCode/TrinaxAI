@@ -53,7 +53,7 @@ export interface ChatMessage {
 /** Modelo de visión para analizar imágenes (se usa al adjuntar una imagen). */
 export const VISION_MODEL = import.meta.env.VITE_TRINAXAI_VISION_MODEL || 'qwen2.5vl:3b';
 const VISION_QUALITY_MODEL = import.meta.env.VITE_TRINAXAI_VISION_QUALITY_MODEL || 'qwen2.5vl:7b';
-const OLLAMA_KEEP_ALIVE = 0;
+const OLLAMA_KEEP_ALIVE_KEY = 'tc-keep-alive';
 const TEXT_NUM_CTX = 3072;
 const VISION_FAST_NUM_CTX = 1024;
 const VISION_FAST_NUM_PREDICT = 120;
@@ -101,6 +101,24 @@ function modelSetting(key: string, fallback: string): string {
   } catch {
     return fallback;
   }
+}
+
+function ollamaKeepAliveSetting(): string | number {
+  try {
+    const raw = localStorage.getItem(OLLAMA_KEEP_ALIVE_KEY)?.trim();
+    if (!raw) return 0;
+    const minutes = Number(raw.replace(/[^0-9.]/g, ''));
+    if (!Number.isFinite(minutes) || minutes <= 0) return 0;
+    if (/^\d+(?:\.\d+)?[smh]$/.test(raw)) return raw;
+    return `${minutes}m`;
+  } catch {
+    return 0;
+  }
+}
+
+function shouldUnloadAfterRequest(keepAlive: string | number): boolean {
+  if (typeof keepAlive === 'number') return keepAlive <= 0;
+  return /^0(?:s|m|h)?$/i.test(keepAlive.trim());
 }
 
 export function routeOllamaModel(text: string): string {
@@ -234,7 +252,12 @@ export async function checkStatus(): Promise<{ ollama: boolean; rag: boolean; in
   } catch { /* down */ }
   try {
     const r = await fetch(`${RAG_BASE}/health`, { signal: AbortSignal.timeout(3000) });
-    if (r.ok) { out.rag = true; const d = await r.json(); out.indexed = !!d.indexed; }
+    if (r.ok) {
+      out.rag = true;
+      const d = await r.json();
+      out.indexed = !!d.indexed;
+      if (!out.ollama && typeof d?.ollama === 'boolean') out.ollama = d.ollama;
+    }
   } catch { /* down */ }
   if (out.rag) {
     try {
@@ -452,7 +475,8 @@ export async function getFileChunks(
   if (opts.offset != null) params.set('offset', String(opts.offset));
   if (opts.q) params.set('q', opts.q);
   const qs = params.toString();
-  const url = `${RAG_BASE}/v1/sources/${encodeURIComponent(collection)}/${encodeURIComponent(file)}/chunks${qs ? `?${qs}` : ''}`;
+  const encodedFile = file.split('/').map((part) => encodeURIComponent(part)).join('/');
+  const url = `${RAG_BASE}/v1/sources/${encodeURIComponent(collection)}/${encodedFile}/chunks${qs ? `?${qs}` : ''}`;
   return apiJson(url, { signal: opts.signal });
 }
 
@@ -879,6 +903,7 @@ export async function streamOllama(
 
   const model = routeOllamaModel(last);
   await ensureOllamaModel(model);
+  const keepAlive = ollamaKeepAliveSetting();
   onMeta?.({ model });
   const response = await fetch(`${OLLAMA_BASE}/api/chat`, {
     method: 'POST',
@@ -887,7 +912,7 @@ export async function streamOllama(
       model,
       messages: textMessagesForOllama(messages),
       stream: true,
-      keep_alive: OLLAMA_KEEP_ALIVE,
+      keep_alive: keepAlive,
       options: {
         num_ctx: TEXT_NUM_CTX,
         num_thread: 8,
@@ -911,7 +936,7 @@ export async function streamOllama(
       fullContent += appendOllamaJsonLine(line, onToken);
     });
   } finally {
-    unloadOllamaModel(model);
+    if (shouldUnloadAfterRequest(keepAlive)) unloadOllamaModel(model);
   }
   if (!signal?.aborted) recordUsage('ollama', model, messages, fullContent);
   return fullContent;
@@ -930,6 +955,7 @@ async function streamOllamaVision(
   const qualityTurn = isVisionQualityTurn(lastContent);
   const model = await routeVisionModel(lastContent);
   await ensureOllamaModel(model);
+  const keepAlive = ollamaKeepAliveSetting();
   onMeta?.({ model });
 
   const apiMessages = messages.map((m, i) => {
@@ -956,7 +982,7 @@ async function streamOllamaVision(
         ...apiMessages,
       ],
       stream: true,
-      keep_alive: OLLAMA_KEEP_ALIVE,
+      keep_alive: keepAlive,
       options: {
         num_ctx: qualityTurn ? VISION_QUALITY_NUM_CTX : VISION_FAST_NUM_CTX,
         num_predict: qualityTurn ? VISION_QUALITY_NUM_PREDICT : VISION_FAST_NUM_PREDICT,
@@ -993,7 +1019,7 @@ async function streamOllamaVision(
     }
     throw err;
   } finally {
-    unloadOllamaModel(model);
+    if (shouldUnloadAfterRequest(keepAlive)) unloadOllamaModel(model);
   }
   if (!signal?.aborted) recordUsage('ollama-vision', model, messages, fullContent);
   return fullContent;

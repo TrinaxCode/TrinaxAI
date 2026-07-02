@@ -9,11 +9,8 @@ interface PwaUpdaterProps {
 }
 
 export default function PwaUpdater({ needsUpdate, onRefresh }: PwaUpdaterProps) {
-  const { lang } = useI18n();
+  const { t } = useI18n();
   const [dismissed, setDismissed] = useState(false);
-
-  const label = lang === 'en' ? 'Update available' : 'Actualización disponible';
-  const buttonText = lang === 'en' ? 'Update' : 'Actualizar';
 
   return (
     <AnimatePresence>
@@ -30,12 +27,12 @@ export default function PwaUpdater({ needsUpdate, onRefresh }: PwaUpdaterProps) 
             marginBottom: 'calc(env(safe-area-inset-bottom, 12px) + 12px)',
           }}
         >
-          <span>{label}</span>
+          <span>{t('pwaUpdateAvailable')}</span>
           <button
             onClick={onRefresh}
             className="px-3 py-1 bg-[#006bbd] text-white rounded-lg hover:bg-[#005299] transition-colors font-medium"
           >
-            {buttonText}
+            {t('pwaUpdate')}
           </button>
           <button
             onClick={() => setDismissed(true)}
