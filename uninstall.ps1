@@ -10,6 +10,8 @@ param(
   [switch]$RemoveData,
   [switch]$RemoveCerts,
   [switch]$RemoveModels,
+  [switch]$RemoveOllama,
+  [switch]$Purge,
   [switch]$KeepFirewall
 )
 
@@ -17,6 +19,12 @@ param(
 TrinaxAI - Windows uninstaller
 Run in PowerShell:
   powershell -ExecutionPolicy Bypass -File .\uninstall.ps1
+  powershell -ExecutionPolicy Bypass -File .\uninstall.ps1 -Purge -Yes
+
+Guided mode asks what to remove:
+  - services, autostart, .venv, frontend build/deps, logs, .env
+  - RAG index/memory/local_sources, HTTPS certs, firewall rules
+  - Ollama models and the Ollama application itself
 #>
 
 $ErrorActionPreference = "Stop"
@@ -91,6 +99,77 @@ function Remove-TrinaxAIFirewallRules {
     }
   }
 }
+function Stop-OllamaProcesses {
+  try {
+    Get-CimInstance Win32_Process |
+      Where-Object { $_.CommandLine -and ($_.CommandLine -like "*ollama*") } |
+      ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+  } catch {
+    Write-Warn "Could not enumerate Ollama processes."
+  }
+}
+function Remove-KnownDirectory([string]$Path, [string]$Label) {
+  if ([string]::IsNullOrWhiteSpace($Path)) { return }
+  try {
+    $Full = [IO.Path]::GetFullPath($Path)
+    if ($Full.Length -lt 10) { throw "Unsafe path: $Full" }
+    if (Test-Path -LiteralPath $Full) {
+      Remove-Item -LiteralPath $Full -Recurse -Force
+      Write-Ok "Removed $Label"
+    }
+  } catch {
+    Write-Warn "Could not remove ${Label}: $($_.Exception.Message)"
+  }
+}
+function Remove-OllamaModelsAndState {
+  $Candidates = New-Object System.Collections.Generic.List[string]
+  if ($env:OLLAMA_MODELS) { $Candidates.Add($env:OLLAMA_MODELS) | Out-Null }
+  if ($env:USERPROFILE) { $Candidates.Add((Join-Path $env:USERPROFILE ".ollama\models")) | Out-Null }
+  if ($HOME) { $Candidates.Add((Join-Path $HOME ".ollama\models")) | Out-Null }
+  if ($env:LOCALAPPDATA) { $Candidates.Add((Join-Path $env:LOCALAPPDATA "Ollama\models")) | Out-Null }
+  $Seen = @{}
+  foreach ($Candidate in $Candidates) {
+    if ([string]::IsNullOrWhiteSpace($Candidate)) { continue }
+    $Full = [IO.Path]::GetFullPath($Candidate)
+    if ($Seen.ContainsKey($Full)) { continue }
+    $Seen[$Full] = $true
+    Remove-KnownDirectory $Full "Ollama models: $Full"
+  }
+}
+function Invoke-OllamaRegistryUninstall {
+  $Roots = @(
+    "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*",
+    "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*",
+    "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*"
+  )
+  foreach ($Root in $Roots) {
+    try {
+      $Apps = Get-ItemProperty $Root -ErrorAction SilentlyContinue |
+        Where-Object { $_.DisplayName -and $_.DisplayName -match "^Ollama" }
+      foreach ($App in $Apps) {
+        $Command = $App.QuietUninstallString
+        if (-not $Command) { $Command = $App.UninstallString }
+        if (-not $Command) { continue }
+        Write-Host "  Running Ollama uninstaller..."
+        Start-Process -FilePath "cmd.exe" -ArgumentList @("/c", $Command) -Wait -WindowStyle Hidden | Out-Null
+      }
+    } catch {
+      Write-Warn "Could not use one Ollama uninstall registry entry."
+    }
+  }
+}
+function Remove-OllamaApp {
+  Stop-OllamaProcesses
+  if (Test-Cmd "winget") {
+    winget uninstall --id Ollama.Ollama --silent --accept-source-agreements 2>$null
+  }
+  Invoke-OllamaRegistryUninstall
+  Stop-OllamaProcesses
+  Remove-KnownDirectory (Join-Path $env:LOCALAPPDATA "Programs\Ollama") "Ollama app"
+  Remove-KnownDirectory (Join-Path $env:LOCALAPPDATA "Ollama") "Ollama local app data"
+  Remove-KnownDirectory (Join-Path $env:APPDATA "Ollama") "Ollama roaming app data"
+  Remove-KnownDirectory (Join-Path $env:ProgramFiles "Ollama") "Ollama Program Files app"
+}
 
 $Repo = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $Repo
@@ -119,9 +198,10 @@ $RemoveVenv = -not $KeepVenv
 $RemoveFrontend = -not $KeepFrontend
 $RemoveLogs = -not $KeepLogs
 $RemoveEnv = -not $KeepEnv
-$RemoveRuntimeData = $RemoveData
-$RemoveRuntimeCerts = $RemoveCerts
-$RemoveOllamaModels = $RemoveModels
+$RemoveRuntimeData = $RemoveData -or $Purge
+$RemoveRuntimeCerts = $RemoveCerts -or $Purge
+$RemoveOllamaModels = $RemoveModels -or $RemoveOllama -or $Purge
+$RemoveOllamaApp = $RemoveOllama -or $Purge
 $RemoveFirewallRules = -not $KeepFirewall
 
 if (-not ($Yes -or $NonInteractive)) {
@@ -134,6 +214,8 @@ if (-not ($Yes -or $NonInteractive)) {
   $RemoveRuntimeData = Read-YesNo "Remove RAG index, memory, and local_sources data?" $false
   $RemoveRuntimeCerts = Read-YesNo "Remove generated local HTTPS cert files?" $false
   $RemoveOllamaModels = Read-YesNo "Remove known Ollama models used by TrinaxAI?" $false
+  $RemoveOllamaApp = Read-YesNo "Remove Ollama application too?" $false
+  if ($RemoveOllamaApp) { $RemoveOllamaModels = $true }
   $RemoveFirewallRules = Read-YesNo "Remove TrinaxAI Windows Firewall rules?" $true
 }
 
@@ -177,6 +259,12 @@ if ($RemoveOllamaModels) {
   } else {
     Write-Warn "Ollama not found; model removal skipped."
   }
+  Remove-OllamaModelsAndState
+}
+
+if ($RemoveOllamaApp) {
+  Write-Step "Ollama application"
+  Remove-OllamaApp
 }
 
 Write-Ok "TrinaxAI uninstall finished"

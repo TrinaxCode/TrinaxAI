@@ -13,6 +13,9 @@ Usage:
   ./update.sh --no-pull          Skip Git pull
   ./update.sh --models           Pull/update configured Ollama models
   ./update.sh --no-models        Do not pull Ollama models
+  ./update.sh --remove-models-first Remove configured models before updating them
+  ./update.sh --repair-ollama    Reinstall/repair Ollama before updating models
+  ./update.sh --remove-ollama    Remove Ollama before continuing; guided mode asks to reinstall
   ./update.sh --restart          Restart TrinaxAI after update
   ./update.sh --no-restart       Do not restart after update
   ./update.sh --enable-autostart Enable boot autostart after update
@@ -23,6 +26,8 @@ Usage:
 What it asks:
   - Create a backup before updating
   - Pull latest code from Git
+  - Remove/reinstall Ollama
+  - Remove configured Ollama models before updating
   - Pull/update configured Ollama models
   - Change boot autostart setting
   - Restart TrinaxAI after update
@@ -41,6 +46,8 @@ Environment variables:
   TRINAXAI_UPDATE_BACKUP=0    Skip backup
   TRINAXAI_UPDATE_PULL=0      Skip Git pull
   TRINAXAI_UPDATE_MODELS=1    Pull configured models
+  TRINAXAI_UPDATE_REMOVE_MODELS=1 Remove configured models before updating
+  TRINAXAI_UPDATE_REPAIR_OLLAMA=1 Reinstall/repair Ollama
   TRINAXAI_UPDATE_RESTART=1   Restart after update
   TRINAXAI_UPDATE_AUDIT=0     Skip readiness audit
 EOF
@@ -60,6 +67,10 @@ RUN_AUDIT="${TRINAXAI_UPDATE_AUDIT:-1}"
 PULL_MODELS="${TRINAXAI_UPDATE_MODELS:-0}"
 PULL_MODELS_SET=0
 [ -n "${TRINAXAI_UPDATE_MODELS+x}" ] && PULL_MODELS_SET=1
+REMOVE_MODELS_FIRST="${TRINAXAI_UPDATE_REMOVE_MODELS:-0}"
+REPAIR_OLLAMA="${TRINAXAI_UPDATE_REPAIR_OLLAMA:-0}"
+REMOVE_OLLAMA=0
+INSTALL_OLLAMA_AFTER_REMOVE=0
 
 RESTART_AFTER="${TRINAXAI_UPDATE_RESTART:-0}"
 RESTART_SET=0
@@ -76,6 +87,9 @@ while [ "$#" -gt 0 ]; do
     --no-pull) PULL_CODE=0;;
     --models|--pull-models) PULL_MODELS=1; PULL_MODELS_SET=1;;
     --no-models) PULL_MODELS=0; PULL_MODELS_SET=1;;
+    --remove-models-first) REMOVE_MODELS_FIRST=1;;
+    --repair-ollama) REPAIR_OLLAMA=1;;
+    --remove-ollama) REMOVE_OLLAMA=1;;
     --restart) RESTART_AFTER=1; RESTART_SET=1;;
     --no-restart) RESTART_AFTER=0; RESTART_SET=1;;
     --enable-autostart) AUTOSTART_ACTION="enable";;
@@ -128,6 +142,28 @@ is_windows() {
     *) return 1 ;;
   esac
 }
+
+if is_windows && [ -f "$ROOT/update.ps1" ] && command -v powershell.exe >/dev/null 2>&1; then
+  PS_ARGS=("-NoProfile" "-ExecutionPolicy" "Bypass" "-File" "$(cygpath -w "$ROOT/update.ps1" 2>/dev/null || printf '%s' "$ROOT/update.ps1")")
+  [ "$NONINTERACTIVE" = "1" ] && PS_ARGS+=("-NonInteractive")
+  [ "$CREATE_BACKUP" = "0" ] && PS_ARGS+=("-NoBackup")
+  [ "$PULL_CODE" = "0" ] && PS_ARGS+=("-NoPull")
+  if [ "$PULL_MODELS_SET" = "1" ]; then
+    [ "$PULL_MODELS" = "1" ] && PS_ARGS+=("-Models") || PS_ARGS+=("-NoModels")
+  fi
+  [ "$REMOVE_MODELS_FIRST" = "1" ] && PS_ARGS+=("-RemoveModels")
+  [ "$REPAIR_OLLAMA" = "1" ] && PS_ARGS+=("-RepairOllama")
+  [ "$REMOVE_OLLAMA" = "1" ] && PS_ARGS+=("-RemoveOllama")
+  if [ "$RESTART_SET" = "1" ]; then
+    [ "$RESTART_AFTER" = "1" ] && PS_ARGS+=("-Restart") || PS_ARGS+=("-NoRestart")
+  fi
+  case "$AUTOSTART_ACTION" in
+    enable) PS_ARGS+=("-EnableAutostart");;
+    disable) PS_ARGS+=("-DisableAutostart");;
+  esac
+  [ "$RUN_AUDIT" = "0" ] && PS_ARGS+=("-NoAudit")
+  exec powershell.exe "${PS_ARGS[@]}"
+fi
 
 PYTHON_CMD=()
 if [ -n "${TRINAXAI_PYTHON:-}" ]; then
@@ -194,6 +230,41 @@ ensure_ollama_running() {
   return 1
 }
 
+repair_ollama() {
+  if command -v curl >/dev/null 2>&1; then
+    curl -fsSL https://ollama.com/install.sh | sh
+  else
+    echo "[!] curl not found; cannot run official Ollama installer."
+    return 1
+  fi
+}
+
+remove_configured_models() {
+  configured_models
+  if command -v ollama >/dev/null 2>&1; then
+    for model in "${MODELS[@]}"; do
+      ollama rm "$model" 2>/dev/null || true
+    done
+  fi
+  [ -n "${HOME:-}" ] && rm -rf -- "$HOME/.ollama/models" 2>/dev/null || true
+}
+
+remove_ollama_app() {
+  pkill -TERM -f "ollama" 2>/dev/null || true
+  sleep 1
+  pkill -KILL -f "ollama" 2>/dev/null || true
+  if command -v brew >/dev/null 2>&1; then
+    brew uninstall ollama 2>/dev/null || true
+  elif command -v apt-get >/dev/null 2>&1; then
+    sudo apt-get remove -y ollama 2>/dev/null || true
+  elif command -v dnf >/dev/null 2>&1; then
+    sudo dnf remove -y ollama 2>/dev/null || true
+  elif command -v pacman >/dev/null 2>&1; then
+    sudo pacman -Rns --noconfirm ollama 2>/dev/null || true
+  fi
+  [ -n "${HOME:-}" ] && rm -rf -- "$HOME/.ollama" 2>/dev/null || true
+}
+
 run_service_manager() {
   local action="$1"
   if [ -f "$ROOT/service_manager.py" ]; then
@@ -223,11 +294,28 @@ if [ "$PULL_CODE" = "1" ]; then
   fi
 fi
 
+if [ "$INTERACTIVE" = "1" ]; then
+  if ask_yes_no "Remove Ollama application before continuing?" n; then
+    REMOVE_OLLAMA=1
+    if ask_yes_no "Install Ollama again with the official installer after removal?" y; then
+      INSTALL_OLLAMA_AFTER_REMOVE=1
+    fi
+  elif ask_yes_no "Repair/reinstall Ollama with the official installer?" n; then
+    REPAIR_OLLAMA=1
+  fi
+fi
+
 if [ "$INTERACTIVE" = "1" ] && [ "$PULL_MODELS_SET" != "1" ]; then
   if ask_yes_no "Download/update configured Ollama models too?" n; then
     PULL_MODELS=1
   else
     PULL_MODELS=0
+  fi
+fi
+
+if [ "$INTERACTIVE" = "1" ]; then
+  if ask_yes_no "Remove configured Ollama models before model update?" n; then
+    REMOVE_MODELS_FIRST=1
   fi
 fi
 
@@ -273,6 +361,17 @@ if [ "$PULL_CODE" = "1" ]; then
   fi
 fi
 
+if [ "$REMOVE_OLLAMA" = "1" ]; then
+  remove_ollama_app
+  if [ "$INSTALL_OLLAMA_AFTER_REMOVE" = "1" ]; then
+    repair_ollama || echo "[!] Ollama reinstall failed."
+  else
+    PULL_MODELS=0
+  fi
+elif [ "$REPAIR_OLLAMA" = "1" ]; then
+  repair_ollama || echo "[!] Ollama repair failed."
+fi
+
 echo "== Required dependency refresh =="
 "${PYTHON_CMD[@]}" -m pip install --upgrade pip
 "${PYTHON_CMD[@]}" -m pip install -r requirements.txt
@@ -296,6 +395,9 @@ fi
 
 if [ "$PULL_MODELS" = "1" ]; then
   configured_models
+  if [ "$REMOVE_MODELS_FIRST" = "1" ]; then
+    remove_configured_models
+  fi
   if ensure_ollama_running; then
     for model in "${MODELS[@]}"; do
       echo "Pulling $model..."

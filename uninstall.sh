@@ -11,6 +11,8 @@ Usage:
   ./uninstall.sh --yes           Non-interactive uninstall with safe defaults
   ./uninstall.sh --remove-data   Also remove RAG storage and local_sources
   ./uninstall.sh --remove-models Also remove known Ollama models
+  ./uninstall.sh --remove-ollama Also remove the Ollama application
+  ./uninstall.sh --purge         Remove all generated data, certs, models, and Ollama
   ./uninstall.sh --keep-env      Keep generated .env
   ./uninstall.sh --remove-certs  Remove generated local HTTPS cert files
   ./uninstall.sh --help          Show this help
@@ -25,11 +27,12 @@ What it asks:
   - Remove RAG index/memory data
   - Remove generated local HTTPS cert files
   - Remove known Ollama models
+  - Remove the Ollama application
 
 What it always keeps:
   - Git repository and source code
   - Shell scripts, docs, tests, and project files
-  - Ollama application itself
+  - Ollama application unless you choose to remove it
 EOF
   exit 0
 }
@@ -51,6 +54,8 @@ REMOVE_DATA=0
 REMOVE_CERTS=0
 REMOVE_MODELS=0
 REMOVE_MODELS_SET=0
+REMOVE_OLLAMA=0
+PURGE=0
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
@@ -71,6 +76,8 @@ while [ "$#" -gt 0 ]; do
     --keep-certs) REMOVE_CERTS=0;;
     --remove-models) REMOVE_MODELS=1; REMOVE_MODELS_SET=1;;
     --keep-models) REMOVE_MODELS=0; REMOVE_MODELS_SET=1;;
+    --remove-ollama) REMOVE_OLLAMA=1; REMOVE_MODELS=1; REMOVE_MODELS_SET=1;;
+    --purge) PURGE=1; REMOVE_DATA=1; REMOVE_CERTS=1; REMOVE_MODELS=1; REMOVE_OLLAMA=1; REMOVE_MODELS_SET=1;;
     *) echo "Unknown option: $1" >&2; usage;;
   esac
   shift
@@ -117,6 +124,24 @@ is_windows() {
     *) return 1 ;;
   esac
 }
+
+if is_windows && [ -f "$ROOT/uninstall.ps1" ] && command -v powershell.exe >/dev/null 2>&1; then
+  PS_ARGS=("-NoProfile" "-ExecutionPolicy" "Bypass" "-File" "$(cygpath -w "$ROOT/uninstall.ps1" 2>/dev/null || printf '%s' "$ROOT/uninstall.ps1")")
+  [ "$CONFIRM_UNINSTALL" = "1" ] && PS_ARGS+=("-Yes")
+  [ "$NONINTERACTIVE" = "1" ] && PS_ARGS+=("-NonInteractive")
+  [ "$STOP_SERVICES" = "0" ] && PS_ARGS+=("-KeepServices")
+  [ "$DISABLE_AUTOSTART" = "0" ] && PS_ARGS+=("-KeepAutostart")
+  [ "$REMOVE_VENV" = "0" ] && PS_ARGS+=("-KeepVenv")
+  [ "$REMOVE_FRONTEND" = "0" ] && PS_ARGS+=("-KeepFrontend")
+  [ "$REMOVE_LOGS" = "0" ] && PS_ARGS+=("-KeepLogs")
+  [ "$REMOVE_ENV" = "0" ] && PS_ARGS+=("-KeepEnv")
+  [ "$REMOVE_DATA" = "1" ] && PS_ARGS+=("-RemoveData")
+  [ "$REMOVE_CERTS" = "1" ] && PS_ARGS+=("-RemoveCerts")
+  [ "$REMOVE_MODELS" = "1" ] && PS_ARGS+=("-RemoveModels")
+  [ "$REMOVE_OLLAMA" = "1" ] && PS_ARGS+=("-RemoveOllama")
+  [ "$PURGE" = "1" ] && PS_ARGS+=("-Purge")
+  exec powershell.exe "${PS_ARGS[@]}"
+fi
 
 PYTHON_CMD=()
 if [ -n "${TRINAXAI_PYTHON:-}" ]; then
@@ -197,6 +222,10 @@ if [ "$INTERACTIVE" = "1" ]; then
       REMOVE_MODELS=1
     fi
   fi
+  if ask_yes_no "Remove Ollama application too?" n; then
+    REMOVE_OLLAMA=1
+    REMOVE_MODELS=1
+  fi
 fi
 
 if [ "$STOP_SERVICES" = "1" ]; then
@@ -242,6 +271,24 @@ if [ "$REMOVE_MODELS" = "1" ] && command -v ollama >/dev/null 2>&1; then
   done
 elif [ "$REMOVE_MODELS" = "1" ]; then
   echo "[!] Ollama not found; model removal skipped."
+fi
+
+if [ "$REMOVE_OLLAMA" = "1" ]; then
+  pkill -TERM -f "ollama" 2>/dev/null || true
+  sleep 1
+  pkill -KILL -f "ollama" 2>/dev/null || true
+  if command -v brew >/dev/null 2>&1; then
+    brew uninstall ollama 2>/dev/null || true
+  elif command -v apt-get >/dev/null 2>&1; then
+    sudo apt-get remove -y ollama 2>/dev/null || true
+  elif command -v dnf >/dev/null 2>&1; then
+    sudo dnf remove -y ollama 2>/dev/null || true
+  elif command -v pacman >/dev/null 2>&1; then
+    sudo pacman -Rns --noconfirm ollama 2>/dev/null || true
+  fi
+  if [ -n "${HOME:-}" ] && [ -d "$HOME/.ollama" ]; then
+    rm -rf -- "$HOME/.ollama"
+  fi
 fi
 
 echo "TrinaxAI uninstall finished."

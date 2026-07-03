@@ -8,6 +8,9 @@ param(
   [switch]$NoRestart,
   [switch]$EnableAutostart,
   [switch]$DisableAutostart,
+  [switch]$RepairOllama,
+  [switch]$RemoveModels,
+  [switch]$RemoveOllama,
   [switch]$NoAudit
 )
 
@@ -15,6 +18,9 @@ param(
 TrinaxAI - Windows updater
 Run in PowerShell:
   powershell -ExecutionPolicy Bypass -File .\update.ps1
+
+Guided mode asks what to update or repair, including Ollama reinstall/removal,
+model removal/download, backup, Git pull, autostart, restart, and audit.
 #>
 
 $ErrorActionPreference = "Stop"
@@ -74,6 +80,53 @@ function Ensure-OllamaRunning {
   }
   return $null
 }
+function Stop-OllamaProcesses {
+  try {
+    Get-CimInstance Win32_Process |
+      Where-Object { $_.CommandLine -and ($_.CommandLine -like "*ollama*") } |
+      ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+  } catch {
+    Write-Warn "Could not enumerate Ollama processes."
+  }
+}
+function Install-OllamaOfficial {
+  Write-Host "  Installing Ollama with: irm https://ollama.com/install.ps1 | iex"
+  try {
+    $PowerShellExe = (Get-Command powershell.exe -ErrorAction SilentlyContinue).Source
+    if (-not $PowerShellExe) { $PowerShellExe = "powershell.exe" }
+    $Command = "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; irm https://ollama.com/install.ps1 | iex"
+    & $PowerShellExe -NoProfile -ExecutionPolicy Bypass -Command $Command
+    if ($LASTEXITCODE -ne 0) { return $false }
+    return [bool](Get-OllamaCommand)
+  } catch {
+    Write-Warn "Official Ollama install command failed: $($_.Exception.Message)"
+    return $false
+  }
+}
+function Remove-KnownDirectory([string]$Path, [string]$Label) {
+  if ([string]::IsNullOrWhiteSpace($Path)) { return }
+  try {
+    $Full = [IO.Path]::GetFullPath($Path)
+    if ($Full.Length -lt 10) { throw "Unsafe path: $Full" }
+    if (Test-Path -LiteralPath $Full) {
+      Remove-Item -LiteralPath $Full -Recurse -Force
+      Write-Ok "Removed $Label"
+    }
+  } catch {
+    Write-Warn "Could not remove ${Label}: $($_.Exception.Message)"
+  }
+}
+function Remove-OllamaApp {
+  Stop-OllamaProcesses
+  if (Test-Cmd "winget") {
+    winget uninstall --id Ollama.Ollama --silent --accept-source-agreements 2>$null
+  }
+  Stop-OllamaProcesses
+  Remove-KnownDirectory (Join-Path $env:LOCALAPPDATA "Programs\Ollama") "Ollama app"
+  Remove-KnownDirectory (Join-Path $env:LOCALAPPDATA "Ollama") "Ollama local app data"
+  Remove-KnownDirectory (Join-Path $env:APPDATA "Ollama") "Ollama roaming app data"
+  Remove-KnownDirectory (Join-Path $env:ProgramFiles "Ollama") "Ollama Program Files app"
+}
 function Read-EnvValue($Key) {
   $EnvPath = Join-Path $Repo ".env"
   if (-not (Test-Path $EnvPath)) { return "" }
@@ -103,6 +156,17 @@ function Get-ConfiguredModels {
     }
   }
   return $List
+}
+function Remove-ConfiguredModels {
+  $Ollama = Get-OllamaCommand
+  if ($Ollama) {
+    foreach ($Model in Get-ConfiguredModels) {
+      Write-Host "  Removing $Model..."
+      & $Ollama rm $Model 2>$null
+    }
+  }
+  Remove-KnownDirectory (Join-Path $env:USERPROFILE ".ollama\models") "Ollama models"
+  Remove-KnownDirectory (Join-Path $env:LOCALAPPDATA "Ollama\models") "Ollama local models"
 }
 function New-TrinaxAIBackup {
   $BackupDir = Join-Path $Repo "backups"
@@ -139,11 +203,22 @@ $PullModels = $Models -and -not $NoModels
 $RunAudit = -not $NoAudit
 $RestartAfter = $Restart -and -not $NoRestart
 $AutostartAction = if ($EnableAutostart) { "enable-autostart" } elseif ($DisableAutostart) { "disable-autostart" } else { "" }
+$RepairOllamaNow = $RepairOllama
+$RemoveModelsFirst = $RemoveModels
+$RemoveOllamaApp = $RemoveOllama
+$InstallOllamaAfterRemove = $RemoveOllama
 
 if (-not $NonInteractive) {
   $CreateBackup = Read-YesNo "Create a backup before updating?" $true
   $PullCode = Read-YesNo "Pull latest code from Git?" $true
+  $RemoveOllamaApp = Read-YesNo "Remove Ollama application before continuing?" $false
+  if ($RemoveOllamaApp) {
+    $InstallOllamaAfterRemove = Read-YesNo "Install Ollama again with the official installer command after removal?" $true
+  } else {
+    $RepairOllamaNow = Read-YesNo "Repair/reinstall Ollama with the official installer command?" $false
+  }
   $PullModels = Read-YesNo "Download/update configured Ollama models too?" $false
+  $RemoveModelsFirst = Read-YesNo "Remove configured Ollama models before model update?" $false
   if (Read-YesNo "Change boot auto-start setting?" $false) {
     $AutostartAction = if (Read-YesNo "Start TrinaxAI automatically when Windows starts?" $true) { "enable-autostart" } else { "disable-autostart" }
   }
@@ -170,6 +245,19 @@ if ($PullCode) {
   }
 }
 
+if ($RemoveOllamaApp) {
+  Write-Step "Ollama application"
+  Remove-OllamaApp
+  if ($InstallOllamaAfterRemove) {
+    if (Install-OllamaOfficial) { Write-Ok "Ollama installed" } else { Write-Warn "Ollama reinstall failed." }
+  } else {
+    $PullModels = $false
+  }
+} elseif ($RepairOllamaNow) {
+  Write-Step "Ollama repair"
+  if (Install-OllamaOfficial) { Write-Ok "Ollama installed" } else { Write-Warn "Ollama repair failed." }
+}
+
 Write-Step "3/7 Python dependencies"
 Invoke-Python @("-m", "pip", "install", "--upgrade", "pip")
 Invoke-Python @("-m", "pip", "install", "-r", "requirements.txt")
@@ -189,6 +277,9 @@ if ((Test-Cmd "npm") -and (Test-Path "chat-pwa")) {
 
 if ($PullModels) {
   Write-Step "5/7 Ollama models"
+  if ($RemoveModelsFirst) {
+    Remove-ConfiguredModels
+  }
   $Ollama = Ensure-OllamaRunning
   if ($Ollama) {
     foreach ($Model in Get-ConfiguredModels) {

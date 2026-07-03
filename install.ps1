@@ -194,21 +194,19 @@ function Install-OllamaOfficial {
   if (Get-OllamaCommand) { return $true }
 
   $TempDir = Join-Path $env:TEMP "trinaxai-install"
-  $OfficialScript = Join-Path $TempDir "ollama-install.ps1"
-  Write-Host "  Installing Ollama with the official installer script..."
-  if (Invoke-DownloadFile "https://ollama.com/install.ps1" $OfficialScript) {
-    try {
-      $PowerShellExe = (Get-Command powershell.exe -ErrorAction SilentlyContinue).Source
-      if (-not $PowerShellExe) { $PowerShellExe = "powershell.exe" }
-      & $PowerShellExe -NoProfile -ExecutionPolicy Bypass -File $OfficialScript
-      Update-ProcessPath
-      if ($LASTEXITCODE -eq 0 -and (Get-OllamaCommand)) {
-        return $true
-      }
-      Write-Warn "The official Ollama install script finished but ollama.exe was not found yet."
-    } catch {
-      Write-Warn "Official Ollama install script failed: $($_.Exception.Message)"
+  Write-Host "  Installing Ollama with the official PowerShell installer..."
+  try {
+    $PowerShellExe = (Get-Command powershell.exe -ErrorAction SilentlyContinue).Source
+    if (-not $PowerShellExe) { $PowerShellExe = "powershell.exe" }
+    $Command = "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; irm https://ollama.com/install.ps1 | iex"
+    & $PowerShellExe -NoProfile -ExecutionPolicy Bypass -Command $Command
+    Update-ProcessPath
+    if ($LASTEXITCODE -eq 0 -and (Get-OllamaCommand)) {
+      return $true
     }
+    Write-Warn "The official Ollama install command finished but ollama.exe was not found yet."
+  } catch {
+    Write-Warn "Official Ollama install command failed: $($_.Exception.Message)"
   }
 
   $Installer = Join-Path $TempDir "OllamaSetup.exe"
@@ -238,6 +236,10 @@ function Require-Ollama {
     Write-Ok "Ollama found"
     return
   }
+  if (Install-OllamaOfficial) {
+    Write-Ok "Ollama installed"
+    return
+  }
   if (Install-WingetPackage "Ollama.Ollama" "ollama") {
     Update-ProcessPath
     if (Get-OllamaCommand) {
@@ -245,12 +247,8 @@ function Require-Ollama {
       return
     }
   }
-  if (Install-OllamaOfficial) {
-    Write-Ok "Ollama installed"
-    return
-  }
   Write-Warn "Ollama was not found and could not be installed automatically."
-  Write-Warn "Check your internet connection and re-run install.ps1. No browser download should be required."
+  Write-Warn "Check your internet connection and re-run install.ps1. Recommended command: irm https://ollama.com/install.ps1 | iex"
   exit 1
 }
 function Require-Command($Command, $WingetId, $InstallName, $ManualUrl) {
