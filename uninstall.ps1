@@ -99,6 +99,20 @@ function Remove-TrinaxAIFirewallRules {
     }
   }
 }
+function Invoke-ExternalWithTimeout([string]$FilePath, [string[]]$Arguments, [int]$TimeoutSec = 90) {
+  try {
+    $Proc = Start-Process -FilePath $FilePath -ArgumentList $Arguments -PassThru -WindowStyle Hidden
+    if (-not $Proc.WaitForExit($TimeoutSec * 1000)) {
+      Stop-Process -Id $Proc.Id -Force -ErrorAction SilentlyContinue
+      Write-Warn "$FilePath timed out after ${TimeoutSec}s."
+      return $false
+    }
+    return ($Proc.ExitCode -eq 0)
+  } catch {
+    Write-Warn "Could not run ${FilePath}: $($_.Exception.Message)"
+    return $false
+  }
+}
 function Stop-OllamaProcesses {
   try {
     Get-CimInstance Win32_Process |
@@ -151,7 +165,7 @@ function Invoke-OllamaRegistryUninstall {
         if (-not $Command) { $Command = $App.UninstallString }
         if (-not $Command) { continue }
         Write-Host "  Running Ollama uninstaller..."
-        Start-Process -FilePath "cmd.exe" -ArgumentList @("/c", $Command) -Wait -WindowStyle Hidden | Out-Null
+        Invoke-ExternalWithTimeout "cmd.exe" @("/d", "/s", "/c", $Command) 120 | Out-Null
       }
     } catch {
       Write-Warn "Could not use one Ollama uninstall registry entry."
@@ -161,7 +175,7 @@ function Invoke-OllamaRegistryUninstall {
 function Remove-OllamaApp {
   Stop-OllamaProcesses
   if (Test-Cmd "winget") {
-    winget uninstall --id Ollama.Ollama --silent --accept-source-agreements 2>$null
+    Invoke-ExternalWithTimeout "winget" @("uninstall", "--id", "Ollama.Ollama", "--silent", "--accept-source-agreements") 120 | Out-Null
   }
   Invoke-OllamaRegistryUninstall
   Stop-OllamaProcesses

@@ -89,6 +89,20 @@ function Stop-OllamaProcesses {
     Write-Warn "Could not enumerate Ollama processes."
   }
 }
+function Invoke-ExternalWithTimeout([string]$FilePath, [string[]]$Arguments, [int]$TimeoutSec = 90) {
+  try {
+    $Proc = Start-Process -FilePath $FilePath -ArgumentList $Arguments -PassThru -WindowStyle Hidden
+    if (-not $Proc.WaitForExit($TimeoutSec * 1000)) {
+      Stop-Process -Id $Proc.Id -Force -ErrorAction SilentlyContinue
+      Write-Warn "$FilePath timed out after ${TimeoutSec}s."
+      return $false
+    }
+    return ($Proc.ExitCode -eq 0)
+  } catch {
+    Write-Warn "Could not run ${FilePath}: $($_.Exception.Message)"
+    return $false
+  }
+}
 function Install-OllamaOfficial {
   Write-Host "  Installing Ollama with: irm https://ollama.com/install.ps1 | iex"
   try {
@@ -119,7 +133,7 @@ function Remove-KnownDirectory([string]$Path, [string]$Label) {
 function Remove-OllamaApp {
   Stop-OllamaProcesses
   if (Test-Cmd "winget") {
-    winget uninstall --id Ollama.Ollama --silent --accept-source-agreements 2>$null
+    Invoke-ExternalWithTimeout "winget" @("uninstall", "--id", "Ollama.Ollama", "--silent", "--accept-source-agreements") 120 | Out-Null
   }
   Stop-OllamaProcesses
   Remove-KnownDirectory (Join-Path $env:LOCALAPPDATA "Programs\Ollama") "Ollama app"
