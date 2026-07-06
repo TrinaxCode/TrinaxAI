@@ -14,7 +14,6 @@ def test_bash_scripts_parse() -> None:
         "backup.sh",
         "update.sh",
         "uninstall.sh",
-        "unistall.sh",
         "startup_ai.sh",
         "shutdown_ai.sh",
     ]:
