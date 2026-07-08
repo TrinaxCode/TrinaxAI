@@ -1,0 +1,1 @@
+"""TrinaxAI backend application package."""

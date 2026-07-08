@@ -3,7 +3,6 @@ from __future__ import annotations
 import os
 from typing import Any
 
-
 RECOMMENDED = ["llama3.2:3b", "qwen2.5-coder:3b", "bge-m3", "qwen2.5vl:3b"]
 
 

@@ -30,16 +30,21 @@ _rich_text_column_cls: Any = None
 
 try:  # pragma: no cover - exercised by tests via sys.modules patching
     from rich.console import Console as _rich_console_cls  # type: ignore
-    from rich.table import Table as _rich_table_cls  # type: ignore
-    from rich.panel import Panel as _rich_panel_cls  # type: ignore
     from rich.markdown import Markdown as _rich_markdown_cls  # type: ignore
-    from rich.syntax import Syntax as _rich_syntax_cls  # type: ignore
-    from rich.prompt import Prompt as _rich_prompt_cls, Confirm as _rich_confirm_cls  # type: ignore
+    from rich.panel import Panel as _rich_panel_cls  # type: ignore
     from rich.progress import (  # type: ignore
         Progress as _rich_progress_cls,
+    )
+    from rich.progress import (
         SpinnerColumn as _rich_spinner_column_cls,
+    )
+    from rich.progress import (
         TextColumn as _rich_text_column_cls,
     )
+    from rich.prompt import Confirm as _rich_confirm_cls
+    from rich.prompt import Prompt as _rich_prompt_cls  # type: ignore
+    from rich.syntax import Syntax as _rich_syntax_cls  # type: ignore
+    from rich.table import Table as _rich_table_cls  # type: ignore
     _RICH = True
 except ImportError:
     _RICH = False

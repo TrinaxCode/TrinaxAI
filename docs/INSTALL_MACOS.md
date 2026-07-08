@@ -2,6 +2,10 @@
 
 Guide to install, configure, start, and get TrinaxAI running on macOS, both Apple Silicon and Intel.
 
+## Support status
+
+The macOS installer is available and CI now validates Python tests, CLI smoke tests, and bash syntax on macOS. Full end-to-end installer validation on real macOS hardware is still pending.
+
 ## What you'll have running
 
 When done, you should have:
@@ -126,10 +130,10 @@ TRINAXAI_PROFILE=16gb
 TRINAXAI_HOST=0.0.0.0
 TRINAXAI_PORT=3333
 TRINAXAI_INDEX_DIR=~/Documents
-TRINAXAI_ALLOW_LAN_SYSTEM=1
+TRINAXAI_ALLOW_LAN_SYSTEM=0
 TRINAXAI_CORS_ORIGINS=https://localhost:3334,http://localhost:3334,https://127.0.0.1:3334,http://127.0.0.1:3334
 OLLAMA_BASE_URL=http://localhost:11434
-OLLAMA_HOST=0.0.0.0
+OLLAMA_HOST=127.0.0.1
 VITE_TRINAXAI_RAG_TARGET=http://localhost:3333
 ```
 

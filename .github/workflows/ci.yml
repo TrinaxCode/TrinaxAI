@@ -32,7 +32,27 @@ jobs:
           exit "$missing"
 
   python:
-    runs-on: ubuntu-latest
+    name: python (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            pytest-command: pytest -q
+          - os: macos-latest
+            pytest-command: pytest -q
+          - os: windows-latest
+            # Windows gets non-destructive Python/runtime coverage here.
+            # Shell and PowerShell installer syntax are validated in scripts.
+            pytest-command: >-
+              pytest -q
+              tests/test_cli_parser.py
+              tests/test_cli_commands.py
+              tests/test_core_config.py
+              tests/test_config_profiles.py
+              tests/test_usage_summary.py
+              tests/test_security_endpoints.py
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -41,6 +61,11 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+            pyproject.toml
 
       - name: Install Python dependencies
         run: |
@@ -55,10 +80,15 @@ jobs:
         run: ruff check .
 
       - name: Pytest
-        run: pytest -q
+        run: ${{ matrix.pytest-command }}
 
   cli:
-    runs-on: ubuntu-latest
+    name: cli (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -67,6 +97,11 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+            pyproject.toml
 
       - name: Install CLI
         run: |
@@ -83,18 +118,46 @@ jobs:
           trinaxai index --help
 
   scripts:
-    runs-on: ubuntu-latest
+    name: scripts (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
       - name: Bash syntax checks
+        if: runner.os != 'Windows'
+        shell: bash
         run: |
           bash -n install.sh
           bash -n backup.sh
           bash -n uninstall.sh
           bash -n startup_ai.sh
           bash -n shutdown_ai.sh
+          find scripts -name "*.sh" -print -exec bash -n {} \;
+
+      - name: PowerShell syntax checks
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          Get-Command pwsh | Out-Null
+          $files = Get-ChildItem -Path . -Filter "*.ps1" -File
+          foreach ($file in $files) {
+            $tokens = $null
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile($file.FullName, [ref]$tokens, [ref]$errors) | Out-Null
+            if ($errors.Count -gt 0) {
+              $errors | ForEach-Object {
+                Write-Host "$($file.Name):$($_.Extent.StartLineNumber): $($_.Message)"
+              }
+              throw "PowerShell syntax check failed for $($file.Name)"
+            }
+            Write-Host "PowerShell syntax OK: $($file.Name)"
+          }
 
   frontend:
     runs-on: ubuntu-latest

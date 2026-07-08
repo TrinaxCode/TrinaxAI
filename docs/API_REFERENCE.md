@@ -1,6 +1,6 @@
 # TrinaxAI API Reference
 
-The RAG API is a FastAPI server (default port **3333**) that powers the PWA, CLI, and any third-party integrations. All system endpoints require authorization (localhost/LAN or admin token). Chat endpoints are open to trusted LAN by default.
+The RAG API is a FastAPI server (default port **3333**) that powers the PWA, CLI, and any third-party integrations. System endpoints require authorization. Chat endpoints are open but constrained by the configured CORS allowlist.
 
 ---
 
@@ -8,9 +8,9 @@ The RAG API is a FastAPI server (default port **3333**) that powers the PWA, CLI
 
 System endpoints (`/system/*`, `/app-state`, `/v1/memory`, collection CRUD) require authorization:
 
-- **localhost/private-LAN** — allowed by default (`ALLOW_LAN_SYSTEM=1`)
-- **Admin token** — set `TRINAXAI_ADMIN_TOKEN` in `.env`, pass as `Authorization: Bearer <token>` header
-- **Disable LAN access** with `TRINAXAI_ALLOW_LAN_SYSTEM=0`
+- **localhost** — allowed by default.
+- **private LAN** — disabled by default. Enable explicitly with `TRINAXAI_ALLOW_LAN_SYSTEM=1`.
+- **Admin token** — set `TRINAXAI_ADMIN_TOKEN` in `.env` and pass it as the `X-Admin-Token: <token>` header.
 
 Chat endpoints (`/v1/chat/completions`, `/health`) are open to trusted origins (CORS filter on private IPs + ports 3334/3335).
 
@@ -82,13 +82,13 @@ Deep multi-pass research query with sub-question decomposition.
 
 Shuts down Ollama + RAG API. **Requires authorization.**
 
-Returns `{"ok": true, "mode": "systemd"|"subprocess"}`.
+Returns `{"ok": true, "output": "AI shutdown initiated. ..."}`.
 
 ### `POST /system/startup`
 
 Starts Ollama + RAG API. **Requires authorization.**
 
-Returns `{"ok": true, "mode": "systemd"|"subprocess"}`.
+Returns `{"ok": true|false, "output": "...", "error": "..."}`.
 
 ### `POST /system/stop-all`
 

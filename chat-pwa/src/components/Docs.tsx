@@ -418,8 +418,8 @@ python trinaxai_cli.py --engine rag`}</pre>
                   {
                     titleEs: 'Protección LAN',
                     titleEn: 'LAN protection',
-                    bodyEs: 'Por defecto acepta localhost y clientes de LAN privada confiable para que la PWA funcione desde teléfono/tablet en la misma WiFi.',
-                    bodyEn: 'By default it accepts localhost and trusted private LAN clients so the PWA works from phones/tablets on the same WiFi.',
+                    bodyEs: 'Por defecto las acciones sensibles aceptan localhost. Los teléfonos/tablets pueden abrir la PWA en la misma WiFi, pero el control de sistema por LAN requiere activación explícita.',
+                    bodyEn: 'By default sensitive actions accept localhost. Phones/tablets can open the PWA on the same WiFi, but LAN system control requires explicit opt-in.',
                   },
                   {
                     titleEs: 'Protección con token',
@@ -440,7 +440,7 @@ python trinaxai_cli.py --engine rag`}</pre>
                   </div>
                 ))}
                 <pre className={`text-xs font-mono p-3 rounded-lg ${codeBg}`}>{`TRINAXAI_ALLOW_LAN_SYSTEM=1
-TRINAXAI_ADMIN_TOKEN=`}</pre>
+TRINAXAI_ADMIN_TOKEN=<strong-random-token>`}</pre>
               </div>
             </div>
           )}

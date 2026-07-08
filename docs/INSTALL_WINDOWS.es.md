@@ -2,6 +2,10 @@
 
 Guía para instalar, configurar, iniciar y dejar listo TrinaxAI en Windows 10/11 con PowerShell.
 
+## Estado de soporte
+
+El instalador de Windows esta disponible y el CI ahora valida smoke tests Python, smoke tests de CLI y sintaxis PowerShell en Windows. La validacion end-to-end del instalador en una maquina Windows real sigue pendiente.
+
 ## Que queda funcionando
 
 Al terminar deberias tener:
@@ -143,10 +147,10 @@ TRINAXAI_PROFILE=16gb
 TRINAXAI_HOST=0.0.0.0
 TRINAXAI_PORT=3333
 TRINAXAI_INDEX_DIR=~/Documents
-TRINAXAI_ALLOW_LAN_SYSTEM=1
+TRINAXAI_ALLOW_LAN_SYSTEM=0
 TRINAXAI_CORS_ORIGINS=https://localhost:3334,http://localhost:3334,https://127.0.0.1:3334,http://127.0.0.1:3334
 OLLAMA_BASE_URL=http://localhost:11434
-OLLAMA_HOST=0.0.0.0
+OLLAMA_HOST=127.0.0.1
 TRINAXAI_RAG_HTTPS=1
 TRINAXAI_RAG_TARGET=https://127.0.0.1:3333
 VITE_TRINAXAI_RAG_TARGET=https://127.0.0.1:3333

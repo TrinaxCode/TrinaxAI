@@ -5,16 +5,62 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "trinaxai"
 version = "1.0.0"
-description = "TrinaxAI local-first AI assistant CLI and local RAG tooling."
+description = "TrinaxAI — local-first AI assistant with RAG, vision, voice, CLI, and PWA."
 readme = "README.md"
 requires-python = ">=3.10"
 license = "AGPL-3.0-or-later"
+license-files = ["LICENSE"]
 authors = [
   { name = "TrinaxCode" }
 ]
+keywords = ["ai", "rag", "ollama", "local-first", "pwa", "cli", "llama-index"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: GNU Affero General Public License v3 or later (AGPLv3+)",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
 dependencies = [
   "httpx>=0.28.1",
-  "rich>=13.0"
+  "rich>=13.0",
+]
+
+[project.optional-dependencies]
+server = [
+  "fastapi>=0.115",
+  "uvicorn[standard]>=0.30",
+  "pydantic>=2.8",
+  "python-dotenv>=1.0",
+  "python-multipart>=0.0.9",
+  "llama-index>=0.12",
+  "llama-index-llms-ollama>=0.5",
+  "llama-index-embeddings-ollama>=0.5",
+  "llama-index-retrievers-bm25>=0.5",
+  "bm25s>=0.2",
+  "docx2txt>=0.9",
+  "pypdf>=5.0",
+  "tree-sitter>=0.22",
+  "tree-sitter-language-pack>=0.9",
+  "psutil>=6.0",
+  "watchdog>=6.0",
+]
+rerank = [
+  "llama-index-postprocessor-sbert-rerank>=0.3",
+  "sentence-transformers>=3.0",
+  "torch>=2.3",
+]
+dev = [
+  "pytest>=8.0",
+  "ruff>=0.8",
+  "pip-audit>=2.7",
+]
+all = [
+  "trinaxai[server,rerank,dev]",
 ]
 
 [project.scripts]
@@ -37,9 +83,12 @@ extend-exclude = [
   "chat-pwa/node_modules",
   "chat-pwa/dist",
   "storage",
+  "storage.bak.nomic",
   "local_sources",
   "backups",
+  "logs",
 ]
 
 [tool.ruff.lint]
-select = ["E9", "F"]
+select = ["E9", "F", "I"]
+ignore = ["E501"]

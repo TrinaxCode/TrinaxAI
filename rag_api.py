@@ -2255,7 +2255,7 @@ async def collections_delete(collection_id: str, request: Request):
 
 
 # ==================== ENDPOINTS DE SISTEMA (protegidos) ====================
-# Riesgo: controlan procesos locales. Por defecto localhost/LAN privada o token admin.
+# Riesgo: controlan procesos locales. Por defecto solo localhost; LAN requiere opt-in o token admin.
 def _is_lan_client(host: str) -> bool:
     try:
         ip = ipaddress.ip_address(host.removeprefix("::ffff:"))
@@ -2264,9 +2264,17 @@ def _is_lan_client(host: str) -> bool:
     return ip.is_loopback or ip.is_private or ip.is_link_local
 
 
+def _is_local_client(host: str) -> bool:
+    try:
+        ip = ipaddress.ip_address(host.removeprefix("::ffff:"))
+    except ValueError:
+        return host in {"localhost"}
+    return ip.is_loopback
+
+
 def _authorize_system(request: Request) -> None:
-    # Validate admin token when clients provide one. Trusted LAN access is also
-    # accepted by default for non-technical local installs.
+    # Validate admin token when clients provide one. LAN system control is
+    # disabled by default and only works when TRINAXAI_ALLOW_LAN_SYSTEM is enabled.
     if ADMIN_TOKEN:
         token = request.headers.get("X-Admin-Token", "")
         if token == ADMIN_TOKEN:
@@ -2278,10 +2286,8 @@ def _authorize_system(request: Request) -> None:
                 detail="Invalid admin token.",
             )
     # Only trust the actual TCP peer, never X-Forwarded-For.
-    # LAN access is enabled by default so the PWA works from phones/tablets
-    # on the same WiFi without forcing non-technical users to manage tokens.
     client_ip = _client_host(request)
-    if client_ip not in _LOCAL_HOSTS and not (
+    if not _is_local_client(client_ip) and not (
         ALLOW_LAN_SYSTEM and _is_lan_client(client_ip)
     ):
         if ADMIN_TOKEN:

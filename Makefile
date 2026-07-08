@@ -1,4 +1,4 @@
-.PHONY: setup frontend-install dev build lint test test-python test-frontend audit audit-optional index check clean clean-build clean-all help
+.PHONY: setup frontend-install dev build lint test test-python test-frontend audit audit-optional index check clean clean-build clean-all help typecheck readiness
 
 # Cross-platform Python detection: prefer venv, fall back to system python3/py.
 PYTHON ?= python3
@@ -13,12 +13,16 @@ help:
 	@echo "  frontend-install Install Node dependencies only"
 	@echo "  dev              Start frontend dev server (hot-reload)"
 	@echo "  lint             Run Python lint and frontend typecheck"
+	@echo "  typecheck        Run Python compile check + TypeScript typecheck"
 	@echo "  test             Run backend + frontend unit tests"
+	@echo "  test-python      Run Python tests only"
+	@echo "  test-frontend    Run frontend tests only"
 	@echo "  build            Build frontend for production"
 	@echo "  index            Run the RAG indexer"
 	@echo "  audit            Run blocking local audits"
 	@echo "  audit-optional   Print optional security audit commands"
-	@echo "  check            Run lint, tests, script checks, build and audit"
+	@echo "  readiness        Run public release readiness check"
+	@echo "  check            Run lint, tests, typecheck, audit, and build"
 	@echo "  clean-build      Remove build artifacts (.venv, node_modules, dist, __pycache__)"
 	@echo "  clean-all        Remove build artifacts AND user data (storage/) — DESTRUCTIVE"
 	@echo ""
@@ -51,6 +55,13 @@ test-python:
 test-frontend:
 	cd chat-pwa && npm test
 
+typecheck:
+	$(VENV_PYTHON) -m py_compile rag_api.py config.py index.py trinaxai_core.py
+	cd chat-pwa && npx tsc --noEmit
+
+readiness:
+	$(VENV_PYTHON) scripts/public_readiness.py
+
 index:
 	$(VENV_PYTHON) index.py
 
@@ -69,7 +80,7 @@ audit-optional:
 	@echo "  $(VENV_PYTHON) -m pip_audit"
 	@echo "  cd chat-pwa && npm audit --audit-level=high"
 
-check: lint test audit build
+check: lint test typecheck readiness audit build
 
 clean: clean-build
 

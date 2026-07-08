@@ -17,6 +17,8 @@ chat-pwa/.vite/
 !.env.example
 *.pem
 *.key
+*.crt
+*.pfx
 certs/
 
 # OS

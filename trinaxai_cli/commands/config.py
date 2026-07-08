@@ -6,7 +6,6 @@ from typing import Any
 from trinaxai_cli.commands import _system
 from trinaxai_cli.config import CLIConfig
 
-
 SECRET_KEYS = {"TRINAXAI_ADMIN_TOKEN", "OPENAI_API_KEY", "ANTHROPIC_API_KEY"}
 
 

@@ -2,6 +2,10 @@
 
 Guía para instalar, configurar, iniciar y dejar listo TrinaxAI en Linux. Aplica para Ubuntu, Debian, Fedora, Arch, openSUSE y distribuciones similares.
 
+## Estado de soporte
+
+Linux es la plataforma principal validada por CI. El CI actual valida tests backend, tests/build frontend, smoke tests de CLI, public-readiness y sintaxis shell en Ubuntu. La validacion end-to-end del instalador en todas las distribuciones listadas sigue pendiente.
+
 ## Que queda funcionando
 
 Al terminar deberias tener:
@@ -137,10 +141,10 @@ TRINAXAI_PROFILE=16gb
 TRINAXAI_HOST=0.0.0.0
 TRINAXAI_PORT=3333
 TRINAXAI_INDEX_DIR=~/Documents
-TRINAXAI_ALLOW_LAN_SYSTEM=1
+TRINAXAI_ALLOW_LAN_SYSTEM=0
 TRINAXAI_CORS_ORIGINS=https://localhost:3334,http://localhost:3334,https://127.0.0.1:3334,http://127.0.0.1:3334
 OLLAMA_BASE_URL=http://localhost:11434
-OLLAMA_HOST=0.0.0.0
+OLLAMA_HOST=127.0.0.1
 VITE_TRINAXAI_RAG_TARGET=http://localhost:3333
 ```
 

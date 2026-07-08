@@ -14,9 +14,28 @@
   <a href="#-quick-start"><img src="https://img.shields.io/badge/powered_by-Ollama-black.svg" alt="Ollama"></a>
   <a href="#-supported-platforms"><img src="https://img.shields.io/badge/platform-Linux|macOS|Windows-lightgrey.svg" alt="Platforms"></a>
   <a href="#-pwa-installation"><img src="https://img.shields.io/badge/PWA-ready-brightgreen.svg" alt="PWA"></a>
+  <a href="https://github.com/TrinaxCode/TrinaxAI/actions"><img src="https://img.shields.io/badge/build-local--only-informational.svg" alt="Build"></a>
+  <a href="#-testing--audit"><img src="https://img.shields.io/badge/tests-backend_%2B_frontend-success.svg" alt="Tests"></a>
 </p>
 
 > **⭐ If TrinaxAI helps you, please star the repo — it helps others find it!**
+
+---
+
+## 📋 Project Status
+
+TrinaxAI is **stable and actively maintained**. Core features (chat, RAG, PWA, CLI, voice, vision) are mature. Current focus: tests, security hardening, and contributor documentation.
+
+| Area | Status |
+|------|--------|
+| Backend API (FastAPI) | ✅ Stable |
+| RAG with hybrid search | ✅ Stable |
+| PWA (React 19 + Vite 6) | ✅ Stable |
+| CLI (`trinaxai`) | ✅ Stable |
+| Cross-platform installers | 🧪 Linux CI-tested; Windows/macOS syntax and smoke validation |
+| Test coverage | 🚧 Growing |
+| Architecture docs | 📝 Improving |
+| Docker support | 📅 Planned |
 
 ---
 
@@ -28,7 +47,7 @@ TrinaxAI is a **local AI assistant** that combines a ChatGPT-like chat interface
 - **Index your projects** for semantic code search with citations
 - **Voice conversations** with speech-to-text and text-to-speech
 - **Vision** — analyze images and screenshots locally
-- **Cross-platform** — Linux, macOS, Windows. One-command install.
+- **Cross-platform installers** — Linux is CI-tested on Ubuntu. Windows and macOS installers are available with CI syntax/smoke validation; full end-to-end OS validation is still pending.
 
 ---
 
@@ -51,20 +70,24 @@ TrinaxAI is a **local AI assistant** that combines a ChatGPT-like chat interface
 
 ## 📸 Screenshots
 
-<!-- TODO: Add screenshots of the PWA chat, CLI demo, and mobile view -->
-<p align="center">
-  <em>Screenshots coming soon. For now: run <code>./install.sh && trinaxai chat</code> to see it live.</em>
-</p>
+Screenshots are pending. The expected contribution paths are:
+
+- `docs/assets/screenshots/chat.png`
+- `docs/assets/screenshots/indexing.png`
+- `docs/assets/screenshots/settings.png`
+- `docs/assets/screenshots/mobile-pwa.png`
+
+Run `./install.sh && trinaxai start`, open `https://localhost:3334`, and submit real captures when available.
 
 ---
 
 ## 🖥️ Supported Platforms
 
-| OS | Installer | Service Manager |
-|---|---|---|
-| **Linux** (Ubuntu, Debian, Fedora, Arch) | `install.sh` | user systemd |
-| **macOS** (Intel + Apple Silicon) | `install.sh` | launchctl |
-| **Windows** (10/11, PowerShell) | `install.ps1` | subprocess supervisor |
+| OS | Installer | Service Manager | Validation status |
+|---|---|---|---|
+| **Linux** (Ubuntu, Debian, Fedora, Arch) | `install.sh` | user systemd | Supported and CI-tested on Ubuntu |
+| **macOS** (Intel + Apple Silicon) | `install.sh` | launchctl | Installer available; CI Python/CLI/bash smoke validation; full install validation pending |
+| **Windows** (10/11, PowerShell) | `install.ps1` | subprocess supervisor | Installer available; CI Python/CLI/PowerShell syntax validation; full install validation pending |
 
 Full guides: [Linux](docs/INSTALL_LINUX.md) · [macOS](docs/INSTALL_MACOS.md) · [Windows](docs/INSTALL_WINDOWS.md)
 <br>Guías en español: [Linux](docs/INSTALL_LINUX.es.md) · [macOS](docs/INSTALL_MACOS.es.md) · [Windows](docs/INSTALL_WINDOWS.es.md)
@@ -176,6 +199,8 @@ The CLI auto-detects whether to use Ollama or RAG based on your query. It works 
 ---
 
 ## 🏗️ Architecture
+
+TrinaxAI is a **three-tier local stack** — PWA, RAG API, and Ollama — all on your machine. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full system design, data flow, and developer guide.
 
 ```
 ┌──────────────────────────────────────────┐

@@ -1,6 +1,6 @@
 # Referencia de API de TrinaxAI
 
-La API RAG es un servidor FastAPI (puerto por defecto **3333**) que impulsa la PWA, la CLI y cualquier integración de terceros. Todos los endpoints de sistema requieren autorización (localhost/LAN o token de administrador). Los endpoints de chat están abiertos a la LAN de confianza por defecto.
+La API RAG es un servidor FastAPI (puerto por defecto **3333**) que impulsa la PWA, la CLI y cualquier integración de terceros. Los endpoints de sistema requieren autorización. Los endpoints de chat están abiertos, pero limitados por la allowlist CORS configurada.
 
 ---
 
@@ -8,9 +8,9 @@ La API RAG es un servidor FastAPI (puerto por defecto **3333**) que impulsa la P
 
 Los endpoints de sistema (`/system/*`, `/app-state`, `/v1/memory`, CRUD de colecciones) requieren autorización:
 
-- **localhost/LAN privada** — permitido por defecto (`ALLOW_LAN_SYSTEM=1`)
-- **Token de administrador** — configura `TRINAXAI_ADMIN_TOKEN` en `.env`, pásalo como cabecera `Authorization: Bearer <token>`
-- **Deshabilitar acceso LAN** con `TRINAXAI_ALLOW_LAN_SYSTEM=0`
+- **localhost** — permitido por defecto.
+- **LAN privada** — desactivada por defecto. Actívala explícitamente con `TRINAXAI_ALLOW_LAN_SYSTEM=1`.
+- **Token de administrador** — configura `TRINAXAI_ADMIN_TOKEN` en `.env` y pásalo como cabecera `X-Admin-Token: <token>`.
 
 Los endpoints de chat (`/v1/chat/completions`, `/health`) están abiertos a los orígenes de confianza (filtro CORS sobre IPs privadas + puertos 3334/3335).
 
@@ -82,13 +82,13 @@ Consulta de investigación profunda multi-pasada con descomposición en sub-preg
 
 Apaga Ollama + la API RAG. **Requiere autorización.**
 
-Devuelve `{"ok": true, "mode": "systemd"|"subprocess"}`.
+Devuelve `{"ok": true, "output": "AI shutdown initiated. ..."}`.
 
 ### `POST /system/startup`
 
 Inicia Ollama + la API RAG. **Requiere autorización.**
 
-Devuelve `{"ok": true, "mode": "systemd"|"subprocess"}`.
+Devuelve `{"ok": true|false, "output": "...", "error": "..."}`.
 
 ### `POST /system/stop-all`
 
