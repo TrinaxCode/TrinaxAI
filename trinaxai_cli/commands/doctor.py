@@ -16,12 +16,16 @@ def run(args: Any, client: Any, ui: Any, config: Any) -> int:
         rows.append([name, "OK" if ok else "FAIL", detail])
 
     add("Python package", True, "CLI import works")
+    root = _system.project_root()
+    add("Install root", root is not None, str(root) if root else "set TRINAXAI_HOME or reinstall")
     add("Service manager", _system.service_manager().is_file(), str(_system.service_manager()))
     add("Ollama command", bool(shutil.which("ollama")), shutil.which("ollama") or "install Ollama")
 
     try:
+        if root is None:
+            raise FileNotFoundError("full TrinaxAI installation not found")
         status = subprocess.run(
-            [sys.executable, str(_system.service_manager()), "status", "--base-dir", str(_system.PROJECT_ROOT)],
+            [sys.executable, str(_system.service_manager()), "status", "--base-dir", str(root)],
             capture_output=True,
             text=True,
             timeout=30,
@@ -55,4 +59,4 @@ def run(args: Any, client: Any, ui: Any, config: Any) -> int:
         add("RAG API", False, f"{exc}; run: trinaxai start")
 
     ui.table(["check", "status", "detail"], rows, title="TrinaxAI doctor")
-    return 0 if all(row[1] == "OK" for row in rows if row[0] in {"Python package", "Service manager"}) else 1
+    return 0 if all(row[1] == "OK" for row in rows if row[0] in {"Python package", "Install root", "Service manager"}) else 1

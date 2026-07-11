@@ -40,7 +40,23 @@ From a terminal:
 curl -fsSL https://raw.githubusercontent.com/TrinaxCode/TrinaxAI/main/install.sh | bash
 ```
 
-The installer clones the project to `~/trinaxai` if it doesn't exist yet, detects your RAM, creates `.env`, installs required dependencies, and prepares the PWA automatically. Optional choices such as model downloads, LAN system control, autostart, and starting services are prompted by default. Use `./install.sh --non-interactive` for scripted installs.
+The installer uses `$XDG_DATA_HOME/trinaxai` (normally `~/.local/share/trinaxai`) for a new installation, while continuing to recognize an existing legacy `~/trinaxai` install. It detects RAM, creates `.env`, installs required dependencies, and prepares the PWA automatically. Optional choices such as model downloads, LAN system control, autostart, and starting services are prompted by default.
+
+Choose a different application directory when needed:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/TrinaxCode/TrinaxAI/main/install.sh | bash -s -- --install-dir "$HOME/apps/trinaxai"
+```
+
+After installation, lifecycle operations do not require changing directories:
+
+```bash
+trinaxai doctor
+trinaxai update
+trinaxai uninstall
+```
+
+Use `trinaxai update -y` or `trinaxai uninstall -y` for safe non-interactive defaults. Personal indexes and Ollama models are preserved unless you explicitly request their removal.
 
 If you already cloned the repository:
 
@@ -166,14 +182,14 @@ Base models:
 
 ```bash
 ollama pull qwen2.5-coder:3b
-ollama pull llama3.2:3b
+ollama pull qwen3:4b-instruct-2507-q4_K_M
 ollama pull bge-m3
 ```
 
 Vision:
 
 ```bash
-ollama pull qwen2.5vl:3b
+ollama pull qwen3-vl:4b
 ```
 
 Machines with more memory:
@@ -185,8 +201,8 @@ ollama pull qwen2.5-coder:7b
 Ultra profile:
 
 ```bash
-ollama pull qwen2.5-coder:14b
-ollama pull qwen2.5vl:7b
+ollama pull qwen3-coder:30b
+ollama pull qwen3-vl:32b
 ```
 
 ## Index your files
@@ -341,6 +357,8 @@ cd ~/trinaxai
 ```
 
 The updater asks whether to create a backup, pull latest code, update models, change autostart, restart services, and run the readiness audit. Python/npm dependencies and the PWA build still run automatically.
+
+The installer also enables a persistent user timer that checks GitHub weekly and runs a safe unattended update. Inspect its history in `logs/auto-update.log`; disable it with `python scripts/auto_update.py disable`.
 
 If you update manually:
 

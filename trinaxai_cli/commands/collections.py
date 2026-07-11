@@ -44,13 +44,9 @@ def run(args: Any, client: Any, ui: Any, config: Any) -> int:
             if not cid:
                 ui.error("Collection id required.")
                 return 1
-            # Persist in shared config (best-effort; not enforced).
-            try:
-                config.ui["active_collection"] = cid  # type: ignore[index]
-                config.save()
-            except Exception:
-                pass
-            ui.success(f"Active collection set to '{cid}'.")
+            config.active_collection = cid
+            saved_to = config.save()
+            ui.success(f"Active collection set to '{cid}' (saved to {saved_to}).")
             return 0
         ui.error(f"Unknown action: {action}")
         return 1

@@ -127,26 +127,27 @@ for i in {1..20}; do
     curl -s http://localhost:11434/api/tags >/dev/null 2>&1 && break
     sleep 1
 done
-# Asegurar la flota de modelos (auto-router + embeddings).
+# Asegurar la flota de modelos (auto-router + embeddings + visión).
 echo -e "      ${BLUE}·${NC} Verificando modelos (descarga los que falten)..."
-MODELS=(bge-m3 qwen2.5-coder:3b llama3.2:3b qwen2.5vl:3b)
-if [ "$PROFILE" = "16gb" ] || [ "$PROFILE" = "max" ] || [ "$PROFILE" = "ultra" ]; then
-    MODELS+=(qwen2.5-coder:7b qwen2.5vl:7b)
-fi
-if [ "$PROFILE" = "ultra" ]; then
-    MODELS+=(qwen2.5-coder:14b)
+if [ "$PROFILE" = "8gb" ]; then
+    MODELS=(bge-m3 qwen3:4b-instruct-2507-q4_K_M llama3.2:1b qwen2.5-coder:1.5b qwen2.5-coder:3b qwen3-vl:2b qwen3-vl:4b)
+elif [ "$PROFILE" = "max" ] || [ "$PROFILE" = "ultra" ]; then
+    MODELS=(bge-m3 qwen3:30b-a3b-instruct-2507-q4_K_M qwen3:4b-instruct-2507-q4_K_M qwen2.5-coder:7b qwen3-coder:30b qwen3-vl:8b qwen3-vl:32b)
+else
+    # 16gb (default)
+    MODELS=(bge-m3 qwen3:4b-instruct-2507-q4_K_M qwen2.5-coder:3b qwen2.5-coder:7b qwen3-vl:4b qwen3-vl:8b)
 fi
 for m in "${MODELS[@]}"; do
-    if ! sudo -u "$USER_NAME" ollama list 2>/dev/null | grep -q "$m"; then
+    if ! sudo -u "$USER_NAME" ollama list 2>/dev/null | grep -qF "$m"; then
         echo -e "        ↓ $m"; sudo -u "$USER_NAME" ollama pull "$m" >/dev/null 2>&1 || true
     fi
 done
-# Eliminar modelos obsoletos (reemplazados por versiones más recientes).
+# Eliminar modelos obsoletos (reemplazados por versiones más recientes en 2026).
 # Si usas estos modelos en otros proyectos, presiona Ctrl+C en los próximos 5 segundos.
-_LEGACY_MODELS=(nomic-embed-text qwen3:4b llava:7b)
+_LEGACY_MODELS=(nomic-embed-text llava:7b moondream qwen2.5vl:3b qwen2.5vl:7b llama3.2:3b qwen2.5-coder:1.5b qwen2.5-coder:14b)
 _PRESENT=()
 for m in "${_LEGACY_MODELS[@]}"; do
-    sudo -u "$USER_NAME" ollama list 2>/dev/null | grep -q "$m" && _PRESENT+=("$m") || true
+    sudo -u "$USER_NAME" ollama list 2>/dev/null | grep -qF "$m" && _PRESENT+=("$m") || true
 done
 if [ ${#_PRESENT[@]} -gt 0 ]; then
     echo -e "      ${YELLOW}⚠${NC}  Los siguientes modelos serán eliminados (reemplazados): ${_PRESENT[*]}"

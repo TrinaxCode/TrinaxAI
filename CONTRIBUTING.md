@@ -48,10 +48,14 @@ TrinaxAI supports multiple languages. To add or improve translations:
 ### 📚 Documentation
 
 Documentation improvements are always welcome! The docs live in:
-- `docs/` — API reference, architecture, developer guide
+- `docs/README.md` — documentation map and maintenance sources of truth
+- `docs/` — API, CLI, configuration, architecture, installation, and developer references
+- `chat-pwa/README.md` — PWA runtime and development reference
 - `chat-pwa/src/components/Docs.tsx` (in-app documentation)
 - `README.md` (project overview)
 - `README.es.md` (Spanish version)
+
+Keep English and `.es.md` counterparts aligned. Verify command names against `trinaxai_cli/app.py`, API paths against `/openapi.json`, and PWA scripts against `chat-pwa/package.json`.
 
 ---
 

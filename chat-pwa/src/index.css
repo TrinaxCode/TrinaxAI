@@ -82,12 +82,10 @@
   html.dark body {
     background: #000000;
     color: #ffffff;
-    transition: background-color 0.3s ease, color 0.3s ease;
   }
   html.light body {
     background: #ffffff;
     color: #1a1a1a;
-    transition: background-color 0.3s ease, color 0.3s ease;
   }
 
   #root {
@@ -241,7 +239,7 @@
 }
 
 .animate-brand {
-  animation: brand-shift 14s ease-in-out infinite;
+  animation: brand-shift 6s ease-in-out infinite;
 }
 
 html.light .animate-brand {
@@ -319,6 +317,63 @@ html.light .animate-brand {
 
 .animate-scale-bounce {
   animation: scale-bounce 0.45s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* ============================================
+   Quick-start chips — elegant glass pills.
+   Entrance + hover motion are handled by framer-motion (opacity/transform),
+   so CSS never sets the `animation` shorthand on the button (that caused the
+   old invisible-but-clickable bug). CSS only decorates: surface, border,
+   brand glow, and icon disc.
+   ============================================ */
+.chip-elegant {
+  transition:
+    border-color 0.35s ease,
+    background-color 0.35s ease,
+    box-shadow 0.35s ease,
+    color 0.25s ease;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  will-change: transform;
+}
+
+/* Icon sits in a soft brand-tinted disc that lifts on hover */
+.chip-elegant-icon {
+  background: rgba(0, 107, 189, 0.10);
+  transition:
+    background-color 0.35s ease,
+    transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+html.dark .chip-elegant-icon {
+  background: rgba(78, 163, 224, 0.12);
+}
+.chip-elegant:hover .chip-elegant-icon {
+  transform: scale(1.14) rotate(-5deg);
+  background: rgba(0, 107, 189, 0.20);
+}
+html.dark .chip-elegant:hover .chip-elegant-icon {
+  background: rgba(78, 163, 224, 0.22);
+}
+
+/* Hover surface + brand glow aura */
+html.dark .chip-elegant:hover {
+  color: rgba(255, 255, 255, 0.95);
+  border-color: rgba(78, 163, 224, 0.45);
+  background-color: rgba(78, 163, 224, 0.09);
+  box-shadow:
+    0 6px 18px rgba(0, 0, 0, 0.28),
+    0 0 0 1px rgba(78, 163, 224, 0.16),
+    0 0 20px rgba(0, 107, 189, 0.20);
+}
+html.light .chip-elegant:hover {
+  color: #004d8a;
+  border-color: rgba(0, 107, 189, 0.42);
+  background-color: rgba(0, 107, 189, 0.05);
+  box-shadow:
+    0 6px 16px rgba(0, 107, 189, 0.12),
+    0 0 0 1px rgba(0, 107, 189, 0.14),
+    0 0 16px rgba(0, 107, 189, 0.12);
 }
 
 /* ============================================
@@ -496,6 +551,36 @@ html.light .prose code:not(pre code) {
 .chat-markdown code {
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+/* ============================================
+   Theme Switch — Circular Reveal Animation
+   (View Transition API)
+   ============================================ */
+
+::view-transition-old(root),
+::view-transition-new(root) {
+  /* Disable the default cross-fade so only the circular clip animates */
+  animation: none;
+  mix-blend-mode: normal;
+}
+
+::view-transition-old(root) {
+  z-index: 0;
+}
+
+::view-transition-new(root) {
+  z-index: 1;
+  animation: theme-reveal 0.4s ease-out both;
+}
+
+@keyframes theme-reveal {
+  from {
+    clip-path: circle(0% at 50% 50%);
+  }
+  to {
+    clip-path: circle(150% at 50% 50%);
+  }
 }
 
 .chat-markdown table {

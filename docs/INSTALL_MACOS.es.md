@@ -64,17 +64,23 @@ cd /ruta/a/TrinaxAI
 bash install.sh
 ```
 
-Si todavia no lo tienes:
+Si todavia no lo tienes, el instalador de un comando lo guarda en `~/Library/Application Support/TrinaxAI`:
 
 ```bash
-git clone https://github.com/TrinaxCode/TrinaxAI.git ~/trinaxai
-cd ~/trinaxai
-bash install.sh
+curl -fsSL https://raw.githubusercontent.com/TrinaxCode/TrinaxAI/main/install.sh | bash
 ```
 
 El instalador detecta RAM, crea `.env`, prepara Python e instala la PWA automaticamente. Las opciones como descargar modelos, control LAN, autoarranque e iniciar servicios se preguntan por defecto. Usa `bash install.sh --non-interactive` para instalaciones automatizadas.
 
 El perfil se elige automaticamente. En modo interactivo, elige `Normal` para usar el perfil recomendado. Usa `Advanced` solo si quieres forzar `8gb`, `16gb`, `max` o `ultra`.
+
+La administracion posterior funciona desde cualquier carpeta:
+
+```bash
+trinaxai doctor
+trinaxai update
+trinaxai uninstall
+```
 
 ## Instalacion manual
 
@@ -161,14 +167,14 @@ Base:
 
 ```bash
 ollama pull qwen2.5-coder:3b
-ollama pull llama3.2:3b
+ollama pull qwen3:4b-instruct-2507-q4_K_M
 ollama pull bge-m3
 ```
 
 Vision:
 
 ```bash
-ollama pull qwen2.5vl:3b
+ollama pull qwen3-vl:4b
 ```
 
 Apple Silicon con 16 GB o mas:
@@ -180,8 +186,8 @@ ollama pull qwen2.5-coder:7b
 Equipos con 32 GB o mas:
 
 ```bash
-ollama pull qwen2.5-coder:14b
-ollama pull qwen2.5vl:7b
+ollama pull qwen3-coder:30b
+ollama pull qwen3-vl:32b
 ```
 
 ## Indexar tus archivos
@@ -315,6 +321,8 @@ cd ~/trinaxai
 ```
 
 El actualizador pregunta si quieres crear backup, descargar codigo nuevo, actualizar modelos, cambiar autoarranque, reiniciar servicios y correr la auditoria. Las dependencias Python/npm y el build de la PWA siguen siendo automaticos.
+
+El instalador también crea un LaunchAgent semanal para actualizaciones automáticas seguras. Los resultados quedan en `logs/auto-update.log`; puedes desactivarlo con `python scripts/auto_update.py disable`.
 
 Actualizacion manual:
 

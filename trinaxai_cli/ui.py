@@ -13,7 +13,7 @@ from __future__ import annotations
 import os
 import sys
 from contextlib import contextmanager
-from typing import Any, Iterator, Sequence
+from typing import Any, Callable, Iterator, Sequence
 
 # ----------------------------------------------------------------- rich import
 _RICH: bool = False
@@ -192,6 +192,30 @@ class Console:
         print(f"... {text}")
         yield
         print("    done")
+
+    @contextmanager
+    def thinking(self, text: str = "TrinaxAI is thinking...") -> Iterator[Callable[[], None]]:
+        """Show a transient status that callers can stop on the first token."""
+        stopped = False
+        status: Any = None
+
+        def stop() -> None:
+            nonlocal stopped
+            if stopped:
+                return
+            stopped = True
+            if status is not None:
+                status.stop()
+
+        if self._rich_console is not None:
+            status = self._rich_console.status(text, spinner="dots")
+            status.start()
+        else:
+            print(text)
+        try:
+            yield stop
+        finally:
+            stop()
 
     # ----------------------------------------------------------------- table
     def table(

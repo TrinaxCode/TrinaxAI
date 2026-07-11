@@ -48,16 +48,20 @@ TrinaxAI admite múltiples idiomas. Para añadir o mejorar traducciones:
 ### 📚 Documentación
 
 ¡Las mejoras a la documentación siempre son bienvenidas! Los docs se encuentran en:
-- `docs/` — Referencia de API, arquitectura, guía para desarrolladores
+- `docs/README.es.md` — mapa documental y fuentes de verdad para mantenimiento
+- `docs/` — referencias de API, CLI, configuración, arquitectura, instalación y desarrollo
+- `chat-pwa/README.es.md` — ejecución y desarrollo de la PWA
 - `chat-pwa/src/components/Docs.tsx` (documentación integrada en la app)
 - `README.md` (descripción general del proyecto)
 - `README.es.md` (versión en español)
+
+Mantén alineadas las versiones en inglés y `.es.md`. Verifica comandos en `trinaxai_cli/app.py`, rutas HTTP en `/openapi.json` y scripts PWA en `chat-pwa/package.json`.
 
 ---
 
 ## Configuración del entorno de desarrollo
 
-Consulta [docs/DEVELOPER_GUIDE.md](docs/DEVELOPER_GUIDE.md) para las instrucciones completas de configuración.
+Consulta [docs/DEVELOPER_GUIDE.es.md](docs/DEVELOPER_GUIDE.es.md) para las instrucciones completas de configuración.
 
 Inicio rápido:
 ```bash
@@ -98,7 +102,7 @@ trinaxai doctor
 python3 test_system.py --verbose
 ```
 
-Consulta `docs/PUBLIC_RELEASE.md` para el checklist completo de publicación.
+Consulta `docs/PUBLIC_RELEASE.es.md` para el checklist completo de publicación.
 
 ## Estilo de commits
 

@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import os
 import platform
+import plistlib
 import shutil
 import subprocess
 import sys
@@ -823,6 +824,11 @@ def _systemd_quote(value: str | Path) -> str:
     return f'"{text}"'
 
 
+def _systemd_path(value: str | Path) -> str:
+    """Escape a path for systemd directives that do not use shell-style quotes."""
+    return str(value).replace("\\", "\\\\").replace(" ", "\\x20")
+
+
 def enable_autostart(base_dir: str) -> ProcessState:
     """Install an OS autostart supervisor.
 
@@ -841,7 +847,7 @@ def enable_autostart(base_dir: str) -> ProcessState:
             "After=network.target\n\n"
             "[Service]\n"
             "Type=simple\n"
-            f"WorkingDirectory={_systemd_quote(base_dir)}\n"
+            f"WorkingDirectory={_systemd_path(base_dir)}\n"
             f"ExecStart={_systemd_quote(python)} {_systemd_quote(Path(base_dir) / 'service_manager.py')} watch --base-dir {_systemd_quote(base_dir)}\n"
             "Restart=always\n"
             "RestartSec=10\n\n"
@@ -876,30 +882,23 @@ def enable_autostart(base_dir: str) -> ProcessState:
         plist_dir = Path.home() / "Library" / "LaunchAgents"
         plist_dir.mkdir(parents=True, exist_ok=True)
         plist = plist_dir / f"{label}.plist"
-        plist.write_text(
-            '<?xml version="1.0" encoding="UTF-8"?>\n'
-            '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" '
-            '"http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n'
-            '<plist version="1.0">\n'
-            "<dict>\n"
-            "  <key>Label</key><string>com.trinaxcode.trinaxai</string>\n"
-            "  <key>ProgramArguments</key>\n"
-            "  <array>\n"
-            f"    <string>{python}</string>\n"
-            f"    <string>{Path(base_dir) / 'service_manager.py'}</string>\n"
-            "    <string>watch</string>\n"
-            "    <string>--base-dir</string>\n"
-            f"    <string>{base_dir}</string>\n"
-            "  </array>\n"
-            "  <key>RunAtLoad</key><true/>\n"
-            "  <key>KeepAlive</key><true/>\n"
-            f"  <key>WorkingDirectory</key><string>{base_dir}</string>\n"
-            f"  <key>StandardOutPath</key><string>{Path(base_dir) / 'logs' / 'supervisor.log'}</string>\n"
-            f"  <key>StandardErrorPath</key><string>{Path(base_dir) / 'logs' / 'supervisor.err.log'}</string>\n"
-            "</dict>\n"
-            "</plist>\n",
-            encoding="utf-8",
-        )
+        payload = {
+            "Label": label,
+            "ProgramArguments": [
+                python,
+                str(Path(base_dir) / "service_manager.py"),
+                "watch",
+                "--base-dir",
+                base_dir,
+            ],
+            "RunAtLoad": True,
+            "KeepAlive": True,
+            "WorkingDirectory": base_dir,
+            "StandardOutPath": str(Path(base_dir) / "logs" / "supervisor.log"),
+            "StandardErrorPath": str(Path(base_dir) / "logs" / "supervisor.err.log"),
+        }
+        with plist.open("wb") as handle:
+            plistlib.dump(payload, handle, fmt=plistlib.FMT_XML, sort_keys=False)
         subprocess.run(
             ["launchctl", "unload", str(plist)], timeout=10, capture_output=True
         )

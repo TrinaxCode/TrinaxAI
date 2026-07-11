@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback, useRef, type ReactNode } from 'react';
+import { createContext, useContext, useState, useCallback, useRef, useEffect, type ReactNode } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { MdClose } from 'react-icons/md';
 
@@ -17,18 +17,40 @@ const ToastContext = createContext<ToastContextValue | null>(null);
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
   const nextIdRef = useRef(0);
+  const timersRef = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map());
+
+  // Cancel any pending auto-dismiss timers when the provider unmounts so we
+  // never call setState on an unmounted component.
+  useEffect(() => {
+    const timers = timersRef.current;
+    return () => {
+      timers.forEach((handle) => clearTimeout(handle));
+      timers.clear();
+    };
+  }, []);
+
+  const clearTimer = useCallback((id: number) => {
+    const handle = timersRef.current.get(id);
+    if (handle !== undefined) {
+      clearTimeout(handle);
+      timersRef.current.delete(id);
+    }
+  }, []);
+
+  const dismiss = useCallback((id: number) => {
+    clearTimer(id);
+    setToasts((prev) => prev.filter((t) => t.id !== id));
+  }, [clearTimer]);
 
   const toast = useCallback((message: string, type: Toast['type'] = 'info') => {
     const id = ++nextIdRef.current;
     setToasts((prev) => [...prev, { id, message, type }]);
-    setTimeout(() => {
+    const handle = setTimeout(() => {
+      timersRef.current.delete(id);
       setToasts((prev) => prev.filter((t) => t.id !== id));
     }, 3500);
+    timersRef.current.set(id, handle);
   }, []);
-
-  const dismiss = (id: number) => {
-    setToasts((prev) => prev.filter((t) => t.id !== id));
-  };
 
   const typeStyles: Record<Toast['type'], string> = {
     success: 'border-green-500/30 bg-green-500/10 text-green-400',

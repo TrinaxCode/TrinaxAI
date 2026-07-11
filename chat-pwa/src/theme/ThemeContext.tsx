@@ -1,4 +1,5 @@
-import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from 'react';
+import { createContext, useContext, useState, useCallback, useEffect, useRef, type ReactNode } from 'react';
+import { flushSync } from 'react-dom';
 import { onSharedStateUpdated } from '../lib/sharedState';
 
 const THEME_KEY = 'tc-theme';
@@ -19,7 +20,7 @@ function loadTheme(): Theme {
   return 'dark';
 }
 
-function applyTheme(theme: Theme) {
+function applyHtmlTheme(theme: Theme) {
   const root = document.documentElement;
   root.classList.toggle('light', theme === 'light');
   root.classList.toggle('dark', theme === 'dark');
@@ -44,28 +45,53 @@ interface ThemeContextValue {
 const ThemeContext = createContext<ThemeContextValue | null>(null);
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [theme, setTheme] = useState<Theme>(loadTheme);
+  const initial = loadTheme();
+  const [theme, setTheme] = useState<Theme>(initial);
+  const themeRef = useRef<Theme>(initial);
 
+  // Apply the initial theme on first render (no animation)
   useEffect(() => {
-    applyTheme(theme);
-  }, [theme]);
+    applyHtmlTheme(initial);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => onSharedStateUpdated(() => {
-    setTheme(loadTheme());
+    const stored = loadTheme();
+    themeRef.current = stored;
+    setTheme(stored);
   }), []);
 
-  const cycleTheme = useCallback(() => {
-    setTheme((prev) => {
-      const next = prev === 'dark' ? 'light' : 'dark';
-      try { localStorage.setItem(THEME_KEY, next); } catch { /* ignore */ }
-      return next;
+  const switchTheme = useCallback((next: Theme) => {
+    themeRef.current = next;
+    try { localStorage.setItem(THEME_KEY, next); } catch { /* ignore */ }
+
+    const st = document as any;
+    if (!st.startViewTransition) {
+      // No View Transition API — just apply synchronously
+      flushSync(() => setTheme(next));
+      applyHtmlTheme(next);
+      return;
+    }
+
+    // Use View Transition API: the callback runs synchronously inside
+    // the transition lifecycle.  We flushSync the React state first so
+    // all components re-render with the NEW theme colours, *then* flip
+    // the html class.  The browser captures:
+    //   old snapshot → current (old) theme
+    //   new snapshot → new theme (components + html class)
+    st.startViewTransition(() => {
+      flushSync(() => setTheme(next));
+      applyHtmlTheme(next);
     });
   }, []);
 
+  const cycleTheme = useCallback(() => {
+    const next = themeRef.current === 'dark' ? 'light' : 'dark';
+    switchTheme(next);
+  }, [switchTheme]);
+
   const setThemeDirect = useCallback((t: Theme) => {
-    try { localStorage.setItem(THEME_KEY, t); } catch { /* ignore */ }
-    setTheme(t);
-  }, []);
+    switchTheme(t);
+  }, [switchTheme]);
 
   return (
     <ThemeContext.Provider value={{ theme, setTheme: setThemeDirect, cycleTheme, isDark: theme === 'dark' }}>

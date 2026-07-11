@@ -64,17 +64,25 @@ cd /path/to/TrinaxAI
 bash install.sh
 ```
 
-If you don't have it yet:
+If you don't have it yet, use the guided one-command installer. New installs live in `~/Library/Application Support/TrinaxAI`:
 
 ```bash
-git clone https://github.com/TrinaxCode/TrinaxAI.git ~/trinaxai
-cd ~/trinaxai
-bash install.sh
+curl -fsSL https://raw.githubusercontent.com/TrinaxCode/TrinaxAI/main/install.sh | bash
 ```
 
 The installer detects RAM, creates `.env`, sets up Python, and installs the PWA automatically. Optional choices such as model downloads, LAN system control, autostart, and starting services are prompted by default. Use `bash install.sh --non-interactive` for scripted installs.
 
 The profile is chosen automatically. In interactive mode, choose `Normal` to use the recommended profile. Use `Advanced` only if you want to force `8gb`, `16gb`, `max`, or `ultra`.
+
+After installation, manage it from any directory:
+
+```bash
+trinaxai doctor
+trinaxai update
+trinaxai uninstall
+```
+
+The uninstaller removes the TrinaxAI launcher and, when requested, its local trusted certificate. User data and Ollama models remain opt-in removals.
 
 ## Manual install
 
@@ -161,14 +169,14 @@ Base:
 
 ```bash
 ollama pull qwen2.5-coder:3b
-ollama pull llama3.2:3b
+ollama pull qwen3:4b-instruct-2507-q4_K_M
 ollama pull bge-m3
 ```
 
 Vision:
 
 ```bash
-ollama pull qwen2.5vl:3b
+ollama pull qwen3-vl:4b
 ```
 
 Apple Silicon with 16 GB or more:
@@ -180,8 +188,8 @@ ollama pull qwen2.5-coder:7b
 Machines with 32 GB or more:
 
 ```bash
-ollama pull qwen2.5-coder:14b
-ollama pull qwen2.5vl:7b
+ollama pull qwen3-coder:30b
+ollama pull qwen3-vl:32b
 ```
 
 ## Index your files
@@ -315,6 +323,8 @@ cd ~/trinaxai
 ```
 
 The updater asks whether to create a backup, pull latest code, update models, change autostart, restart services, and run the readiness audit. Python/npm dependencies and the PWA build still run automatically.
+
+The installer also creates a weekly LaunchAgent for safe automatic updates. Results are stored in `logs/auto-update.log`; disable it with `python scripts/auto_update.py disable`.
 
 Manual update:
 

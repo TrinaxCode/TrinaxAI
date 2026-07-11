@@ -110,7 +110,7 @@ cp .env.example .env
        return {"ok": True}
    ```
 
-2. Añádelo a la referencia de API en `docs/API_REFERENCE.md`
+2. Añádelo a la referencia de API en `docs/API_REFERENCE.es.md`
 3. Añádelo a la documentación integrada en la sección de API de `Docs.tsx`
 4. Si la PWA lo necesita, añade la función fetch en `chat-pwa/src/lib/api.ts`
 
@@ -181,6 +181,43 @@ rm -rf storage/docstore.json storage/index_store.json storage/manifest.json
 python index.py
 curl -k -X POST http://localhost:3333/system/reload
 ```
+
+---
+
+## Desarrollo de la PWA
+
+### Servidor de Desarrollo
+El servidor de desarrollo Vite se ejecuta en `https://localhost:3334` con reemplazo de módulos en caliente. Proxy de `/api/rag` → `localhost:3333` y `/api/ollama` → `localhost:11434`.
+
+```bash
+cd chat-pwa
+npm run dev
+```
+
+### Caché del Service Worker
+La PWA usa `vite-plugin-pwa` con `registerType: 'autoUpdate'`. Durante el desarrollo, el service worker **no** se registra para evitar problemas de caché. Para probar funciones de PWA:
+
+```bash
+npm run build
+npm run preview   # Sirve la build de producción con service worker
+```
+
+### Depuración del Frontend
+- **React DevTools**: Instala la extensión del navegador para inspeccionar componentes.
+- **Pestaña Network**: Todas las llamadas API pasan por el proxy de Vite — revisa la pestaña Network para `/api/rag/*` y `/api/ollama/*`.
+- **IndexedDB**: Los archivos adjuntos se almacenan en `trinaxai-chat-files` — inspecciona vía DevTools > Application > IndexedDB.
+- **localStorage**: El historial de chat, configuración y estado compartido están en localStorage — revisa Application > Local Storage.
+- **Service Worker**: Usa Application > Service Workers para desregistrar o actualizar.
+- **Streaming SSE**: Los eventos aparecen en la pestaña Network como respuestas `text/event-stream`.
+
+### División de Código
+Las dependencias pesadas se dividen en chunks separados (configurado en `vite.config.ts`):
+- `vendor-react` — React + ReactDOM
+- `vendor-framer` — Framer Motion
+- `vendor-markdown` — react-markdown + rehype-sanitize
+- `vendor-icons` — react-icons
+
+Las páginas con carga diferida (`React.lazy`) se cargan bajo demanda: `Settings`, `OnboardingWizard`, `Docs`, `KnowledgeBrowser`.
 
 ---
 

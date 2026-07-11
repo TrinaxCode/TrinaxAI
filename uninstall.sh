@@ -2,6 +2,22 @@
 # TrinaxAI uninstaller. Stops services and removes selected local runtime files.
 set -euo pipefail
 
+RED='\033[0;31m'; GREEN='\033[0;32m'; BLUE='\033[0;34m'
+YELLOW='\033[1;33m'; CYAN='\033[0;36m'; NC='\033[0m'; BOLD='\033[1m'
+print_step() { echo -e "\n${BLUE}${BOLD}┌─ $1${NC}"; }
+print_ok() { echo -e "  ${GREEN}✓${NC} $1"; }
+print_warn() { echo -e "  ${YELLOW}⚠${NC} $1"; }
+
+as_root() {
+  if [ "$(id -u 2>/dev/null || echo 1)" = "0" ]; then
+    "$@"
+  elif command -v sudo >/dev/null 2>&1; then
+    sudo "$@"
+  else
+    return 127
+  fi
+}
+
 usage() {
   cat <<EOF
 TrinaxAI Uninstaller
@@ -187,10 +203,28 @@ safe_remove() {
   done
 }
 
-echo "This will uninstall TrinaxAI runtime files from:"
-echo "  $ROOT"
-echo ""
-echo "Source code will stay in place. You choose which generated/runtime files are removed."
+remove_cli_path_block() {
+  local profile tmp
+  for profile in "$HOME/.zshrc" "$HOME/.bashrc" "$HOME/.bash_profile" "$HOME/.profile" "$HOME/.config/fish/config.fish"; do
+    [ -f "$profile" ] || continue
+    grep -Fq '# >>> TrinaxAI CLI >>>' "$profile" || continue
+    tmp="${profile}.trinaxai.tmp"
+    awk '
+      $0 == "# >>> TrinaxAI CLI >>>" { skip=1; next }
+      $0 == "# <<< TrinaxAI CLI <<<" { skip=0; next }
+      !skip { print }
+    ' "$profile" > "$tmp"
+    cat "$tmp" > "$profile"
+    rm -f "$tmp"
+    echo "[OK] Removed TrinaxAI PATH entry from $profile"
+  done
+}
+
+echo -e "\n${BLUE}${BOLD}╔══════════════════════════════════════════╗${NC}"
+echo -e "${BLUE}${BOLD}║        TrinaxAI · Clean Uninstaller       ║${NC}"
+echo -e "${BLUE}${BOLD}╚══════════════════════════════════════════╝${NC}"
+echo -e "  ${CYAN}Location:${NC} $ROOT"
+echo -e "  ${GREEN}Protected by default:${NC} source code, indexes, and Ollama models"
 echo ""
 
 if [ "$INTERACTIVE" = "1" ]; then
@@ -229,6 +263,7 @@ if [ "$INTERACTIVE" = "1" ]; then
 fi
 
 if [ "$STOP_SERVICES" = "1" ]; then
+  print_step "Stopping Services"
   if [ "${#PYTHON_CMD[@]}" -gt 0 ] && [ -f "$ROOT/service_manager.py" ]; then
     TRINAXAI_PRIVILEGED_WRAPPER=1 "${PYTHON_CMD[@]}" "$ROOT/service_manager.py" stop-all --base-dir "$ROOT" || true
   elif [ -f "./shutdown_ai.sh" ]; then
@@ -236,7 +271,23 @@ if [ "$STOP_SERVICES" = "1" ]; then
   fi
 fi
 
+print_step "Automatic Updates"
+if [ "${#PYTHON_CMD[@]}" -gt 0 ] && [ -f "$ROOT/scripts/auto_update.py" ]; then
+  "${PYTHON_CMD[@]}" "$ROOT/scripts/auto_update.py" disable --base-dir "$ROOT" || true
+fi
+if command -v systemctl >/dev/null 2>&1; then
+  systemctl --user disable --now trinaxai-update.timer 2>/dev/null || true
+  rm -f "$HOME/.config/systemd/user/trinaxai-update.timer" "$HOME/.config/systemd/user/trinaxai-update.service"
+  systemctl --user daemon-reload 2>/dev/null || true
+fi
+if [ "$(uname -s)" = "Darwin" ]; then
+  launchctl unload "$HOME/Library/LaunchAgents/com.trinaxcode.trinaxai.update.plist" 2>/dev/null || true
+  rm -f "$HOME/Library/LaunchAgents/com.trinaxcode.trinaxai.update.plist"
+fi
+print_ok "Weekly update task removed"
+
 if [ "$DISABLE_AUTOSTART" = "1" ]; then
+  print_step "Boot Auto-Start"
   if [ "${#PYTHON_CMD[@]}" -gt 0 ] && [ -f "$ROOT/service_manager.py" ]; then
     TRINAXAI_PRIVILEGED_WRAPPER=1 "${PYTHON_CMD[@]}" "$ROOT/service_manager.py" disable-autostart --base-dir "$ROOT" || true
   fi
@@ -244,12 +295,22 @@ if [ "$DISABLE_AUTOSTART" = "1" ]; then
     systemctl --user disable --now trinaxai.service 2>/dev/null || true
     rm -f "$HOME/.config/systemd/user/trinaxai.service"
     systemctl --user daemon-reload 2>/dev/null || true
-    sudo rm -f /etc/systemd/system/trinaxai.service /etc/systemd/system/ai-rag.service /etc/systemd/system/trinaxai-frontend.service 2>/dev/null || true
-    sudo systemctl daemon-reload 2>/dev/null || true
+    as_root rm -f /etc/systemd/system/trinaxai.service /etc/systemd/system/ai-rag.service /etc/systemd/system/trinaxai-frontend.service 2>/dev/null || true
+    as_root systemctl daemon-reload 2>/dev/null || true
   fi
   if [ "$(uname -s)" = "Darwin" ]; then
     launchctl unload "$HOME/Library/LaunchAgents/com.trinaxcode.trinaxai.plist" 2>/dev/null || true
     rm -f "$HOME/Library/LaunchAgents/com.trinaxcode.trinaxai.plist"
+  fi
+fi
+
+if [ "$REMOVE_CERTS" = "1" ]; then
+  if [ "$(uname -s)" = "Darwin" ] && command -v security >/dev/null 2>&1; then
+    security delete-certificate -c "TrinaxAI Local HTTPS" "$HOME/Library/Keychains/login.keychain-db" >/dev/null 2>&1 || true
+  elif [ "$(uname -s)" = "Linux" ]; then
+    as_root rm -f /usr/local/share/ca-certificates/trinaxai-local.crt /etc/pki/ca-trust/source/anchors/trinaxai-local.crt 2>/dev/null || true
+    command -v update-ca-certificates >/dev/null 2>&1 && as_root update-ca-certificates >/dev/null 2>&1 || true
+    command -v update-ca-trust >/dev/null 2>&1 && as_root update-ca-trust >/dev/null 2>&1 || true
   fi
 fi
 
@@ -265,8 +326,24 @@ if [ "${#REMOVE_TARGETS[@]}" -gt 0 ]; then
   safe_remove "${REMOVE_TARGETS[@]}"
 fi
 
+# Remove only the launcher that belongs to this installation. Never delete a
+# different user's command or a regular file with the same name.
+CLI_LINK="$HOME/.local/bin/trinaxai"
+if [ -L "$CLI_LINK" ]; then
+  LINK_TARGET="$(readlink "$CLI_LINK" 2>/dev/null || true)"
+  case "$LINK_TARGET" in
+    "$ROOT/.venv/bin/trinaxai"|"$ROOT/.venv/Scripts/trinaxai"|"$ROOT/.venv/Scripts/trinaxai.exe")
+      rm -f "$CLI_LINK"
+      echo "[OK] Removed CLI launcher: $CLI_LINK"
+      ;;
+  esac
+fi
+if [ "$REMOVE_VENV" = "1" ]; then
+  remove_cli_path_block
+fi
+
 if [ "$REMOVE_MODELS" = "1" ] && command -v ollama >/dev/null 2>&1; then
-  for model in qwen2.5-coder:1.5b qwen2.5-coder:3b qwen2.5-coder:7b qwen2.5-coder:14b llama3.2:3b bge-m3 qwen2.5vl:3b qwen2.5vl:7b; do
+  for model in qwen3:4b-instruct-2507-q4_K_M qwen3:30b-a3b-instruct-2507-q4_K_M qwen2.5-coder:1.5b qwen2.5-coder:3b qwen2.5-coder:7b qwen3-coder:30b llama3.2:1b bge-m3 qwen3-vl:2b qwen3-vl:4b qwen3-vl:8b qwen3-vl:32b qwen2.5-coder:14b llama3.2:3b nomic-embed-text moondream qwen2.5vl:3b qwen2.5vl:7b llava:7b; do
     ollama rm "$model" 2>/dev/null || true
   done
 elif [ "$REMOVE_MODELS" = "1" ]; then
@@ -280,11 +357,11 @@ if [ "$REMOVE_OLLAMA" = "1" ]; then
   if command -v brew >/dev/null 2>&1; then
     brew uninstall ollama 2>/dev/null || true
   elif command -v apt-get >/dev/null 2>&1; then
-    sudo apt-get remove -y ollama 2>/dev/null || true
+    as_root apt-get remove -y ollama 2>/dev/null || true
   elif command -v dnf >/dev/null 2>&1; then
-    sudo dnf remove -y ollama 2>/dev/null || true
+    as_root dnf remove -y ollama 2>/dev/null || true
   elif command -v pacman >/dev/null 2>&1; then
-    sudo pacman -Rns --noconfirm ollama 2>/dev/null || true
+    as_root pacman -Rns --noconfirm ollama 2>/dev/null || true
   fi
   if [ -n "${HOME:-}" ] && [ -d "$HOME/.ollama" ]; then
     rm -rf -- "$HOME/.ollama"

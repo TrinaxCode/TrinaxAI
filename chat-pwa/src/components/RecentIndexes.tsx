@@ -5,7 +5,7 @@ import { useI18n } from '../i18n/I18nContext';
 import { useTheme } from '../theme/ThemeContext';
 import { useToast } from './Toast';
 import ConfirmModal from './ConfirmModal';
-import { startWatch, type Collection } from '../lib/api';
+import { deleteIndexedImport, startWatch, type Collection } from '../lib/api';
 
 interface RecentIndex {
   label: string;
@@ -79,7 +79,8 @@ export default function RecentIndexes({ collections }: Props) {
   const { isDark } = useTheme();
   const toast = useToast();
   const [items, setItems] = useState<RecentIndex[]>(() => loadRecent());
-  const [deleteIndex, setDeleteIndex] = useState<number | null>(null);
+  const [deleteKey, setDeleteKey] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   // Refresh after each successful index — poll localStorage every 3s while mounted.
   useEffect(() => {
@@ -97,7 +98,7 @@ export default function RecentIndexes({ collections }: Props) {
       // re-index run via index.py in append mode within ~2 seconds of any
       // change. To force an immediate refresh, we schedule a tiny synthetic
       // event (touch the directory mtime) by writing a noop file and removing it.
-      await startWatch({ paths: [`local_sources/collections/${it.collectionId}`] });
+      await startWatch({ collection: it.collectionId });
       toast.toast(
         t('recentWatcherRunning').replace('{collection}', it.collectionName || it.collectionId),
         'success',
@@ -107,15 +108,15 @@ export default function RecentIndexes({ collections }: Props) {
     }
   }, [toast, t]);
 
-  const remove = useCallback((idx: number) => {
+  // Operate by stable key, not positional index: the 3s poll can reorder
+  // `items` between opening the confirm modal and the delete completing.
+  const forget = useCallback((key: string) => {
     setItems((prev) => {
-      const target = prev[idx];
-      if (!target) return prev;
-      const key = recentKey(target);
+      if (!prev.some((it) => recentKey(it) === key)) return prev;
       const deleted = loadDeletedRecent();
       deleted.add(key);
       saveDeletedRecent(deleted);
-      const next = prev.filter((_, i) => i !== idx);
+      const next = prev.filter((it) => recentKey(it) !== key);
       saveRecent(next);
       try {
         const lastRaw = localStorage.getItem(LAST_INDEX_KEY);
@@ -125,6 +126,26 @@ export default function RecentIndexes({ collections }: Props) {
       return next;
     });
   }, []);
+
+  const remove = useCallback(async (key: string) => {
+    const target = items.find((it) => recentKey(it) === key);
+    if (!target) return;
+    setDeleting(true);
+    try {
+      if (target.path) {
+        const result = await deleteIndexedImport(target.path, target.collectionId);
+        toast.toast(
+          t('recentIndexDeleted').replace('{count}', String(result.deleted)),
+          'info',
+        );
+      }
+      forget(key);
+    } catch (err) {
+      toast.toast(err instanceof Error ? err.message.slice(0, 180) : t('recentIndexDeleteFailed'), 'error');
+    } finally {
+      setDeleting(false);
+    }
+  }, [forget, items, t, toast]);
 
   const cardBg = isDark ? 'bg-white/[0.03] border-white/[0.06]' : 'bg-gray-50 border-gray-200';
   const muted = isDark ? 'text-white/45' : 'text-gray-500';
@@ -145,9 +166,9 @@ export default function RecentIndexes({ collections }: Props) {
     <section className={`rounded-xl border p-4 space-y-2 ${cardBg}`}>
       <div className={`text-sm font-medium ${label}`}>{t('recentIndexesTitle')}</div>
       <div className="space-y-1.5">
-        {items.map((it, i) => (
+        {items.map((it) => (
           <motion.div
-            key={`${it.label}-${it.indexedAt}-${i}`}
+            key={recentKey(it)}
             initial={{ opacity: 0, y: 2 }}
             animate={{ opacity: 1, y: 0 }}
             className={`flex items-center gap-2 rounded-lg border px-3 py-2 ${isDark ? 'bg-black/30 border-white/[0.06]' : 'bg-white border-gray-200'}`}
@@ -170,7 +191,7 @@ export default function RecentIndexes({ collections }: Props) {
               <MdRefresh size={14} />
             </button>
             <button
-              onClick={() => setDeleteIndex(i)}
+              onClick={() => setDeleteKey(recentKey(it))}
               className={`shrink-0 p-1.5 rounded-lg ${isDark ? 'text-white/25 hover:text-red-400 hover:bg-white/[0.05]' : 'text-gray-300 hover:text-red-500 hover:bg-gray-100'}`}
               aria-label={t('removeFromHistory')}
               title={t('removeFromHistory')}
@@ -181,16 +202,16 @@ export default function RecentIndexes({ collections }: Props) {
         ))}
       </div>
       <ConfirmModal
-        open={deleteIndex !== null}
+        open={deleteKey !== null}
         title={t('recentDeleteTitle')}
-        message={t('recentDeleteConfirm').replace('{label}', items[deleteIndex ?? -1]?.label || t('recentIndexesTitle'))}
+        message={t('recentDeleteConfirm').replace('{label}', items.find((it) => recentKey(it) === deleteKey)?.label || t('recentIndexesTitle'))}
         confirmLabel={t('removeFromHistory')}
         danger
-        onConfirm={() => {
-          if (deleteIndex !== null) remove(deleteIndex);
-          setDeleteIndex(null);
+        onConfirm={async () => {
+          if (deleteKey !== null) await remove(deleteKey);
+          setDeleteKey(null);
         }}
-        onCancel={() => setDeleteIndex(null)}
+        onCancel={() => { if (!deleting) setDeleteKey(null); }}
       />
     </section>
   );

@@ -1,7 +1,7 @@
 import { APP_CONFIG } from './config';
 import { getUserSystemInstruction } from './userProfile';
 
-const RAG_BASE = APP_CONFIG.ragBase;
+export const RAG_BASE = APP_CONFIG.ragBase;
 const OLLAMA_BASE = APP_CONFIG.ollamaBase;
 
 /** Custom error with status code for better diagnostics */
@@ -38,11 +38,24 @@ export interface StreamOptions {
   collections?: string[];
 }
 
+export interface ChatDocumentAttachment {
+  id?: string;
+  name: string;
+  size: number;
+  mimeType?: string;
+  storageKey?: string;
+  kind?: 'image' | 'document';
+  truncated?: boolean;
+}
+
 export interface ChatMessage {
   role: 'user' | 'assistant' | 'system';
   content: string;
+  // Texto corto que se muestra al usuario cuando `content` incluye contexto interno.
+  displayContent?: string;
   // Imagen adjunta (data URL base64) — para análisis con modelo de visión.
   image?: string;
+  documentAttachments?: ChatDocumentAttachment[];
   inputMode?: 'text' | 'voice';
   // Solo en respuestas del asistente (RAG): de dónde salió la info.
   sources?: Source[];
@@ -51,10 +64,60 @@ export interface ChatMessage {
 }
 
 /** Modelo de visión para analizar imágenes (se usa al adjuntar una imagen). */
-export const VISION_MODEL = import.meta.env.VITE_TRINAXAI_VISION_MODEL || 'qwen2.5vl:3b';
-const VISION_QUALITY_MODEL = import.meta.env.VITE_TRINAXAI_VISION_QUALITY_MODEL || 'qwen2.5vl:7b';
+export const VISION_MODEL = import.meta.env.VITE_TRINAXAI_VISION_MODEL || 'qwen3-vl:4b';
+const VISION_QUALITY_MODEL = import.meta.env.VITE_TRINAXAI_VISION_QUALITY_MODEL || 'qwen3-vl:8b';
 const OLLAMA_KEEP_ALIVE_KEY = 'tc-keep-alive';
-const OLLAMA_KEEP_ALIVE_DEFAULT = import.meta.env.VITE_TRINAXAI_KEEP_ALIVE || '5m';
+export const OLLAMA_KEEP_ALIVE_DEFAULT = import.meta.env.VITE_TRINAXAI_KEEP_ALIVE || '10m';
+export const MODEL_KEYS = [
+  'tc-models-chat',
+  'tc-models-deep',
+  'tc-models-vision',
+  'tc-models-vision-quality',
+  'tc-models-embed',
+  'tc-models-code',
+  'tc-models-fast',
+] as const;
+export type ModelSettingKey = typeof MODEL_KEYS[number];
+export type ModelPreset = 'low' | 'balanced' | 'max' | 'ultra';
+export const MODEL_PRESETS: Record<ModelPreset, Record<ModelSettingKey, string>> = {
+  low: {
+    'tc-models-chat': 'qwen3:4b-instruct-2507-q4_K_M',
+    'tc-models-deep': 'qwen2.5-coder:3b',
+    'tc-models-vision': 'qwen3-vl:2b',
+    'tc-models-vision-quality': 'qwen3-vl:4b',
+    'tc-models-embed': 'bge-m3',
+    'tc-models-code': 'qwen2.5-coder:1.5b',
+    'tc-models-fast': 'llama3.2:1b',
+  },
+  balanced: {
+    'tc-models-chat': 'qwen3:4b-instruct-2507-q4_K_M',
+    'tc-models-deep': 'qwen2.5-coder:7b',
+    'tc-models-vision': 'qwen3-vl:4b',
+    'tc-models-vision-quality': 'qwen3-vl:8b',
+    'tc-models-embed': 'bge-m3',
+    'tc-models-code': 'qwen2.5-coder:3b',
+    'tc-models-fast': 'qwen3:4b-instruct-2507-q4_K_M',
+  },
+  max: {
+    'tc-models-chat': 'qwen3:30b-a3b-instruct-2507-q4_K_M',
+    'tc-models-deep': 'qwen3-coder:30b',
+    'tc-models-vision': 'qwen3-vl:8b',
+    'tc-models-vision-quality': 'qwen3-vl:32b',
+    'tc-models-embed': 'bge-m3',
+    'tc-models-code': 'qwen2.5-coder:7b',
+    'tc-models-fast': 'qwen3:4b-instruct-2507-q4_K_M',
+  },
+  ultra: {
+    'tc-models-chat': 'qwen3:30b-a3b-instruct-2507-q4_K_M',
+    'tc-models-deep': 'qwen3-coder:30b',
+    'tc-models-vision': 'qwen3-vl:8b',
+    'tc-models-vision-quality': 'qwen3-vl:32b',
+    'tc-models-embed': 'bge-m3',
+    'tc-models-code': 'qwen2.5-coder:7b',
+    'tc-models-fast': 'qwen3:4b-instruct-2507-q4_K_M',
+  },
+};
+export const DEFAULT_MODEL_SETTINGS = MODEL_PRESETS.balanced;
 const TEXT_NUM_CTX = 3072;
 const VISION_FAST_NUM_CTX = 1024;
 const VISION_FAST_NUM_PREDICT = 120;
@@ -62,6 +125,7 @@ const VISION_QUALITY_NUM_CTX = 1536;
 const VISION_QUALITY_NUM_PREDICT = 200;
 const VISION_IMAGE_MAX_SIDE = 768;
 const VISION_IMAGE_QUALITY = 0.74;
+const DIRECT_CHAT_CONTEXT_CHARS = 10_000;
 const VISION_QUALITY_HINTS = [
   'detallado', 'detalle', 'profundo', 'análisis', 'analisis',
   'ocr', 'texto', 'lee', 'transcribe', 'código', 'codigo', 'ui', 'interfaz',
@@ -74,11 +138,20 @@ const INDEXABLE_EXTENSIONS = new Set([
   '.py', '.js', '.jsx', '.ts', '.tsx', '.vue', '.svelte',
   '.html', '.css', '.scss', '.sass',
   '.c', '.h', '.cpp', '.cs', '.java', '.go', '.rb', '.php', '.rs',
-  '.sh', '.ps1', '.dockerfile', '.sql', '.graphql', '.cjs', '.mjs',
-  '.json', '.yml', '.yaml', '.toml', '.xml', '.ini', '.csv',
-  '.md', '.mdx', '.txt', '.rst', '.pdf', '.docx',
+  '.swift', '.kt', '.kts', '.scala', '.dart', '.lua', '.pl', '.pm',
+  '.erl', '.ex', '.exs', '.clj', '.fs', '.fsx', '.vb', '.asm', '.s',
+  '.r', '.jl', '.m',
+  '.sh', '.bash', '.zsh', '.fish', '.ps1', '.bat', '.cmd',
+  '.dockerfile', '.sql', '.graphql', '.gql', '.cjs', '.mjs',
+  '.json', '.jsonl', '.ipynb', '.yml', '.yaml', '.toml', '.xml', '.ini',
+  '.cfg', '.conf', '.properties', '.env', '.csv', '.tsv',
+  '.md', '.mdx', '.txt', '.rst', '.tex', '.bib', '.log',
+  '.pdf', '.docx', '.pptx',
 ]);
-const INDEXABLE_FILENAMES = new Set(['dockerfile']);
+const INDEXABLE_FILENAMES = new Set([
+  'dockerfile', 'makefile', 'readme', 'license', 'changelog',
+  'contributing', 'gemfile', 'procfile',
+]);
 
 /** AUTO-ROUTER (modo Ollama): elige modelo según la consulta. Espeja al backend. */
 const CODE_HINTS = ['código', 'codigo', 'function', 'función', 'funcion', 'def ', 'class ',
@@ -91,12 +164,24 @@ const DEEP_HINTS = ['refactor', 'optimiz', 'arquitect', 'depura', 'debug', 'por 
   'porque falla', 'explica a fondo', 'paso a paso', 'detalle', 'rendimiento', 'performance',
   'seguridad', 'security', 'diseña', 'implementa', 'completo', 'varios archivos', 'analiza',
   'revisa', 'compara'];
+const GENERAL_TOPIC_HINTS = [
+  'clima', 'weather', 'receta', 'cocina', 'comida', 'viaje', 'vacaciones',
+  'película', 'pelicula', 'música', 'musica', 'deporte', 'salud', 'ejercicio',
+  'historia', 'geografía', 'geografia', 'capital de', 'quién es', 'quien es',
+  'qué es', 'que es', 'cuéntame', 'cuentame', 'consejo', 'traduce', 'traducción',
+  'translation', 'recipe', 'travel', 'movie', 'music', 'who is', 'what is',
+];
+const TOPIC_SHIFT_HINTS = [
+  'cambiando de tema', 'cambio de tema', 'otra cosa', 'ahora hablemos',
+  'dejando el código', 'dejando el codigo', 'new topic', 'change of topic',
+  'switching topics', 'let\'s talk about',
+];
 const VISION_EXPLICIT_QUALITY_HINTS = [
   'máxima calidad', 'maxima calidad', 'alta calidad', 'modelo grande',
   'lo más detallado', 'lo mas detallado', 'muy detallado', 'analiza a fondo',
 ];
 
-function modelSetting(key: string, fallback: string): string {
+export function modelSetting(key: string, fallback: string): string {
   try {
     return localStorage.getItem(key)?.trim() || fallback;
   } catch {
@@ -104,7 +189,7 @@ function modelSetting(key: string, fallback: string): string {
   }
 }
 
-function ollamaKeepAliveSetting(): string | number {
+export function ollamaKeepAliveSetting(): string | number {
   try {
     const raw = localStorage.getItem(OLLAMA_KEEP_ALIVE_KEY)?.trim();
     if (!raw) return OLLAMA_KEEP_ALIVE_DEFAULT;
@@ -117,19 +202,116 @@ function ollamaKeepAliveSetting(): string | number {
   }
 }
 
+export function aggressiveQuantizationEnabled(): boolean {
+  try {
+    return localStorage.getItem('tc-aggressive-quant') === '1';
+  } catch {
+    return false;
+  }
+}
+
+export function normalizeActiveCollections(
+  ids: string[],
+  validIds?: Set<string>,
+  defaultId = 'default',
+): string[] {
+  const seen = new Set<string>();
+  const cleaned = ids
+    .map((id) => String(id || '').trim())
+    .filter((id) => id && (!validIds || validIds.has(id)))
+    .filter((id) => {
+      if (seen.has(id)) return false;
+      seen.add(id);
+      return true;
+    });
+  if (cleaned.length === 0) return [defaultId];
+  return cleaned;
+}
+
+export function nextActiveCollections(
+  current: string[],
+  toggledId: string,
+  defaultId = 'default',
+): string[] {
+  const id = String(toggledId || '').trim() || defaultId;
+  const active = normalizeActiveCollections(current, undefined, defaultId);
+  if (id === defaultId) {
+    if (active.includes(defaultId)) {
+      const next = active.filter((value) => value !== defaultId);
+      return next.length ? next : [defaultId];
+    }
+    return [...active, defaultId];
+  }
+  if (active.includes(id)) {
+    const next = active.filter((value) => value !== id);
+    return next.length ? next : [defaultId];
+  }
+  if (active.length === 1 && active[0] === defaultId) return [id];
+  return normalizeActiveCollections(
+    [...active, id],
+    undefined,
+    defaultId,
+  );
+}
+
+function ollamaRuntimeOptions<T extends Record<string, number>>(base: T): T & { num_gpu?: number } {
+  const options: T & { num_gpu?: number } = { ...base };
+  if (aggressiveQuantizationEnabled()) {
+    options.num_gpu = 0;
+    const runtime = options as Record<string, number>;
+    if (typeof runtime.num_ctx === 'number') {
+      runtime.num_ctx = Math.min(runtime.num_ctx, 2048);
+    }
+  }
+  return options;
+}
+
 function shouldUnloadAfterRequest(keepAlive: string | number): boolean {
   if (typeof keepAlive === 'number') return keepAlive <= 0;
   return /^0(?:s|m|h)?$/i.test(keepAlive.trim());
 }
 
-export function routeOllamaModel(text: string): string {
+/**
+ * Route instantly while keeping model affinity across follow-up turns.
+ * Loading a second Ollama model is usually slower than answering a short
+ * follow-up with the model that is already warm.
+ */
+export function routeOllamaModel(text: string, messages: ChatMessage[] = []): string {
   const t = (text || '').toLowerCase();
   const isCode = text.includes('`') || CODE_HINTS.some((h) => t.includes(h));
-  const isDeep = text.length > 600 || DEEP_HINTS.some((h) => t.includes(h));
-  if (isDeep) return modelSetting('tc-models-deep', 'qwen2.5-coder:3b');
-  if (isCode) return modelSetting('tc-models-code', 'qwen2.5-coder:3b');
-  if (t.trim().length < 25) return modelSetting('tc-models-fast', 'llama3.2:3b');
-  return modelSetting('tc-models-chat', 'llama3.2:3b');
+  const deepSignals = DEEP_HINTS.filter((h) => t.includes(h)).length;
+  // The deep model is intentionally reserved for substantial technical work.
+  // A generic request containing "analiza" should stay on the faster chat model.
+  const isDeepCode = isCode && (text.length > 1_200 || deepSignals >= 2);
+  const codeModel = modelSetting('tc-models-code', DEFAULT_MODEL_SETTINGS['tc-models-code']);
+  const deepModel = modelSetting('tc-models-deep', DEFAULT_MODEL_SETTINGS['tc-models-deep']);
+  const fastModel = modelSetting('tc-models-fast', DEFAULT_MODEL_SETTINGS['tc-models-fast']);
+  const chatModel = modelSetting('tc-models-chat', DEFAULT_MODEL_SETTINGS['tc-models-chat']);
+  const candidate = isDeepCode
+    ? deepModel
+    : isCode
+      ? codeModel
+      : t.trim().length < 25
+        ? fastModel
+        : chatModel;
+
+  const textModels = new Set([codeModel, deepModel, fastModel, chatModel]);
+  const previousModel = [...messages]
+    .reverse()
+    .find((message) => message.role === 'assistant' && message.model && textModels.has(message.model))
+    ?.model;
+  if (!previousModel || previousModel === candidate) return candidate;
+
+  // Strong technical intent switches to Qwen immediately. An explicit everyday
+  // topic (or an explicit topic change) switches back to Llama immediately.
+  if (isCode) return candidate;
+  const explicitGeneral = TOPIC_SHIFT_HINTS.some((h) => t.includes(h))
+    || GENERAL_TOPIC_HINTS.some((h) => t.includes(h));
+  if (explicitGeneral) return candidate;
+
+  // Ambiguous/short follow-ups inherit the warm model, avoiding Ollama unload/load
+  // churn in the middle of one task.
+  return previousModel;
 }
 
 async function availableOllamaModels(): Promise<string[]> {
@@ -177,7 +359,7 @@ async function routeVisionModel(text: string): Promise<string> {
     return qualityVision;
   }
   if (hasModel(models, fastVision)) return fastVision;
-  if (hasModel(models, 'moondream')) return 'moondream';
+  if (hasModel(models, 'qwen3-vl:2b')) return 'qwen3-vl:2b';
   return fastVision;
 }
 
@@ -279,6 +461,14 @@ export interface ChatSession {
   title: string;
   messages: ChatMessage[];
   engine: ChatEngine;
+  createdAt: number;
+  updatedAt: number;
+  folderId?: string;
+}
+
+export interface ChatFolder {
+  id: string;
+  name: string;
   createdAt: number;
   updatedAt: number;
 }
@@ -460,6 +650,13 @@ export interface ResearchResult {
   model: string;
 }
 
+export interface DeleteIndexedImportResult {
+  deleted: number;
+  removed_path: boolean;
+  path: string;
+  collection: string;
+}
+
 export async function getCollectionSources(
   collection: string,
   signal?: AbortSignal,
@@ -481,6 +678,36 @@ export async function getFileChunks(
   const encodedFile = file.split('/').map((part) => encodeURIComponent(part)).join('/');
   const url = `${RAG_BASE}/v1/sources/${encodeURIComponent(collection)}/${encodedFile}/chunks${qs ? `?${qs}` : ''}`;
   return apiJson(url, { signal: opts.signal });
+}
+
+/** Delete all indexed chunks for a single file within a collection. */
+export async function deleteSource(
+  collection: string,
+  file: string,
+): Promise<{ deleted: number; collection: string; file: string }> {
+  const encodedFile = file.split('/').map((part) => encodeURIComponent(part)).join('/');
+  const url = `${RAG_BASE}/v1/sources/${encodeURIComponent(collection)}/${encodedFile}`;
+  return apiJson(url, { method: 'DELETE' });
+}
+
+/** Bulk-delete ALL indexed sources in a collection (keeps the collection itself). */
+export async function deleteCollectionSources(
+  collection: string,
+): Promise<{ deleted: number; collection: string }> {
+  const url = `${RAG_BASE}/v1/sources/${encodeURIComponent(collection)}`;
+  return apiJson(url, { method: 'DELETE' });
+}
+
+/** Delete a browser-imported folder copy and its indexed chunks. */
+export async function deleteIndexedImport(
+  path: string,
+  collectionId?: string,
+): Promise<DeleteIndexedImportResult> {
+  return apiJson(`${RAG_BASE}/system/index-imports`, {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path, collection_id: collectionId || 'default' }),
+  });
 }
 
 // ── File Watcher ──
@@ -552,6 +779,7 @@ export async function runResearch(
   query: string,
   opts: { collections?: string[]; depth?: 1 | 2 | 3; signal?: AbortSignal } = {},
 ): Promise<ResearchResult> {
+  const keepAlive = ollamaKeepAliveSetting();
   return apiJson(`${RAG_BASE}/v1/research`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -559,6 +787,9 @@ export async function runResearch(
       query,
       collections: opts.collections,
       depth: opts.depth ?? 2,
+      model: modelSetting('tc-models-deep', DEFAULT_MODEL_SETTINGS['tc-models-deep']),
+      keep_alive: keepAlive,
+      aggressive_quant: aggressiveQuantizationEnabled(),
     }),
     signal: opts.signal,
   });
@@ -608,7 +839,14 @@ export async function resetSharedAppState(): Promise<void> {
 
 export function startFolderIndex(
   files: FileList | File[],
-  options: { signal?: AbortSignal; onUploadProgress?: (progress: number) => void; collectionId?: string } = {},
+  options: {
+    signal?: AbortSignal;
+    onUploadProgress?: (progress: number) => void;
+    collectionId?: string;
+    watchId?: string;
+    embedModel?: string;
+    aggressiveQuant?: boolean;
+  } = {},
 ): Promise<FolderImportResult> {
   const selected = Array.from(files);
   if (selected.length === 0) throw new Error('No files selected.');
@@ -618,6 +856,9 @@ export function startFolderIndex(
   const form = new FormData();
   form.append('label', label);
   form.append('collection_id', options.collectionId || 'default');
+  if (options.watchId) form.append('watch_id', options.watchId);
+  form.append('embed_model', options.embedModel || modelSetting('tc-models-embed', DEFAULT_MODEL_SETTINGS['tc-models-embed']));
+  form.append('aggressive_quant', String(options.aggressiveQuant ?? aggressiveQuantizationEnabled()));
   indexable.forEach((file) => {
     const rel = (file as File & { webkitRelativePath?: string }).webkitRelativePath || file.name;
     form.append('files', file, rel);
@@ -682,13 +923,39 @@ export async function cancelIndexJob(jobId: string, signal?: AbortSignal): Promi
   return validateIndexJobStatus(data.job);
 }
 
-export async function extractDocumentText(file: File, signal?: AbortSignal): Promise<ExtractedDocument> {
+export function extractDocumentText(
+  file: File,
+  options: { signal?: AbortSignal; onUploadProgress?: (progress: number) => void } = {},
+): Promise<ExtractedDocument> {
   const form = new FormData();
   form.append('file', file, file.name);
-  return apiJson<ExtractedDocument>(`${RAG_BASE}/documents/extract`, {
-    method: 'POST',
-    body: form,
-    signal,
+
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', `${RAG_BASE}/documents/extract`);
+    xhr.responseType = 'json';
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable && event.total > 0) {
+        options.onUploadProgress?.(Math.round((event.loaded / event.total) * 70));
+      }
+    };
+    xhr.onload = () => {
+      const result = xhr.response || {};
+      if (xhr.status < 200 || xhr.status >= 300) {
+        const detail = typeof result === 'object'
+          ? JSON.stringify(result).slice(0, 500)
+          : String(xhr.responseText || '').slice(0, 500);
+        reject(new ApiError(`Document extraction failed: ${xhr.status} ${xhr.statusText}${detail ? `\n${detail}` : ''}`, xhr.status));
+        return;
+      }
+      options.onUploadProgress?.(100);
+      resolve(result as ExtractedDocument);
+    };
+    xhr.onerror = () => reject(new ApiError('Document extraction failed: network error', 0));
+    xhr.onabort = () => reject(new DOMException('Document extraction cancelled', 'AbortError'));
+    options.signal?.addEventListener('abort', () => xhr.abort(), { once: true });
+    options.onUploadProgress?.(1);
+    xhr.send(form);
   });
 }
 
@@ -767,27 +1034,37 @@ function isVoiceTurn(messages: ChatMessage[]): boolean {
   return messages[messages.length - 1]?.inputMode === 'voice';
 }
 
-function detectTurnLanguage(text: string): 'en' | 'es' {
-  const sample = text.toLowerCase();
-  const enHits = [
-    'the ', 'what ', 'why ', 'how ', 'can ', 'could ', 'would ', 'should ',
-    'please', 'thanks', 'thank ', 'hello', 'hi ', 'hey ', 'install', 'error',
-    'file', 'folder', 'tell ', 'explain', 'write ', 'make ', 'create ', 'help ',
-    'fix ', 'does ', 'is ', 'are ', 'you ', 'my ', 'your ', 'this ', 'that ',
-  ].filter((word) => sample.includes(word)).length;
-  const esHits = [
-    ' el ', ' la ', ' los ', ' las ', ' que ', ' como ', 'por ', 'para ',
-    'hola', 'gracias', 'instalar', 'error', 'archivo', 'carpeta', 'dime ',
-    'explica', 'escribe ', 'haz ', 'crea ', 'ayuda ', 'arregla ', 'eres ',
-    'soy ', 'mi ', 'tu ', 'este ', 'esta ',
-  ].filter((word) => sample.includes(word)).length;
-  if (enHits > esHits) return 'en';
-  if (esHits > enHits) return 'es';
-  return /[¿¡ñáéíóú]/i.test(text) ? 'es' : 'en';
+export function detectTurnLanguage(text: string): 'en' | 'es' {
+  // Count complete words only. Substring matching made neutral words such as
+  // "error" influence the result and was especially unreliable for short
+  // questions and code-related messages.
+  const words = text.toLocaleLowerCase().match(/[a-záéíóúüñ]+/gi) ?? [];
+  const enWords = new Set([
+    'the', 'a', 'an', 'this', 'that', 'these', 'those', 'is', 'are', 'am',
+    'be', 'was', 'were', 'do', 'does', 'did', 'how', 'what', 'why', 'when',
+    'where', 'which', 'who', 'can', 'could', 'would', 'should', 'please',
+    'thanks', 'thank', 'hello', 'hi', 'hey', 'install', 'file', 'folder',
+    'tell', 'explain', 'write', 'make', 'create', 'help', 'fix', 'you',
+    'your', 'my', 'we', 'with', 'from', 'to', 'of', 'in', 'on', 'and', 'or',
+    'but', 'for', 'yes',
+  ]);
+  const esWords = new Set([
+    'el', 'la', 'los', 'las', 'un', 'una', 'unos', 'unas', 'este', 'esta',
+    'estos', 'estas', 'es', 'son', 'soy', 'eres', 'está', 'están', 'hay',
+    'que', 'qué', 'cómo', 'como', 'por', 'para', 'con', 'sin', 'de', 'del',
+    'en', 'y', 'o', 'pero', 'hola', 'gracias', 'instalar', 'archivo',
+    'carpeta', 'dime', 'explica', 'escribe', 'haz', 'crea', 'ayuda', 'arregla',
+    'tú', 'tu', 'yo', 'mi', 'me', 'te', 'cuando', 'cuándo', 'dónde', 'porque',
+    'también', 'sí',
+  ]);
+  const enHits = words.filter((word) => enWords.has(word)).length;
+  const esHits = words.filter((word) => esWords.has(word)).length;
+  if (enHits !== esHits) return enHits > esHits ? 'en' : 'es';
+  return /[¿¡ñáéíóúü]/i.test(text) ? 'es' : 'en';
 }
 
 function languageSystemPrompt(messages: ChatMessage[]): ChatMessage {
-  const last = messages[messages.length - 1]?.content ?? '';
+  const last = [...messages].reverse().find((message) => message.role === 'user')?.content ?? '';
   const detected = detectTurnLanguage(last);
   return {
     role: 'system',
@@ -798,7 +1075,7 @@ function languageSystemPrompt(messages: ChatMessage[]): ChatMessage {
 }
 
 function turnLanguage(messages: ChatMessage[]): 'en' | 'es' {
-  const last = messages[messages.length - 1]?.content ?? '';
+  const last = [...messages].reverse().find((message) => message.role === 'user')?.content ?? '';
   return detectTurnLanguage(last);
 }
 
@@ -812,6 +1089,38 @@ function conversationStylePrompt(messages: ChatMessage[]): ChatMessage {
   };
 }
 
+function truncateForContext(content: string, maxChars: number): string {
+  if (content.length <= maxChars) return content;
+  const marker = '\n\n[...contexto anterior truncado para ajustarse al modelo...]\n\n';
+  if (maxChars <= marker.length + 80) return content.slice(-maxChars);
+  const available = maxChars - marker.length;
+  const head = Math.ceil(available * 0.55);
+  return `${content.slice(0, head)}${marker}${content.slice(-(available - head))}`;
+}
+
+/**
+ * Keep the newest useful conversation context inside the local model window.
+ * Ollama otherwise truncates oversized prompts implicitly, which can discard
+ * the current question or system instructions and sharply degrade answers.
+ */
+export function compactChatContext(
+  messages: ChatMessage[],
+  maxChars = DIRECT_CHAT_CONTEXT_CHARS,
+): ChatMessage[] {
+  if (maxChars <= 0 || messages.length === 0) return [];
+  const selected: ChatMessage[] = [];
+  let remaining = maxChars;
+
+  for (let index = messages.length - 1; index >= 0 && remaining > 0; index -= 1) {
+    const message = messages[index];
+    const content = truncateForContext(message.content ?? '', remaining);
+    selected.push({ ...message, content });
+    remaining -= content.length;
+  }
+
+  return selected.reverse();
+}
+
 function textMessagesForOllama(messages: ChatMessage[]) {
   const lang = turnLanguage(messages);
   const system = isVoiceTurn(messages)
@@ -819,7 +1128,7 @@ function textMessagesForOllama(messages: ChatMessage[]) {
     : [ollamaSystemPrompt(lang), languageSystemPrompt(messages), conversationStylePrompt(messages)];
   return [
     ...system,
-    ...messages.map((m) => ({ role: m.role, content: m.content })),
+    ...compactChatContext(messages).map((m) => ({ role: m.role, content: m.content })),
   ];
 }
 
@@ -852,23 +1161,33 @@ async function readStreamLines(
   }
 }
 
-function appendOllamaJsonLine(line: string, onToken: (token: string) => void): string {
+export function parseOllamaJsonLine(line: string): { token?: string; error?: string } {
   const trimmed = line.trim();
-  if (!trimmed) return '';
+  if (!trimmed) return {};
   try {
     const parsed = JSON.parse(trimmed);
     const token = typeof parsed?.message?.content === 'string' ? parsed.message.content : '';
-    if (token) onToken(token);
-    return token;
+    if (typeof parsed?.error === 'string' && parsed.error.trim()) {
+      return { error: parsed.error.trim() };
+    }
+    return token ? { token } : {};
   } catch {
-    return '';
+    return {};
   }
+}
+
+function appendOllamaJsonLine(line: string, onToken: (token: string) => void): string {
+  const event = parseOllamaJsonLine(line);
+  if (event.error) throw new Error(`Ollama: ${event.error}`);
+  if (event.token) onToken(event.token);
+  return event.token ?? '';
 }
 
 export function parseRagSseLine(line: string): {
   token?: string;
   meta?: StreamMeta;
   done?: boolean;
+  error?: string;
 } {
   const trimmed = line.trim();
   if (!trimmed || !trimmed.startsWith('data: ')) return {};
@@ -881,6 +1200,9 @@ export function parseRagSseLine(line: string): {
     }
     if (parsed.trinaxai_sources) {
       return { meta: { sources: parsed.trinaxai_sources as Source[] } };
+    }
+    if (typeof parsed.trinaxai_error === 'string' && parsed.trinaxai_error.trim()) {
+      return { error: parsed.trinaxai_error.trim() };
     }
     const token = parsed.choices?.[0]?.delta?.content;
     return typeof token === 'string' && token ? { token } : {};
@@ -904,7 +1226,7 @@ export async function streamOllama(
     return streamOllamaVision(messages, onToken, signal, onMeta);
   }
 
-  const model = routeOllamaModel(last);
+  const model = routeOllamaModel(last, messages);
   await ensureOllamaModel(model);
   const keepAlive = ollamaKeepAliveSetting();
   onMeta?.({ model });
@@ -916,10 +1238,10 @@ export async function streamOllama(
       messages: textMessagesForOllama(messages),
       stream: true,
       keep_alive: keepAlive,
-      options: {
+      options: ollamaRuntimeOptions({
         num_ctx: TEXT_NUM_CTX,
         num_thread: 8,
-      },
+      }),
     }),
     signal,
   });
@@ -986,11 +1308,11 @@ async function streamOllamaVision(
       ],
       stream: true,
       keep_alive: keepAlive,
-      options: {
+      options: ollamaRuntimeOptions({
         num_ctx: qualityTurn ? VISION_QUALITY_NUM_CTX : VISION_FAST_NUM_CTX,
         num_predict: qualityTurn ? VISION_QUALITY_NUM_PREDICT : VISION_FAST_NUM_PREDICT,
         num_thread: 8,
-      },
+      }),
     }),
     signal,
   });
@@ -1038,6 +1360,8 @@ export async function streamRag(
 ): Promise<string> {
   const voiceTurn = isVoiceTurn(messages);
   const lang = turnLanguage(messages);
+  const lastUser = [...messages].reverse().find((m) => m.role === 'user')?.content ?? '';
+  const keepAlive = ollamaKeepAliveSetting();
   const clean = messages.map((m, i) => ({
     role: m.role,
     content: voiceTurn && i === messages.length - 1
@@ -1051,13 +1375,14 @@ export async function streamRag(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       messages: [
-        { role: 'system', content: getUserSystemInstruction(lang) },
-        { role: 'system', content: languageSystemPrompt(messages).content },
-        { role: 'system', content: conversationStylePrompt(messages).content },
+        { role: 'system', content: `${getUserSystemInstruction(lang)}\n\n${languageSystemPrompt(messages).content}` },
         ...clean,
       ],
       stream: true,
       collections: options.collections,
+      model: routeOllamaModel(lastUser, messages),
+      keep_alive: keepAlive,
+      aggressive_quant: aggressiveQuantizationEnabled(),
     }),
     signal,
   });
@@ -1072,6 +1397,7 @@ export async function streamRag(
   let fullContent = '';
   await readStreamLines(response, signal, (line) => {
     const event = parseRagSseLine(line);
+    if (event.error) throw new Error(`RAG: ${event.error}`);
     if (event.meta) onMeta?.(event.meta);
     if (event.token) {
       fullContent += event.token;

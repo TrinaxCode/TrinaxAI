@@ -32,12 +32,37 @@ mkdir -p "$BACKUP_DIR"
 
 create_backup() {
   local out="$BACKUP_DIR/trinaxai-backup-$STAMP.tar.gz"
-  tar -czf "$out" \
+
+  # Only include paths that actually exist, so a missing optional item (e.g. a
+  # fresh checkout without .env) does not abort the whole backup.
+  local items=()
+  local candidate
+  for candidate in .env storage local_sources; do
+    [ -e "$ROOT/$candidate" ] && items+=("$candidate")
+  done
+  if [ "${#items[@]}" -eq 0 ]; then
+    echo "Error: nothing to back up (.env, storage, local_sources all missing)" >&2
+    exit 1
+  fi
+
+  if ! tar -czf "$out" \
     --exclude='chat-pwa/node_modules' \
     --exclude='chat-pwa/dist' \
     --exclude='.venv' \
     -C "$ROOT" \
-    .env storage local_sources 2>/dev/null || true
+    "${items[@]}"; then
+    echo "Error: backup failed while creating $out" >&2
+    rm -f "$out"
+    exit 1
+  fi
+
+  # A valid archive must be non-empty and readable by tar.
+  if [ ! -s "$out" ] || ! tar -tzf "$out" >/dev/null 2>&1; then
+    echo "Error: backup archive is empty or corrupt: $out" >&2
+    rm -f "$out"
+    exit 1
+  fi
+
   echo "$out"
 }
 

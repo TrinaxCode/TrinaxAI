@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from typing import Any
 
-RECOMMENDED = ["llama3.2:3b", "qwen2.5-coder:3b", "bge-m3", "qwen2.5vl:3b"]
+RECOMMENDED = ["qwen3:4b-instruct-2507-q4_K_M", "qwen2.5-coder:3b", "bge-m3", "qwen3-vl:4b"]
 
 
 def run(args: Any, client: Any, ui: Any, config: Any) -> int:
@@ -11,9 +11,7 @@ def run(args: Any, client: Any, ui: Any, config: Any) -> int:
     rows: list[list[str]] = []
     installed: set[str] = set()
     try:
-        response = client._client.get(f"{base}/api/tags", timeout=5.0)  # noqa: SLF001
-        response.raise_for_status()
-        for model in response.json().get("models", []):
+        for model in client.list_ollama_models(base):
             name = str(model.get("name", ""))
             if name:
                 installed.add(name)

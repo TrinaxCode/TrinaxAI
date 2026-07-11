@@ -15,6 +15,12 @@ class CLIParserTests(unittest.TestCase):
         self.assertEqual(args.command, "ask")
         self.assertEqual(args.prompt, ["explica", "este", "proyecto"])
 
+    def test_general_chat_engine_is_available(self) -> None:
+        chat = _build_parser().parse_args(["chat", "--engine", "general"])
+        ask = _build_parser().parse_args(["ask", "hola", "--engine", "rag"])
+        self.assertEqual(chat.engine, "general")
+        self.assertEqual(ask.engine, "rag")
+
     def test_index_accepts_positional_path(self) -> None:
         args = _build_parser().parse_args(["index", "."])
         self.assertEqual(args.command, "index")

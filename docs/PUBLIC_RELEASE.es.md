@@ -4,22 +4,66 @@ Usa esta lista antes de etiquetar o publicar una version publica de TrinaxAI.
 
 ## Chequeos Requeridos
 
-Ejecuta desde la raiz del repositorio:
+Ejecuta desde la raíz del repositorio:
 
 ```bash
+python3 -m pip install -r requirements-dev.txt
+python3 -m pip install -e .
 python3 scripts/public_readiness.py
 python3 -m py_compile rag_api.py index.py config.py trinaxai_cli.py service_manager.py test_system.py scripts/public_readiness.py
-# En Windows/PowerShell, tambien valida:
+ruff check .
+pytest -q
+bash -n install.sh
+bash -n backup.sh
+bash -n uninstall.sh
+# En Windows/PowerShell, también valida:
 # powershell -NoProfile -ExecutionPolicy Bypass -File .\update.ps1 -NonInteractive -NoPull -NoBackup -NoRestart -NoAudit
 # powershell -NoProfile -ExecutionPolicy Bypass -File .\uninstall.ps1 -Yes -KeepServices -KeepAutostart -KeepVenv -KeepFrontend -KeepLogs -KeepEnv -KeepFirewall
 cd chat-pwa && npm run build
+cd chat-pwa && npm test
+cd chat-pwa && npm audit --audit-level=high
 ```
 
 Para una prueba local de runtime:
 
 ```bash
 python3 test_system.py --verbose
+trinaxai --help
+trinaxai doctor
 ```
+
+## Versionado
+
+Usa etiquetas SemVer:
+
+- `v1.0.0-rc.1` para un candidato de lanzamiento.
+- `v1.0.0` para el primer lanzamiento público estable.
+- `v1.0.1` para correcciones solo de parches.
+- `v1.1.0` para lanzamientos de funcionalidades compatibles hacia atrás.
+
+Etiqueta desde un árbol limpio:
+
+```bash
+git tag -a v1.0.0 -m "TrinaxAI v1.0.0"
+git push origin v1.0.0
+```
+
+## Publicación en GitHub
+
+Crea un GitHub Release desde la etiqueta SemVer con:
+
+- Notas de lanzamiento de `CHANGELOG.md`.
+- Comando de instalación para Linux/macOS.
+- Comando de instalación PowerShell para Windows.
+- Limitaciones conocidas y notas de actualización.
+- Enlaces a `SECURITY.md`, `CONTRIBUTING.md` y guías de instalación por plataforma.
+
+Assets sugeridos:
+
+- Archivo fuente generado por GitHub.
+- `install.sh`
+- `install.ps1`
+- Archivo de checksums opcional para los scripts de instalación.
 
 ## Alcance de la Version
 
@@ -47,7 +91,9 @@ Antes de publicar, verifica estos flujos en una instalacion limpia:
 - Usar `Apagar IA`; Ollama y RAG deben apagarse y permanecer apagados despues de reiniciar.
 - Usar `Encender IA`; Ollama y RAG deben iniciar y permanecer habilitados despues de reiniciar.
 - Ejecutar una indexacion y confirmar que las fuentes aparecen en respuestas RAG.
-- Abrir Configuracion > Estadisticas y confirmar que los conteos cambian despues de usar la app.
+- Abrir Configuración > Estadísticas y confirmar que los conteos cambian después de usar la app.
+- Ejecutar `trinaxai`, `/help`, `/status`, `/clear`, y `/exit`.
+- Ejecutar `trinaxai index .` en un pequeño proyecto de prueba.
 
 ## Defaults de Rendimiento
 

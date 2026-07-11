@@ -30,7 +30,12 @@ DEFAULT_BASE_URL = "http://localhost:3333"
 
 
 def _default_config_path() -> Path:
-    """Return the XDG-resolved default config path (does not require it to exist)."""
+    """Return the platform-native user config path."""
+    if sys.platform == "win32":
+        base = os.environ.get("APPDATA") or os.path.join("~", "AppData", "Roaming")
+        return Path(base).expanduser() / "TrinaxAI" / "config.toml"
+    if sys.platform == "darwin":
+        return Path("~/Library/Application Support/TrinaxAI/config.toml").expanduser()
     base = os.environ.get("XDG_CONFIG_HOME") or os.path.join("~", ".config")
     return Path(base).expanduser() / "trinaxai" / "config.toml"
 
@@ -57,9 +62,12 @@ class CLIConfig:
     api_base_url: str = DEFAULT_BASE_URL
     api_verify_tls: bool = False
 
-    engine: str = "rag"
+    # Match the PWA: a new general chat talks directly to Ollama. RAG is
+    # opt-in so unrelated indexed documents cannot hijack a casual prompt.
+    engine: str = "ollama"
     model: str = "qwen2.5-coder:3b"
     collections: list[str] = field(default_factory=lambda: ["default"])
+    active_collection: str = "default"
 
     ui_color: str = "auto"  # auto | always | never
 
@@ -76,6 +84,7 @@ class CLIConfig:
             "engine": self.engine,
             "model": self.model,
             "collections": list(self.collections),
+            "active_collection": self.active_collection,
         }
 
     @property
@@ -215,6 +224,8 @@ def _apply_section(cfg: CLIConfig, parsed: dict[str, Any]) -> None:
             cols = defaults["collections"]
             if isinstance(cols, list):
                 cfg.collections = [str(c) for c in cols]
+        if "active_collection" in defaults:
+            cfg.active_collection = str(defaults["active_collection"])
 
     ui = parsed.get("ui") or {}
     if isinstance(ui, dict) and "color" in ui:
@@ -238,6 +249,7 @@ def _render_toml(cfg: CLIConfig) -> str:
         f'engine = "{cfg.engine}"',
         f'model = "{cfg.model}"',
         "collections = [" + ", ".join(f'"{c}"' for c in cfg.collections) + "]",
+        f'active_collection = "{cfg.active_collection}"',
         "",
         "[ui]",
         f'color = "{cfg.ui_color}"',

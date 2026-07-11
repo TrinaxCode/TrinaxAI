@@ -11,7 +11,9 @@ param(
   [switch]$RepairOllama,
   [switch]$RemoveModels,
   [switch]$RemoveOllama,
-  [switch]$NoAudit
+  [switch]$NoAudit,
+  [switch]$Scheduled,
+  [string]$RepoRoot = ""
 )
 
 <# 
@@ -25,9 +27,10 @@ model removal/download, backup, Git pull, autostart, restart, and audit.
 
 $ErrorActionPreference = "Stop"
 
-function Write-Step($Text) { Write-Host "`n=== $Text ===`n" -ForegroundColor Blue }
+function Write-Step($Text) { Write-Host "`n  +-- $Text" -ForegroundColor Blue }
 function Write-Ok($Text) { Write-Host "  [OK] $Text" -ForegroundColor Green }
 function Write-Warn($Text) { Write-Host "  [!] $Text" -ForegroundColor Yellow }
+function Write-Info($Text) { Write-Host "  [>] $Text" -ForegroundColor Cyan }
 function Test-Cmd($Name) { return $null -ne (Get-Command $Name -ErrorAction SilentlyContinue) }
 function Read-YesNo($Prompt, [bool]$DefaultYes = $true) {
   if ($NonInteractive) { return $DefaultYes }
@@ -165,7 +168,7 @@ function Get-ConfiguredModels {
   Add-Model $List (Read-EnvValue "TRINAXAI_EMBED")
   Add-Model $List (Read-EnvValue "VITE_TRINAXAI_VISION_MODEL")
   if ($List.Count -eq 0) {
-    foreach ($Model in @("qwen2.5-coder:3b", "llama3.2:3b", "bge-m3", "qwen2.5vl:3b")) {
+    foreach ($Model in @("qwen2.5-coder:3b", "qwen3:4b-instruct-2507-q4_K_M", "bge-m3", "qwen3-vl:4b")) {
       Add-Model $List $Model
     }
   }
@@ -202,14 +205,63 @@ function Invoke-ServiceManager($Action) {
   Invoke-Python @((Join-Path $Repo "service_manager.py"), $Action, "--base-dir", $Repo)
 }
 
-$Repo = Split-Path -Parent $MyInvocation.MyCommand.Path
+function Sync-TrinaxRepository {
+  $Remote = "https://github.com/TrinaxCode/TrinaxAI.git"
+  $Managed = Test-Path ".trinaxai-managed"
+  if (-not (Test-Cmd "git")) { throw "Git is required to update TrinaxAI." }
+  Write-Info "Fetching the latest TrinaxAI source from GitHub..."
+  if (-not (Test-Path ".git")) {
+    git init -q
+    if ($Managed) { Add-Content -Encoding UTF8 ".git\info\exclude" ".trinaxai-managed" }
+    git remote add origin $Remote
+    git fetch --prune origin main
+    if ($LASTEXITCODE -ne 0) { throw "Could not fetch origin/main." }
+    git reset --hard origin/main
+    Write-Ok "Archive installation converted to an updateable Git repository"
+    return
+  }
+  if ($Managed) {
+    $Exclude = ".git\info\exclude"
+    if (-not (Select-String -Path $Exclude -SimpleMatch ".trinaxai-managed" -Quiet -ErrorAction SilentlyContinue)) {
+      Add-Content -Encoding UTF8 $Exclude ".trinaxai-managed"
+    }
+  }
+  git remote get-url origin 2>$null | Out-Null
+  if ($LASTEXITCODE -eq 0) { git remote set-url origin $Remote }
+  else { git remote add origin $Remote }
+  $Dirty = -not [string]::IsNullOrWhiteSpace((git status --porcelain --untracked-files=normal | Out-String))
+  if ($Dirty) {
+    if ($Managed) {
+      $Stamp = Get-Date -Format "yyyyMMdd-HHmmss"
+      git stash push --include-untracked -m "TrinaxAI automatic pre-update $Stamp"
+      Write-Warn "Local code changes were preserved in Git stash"
+    } else {
+      throw "Local developer changes detected; update stopped to protect them."
+    }
+  }
+  git fetch --prune origin main
+  if ($LASTEXITCODE -ne 0) { throw "Could not fetch origin/main." }
+  git merge --ff-only origin/main
+  if ($LASTEXITCODE -eq 0) {
+    Write-Ok "Repository synchronized with origin/main"
+  } elseif ($Managed) {
+    git reset --hard origin/main
+    Write-Ok "Managed installation synchronized with origin/main"
+  } else {
+    throw "The local branch diverged from origin/main; update stopped safely."
+  }
+}
+
+$Repo = if ($RepoRoot) { [IO.Path]::GetFullPath($RepoRoot) } else { Split-Path -Parent $MyInvocation.MyCommand.Path }
 Set-Location $Repo
 $PythonExe = Get-PythonExe
 
 Write-Host ""
-Write-Host "==========================================" -ForegroundColor Blue
-Write-Host " TrinaxAI - Windows updater              " -ForegroundColor Blue
-Write-Host "==========================================" -ForegroundColor Blue
+Write-Host "+========================================+" -ForegroundColor Blue
+Write-Host "|          TrinaxAI - Smart Update       |" -ForegroundColor Blue
+Write-Host "+========================================+" -ForegroundColor Blue
+if ($Scheduled) { Write-Info "Weekly automatic maintenance" }
+else { Write-Info "Your data and settings stay untouched" }
 
 $CreateBackup = -not $NoBackup
 $PullCode = -not $NoPull
@@ -221,6 +273,15 @@ $RepairOllamaNow = $RepairOllama
 $RemoveModelsFirst = $RemoveModels
 $RemoveOllamaApp = $RemoveOllama
 $InstallOllamaAfterRemove = $RemoveOllama
+
+if ($Scheduled) {
+  $NonInteractive = $true
+  $CreateBackup = $false
+  $PullCode = $true
+  $PullModels = $false
+  $RunAudit = $false
+  $RestartAfter = $true
+}
 
 if (-not $NonInteractive) {
   $CreateBackup = Read-YesNo "Create a backup before updating?" $true
@@ -252,11 +313,7 @@ if ($CreateBackup) {
 
 if ($PullCode) {
   Write-Step "2/7 Git"
-  if ((Test-Path ".git") -and (Test-Cmd "git")) {
-    git pull --ff-only
-  } else {
-    Write-Warn "Git repository not detected; pull skipped."
-  }
+  Sync-TrinaxRepository
 }
 
 if ($RemoveOllamaApp) {
@@ -326,3 +383,4 @@ if ($RestartAfter) {
 }
 
 Write-Ok "TrinaxAI update finished"
+Write-Info "Settings, indexes, models, and personal data were preserved."

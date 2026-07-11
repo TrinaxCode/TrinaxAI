@@ -13,7 +13,7 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0--or--later-blue.svg" alt="AGPL-3.0-or-later"></a>
   <a href="#-quick-start"><img src="https://img.shields.io/badge/powered_by-Ollama-black.svg" alt="Ollama"></a>
   <a href="#-supported-platforms"><img src="https://img.shields.io/badge/platform-Linux|macOS|Windows-lightgrey.svg" alt="Platforms"></a>
-  <a href="#-pwa-installation"><img src="https://img.shields.io/badge/PWA-ready-brightgreen.svg" alt="PWA"></a>
+  <a href="chat-pwa/README.md"><img src="https://img.shields.io/badge/PWA-ready-brightgreen.svg" alt="PWA"></a>
   <a href="https://github.com/TrinaxCode/TrinaxAI/actions"><img src="https://img.shields.io/badge/build-local--only-informational.svg" alt="Build"></a>
   <a href="#-testing--audit"><img src="https://img.shields.io/badge/tests-backend_%2B_frontend-success.svg" alt="Tests"></a>
 </p>
@@ -58,7 +58,7 @@ TrinaxAI is a **local AI assistant** that combines a ChatGPT-like chat interface
 - 🗂️ **Knowledge Collections** — Create separate RAG spaces and query one or many
 - 🧭 **Local Memory** — "remember that..." facts persist across devices via shared state
 - 🎤 **Voice Mode** — Speech recognition + text-to-speech. Natural conversations
-- 📸 **Vision** — Analyze images with qwen2.5-vl
+- 📸 **Vision** — Analyze images with qwen3-vl
 - 💻 **Developer CLI** — `trinaxai ask`, `trinaxai chat`, `trinaxai index`, `trinaxai doctor`
 - 🌐 **Bilingual** — Spanish & English, auto-detected
 - 🌓 **Dark/Light Mode** — Auto-detected from system preference
@@ -68,16 +68,42 @@ TrinaxAI is a **local AI assistant** that combines a ChatGPT-like chat interface
 
 ---
 
+## 🧭 Visual Overview
+
+TrinaxAI has two chat paths: direct Ollama for general/vision conversations and FastAPI for retrieval over indexed content. The PWA reaches both through same-origin Vite proxies.
+
+```mermaid
+flowchart LR
+  U["User"] --> PWA["React PWA :3334"]
+  U --> CLI["trinaxai CLI"]
+  PWA -->|"/api/ollama · NDJSON"| OL["Ollama :11434"]
+  PWA -->|"/api/rag · SSE/JSON"| API["FastAPI :3333"]
+  CLI --> API
+  CLI --> OL
+  API --> R["Hybrid retrieval<br/>vector + BM25"]
+  R --> S["LlamaIndex storage<br/>storage/"]
+  API --> OL
+  IDX["index.py"] --> S
+  SRC["Projects / documents"] --> IDX
+  API --> DATA["Collections · memory<br/>watcher · app state"]
+```
+
+RAG queries retrieve vector and BM25 candidates, optionally rerank them, and ask an Ollama model to synthesize a cited answer. Direct chat bypasses the index. `service_manager.py` supervises services across Linux, macOS, and Windows; it is not limited to systemd.
+
+---
+
 ## 📸 Screenshots
 
-Screenshots are pending. The expected contribution paths are:
+Screenshots will be added soon. If you'd like to contribute, capture the following views at 1440×900 resolution (PNG, optimized with `pngquant`):
 
-- `docs/assets/screenshots/chat.png`
-- `docs/assets/screenshots/indexing.png`
-- `docs/assets/screenshots/settings.png`
-- `docs/assets/screenshots/mobile-pwa.png`
+| Screenshot | Path | Description |
+|---|---|---|
+| Chat | `docs/assets/screenshots/chat.png` | Main chat interface with RAG citations |
+| Indexing | `docs/assets/screenshots/indexing.png` | Collection indexing with progress bar |
+| Settings | `docs/assets/screenshots/settings.png` | Settings panel with model config |
+| Mobile PWA | `docs/assets/screenshots/mobile-pwa.png` | PWA installed on mobile home screen |
 
-Run `./install.sh && trinaxai start`, open `https://localhost:3334`, and submit real captures when available.
+Run `./install.sh && trinaxai start`, open `https://localhost:3334`, and submit a PR with your captures.
 
 ---
 
@@ -136,6 +162,7 @@ cd TrinaxAI
 | `--no-models` | Skip downloading Ollama models |
 | `--no-vision` | Skip vision model download |
 | `--no-autostart` | Do not enable boot auto-start |
+| `--no-auto-update` | Do not enable the safe weekly GitHub update check |
 | `--no-start` | Do not start TrinaxAI after install |
 | `--profile 8gb\|16gb\|max\|ultra` | Override auto-detected hardware profile |
 | `--lan-system` | Enable LAN system-control endpoints (generate admin token) |
@@ -157,6 +184,8 @@ powershell -ExecutionPolicy Bypass -File .\uninstall.ps1
 ```
 
 Required dependencies still install/update automatically. Optional choices such as model downloads, boot auto-start, data removal, and restarts are prompted by default.
+
+New client-first installations enable a weekly update check automatically. It downloads the latest updater first, synchronizes `origin/main`, refreshes Python/npm dependencies, rebuilds the PWA, and restarts TrinaxAI. Personal settings, indexes, models, certificates, and `.env` stay untouched. Logs are written to `logs/auto-update.log`, and uninstalling removes the scheduled task.
 
 ### Open the PWA
 
@@ -181,20 +210,20 @@ trinaxai                  # Interactive REPL
 trinaxai ask "..."        # One-shot question
 trinaxai chat             # Interactive chat session
 trinaxai index .          # Index the current directory
-trinaxai browse           # Browse indexed collections
+trinaxai browse list-collections
 trinaxai doctor           # System health check
 trinaxai start            # Start all services
-trinaxai stop             # Stop all services
-trinaxai watch            # Start file watcher for auto-reindex
-trinaxai research "..."   # Multi-pass deep research on a question
+trinaxai stop             # Stop AI; keep the PWA available
+trinaxai watch start --paths . --collection default
+trinaxai research --query "..." --depth 2
 trinaxai export           # Export a conversation
-trinaxai memory           # Manage persistent memory entries
-trinaxai collections      # List or manage RAG collections
-trinaxai --engine rag     # Force RAG engine
-trinaxai --engine ollama  # Force Ollama engine
+trinaxai memory list      # Manage persistent memory entries
+trinaxai collections list # List or manage RAG collections
+trinaxai chat --engine rag
+trinaxai chat --engine ollama
 ```
 
-The CLI auto-detects whether to use Ollama or RAG based on your query. It works with the same backend as the PWA — no separate configuration needed.
+The default CLI engine is Ollama; select `--engine rag` when indexed context is required. See the [complete CLI reference](docs/CLI_REFERENCE.md), including TOML configuration and every subcommand.
 
 ---
 
@@ -216,8 +245,8 @@ TrinaxAI is a **three-tier local stack** — PWA, RAG API, and Ollama — all on
 │  └─────┬──────────────────────────────┘   │
 │        │                                   │
 │  ┌─────┴──────┐                            │
-│  │  Ollama    │  qwen2.5 • llama3.2       │
-│  │  :11434    │  bge-m3 • moondream       │
+│  │  Ollama    │  qwen3 • qwen2.5-coder    │
+│  │  :11434    │  bge-m3 • qwen3-vl        │
 │  └────────────┘                            │
 └──────────────────────────────────────────┘
 ```
@@ -285,6 +314,10 @@ trinaxai doctor
 
 See [docs/DEVELOPER_GUIDE.md](docs/DEVELOPER_GUIDE.md) for full instructions.
 
+## 📚 Documentation
+
+Use the [documentation hub](docs/README.md) to navigate the complete set. Key references: [architecture](docs/ARCHITECTURE.md), [configuration](docs/CONFIGURATION.md), [CLI](docs/CLI_REFERENCE.md), [HTTP API](docs/API_REFERENCE.md), and [PWA](chat-pwa/README.md).
+
 ---
 
 ## ✅ Testing & Audit
@@ -326,7 +359,7 @@ python3 test_system.py --verbose
 | `backup.sh` / `update.sh` / `uninstall.sh` | Linux/macOS maintenance scripts |
 | `update.ps1` / `uninstall.ps1` | Windows maintenance scripts |
 | `install.sh` / `install.ps1` | One-command installers |
-| `chat-pwa/` | React PWA frontend |
+| `chat-pwa/` | React PWA frontend ([README](chat-pwa/README.md)) |
 | `scripts/public_readiness.py` | Pre-release audit tool |
 | `test_system.py` | System health test |
 
@@ -338,7 +371,7 @@ python3 test_system.py --verbose
 A: No. Everything runs locally. The only network calls are to Ollama (localhost:11434), the RAG API (localhost:3333), and Google Fonts (in the PWA). No chat data, code, or documents leave your machine.
 
 **Q: What models are recommended?**  
-A: The installer auto-detects RAM. 8 GB uses `llama3.2:1b`, `qwen2.5-coder:1.5b`, and `nomic-embed-text`. 16 GB uses `llama3.2:3b`, `qwen2.5-coder:3b`, and `bge-m3`. Visit [canirun.ai](https://www.canirun.ai) to check what your hardware supports.
+A: The installer auto-detects RAM. 8 GB uses `qwen3:4b-instruct-2507-q4_K_M`, `llama3.2:1b` (fast), `qwen2.5-coder:1.5b`, and `bge-m3`. 16 GB uses `qwen3:4b-instruct-2507-q4_K_M`, `qwen2.5-coder:3b`, and `bge-m3`. Visit [canirun.ai](https://www.canirun.ai) to check what your hardware supports.
 
 **Q: Can I use it from my phone?**  
 A: Yes. Open `https://[YOUR-LAN-IP]:3334` from any device on the same WiFi. The PWA is installable on iOS and Android.
@@ -362,7 +395,7 @@ A: AGPL-3.0-or-later. Free for personal and commercial use. See [LICENSE](LICENS
 See [ROADMAP.md](ROADMAP.md) for the full plan. Highlights:
 
 - ✅ **Done** — Chat, RAG, voice, vision, PWA, CLI, installers, watcher, research mode
-- 🔜 **Near-term** — Visual project browser, conversation summarization, prompt templates
+- 🔜 **Near-term** — Hierarchical knowledge tree, conversation summarization, richer index telemetry
 - 📅 **Planned** — Docker/Compose, MCP server, Obsidian integration, benchmark suite
 
 ---

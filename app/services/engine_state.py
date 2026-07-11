@@ -24,7 +24,8 @@ class EngineState:
     known_projects: list[str] = []
 
     # LLM cache
-    llm_cache: dict[str, Any] = {}
+    llm_cache: dict[tuple, Any] = {}
+    llm_cache_lock = threading.Lock()
 
     # Retrieval caches
     retrieval_cache: dict[tuple, tuple[float, list]] = {}

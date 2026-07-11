@@ -7,22 +7,28 @@ import sys
 from pathlib import Path
 from typing import Any
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
+from trinaxai_cli.runtime import find_install_root
+
+
+def project_root() -> Path | None:
+    return find_install_root()
 
 
 def service_manager() -> Path:
-    return PROJECT_ROOT / "service_manager.py"
+    root = project_root()
+    return root / "service_manager.py" if root else Path("service_manager.py")
 
 
 def run_service_action(action: str, ui: Any, *, timeout: int = 120) -> int:
+    root = project_root()
     script = service_manager()
-    if not script.is_file():
-        ui.error("Cannot locate service_manager.py. Run this command from a TrinaxAI checkout.")
+    if root is None or not script.is_file():
+        ui.error("Cannot locate the TrinaxAI installation. Set TRINAXAI_HOME or run the installer again.")
         return 1
     try:
         proc = subprocess.run(
-            [sys.executable, str(script), action, "--base-dir", str(PROJECT_ROOT)],
-            cwd=str(PROJECT_ROOT),
+            [sys.executable, str(script), action, "--base-dir", str(root)],
+            cwd=str(root),
             text=True,
             capture_output=True,
             timeout=timeout,
@@ -48,7 +54,10 @@ def run_service_action(action: str, ui: Any, *, timeout: int = 120) -> int:
 
 
 def load_dotenv_values() -> dict[str, str]:
-    env_path = PROJECT_ROOT / ".env"
+    root = project_root()
+    if root is None:
+        return {}
+    env_path = root / ".env"
     values: dict[str, str] = {}
     if not env_path.is_file():
         return values
@@ -70,7 +79,10 @@ def masked(value: str | None) -> str:
 
 
 def service_state() -> dict[str, Any]:
-    path = PROJECT_ROOT / "storage" / "service_state.json"
+    root = project_root()
+    if root is None:
+        return {}
+    path = root / "storage" / "service_state.json"
     if not path.is_file():
         return {}
     try:

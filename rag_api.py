@@ -29,13 +29,12 @@ import uuid
 if sys.platform == "win32" and hasattr(sys.stdout, "buffer"):
     import codecs
     sys.stdout = codecs.getwriter("utf-8")(sys.stdout.buffer, "replace")  # type: ignore[assignment]
-from collections import defaultdict
 from io import BytesIO
 from typing import Any
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from llama_index.core import (
     QueryBundle,
     Settings,
@@ -48,14 +47,30 @@ from llama_index.core.response_synthesizers import (
     get_response_synthesizer,
 )
 from llama_index.core.retrievers import QueryFusionRetriever
+from llama_index.core.vector_stores import FilterCondition, MetadataFilter, MetadataFilters
 from llama_index.retrievers.bm25 import BM25Retriever
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
+from starlette.concurrency import run_in_threadpool
 
 import config
-from trinaxai_core import sanitize_collection_id
+from app.generation.presets import build_task_spec
+from app.generation.prompts import (
+    build_generation_prompt,
+    grounded_template,
+    wants_creator_bio,
+)
+from app.generation.spec import Regime
+from app.generation.validate import validate_output
+from app.routes.voice import router as voice_router
+from app.security.rate_limit import _client_host, enforce_rate_limit
+from trinaxai_core import exclusive_process_lock, sanitize_collection_id
 
 LOG = logging.getLogger("trinaxai.rag_api")
 app = FastAPI(title="TrinaxAI RAG API")
+
+# Voice routes must be registered before any catch-all / mount.
+# Las rutas de voz se registran antes de cualquier catch-all o mount.
+app.include_router(voice_router, prefix="/v1")
 
 # ── CORS: allowlist en vez de "*" ──
 _default_origins = (
@@ -118,14 +133,35 @@ Settings.embed_model = config.make_embed()
 
 # ── Prompt: identidad concisa + fidelidad estricta al contexto ──
 qa_prompt_tmpl = PromptTemplate(
-    "You are TrinaxAI, a local-first, open-source assistant using local open-source models. "
+    "You are TrinaxAI, a local-first, open-source AI assistant built with Ollama. "
     "Your product identity is always TrinaxAI. "
-    "You were created by TrinaxCode — a Full Stack Web Developer from Tuxtla Gutiérrez, Chiapas (originally from Nicaragua), "
-    "focused on React, TypeScript, Python, Django, PostgreSQL, and Firebase. "
-    "TrinaxCode builds products with real traffic, real leads, and real revenue. "
-    "GitHub: https://github.com/TrinaxCode. LinkedIn: https://linkedin.com/in/trinaxcode. "
-    "If the user asks who created you, what is TrinaxCode, or anything about your origin, explain that TrinaxCode is your creator, "
-    "a Full Stack Developer who made you as an open-source local-first AI project, and share the links above. "
+    "You run entirely on the user's machine — no cloud, no subscriptions, no data collection. "
+    "Privacy, freedom, and full user control are your core values.\n\n"
+    "ABOUT YOUR CREATOR — TrinaxCode:\n"
+    "TrinaxCode is the developer alias of a Full Stack Web Developer based in Tuxtla Gutiérrez, Chiapas, México (originally from Nicaragua). "
+    "His guiding philosophy: 'Production impact over tutorial demos' — he builds products people actually use, "
+    "not portfolio clones. His sites rank on Google, generate real traffic, and solve real problems.\n"
+    "Education: Harvard Professional Certificate in Web Programming (CS50x & CS50W). "
+    "Selected participant in Stanford Code in Place 2026, Stanford's international CS education initiative.\n"
+    "Expertise: React, TypeScript, Django, PostgreSQL, Firebase, and modern full-stack development. "
+    "Content creator with +60K followers on TikTok sharing coding knowledge in Spanish.\n"
+    "Featured projects beyond TrinaxAI: "
+    "Rednura Web (e-commerce with AI recommendation assistant, #1 organic ranking in Tuxtla Gutiérrez), "
+    "Belcons Remodeling (full-stack lead capture & quote management for a US remodeling company), "
+    "CEDAS Montessori (institutional site with React/TypeScript/Tailwind), "
+    "Iglesia Adventista El Jobo (community portal, +10K visits), "
+    "ApexLumen (educational platform with social dynamics), "
+    "Real-time Facial Expression Detector (computer vision with OpenCV & MediaPipe).\n"
+    "TrinaxCode created TrinaxAI because he believes AI should belong to everyone, not just big tech companies — "
+    "a 100% local, open-source (AGPL-3.0) assistant combining a ChatGPT-like PWA, developer CLI, "
+    "semantic code search with citations, voice mode, and vision — all running locally with Ollama models.\n"
+    "Links: GitHub (https://github.com/TrinaxCode), LinkedIn (https://linkedin.com/in/trinaxcode), "
+    "X/Twitter (https://x.com/TrinaxCode), Email (trinaxcode@gmail.com), "
+    "ORCID (https://orcid.org/0009-0009-2321-9834).\n\n"
+    "BEHAVIOR:\n"
+    "If the user asks who created you, who is TrinaxCode, what is TrinaxCode, or anything about your origin/creator, "
+    "respond with a polished, sophisticated professional bio covering his background, philosophy, education, "
+    "featured projects, and the mission behind TrinaxAI. Share the relevant links. "
     "Answer like a senior colleague: direct, precise, and in the language of the current user question. "
     "If the current question is in English, answer in English. If it is in Spanish, answer in Spanish. "
     "Do not let the interface language, previous turns, or indexed document language override the current user question. "
@@ -142,65 +178,26 @@ qa_prompt_tmpl = PromptTemplate(
     "{context_str}\n"
     "</context>\n\n"
     "{query_str}\n"
-    "Respuesta:\n"
+    "Answer in the language required above:\n"
 )
 
 # ── Estado global del motor ──
 _fusion_retriever = None
 _index_docstore = None
+_vector_index = None
 KNOWN_PROJECTS: list[str] = []
 _llm_cache: dict = {}
+_llm_cache_lock = threading.Lock()
+_collection_retrievers: dict[tuple[str, ...], Any] = {}
+_collection_retrievers_lock = threading.Lock()
 _retrieval_cache: dict[tuple, tuple[float, list]] = {}
 _retrieval_cache_lock = threading.Lock()
 _sources_cache: dict[tuple, tuple[float, Any]] = {}
 _sources_cache_lock = threading.Lock()
 
-# ── Rate limiting (token bucket simple) ──
-_rate_limit_state: dict[str, list[float]] = defaultdict(list)
-_RATE_LIMIT_MAX = int(os.getenv("TRINAXAI_RATE_LIMIT_PER_MINUTE", "30"))
-_RATE_LIMIT_WINDOW = float(os.getenv("TRINAXAI_RATE_LIMIT_WINDOW_SECONDS", "60"))
-_RATE_LIMIT_MAX_CLIENTS = 2000
-_rate_limit_last_prune = 0.0
-_rate_limit_lock = threading.Lock()
-
-
-def _check_rate_limit(ip: str) -> bool:
-    """True if request is allowed under the rate limit."""
-    global _rate_limit_last_prune
-    with _rate_limit_lock:
-        now = time.time()
-        if (
-            len(_rate_limit_state) > _RATE_LIMIT_MAX_CLIENTS
-            or now - _rate_limit_last_prune > _RATE_LIMIT_WINDOW
-        ):
-            stale = [
-                key
-                for key, values in _rate_limit_state.items()
-                if not values
-                or all(now - stamp >= _RATE_LIMIT_WINDOW for stamp in values)
-            ]
-            for key in stale:
-                _rate_limit_state.pop(key, None)
-            _rate_limit_last_prune = now
-        window = [t for t in _rate_limit_state[ip] if now - t < _RATE_LIMIT_WINDOW]
-        _rate_limit_state[ip] = window
-        if len(window) >= _RATE_LIMIT_MAX:
-            return False
-        window.append(now)
-        return True
-
-
-def _client_host(request: Request) -> str:
-    return request.client.host if request.client else "127.0.0.1"
-
-
-def _enforce_rate_limit(request: Request, *, bucket: str = "chat") -> None:
-    key = f"{bucket}:{_client_host(request)}"
-    if not _check_rate_limit(key):
-        LOG.warning("Rate limit exceeded for %s", bucket)
-        raise HTTPException(status_code=429, detail="Too many requests. Slow down.")
-
-
+# ── Rate limiting ahora vive en app.security.rate_limit para poder reutilizarse
+# sin crear importaciones circulares. / Rate limiting now lives in
+# app.security.rate_limit so it can be reused without circular imports.
 def _prune_old_jobs() -> None:
     """Remove completed/cancelled/failed index jobs older than 1 hour."""
     now = time.time()
@@ -229,11 +226,20 @@ _index_jobs: dict[str, dict] = {}
 _index_jobs_lock = threading.Lock()
 _app_state_lock = threading.Lock()
 _collections_lock = threading.Lock()
+_memory_lock = threading.Lock()
 _engine_lock = threading.RLock()
 APP_STATE_PATH = os.path.join(config.PERSIST_DIR, "app_state.json")
-APP_STATE_MAX_BYTES = int(
-    os.getenv("TRINAXAI_APP_STATE_MAX_BYTES", str(6 * 1024 * 1024))
+CHAT_ATTACHMENTS_DIR = os.path.join(config.PERSIST_DIR, "chat_attachments")
+APP_STATE_MAX_BYTES = config._env_int(
+    "TRINAXAI_APP_STATE_MAX_BYTES", 6 * 1024 * 1024, minimum=1024
 )
+
+
+def _index_process_lock():
+    return exclusive_process_lock(
+        os.path.join(config.PERSIST_DIR, ".indexing.lock"),
+        timeout=config._env_float("TRINAXAI_INDEX_LOCK_TIMEOUT", 3600.0, minimum=1.0, maximum=86400.0),
+    )
 
 
 def _clear_index_runtime_caches() -> None:
@@ -241,6 +247,8 @@ def _clear_index_runtime_caches() -> None:
         _retrieval_cache.clear()
     with _sources_cache_lock:
         _sources_cache.clear()
+    with _collection_retrievers_lock:
+        _collection_retrievers.clear()
 
 
 def _clear_directory_contents(path: str) -> list[str]:
@@ -380,8 +388,12 @@ def _collection_slug(name: str) -> str:
 
 def _collection_public(item: dict) -> dict:
     now = time.time()
+    collection_id = sanitize_collection_id(
+        str(item.get("id") or config.DEFAULT_COLLECTION_ID),
+        fallback=config.DEFAULT_COLLECTION_ID,
+    )
     return {
-        "id": str(item.get("id") or config.DEFAULT_COLLECTION_ID),
+        "id": collection_id,
         "name": str(item.get("name") or config.DEFAULT_COLLECTION_NAME),
         "created_at": float(item.get("created_at") or now),
         "updated_at": float(item.get("updated_at") or item.get("created_at") or now),
@@ -438,9 +450,10 @@ def _get_collection_unlocked(collection_id: str) -> dict | None:
 
 
 def _ensure_collection(collection_id: str | None, name: str | None = None) -> dict:
-    cid = (
-        collection_id or config.DEFAULT_COLLECTION_ID
-    ).strip() or config.DEFAULT_COLLECTION_ID
+    cid = sanitize_collection_id(
+        collection_id,
+        fallback=config.DEFAULT_COLLECTION_ID,
+    )
     with _collections_lock:
         collections = _read_collections_unlocked()
         for item in collections:
@@ -458,13 +471,13 @@ def _ensure_collection(collection_id: str | None, name: str | None = None) -> di
         return created
 
 
-def _delete_collection_nodes(collection_id: str) -> int:
+def _delete_collection_nodes_unlocked(collection_id: str) -> int:
     if collection_id == config.DEFAULT_COLLECTION_ID:
         raise HTTPException(
             status_code=400, detail="The default collection cannot be deleted."
         )
     deleted_nodes = 0
-    try:
+    if os.path.exists(os.path.join(config.PERSIST_DIR, "docstore.json")):
         storage_context = StorageContext.from_defaults(persist_dir=config.PERSIST_DIR)
         index = load_index_from_storage(storage_context)
         node_ids = [
@@ -477,8 +490,6 @@ def _delete_collection_nodes(collection_id: str) -> int:
             index.delete_nodes(node_ids, delete_from_docstore=True)
             index.storage_context.persist(persist_dir=config.PERSIST_DIR)
             deleted_nodes = len(node_ids)
-    except Exception:
-        deleted_nodes = 0
 
     try:
         with open(config.MANIFEST_PATH, encoding="utf-8") as f:
@@ -499,6 +510,12 @@ def _delete_collection_nodes(collection_id: str) -> int:
         os.path.join(config.LOCAL_SOURCES_DIR, "collections", collection_id),
         ignore_errors=True,
     )
+    return deleted_nodes
+
+
+def _delete_collection_nodes(collection_id: str) -> int:
+    with _index_process_lock():
+        deleted_nodes = _delete_collection_nodes_unlocked(collection_id)
     build_engine()
     return deleted_nodes
 
@@ -616,14 +633,20 @@ def _run_index_job(
     target: str,
     collection_id: str = config.DEFAULT_COLLECTION_ID,
     collection_name: str = config.DEFAULT_COLLECTION_NAME,
+    embed_model: str | None = None,
+    aggressive_quant: bool = False,
+    append_only: bool = True,
 ) -> None:
     env = {
         **os.environ,
         "TRINAXAI_INDEX_DIR": target,
         "TRINAXAI_COLLECTION_ID": _collection_slug(collection_id),
         "TRINAXAI_COLLECTION_NAME": collection_name,
-        "TRINAXAI_INDEX_APPEND": "1",
+        "TRINAXAI_INDEX_APPEND": "1" if append_only else "0",
+        "TRINAXAI_AGGRESSIVE_QUANT": "1" if aggressive_quant else "0",
     }
+    if embed_model:
+        env["TRINAXAI_EMBED"] = embed_model
     _update_index_job(
         job_id, status="indexing", phase="starting", progress=30, started_at=time.time()
     )
@@ -709,22 +732,64 @@ def _run_index_job(
     )
 
 
-def get_llm(model: str):
-    """Cachea los LLM por nombre (crear el objeto es barato; reusar evita ruido)."""
-    if model not in _llm_cache:
-        _llm_cache[model] = config.make_llm(temperature=0.0, model=model)
-    return _llm_cache[model]
+def get_llm(
+    model: str,
+    *,
+    keep_alive: str | int | None = None,
+    aggressive_quant: bool | None = None,
+    temperature: float = 0.0,
+    num_ctx: int | None = None,
+    num_predict: int | None = None,
+    top_p: float | None = None,
+    top_k: int | None = None,
+    repeat_penalty: float | None = None,
+    stop: tuple[str, ...] | None = None,
+):
+    """Cachea los LLM por nombre (crear el objeto es barato; reusar evita ruido).
+
+    La clave de caché incluye los knobs de muestreo, así que cada régimen de
+    generación (código, creativo, RAG) reutiliza su propia instancia sin
+    pisar a las demás. Llamado sin knobs extra ⇒ comportamiento histórico.
+    """
+    cache_key = (
+        model,
+        str(config.KEEP_ALIVE if keep_alive is None else keep_alive),
+        bool(config.TRINAXAI_AGGRESSIVE_QUANT if aggressive_quant is None else aggressive_quant),
+        round(float(temperature), 3),
+        num_ctx,
+        num_predict,
+        top_p,
+        top_k,
+        repeat_penalty,
+        tuple(stop) if stop else None,
+    )
+    with _llm_cache_lock:
+        if cache_key not in _llm_cache:
+            _llm_cache[cache_key] = config.make_llm(
+                temperature=temperature,
+                model=model,
+                keep_alive=keep_alive,
+                aggressive_quant=aggressive_quant,
+                num_ctx=num_ctx,
+                num_predict=num_predict,
+                top_p=top_p,
+                top_k=top_k,
+                repeat_penalty=repeat_penalty,
+                stop=stop,
+            )
+        return _llm_cache[cache_key]
 
 
 def build_engine() -> bool:
     """Carga el índice y arma el retriever híbrido. False si aún no hay índice."""
-    global _fusion_retriever, _index_docstore, KNOWN_PROJECTS
+    global _fusion_retriever, _index_docstore, _vector_index, KNOWN_PROJECTS
     with _engine_lock:
         try:
             storage_context = StorageContext.from_defaults(
                 persist_dir=config.PERSIST_DIR
             )
             index = load_index_from_storage(storage_context)
+            _vector_index = index
             vector_retriever = index.as_retriever(
                 similarity_top_k=config.FUSION_CANDIDATES
             )
@@ -757,6 +822,7 @@ def build_engine() -> bool:
         except Exception as e:
             _fusion_retriever = None
             _index_docstore = None
+            _vector_index = None
             KNOWN_PROJECTS = []
             _clear_index_runtime_caches()
             try:
@@ -789,13 +855,51 @@ def _chat_messages(messages: list[dict]) -> list[dict]:
     return [m for m in messages if m.get("role") in {"user", "assistant"}]
 
 
+def _language_instruction(text: str) -> str:
+    """Return a deterministic language rule for the current user turn."""
+    words = set(re.findall(r"[a-záéíóúüñ]+", text.lower()))
+    es = words & {
+        "el", "la", "los", "las", "un", "una", "es", "son", "soy", "eres",
+        "está", "hay", "que", "qué", "cómo", "como", "por", "para", "con",
+        "sin", "de", "del", "en", "y", "o", "pero", "hola", "gracias",
+        "archivo", "carpeta", "dime", "explica", "ayuda", "arregla", "tu", "tú",
+        "mi", "yo", "cuando", "cuándo", "dónde", "porque", "también", "sí",
+    }
+    en = words & {
+        "the", "this", "that", "is", "are", "am", "was", "were", "do", "does",
+        "did", "how", "what", "why", "when", "where", "which", "who", "can",
+        "could", "would", "should", "please", "thanks", "hello", "hi", "hey",
+        "file", "folder", "tell", "explain", "help", "fix", "you", "your", "my",
+        "with", "from", "to", "of", "in", "on", "and", "or", "but", "for", "yes",
+    }
+    if len(es) == len(en):
+        language = "Spanish" if re.search(r"[¿¡ñáéíóúü]", text, re.I) else "English"
+    else:
+        language = "Spanish" if len(es) > len(en) else "English"
+    return (
+        f"LANGUAGE RULE: The current user message is in {language}. "
+        f"Answer entirely in {language}. This rule overrides the interface language, "
+        "conversation history, system profile language, and indexed document language."
+    )
+
+
 def _system_instructions(messages: list[dict]) -> str:
     parts = [
         str(m.get("content", "")).strip()
         for m in messages
         if m.get("role") == "system" and str(m.get("content", "")).strip()
     ]
-    return "\n".join(parts)
+    return _bounded_text("\n".join(parts), 8_000)
+
+
+def _bounded_text(value: str, limit: int) -> str:
+    text = str(value or "")
+    if len(text) <= limit:
+        return text
+    marker = "\n[...truncated...]\n"
+    available = max(0, limit - len(marker))
+    head = available // 2
+    return text[:head] + marker + text[-(available - head) :]
 
 
 def prepare_query(messages: list[dict]) -> tuple[str, str]:
@@ -805,9 +909,12 @@ def prepare_query(messages: list[dict]) -> tuple[str, str]:
     mete el historial reciente en el prompt de síntesis (entiende seguimientos).
     """
     chat = _chat_messages(messages)
-    current = chat[-1].get("content", "") if chat else messages[-1].get("content", "")
+    current = _bounded_text(
+        chat[-1].get("content", "") if chat else messages[-1].get("content", ""),
+        12_000,
+    )
     user_turns = [m["content"] for m in chat if m.get("role") == "user"]
-    prev_user = user_turns[-2] if len(user_turns) >= 2 else ""
+    prev_user = _bounded_text(user_turns[-2], 4_000) if len(user_turns) >= 2 else ""
     retrieval_q = (prev_user + " " + current).strip()
 
     system = _system_instructions(messages)
@@ -815,7 +922,8 @@ def prepare_query(messages: list[dict]) -> tuple[str, str]:
     prefix = f"INSTRUCCIONES DEL SISTEMA:\n{system}\n\n" if system else ""
     if history:
         hist_txt = "\n".join(
-            f"{'Usuario' if m.get('role') == 'user' else 'TrinaxAI'}: {m.get('content', '')}"
+            f"{'Usuario' if m.get('role') == 'user' else 'TrinaxAI'}: "
+            f"{_bounded_text(m.get('content', ''), 2_000)}"
             for m in history
         )
         synth_q = (
@@ -826,6 +934,54 @@ def prepare_query(messages: list[dict]) -> tuple[str, str]:
     return retrieval_q, synth_q
 
 
+def _retriever_for_collections(active_collections: tuple[str, ...]):
+    """Build and cache a hybrid retriever scoped before candidate ranking."""
+    if not active_collections:
+        return _fusion_retriever
+    with _collection_retrievers_lock:
+        cached = _collection_retrievers.get(active_collections)
+        if cached is not None:
+            return cached
+        if _vector_index is None or _index_docstore is None:
+            return None
+        allowed = set(active_collections)
+        nodes = [
+            node
+            for node in _index_docstore.docs.values()
+            if (getattr(node, "metadata", {}) or {}).get(
+                "collection_id", config.DEFAULT_COLLECTION_ID
+            )
+            in allowed
+        ]
+        if not nodes:
+            return None
+        filters = MetadataFilters(
+            filters=[
+                MetadataFilter(key="collection_id", value=collection_id)
+                for collection_id in active_collections
+            ],
+            condition=FilterCondition.OR,
+        )
+        vector_retriever = _vector_index.as_retriever(
+            similarity_top_k=config.FUSION_CANDIDATES,
+            filters=filters,
+        )
+        bm25_retriever = BM25Retriever.from_defaults(
+            nodes=nodes,
+            similarity_top_k=config.FUSION_CANDIDATES,
+        )
+        retriever = QueryFusionRetriever(
+            [vector_retriever, bm25_retriever],
+            similarity_top_k=config.FUSION_CANDIDATES,
+            num_queries=1,
+            mode="reciprocal_rerank",
+            use_async=False,
+            llm=get_llm(config.LLM_MODEL),
+        )
+        _collection_retrievers[active_collections] = retriever
+        return retriever
+
+
 def _cached_retrieve(
     retrieval_q: str,
     current: str,
@@ -833,7 +989,11 @@ def _cached_retrieve(
     project: str | None,
 ):
     active_collections = tuple(
-        sorted(c.strip() for c in (collections or []) if isinstance(c, str) and c.strip())
+        sorted(
+            sanitize_collection_id(c, fallback=config.DEFAULT_COLLECTION_ID)
+            for c in (collections or [])
+            if isinstance(c, str) and c.strip()
+        )
     )
     cache_key = (
         retrieval_q,
@@ -854,20 +1014,17 @@ def _cached_retrieve(
         if cached is not None:
             return list(cached)
 
-    nodes = _fusion_retriever.retrieve(retrieval_q)
-    if active_collections or project:
-        filtered = list(nodes)
-        if active_collections:
-            filtered = [
-                n
-                for n in filtered
-                if n.metadata.get("collection_id", config.DEFAULT_COLLECTION_ID)
-                in active_collections
-            ]
+    retriever = _retriever_for_collections(active_collections)
+    nodes = retriever.retrieve(retrieval_q) if retriever is not None else []
+    if active_collections:
         if project:
-            filtered = [n for n in filtered if n.metadata.get("project") == project]
-        if filtered:
-            nodes = filtered
+            project_nodes = [n for n in nodes if n.metadata.get("project") == project]
+            if project_nodes:
+                nodes = project_nodes
+    elif project:
+        project_nodes = [n for n in nodes if n.metadata.get("project") == project]
+        if project_nodes:
+            nodes = project_nodes
 
     # Reranking: reordena por relevancia REAL a la pregunta (no al texto+historial).
     if _reranker is not None and nodes:
@@ -881,36 +1038,222 @@ def _cached_retrieve(
     return list(nodes)
 
 
-def run_rag(messages: list[dict], stream: bool, collections: list[str] | None = None):
-    """Recupera (con filtro de proyecto), elige modelo y sintetiza.
+def _estimate_tokens(text: str) -> int:
+    """Rough token estimate (~4 chars/token) — good enough for budgeting."""
+    return max(0, len(text or "") // 4)
 
-    Devuelve (response, source_nodes, model, project)."""
+
+class _TextResponse:
+    """Minimal stand-in for a LlamaIndex response for the non-RAG path.
+
+    Exposes the same surface the callers use: ``.response_gen`` (token stream)
+    and ``str(response)`` (full text), plus an empty ``source_nodes`` so the
+    sources payload stays empty when generation is ungrounded.
+    """
+
+    def __init__(self, text: str | None = None, gen=None):
+        self._text = text
+        self._gen = gen
+        self.source_nodes: list = []
+
+    @property
+    def response_gen(self):
+        if self._gen is not None:
+            return self._gen
+        return iter([self._text or ""])
+
+    @property
+    def response(self) -> str:
+        return str(self)
+
+    def __str__(self) -> str:
+        if self._text is None:
+            self._text = "".join(self._gen or [])
+        return self._text or ""
+
+
+def _freeform_generate(llm, prompt: str, stream: bool):
+    """Generate without RAG grounding. Returns a ``_TextResponse``.
+
+    Always drives Ollama via ``stream_complete`` under the hood — even when the
+    caller wants the full text — because httpx applies its read timeout PER
+    CHUNK for streaming responses, not to the whole generation. On CPU a large
+    creative output can take many minutes; a single blocking ``complete()``
+    would hit the total request timeout, whereas streaming only times out if the
+    model stalls between tokens.
+    """
+    def _token_stream():
+        for chunk in llm.stream_complete(prompt):
+            delta = getattr(chunk, "delta", None)
+            yield delta if delta is not None else str(chunk)
+
+    if stream:
+        return _TextResponse(gen=_token_stream())
+    # "Blocking" call: still stream internally, just accumulate before returning.
+    return _TextResponse(text="".join(_token_stream()))
+
+
+_DELIVERABLE_KEYWORDS = (
+    "tests", "benchmark", "faq", "chat", "responsive", "animation",
+    "docstring", "types",
+)
+
+
+def _wanted_deliverables(text: str) -> tuple[str, ...]:
+    t = (text or "").lower()
+    hits = []
+    if "test" in t or "prueba" in t:
+        hits.append("tests")
+    if "benchmark" in t:
+        hits.append("benchmark")
+    if "faq" in t:
+        hits.append("faq")
+    if "chat" in t:
+        hits.append("chat")
+    if "responsive" in t or "adaptable" in t:
+        hits.append("responsive")
+    if "animaci" in t or "animation" in t:
+        hits.append("animation")
+    return tuple(hits)
+
+
+def _fix_prompt(regime: Regime, original: str, answer: str, findings: str) -> str:
+    """Targeted single-pass correction prompt."""
+    return (
+        "Your previous answer to the user's request has issues that must be "
+        "fixed. Keep everything that was correct; change ONLY what is needed to "
+        "resolve the problems below. Return the COMPLETE corrected result "
+        "(full code/files), not a diff and not a description of the changes.\n\n"
+        f"USER REQUEST:\n{original}\n\n"
+        f"PROBLEMS TO FIX:\n{findings}\n\n"
+        f"PREVIOUS ANSWER:\n{answer}\n\n"
+        "Corrected answer:"
+    )
+
+
+def run_rag(
+    messages: list[dict],
+    stream: bool,
+    collections: list[str] | None = None,
+    *,
+    model_override: str | None = None,
+    keep_alive: str | int | None = None,
+    aggressive_quant: bool | None = None,
+):
+    """Clasifica la tarea, elige régimen/parametros y sintetiza.
+
+    Camino grounded (RAG) para preguntas sobre documentos indexados; camino de
+    generación libre (sin RAG, plantilla y parámetros por tarea) para código y
+    diseño. Devuelve (response, source_nodes, model, project) — interfaz intacta.
+    """
     chat = _chat_messages(messages)
-    current = chat[-1].get("content", "") if chat else messages[-1].get("content", "")
-    model = config.route_model(current)
-    llm = get_llm(model)
+    user_messages = [m for m in chat if m.get("role") == "user"]
+    current = (
+        user_messages[-1].get("content", "")
+        if user_messages
+        else (chat[-1].get("content", "") if chat else "")
+    )
 
     retrieval_q, synth_q = prepare_query(messages)
     project = detect_project(retrieval_q)
+    lang = _language_instruction(current)
 
-    nodes = _cached_retrieve(retrieval_q, current, collections, project)
-
-    synth = get_response_synthesizer(
-        llm=llm,
-        text_qa_template=qa_prompt_tmpl,
-        response_mode=ResponseMode.COMPACT,
-        streaming=stream,
+    has_index = _fusion_retriever is not None
+    prompt_tokens = _estimate_tokens(synth_q) + _estimate_tokens(lang)
+    spec = build_task_spec(
+        messages,
+        model_override=model_override,
+        has_index=has_index,
+        estimated_prompt_tokens=prompt_tokens,
     )
-    response = synth.synthesize(synth_q, nodes=nodes)
+    try:
+        LOG.info("TaskSpec: %s", spec.describe())
+    except Exception:
+        pass
+
+    llm = get_llm(
+        spec.model,
+        keep_alive=keep_alive,
+        aggressive_quant=aggressive_quant,
+        **spec.llm_kwargs(),
+    )
+
+    # ── Grounded path (RAG): unchanged contract, tuned template ──
+    if spec.use_rag:
+        nodes = _cached_retrieve(retrieval_q, current, collections, project)
+        synth_q_full = f"{lang}\n\n{synth_q}"
+        synth = get_response_synthesizer(
+            llm=llm,
+            text_qa_template=grounded_template(wants_creator_bio(current)),
+            response_mode=ResponseMode.COMPACT,
+            streaming=stream,
+        )
+        response = synth.synthesize(synth_q_full, nodes=nodes)
+        _safe_record_usage("rag", spec.model, project, collections, chat, nodes)
+        return response, nodes, spec.model, project
+
+    # ── Free-form generation path (no RAG grounding) ──
+    prompt = build_generation_prompt(
+        spec.regime,
+        synth_q,
+        language_instruction=lang,
+        include_creator_bio=wants_creator_bio(current),
+    )
+
+    # generate → validate → fix (Phase 7). Only for non-streaming calls: a fix
+    # pass needs the COMPLETE answer, which would force us to buffer the whole
+    # (possibly multi-minute) generation before emitting a single token. Live
+    # streaming users still get the fully tuned single-pass generation; API/CLI
+    # callers (stream=False) get the extra validation+correction safety net.
+    if spec.validate and spec.max_fix_passes > 0 and not stream:
+        first = _freeform_generate(llm, prompt, stream=False)
+        text = str(first)
+        deliverables = _wanted_deliverables(current)
+        require_responsive = "responsive" in current.lower() or spec.regime is Regime.CREATIVE
+        result = validate_output(
+            text,
+            regime=spec.regime.value,
+            deliverables=deliverables,
+            require_responsive=require_responsive,
+        )
+        passes = 0
+        while not result.ok and passes < spec.max_fix_passes:
+            passes += 1
+            try:
+                LOG.info("Fix pass %d: %s", passes, result.summary())
+            except Exception:
+                pass
+            fix_llm = get_llm(
+                spec.model,
+                keep_alive=keep_alive,
+                aggressive_quant=aggressive_quant,
+                **spec.llm_kwargs(),
+            )
+            fixed = _freeform_generate(
+                fix_llm, _fix_prompt(spec.regime, current, text, result.summary()), stream=False
+            )
+            text = str(fixed)
+            result = validate_output(
+                text,
+                regime=spec.regime.value,
+                deliverables=deliverables,
+                require_responsive=require_responsive,
+            )
+        _safe_record_usage("gen", spec.model, project, collections, chat, [])
+        return _TextResponse(text=text), [], spec.model, project
+
+    response = _freeform_generate(llm, prompt, stream=stream)
+    _safe_record_usage("gen", spec.model, project, collections, chat, [])
+    return response, [], spec.model, project
+
+
+def _safe_record_usage(kind, model, project, collections, chat, nodes):
     try:
         est = sum(len(str(m.get("content", ""))) for m in chat) // 4
         est += sum(len(n.get_content()) for n in nodes) // 4
-        _record_usage(
-            "rag", model, project, list(collections or []), est
-        )  # defined below (line ~1391)
+        _record_usage(kind, model, project, list(collections or []), est)
     except Exception:
         pass
-    return response, nodes, model, project
 
 
 def sources_payload(source_nodes) -> list[dict]:
@@ -948,9 +1291,35 @@ def sources_payload(source_nodes) -> list[dict]:
 
 class ChatRequest(BaseModel):
     model: str | None = None
-    messages: list[dict]
+    messages: list[dict] = Field(min_length=1, max_length=100)
     stream: bool = False
-    collections: list[str] | None = None
+    collections: list[str] | None = Field(default=None, max_length=50)
+    keep_alive: str | int | None = None
+    aggressive_quant: bool | None = None
+
+    @field_validator("messages")
+    @classmethod
+    def validate_messages(cls, messages: list[dict]) -> list[dict]:
+        total_chars = 0
+        has_user = False
+        for message in messages:
+            if not isinstance(message, dict):
+                raise ValueError("Each message must be an object.")
+            role = message.get("role")
+            content = message.get("content")
+            if role not in {"system", "user", "assistant"}:
+                raise ValueError("Message role must be system, user, or assistant.")
+            if not isinstance(content, str):
+                raise ValueError("Message content must be text.")
+            has_user = has_user or role == "user"
+            if len(content) > 100_000:
+                raise ValueError("A single message is too large (maximum 100,000 characters).")
+            total_chars += len(content)
+        if not has_user:
+            raise ValueError("At least one user message is required.")
+        if total_chars > 200_000:
+            raise ValueError("Conversation is too large (maximum 200,000 characters).")
+        return messages
 
 
 class CollectionCreateRequest(BaseModel):
@@ -963,6 +1332,11 @@ class CollectionUpdateRequest(BaseModel):
 
 class AppStateRequest(BaseModel):
     values: dict[str, str]
+
+
+class IndexImportDeleteRequest(BaseModel):
+    path: str
+    collection_id: str | None = None
 
 
 class DocumentExtractResponse(BaseModel):
@@ -983,6 +1357,30 @@ ALLOW_LAN_SYSTEM = os.getenv("TRINAXAI_ALLOW_LAN_SYSTEM", "0").strip().lower() n
 }
 _health_ollama_ok = False
 _health_ollama_checked_at = 0.0
+_MODEL_MAX_CONCURRENCY = config._env_int(
+    "TRINAXAI_MODEL_MAX_CONCURRENCY", 1, minimum=1, maximum=8
+)
+_model_slots = threading.BoundedSemaphore(_MODEL_MAX_CONCURRENCY)
+_document_slots = threading.BoundedSemaphore(
+    config._env_int("TRINAXAI_DOCUMENT_MAX_CONCURRENCY", 1, minimum=1, maximum=4)
+)
+
+
+def _run_model_task(function, *args, **kwargs):
+    with _model_slots:
+        return function(*args, **kwargs)
+
+
+def _run_rag_nonstream(req: ChatRequest):
+    return _run_model_task(
+        run_rag,
+        req.messages,
+        stream=False,
+        collections=req.collections,
+        model_override=req.model,
+        keep_alive=req.keep_alive,
+        aggressive_quant=req.aggressive_quant,
+    )
 
 
 def _ollama_available_cached() -> bool:
@@ -1004,7 +1402,7 @@ def _ollama_available_cached() -> bool:
 
 
 def _sse(obj: dict) -> str:
-    return f"data: {json.dumps(obj, ensure_ascii=False)}\n\n"
+    return f"data: {json.dumps(obj, ensure_ascii=False, separators=(',', ':'))}\n\n"
 
 
 def _sse_done() -> str:
@@ -1016,39 +1414,84 @@ def _sse_error(exc: Exception) -> str:
     return _sse({"trinaxai_error": str(exc)[:200]})
 
 
-def generate_stream(messages: list[dict], collections: list[str] | None = None):
-    if _fusion_retriever is None:
-        yield _sse({"choices": [{"delta": {"content": NO_INDEX_MSG}}]})
-        yield _sse_done()
-        return
+def generate_stream(
+    messages: list[dict],
+    collections: list[str] | None = None,
+    *,
+    model: str | None = None,
+    keep_alive: str | int | None = None,
+    aggressive_quant: bool | None = None,
+):
+    _model_slots.acquire()
     try:
-        response, nodes, model, project = run_rag(
-            messages, stream=True, collections=collections
+        # Resolve the plan up front so the UI preview shows the right model and
+        # so we only require an index for tasks that actually need retrieval.
+        preview_retrieval_q, _ = prepare_query(messages)
+        preview_project = detect_project(preview_retrieval_q)
+        preview_spec = build_task_spec(
+            messages, model_override=model, has_index=_fusion_retriever is not None
         )
-        yield _sse({"trinaxai": {"model": model, "project": project}})
+        if preview_spec.use_rag and _fusion_retriever is None:
+            yield _sse({"choices": [{"delta": {"content": NO_INDEX_MSG}}]})
+            yield _sse_done()
+            return
+        preview_model = preview_spec.model
+        yield _sse(
+            {
+                "trinaxai": {
+                    "model": preview_model,
+                    "project": preview_project,
+                    "phase": "retrieving" if preview_spec.use_rag else "generating",
+                }
+            }
+        )
+        response, nodes, selected_model, project = run_rag(
+            messages,
+            stream=True,
+            collections=collections,
+            model_override=model,
+            keep_alive=keep_alive,
+            aggressive_quant=aggressive_quant,
+        )
+        if selected_model != preview_model or project != preview_project:
+            yield _sse({"trinaxai": {"model": selected_model, "project": project}})
         for token in response.response_gen:
             yield _sse({"choices": [{"delta": {"content": token}}]})
         yield _sse({"trinaxai_sources": sources_payload(nodes)})
     except Exception as e:
         yield _sse_error(e)
+    finally:
+        _model_slots.release()
     yield _sse_done()
 
 
 @app.post("/v1/chat/completions")
 async def chat(req: ChatRequest, request: Request):
-    _enforce_rate_limit(request, bucket="chat")
+    enforce_rate_limit(request, bucket="chat")
 
     if req.stream:
         return StreamingResponse(
-            generate_stream(req.messages, req.collections),
+            generate_stream(
+                req.messages,
+                req.collections,
+                model=req.model,
+                keep_alive=req.keep_alive,
+                aggressive_quant=req.aggressive_quant,
+            ),
             media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "X-Accel-Buffering": "no",
+            },
         )
-    if _fusion_retriever is None:
+    # Only block on a missing index when the task actually needs retrieval.
+    _preview_spec = build_task_spec(
+        req.messages, model_override=req.model, has_index=_fusion_retriever is not None
+    )
+    if _preview_spec.use_rag and _fusion_retriever is None:
         content, sources, model, project = NO_INDEX_MSG, [], config.LLM_MODEL, None
     else:
-        response, nodes, model, project = run_rag(
-            req.messages, stream=False, collections=req.collections
-        )
+        response, nodes, model, project = await run_in_threadpool(_run_rag_nonstream, req)
         content, sources = str(response), sources_payload(nodes)
     return {
         "id": f"chatcmpl-{int(time.time())}",
@@ -1079,6 +1522,8 @@ class ResearchRequest(BaseModel):
     collections: list[str] | None = None
     depth: int = 2
     model: str | None = None
+    keep_alive: str | int | None = None
+    aggressive_quant: bool | None = None
 
 
 class WatchStartRequest(BaseModel):
@@ -1150,21 +1595,27 @@ def _research_retrieve(
     """
     if _fusion_retriever is None:
         return []
+    active_collections = tuple(
+        sorted(
+            sanitize_collection_id(c, fallback=config.DEFAULT_COLLECTION_ID)
+            for c in (collections or [])
+            if isinstance(c, str) and c.strip()
+        )
+    )
     try:
-        nodes = _fusion_retriever.retrieve(query)
+        retriever = _retriever_for_collections(active_collections)
+        nodes = retriever.retrieve(query) if retriever is not None else []
     except Exception:
         return []
     if collections:
         allowed = {c for c in collections if isinstance(c, str) and c.strip()}
         if allowed:
-            filtered = [
+            nodes = [
                 n
                 for n in nodes
                 if n.metadata.get("collection_id", config.DEFAULT_COLLECTION_ID)
                 in allowed
             ]
-            if filtered:
-                nodes = filtered
     if top_k is not None:
         nodes = nodes[:top_k]
     return nodes
@@ -1263,19 +1714,11 @@ def _watch_try_import():
 
 
 def _watch_default_paths(collection: str | None) -> list[str]:
-    """Pick reasonable default paths to watch for a given collection."""
+    """Return the original source directories configured for indexing."""
     roots: list[str] = []
-    for candidate in (
-        os.path.join(config.BASE_DIR, "local_sources"),
-        config.LOCAL_SOURCES_DIR,
-    ):
+    for candidate in config.PROJECTS_DIRS:
         if candidate and os.path.isdir(candidate):
             roots.append(candidate)
-    # Filter to the requested collection when collections live in subfolders.
-    if collection:
-        sub = os.path.join(config.LOCAL_SOURCES_DIR, "collections", collection)
-        if os.path.isdir(sub):
-            roots = [sub] + [r for r in roots if r != sub]
     # Deduplicate while keeping order.
     seen: set[str] = set()
     out: list[str] = []
@@ -1298,12 +1741,24 @@ except Exception:
 class _watch_Handler(_WDFileSystemEventHandler):
     """Debounced watchdog handler that spawns index.py for changed files."""
 
-    def __init__(self, paths: list[str], debounce_seconds: float = 2.0):
+    def __init__(
+        self,
+        paths: list[str],
+        *,
+        mirror_roots: dict[str, str] | None = None,
+        collection_ids: dict[str, str] | None = None,
+        collection_names: dict[str, str] | None = None,
+        debounce_seconds: float = 2.0,
+    ):
         self.paths = paths
+        self.mirror_roots = mirror_roots or {}
+        self.collection_ids = collection_ids or {}
+        self.collection_names = collection_names or {}
         self.debounce_seconds = debounce_seconds
         self._timer: threading.Timer | None = None
         self._pending: set[str] = set()
         self._lock = threading.Lock()
+        self._reindex_lock = threading.Lock()
 
     def _schedule(self) -> None:
         with self._lock:
@@ -1318,31 +1773,136 @@ class _watch_Handler(_WDFileSystemEventHandler):
             pending = sorted(self._pending)
             self._pending.clear()
             self._timer = None
+        if not pending:
+            return
         with _watcher_state["lock"]:
             _watcher_state["events_seen"] += len(pending)
-        # Fire ONE reindex process; index.py reads its own path configuration
-        # from TRINAXAI_INDEX_DIR / collection env vars. Running N parallel
-        # indexing processes against the same store risks index corruption.
-        try:
-            subprocess.Popen(
-                [sys.executable, os.path.join(config.BASE_DIR, "index.py")],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                env={**os.environ, "TRINAXAI_INDEX_APPEND": "1"},
-            )
-        except Exception:
-            pass
 
+        # A watcher path can be a collection directory. The old implementation
+        # launched index.py without overriding its environment, so it indexed
+        # config.TRINAXAI_INDEX_DIR and the default collection instead of the
+        # folder that actually changed.
+        roots: list[str] = []
+        for changed in pending:
+            changed_abs = os.path.abspath(changed)
+            matches = []
+            for root in self.paths:
+                try:
+                    if os.path.commonpath([changed_abs, root]) == os.path.abspath(root):
+                        matches.append(root)
+                except ValueError:
+                    # Different Windows drives cannot share a common path.
+                    continue
+            if matches:
+                root = max(matches, key=len)
+                if root not in roots:
+                    roots.append(root)
+
+        # Never run two indexers against the same persisted store. If another
+        # debounce cycle is already indexing, its events are picked up by the
+        # next cycle instead of corrupting the index through parallel writes.
+        if not self._reindex_lock.acquire(blocking=False):
+            with self._lock:
+                self._pending.update(pending)
+            self._schedule()
+            return
+        try:
+            for root in roots:
+                target_root = self.mirror_roots.get(root, root)
+                collection_id = self.collection_ids.get(
+                    root, config.DEFAULT_COLLECTION_ID
+                )
+                collection_name = self.collection_names.get(
+                    root, config.DEFAULT_COLLECTION_NAME
+                )
+                if root == target_root:
+                    collections_root = os.path.abspath(
+                        os.path.join(config.LOCAL_SOURCES_DIR, "collections")
+                    )
+                    if os.path.dirname(root) == collections_root:
+                        collection_id = os.path.basename(root)
+                        collection_name = next(
+                            (
+                                item.get("name", collection_name)
+                                for item in _read_collections_unlocked()
+                                if item.get("id") == collection_id
+                            ),
+                            collection_name,
+                        )
+
+                # Keep the private local mirror synchronized before indexing.
+                for changed in pending:
+                    changed_abs = os.path.abspath(changed)
+                    try:
+                        if os.path.commonpath([changed_abs, root]) != os.path.abspath(root):
+                            continue
+                    except ValueError:
+                        continue
+                    relative = os.path.relpath(changed_abs, root)
+                    destination = os.path.abspath(os.path.join(target_root, relative))
+                    if not destination.startswith(os.path.abspath(target_root) + os.sep):
+                        continue
+                    try:
+                        if os.path.abspath(destination) == changed_abs:
+                            continue
+                        if os.path.exists(changed_abs):
+                            os.makedirs(os.path.dirname(destination), exist_ok=True)
+                            shutil.copy2(changed_abs, destination)
+                        else:
+                            os.remove(destination)
+                            parent = os.path.dirname(destination)
+                            while parent.startswith(os.path.abspath(target_root) + os.sep):
+                                if os.listdir(parent):
+                                    break
+                                os.rmdir(parent)
+                                parent = os.path.dirname(parent)
+                    except OSError as exc:
+                        LOG.warning("Watcher mirror failed for %s: %s", changed_abs, exc)
+
+                env = {
+                    **os.environ,
+                    "TRINAXAI_INDEX_DIR": target_root,
+                    "TRINAXAI_COLLECTION_ID": collection_id,
+                    "TRINAXAI_COLLECTION_NAME": collection_name,
+                    # Do not append-only: a deleted file must be removed from
+                    # the vector index and manifest as well.
+                    "TRINAXAI_INDEX_APPEND": "0",
+                }
+                try:
+                    result = subprocess.run(
+                        [sys.executable, os.path.join(config.BASE_DIR, "index.py")],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                        env=env,
+                        check=False,
+                    )
+                    if result.returncode == 0:
+                        build_engine()
+                except Exception:
+                    LOG.exception("Watcher reindex failed for %s", target_root)
+        finally:
+            self._reindex_lock.release()
+
+    def _ignored(self, path: str) -> bool:
+        """Ignore generated mirrors and runtime state inside a source root."""
+        absolute = os.path.abspath(path)
+        ignored_roots = [config.LOCAL_SOURCES_DIR, config.PERSIST_DIR]
+        return any(
+            absolute == os.path.abspath(root)
+            or absolute.startswith(os.path.abspath(root) + os.sep)
+            for root in ignored_roots
+            if root
+        )
     # watchdog hooks
     def on_created(self, event):  # noqa: D401
-        if getattr(event, "is_directory", False):
+        if getattr(event, "is_directory", False) or self._ignored(event.src_path):
             return
         with self._lock:
             self._pending.add(event.src_path)
         self._schedule()
 
     def on_modified(self, event):
-        if getattr(event, "is_directory", False):
+        if getattr(event, "is_directory", False) or self._ignored(event.src_path):
             return
         with self._lock:
             self._pending.add(event.src_path)
@@ -1350,14 +1910,15 @@ class _watch_Handler(_WDFileSystemEventHandler):
 
     def on_moved(self, event):
         dest = getattr(event, "dest_path", "") or event.src_path
-        if getattr(event, "is_directory", False):
+        if getattr(event, "is_directory", False) or self._ignored(event.src_path) or self._ignored(dest):
             return
         with self._lock:
+            self._pending.add(event.src_path)
             self._pending.add(dest)
         self._schedule()
 
     def on_deleted(self, event):
-        if getattr(event, "is_directory", False):
+        if getattr(event, "is_directory", False) or self._ignored(event.src_path):
             return
         with self._lock:
             self._pending.add(event.src_path)
@@ -1365,6 +1926,21 @@ class _watch_Handler(_WDFileSystemEventHandler):
 
 
 # ── Memory storage helpers ──
+def _atomic_write_json(path: str, payload: object) -> None:
+    """Write JSON atomically via a unique temp file + os.replace."""
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    tmp = f"{path}.{os.getpid()}.{uuid.uuid4().hex}.tmp"
+    try:
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(payload, f, ensure_ascii=False, indent=2)
+        os.replace(tmp, path)
+    finally:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+
+
 def _memory_load() -> dict:
     try:
         with open(USER_MEMORY_PATH, encoding="utf-8") as f:
@@ -1380,16 +1956,12 @@ def _memory_load() -> dict:
 
 
 def _memory_save(data: dict) -> None:
-    os.makedirs(config.PERSIST_DIR, exist_ok=True)
-    tmp = f"{USER_MEMORY_PATH}.tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
-    os.replace(tmp, USER_MEMORY_PATH)
+    _atomic_write_json(USER_MEMORY_PATH, data)
 
 
 # ── 1. Knowledge Browser: GET /v1/sources ──
 @app.get("/v1/sources")
-async def sources_list(collection: str | None = None, request: Request = None):
+def sources_list(collection: str | None = None, request: Request = None):
     """List source files in a collection with chunk counts and a preview snippet.
 
     Response: ``{"collection": str, "sources": [{"file", "chunks", "size",
@@ -1438,7 +2010,7 @@ async def sources_list(collection: str | None = None, request: Request = None):
 
 # ── 1b. Knowledge Browser: GET /v1/sources/{collection}/{file:path}/chunks ──
 @app.get("/v1/sources/{collection}/{file:path}/chunks")
-async def sources_chunks(
+def sources_chunks(
     collection: str,
     file: str,
     limit: int = 50,
@@ -1493,15 +2065,152 @@ async def sources_chunks(
     }
 
 
+# ── 1c. Knowledge Browser: DELETE /v1/sources/{collection}/{file:path} ──
+def _trim_manifest_keys(keys: set[str]) -> None:
+    """Remove exact manifest keys."""
+    if not keys:
+        return
+    try:
+        with open(config.MANIFEST_PATH, encoding="utf-8") as f:
+            manifest = json.load(f)
+        if isinstance(manifest, dict):
+            trimmed = {k: v for k, v in manifest.items() if str(k) not in keys}
+            if len(trimmed) != len(manifest):
+                tmp = f"{config.MANIFEST_PATH}.tmp"
+                with open(tmp, "w", encoding="utf-8") as f:
+                    json.dump(trimmed, f)
+                os.replace(tmp, config.MANIFEST_PATH)
+    except (OSError, ValueError):
+        pass
+
+
+def _delete_indexed_rel_paths_unlocked(collection: str, rel_paths: set[str]) -> int:
+    """Delete indexed nodes for a set of relative source paths in one collection."""
+    if not rel_paths:
+        return 0
+    deleted = 0
+    source_keys = {f"{collection}:{rel}" for rel in rel_paths}
+    storage_context = StorageContext.from_defaults(persist_dir=config.PERSIST_DIR)
+    index = load_index_from_storage(storage_context)
+    node_ids: list[str] = []
+    for node_id, node in index.docstore.docs.items():
+        meta = getattr(node, "metadata", {}) or {}
+        rid = meta.get("collection_id", config.DEFAULT_COLLECTION_ID)
+        if rid != collection:
+            continue
+        rel = meta.get("rel_path") or meta.get("file_path") or ""
+        source_key = meta.get("source_key") or f"{rid}:{rel}"
+        if rel in rel_paths or source_key in source_keys:
+            node_ids.append(node_id)
+    if node_ids:
+        index.delete_nodes(node_ids, delete_from_docstore=True)
+        index.storage_context.persist(persist_dir=config.PERSIST_DIR)
+        deleted = len(node_ids)
+    _trim_manifest_keys(source_keys)
+    return deleted
+
+
+def _delete_indexed_rel_paths(collection: str, rel_paths: set[str]) -> int:
+    with _index_process_lock():
+        return _delete_indexed_rel_paths_unlocked(collection, rel_paths)
+
+
+@app.delete("/v1/sources/{collection}/{file:path}")
+async def sources_delete(collection: str, file: str, request: Request):
+    """Delete all indexed chunks belonging to a single file inside a collection.
+
+    Removes nodes from the docstore and index, persists the change, and
+    clears the in-memory sources cache so the UI reflects the removal
+    immediately.  Returns the number of deleted chunks.
+    """
+    _authorize_system(request)
+    rel_path = file  # FastAPI URL-decodes {file:path} automatically.
+    try:
+        deleted = await run_in_threadpool(
+            _delete_indexed_rel_paths, collection, {rel_path}
+        )
+    except Exception as exc:
+        LOG.exception("Failed to delete source %s in %s", rel_path, collection)
+        raise HTTPException(status_code=500, detail="Failed to delete source.") from exc
+    # Clear caches so the browser / CLI picks up the change immediately.
+    with _sources_cache_lock:
+        _sources_cache.pop(("sources:list", collection), None)
+        _sources_cache.pop(("sources:chunks", collection, rel_path), None)
+    with _retrieval_cache_lock:
+        _retrieval_cache.clear()
+    await run_in_threadpool(build_engine)
+    return {"deleted": deleted, "collection": collection, "file": rel_path}
+
+
+# ── 1d. Knowledge Browser: DELETE /v1/sources/{collection} (all files) ──
+@app.delete("/v1/sources/{collection}")
+async def sources_delete_collection(collection: str, request: Request):
+    """Delete ALL indexed chunks in a collection (keeps the collection metadata).
+
+    This is a bulk operation that removes every node belonging to the
+    collection without deleting the collection itself.  Use
+    ``DELETE /collections/{id}`` if you want to remove the collection too.
+    """
+    _authorize_system(request)
+    if collection == config.DEFAULT_COLLECTION_ID:
+        raise HTTPException(
+            status_code=400, detail="Cannot bulk-delete the default collection sources."
+        )
+    try:
+        deleted = await run_in_threadpool(_delete_collection_sources_sync, collection)
+    except Exception as exc:
+        LOG.exception("Failed to bulk-delete sources in %s", collection)
+        raise HTTPException(status_code=500, detail="Failed to delete sources.") from exc
+    with _sources_cache_lock:
+        _sources_cache.clear()
+    with _retrieval_cache_lock:
+        _retrieval_cache.clear()
+    await run_in_threadpool(build_engine)
+    return {"deleted": deleted, "collection": collection}
+
+
+def _delete_collection_sources_sync(collection: str) -> int:
+    with _index_process_lock():
+        storage_context = StorageContext.from_defaults(persist_dir=config.PERSIST_DIR)
+        index = load_index_from_storage(storage_context)
+        node_ids = [
+            node_id
+            for node_id, node in index.docstore.docs.items()
+            if (getattr(node, "metadata", {}) or {}).get(
+                "collection_id", config.DEFAULT_COLLECTION_ID
+            )
+            == collection
+        ]
+        if node_ids:
+            index.delete_nodes(node_ids, delete_from_docstore=True)
+            index.storage_context.persist(persist_dir=config.PERSIST_DIR)
+        _trim_manifest_prefix(f"{collection}:")
+        return len(node_ids)
+
+
+def _trim_manifest_prefix(prefix: str) -> None:
+    """Remove all manifest keys that start with *prefix*."""
+    try:
+        with open(config.MANIFEST_PATH, encoding="utf-8") as f:
+            manifest = json.load(f)
+        if isinstance(manifest, dict):
+            trimmed = {k: v for k, v in manifest.items() if not str(k).startswith(prefix)}
+            if len(trimmed) != len(manifest):
+                tmp = f"{config.MANIFEST_PATH}.tmp"
+                with open(tmp, "w", encoding="utf-8") as f:
+                    json.dump(trimmed, f)
+                os.replace(tmp, config.MANIFEST_PATH)
+    except (OSError, ValueError):
+        pass
+
+
 # ── 2. Deep Research: POST /v1/research ──
-@app.post("/v1/research")
-async def research(req: ResearchRequest, request: Request):
+def _research_sync(req: ResearchRequest):
     """Multi-pass retrieval + LLM synthesis with optional sub-question decomposition.
 
     Response: ``{"answer": str, "sub_questions": [...], "sources": [...],
     "passes": int, "model": str}``
     """
-    _authorize_system(request)
     depth = max(1, min(3, int(req.depth or 2)))
     model_name = (req.model or "").strip() or config.LLM_MODEL
     if _fusion_retriever is None:
@@ -1512,7 +2221,11 @@ async def research(req: ResearchRequest, request: Request):
             "passes": 0,
             "model": model_name,
         }
-    llm = get_llm(model_name)
+    llm = get_llm(
+        model_name,
+        keep_alive=req.keep_alive,
+        aggressive_quant=req.aggressive_quant,
+    )
     sub_questions = _research_decompose(llm, req.query, depth)
     passes = max(1, len(sub_questions))
     seen: dict[str, dict] = {}
@@ -1565,9 +2278,16 @@ async def research(req: ResearchRequest, request: Request):
     }
 
 
+@app.post("/v1/research")
+async def research(req: ResearchRequest, request: Request):
+    """Run deep research without blocking FastAPI's event loop."""
+    _authorize_system(request)
+    return await run_in_threadpool(_run_model_task, _research_sync, req)
+
+
 # ── 3a. File Watcher: POST /v1/watch/start ──
 @app.post("/v1/watch/start")
-async def watch_start(req: WatchStartRequest, request: Request):
+def watch_start(req: WatchStartRequest, request: Request):
     """Start a watchdog observer that re-runs ``index.py`` when files change.
 
     Response: ``{"status": "started" | "already_running" | "watchdog_not_available",
@@ -1581,21 +2301,97 @@ async def watch_start(req: WatchStartRequest, request: Request):
             detail="watchdog is not installed. Run: pip install watchdog",
         )
     with _watcher_state["lock"]:
-        if _watcher_state["observer"] is not None:
+        current_observer = _watcher_state["observer"]
+        if current_observer is not None and current_observer.is_alive():
             return {
                 "status": "already_running",
                 "watching": list(_watcher_state["paths"]),
                 "pid": os.getpid(),
             }
+        # An observer can stop unexpectedly (for example after an OS watcher
+        # limit is reached). Do not leave the UI stuck in "already running".
+        _watcher_state["observer"] = None
+        _watcher_state["handler"] = None
+        _watcher_state["paths"] = []
         paths = [p for p in (req.paths or []) if p] or _watch_default_paths(
             req.collection
         )
-        paths = [os.path.abspath(p) for p in paths if os.path.isdir(p)]
+        paths = [
+            os.path.abspath(os.path.expandvars(os.path.expanduser(p)))
+            for p in paths
+            if os.path.isdir(os.path.expandvars(os.path.expanduser(p)))
+        ]
         if not paths:
             raise HTTPException(
                 status_code=400, detail="No valid directories to watch."
             )
-        handler = _watch_Handler(paths)
+        collections_root = os.path.abspath(
+            os.path.join(config.LOCAL_SOURCES_DIR, "collections")
+        )
+        collection_name_by_id = {
+            item.get("id"): item.get("name", item.get("id", ""))
+            for item in _read_collections_unlocked()
+            if item.get("id")
+        }
+        mirror_roots: dict[str, str] = {}
+        collection_ids: dict[str, str] = {}
+        collection_names: dict[str, str] = {}
+        for source_root in paths:
+            collection_id = sanitize_collection_id(
+                req.collection,
+                fallback=config.DEFAULT_COLLECTION_ID,
+            )
+            collection_name = collection_name_by_id.get(
+                collection_id, config.DEFAULT_COLLECTION_NAME
+            )
+            # Preserve support for manually supplied local collection paths.
+            if os.path.dirname(source_root) == collections_root:
+                collection_id = os.path.basename(source_root)
+                collection_name = collection_name_by_id.get(
+                    collection_id, config.DEFAULT_COLLECTION_NAME
+                )
+                target_root = source_root
+            else:
+                target_root = os.path.join(
+                    collections_root, collection_id, "watch-source"
+                )
+                os.makedirs(target_root, exist_ok=True)
+                # Seed the mirror so the first incremental run has the complete
+                # source tree, not just the next changed file.
+                for dirpath, dirnames, filenames in os.walk(source_root):
+                    dirnames[:] = [
+                        d
+                        for d in dirnames
+                        if not d.startswith(".")
+                        and not os.path.abspath(os.path.join(dirpath, d)).startswith(
+                            os.path.abspath(config.LOCAL_SOURCES_DIR) + os.sep
+                        )
+                        and not os.path.abspath(os.path.join(dirpath, d)).startswith(
+                            os.path.abspath(config.PERSIST_DIR) + os.sep
+                        )
+                    ]
+                    relative_dir = os.path.relpath(dirpath, source_root)
+                    destination_dir = target_root if relative_dir == "." else os.path.join(target_root, relative_dir)
+                    os.makedirs(destination_dir, exist_ok=True)
+                    for filename in filenames:
+                        if filename.startswith("."):
+                            continue
+                        source_file = os.path.join(dirpath, filename)
+                        destination_file = os.path.join(destination_dir, filename)
+                        try:
+                            shutil.copy2(source_file, destination_file)
+                        except OSError as exc:
+                            LOG.warning("Could not seed watcher mirror %s: %s", source_file, exc)
+            mirror_roots[source_root] = target_root
+            collection_ids[source_root] = collection_id
+            collection_names[source_root] = collection_name
+
+        handler = _watch_Handler(
+            paths,
+            mirror_roots=mirror_roots,
+            collection_ids=collection_ids,
+            collection_names=collection_names,
+        )
         observer = Observer()
         for p in paths:
             observer.schedule(handler, p, recursive=True)
@@ -1663,51 +2459,60 @@ async def memory_list(request: Request):
 
 
 # ── 4b. Memory: POST /v1/memory ──
-@app.post("/v1/memory")
-async def memory_create(req: MemoryCreateRequest, request: Request):
-    """Append a new memory entry. Returns the persisted record."""
-    _authorize_system(request)
+def _memory_create_sync(req: MemoryCreateRequest) -> dict:
     text = (req.text or "").strip()
     if not text:
         raise HTTPException(status_code=400, detail="Memory text is required.")
-    data = _memory_load()
     mem = {
         "id": uuid.uuid4().hex,
         "text": text,
         "created_at": time.time(),
         "tags": [str(t).strip() for t in (req.tags or []) if str(t).strip()],
     }
-    data.setdefault("memories", []).append(mem)
-    _memory_save(data)
+    with _memory_lock:
+        data = _memory_load()
+        data.setdefault("memories", []).append(mem)
+        _memory_save(data)
     return mem
 
 
+@app.post("/v1/memory")
+async def memory_create(req: MemoryCreateRequest, request: Request):
+    """Append a new memory entry. Returns the persisted record."""
+    _authorize_system(request)
+    return await run_in_threadpool(_memory_create_sync, req)
+
+
 # ── 4c. Memory: DELETE /v1/memory/{memory_id} ──
+def _memory_delete_sync(memory_id: str) -> dict:
+    with _memory_lock:
+        data = _memory_load()
+        before = len(data.get("memories", []))
+        data["memories"] = [
+            m for m in data.get("memories", []) if m.get("id") != memory_id
+        ]
+        deleted = len(data["memories"]) < before
+        if deleted:
+            _memory_save(data)
+    return {"deleted": deleted}
+
+
 @app.delete("/v1/memory/{memory_id}")
 async def memory_delete(memory_id: str, request: Request):
     """Remove a memory entry by id."""
     _authorize_system(request)
-    data = _memory_load()
-    before = len(data.get("memories", []))
-    data["memories"] = [m for m in data.get("memories", []) if m.get("id") != memory_id]
-    deleted = len(data["memories"]) < before
-    if deleted:
-        _memory_save(data)
-    return {"deleted": deleted}
+    return await run_in_threadpool(_memory_delete_sync, memory_id)
 
 
 # ── 4d. Memory: POST /v1/memory/refresh ──
-@app.post("/v1/memory/refresh")
-async def memory_refresh(req: MemoryRefreshRequest, request: Request):
-    """Summarise all stored memories into a short context-injectable note."""
-    _authorize_system(request)
-    data = _memory_load()
+def _memory_refresh_sync(req: MemoryRefreshRequest):
+    with _memory_lock:
+        data = _memory_load()
     mems = data.get("memories", [])
     summary_path = os.path.join(config.PERSIST_DIR, "user_memory_summary.json")
     if not mems:
         summary = {"summary": "", "count": 0, "updated_at": time.time()}
-        with open(summary_path, "w", encoding="utf-8") as f:
-            json.dump(summary, f, ensure_ascii=False, indent=2)
+        _atomic_write_json(summary_path, summary)
         return {"status": "refreshed", "summary": "", "count": 0}
     bullets = "\n".join(f"- {m.get('text', '')}" for m in mems[:200])
     prompt = (
@@ -1725,10 +2530,15 @@ async def memory_refresh(req: MemoryRefreshRequest, request: Request):
             m.get("text", "") for m in mems[:5]
         )
     summary = {"summary": text, "count": len(mems), "updated_at": time.time()}
-    os.makedirs(config.PERSIST_DIR, exist_ok=True)
-    with open(summary_path, "w", encoding="utf-8") as f:
-        json.dump(summary, f, ensure_ascii=False, indent=2)
+    _atomic_write_json(summary_path, summary)
     return {"status": "refreshed", "summary": text, "count": len(mems)}
+
+
+@app.post("/v1/memory/refresh")
+async def memory_refresh(req: MemoryRefreshRequest, request: Request):
+    """Summarise memories without blocking FastAPI's event loop."""
+    _authorize_system(request)
+    return await run_in_threadpool(_run_model_task, _memory_refresh_sync, req)
 
 
 # ── 4e. Memory: GET /v1/memory/summary ──
@@ -2018,11 +2828,26 @@ def _write_app_state(values: dict[str, str]) -> None:
                 raise
 
 
+def _app_state_etag() -> str:
+    """Cheap version tag that avoids parsing multi-megabyte state on a 304."""
+    try:
+        stat = os.stat(APP_STATE_PATH)
+        return f'W/"{stat.st_mtime_ns:x}-{stat.st_size:x}-{stat.st_ino:x}"'
+    except OSError:
+        return 'W/"missing"'
+
+
 @app.get("/app-state")
-async def app_state_get():
+async def app_state_get(request: Request):
     """Shared local PWA state for devices connected to this TrinaxAI host."""
     with _app_state_lock:
-        return {"ok": True, "values": _read_app_state()}
+        etag = _app_state_etag()
+        headers = {"ETag": etag, "Cache-Control": "no-cache"}
+        if request.headers.get("if-none-match") == etag:
+            return Response(status_code=304, headers=headers)
+        values = _read_app_state()
+        headers["ETag"] = _app_state_etag()
+        return JSONResponse({"ok": True, "values": values}, headers=headers)
 
 
 @app.put("/app-state")
@@ -2035,9 +2860,11 @@ async def app_state_put(req: AppStateRequest, request: Request):
     }
     with _app_state_lock:
         state = _read_app_state()
+        before = dict(state)
         state.update(incoming)
-        _write_app_state(state)
-        return {"ok": True, "values": state}
+        if state != before:
+            _write_app_state(state)
+        return JSONResponse({"ok": True}, headers={"ETag": _app_state_etag()})
 
 
 @app.delete("/app-state")
@@ -2055,9 +2882,153 @@ async def app_state_delete(request: Request):
 
 
 DOC_EXTRACT_MAX_BYTES = int(
-    os.getenv("TRINAXAI_DOC_EXTRACT_MAX_BYTES", str(15 * 1024 * 1024))
+    os.getenv("TRINAXAI_DOC_EXTRACT_MAX_BYTES", str(250 * 1024 * 1024))
 )
-DOC_EXTRACT_MAX_CHARS = int(os.getenv("TRINAXAI_DOC_EXTRACT_MAX_CHARS", "120000"))
+DOC_EXTRACT_MAX_CHARS = config._env_int("TRINAXAI_DOC_EXTRACT_MAX_CHARS", 120000, minimum=1000)
+CHAT_ATTACHMENT_MAX_BYTES = config._env_int(
+    "TRINAXAI_CHAT_ATTACHMENT_MAX_BYTES", 250 * 1024 * 1024, minimum=1024
+)
+CHAT_ATTACHMENTS_MAX_BYTES = config._env_int(
+    "TRINAXAI_CHAT_ATTACHMENTS_MAX_BYTES", 1024 * 1024 * 1024, minimum=1024
+)
+CHAT_ATTACHMENTS_MAX_FILES = config._env_int("TRINAXAI_CHAT_ATTACHMENTS_MAX_FILES", 1000, minimum=1)
+_attachment_lock = threading.Lock()
+_SAFE_INLINE_ATTACHMENT_TYPES = {
+    "application/pdf",
+    "image/gif",
+    "image/jpeg",
+    "image/png",
+    "image/webp",
+    "text/plain",
+}
+
+
+def _attachment_paths(attachment_id: str) -> tuple[str, str]:
+    if not re.fullmatch(r"[0-9a-f]{32}", attachment_id):
+        raise HTTPException(status_code=404, detail="Attachment not found.")
+    return (
+        os.path.join(CHAT_ATTACHMENTS_DIR, f"{attachment_id}.bin"),
+        os.path.join(CHAT_ATTACHMENTS_DIR, f"{attachment_id}.json"),
+    )
+
+
+def _attachment_usage_unlocked() -> tuple[int, int]:
+    try:
+        entries = os.scandir(CHAT_ATTACHMENTS_DIR)
+    except OSError:
+        return 0, 0
+    total = count = 0
+    with entries:
+        for entry in entries:
+            if not entry.is_file(follow_symlinks=False) or not entry.name.endswith(".bin"):
+                continue
+            try:
+                total += entry.stat(follow_symlinks=False).st_size
+                count += 1
+            except OSError:
+                continue
+    return total, count
+
+
+@app.post("/attachments")
+async def attachment_upload(request: Request, file: UploadFile = File(...)):
+    """Store a chat file on the TrinaxAI host for cross-device access."""
+    enforce_rate_limit(request, bucket="attachment_upload")
+    attachment_id = uuid.uuid4().hex
+    data_path, metadata_path = _attachment_paths(attachment_id)
+    os.makedirs(CHAT_ATTACHMENTS_DIR, exist_ok=True)
+    size = 0
+    try:
+        with open(data_path, "wb") as output:
+            while True:
+                chunk = await file.read(1024 * 1024)
+                if not chunk:
+                    break
+                size += len(chunk)
+                if size > CHAT_ATTACHMENT_MAX_BYTES:
+                    raise HTTPException(
+                        status_code=413,
+                        detail=f"Attachment is too large. Limit: {CHAT_ATTACHMENT_MAX_BYTES} bytes.",
+                    )
+                output.write(chunk)
+        if size == 0:
+            raise HTTPException(status_code=400, detail="Empty attachment.")
+        with _attachment_lock:
+            existing_bytes, existing_files = _attachment_usage_unlocked()
+            # The freshly written .bin is already included in this snapshot.
+            if existing_files > CHAT_ATTACHMENTS_MAX_FILES:
+                raise HTTPException(status_code=507, detail="Attachment file quota exceeded.")
+            if existing_bytes > CHAT_ATTACHMENTS_MAX_BYTES:
+                raise HTTPException(status_code=507, detail="Attachment storage quota exceeded.")
+        supplied_type = (file.content_type or "application/octet-stream").lower()
+        safe_type = supplied_type if supplied_type in _SAFE_INLINE_ATTACHMENT_TYPES else "application/octet-stream"
+        metadata = {
+            "id": attachment_id,
+            "name": os.path.basename(file.filename or "attachment"),
+            "size": size,
+            "mime_type": safe_type,
+            "created_at": time.time(),
+        }
+        tmp_metadata = f"{metadata_path}.tmp"
+        with open(tmp_metadata, "w", encoding="utf-8") as stream:
+            json.dump(metadata, stream, ensure_ascii=False)
+        os.replace(tmp_metadata, metadata_path)
+        return {"ok": True, **metadata, "storage_key": f"server:{attachment_id}"}
+    except Exception:
+        for path in (data_path, metadata_path, f"{metadata_path}.tmp"):
+            try:
+                os.remove(path)
+            except OSError:
+                pass
+        raise
+    finally:
+        await file.close()
+
+
+@app.get("/attachments/{attachment_id}")
+async def attachment_get(attachment_id: str, request: Request):
+    enforce_rate_limit(request, bucket="attachment_download")
+    data_path, metadata_path = _attachment_paths(attachment_id)
+    try:
+        with open(metadata_path, encoding="utf-8") as stream:
+            metadata = json.load(stream)
+    except (OSError, ValueError):
+        raise HTTPException(status_code=404, detail="Attachment not found.")
+    if not os.path.isfile(data_path):
+        raise HTTPException(status_code=404, detail="Attachment not found.")
+    stored_type = str(metadata.get("mime_type") or "application/octet-stream").lower()
+    media_type = (
+        stored_type
+        if stored_type in _SAFE_INLINE_ATTACHMENT_TYPES
+        else "application/octet-stream"
+    )
+    inline = media_type in _SAFE_INLINE_ATTACHMENT_TYPES
+    return FileResponse(
+        data_path,
+        media_type=media_type,
+        filename=os.path.basename(str(metadata.get("name") or "attachment")),
+        content_disposition_type="inline" if inline else "attachment",
+        headers={
+            "Cache-Control": "private, max-age=3600",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
+
+
+@app.delete("/attachments/{attachment_id}")
+async def attachment_delete(attachment_id: str, request: Request):
+    _authorize_system(request)
+    removed = False
+    with _attachment_lock:
+        for path in _attachment_paths(attachment_id):
+            try:
+                os.remove(path)
+                removed = True
+            except FileNotFoundError:
+                continue
+    if not removed:
+        raise HTTPException(status_code=404, detail="Attachment not found.")
+    return {"ok": True, "deleted": attachment_id}
 
 
 def _decode_text_bytes(data: bytes) -> str:
@@ -2136,12 +3107,55 @@ def _extract_docx_text(data: bytes) -> str:
                 pass
 
 
+def _extract_pptx_text(data: bytes) -> str:
+    try:
+        from pptx import Presentation
+    except Exception as exc:
+        raise HTTPException(
+            status_code=501, detail="PPTX extraction requires python-pptx."
+        ) from exc
+    try:
+        presentation = Presentation(BytesIO(data))
+        slides: list[str] = []
+        for slide_index, slide in enumerate(presentation.slides, start=1):
+            parts: list[str] = []
+            for shape in slide.shapes:
+                text = ""
+                if getattr(shape, "has_text_frame", False):
+                    text = shape.text or ""
+                elif getattr(shape, "has_table", False):
+                    rows: list[str] = []
+                    for row in shape.table.rows:
+                        cells = [cell.text.strip() for cell in row.cells if cell.text.strip()]
+                        if cells:
+                            rows.append(" | ".join(cells))
+                    text = "\n".join(rows)
+                if text.strip():
+                    parts.append(text.strip())
+            try:
+                if slide.has_notes_slide and slide.notes_slide.notes_text_frame:
+                    notes = slide.notes_slide.notes_text_frame.text or ""
+                    if notes.strip():
+                        parts.append(f"Notes:\n{notes.strip()}")
+            except Exception:
+                pass
+            if parts:
+                slides.append(f"[Slide {slide_index}]\n" + "\n\n".join(parts))
+        return "\n\n".join(slides).strip()
+    except Exception as exc:
+        raise HTTPException(
+            status_code=422, detail=f"Could not extract PPTX text: {str(exc)[:180]}"
+        ) from exc
+
+
 def _extract_document_text(filename: str, data: bytes) -> str:
     ext = os.path.splitext(filename.lower())[1]
     if ext == ".pdf":
         return _extract_pdf_text(data)
     if ext == ".docx":
         return _extract_docx_text(data)
+    if ext == ".pptx":
+        return _extract_pptx_text(data)
     if ext in {
         ".txt",
         ".md",
@@ -2161,16 +3175,35 @@ def _extract_document_text(filename: str, data: bytes) -> str:
 
 
 @app.post("/documents/extract", response_model=DocumentExtractResponse)
-async def document_extract(file: UploadFile = File(...)):
+async def document_extract(request: Request, file: UploadFile = File(...)):
+    enforce_rate_limit(request, bucket="document_extract")
     name = file.filename or "document"
-    data = await file.read()
+    chunks: list[bytes] = []
+    total_bytes = 0
+    while True:
+        chunk = await file.read(1024 * 1024)
+        if not chunk:
+            break
+        total_bytes += len(chunk)
+        if total_bytes > DOC_EXTRACT_MAX_BYTES:
+            await file.close()
+            raise HTTPException(
+                status_code=413,
+                detail=(
+                    "Document is too large for temporary extraction. "
+                    f"Limit: {DOC_EXTRACT_MAX_BYTES} bytes."
+                ),
+            )
+        chunks.append(chunk)
+    await file.close()
+    data = b"".join(chunks)
     if not data:
         raise HTTPException(status_code=400, detail="Empty file.")
-    if len(data) > DOC_EXTRACT_MAX_BYTES:
-        raise HTTPException(
-            status_code=413, detail="Document is too large for temporary extraction."
-        )
-    text = _extract_document_text(name, data)
+    def extract_with_slot():
+        with _document_slots:
+            return _extract_document_text(name, data)
+
+    text = await run_in_threadpool(extract_with_slot)
     if not text.strip():
         raise HTTPException(
             status_code=422, detail="No readable text found in this document."
@@ -2246,11 +3279,14 @@ async def collections_delete(collection_id: str, request: Request):
         )
     with _collections_lock:
         collections = _read_collections_unlocked()
-        next_collections = [item for item in collections if item["id"] != collection_id]
-        if len(next_collections) == len(collections):
+        if not any(item["id"] == collection_id for item in collections):
             raise HTTPException(status_code=404, detail="Collection not found.")
-        _write_collections_unlocked(next_collections)
-    deleted_nodes = _delete_collection_nodes(collection_id)
+    deleted_nodes = await run_in_threadpool(_delete_collection_nodes, collection_id)
+    with _collections_lock:
+        collections = _read_collections_unlocked()
+        _write_collections_unlocked(
+            [item for item in collections if item["id"] != collection_id]
+        )
     return {"ok": True, "deleted_nodes": deleted_nodes}
 
 
@@ -2285,6 +3321,14 @@ def _authorize_system(request: Request) -> None:
                 status_code=403,
                 detail="Invalid admin token.",
             )
+    origin = request.headers.get("Origin", "").strip()
+    if origin:
+        origin_regex = os.getenv(
+            "TRINAXAI_CORS_ORIGIN_REGEX",
+            r"https?://(localhost|127\.0\.0\.1|10\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+|172\.(1[6-9]|2\d|3[0-1])\.\d+\.\d+):(3334|3335)",
+        )
+        if origin not in cors_origins and not re.fullmatch(origin_regex, origin):
+            raise HTTPException(status_code=403, detail="Untrusted browser origin.")
     # Only trust the actual TCP peer, never X-Forwarded-For.
     client_ip = _client_host(request)
     if not _is_local_client(client_ip) and not (
@@ -2339,11 +3383,13 @@ async def system_shutdown(request: Request):
 async def system_startup(request: Request):
     _authorize_system(request)
     script = os.path.join(os.path.dirname(__file__), "service_manager.py")
-    result = subprocess.run(
-        [sys.executable, script, "start-ai", "--base-dir", os.path.dirname(__file__)],
-        capture_output=True,
-        text=True,
-        timeout=60,
+    result = await run_in_threadpool(
+        lambda: subprocess.run(
+            [sys.executable, script, "start-ai", "--base-dir", os.path.dirname(__file__)],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
     )
     return {
         "ok": result.returncode == 0,
@@ -2364,7 +3410,7 @@ async def system_stop_all(request: Request):
 async def system_reload(request: Request):
     """Recarga el índice tras index.py, sin reiniciar el servicio."""
     _authorize_system(request)
-    ok = build_engine()
+    ok = await run_in_threadpool(build_engine)
     return {
         "ok": ok,
         "indexed": _fusion_retriever is not None,
@@ -2377,6 +3423,9 @@ async def system_index_upload(
     request: Request,
     label: str = Form("import"),
     collection_id: str = Form(config.DEFAULT_COLLECTION_ID),
+    embed_model: str = Form(""),
+    aggressive_quant: bool = Form(False),
+    watch_id: str = Form(""),
     files: list[UploadFile] = File(...),
 ):
     """Importa una carpeta elegida en el navegador y la indexa localmente.
@@ -2395,26 +3444,40 @@ async def system_index_upload(
         )
 
     stamp = time.strftime("%Y%m%d-%H%M%S")
-    collection = _ensure_collection(collection_id)
-    safe_label = _safe_label(label)
-    target = os.path.join(
-        config.LOCAL_SOURCES_DIR,
-        "collections",
-        collection["id"],
-        f"{safe_label}-{stamp}",
+    safe_collection_id = sanitize_collection_id(
+        collection_id,
+        fallback=config.DEFAULT_COLLECTION_ID,
     )
+    collection = _ensure_collection(safe_collection_id)
+    safe_label = _safe_label(label)
+    safe_watch_id = _safe_label(watch_id) if watch_id.strip() else ""
+    collections_root = os.path.realpath(
+        os.path.join(config.LOCAL_SOURCES_DIR, "collections")
+    )
+    target = os.path.realpath(os.path.join(
+        collections_root,
+        collection["id"],
+        "watchers" if safe_watch_id else "",
+        f"{safe_label}-{safe_watch_id}" if safe_watch_id else f"{safe_label}-{stamp}",
+    ))
+    try:
+        if os.path.commonpath([target, collections_root]) != collections_root:
+            raise ValueError("unsafe upload path")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Unsafe collection path.") from exc
     os.makedirs(target, exist_ok=True)
     job = _new_index_job(safe_label, target, collection["id"], collection["name"])
 
     saved = 0
     skipped = 0
     total_bytes = 0
-    max_bytes = config.MAX_FILE_BYTES
+    incoming_paths: set[str] = set()
     for upload in files:
         rel = _safe_rel_path(upload.filename or "")
         if not rel:
             skipped += 1
             continue
+        incoming_paths.add(os.path.normpath(rel))
         dest = os.path.abspath(os.path.join(target, rel))
         if not dest.startswith(os.path.abspath(target) + os.sep):
             skipped += 1
@@ -2422,6 +3485,7 @@ async def system_index_upload(
         os.makedirs(os.path.dirname(dest), exist_ok=True)
 
         size = 0
+        max_bytes = config.max_file_bytes(rel)
         with open(dest, "wb") as out:
             while True:
                 chunk = await upload.read(1024 * 1024)
@@ -2476,6 +3540,19 @@ async def system_index_upload(
         )
         raise HTTPException(status_code=400, detail="No indexable files were saved.")
 
+    if safe_watch_id:
+        # A watched folder is a mirror, so files deleted on the user's machine
+        # must also disappear from local_sources before incremental indexing.
+        for dirpath, _, filenames in os.walk(target):
+            for filename in filenames:
+                absolute = os.path.join(dirpath, filename)
+                relative = os.path.normpath(os.path.relpath(absolute, target))
+                if relative not in incoming_paths:
+                    try:
+                        os.remove(absolute)
+                    except OSError:
+                        pass
+
     _update_index_job(
         job["id"],
         saved=saved,
@@ -2487,7 +3564,15 @@ async def system_index_upload(
     )
     threading.Thread(
         target=_run_index_job,
-        args=(job["id"], target, collection["id"], collection["name"]),
+        args=(
+            job["id"],
+            target,
+            collection["id"],
+            collection["name"],
+            (embed_model or "").strip() or None,
+            bool(aggressive_quant),
+            not bool(safe_watch_id),
+        ),
         daemon=True,
         name=f"trinaxai-index-{job['id'][:8]}",
     ).start()
@@ -2502,6 +3587,58 @@ async def system_index_upload(
         "projects": KNOWN_PROJECTS,
         "collection_id": collection["id"],
         "collection_name": collection["name"],
+    }
+
+
+@app.delete("/system/index-imports")
+async def system_delete_index_import(req: IndexImportDeleteRequest, request: Request):
+    """Delete a browser-uploaded local source folder and its indexed chunks."""
+    _authorize_system(request)
+    raw_path = (req.path or "").strip()
+    if not raw_path:
+        raise HTTPException(status_code=400, detail="Missing import path.")
+    root = os.path.abspath(os.path.join(config.LOCAL_SOURCES_DIR, "collections"))
+    target = os.path.abspath(os.path.expanduser(raw_path))
+    rel_to_root = os.path.relpath(target, root)
+    parts = [] if rel_to_root in {".", ""} else rel_to_root.split(os.sep)
+    if (
+        rel_to_root.startswith("..")
+        or os.path.isabs(rel_to_root)
+        or len(parts) < 2
+    ):
+        raise HTTPException(status_code=400, detail="Refusing to delete unsafe import path.")
+    collection_id = _collection_slug(req.collection_id or parts[0])
+    rel_paths: set[str] = set()
+    if os.path.isdir(target):
+        for dirpath, _dirnames, filenames in os.walk(target):
+            for filename in filenames:
+                rel_paths.add(
+                    os.path.relpath(os.path.join(dirpath, filename), target).replace("\\", "/")
+                )
+    deleted = 0
+    try:
+        index_exists = os.path.exists(os.path.join(config.PERSIST_DIR, "docstore.json"))
+        if rel_paths and index_exists:
+            deleted = _delete_indexed_rel_paths(collection_id, rel_paths)
+    except Exception as exc:
+        LOG.exception("Failed to delete indexed import for collection %s", collection_id)
+        raise HTTPException(
+            status_code=500, detail="Failed to delete indexed import."
+        ) from exc
+    removed_path = False
+    if os.path.isdir(target):
+        shutil.rmtree(target, ignore_errors=True)
+        removed_path = not os.path.exists(target)
+    with _sources_cache_lock:
+        _sources_cache.clear()
+    with _retrieval_cache_lock:
+        _retrieval_cache.clear()
+    await run_in_threadpool(build_engine)
+    return {
+        "deleted": deleted,
+        "removed_path": removed_path,
+        "path": target,
+        "collection": collection_id,
     }
 
 
@@ -2538,7 +3675,7 @@ async def system_cancel_index_job(request: Request, job_id: str):
 
 
 @app.post("/system/self-test")
-async def system_self_test(request: Request):
+def system_self_test(request: Request):
     """Prueba automática del sistema: Ollama, embedding, query básica.
     Útil para diagnóstico desde la PWA o CI/CD."""
     _authorize_system(request)
@@ -2586,5 +3723,5 @@ if __name__ == "__main__":
     import uvicorn
 
     host = os.getenv("TRINAXAI_HOST", "0.0.0.0")
-    port = int(os.getenv("TRINAXAI_PORT", "3333"))
+    port = config._env_int("TRINAXAI_PORT", 3333, minimum=1, maximum=65535)
     uvicorn.run("rag_api:app", host=host, port=port, reload=False)

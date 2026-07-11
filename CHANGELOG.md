@@ -18,7 +18,9 @@ All notable changes to TrinaxAI are documented here. This project follows [Keep 
 - File system watcher for auto-reindexing on changes
 - Cross-device shared state sync via local backend
 - Usage statistics aggregation from JSONL logs
-- Spanish/English bilingual UI with i18n system (257 keys per language)
+- Spanish/English bilingual UI with parity-checked i18n keys
+- Host-backed chat attachments with IndexedDB fallback for offline or older-backend sessions
+- Bilingual documentation hub and dedicated API, CLI, configuration, architecture, installation, PWA, and developer references
 - Dark/light theme with system preference detection
 - Full PWA installability (iOS, Android, desktop)
 - Self-signed HTTPS for local LAN access

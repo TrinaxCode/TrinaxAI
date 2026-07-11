@@ -1,7 +1,7 @@
 import type { Lang } from '../i18n/translations';
 
 const NAME_KEY = 'tc-user-name';
-const NICKNAME_KEY = 'tc-user-nickname';
+export const NICKNAME_KEY = 'tc-user-nickname';
 const LANG_KEY = 'tc-lang';
 const MEMORY_KEY = 'tc-user-memory';
 const RESERVED_PROFILE_NAMES = new Set(['trinaxcode', 'trinaxai']);
@@ -31,6 +31,11 @@ function firstName(name: string): string {
 function cleanProfileName(value: string): string {
   const name = value.trim();
   return RESERVED_PROFILE_NAMES.has(name.toLowerCase()) ? '' : name;
+}
+
+export function isValidProfileName(value: string): boolean {
+  const trimmed = value.trim();
+  return trimmed.length > 0 && !RESERVED_PROFILE_NAMES.has(trimmed.toLowerCase());
 }
 
 export function getPreferredUserName(lang: Lang = detectedLang()): string {

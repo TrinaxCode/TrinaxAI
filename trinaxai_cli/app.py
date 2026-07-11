@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import importlib
 import logging
+import os
 import sys
 from pathlib import Path
 from typing import Any, Sequence
@@ -32,6 +33,7 @@ def _build_parser() -> argparse.ArgumentParser:
         description="TrinaxAI CLI v2 - local-first terminal assistant.",
     )
     parser.add_argument("--api-url", help="RAG API base URL (overrides config).")
+    parser.add_argument("--install-root", help="Full TrinaxAI installation directory (overrides auto-discovery).")
     parser.add_argument(
         "--insecure",
         action="store_true",
@@ -63,13 +65,19 @@ def _build_parser() -> argparse.ArgumentParser:
     # Flat (no sub-subcommands) commands
     chat_p = sub.add_parser("chat", help="Interactive REPL or single-shot prompt.")
     chat_p.add_argument("--prompt", help="Run a single prompt and exit.")
-    chat_p.add_argument("--session", default="default", help="Session name (default: default).")
+    chat_p.add_argument("--session", help="Session name. A unique name is created when omitted.")
     chat_p.add_argument("--collections", help="Comma-separated collection ids.")
+    chat_p.add_argument(
+        "--engine",
+        choices=["general", "ollama", "rag"],
+        help="Chat engine. General uses Ollama without indexed-document context.",
+    )
 
     ask_p = sub.add_parser("ask", help="Ask one question and exit.")
     ask_p.add_argument("prompt", nargs="+", help="Question or prompt to send to TrinaxAI.")
-    ask_p.add_argument("--session", default="default", help="Session name (default: default).")
+    ask_p.add_argument("--session", help="Session name. A unique name is created when omitted.")
     ask_p.add_argument("--collections", help="Comma-separated collection ids.")
+    ask_p.add_argument("--engine", choices=["general", "ollama", "rag"])
 
     idx_p = sub.add_parser("index", help="Index a folder into the local RAG store.")
     idx_p.add_argument("path", nargs="?", help="Folder to index, for example: trinaxai index .")
@@ -104,7 +112,22 @@ def _build_parser() -> argparse.ArgumentParser:
     sub.add_parser("doctor", help="Run local health checks.")
     sub.add_parser("version", help="Print TrinaxAI CLI version.")
     sub.add_parser("help", help="Show TrinaxAI CLI help.")
-    sub.add_parser("update", help="Self-update the installation.")
+    update_p = sub.add_parser("update", help="Update code, dependencies and the PWA.")
+    update_p.add_argument("-y", "--yes", action="store_true", help="Use safe non-interactive defaults.")
+    update_p.add_argument("--no-backup", action="store_true")
+    update_p.add_argument("--no-pull", action="store_true")
+    update_p.add_argument("--models", action="store_true", help="Update configured Ollama models.")
+    update_p.add_argument("--no-models", action="store_true")
+    update_p.add_argument("--restart", action="store_true")
+    update_p.add_argument("--no-restart", action="store_true")
+
+    uninstall_p = sub.add_parser("uninstall", help="Guided, safe TrinaxAI uninstaller.")
+    uninstall_p.add_argument("-y", "--yes", action="store_true", help="Confirm and use safe defaults.")
+    uninstall_p.add_argument("--purge", action="store_true", help="Also remove data, models, certs and Ollama.")
+    uninstall_p.add_argument("--remove-data", action="store_true")
+    uninstall_p.add_argument("--remove-models", action="store_true")
+    uninstall_p.add_argument("--remove-ollama", action="store_true")
+    uninstall_p.add_argument("--keep-env", action="store_true")
     sub.add_parser("mcp", help="Configure MCP server (placeholder).")
     exp_p = sub.add_parser("export", help="Export a saved session.")
     exp_p.add_argument("--session", default="default")
@@ -188,6 +211,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     """Entry point.  Returns the process exit code."""
     parser = _build_parser()
     args = parser.parse_args(argv)
+
+    if args.install_root:
+        os.environ["TRINAXAI_HOME"] = str(Path(args.install_root).expanduser())
 
     logging.basicConfig(
         level=logging.DEBUG if args.verbose else logging.WARNING,

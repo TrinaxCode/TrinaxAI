@@ -51,3 +51,12 @@ def test_cli_index_help() -> None:
     assert result.returncode == 0
     assert "usage: trinaxai index" in result.stdout
     assert "--collection" in result.stdout
+
+
+def test_cli_lifecycle_help() -> None:
+    update = run_cli("update", "--help")
+    uninstall = run_cli("uninstall", "--help")
+    assert update.returncode == 0
+    assert "--no-backup" in update.stdout
+    assert uninstall.returncode == 0
+    assert "--purge" in uninstall.stdout

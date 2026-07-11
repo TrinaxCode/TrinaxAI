@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -29,27 +30,28 @@ if sys.platform == "win32" and hasattr(sys.stdout, "buffer"):
     sys.stdout = codecs.getwriter("utf-8")(sys.stdout.buffer, "replace")  # type: ignore[assignment]
 
 import config
+from trinaxai_core import _positive_int, exclusive_process_lock, sanitize_collection_id
 
-EXTRACTOR_EXTS = {".pdf", ".docx"}
+EXTRACTOR_EXTS = {".pdf", ".docx", ".pptx"}
 TEXT_ENCODINGS = ("utf-8-sig", "utf-8", "cp1252", "latin-1")
 
 
 def _env_int(name: str, default: int, *, minimum: int = 1, maximum: int | None = None) -> int:
-    try:
-        value = int(os.getenv(name, str(default)))
-    except ValueError:
-        return default
-    value = max(minimum, value)
-    if maximum is not None:
-        value = min(maximum, value)
-    return value
+    """Read an int env var, clamped to [minimum, maximum]; falls back on bad input.
+
+    Thin wrapper over ``trinaxai_core._positive_int`` so parsing/clamping stays
+    consistent across config/index/core.
+    """
+    return _positive_int(
+        os.getenv(name, default), default, minimum=minimum, maximum=maximum
+    )
 
 
 # ==================== SETTINGS ====================
 # NO se define Settings.llm: indexar solo necesita embeddings.
-COLLECTION_ID = (
-    os.getenv("TRINAXAI_COLLECTION_ID", config.DEFAULT_COLLECTION_ID).strip()
-    or config.DEFAULT_COLLECTION_ID
+COLLECTION_ID = sanitize_collection_id(
+    os.getenv("TRINAXAI_COLLECTION_ID", config.DEFAULT_COLLECTION_ID),
+    fallback=config.DEFAULT_COLLECTION_ID,
 )
 COLLECTION_NAME = (
     os.getenv("TRINAXAI_COLLECTION_NAME", config.DEFAULT_COLLECTION_NAME).strip()
@@ -57,6 +59,12 @@ COLLECTION_NAME = (
 )
 
 INDEX_BATCH_SIZE = _env_int("TRINAXAI_INDEX_BATCH_SIZE", 100, minimum=1, maximum=1000)
+INDEX_LOAD_WORKERS = _env_int(
+    "TRINAXAI_INDEX_LOAD_WORKERS",
+    min(8, os.cpu_count() or 4),
+    minimum=1,
+    maximum=32,
+)
 APPEND_ONLY = os.getenv("TRINAXAI_INDEX_APPEND", "0").strip().lower() in {
     "1",
     "true",
@@ -136,7 +144,7 @@ def collect_files(root: str) -> list[str]:
                 continue
             full = os.path.join(dirpath, fn)
             try:
-                if os.path.getsize(full) > config.MAX_FILE_BYTES:
+                if os.path.getsize(full) > config.max_file_bytes(full):
                     skipped_big += 1
                     continue
             except OSError:
@@ -150,7 +158,7 @@ def collect_files(root: str) -> list[str]:
     if skipped_big:
         print(
             f"   ⏭️  {skipped_big} archivos omitidos por tamaño "
-            f"(> {config.MAX_FILE_BYTES // (1024 * 1024)} MB)"
+            "(sobre el límite configurado para su tipo de archivo)"
         )
     return files
 
@@ -208,11 +216,53 @@ def _load_extracted_documents(path: str) -> list[Document]:
     ).load_data()
 
 
+def _load_pptx_document(path: str) -> Document:
+    from llama_index.core.schema import Document
+    from pptx import Presentation
+
+    presentation = Presentation(path)
+    slides: list[str] = []
+    for slide_index, slide in enumerate(presentation.slides, start=1):
+        parts: list[str] = []
+        for shape in slide.shapes:
+            text = ""
+            if getattr(shape, "has_text_frame", False):
+                text = shape.text or ""
+            elif getattr(shape, "has_table", False):
+                rows: list[str] = []
+                for row in shape.table.rows:
+                    cells = [cell.text.strip() for cell in row.cells if cell.text.strip()]
+                    if cells:
+                        rows.append(" | ".join(cells))
+                text = "\n".join(rows)
+            if text.strip():
+                parts.append(text.strip())
+        try:
+            if slide.has_notes_slide and slide.notes_slide.notes_text_frame:
+                notes = slide.notes_slide.notes_text_frame.text or ""
+                if notes.strip():
+                    parts.append(f"Notes:\n{notes.strip()}")
+        except Exception:
+            pass
+        if parts:
+            slides.append(f"[Slide {slide_index}]\n" + "\n\n".join(parts))
+    return Document(text="\n\n".join(slides).strip(), metadata={"file_path": path})
+
+
 def _load_file_documents(path: str) -> list[Document]:
     ext = os.path.splitext(path)[1].lower()
+    if ext == ".pptx":
+        return [_load_pptx_document(path)]
     if ext in EXTRACTOR_EXTS:
         return _load_extracted_documents(path)
     return [_load_text_document(path)]
+
+
+def _load_file_documents_result(path: str) -> tuple[str, list[Document], Exception | None]:
+    try:
+        return path, _load_file_documents(path), None
+    except Exception as exc:
+        return path, [], exc
 
 
 def iter_batches(items: list[str], batch_size: int = INDEX_BATCH_SIZE):
@@ -234,11 +284,22 @@ def load_docs(paths: list[str]) -> list[Document]:
     out: list[Document] = []
     for batch in iter_batches(paths):
         docs: list[Document] = []
-        for path in batch:
-            try:
-                docs.extend(_load_file_documents(path))
-            except Exception as e:
-                print(f"   ⚠️  Error leyendo {os.path.basename(path)}, omitido: {e}")
+        if INDEX_LOAD_WORKERS > 1 and len(batch) > 1:
+            workers = min(INDEX_LOAD_WORKERS, len(batch))
+            with ThreadPoolExecutor(max_workers=workers) as executor:
+                results = executor.map(_load_file_documents_result, batch)
+                for path, loaded, error in results:
+                    if error is not None:
+                        print(f"   ⚠️  Error leyendo {os.path.basename(path)}, omitido: {error}")
+                        continue
+                    docs.extend(loaded)
+        else:
+            for path in batch:
+                path, loaded, error = _load_file_documents_result(path)
+                if error is not None:
+                    print(f"   ⚠️  Error leyendo {os.path.basename(path)}, omitido: {error}")
+                    continue
+                docs.extend(loaded)
         by_path: dict[str, list[Document]] = {}
         for d in docs:
             by_path.setdefault(d.metadata.get("file_path", ""), []).append(d)
@@ -335,11 +396,15 @@ def write_manifest(m: dict) -> None:
 
 
 def current_state(paths: list[str]) -> dict:
-    """{ruta_relativa: mtime} de los archivos actuales en disco."""
+    """Return high-resolution file fingerprints for incremental indexing."""
     state = {}
     for p in paths:
         try:
-            state[_source_key(p)] = int(os.path.getmtime(p))
+            stat = os.stat(p)
+            state[_source_key(p)] = {
+                "mtime_ns": stat.st_mtime_ns,
+                "size": stat.st_size,
+            }
         except OSError:
             pass
     return state
@@ -349,6 +414,10 @@ def diff_manifest(old_state: dict, new_state: dict, rel_to_path: dict[str, str])
     new_files: list[str] = []
     changed: list[str] = []
     for key, path in rel_to_path.items():
+        if key not in new_state:
+            # File vanished/became unreadable between scanning and stat();
+            # skip it here — it is handled by the `deleted` set below.
+            continue
         if key in old_state:
             if old_state[key] != new_state[key]:
                 changed.append(path)
@@ -364,12 +433,23 @@ def remove_obsolete_nodes(index: VectorStoreIndex, changed: list[str], deleted: 
     rels_to_remove = {
         key.split(":", 1)[1] if ":" in key else key for key in source_keys_to_remove
     }
-    node_ids = [
-        nid
-        for nid, node in index.docstore.docs.items()
-        if node.metadata.get("source_key") in source_keys_to_remove
-        or node.metadata.get("rel_path") in rels_to_remove
-    ]
+    node_ids = []
+    for nid, node in index.docstore.docs.items():
+        metadata = node.metadata or {}
+        source_key = metadata.get("source_key")
+        collection_id = metadata.get("collection_id", config.DEFAULT_COLLECTION_ID)
+        if source_key in source_keys_to_remove:
+            node_ids.append(nid)
+            continue
+        # Legacy nodes may not have source_key. Restrict the compatibility
+        # fallback to the active collection so equal relative paths in another
+        # collection are never deleted.
+        if (
+            not source_key
+            and collection_id == COLLECTION_ID
+            and metadata.get("rel_path") in rels_to_remove
+        ):
+            node_ids.append(nid)
     if node_ids:
         index.delete_nodes(node_ids, delete_from_docstore=True)
     return len(node_ids)
@@ -388,13 +468,24 @@ def insert_files(index: VectorStoreIndex, paths: list[str]) -> int:
 
 
 def persist_final_state(old_state: dict, new_state: dict, *, incremental: bool) -> int:
+    """Persist the manifest without clobbering entries from other collections.
+
+    The manifest is global with ``{COLLECTION_ID}:{rel}`` keys, but ``new_state``
+    only holds the active collection's files. Writing it verbatim would wipe every
+    other collection's entries and force a full re-embed of them next time. So we
+    keep foreign-collection keys untouched and only refresh the active prefix.
+    """
+    prefix = f"{COLLECTION_ID}:"
     if incremental and APPEND_ONLY:
         merged_state = dict(old_state)
         merged_state.update(new_state)
         write_manifest(merged_state)
         return len(merged_state)
-    write_manifest(new_state)
-    return len(new_state)
+    # Preserve keys belonging to other collections, replace the active one.
+    merged_state = {k: v for k, v in old_state.items() if not k.startswith(prefix)}
+    merged_state.update(new_state)
+    write_manifest(merged_state)
+    return len(merged_state)
 
 
 def run_incremental(old_state: dict, new_state: dict, rel_to_path: dict[str, str]) -> int:
@@ -457,26 +548,33 @@ def print_summary(final_count: int) -> None:
 
 
 def run_index(root: str | None = None) -> int:
-    ensure_embed_settings()
     root = root or config.PROJECTS_DIRS[0]
     print("\n🧠 TrinaxAI — Indexador de Documentos")
     print("═" * 45)
     if not os.path.isdir(root):
         print(f"❌ Directorio no encontrado: {root}")
         return 1
+    lock_timeout = _env_int("TRINAXAI_INDEX_LOCK_TIMEOUT", 3600, minimum=1, maximum=86400)
+    lock_path = os.path.join(config.PERSIST_DIR, ".indexing.lock")
+    print("🔒 Esperando turno exclusivo del índice...", flush=True)
+    try:
+        with exclusive_process_lock(lock_path, timeout=lock_timeout):
+            ensure_embed_settings()
+            print(f"📂 Recorriendo: {root}")
+            paths = collect_files(root)
+            rel_to_path = {_source_key(p): p for p in paths}
+            new_state = current_state(paths)
+            print(f"   └─ {len(paths)} archivos candidatos")
 
-    print(f"📂 Recorriendo: {root}")
-    paths = collect_files(root)
-    rel_to_path = {_source_key(p): p for p in paths}
-    new_state = current_state(paths)
-    print(f"   └─ {len(paths)} archivos candidatos")
-
-    old_state = read_manifest()
-    index_exists = os.path.exists(os.path.join(config.PERSIST_DIR, "docstore.json"))
-    incremental = index_exists and bool(old_state)
-    if incremental:
-        return run_incremental(old_state, new_state, rel_to_path)
-    return run_full_index(paths, new_state)
+            old_state = read_manifest()
+            index_exists = os.path.exists(os.path.join(config.PERSIST_DIR, "docstore.json"))
+            incremental = index_exists and bool(old_state)
+            if incremental:
+                return run_incremental(old_state, new_state, rel_to_path)
+            return run_full_index(paths, new_state)
+    except TimeoutError as exc:
+        print(f"❌ {exc}")
+        return 2
 
 
 # ==================== MAIN ====================

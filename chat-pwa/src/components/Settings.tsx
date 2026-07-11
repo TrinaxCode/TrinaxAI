@@ -1,6 +1,6 @@
 import { useRef, useState, useEffect, useMemo } from 'react';
 import { motion } from 'framer-motion';
-import { MdArrowBack, MdAdd, MdDelete, MdTranslate, MdDarkMode, MdLightMode, MdBook, MdRefresh, MdStorage, MdWarning, MdPowerSettingsNew, MdRocketLaunch, MdStop, MdVisibility, MdMemory, MdBarChart, MdAutoFixHigh, MdBookOnline, MdFlashOn } from 'react-icons/md';
+import { MdArrowBack, MdAdd, MdDelete, MdTranslate, MdDarkMode, MdLightMode, MdBook, MdRefresh, MdStorage, MdWarning, MdPowerSettingsNew, MdRocketLaunch, MdStop, MdVisibility, MdMemory, MdBarChart, MdAutoFixHigh, MdBookOnline, MdFlashOn, MdPerson, MdCheck } from 'react-icons/md';
 import { useI18n } from '../i18n/I18nContext';
 import { useTheme } from '../theme/ThemeContext';
 import { useToast } from './Toast';
@@ -10,10 +10,10 @@ import WatcherCard from './WatcherCard';
 import MemoryPanel from './MemoryPanel';
 import StatsPanel from './StatsPanel';
 import RecentIndexes from './RecentIndexes';
-import { cancelIndexJob, createCollection, deleteCollection, folderLabelFromFiles, getCollections, getIndexJob, indexableFilesFrom, renameCollection, resetSharedAppState, startFolderIndex, type Collection, type IndexJobStatus } from '../lib/api';
+import { DEFAULT_MODEL_SETTINGS, MODEL_KEYS, MODEL_PRESETS, OLLAMA_KEEP_ALIVE_DEFAULT, cancelIndexJob, createCollection, deleteCollection, folderLabelFromFiles, getCollections, getIndexJob, indexableFilesFrom, modelSetting, renameCollection, resetSharedAppState, startFolderIndex, type Collection, type IndexJobStatus, type ModelPreset } from '../lib/api';
 import { APP_CONFIG } from '../lib/config';
 import { syncSharedStateOnce } from '../lib/sharedState';
-import type { TranslationKey } from '../i18n/translations';
+import { NICKNAME_KEY, isValidProfileName } from '../lib/userProfile';
 
 type SettingsSection = 'general' | 'indexing' | 'prompts' | 'memory' | 'stats';
 
@@ -23,43 +23,42 @@ interface Props {
 }
 interface CustomPrompt { name: string; text: string; }
 
-interface QuickTemplate { name: string; labelKey: TranslationKey; textKey: TranslationKey }
-
-const QUICK_ACTION_TEMPLATES: QuickTemplate[] = [
-  { name: 'explain',     labelKey: 'quickExplainLabel',   textKey: 'quickExplainText' },
-  { name: 'tests',       labelKey: 'quickTestsLabel',     textKey: 'quickTestsText' },
-  { name: 'bugs',        labelKey: 'quickBugsLabel',      textKey: 'quickBugsText' },
-  { name: 'refactor',    labelKey: 'quickRefactorLabel',  textKey: 'quickRefactorText' },
-  { name: 'commit',      labelKey: 'quickCommitLabel',    textKey: 'quickCommitText' },
-  { name: 'translate',   labelKey: 'quickTranslateLabel', textKey: 'quickTranslateText' },
-  { name: 'eli5',        labelKey: 'quickEli5Label',      textKey: 'quickEli5Text' },
-  { name: 'topython',    labelKey: 'quickPythonLabel',    textKey: 'quickPythonText' },
-  { name: 'summary',     labelKey: 'quickSummaryLabel',   textKey: 'quickSummaryText' },
-  { name: 'docstring',   labelKey: 'quickDocstringLabel', textKey: 'quickDocstringText' },
-];
-
-const OLLAMA_KEY = 'tc-ollama-prompts';
-const RAG_KEY = 'tc-rag-prompts';
+const PROMPTS_KEY = 'tc-prompts';
+const LEGACY_PROMPT_KEYS = ['tc-ollama-prompts', 'tc-rag-prompts'];
 
 const DEF_OLLAMA_ES = 'Eres TrinaxAI, asistente de IA local-first y open-source. Fuiste creado por TrinaxCode — Full Stack Developer de Tuxtla Gutiérrez, Chiapas (originario de Nicaragua), enfocado en React, TypeScript, Python, Django, PostgreSQL y Firebase. GitHub: https://github.com/TrinaxCode. LinkedIn: https://linkedin.com/in/trinaxcode. Si el usuario pregunta quién te creó, habla de TrinaxCode y comparte los links. Responde claro, útil y sin inventar datos.';
-const DEF_RAG_ES = 'Eres TrinaxAI. Fuiste creado por TrinaxCode — Full Stack Developer (React, TypeScript, Python, Django, PostgreSQL, Firebase). GitHub: https://github.com/TrinaxCode. Si preguntan por tu origen, habla de TrinaxCode. Responde solo con datos del contexto indexado. Si falta información, dilo claramente.';
 const DEF_OLLAMA_EN = 'You are TrinaxAI, a local-first open-source AI assistant. You were created by TrinaxCode — a Full Stack Developer from Tuxtla Gutiérrez, Chiapas (originally from Nicaragua), focused on React, TypeScript, Python, Django, PostgreSQL, and Firebase. GitHub: https://github.com/TrinaxCode. LinkedIn: https://linkedin.com/in/trinaxcode. If the user asks who created you, talk about TrinaxCode and share the links. Be clear, useful, and do not invent facts.';
-const DEF_RAG_EN = 'You are TrinaxAI. You were created by TrinaxCode — Full Stack Developer (React, TypeScript, Python, Django, PostgreSQL, Firebase). GitHub: https://github.com/TrinaxCode. If asked about your origin, talk about TrinaxCode. Only respond with data from the indexed context. Do not invent.';
-const MODEL_KEYS = ['tc-models-chat','tc-models-deep','tc-models-vision','tc-models-vision-quality','tc-models-embed','tc-models-code','tc-models-fast'];
+const DEF_SHARED_ES = `${DEF_OLLAMA_ES} Si hay contexto indexado, úsalo cuando sea relevante y distingue claramente entre datos encontrados y explicaciones generales.`;
+const DEF_SHARED_EN = `${DEF_OLLAMA_EN} When indexed context is available, use it when relevant and clearly distinguish found facts from general explanations.`;
 
-function load(k: string, d: string): CustomPrompt[] {
-  try { const j = localStorage.getItem(k); return j ? JSON.parse(j) : [{ name: 'system', text: d }]; }
-  catch { return [{ name: 'system', text: d }]; }
+function loadPrompts(lang: 'es' | 'en'): CustomPrompt[] {
+  try {
+    const current = JSON.parse(localStorage.getItem(PROMPTS_KEY) || 'null');
+    if (Array.isArray(current) && current.length) return current;
+    const legacy = LEGACY_PROMPT_KEYS.flatMap((key) => {
+      try {
+        const value = JSON.parse(localStorage.getItem(key) || '[]');
+        return Array.isArray(value) ? value : [];
+      } catch { return []; }
+    });
+    const unique = new Map<string, CustomPrompt>();
+    legacy.forEach((prompt) => {
+      if (prompt?.name && prompt.name !== 'system') unique.set(String(prompt.name), { name: String(prompt.name), text: String(prompt.text || '') });
+    });
+    const system = legacy.find((prompt) => prompt?.name === 'system') || {
+      name: 'system',
+      text: lang === 'en' ? DEF_SHARED_EN : DEF_SHARED_ES,
+    };
+    return [{ name: 'system', text: String(system.text || '') }, ...unique.values()];
+  } catch {
+    return [{ name: 'system', text: lang === 'en' ? DEF_SHARED_EN : DEF_SHARED_ES }];
+  }
 }
-
-function getDefaultOllama(lang: 'es'|'en') { return lang === 'en' ? DEF_OLLAMA_EN : DEF_OLLAMA_ES; }
-function getDefaultRag(lang: 'es'|'en') { return lang === 'en' ? DEF_RAG_EN : DEF_RAG_ES; }
 
 export default function Settings({ onBack, initialSection = 'general' }: Props) {
   const { t, lang, setLang } = useI18n();
   const { theme, cycleTheme, isDark } = useTheme();
   const toast = useToast();
-  const [tab, setTab] = useState<'ollama' | 'rag'>('ollama');
   const [section, setSection] = useState<SettingsSection>(initialSection);
 
   useEffect(() => {
@@ -84,15 +83,29 @@ export default function Settings({ onBack, initialSection = 'general' }: Props) 
     return () => window.removeEventListener('tc-open-memory-tab', onMem);
   }, []);
   const [sd, setSd] = useState(false); const [su, setSu] = useState(false);
-  const [op, setOp] = useState<CustomPrompt[]>(() => load(OLLAMA_KEY, getDefaultOllama(lang)));
-  const [rp, setRp] = useState<CustomPrompt[]>(() => load(RAG_KEY, getDefaultRag(lang)));
+  const [nickname, setNicknameValue] = useState(() => localStorage.getItem(NICKNAME_KEY) || '');
+  const [nicknameEditing, setNicknameEditing] = useState(false);
+  const saveNickname = () => {
+    const trimmed = nickname.trim();
+    if (!trimmed) {
+      localStorage.removeItem(NICKNAME_KEY);
+    } else if (!isValidProfileName(trimmed)) {
+      toast.toast(t('profileNicknameReserved'), 'warning');
+      return;
+    } else {
+      localStorage.setItem(NICKNAME_KEY, trimmed);
+    }
+    setNicknameEditing(false);
+    toast.toast(t('profileNicknameSaved'), 'success');
+    void syncSharedStateOnce(800);
+  };
+  const [prompts, setPrompts] = useState<CustomPrompt[]>(() => loadPrompts(lang));
   const [nn, setNn] = useState(''); const [nt, setNt] = useState('');
-  const prompts = tab === 'ollama' ? op : rp; const setP = tab === 'ollama' ? setOp : setRp; const key = tab === 'ollama' ? OLLAMA_KEY : RAG_KEY;
   useEffect(() => {
-    localStorage.setItem(key, JSON.stringify(prompts));
+    localStorage.setItem(PROMPTS_KEY, JSON.stringify(prompts));
     const id = window.setTimeout(() => { void syncSharedStateOnce(1200); }, 450);
     return () => window.clearTimeout(id);
-  }, [prompts, key]);
+  }, [prompts]);
 
   const [indexing, setIndexing] = useState(false);
   const [restoreConfirm, setRestoreConfirm] = useState('');
@@ -137,16 +150,28 @@ export default function Settings({ onBack, initialSection = 'general' }: Props) 
   useEffect(() => { localStorage.setItem('tc-index-collection', indexCollectionId); }, [indexCollectionId]);
   useEffect(() => { void refreshCollections(); }, []);
 
+  // On unmount, abort any in-flight indexing poll and clear the pending
+  // clear-job timer so we never call setState on an unmounted component.
+  useEffect(() => {
+    return () => {
+      indexAbortRef.current?.abort();
+      if (clearJobTimerRef.current) {
+        clearTimeout(clearJobTimerRef.current);
+        clearJobTimerRef.current = null;
+      }
+    };
+  }, []);
+
   const add = () => {
     const n = nn.trim().toLowerCase().replace(/\s+/g,'-'); if (!n||!nt.trim()) return;
     if (prompts.some(p=>p.name===n)) { toast.toast(t('promptExists'), 'warning'); return; }
-    setP([...prompts,{name:n,text:nt.trim()}]); setNn(''); setNt('');
+    setPrompts([...prompts,{name:n,text:nt.trim()}]); setNn(''); setNt('');
     toast.toast(t('promptAdded'), 'success');
   };
-  const upd = (name:string, f:'name'|'text', v:string) => setP(items=>items.map((item)=>item.name===name?{...item,[f]:v}:item));
+  const upd = (name:string, f:'name'|'text', v:string) => setPrompts(items=>items.map((item)=>item.name===name?{...item,[f]:v}:item));
   const del = (name:string) => {
     if (name === 'system') return;
-    setP(items=>items.filter((item)=>item.name!==name));
+    setPrompts(items=>items.filter((item)=>item.name!==name));
     setPromptDeleteName(null);
     toast.toast(t('promptDeleted'), 'info');
   };
@@ -284,51 +309,14 @@ export default function Settings({ onBack, initialSection = 'general' }: Props) 
     window.location.reload();
   };
 
-  const setModelPreset = (preset: 'low' | 'balanced' | 'max' | 'ultra') => {
-    const values = preset === 'low'
-      ? {
-        'tc-models-chat': 'llama3.2:3b',
-        'tc-models-deep': 'qwen2.5-coder:3b',
-        'tc-models-vision': 'qwen2.5vl:3b',
-        'tc-models-vision-quality': 'qwen2.5vl:3b',
-        'tc-models-embed': 'bge-m3',
-        'tc-models-code': 'qwen2.5-coder:3b',
-        'tc-models-fast': 'llama3.2:3b',
-      }
-      : preset === 'ultra'
-      ? {
-        'tc-models-chat': 'llama3.2:3b',
-        'tc-models-deep': 'qwen2.5-coder:14b',
-        'tc-models-vision': 'qwen2.5vl:3b',
-        'tc-models-vision-quality': 'qwen2.5vl:7b',
-        'tc-models-embed': 'bge-m3',
-        'tc-models-code': 'qwen2.5-coder:3b',
-        'tc-models-fast': 'llama3.2:3b',
-      }
-      : preset === 'max'
-      ? {
-        'tc-models-chat': 'llama3.2:3b',
-        'tc-models-deep': 'qwen2.5-coder:7b',
-        'tc-models-vision': 'qwen2.5vl:3b',
-        'tc-models-vision-quality': 'qwen2.5vl:7b',
-        'tc-models-embed': 'bge-m3',
-        'tc-models-code': 'qwen2.5-coder:3b',
-        'tc-models-fast': 'llama3.2:3b',
-      }
-      : {
-        'tc-models-chat': 'llama3.2:3b',
-        'tc-models-deep': 'qwen2.5-coder:3b',
-        'tc-models-vision': 'qwen2.5vl:3b',
-        'tc-models-vision-quality': 'qwen2.5vl:7b',
-        'tc-models-embed': 'bge-m3',
-        'tc-models-code': 'qwen2.5-coder:3b',
-        'tc-models-fast': 'llama3.2:3b',
-      };
+  const setModelPreset = (preset: ModelPreset) => {
+    const values = MODEL_PRESETS[preset];
     Object.entries(values).forEach(([k, v]) => setLocalSetting(k, v));
     toast.toast(t('modelPresetApplied'), 'success');
   };
 
-  const getModel = (key: string, fallback: string) => localStorage.getItem(key) || fallback;
+  const getModel = (key: keyof typeof DEFAULT_MODEL_SETTINGS) => modelSetting(key, DEFAULT_MODEL_SETTINGS[key]);
+  const getKeepAlive = () => localStorage.getItem('tc-keep-alive') || OLLAMA_KEEP_ALIVE_DEFAULT;
   const progress = Math.max(uploadProgress, indexJob?.progress ?? 0);
   const formatEta = (seconds: number | null | undefined) => {
     if (!seconds) return t('indexEtaCalculating');
@@ -361,18 +349,16 @@ export default function Settings({ onBack, initialSection = 'general' }: Props) 
   const textLabel = isDark ? 'text-white/80' : 'text-gray-800';
   const textPlaceholder = isDark ? 'placeholder-white/20' : 'placeholder-gray-400';
   const textValue = isDark ? 'text-white/70' : 'text-gray-700';
-  const tabActive = 'text-[#006bbd] border-b-2 border-[#006bbd]';
-  const tabInactive = isDark ? 'text-white/40 hover:text-white/70' : 'text-gray-400 hover:text-gray-600';
   const inputText = isDark ? 'text-white/70' : 'text-gray-700';
   const borderFocus = 'focus:border-[#006bbd]/40';
   const sectionBg = isDark ? 'bg-white/[0.03] border-white/[0.06]' : 'bg-gray-50 border-gray-200';
 
-  return (<motion.div className={`h-full flex flex-col min-w-0 max-w-full ${isDark ? 'bg-black' : 'bg-white'}`} initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}}>
+  return (<motion.div className={`h-full flex flex-col min-w-0 max-w-full overflow-x-hidden ${isDark ? 'bg-black' : 'bg-white'}`} initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}}>
     <div className={`shrink-0 flex items-center gap-3 px-4 pt-[env(safe-area-inset-top,0px)] pb-3 border-b ${isDark ? 'border-white/[0.06]' : 'border-gray-200'}`}>
       <button onClick={onBack} className={`p-2 -ml-2 ${isDark ? 'text-white/60 hover:text-white' : 'text-gray-500 hover:text-gray-800'}`}><MdArrowBack size={20}/></button>
       <span className={`text-sm font-medium ${textLabel}`}>{t('settingsTitle')}</span>
     </div>
-    <div className={`shrink-0 flex gap-1 px-2 pt-2 pb-1 border-b ${isDark ? 'border-white/[0.04]' : 'border-gray-100'} overflow-x-auto`}>
+    <div className={`shrink-0 flex gap-0.5 sm:gap-1 px-1 sm:px-2 pt-2 pb-1 border-b ${isDark ? 'border-white/[0.04]' : 'border-gray-100'} overflow-x-auto overscroll-x-contain`}>
       {([
         ['general', t('settingsGeneral')],
         ['indexing', t('settingsIndexing')],
@@ -383,7 +369,7 @@ export default function Settings({ onBack, initialSection = 'general' }: Props) 
         <button
           key={k}
           onClick={() => setSection(k)}
-          className={`shrink-0 px-2 py-1 rounded-lg text-[11px] font-medium transition-colors whitespace-nowrap ${
+          className={`shrink-0 px-1.5 sm:px-2 py-1 rounded-lg text-[10px] sm:text-[11px] font-medium transition-colors whitespace-nowrap ${
             section === k
               ? 'bg-[#006bbd]/15 text-[#006bbd]'
               : isDark ? 'text-white/50 hover:text-white/80' : 'text-gray-500 hover:text-gray-800'
@@ -401,6 +387,54 @@ export default function Settings({ onBack, initialSection = 'general' }: Props) 
         <h3 className={`text-xs font-medium uppercase tracking-widest mb-3 ${textHeading}`}>{t('status')}</h3>
         <div className={`${bgCard} rounded-xl px-4 py-3`}>
           <StatusDots />
+        </div>
+      </section>
+
+      {/* ── Profile ── */}
+      <section>
+        <h3 className={`text-xs font-medium uppercase tracking-widest mb-3 ${textHeading}`}>{t('profile')}</h3>
+        <div className={`${bgCard} rounded-xl border px-4 py-3 space-y-2`}>
+          <label className={`text-[10px] uppercase tracking-wider ${textHeading}`}>{t('profileNicknameLabel')}</label>
+          <div className="flex items-center gap-2">
+            <MdPerson size={18} className={isDark ? 'text-white/30' : 'text-gray-400'} />
+            {nicknameEditing ? (
+              <>
+                <input
+                  type="text"
+                  value={nickname}
+                  onChange={(e) => setNicknameValue(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') saveNickname(); if (e.key === 'Escape') { setNicknameValue(localStorage.getItem(NICKNAME_KEY) || ''); setNicknameEditing(false); } }}
+                  placeholder={t('profileNicknameLabel')}
+                  className={`min-w-0 flex-1 bg-transparent text-sm outline-none border-b ${isDark ? 'text-white/80 border-[#006bbd]/40 placeholder-white/20' : 'text-gray-800 border-[#006bbd]/40 placeholder-gray-400'} focus:border-[#006bbd] px-1 py-0.5`}
+                  autoFocus
+                />
+                <button
+                  onClick={saveNickname}
+                  className={`p-1.5 rounded-lg ${isDark ? 'text-[#006bbd] hover:bg-white/[0.06]' : 'text-[#006bbd] hover:bg-gray-100'}`}
+                  title={t('save')}
+                >
+                  <MdCheck size={18} />
+                </button>
+              </>
+            ) : (
+              <>
+                <span className={`min-w-0 flex-1 text-sm ${isDark ? 'text-white/70' : 'text-gray-700'}`}>
+                  {nickname.trim() || (lang === 'en' ? 'User' : 'Usuario')}
+                </span>
+                <button
+                  onClick={() => setNicknameEditing(true)}
+                  className={`px-2 py-1 rounded-lg text-xs font-medium transition-colors ${
+                    isDark ? 'text-white/40 hover:text-white/70 hover:bg-white/[0.06]' : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'
+                  }`}
+                >
+                  {t('edit')}
+                </button>
+              </>
+            )}
+          </div>
+          <p className={`text-[10px] leading-relaxed ${isDark ? 'text-white/25' : 'text-gray-400'}`}>
+            {t('profileNicknameHint')}
+          </p>
         </div>
       </section>
 
@@ -447,36 +481,36 @@ export default function Settings({ onBack, initialSection = 'general' }: Props) 
       </section>
 
       {/* ── Models Section (Advanced, collapsed) ── */}
-      <section>
+      <section className="min-w-0 max-w-full overflow-hidden">
         <button onClick={() => setModelsExpanded(v => !v)}
           className={`w-full flex items-center justify-between text-xs font-medium uppercase tracking-widest mb-3 ${textHeading} hover:opacity-80`}>
           <span>{t('modelCustomize')}</span>
           <span className="text-[10px]">{modelsExpanded ? '▾' : '▸'}</span>
         </button>
         {modelsExpanded && (
-          <div className="space-y-2">
+          <div className="space-y-2 min-w-0 max-w-full">
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
               <button onClick={() => setModelPreset('low')} className={`min-w-0 px-2 py-2 rounded-lg text-[11px] font-medium break-words ${btnBase}`}>{t('modelPresetLow')}</button>
               <button onClick={() => setModelPreset('balanced')} className={`min-w-0 px-2 py-2 rounded-lg text-[11px] font-medium break-words ${btnBase}`}>{t('modelPresetBalanced')}</button>
               <button onClick={() => setModelPreset('max')} className={`min-w-0 px-2 py-2 rounded-lg text-[11px] font-medium break-words ${btnBase}`}>{t('modelPresetMax')}</button>
               <button onClick={() => setModelPreset('ultra')} className={`min-w-0 px-2 py-2 rounded-lg text-[11px] font-medium break-words ${btnBase}`}>{t('modelPresetUltra')}</button>
             </div>
-            {[
-              { k: 'tc-models-chat', label: t('modelChat'), def: 'llama3.2:3b' },
-              { k: 'tc-models-deep', label: t('modelDeep'), def: 'qwen2.5-coder:3b' },
-              { k: 'tc-models-vision', label: t('modelVision'), def: 'qwen2.5vl:3b' },
-              { k: 'tc-models-vision-quality', label: t('modelVisionQuality'), def: 'qwen2.5vl:7b' },
-              { k: 'tc-models-embed', label: t('modelEmbedding'), def: 'bge-m3', isEmbed: true },
-              { k: 'tc-models-code', label: t('modelCode'), def: 'qwen2.5-coder:3b' },
-              { k: 'tc-models-fast', label: t('modelFast'), def: 'llama3.2:3b' },
-            ].map(({ k, label, def, isEmbed }) => (
-              <div key={k} className={`flex flex-col sm:flex-row sm:items-center gap-2 px-3 py-2 rounded-lg ${bgCard}`}>
-                <span className={`min-w-0 text-[10px] sm:w-28 sm:shrink-0 break-words ${textHeading}`}>{label}</span>
+            {([
+              { k: 'tc-models-chat', label: t('modelChat'), isEmbed: false },
+              { k: 'tc-models-deep', label: t('modelDeep'), isEmbed: false },
+              { k: 'tc-models-vision', label: t('modelVision'), isEmbed: false },
+              { k: 'tc-models-vision-quality', label: t('modelVisionQuality'), isEmbed: false },
+              { k: 'tc-models-embed', label: t('modelEmbedding'), isEmbed: true },
+              { k: 'tc-models-code', label: t('modelCode'), isEmbed: false },
+              { k: 'tc-models-fast', label: t('modelFast'), isEmbed: false },
+            ] as const).map(({ k, label, isEmbed }) => (
+              <div key={k} className={`flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-2 px-3 py-2 rounded-lg ${bgCard} min-w-0 max-w-full overflow-hidden`}>
+                <span className={`min-w-0 text-[10px] sm:w-24 sm:shrink-0 break-words leading-tight ${textHeading}`}>{label}</span>
                 {isEmbed ? (
                   <select
-                    value={localStorage.getItem(k) || def}
+                    value={getModel(k)}
                     onChange={(e) => setLocalSetting(k, e.target.value)}
-                    className={`min-w-0 flex-1 text-[11px] font-mono bg-transparent outline-none border-b border-transparent hover:border-[#006bbd]/30 focus:border-[#006bbd] px-1 py-0.5 transition-colors ${isDark ? 'text-white/70' : 'text-gray-700'}`}
+                    className={`min-w-0 flex-1 text-[11px] font-mono bg-transparent outline-none border-b border-transparent hover:border-[#006bbd]/30 focus:border-[#006bbd] px-1 py-0.5 transition-colors max-w-full ${isDark ? 'text-white/70' : 'text-gray-700'}`}
                   >
                     <option value="bge-m3">bge-m3 · 1024d · multilingual (recommended)</option>
                     <option value="nomic-embed-text">nomic-embed-text · 768d · faster</option>
@@ -485,18 +519,18 @@ export default function Settings({ onBack, initialSection = 'general' }: Props) 
                   </select>
                 ) : (
                   <input
-                    value={getModel(k, def)}
+                    value={getModel(k)}
                     onChange={(e) => setLocalSetting(k, e.target.value)}
                     onBlur={(e) => { const v = e.target.value.trim(); if (v && v !== e.target.value) setLocalSetting(k, v); }}
                     onKeyDown={(e) => { if (e.key === 'Enter') { const v = (e.target as HTMLInputElement).value.trim(); if (v) setLocalSetting(k, v); (e.target as HTMLInputElement).blur(); } }}
-                    className={`min-w-0 flex-1 text-[11px] font-mono bg-transparent outline-none border-b border-transparent hover:border-[#006bbd]/30 focus:border-[#006bbd] px-1 py-0.5 transition-colors ${isDark ? 'text-white/70' : 'text-gray-700'}`}
+                    className={`min-w-0 w-full flex-1 text-[11px] font-mono bg-transparent outline-none border-b border-transparent hover:border-[#006bbd]/30 focus:border-[#006bbd] px-1 py-0.5 transition-colors max-w-full ${isDark ? 'text-white/70' : 'text-gray-700'}`}
                   />
                 )}
               </div>
             ))}
             <div className="flex flex-col sm:flex-row gap-2">
               <button onClick={async () => {
-                const models = MODEL_KEYS.map(k => localStorage.getItem(k)).filter(Boolean) as string[];
+                const models = Array.from(new Set(MODEL_KEYS.map(k => getModel(k)).filter(Boolean)));
                 for (const m of models) {
                   if (!m) continue;
                   toast.toast(t('modelPulling').replace('{model}', m), 'info');
@@ -532,14 +566,14 @@ export default function Settings({ onBack, initialSection = 'general' }: Props) 
               <div className="space-y-1">
                 <div className="flex items-center justify-between gap-2">
                   <span className={`min-w-0 text-xs break-words ${textLabel}`}>{t('keepModelsLoaded')}</span>
-                  <span className={`text-[10px] font-mono ${textHeading}`}>{localStorage.getItem('tc-keep-alive') || '0s'}</span>
+                  <span className={`text-[10px] font-mono ${textHeading}`}>{getKeepAlive()}</span>
                 </div>
                 <input
                   type="range"
                   min="0"
                   max="60"
                   step="5"
-                  value={parseInt(localStorage.getItem('tc-keep-alive')?.replace(/[^0-9]/g, '') || '0', 10)}
+                  value={parseInt(getKeepAlive().replace(/[^0-9]/g, '') || '0', 10)}
                   onChange={(e) => setLocalSetting('tc-keep-alive', e.target.value === '0' ? '0s' : `${e.target.value}m`)}
                   className="w-full accent-[#006bbd]"
                 />
@@ -550,7 +584,7 @@ export default function Settings({ onBack, initialSection = 'general' }: Props) 
 
               <button
                 onClick={async () => {
-                  const models = MODEL_KEYS.map(k => localStorage.getItem(k)).filter(Boolean) as string[];
+                  const models = Array.from(new Set(MODEL_KEYS.map(k => getModel(k)).filter(Boolean)));
                   let ok = 0;
                   for (const m of models) {
                     try {
@@ -624,54 +658,6 @@ export default function Settings({ onBack, initialSection = 'general' }: Props) 
 
       {section === 'indexing' && (
       <>
-      <WatcherCard collections={collections} />
-      <RecentIndexes collections={collections} />
-
-      {/* ── Collections Section ── */}
-      <section>
-        <h3 className={`text-xs font-medium uppercase tracking-widest mb-3 ${textHeading}`}>{t('collections')}</h3>
-        <div className="space-y-2">
-          {collections.map((collection) => (
-            <div key={collection.id} className={`flex items-center gap-2 px-3 py-2 rounded-xl border ${bgCard}`}>
-              <input
-                defaultValue={collection.name}
-                disabled={collection.id === 'default'}
-                onBlur={(e) => updateCollectionName(collection.id, collection.name, e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
-                }}
-                className={`min-w-0 flex-1 bg-transparent text-sm outline-none disabled:opacity-60 ${inputText}`}
-              />
-              {collection.id !== 'default' && (
-                <button
-                  onClick={() => setCollectionDeleteId(collection.id)}
-                  className={`p-1.5 rounded-lg ${isDark ? 'text-white/25 hover:text-red-400 hover:bg-white/[0.05]' : 'text-gray-300 hover:text-red-500 hover:bg-gray-100'}`}
-                  aria-label={t('delete')}
-                  title={t('delete')}
-                >
-                  <MdDelete size={16} />
-                </button>
-              )}
-            </div>
-          ))}
-          <div className={`flex items-center gap-2 rounded-xl border border-dashed px-3 py-2 ${isDark ? 'border-white/[0.08]' : 'border-gray-300'}`}>
-            <input
-              value={newCollectionName}
-              onChange={(e) => setNewCollectionName(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') addCollection(); }}
-              placeholder={t('collectionName')}
-              className={`min-w-0 flex-1 bg-transparent text-sm outline-none ${textValue} ${textPlaceholder}`}
-            />
-            <button
-              onClick={addCollection}
-              className="shrink-0 flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-[#006bbd]/15 text-[#006bbd] hover:bg-[#006bbd]/25"
-            >
-              <MdAdd size={14}/> {t('add')}
-            </button>
-          </div>
-        </div>
-      </section>
-
       {/* ── Index Section ── */}
       <section>
         <h3 className={`text-xs font-medium uppercase tracking-widest mb-3 ${textHeading}`}>{t('indexProjects')}</h3>
@@ -766,44 +752,58 @@ export default function Settings({ onBack, initialSection = 'general' }: Props) 
           </div>
         )}
       </section>
+
+      <RecentIndexes collections={collections} />
+
+      {/* ── Collections Section ── */}
+      <section>
+        <h3 className={`text-xs font-medium uppercase tracking-widest mb-3 ${textHeading}`}>{t('collections')}</h3>
+        <div className="space-y-2">
+          {collections.map((collection) => (
+            <div key={collection.id} className={`flex items-center gap-2 px-3 py-2 rounded-xl border ${bgCard}`}>
+              <input
+                defaultValue={collection.name}
+                disabled={collection.id === 'default'}
+                onBlur={(e) => updateCollectionName(collection.id, collection.name, e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+                }}
+                className={`min-w-0 flex-1 bg-transparent text-sm outline-none disabled:opacity-60 ${inputText}`}
+              />
+              {collection.id !== 'default' && (
+                <button
+                  onClick={() => setCollectionDeleteId(collection.id)}
+                  className={`p-1.5 rounded-lg ${isDark ? 'text-white/25 hover:text-red-400 hover:bg-white/[0.05]' : 'text-gray-300 hover:text-red-500 hover:bg-gray-100'}`}
+                  aria-label={t('delete')}
+                  title={t('delete')}
+                >
+                  <MdDelete size={16} />
+                </button>
+              )}
+            </div>
+          ))}
+          <div className={`flex items-center gap-2 rounded-xl border border-dashed px-3 py-2 ${isDark ? 'border-white/[0.08]' : 'border-gray-300'}`}>
+            <input
+              value={newCollectionName}
+              onChange={(e) => setNewCollectionName(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') addCollection(); }}
+              placeholder={t('collectionName')}
+              className={`min-w-0 flex-1 bg-transparent text-sm outline-none ${textValue} ${textPlaceholder}`}
+            />
+            <button
+              onClick={addCollection}
+              className="shrink-0 flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-[#006bbd]/15 text-[#006bbd] hover:bg-[#006bbd]/25"
+            >
+              <MdAdd size={14}/> {t('add')}
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <WatcherCard collections={collections} />
       </>)}
 
       {section === 'prompts' && (<>
-        <div className={`flex border-b ${isDark ? 'border-white/[0.06]' : 'border-gray-200'}`}>
-          {(['ollama','rag']as const).map(tb=>(<button key={tb} onClick={()=>{setTab(tb);setNn('');setNt('')}} className={`px-4 py-2 text-sm font-medium ${tab===tb?tabActive:tabInactive}`}>{tb==='ollama'?t('ollamaEngine'):t('ragEngine')}</button>))}
-        </div>
-        {/* ── Quick Action templates ── */}
-        <section>
-          <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
-            <h3 className={`text-xs font-medium uppercase tracking-widest ${textHeading}`}>{t('quickActionTemplates')}</h3>
-            <span className={`text-[10px] ${textHeading}`}>{t('quickActionTemplatesHint')}</span>
-          </div>
-          <div className="flex flex-wrap gap-1.5">
-            {QUICK_ACTION_TEMPLATES.map((tmpl) => {
-              const exists = prompts.some((p) => p.name === tmpl.name);
-              return (
-                <button
-                  key={tmpl.name}
-                  onClick={() => {
-                    if (exists) { toast.toast(t('alreadyAdded'), 'warning'); return; }
-                    setP([...prompts, { name: tmpl.name, text: t(tmpl.textKey) }]);
-                    toast.toast(t('slashCommandAdded').replace('{name}', tmpl.name), 'success');
-                  }}
-                className={`min-w-0 flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium border transition-colors ${
-                    exists
-                      ? isDark ? 'bg-white/[0.03] border-white/[0.06] text-white/30 cursor-not-allowed' : 'bg-gray-100 border-gray-200 text-gray-400 cursor-not-allowed'
-                      : isDark ? 'bg-white/[0.03] border-white/[0.06] text-white/65 hover:text-white hover:border-white/[0.15]' : 'bg-white border-gray-200 text-gray-600 hover:text-gray-800 hover:border-gray-300'
-                  }`}
-                  disabled={exists}
-                >
-                  <span className="font-mono text-[10px] text-[#006bbd]">/{tmpl.name}</span>
-                  <span className="min-w-0 break-words opacity-80">{t(tmpl.labelKey)}</span>
-                </button>
-              );
-            })}
-          </div>
-        </section>
-
         <section className="space-y-4">
           {prompts.filter(p => p.name !== 'system').map((p)=>(<div key={p.name} className={`${sectionBg} rounded-xl p-4 space-y-2`}>
             <div className="flex items-center justify-between">

@@ -19,23 +19,27 @@ This roadmap keeps V1 focused on reliability before adding breadth. Timelines ar
 - [x] Developer CLI (`trinaxai ask`, `trinaxai chat`, `trinaxai index`, `trinaxai doctor`)
 - [x] Secure defaults: LAN system control disabled, admin token auto-generation
 - [x] Bilingual README, FAQ, security model docs, and install guides
+- [x] Knowledge browser for collections, files, chunks, search, and deletion
+- [x] Background indexing jobs with progress, ETA, and cancellation
+- [x] Reusable prompt templates in the PWA
+- [x] FastAPI-generated OpenAPI, Swagger UI, and ReDoc
+- [x] Backend pytest and frontend Vitest suites in CI
 
 ---
 
 ## 🔜 In Progress / Near-Term
 
 - [ ] **Screenshots and demo GIFs** — Visual proof of the PWA and CLI in action
-- [ ] **Visual project browser** — Tree view of indexed files in the PWA
+- [ ] **Knowledge tree view** — Add hierarchical folders on top of the existing knowledge browser
 - [ ] **Conversation summarization** — Auto-summarize long chats to save context window
-- [ ] **Structured indexer events** — More granular progress for better ETA
-- [ ] **Prompt templates** — Save and reuse custom system prompts per collection
-- [ ] **CI expansion** — Add CodeQL, Gitleaks, Semgrep, Trivy, and pytest
+- [ ] **Indexer telemetry** — Improve phase timing and ETA accuracy for very large imports
+- [ ] **CI security expansion** — Add CodeQL, Gitleaks, Semgrep, and Trivy
 
 ---
 
 ## 📅 Planned
 
-- [ ] **Test coverage** — pytest for backend, vitest + Testing Library for frontend
+- [ ] **Test coverage expansion** — Add interaction/accessibility tests and raise backend branch coverage
 - [ ] **Docker/Compose deployment** — Reproducible containerized stack (for advanced users)
 - [ ] **More model profiles** — Auto-detection for GPU-heavy machines (RTX 4090, M2 Ultra)
 - [ ] **API rate limit tuning** — Configurable per-user limits
@@ -49,7 +53,6 @@ This roadmap keeps V1 focused on reliability before adding breadth. Timelines ar
 - [ ] **Plugin system** — Tool extensions via Python entry points
 - [ ] **Mobile push notifications** — Service worker background sync
 - [ ] **Multi-user support** — Per-user collections, memory, and history
-- [ ] **OpenAPI/Swagger docs** — Auto-generated from FastAPI app
 - [ ] **WebSocket streaming** — Bidirectional chat for lower latency
 - [ ] **Benchmark suite** — Performance regression tests for retrieval and indexing
 

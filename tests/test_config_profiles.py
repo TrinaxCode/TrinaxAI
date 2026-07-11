@@ -25,6 +25,7 @@ def test_config_8gb_profile_uses_light_defaults(tmp_path: Path) -> None:
     env.pop("TRINAXAI_MODEL_FAST", None)
     env.pop("TRINAXAI_EMBED_PRESET", None)
     env.pop("TRINAXAI_EMBED", None)
+    env.pop("TRINAXAI_EMBED_BATCH", None)
     result = subprocess.run(
         [
             sys.executable,
@@ -50,10 +51,10 @@ def test_config_8gb_profile_uses_light_defaults(tmp_path: Path) -> None:
     )
     data = json.loads(result.stdout)
 
-    assert data["general"] == "llama3.2:1b"
+    assert data["general"] == "qwen3:4b-instruct-2507-q4_K_M"
     assert data["code"] == "qwen2.5-coder:1.5b"
-    assert data["deep"] == "qwen2.5-coder:1.5b"
+    assert data["deep"] == "qwen2.5-coder:3b"
     assert data["fast"] == "llama3.2:1b"
-    assert data["embed_preset"] == "lite"
-    assert data["embed"] == "nomic-embed-text"
+    assert data["embed_preset"] == "balanced"
+    assert data["embed"] == "bge-m3"
     assert data["batch"] == 1

@@ -16,8 +16,8 @@
 │  └─────┬──────────────────────────────┘   │
 │        │                                   │
 │  ┌─────┴──────┐                            │
-│  │   Ollama   │  qwen2.5 · llama3.2       │
-│  │   :11434   │  bge-m3 · moondream       │
+│  │   Ollama   │  qwen3 · qwen2.5-coder    │
+│  │   :11434   │  bge-m3 · qwen3-vl        │
 │  └────────────┘                            │
 └──────────────────────────────────────────┘
 ```
@@ -38,8 +38,8 @@ Everything runs on localhost or a trusted private LAN. No cloud dependencies.
 
 The single source of truth for all subsystems. Defines:
 
-- **Model fleet** — `MODEL_GENERAL`, `MODEL_CODE`, `MODEL_DEEP`, `MODEL_FAST`
-- **Hardware profiles** — auto-tuned by `TRINAXAI_PROFILE` (8gb/16gb/max/ultra)
+- **Model fleet** — `MODEL_GENERAL`, `MODEL_CODE`, `MODEL_DEEP`, `MODEL_FAST` (all tool-calling capable and non-thinking, i.e. agent-ready)
+- **Hardware profiles** — auto-tuned by `TRINAXAI_PROFILE` (4gb/8gb/16gb/max/ultra)
 - **Embedding presets** — bge-m3 balanced, nomic lite, all-minilm fast
 - **Factory functions** — `make_llm()`, `make_embed()`, `make_reranker()`
 - **Auto-router** — `route_model()` heuristic classifier (no LLM call needed)
@@ -72,17 +72,17 @@ The heart of the system. Key subsystems:
 
 ### `chat-pwa/` — React PWA Frontend
 
-18 components in TypeScript with Tailwind CSS and framer-motion:
+TypeScript components built with Tailwind CSS and framer-motion include:
 
 | Component | Purpose |
 |---|---|
 | `ChatInterface` | Main chat UI with streaming, markdown, voice, slash commands |
-| `ChatSidebar` | Session history, search, export (Markdown/PDF/Word) |
+| `ChatSidebar` | Session history, folders, search, and export workflows |
 | `Settings` | 5-section config panel (general, indexing, prompts, memory, stats) |
 | `KnowledgeBrowser` | Explore indexed chunks by collection→file→chunk |
 | `Sources` | Citation cards with file, project, snippet, score |
-| `OnboardingWizard` | 7-step first-time setup |
-| `Docs` | 11-section in-app documentation |
+| `OnboardingWizard` | First-time profile and model setup |
+| `Docs` | Bilingual in-app user documentation |
 
 **Tech stack**: React 19, Vite 6, TypeScript, Tailwind CSS, vite-plugin-pwa, react-markdown
 
@@ -126,7 +126,7 @@ User types query in PWA
        │
        └─ Ollama engine:
             routeOllamaModel() → Ollama /api/chat (JSON lines)
-            → model unload (keep_alive=0)
+            → model lifecycle follows the configured keep_alive value
 ```
 
 ---
@@ -159,10 +159,10 @@ index.py starts
 
 | Layer | Mechanism |
 |---|---|
-| **Network** | Localhost + private LAN only (CORS filter by IP + port) |
-| **System endpoints** | Require localhost/LAN or admin token (`TRINAXAI_ADMIN_TOKEN`) |
+| **Network** | Configurable bind address plus explicit CORS origins/regex |
+| **Protected endpoints** | Require loopback, opted-in private LAN, or admin token (`TRINAXAI_ADMIN_TOKEN`) |
 | **LAN control** | `TRINAXAI_ALLOW_LAN_SYSTEM=0` disables LAN system access |
-| **TLS** | HTTPS with self-signed certs (localhost-only, `TRINAXAI_TLS_VERIFY` controls) |
+| **TLS** | Managed services can use local certificates; `TRINAXAI_TLS_VERIFY` controls selected outgoing verification |
 | **Sudoers** | `setup_trinaxai.sh` creates `/etc/sudoers.d/trinaxai` for service control |
 | **Data** | All data stays on device — no cloud uploads, no telemetry |
 
@@ -173,11 +173,16 @@ index.py starts
 ```
 storage/
 ├── docstore.json          # LlamaIndex document store
-├── index_store.json       # FAISS/vector index
+├── index_store.json       # LlamaIndex index metadata
+├── *_vector_store.json    # Persisted vector stores/namespaces
+├── graph_store.json       # LlamaIndex graph store
 ├── manifest.json          # File→mtime for incremental indexing
 ├── collections.json       # Collection metadata
 ├── usage.jsonl            # Usage statistics (JSON lines)
-└── app_state.json         # Cross-device shared state
+├── app_state.json         # Cross-device shared state
+├── chat_attachments/      # Host-backed synchronized chat files
+├── usage_summary.json     # Cached usage aggregate
+└── user_memory*.json      # Memory entries/summary when present
 ```
 
 ---
@@ -379,14 +384,18 @@ These principles guide all design and contribution decisions:
 7. **Cross-platform with evidence** — Linux is CI-tested on Ubuntu. Windows and macOS have installers plus CI syntax/smoke validation, but full end-to-end OS validation must remain explicit.
 8. **Accessible** — Spanish and English bilingual support. PWA works on mobile. CLI works over SSH.
 9. **Small, focused PRs** — Prefer small, well-tested changes over large refactors. Each PR should address one concern.
-10. **Documentation lives with code** — Architecture decisions are documented here. API reference in `docs/API_REFERENCE.md`. Developer guide in `docs/DEVELOPER_GUIDE.md`.
+10. **Documentation lives with code** — Architecture decisions are documented here, with dedicated API, CLI, configuration, PWA, and developer references.
 
 ---
 
 ## Related Documents
 
-- [API Reference](API_REFERENCE.md) — Full endpoint documentation
+- [Documentation index](README.md) — Complete guide and reference map
+- [API Reference](API_REFERENCE.md) — HTTP contracts and endpoints
+- [Configuration Reference](CONFIGURATION.md) — Variables, profiles, and security
+- [CLI Reference](CLI_REFERENCE.md) — Commands, flags, and TOML
 - [Developer Guide](DEVELOPER_GUIDE.md) — Local setup, conventions, debugging
+- [PWA Documentation](../chat-pwa/README.md) — Frontend runtime and development
 - [Security Policy](../SECURITY.md) — Threat model and reporting
 - [Contributing Guide](../CONTRIBUTING.md) — PR process and guidelines
 - [Roadmap](../ROADMAP.md) — Planned features and milestones

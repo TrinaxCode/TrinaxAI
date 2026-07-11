@@ -7,6 +7,7 @@ and the logic to delete nodes belonging to a specific collection.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import shutil
 import time
@@ -18,6 +19,8 @@ import config
 from app.services.engine_state import state
 from app.services.rag_service import build_engine
 from trinaxai_core import sanitize_collection_id
+
+LOG = logging.getLogger("trinaxai.collection_service")
 
 
 def _collection_slug(name: str) -> str:
@@ -112,40 +115,51 @@ def delete_collection_nodes(collection_id: str) -> int:
             status_code=400, detail="The default collection cannot be deleted."
         )
     deleted_nodes = 0
-    try:
-        storage_context = StorageContext.from_defaults(persist_dir=config.PERSIST_DIR)
-        index = load_index_from_storage(storage_context)
-        node_ids = [
-            node_id
-            for node_id, node in index.docstore.docs.items()
-            if node.metadata.get("collection_id", config.DEFAULT_COLLECTION_ID)
-            == collection_id
-        ]
-        if node_ids:
-            index.delete_nodes(node_ids, delete_from_docstore=True)
-            index.storage_context.persist(persist_dir=config.PERSIST_DIR)
-            deleted_nodes = len(node_ids)
-    except Exception:
-        deleted_nodes = 0
+    with state.engine_lock:
+        try:
+            storage_context = StorageContext.from_defaults(persist_dir=config.PERSIST_DIR)
+            index = load_index_from_storage(storage_context)
+            node_ids = [
+                node_id
+                for node_id, node in index.docstore.docs.items()
+                if node.metadata.get("collection_id", config.DEFAULT_COLLECTION_ID)
+                == collection_id
+            ]
+            if node_ids:
+                index.delete_nodes(node_ids, delete_from_docstore=True)
+                index.storage_context.persist(persist_dir=config.PERSIST_DIR)
+                deleted_nodes = len(node_ids)
+        except FileNotFoundError:
+            # No index persisted yet — nothing to delete, safe to continue.
+            deleted_nodes = 0
+        except Exception:
+            # Node deletion failed for a real reason. Do NOT destroy the source
+            # files, or we would leave the store inconsistent (sources gone but
+            # chunks still indexed). Surface the failure instead.
+            LOG.exception("Failed to delete nodes for collection %s", collection_id)
+            raise HTTPException(
+                status_code=500,
+                detail="Failed to delete collection nodes; sources were preserved.",
+            )
 
-    try:
-        with open(config.MANIFEST_PATH, encoding="utf-8") as f:
-            manifest = json.load(f)
-        if isinstance(manifest, dict):
-            prefix = f"{collection_id}:"
-            trimmed = {
-                k: v for k, v in manifest.items() if not str(k).startswith(prefix)
-            }
-            if len(trimmed) != len(manifest):
-                tmp = f"{config.MANIFEST_PATH}.tmp"
-                with open(tmp, "w", encoding="utf-8") as f:
-                    json.dump(trimmed, f)
-                os.replace(tmp, config.MANIFEST_PATH)
-    except (OSError, ValueError):
-        pass
-    shutil.rmtree(
-        os.path.join(config.LOCAL_SOURCES_DIR, "collections", collection_id),
-        ignore_errors=True,
-    )
-    build_engine()
+        try:
+            with open(config.MANIFEST_PATH, encoding="utf-8") as f:
+                manifest = json.load(f)
+            if isinstance(manifest, dict):
+                prefix = f"{collection_id}:"
+                trimmed = {
+                    k: v for k, v in manifest.items() if not str(k).startswith(prefix)
+                }
+                if len(trimmed) != len(manifest):
+                    tmp = f"{config.MANIFEST_PATH}.{os.getpid()}.tmp"
+                    with open(tmp, "w", encoding="utf-8") as f:
+                        json.dump(trimmed, f)
+                    os.replace(tmp, config.MANIFEST_PATH)
+        except (OSError, ValueError):
+            LOG.warning("Could not trim manifest for collection %s", collection_id)
+        shutil.rmtree(
+            os.path.join(config.LOCAL_SOURCES_DIR, "collections", collection_id),
+            ignore_errors=True,
+        )
+        build_engine()
     return deleted_nodes

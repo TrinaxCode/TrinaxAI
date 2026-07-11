@@ -77,6 +77,17 @@ function Remove-InRepo([string[]]$RelativePaths) {
     }
   }
 }
+function Remove-UserPath($PathToRemove) {
+  if ([string]::IsNullOrWhiteSpace($PathToRemove)) { return }
+  $UserPath = [Environment]::GetEnvironmentVariable("Path", "User")
+  if ([string]::IsNullOrWhiteSpace($UserPath)) { return }
+  $Expected = [IO.Path]::GetFullPath($PathToRemove).TrimEnd('\')
+  $Parts = $UserPath.Split(";") | Where-Object {
+    -not [string]::IsNullOrWhiteSpace($_) -and
+    ([IO.Path]::GetFullPath($_).TrimEnd('\') -ne $Expected)
+  }
+  [Environment]::SetEnvironmentVariable("Path", ($Parts -join ";"), "User")
+}
 function Get-OllamaCommand {
   $Candidates = @(
     "ollama",
@@ -96,6 +107,17 @@ function Remove-TrinaxAIFirewallRules {
       Get-NetFirewallRule -DisplayName $Name -ErrorAction SilentlyContinue | Remove-NetFirewallRule
     } catch {
       Write-Warn "Could not remove firewall rule $Name"
+    }
+  }
+}
+function Remove-TrinaxAICertificates {
+  foreach ($Store in @("Cert:\CurrentUser\My", "Cert:\CurrentUser\Root")) {
+    try {
+      Get-ChildItem $Store -ErrorAction SilentlyContinue |
+        Where-Object { $_.FriendlyName -eq "TrinaxAI Local HTTPS" -or $_.Subject -eq "CN=TrinaxAI Local HTTPS" } |
+        Remove-Item -Force -ErrorAction SilentlyContinue
+    } catch {
+      Write-Warn "Could not remove TrinaxAI certificates from $Store"
     }
   }
 }
@@ -190,10 +212,10 @@ Set-Location $Repo
 $PythonExe = Get-PythonExe
 
 Write-Host ""
-Write-Host "==========================================" -ForegroundColor Blue
-Write-Host " TrinaxAI - Windows uninstaller          " -ForegroundColor Blue
-Write-Host "==========================================" -ForegroundColor Blue
-Write-Host "Repository/source code will stay in place." -ForegroundColor Cyan
+Write-Host "+========================================+" -ForegroundColor Blue
+Write-Host "|       TrinaxAI - Clean Uninstaller     |" -ForegroundColor Blue
+Write-Host "+========================================+" -ForegroundColor Blue
+Write-Host " Protected: source code, indexes, and Ollama models" -ForegroundColor Cyan
 
 if (-not ($Yes -or $NonInteractive)) {
   $Confirm = Read-Host "Type UNINSTALL to continue"
@@ -238,6 +260,14 @@ if ($StopServices) {
   Invoke-ServiceManager "stop-all"
 }
 
+Write-Step "Automatic updates"
+if ((Test-Path (Join-Path $Repo "scripts\auto_update.py")) -and $PythonExe) {
+  Invoke-Python @((Join-Path $Repo "scripts\auto_update.py"), "disable", "--base-dir", $Repo)
+} elseif (Test-Cmd "schtasks") {
+  & schtasks /Delete /F /TN "TrinaxAI Weekly Update" 2>$null
+}
+Write-Ok "Weekly update task removed"
+
 if ($DisableAutostart) {
   Write-Step "2/4 Autostart"
   Invoke-ServiceManager "disable-autostart"
@@ -258,16 +288,23 @@ if ($RemoveRuntimeData) {
 }
 if ($RemoveRuntimeCerts) { $Targets.Add("chat-pwa\certs") | Out-Null }
 Remove-InRepo $Targets.ToArray()
+if ($RemoveVenv) {
+  Remove-UserPath (Join-Path $Repo ".venv\Scripts")
+  Write-Ok "Removed TrinaxAI CLI directory from the user PATH"
+}
 
 if ($RemoveFirewallRules) {
   Remove-TrinaxAIFirewallRules
+}
+if ($RemoveRuntimeCerts) {
+  Remove-TrinaxAICertificates
 }
 
 if ($RemoveOllamaModels) {
   Write-Step "4/4 Ollama models"
   $Ollama = Get-OllamaCommand
   if ($Ollama) {
-    foreach ($Model in @("llama3.2:1b", "llama3.2:3b", "qwen2.5-coder:1.5b", "qwen2.5-coder:3b", "qwen2.5-coder:7b", "qwen2.5-coder:14b", "nomic-embed-text", "bge-m3", "moondream", "qwen2.5vl:3b", "qwen2.5vl:7b")) {
+    foreach ($Model in @("qwen3:4b-instruct-2507-q4_K_M", "qwen3:30b-a3b-instruct-2507-q4_K_M", "qwen2.5-coder:1.5b", "qwen2.5-coder:3b", "qwen2.5-coder:7b", "qwen3-coder:30b", "llama3.2:1b", "bge-m3", "qwen3-vl:2b", "qwen3-vl:4b", "qwen3-vl:8b", "qwen3-vl:32b", "qwen2.5-coder:14b", "llama3.2:3b", "nomic-embed-text", "moondream", "qwen2.5vl:3b", "qwen2.5vl:7b", "llava:7b")) {
       & $Ollama rm $Model 2>$null
     }
   } else {

@@ -1,336 +1,205 @@
 # Referencia de API de TrinaxAI
 
-La API RAG es un servidor FastAPI (puerto por defecto **3333**) que impulsa la PWA, la CLI y cualquier integración de terceros. Los endpoints de sistema requieren autorización. Los endpoints de chat están abiertos, pero limitados por la allowlist CORS configurada.
+La API FastAPI conecta la PWA y la CLI con el índice RAG, la memoria, la voz y la administración local. Por defecto escucha en `https://localhost:3333`; la URL depende de `TRINAXAI_HOST`, `TRINAXAI_PORT` y TLS.
 
----
+Documentación generada en una instancia activa:
 
-## Autenticación
+- Swagger UI: `/docs`
+- ReDoc: `/redoc`
+- OpenAPI JSON: `/openapi.json`
 
-Los endpoints de sistema (`/system/*`, `/app-state`, `/v1/memory`, CRUD de colecciones) requieren autorización:
+## Autorización y límites
 
-- **localhost** — permitido por defecto.
-- **LAN privada** — desactivada por defecto. Actívala explícitamente con `TRINAXAI_ALLOW_LAN_SYSTEM=1`.
-- **Token de administrador** — configura `TRINAXAI_ADMIN_TOKEN` en `.env` y pásalo como cabecera `X-Admin-Token: <token>`.
+Los endpoints marcados como **protegidos** aceptan la solicitud cuando ocurre una de estas condiciones:
 
-Los endpoints de chat (`/v1/chat/completions`, `/health`) están abiertos a los orígenes de confianza (filtro CORS sobre IPs privadas + puertos 3334/3335).
+1. El peer TCP es loopback.
+2. `X-Admin-Token` coincide con el token configurado.
+3. El peer pertenece a una red privada y `TRINAXAI_ALLOW_LAN_SYSTEM` está activado.
 
----
+Un token enviado pero incorrecto produce `403`. La implementación no confía en `X-Forwarded-For`. Si colocas un reverse proxy, conserva esta frontera o añade autenticación en el proxy.
 
-## Chat y Recuperación
+Chat, STT y TTS tienen buckets separados por IP. Los valores generales son 30 solicitudes por 60 segundos y se configuran con `TRINAXAI_RATE_LIMIT_PER_MINUTE` y `TRINAXAI_RATE_LIMIT_WINDOW_SECONDS`.
+
+```bash
+curl -k https://localhost:3333/health
+curl -k -H "X-Admin-Token: $TOKEN" https://localhost:3333/v1/memory
+```
+
+## Resumen de endpoints
+
+| Método y ruta | Protección | Propósito |
+|---|---|---|
+| `POST /v1/chat/completions` | Rate limit | Chat RAG JSON o SSE. |
+| `POST /v1/research` | Protegido | Investigación RAG multipasada. |
+| `GET /v1/voice/capabilities` | Pública | Motores locales de voz disponibles. |
+| `POST /v1/voice/stt` | Rate limit | Audio multipart a texto. |
+| `POST /v1/voice/tts` | Rate limit | Texto JSON a audio. |
+| `GET /v1/sources` | Protegido | Archivos indexados por colección. |
+| `GET /v1/sources/{collection}/{file}/chunks` | Protegido | Chunks paginados de un archivo. |
+| `DELETE /v1/sources/{collection}/{file}` | Protegido | Elimina chunks de un archivo. |
+| `DELETE /v1/sources/{collection}` | Protegido | Vacía una colección no predeterminada. |
+| `GET/POST /v1/memory` | Protegido | Lista o crea memorias. |
+| `DELETE /v1/memory/{memory_id}` | Protegido | Elimina una memoria. |
+| `POST /v1/memory/refresh` | Protegido | Regenera el resumen. |
+| `GET /v1/memory/summary` | Protegido | Lee el resumen. |
+| `POST/GET /v1/watch/*` | Protegido | Inicia, detiene o consulta el watcher. |
+| `POST /v1/usage`, `GET /v1/stats` | Protegido | Métricas locales. |
+| `GET /health`, `GET /resources` | Pública | Salud y RAM local. |
+| `GET /app-state` | Pública | Estado compartido con ETag. |
+| `PUT/DELETE /app-state` | Protegido | Sincroniza o restablece estado. |
+| `POST /attachments`, `GET /attachments/{attachment_id}` | Pública | Persiste/recupera adjuntos del chat. |
+| `POST /documents/extract` | Pública | Extracción temporal de documento. |
+| `GET /collections` | Pública | Lista metadatos de colecciones. |
+| `POST/PATCH/DELETE /collections/*` | Protegido | Administra colecciones. |
+| `/system/*` | Protegido | Servicios, índice y autoprueba. |
+
+## Chat RAG
 
 ### `POST /v1/chat/completions`
 
-Endpoint de chat compatible con OpenAI, con recuperación RAG. Soporta streaming SSE.
+Compatible en forma básica con completions de chat de OpenAI:
 
-**Petición:**
 ```json
 {
-  "model": "auto",
-  "messages": [
-    {"role": "user", "content": "How does the auth module work?"},
-    {"role": "assistant", "content": "..."}
-  ],
+  "model": null,
+  "messages": [{"role": "user", "content": "¿Cómo funciona la autorización?"}],
   "stream": true,
-  "collections": ["default", "my-project"]
+  "collections": ["default"],
+  "keep_alive": "10m",
+  "aggressive_quant": false
 }
 ```
 
-**Respuesta (streaming SSE):**
-```
-data: {"trinaxai":{"model":"qwen2.5-coder:7b","project":"Insider"}}
-data: {"choices":[{"delta":{"content":"The auth module..."}}]}
-data: {"trinaxai_sources":[{"file":"auth.py","snippet":"...","score":0.89}]}
+- `messages`: 1–100 objetos; roles `system`, `user` o `assistant`; máximo total de 2,000,000 caracteres y al menos un mensaje `user`.
+- `model`: `null`/vacío activa el router; también acepta un nombre de Ollama.
+- `collections`: hasta 50 IDs.
+- `stream=false`: devuelve `chat.completion` JSON con `choices` y `trinaxai.sources`.
+- `stream=true`: devuelve `text/event-stream`.
+
+Eventos SSE posibles:
+
+```text
+data: {"trinaxai":{"model":"...","project":null,"phase":"retrieving"}}
+data: {"choices":[{"delta":{"content":"texto"}}]}
+data: {"trinaxai_sources":[{"file":"...","snippet":"...","score":0.8}]}
 data: [DONE]
 ```
 
-**Sin streaming:**
-```json
-{
-  "choices": [{"message": {"role": "assistant", "content": "..."}}],
-  "trinaxai": {"model": "qwen2.5-coder:7b", "sources": [...]}
-}
-```
-
-| Campo | Notas |
-|---|---|
-| `model` | `"auto"` (por defecto) o cualquier nombre de modelo de Ollama |
-| `stream` | `true` para SSE, `false` para respuesta JSON única |
-| `collections` | Lista opcional de IDs de colección en las que buscar |
-
----
+Si no hay índice, responde un mensaje informativo sin fuentes en vez de fallar.
 
 ### `POST /v1/research`
 
-Consulta de investigación profunda multi-pasada con descomposición en sub-preguntas.
-
-**Petición:**
 ```json
 {
-  "query": "Compare authentication patterns across the project",
+  "query": "Compara los mecanismos de persistencia",
+  "collections": ["default"],
   "depth": 2,
-  "collections": ["default"]
+  "model": null,
+  "keep_alive": "10m",
+  "aggressive_quant": false
 }
 ```
 
-**Respuesta:** Stream SSE con resultados de cada pasada de investigación y síntesis final.
+`depth` se normaliza a 1–3. La respuesta es JSON, no SSE: `answer`, `sub_questions`, `sources`, `passes` y `model`.
 
----
+## Fuentes y colecciones
 
-## Control del Sistema
-
-### `POST /system/shutdown`
-
-Apaga Ollama + la API RAG. **Requiere autorización.**
-
-Devuelve `{"ok": true, "output": "AI shutdown initiated. ..."}`.
-
-### `POST /system/startup`
-
-Inicia Ollama + la API RAG. **Requiere autorización.**
-
-Devuelve `{"ok": true|false, "output": "...", "error": "..."}`.
-
-### `POST /system/stop-all`
-
-Detiene todos los servicios inmediatamente. **Requiere autorización.**
-
-### `POST /system/reload`
-
-Recarga en caliente el índice RAG desde `storage/`. **Requiere autorización.**
-
-Devuelve `{"ok": true}` o error.
-
-### `POST /system/self-test`
-
-Ejecuta verificaciones de salud automatizadas: Ollama, embeddings, consulta RAG. **Requiere autorización.**
-
-Devuelve `{"ok": true|false, "results": {"ollama": bool, "embedding": bool, "rag_query": bool, "rag_indexed": bool}}`.
-
----
-
-## Indexación
-
-### `POST /system/index-upload`
-
-Sube una carpeta para indexarla (selector de archivos del navegador). **Requiere autorización.**
-
-**Petición:** `multipart/form-data` con los archivos de una carpeta.
-
-**Respuesta:** `{"job_id": "abc123", "status": "starting"}`
-
-### `GET /system/index-jobs/{job_id}`
-
-Consulta el progreso de un trabajo de indexación.
-
-**Respuesta:**
-```json
-{
-  "status": "indexing",
-  "progress": 65,
-  "phase": "embedding",
-  "eta": 12
-}
+```http
+GET /v1/sources?collection=default
+GET /v1/sources/default/path/to/file.py/chunks?limit=50&offset=0&q=texto
+DELETE /v1/sources/default/path/to/file.py
 ```
 
-### `POST /system/index-jobs/{job_id}/cancel`
+La ruta del archivo puede contener `/` y debe codificarse como URL. La lista responde `{collection, sources}`; chunks responde `{collection, file, total, chunks, query}`. `limit` se restringe a 1–500.
 
-Cancela un trabajo de indexación en ejecución. **Requiere autorización.**
+Colecciones:
 
----
-
-## Colecciones
-
-### `GET /collections`
-
-Lista todas las colecciones RAG.
-
-**Respuesta:** `["default", "my-project", "docs"]`
-
-### `POST /collections`
-
-Crea una colección. **Requiere autorización.**
-
-**Petición:** `{"name": "My Project"}`
-
-### `PUT /collections/{collection_id}`
-
-Renombra una colección. **Requiere autorización.**
-
-**Petición:** `{"name": "New Name"}`
-
-### `DELETE /collections/{collection_id}`
-
-Elimina una colección y todos sus chunks. **Requiere autorización.**
-
----
-
-## Explorador de Conocimiento
-
-### `GET /v1/sources`
-
-Lista los archivos indexados con el conteo de chunks en una colección.
-
-**Query:** `?collection=default`
-
-**Respuesta:**
-```json
-[
-  {"file": "app/auth.py", "project": "Insider", "chunks": 45, "collection": "General"}
-]
+```http
+GET    /collections
+POST   /collections                 {"name":"Documentación"}
+PATCH  /collections/{collection_id} {"name":"Nuevo nombre"}
+DELETE /collections/{collection_id}
 ```
 
-### `GET /v1/sources/{file_path}`
+`GET /collections` devuelve `{ok, collections}`. La colección `default` no puede eliminarse. Borrar metadatos de colección y vaciar sus fuentes son operaciones diferentes.
 
-Obtiene todos los chunks de un archivo específico.
+## Indexación desde navegador
 
-**Query:** `?collection=default&limit=50`
+`POST /system/index-upload` recibe `multipart/form-data`:
 
----
-
-## Memoria
-
-### `GET /v1/memory`
-
-Lista todas las entradas de memoria persistente.
-
-**Respuesta:** `[{"id": "abc", "text": "User prefers Python", "tags": ["pref"]}]`
-
-### `POST /v1/memory`
-
-Añade una entrada de memoria. **Requiere autorización.**
-
-**Petición:** `{"text": "User prefers Python 3.12+", "tags": ["pref", "python"]}`
-
-### `DELETE /v1/memory/{memory_id}`
-
-Elimina una entrada de memoria. **Requiere autorización.**
-
-### `POST /v1/memory/refresh`
-
-Regenera el auto-resumen a partir de las entradas de memoria. **Requiere autorización.**
-
-### `GET /v1/memory/summary`
-
-Obtiene el texto del auto-resumen actual.
-
----
-
-## Vigilante de Archivos
-
-### `POST /v1/watch/start`
-
-Inicia el vigilante del sistema de archivos. **Requiere autorización.** Requiere el paquete pip `watchdog`.
-
-**Petición:** `{"paths": ["/home/user/projects"], "collection": "default"}`
-
-### `POST /v1/watch/stop`
-
-Detiene el vigilante de archivos. **Requiere autorización.**
-
-### `GET /v1/watch/status`
-
-Obtiene el estado del vigilante: en ejecución, rutas monitorizadas, conteo de eventos.
-
----
-
-## Estadísticas
-
-### `GET /v1/stats`
-
-Obtiene estadísticas de uso desde `storage/usage.jsonl`.
-
-**Respuesta:**
-```json
-{
-  "total_messages": 1523,
-  "estimated_tokens": 450000,
-  "top_models": {"qwen2.5-coder:3b": 800},
-  "top_collections": {"default": 1200}
-}
-```
-
----
-
-## Salud y Telemetría
-
-### `GET /health`
-
-Resumen del estado del sistema.
-
-**Respuesta:**
-```json
-{
-  "status": "ok",
-  "models": ["qwen2.5-coder:3b", "llama3.2:3b", "bge-m3"],
-  "indexed": true,
-  "profile": "16gb",
-  "projects": ["Insider", "MyApp"],
-  "features": {"reranker": false, "ocr": false, "watcher": false}
-}
-```
-
-### `GET /resources`
-
-Telemetría básica de RAM/VRAM local. Requiere `psutil`.
-
-**Respuesta:**
-```json
-{
-  "ram": {"total_gb": 32, "used_gb": 12, "percent": 37.5},
-  "ollama_processes": 2
-}
-```
-
----
-
-## Estado de la App (Sincronización entre Dispositivos)
-
-### `GET /app-state`
-
-Lee la configuración compartida almacenada en `storage/app_state.json`.
-
-### `PUT /app-state`
-
-Guarda el estado compartido (ajustes, historial de chat, preferencias). **Requiere autorización.**
-
-**Petición:** `{"values": {"theme": "dark", "language": "en"}}`
-
-### `DELETE /app-state`
-
-Restablecimiento total del estado compartido a los valores por defecto del host. **Requiere autorización.**
-
----
-
-## Extracción de Documentos
-
-### `POST /documents/extract`
-
-Extrae texto de PDF/DOCX/TXT para análisis temporal (no se indexa).
-
-**Petición:** `multipart/form-data` con el archivo.
-
-**Respuesta:** `{"ok": true, "name": "doc.pdf", "text": "...", "chars": 5000, "truncated": false}`
-
----
-
-## Códigos de Error
-
-| HTTP | Significado |
+| Campo | Tipo / valor inicial |
 |---|---|
-| 200 | Éxito |
-| 400 | Petición incorrecta (parámetros faltantes, datos inválidos) |
-| 401 | No autorizado (endpoint de sistema sin token) |
-| 404 | No encontrado (colección, trabajo, memoria) |
-| 429 | Límite de tasa excedido (30 peticiones/min por IP) |
-| 500 | Error interno |
-| 501 | No implementado (ej., watchdog no instalado) |
-| 503 | Servicio no disponible (Ollama caído, índice no cargado) |
+| `files` | Uno o más archivos; requerido. |
+| `label` | Texto; `import`. |
+| `collection_id` | Texto; `default`. |
+| `embed_model` | Texto opcional. |
+| `aggressive_quant` | Booleano; `false`. |
+| `watch_id` | Texto opcional para importaciones sincronizadas. |
 
----
+La respuesta contiene `job_id`, ruta local, archivos guardados/omitidos, bytes y colección. El trabajo continúa en segundo plano:
 
-## Límite de Tasa
+```http
+GET  /system/index-jobs/{job_id}
+POST /system/index-jobs/{job_id}/cancel
+```
 
-- **30 peticiones por minuto** por dirección IP
-- Ventana: 60 segundos deslizantes
-- Afecta: completaciones de chat y endpoints de sistema
-- Devuelve HTTP 429 cuando se supera el límite
+`DELETE /system/index-imports` recibe `{"path":"...","collection_id":"..."}` y solo acepta rutas internas seguras de importaciones locales.
+
+## Memoria, watcher y métricas
+
+```http
+GET    /v1/memory
+POST   /v1/memory             {"text":"...","tags":["preferencia"]}
+DELETE /v1/memory/{id}
+POST   /v1/memory/refresh     {"scope":null}
+GET    /v1/memory/summary
+
+POST /v1/watch/start          {"paths":["/ruta"],"collection":"default"}
+POST /v1/watch/stop
+GET  /v1/watch/status
+
+POST /v1/usage               {"engine":"ollama","model":"...","est_tokens":100}
+GET  /v1/stats
+```
+
+El watcher requiere `watchdog` y solo acepta directorios existentes. Las estadísticas se almacenan localmente.
+
+## Estado compartido
+
+- `GET /app-state` devuelve `{ok, values}` y `ETag`; acepta `If-None-Match` y puede responder `304`.
+- `PUT /app-state` acepta `{"values":{"tc-clave":"valor-string"}}`; solo conserva claves `tc-*` y valores string.
+- `DELETE /app-state` exige además `X-TrinaxAI-Confirm: reset-app-state`; limpia el estado de ejecución local y devuelve los elementos eliminados.
+
+El estado compartido tiene un límite predeterminado de 6 MiB (`TRINAXAI_APP_STATE_MAX_BYTES`).
+
+## Adjuntos, documentos y voz
+
+`POST /attachments` recibe un archivo multipart y lo guarda bajo `storage/chat_attachments/` para que las conversaciones sincronizadas puedan abrirlo desde otros navegadores. Devuelve `id`, nombre, tamaño, MIME y una `storage_key` con prefijo `server:`. `GET /attachments/{attachment_id}` muestra inline imágenes, PDF y texto seguros; los tipos desconocidos se descargan con `nosniff`. `DELETE /attachments/{attachment_id}` está protegido como las operaciones de sistema. Los límites predeterminados son 250 MiB por archivo, 1 GiB total y 1,000 archivos retenidos. Las cargas y descargas tienen rate limiting. Estos endpoints siguen siendo públicos dentro de la frontera de red configurada: no expongas la API a clientes no confiables.
+
+`POST /documents/extract` acepta un archivo multipart y devuelve `{ok, name, text, chars, truncated}`. Soporta extracción especializada de PDF, DOCX y PPTX, y decodificación de formatos de texto. No indexa el contenido. Los límites se documentan en [CONFIGURATION.es.md](CONFIGURATION.es.md).
+
+Voz:
+
+```http
+GET  /v1/voice/capabilities
+POST /v1/voice/stt   multipart: file, lang=es
+POST /v1/voice/tts   {"text":"Hola","lang":"es"}
+```
+
+TTS devuelve bytes de audio con su `Content-Type`. STT/TTS responden `501` cuando no hay motor local instalado.
+
+## Sistema y diagnóstico
+
+| Endpoint | Resultado |
+|---|---|
+| `POST /system/shutdown` | Detiene IA, mantiene la PWA. |
+| `POST /system/startup` | Inicia servicios de IA. |
+| `POST /system/stop-all` | Detiene todo. |
+| `POST /system/reload` | Recarga el índice en memoria. |
+| `POST /system/self-test` | Comprueba Ollama, embeddings e índice/RAG. |
+| `GET /health` | Modelos, perfil, índice, colecciones y capacidades. |
+| `GET /resources` | RAM en bytes; VRAM actualmente `null`. |
+
+## Errores
+
+FastAPI usa `{"detail":"mensaje"}` para errores HTTP. Los más relevantes son `400` (entrada inválida), `403` (autorización), `404`, `409` (confirmación requerida), `413` (límite), `422` (validación/extracción), `429`, `500`, `501` y `503`.

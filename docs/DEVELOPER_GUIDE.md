@@ -184,6 +184,43 @@ curl -k -X POST http://localhost:3333/system/reload
 
 ---
 
+## PWA Development
+
+### Dev Server
+The Vite dev server runs on `https://localhost:3334` with hot module replacement. It proxies `/api/rag` → `localhost:3333` and `/api/ollama` → `localhost:11434`.
+
+```bash
+cd chat-pwa
+npm run dev
+```
+
+### Service Worker Caching
+The PWA uses `vite-plugin-pwa` with `registerType: 'autoUpdate'`. During development, the service worker is **not** registered to avoid caching issues. To test PWA features:
+
+```bash
+npm run build
+npm run preview   # Serves production build with service worker
+```
+
+### Debugging the Frontend
+- **React DevTools**: Install the browser extension for component inspection.
+- **Network tab**: All API calls go through the Vite proxy — check the Network tab for `/api/rag/*` and `/api/ollama/*`.
+- **IndexedDB**: File attachments are stored in `trinaxai-chat-files` — inspect via DevTools > Application > IndexedDB.
+- **localStorage**: Chat history, settings, and shared state are in localStorage — check Application > Local Storage.
+- **Service Worker**: Use Application > Service Workers to unregister or update.
+- **Streaming SSE**: Events appear in the Network tab as `text/event-stream` responses.
+
+### Code Splitting
+Heavy dependencies are split into separate chunks (configured in `vite.config.ts`):
+- `vendor-react` — React + ReactDOM
+- `vendor-framer` — Framer Motion
+- `vendor-markdown` — react-markdown + rehype-sanitize
+- `vendor-icons` — react-icons
+
+Lazy-loaded pages (`React.lazy`) load on demand: `Settings`, `OnboardingWizard`, `Docs`, `KnowledgeBrowser`.
+
+---
+
 ## Common Tasks
 
 ### Reset everything

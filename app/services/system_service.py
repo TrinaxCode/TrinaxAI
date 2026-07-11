@@ -35,7 +35,7 @@ APP_STATE_MAX_BYTES = int(
 _SAFE_SEGMENT = re.compile(r"[^A-Za-z0-9._ -]+")
 
 DOC_EXTRACT_MAX_BYTES = int(
-    os.getenv("TRINAXAI_DOC_EXTRACT_MAX_BYTES", str(15 * 1024 * 1024))
+    os.getenv("TRINAXAI_DOC_EXTRACT_MAX_BYTES", str(250 * 1024 * 1024))
 )
 DOC_EXTRACT_MAX_CHARS = int(os.getenv("TRINAXAI_DOC_EXTRACT_MAX_CHARS", "120000"))
 

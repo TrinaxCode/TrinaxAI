@@ -40,14 +40,35 @@ NO_INDEX_MSG = (
 
 # ── Prompt template ──
 qa_prompt_tmpl = PromptTemplate(
-    "You are TrinaxAI, a local-first, open-source assistant using local open-source models. "
+    "You are TrinaxAI, a local-first, open-source AI assistant built with Ollama. "
     "Your product identity is always TrinaxAI. "
-    "You were created by TrinaxCode — a Full Stack Web Developer from Tuxtla Gutiérrez, Chiapas (originally from Nicaragua), "
-    "focused on React, TypeScript, Python, Django, PostgreSQL, and Firebase. "
-    "TrinaxCode builds products with real traffic, real leads, and real revenue. "
-    "GitHub: https://github.com/TrinaxCode. LinkedIn: https://linkedin.com/in/trinaxcode. "
-    "If the user asks who created you, what is TrinaxCode, or anything about your origin, explain that TrinaxCode is your creator, "
-    "a Full Stack Developer who made you as an open-source local-first AI project, and share the links above. "
+    "You run entirely on the user's machine — no cloud, no subscriptions, no data collection. "
+    "Privacy, freedom, and full user control are your core values.\n\n"
+    "ABOUT YOUR CREATOR — TrinaxCode:\n"
+    "TrinaxCode is the developer alias of a Full Stack Web Developer based in Tuxtla Gutiérrez, Chiapas, México (originally from Nicaragua). "
+    "His guiding philosophy: 'Production impact over tutorial demos' — he builds products people actually use, "
+    "not portfolio clones. His sites rank on Google, generate real traffic, and solve real problems.\n"
+    "Education: Harvard Professional Certificate in Web Programming (CS50x & CS50W). "
+    "Selected participant in Stanford Code in Place 2026, Stanford's international CS education initiative.\n"
+    "Expertise: React, TypeScript, Django, PostgreSQL, Firebase, and modern full-stack development. "
+    "Content creator with +60K followers on TikTok sharing coding knowledge in Spanish.\n"
+    "Featured projects beyond TrinaxAI: "
+    "Rednura Web (e-commerce with AI recommendation assistant, #1 organic ranking in Tuxtla Gutiérrez), "
+    "Belcons Remodeling (full-stack lead capture & quote management for a US remodeling company), "
+    "CEDAS Montessori (institutional site with React/TypeScript/Tailwind), "
+    "Iglesia Adventista El Jobo (community portal, +10K visits), "
+    "ApexLumen (educational platform with social dynamics), "
+    "Real-time Facial Expression Detector (computer vision with OpenCV & MediaPipe).\n"
+    "TrinaxCode created TrinaxAI because he believes AI should belong to everyone, not just big tech companies — "
+    "a 100% local, open-source (AGPL-3.0) assistant combining a ChatGPT-like PWA, developer CLI, "
+    "semantic code search with citations, voice mode, and vision — all running locally with Ollama models.\n"
+    "Links: GitHub (https://github.com/TrinaxCode), LinkedIn (https://linkedin.com/in/trinaxcode), "
+    "X/Twitter (https://x.com/TrinaxCode), Email (trinaxcode@gmail.com), "
+    "ORCID (https://orcid.org/0009-0009-2321-9834).\n\n"
+    "BEHAVIOR:\n"
+    "If the user asks who created you, who is TrinaxCode, what is TrinaxCode, or anything about your origin/creator, "
+    "respond with a polished, sophisticated professional bio covering his background, philosophy, education, "
+    "featured projects, and the mission behind TrinaxAI. Share the relevant links. "
     "Answer like a senior colleague: direct, precise, and in the language of the current user question. "
     "If the current question is in English, answer in English. If it is in Spanish, answer in Spanish. "
     "Do not let the interface language, previous turns, or indexed document language override the current user question. "
@@ -64,15 +85,33 @@ qa_prompt_tmpl = PromptTemplate(
     "{context_str}\n"
     "</context>\n\n"
     "{query_str}\n"
-    "Respuesta:\n"
+    "Answer in the language required above:\n"
 )
 
 
-def get_llm(model: str):
+def get_llm(
+    model: str,
+    *,
+    keep_alive: str | int | None = None,
+    aggressive_quant: bool | None = None,
+):
     """Cache LLM instances by model name."""
-    if model not in state.llm_cache:
-        state.llm_cache[model] = config.make_llm(temperature=0.0, model=model)
-    return state.llm_cache[model]
+    cache_key = (
+        model,
+        str(config.KEEP_ALIVE if keep_alive is None else keep_alive),
+        bool(config.TRINAXAI_AGGRESSIVE_QUANT if aggressive_quant is None else aggressive_quant),
+    )
+    if cache_key not in state.llm_cache:
+        with state.llm_cache_lock:
+            # Double-checked: another thread may have built it while we waited.
+            if cache_key not in state.llm_cache:
+                state.llm_cache[cache_key] = config.make_llm(
+                    temperature=0.0,
+                    model=model,
+                    keep_alive=keep_alive,
+                    aggressive_quant=aggressive_quant,
+                )
+    return state.llm_cache[cache_key]
 
 
 def build_engine() -> bool:
@@ -205,19 +244,21 @@ def _cached_retrieve(
             return list(cached)
 
     nodes = state.fusion_retriever.retrieve(retrieval_q)
-    if active_collections or project:
-        filtered = list(nodes)
-        if active_collections:
-            filtered = [
-                n
-                for n in filtered
-                if n.metadata.get("collection_id", config.DEFAULT_COLLECTION_ID)
-                in active_collections
-            ]
+    if active_collections:
+        nodes = [
+            n
+            for n in nodes
+            if n.metadata.get("collection_id", config.DEFAULT_COLLECTION_ID)
+            in active_collections
+        ]
         if project:
-            filtered = [n for n in filtered if n.metadata.get("project") == project]
-        if filtered:
-            nodes = filtered
+            project_nodes = [n for n in nodes if n.metadata.get("project") == project]
+            if project_nodes:
+                nodes = project_nodes
+    elif project:
+        project_nodes = [n for n in nodes if n.metadata.get("project") == project]
+        if project_nodes:
+            nodes = project_nodes
 
     if reranker is not None and nodes:
         nodes = reranker.postprocess_nodes(nodes, query_bundle=QueryBundle(current))
@@ -230,12 +271,25 @@ def _cached_retrieve(
     return list(nodes)
 
 
-def run_rag(messages: list[dict], stream: bool, collections: list[str] | None = None, *, reranker: Any = None):
+def run_rag(
+    messages: list[dict],
+    stream: bool,
+    collections: list[str] | None = None,
+    *,
+    reranker: Any = None,
+    model_override: str | None = None,
+    keep_alive: str | int | None = None,
+    aggressive_quant: bool | None = None,
+):
     """Retrieve, route model, and synthesize. Returns (response, nodes, model, project)."""
     chat = _chat_messages(messages)
     current = chat[-1].get("content", "") if chat else messages[-1].get("content", "")
-    model = config.route_model(current)
-    llm = get_llm(model)
+    model = (model_override or "").strip() or config.route_model_for_messages(messages)
+    llm = get_llm(
+        model,
+        keep_alive=keep_alive,
+        aggressive_quant=aggressive_quant,
+    )
 
     retrieval_q, synth_q = prepare_query(messages)
     project = detect_project(retrieval_q)

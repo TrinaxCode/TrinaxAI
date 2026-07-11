@@ -1,18 +1,21 @@
-import { memo, useState, useRef, useEffect, useCallback } from 'react';
+import { memo, useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import ReactMarkdown from 'react-markdown';
 import rehypeSanitize from 'rehype-sanitize';
-import { MdSend, MdStop, MdMenu, MdMic, MdVolumeUp, MdImage, MdClose, MdContentCopy, MdCheck, MdUploadFile, MdDownload, MdPictureAsPdf, MdRefresh, MdEdit, MdScience, MdKeyboardArrowDown } from 'react-icons/md';
+import { MdSend, MdStop, MdMenu, MdMic, MdVolumeUp, MdImage, MdClose, MdContentCopy, MdCheck, MdUploadFile, MdDownload, MdDescription, MdRefresh, MdEdit, MdScience, MdKeyboardArrowDown } from 'react-icons/md';
 import { useI18n } from '../i18n/I18nContext';
 import { useTheme } from '../theme/ThemeContext';
 import ToggleSwitch from './ToggleSwitch';
 import Sources from './Sources';
 import { useToast } from './Toast';
-import type { ChatMessage, ChatEngine, Collection } from '../lib/api';
-import { extractDocumentText, getCollections, getIndexJob, indexableFilesFrom, prepareImageForVision, runResearch, startFolderIndex, getMemorySummary } from '../lib/api';
+import type { ChatMessage, ChatEngine, Collection, ChatDocumentAttachment } from '../lib/api';
+import { extractDocumentText, getCollections, getIndexJob, indexableFilesFrom, nextActiveCollections, normalizeActiveCollections, prepareImageForVision, runResearch, startFolderIndex, getMemorySummary } from '../lib/api';
 import { getPreferredUserName, rememberFromMessage } from '../lib/userProfile';
 import { useStreamChat } from '../hooks/useStreamChat';
+import { detectBackendVoice, detectSpeechSynthesis, speakBackend, transcribeAudio } from '../services/voice';
+import { startAudioRecorder } from '../utils/audioRecorder';
 import { onSharedStateUpdated } from '../lib/sharedState';
+import { getChatAttachmentUrl, storeChatAttachment } from '../lib/chatAttachments';
 
 interface ChatInterfaceProps {
   messages: ChatMessage[];
@@ -23,6 +26,7 @@ interface ChatInterfaceProps {
   sidebarOpen: boolean;
   onNavigate?: (page: 'settings' | 'indexing' | 'browser' | 'memory' | 'docs') => void;
   onRequestExport?: (kind: 'markdown') => void;
+  folderContext?: Array<{ title: string; messages: ChatMessage[] }>;
 }
 
 interface AttachedDocument {
@@ -35,6 +39,18 @@ interface AttachedDocument {
 
 const DOC_MAX_CHARS = 120_000;
 const DOC_TOTAL_MAX_CHARS = 220_000;
+
+function textPreviewDocument(text: string): string {
+  const escaped = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  return `<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>body{margin:0;padding:16px;background:#fff;color:#202124;font:13px/1.55 ui-monospace,SFMono-Regular,Menlo,monospace;white-space:pre-wrap;overflow-wrap:anywhere}</style></head><body>${escaped}</body></html>`;
+}
+
+function formatAttachmentSize(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) return '';
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
 
 /**
  * Built-in slash commands. Each is identified by its `name` and a behaviour kind.
@@ -68,26 +84,118 @@ function getBuiltinHint(name: string, lang: 'es' | 'en'): string {
     watch:     { es: 'Watcher de archivos', en: 'File watcher' },
     research:  { es: 'Investigación profunda', en: 'Multi-pass deep research' },
     summarize: { es: 'Resumir conversación', en: 'Summarize conversation' },
-    export:    { es: 'Exportar como Markdown', en: 'Export as Markdown' },
+    resumir:   { es: 'Resumir conversación', en: 'Summarize conversation' },
+    export:    { es: 'Descargar chat (MD, PDF, Word)', en: 'Download chat (MD, PDF, Word)' },
     sources:   { es: 'Ver fuentes indexadas', en: 'View indexed sources' },
   };
   return hints[name]?.[lang] ?? '';
 }
 
-function findBuiltin(name: string): BuiltinCommand | undefined {
-  const lc = name.toLowerCase();
-  return BUILTIN_COMMANDS.find((b) => b.name === lc);
+function localizedBuiltins(lang: 'es' | 'en'): BuiltinCommand[] {
+  return BUILTIN_COMMANDS.map((command) => command.kind === 'summarize'
+    ? { ...command, name: lang === 'es' ? 'resumir' : 'summarize' }
+    : command);
 }
 
-const BUILTIN_BY_NAME: Record<string, BuiltinCommand> = BUILTIN_COMMANDS.reduce(
-  (acc, b) => { acc[b.name] = b; return acc; },
-  {} as Record<string, BuiltinCommand>,
-);
+function findBuiltin(name: string, lang: 'es' | 'en'): BuiltinCommand | undefined {
+  const lc = name.toLowerCase();
+  return localizedBuiltins(lang).find((b) => b.name === lc);
+}
+
+// ── Quick-start chip pool (28 options, 2 randomly shown per new chat) ──
+interface QuickChipDef {
+  labelKey: string;
+  icon: string;
+  kind: 'navigate' | 'slash' | 'prompt' | 'callMode' | 'pickImage' | 'pickFile' | 'toggleResearch';
+  page?: string;
+  command?: string;
+  promptKey?: string;
+}
+
+const QUICK_CHIP_POOL: QuickChipDef[] = [
+  { labelKey: 'quickChipIndex',        icon: '📂', kind: 'navigate', page: 'indexing' },
+  { labelKey: 'quickChipExplain',      icon: '💡', kind: 'prompt',   promptKey: 'quickChipExplainPrompt' },
+  { labelKey: 'quickChipSummarize',    icon: '📝', kind: 'slash',    command: '/summarize' },
+  { labelKey: 'quickChipResearch',     icon: '🔬', kind: 'slash',    command: '/research ' },
+  { labelKey: 'quickChipFindBugs',     icon: '🐛', kind: 'prompt',   promptKey: 'quickChipFindBugsPrompt' },
+  { labelKey: 'quickChipGenerateTests',icon: '🧪', kind: 'prompt',   promptKey: 'quickChipGenerateTestsPrompt' },
+  { labelKey: 'quickChipWriteDocs',    icon: '📄', kind: 'prompt',   promptKey: 'quickChipWriteDocsPrompt' },
+  { labelKey: 'quickChipRefactor',     icon: '🔄', kind: 'prompt',   promptKey: 'quickChipRefactorPrompt' },
+  { labelKey: 'quickChipOptimize',     icon: '⚡', kind: 'prompt',   promptKey: 'quickChipOptimizePrompt' },
+  { labelKey: 'quickChipCodeReview',   icon: '🔍', kind: 'prompt',   promptKey: 'quickChipCodeReviewPrompt' },
+  { labelKey: 'quickChipTranslate',    icon: '🌐', kind: 'prompt',   promptKey: 'quickChipTranslatePrompt' },
+  { labelKey: 'quickChipFixErrors',    icon: '🛠️', kind: 'prompt',   promptKey: 'quickChipFixErrorsPrompt' },
+  { labelKey: 'quickChipDatabase',     icon: '🗄️', kind: 'prompt',   promptKey: 'quickChipDatabasePrompt' },
+  { labelKey: 'quickChipSetupProject', icon: '🚀', kind: 'prompt',   promptKey: 'quickChipSetupProjectPrompt' },
+  { labelKey: 'quickChipSnippet',      icon: '📋', kind: 'prompt',   promptKey: 'quickChipSnippetPrompt' },
+  { labelKey: 'quickChipUI',           icon: '🎨', kind: 'prompt',   promptKey: 'quickChipUIPrompt' },
+  { labelKey: 'quickChipSecurity',     icon: '🔒', kind: 'prompt',   promptKey: 'quickChipSecurityPrompt' },
+  { labelKey: 'quickChipAnalyze',      icon: '📊', kind: 'prompt',   promptKey: 'quickChipAnalyzePrompt' },
+  { labelKey: 'quickChipApiEndpoint',  icon: '🔌', kind: 'prompt',   promptKey: 'quickChipApiEndpointPrompt' },
+  { labelKey: 'quickChipDeploy',       icon: '🚢', kind: 'prompt',   promptKey: 'quickChipDeployPrompt' },
+  { labelKey: 'quickChipDebug',        icon: '🐞', kind: 'prompt',   promptKey: 'quickChipDebugPrompt' },
+  { labelKey: 'quickChipGitCommit',    icon: '💬', kind: 'prompt',   promptKey: 'quickChipGitCommitPrompt' },
+  // ── Tool chips (TrinaxAI features) ──
+  { labelKey: 'quickChipCallMode',          icon: '📞', kind: 'callMode' },
+  { labelKey: 'quickChipReviewImage',       icon: '🖼️', kind: 'pickImage',   promptKey: 'quickChipReviewImagePrompt' },
+  { labelKey: 'quickChipSummarizeFile',     icon: '📎', kind: 'pickFile',    promptKey: 'quickChipSummarizeFilePrompt' },
+  { labelKey: 'quickChipWhatRemember',      icon: '🧠', kind: 'prompt',      promptKey: 'quickChipWhatRememberPrompt' },
+  { labelKey: 'quickChipBrowseKnowledge',   icon: '📚', kind: 'navigate',    page: 'browser' },
+  { labelKey: 'quickChipExportChat',        icon: '📥', kind: 'slash',       command: '/export' },
+  { labelKey: 'quickChipDeepResearchToggle',icon: '🔭', kind: 'toggleResearch' },
+];
+
+const PLAIN_URL_RE = /(^|[\s(])((?:https?:\/\/|www\.)[^\s<>()]+)(?=[\s)]|$)/g;
+
+/** Trailing punctuation that should NOT be part of a URL. */
+const TRAILING_PUNCT_RE = /[.,;:!?'"»]+$/;
+
+function linkifyPlainUrls(text: string): string {
+  return text
+    .split(/(```[\s\S]*?```|`[^`]*`)/g)
+    .map((part) => {
+      if (part.startsWith('`')) return part;
+      return part.replace(PLAIN_URL_RE, (match, prefix: string, url: string, offset: number, source: string) => {
+        if (prefix === '(' && source[offset - 1] === ']') return match;
+        // Strip trailing sentence punctuation so it isn't included in the link
+        let cleanUrl = url;
+        let trailing = '';
+        const punctMatch = cleanUrl.match(TRAILING_PUNCT_RE);
+        if (punctMatch) {
+          trailing = punctMatch[0];
+          cleanUrl = cleanUrl.slice(0, -trailing.length);
+        }
+        const href = cleanUrl.startsWith('www.') ? `https://${cleanUrl}` : cleanUrl;
+        return `${prefix}[${cleanUrl}](${href})${trailing}`;
+      });
+    })
+    .join('');
+}
 
 const MarkdownContent = memo(function MarkdownContent({ text, isDark }: { text: string; isDark: boolean }) {
   return (
     <div className={`chat-markdown prose prose-sm min-w-0 max-w-full break-words [overflow-wrap:anywhere] ${isDark ? 'prose-invert' : ''}`}>
-      <ReactMarkdown rehypePlugins={[rehypeSanitize]}>{text}</ReactMarkdown>
+      <ReactMarkdown
+        rehypePlugins={[rehypeSanitize]}
+        components={{
+          a: ({ children, href }) => (
+            <a
+              href={href}
+              target="_blank"
+              rel="noreferrer"
+              className={`underline decoration-1 underline-offset-2 ${
+                isDark
+                  ? 'text-blue-400 hover:text-blue-300'
+                  : 'text-blue-600 hover:text-blue-700'
+              }`}
+            >
+              {children}
+            </a>
+          ),
+        }}
+      >
+        {linkifyPlainUrls(text)}
+      </ReactMarkdown>
     </div>
   );
 });
@@ -101,37 +209,51 @@ export default function ChatInterface({
   sidebarOpen,
   onNavigate,
   onRequestExport,
+  folderContext = [],
 }: ChatInterfaceProps) {
   const { t, lang } = useI18n();
   const { isDark } = useTheme();
+  const voiceLang = lang === 'en' ? 'en-US' : 'es-ES';
   const toast = useToast();
   const [input, setInput] = useState('');
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [editingText, setEditingText] = useState('');
-  const { streaming, streamedText, sendMessage, abort } = useStreamChat();
+  const { streaming, streamedText, sendMessage, abort, wasAborted } = useStreamChat();
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const messagesRef = useRef<HTMLDivElement>(null);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [showScrollButton, setShowScrollButton] = useState(false);
+  const showScrollButtonRef = useRef(false);
+  const autoScrollUntilRef = useRef(0);
+  const scrollButtonTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [userDisplayName, setUserDisplayName] = useState(() => getPreferredUserName(lang));
   const [collections, setCollections] = useState<Collection[]>([]);
   const [activeCollectionIds, setActiveCollectionIds] = useState<string[]>(() => {
     try {
       const parsed = JSON.parse(localStorage.getItem('tc-active-collections') || '["default"]');
-      return Array.isArray(parsed) && parsed.every((v) => typeof v === 'string') && parsed.length ? parsed : ['default'];
+      return Array.isArray(parsed) && parsed.every((v) => typeof v === 'string') && parsed.length
+        ? normalizeActiveCollections(parsed)
+        : ['default'];
     } catch {
       return ['default'];
     }
   });
   const [docUploadStatus, setDocUploadStatus] = useState('');
+  const [docConvertProgress, setDocConvertProgress] = useState<{ file: string; progress: number } | null>(null);
   const [attachedDocs, setAttachedDocs] = useState<AttachedDocument[]>([]);
   const [docIndexCollectionId, setDocIndexCollectionId] = useState(() => activeCollectionIds[0] || 'default');
   const docInputRef = useRef<HTMLInputElement>(null);
 
   const [slashOpen, setSlashOpen] = useState(false);
   const [slashFilter, setSlashFilter] = useState('');
+  const [exportMenuOpen, setExportMenuOpen] = useState(false);
 
-  const customPrompts = useRef<Array<{name:string;text:string;builtin?:boolean}>>([]);
+  const customPrompts = useRef<Array<{
+    name: string;
+    text: string;
+    builtin?: boolean;
+    kind?: BuiltinKind;
+  }>>([]);
   const reloadLocalProfile = useCallback(() => {
     const readPrompts = (key: string) => {
       try {
@@ -141,11 +263,16 @@ export default function ChatInterface({
         return [];
       }
     };
-    const op = readPrompts('tc-ollama-prompts');
-    const rp = readPrompts('tc-rag-prompts');
-    customPrompts.current = [...BUILTIN_COMMANDS, ...op, ...rp]
+    const shared = readPrompts('tc-prompts');
+    const legacy = shared.length ? [] : [...readPrompts('tc-ollama-prompts'), ...readPrompts('tc-rag-prompts')];
+    customPrompts.current = [...localizedBuiltins(lang), ...shared, ...legacy]
       .filter((p: any) => p?.name && p.name !== 'system')
-      .map((p: any) => ({ name: String(p.name), text: String(p.text || ''), builtin: false }));
+      .map((p: any) => ({
+        name: String(p.name),
+        text: String(p.text || ''),
+        builtin: Boolean(p.builtin),
+        kind: p.kind as BuiltinKind | undefined,
+      }));
     const nextName = getPreferredUserName(lang);
     setUserDisplayName((current) => (current === nextName ? current : nextName));
   }, [lang]);
@@ -173,8 +300,7 @@ export default function ChatInterface({
         setCollections(next);
         const valid = new Set(next.map((item) => item.id));
         setActiveCollectionIds((prev) => {
-          const kept = prev.filter((id) => valid.has(id));
-          return kept.length ? kept : ['default'];
+          return normalizeActiveCollections(prev, valid);
         });
       })
       .catch(() => {
@@ -197,6 +323,20 @@ export default function ChatInterface({
   }, [messages.length, streaming, phrases.length]);
 
   const motd = phrases[motdIndex];
+
+  // ── Random quick-start chips (2 per new chat) ──
+  // Uses a ref updated in render-phase so chips are immediately visible.
+  // Regenerates when transitioning from non-empty → empty chat.
+  const chipDefsRef = useRef<QuickChipDef[]>([]);
+  const prevMessageCount = useRef(messages.length);
+
+  if (messages.length === 0 && !streaming) {
+    if (prevMessageCount.current > 0 || chipDefsRef.current.length === 0) {
+      const shuffled = [...QUICK_CHIP_POOL].sort(() => Math.random() - 0.5);
+      chipDefsRef.current = shuffled.slice(0, 2);
+    }
+  }
+  prevMessageCount.current = messages.length;
 
   const handleInputChange = useCallback(
     (e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -224,17 +364,62 @@ export default function ChatInterface({
   const updateScrollState = useCallback(() => {
     const el = messagesRef.current;
     if (!el) return;
+    const scrollable = el.scrollHeight > el.clientHeight + 16;
+    // While auto-scrolling, keep the button hidden.
+    if (Date.now() < autoScrollUntilRef.current) {
+      if (showScrollButtonRef.current) {
+        showScrollButtonRef.current = false;
+        setShowScrollButton(false);
+      }
+      return;
+    }
     const distance = el.scrollHeight - el.scrollTop - el.clientHeight;
-    const atBottom = distance < 96;
-    setShowScrollButton(!atBottom && el.scrollHeight > el.clientHeight + 16);
+    const shouldShow = scrollable && distance > 200;
+
+    // Always cancel any pending show timer when we shouldn't show.
+    if (!shouldShow) {
+      if (scrollButtonTimerRef.current) {
+        clearTimeout(scrollButtonTimerRef.current);
+        scrollButtonTimerRef.current = null;
+      }
+    }
+
+    if (!shouldShow && showScrollButtonRef.current) {
+      showScrollButtonRef.current = false;
+      setShowScrollButton(false);
+      return;
+    }
+
+    if (shouldShow && !showScrollButtonRef.current && !scrollButtonTimerRef.current) {
+      scrollButtonTimerRef.current = setTimeout(() => {
+        scrollButtonTimerRef.current = null;
+        // Re-check distance at fire time — user may have scrolled back down.
+        const el2 = messagesRef.current;
+        if (!el2) return;
+        const d2 = el2.scrollHeight - el2.scrollTop - el2.clientHeight;
+        if (d2 <= 200) return;
+        showScrollButtonRef.current = true;
+        setShowScrollButton(true);
+      }, 250);
+    }
   }, []);
 
   const scrollToBottom = useCallback((behavior: ScrollBehavior = 'smooth') => {
     const el = messagesRef.current;
     if (!el) return;
+    autoScrollUntilRef.current = Date.now() + (behavior === 'smooth' ? 750 : 120);
     el.scrollTo({ top: el.scrollHeight, behavior });
+    showScrollButtonRef.current = false;
     setShowScrollButton(false);
-  }, []);
+    if (scrollButtonTimerRef.current) {
+      clearTimeout(scrollButtonTimerRef.current);
+      scrollButtonTimerRef.current = null;
+    }
+    window.setTimeout(() => {
+      autoScrollUntilRef.current = 0;
+      updateScrollState();
+    }, behavior === 'smooth' ? 780 : 140);
+  }, [updateScrollState]);
 
   useEffect(() => {
     requestAnimationFrame(updateScrollState);
@@ -252,11 +437,14 @@ export default function ChatInterface({
   }, []);
 
   const visibleMessageContent = useCallback((text: string) => text.trim(), []);
+  const messageDisplayContent = useCallback((msg: ChatMessage) => (
+    msg.displayContent ?? (msg.content || (msg.image ? '[image]' : ''))
+  ).trim(), []);
 
 function getLastUserText(messages: ChatMessage[], beforeMsg?: ChatMessage): string {
   const upto = beforeMsg ? messages.slice(0, messages.indexOf(beforeMsg) + 1) : messages;
   for (let i = upto.length - 1; i >= 0; i--) {
-    if (upto[i].role === 'user') return upto[i].content;
+    if (upto[i].role === 'user') return upto[i].displayContent ?? upto[i].content;
   }
   return '';
 }
@@ -264,58 +452,87 @@ function getLastUserText(messages: ChatMessage[], beforeMsg?: ChatMessage): stri
   const conversationMarkdown = useCallback(() => {
     const lines = ['# TrinaxAI Conversation', ''];
     for (const msg of messages) {
-      lines.push(`## ${msg.role === 'user' ? 'User' : 'TrinaxAI'}`, '', visibleMessageContent(msg.content || (msg.image ? '[image]' : '')), '');
+      lines.push(`## ${msg.role === 'user' ? 'User' : 'TrinaxAI'}`, '', messageDisplayContent(msg), '');
+      if (msg.documentAttachments?.length) {
+        lines.push('Attachments:', ...msg.documentAttachments.map((doc) => `- ${doc.name}`), '');
+      }
       if (msg.sources?.length) {
         lines.push('Sources:', ...msg.sources.map((source) => `- ${source.file}${source.page ? ` p. ${source.page}` : ''}${source.collection ? ` (${source.collection})` : ''}`), '');
       }
     }
     return lines.join('\n');
-  }, [messages, visibleMessageContent]);
+  }, [messages, messageDisplayContent]);
 
-  const exportMarkdown = useCallback(() => {
-    const blob = new Blob([conversationMarkdown()], { type: 'text/markdown;charset=utf-8' });
+  // Robust blob download: the anchor MUST be in the DOM for the click to fire
+  // in Firefox/Safari, and the object URL must outlive the click (revoking it
+  // synchronously cancels the download). Defer revocation to the next tick.
+  const triggerDownload = useCallback((blob: Blob, filename: string) => {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `trinaxai-chat-${new Date().toISOString().slice(0, 10)}.md`;
+    a.download = filename;
+    a.rel = 'noopener';
+    a.style.display = 'none';
+    document.body.appendChild(a);
     a.click();
-    URL.revokeObjectURL(url);
-  }, [conversationMarkdown]);
+    setTimeout(() => {
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }, 1000);
+  }, []);
 
-  const exportPdf = useCallback(() => {
+  const exportMarkdown = useCallback(() => {
+    const blob = new Blob([conversationMarkdown()], { type: 'text/markdown;charset=utf-8' });
+    triggerDownload(blob, `trinaxai-chat-${new Date().toISOString().slice(0, 10)}.md`);
+  }, [conversationMarkdown, triggerDownload]);
+
+  const exportHtmlBody = useCallback(() => {
     const escapeHtml = (value: string) => value
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;');
-    const win = window.open('', '_blank');
-    if (!win) return;
-    const body = messages.map((msg) => `
+    return messages.map((msg) => `
       <section>
         <h2>${msg.role === 'user' ? 'User' : 'TrinaxAI'}</h2>
-        <pre>${escapeHtml(visibleMessageContent(msg.content || (msg.image ? '[image]' : '')))}</pre>
+        <pre>${escapeHtml(messageDisplayContent(msg))}${msg.documentAttachments?.length ? `\n\nAttachments:\n${msg.documentAttachments.map((doc) => `- ${escapeHtml(doc.name)}`).join('\n')}` : ''}</pre>
       </section>
     `).join('');
+  }, [messages, messageDisplayContent]);
+
+  const exportPdf = useCallback(() => {
+    const win = window.open('', '_blank');
+    if (!win) {
+      toast.toast(t('exportPdfPopupBlocked'), 'error');
+      return;
+    }
     win.document.write(`<!doctype html><html><head><title>TrinaxAI Conversation</title><style>
       body{font-family:system-ui,-apple-system,Segoe UI,sans-serif;margin:32px;color:#111;line-height:1.5}
       h1{font-size:22px}h2{font-size:14px;margin-top:24px;color:#006bbd}
       pre{white-space:pre-wrap;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px}
-    </style></head><body><h1>TrinaxAI Conversation</h1>${body}</body></html>`);
+    </style></head><body><h1>TrinaxAI Conversation</h1>${exportHtmlBody()}</body></html>`);
     win.document.close();
     win.focus();
     win.print();
-  }, [messages, visibleMessageContent]);
+  }, [exportHtmlBody, toast, t]);
 
-  const activeCollectionsForRequest = activeCollectionIds.length ? activeCollectionIds : ['default'];
+  const exportWord = useCallback(() => {
+    const html = `<!doctype html><html><head><meta charset="utf-8"><title>TrinaxAI Conversation</title><style>
+      body{font-family:system-ui,-apple-system,Segoe UI,sans-serif;margin:32px;color:#111;line-height:1.5}
+      h1{font-size:22px}h2{font-size:14px;margin-top:24px;color:#006bbd}
+      pre{white-space:pre-wrap;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px}
+    </style></head><body><h1>TrinaxAI Conversation</h1>${exportHtmlBody()}</body></html>`;
+    const blob = new Blob([html], { type: 'application/msword;charset=utf-8' });
+    triggerDownload(blob, `trinaxai-chat-${new Date().toISOString().slice(0, 10)}.doc`);
+  }, [exportHtmlBody, triggerDownload]);
+
+  const activeCollectionsForRequest = useMemo(
+    () => normalizeActiveCollections(activeCollectionIds),
+    [activeCollectionIds],
+  );
 
   const toggleCollection = useCallback((id: string) => {
-    setActiveCollectionIds((prev) => {
-      if (prev.includes(id)) {
-        const next = prev.filter((value) => value !== id);
-        return next.length ? next : prev;
-      }
-      return [...prev, id];
-    });
+    setActiveCollectionIds((prev) => nextActiveCollections(prev, id));
   }, []);
 
   const indexAttachedDocs = useCallback(async () => {
@@ -364,8 +581,20 @@ function getLastUserText(messages: ChatMessage[], beforeMsg?: ChatMessage): stri
     try {
       let remaining = DOC_TOTAL_MAX_CHARS;
       const docs: AttachedDocument[] = [];
-      for (const file of files.slice(0, 5)) {
-        const extracted = await extractDocumentText(file);
+      const selectedDocs = files.slice(0, 5);
+      for (let index = 0; index < selectedDocs.length; index += 1) {
+        const file = selectedDocs[index];
+        setDocUploadStatus(t('chatDocConverting').replace('{file}', file.name));
+        setDocConvertProgress({ file: file.name, progress: Math.max(1, Math.round((index / selectedDocs.length) * 100)) });
+        const extracted = await extractDocumentText(file, {
+          onUploadProgress: (progress) => {
+            const current = Math.min(95, Math.round(((index * 100) + progress) / selectedDocs.length));
+            setDocConvertProgress({ file: file.name, progress: current });
+            if (progress >= 70) {
+              setDocUploadStatus(t('chatDocConverting').replace('{file}', file.name));
+            }
+          },
+        });
         const raw = extracted.text;
         const room = Math.max(0, remaining);
         const content = raw.slice(0, Math.min(DOC_MAX_CHARS, room));
@@ -379,9 +608,11 @@ function getLastUserText(messages: ChatMessage[], beforeMsg?: ChatMessage): stri
         });
         if (remaining <= 0) break;
       }
+      setDocConvertProgress(null);
       setAttachedDocs(docs);
       setDocUploadStatus(t('chatDocsAttached').replace('{count}', String(docs.length)));
     } catch (err: unknown) {
+      setDocConvertProgress(null);
       setDocUploadStatus(err instanceof Error ? err.message.slice(0, 180) : t('chatDocReadFailed'));
     }
   }, [t]);
@@ -392,6 +623,7 @@ function getLastUserText(messages: ChatMessage[], beforeMsg?: ChatMessage): stri
   const recognitionRef = useRef<any>(null);
   const callModeRef = useRef(false);
   const startVoiceRef = useRef<(continuous: boolean) => void>(() => {});
+  const handleSendTextRef = useRef<(raw: string, opts?: { viaVoice?: boolean; continueCall?: boolean }) => Promise<void>>(async () => {});
   const ttsActiveKeyRef = useRef<string | null>(null);
   const [ttsActiveKey, setTtsActiveKey] = useState<string | null>(null);
   const [ttsSpeaking, setTtsSpeaking] = useState(false);
@@ -402,6 +634,9 @@ function getLastUserText(messages: ChatMessage[], beforeMsg?: ChatMessage): stri
   const ttsPumpRef = useRef<number | null>(null);
   const voiceToastAtRef = useRef(0);
   const flushVoiceTtsRef = useRef<(force?: boolean, onDone?: () => void) => void>(() => {});
+  const ttsCancellingRef = useRef(false);
+  const wakeLockRef = useRef<WakeLockSentinel | null>(null);
+  const backendRecorderStopRef = useRef<(() => void) | null>(null);
   const voiceSupported = typeof window !== 'undefined' &&
     !!((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition);
   const secureVoiceContext = typeof window !== 'undefined' &&
@@ -418,9 +653,65 @@ function getLastUserText(messages: ChatMessage[], beforeMsg?: ChatMessage): stri
     callModeRef.current = callMode;
   }, [callMode]);
 
+  // Wake lock helpers / helpers de wake lock
+  const requestWakeLock = useCallback(async () => {
+    try {
+      wakeLockRef.current = await (navigator as any).wakeLock?.request?.('screen');
+    } catch { /* ignore */ }
+  }, []);
+
+  const releaseWakeLock = useCallback(() => {
+    wakeLockRef.current?.release().catch(() => {});
+    wakeLockRef.current = null;
+  }, []);
+
+  // Backend voice capture / captura de voz por backend
+  const startBackendVoiceCapture = useCallback(async (continuous: boolean) => {
+    if (!detectBackendVoice()) {
+      showVoiceToast(t('voiceRecognitionUnsupported'), 'warning');
+      setCallMode(false);
+      setListening(false);
+      return;
+    }
+    if (streaming) return;
+    setListening(true);
+    try {
+      const recorder = await startAudioRecorder({
+        onSilence: async (blob) => {
+          if (!callModeRef.current) return;
+          setListening(false);
+          backendRecorderStopRef.current = null;
+          try {
+            const text = await transcribeAudio(blob, voiceLang);
+            if (text.trim()) {
+              handleSendTextRef.current(text.trim(), { viaVoice: true, continueCall: continuous });
+            } else if (continuous && callModeRef.current) {
+              window.setTimeout(() => startBackendVoiceCapture(true), 500);
+            }
+          } catch {
+            showVoiceToast(t('voiceRecognitionFailed'), 'warning');
+            if (continuous && callModeRef.current) {
+              window.setTimeout(() => startBackendVoiceCapture(true), 900);
+            }
+          }
+        },
+        onError: () => {
+          setListening(false);
+          backendRecorderStopRef.current = null;
+          showVoiceToast(t('voiceRecognitionFailed'), 'warning');
+          setCallMode(false);
+        },
+      }, 1500);
+      backendRecorderStopRef.current = recorder.stop;
+    } catch {
+      setListening(false);
+      showVoiceToast(t('voiceMicPermissionDenied'), 'error');
+      setCallMode(false);
+    }
+  }, [showVoiceToast, streaming, t, voiceLang]);
+
   // ── TTS (leer respuestas en voz alta) ──
   const ttsSupported = typeof window !== 'undefined' && 'speechSynthesis' in window;
-  const voiceLang = lang === 'en' ? 'en-US' : 'es-ES';
   useEffect(() => {
     if (!ttsSupported) return undefined;
     const refreshVoices = () => setVoiceVersion((value) => value + 1);
@@ -500,9 +791,12 @@ function getLastUserText(messages: ChatMessage[], beforeMsg?: ChatMessage): stri
   useEffect(() => () => stopTtsPump(), [stopTtsPump]);
 
   const stopSpeak = useCallback(() => {
+    ttsCancellingRef.current = true;
     if (ttsSupported) window.speechSynthesis.cancel();
     stopTtsPump();
     clearTtsState();
+    // Reset the cancelling flag after pending error events fire.
+    window.setTimeout(() => { ttsCancellingRef.current = false; }, 200);
   }, [clearTtsState, stopTtsPump, ttsSupported]);
 
   const unlockSpeech = useCallback(() => {
@@ -532,8 +826,9 @@ function getLastUserText(messages: ChatMessage[], beforeMsg?: ChatMessage): stri
       stopSpeak();
       return;
     }
+    ttsCancellingRef.current = false;
     const clean = text
-      .replace(/```[\s\S]*?```/g, ' bloque de código. ')
+      .replace(/```[\s\S]*?```/g, t('ttsCodeBlockReplacement'))
       .replace(/`[^`]*`/g, '')
       .replace(/\[(.*?)\]\(.*?\)/g, '$1')
       .replace(/[#*_>~|]/g, '')
@@ -567,7 +862,7 @@ function getLastUserText(messages: ChatMessage[], beforeMsg?: ChatMessage): stri
       u.onerror = () => {
         stopTtsPump();
         clearTtsState();
-        showVoiceToast(t('ttsUnavailable'));
+        if (!ttsCancellingRef.current) showVoiceToast(t('ttsUnavailable'));
         onDone?.();
       };
       try {
@@ -575,14 +870,38 @@ function getLastUserText(messages: ChatMessage[], beforeMsg?: ChatMessage): stri
       } catch {
         stopTtsPump();
         clearTtsState();
-        showVoiceToast(t('ttsUnavailable'));
+        if (!ttsCancellingRef.current) showVoiceToast(t('ttsUnavailable'));
         onDone?.();
       }
     });
   }, [clearTtsState, pickVoice, showVoiceToast, splitSpeech, startTtsPump, stopSpeak, stopTtsPump, t, ttsSupported, voiceLang]);
 
+  const speakWithFallback = useCallback((text: string, onDone?: () => void, key?: string) => {
+    if (detectSpeechSynthesis()) {
+      speak(text, onDone, key);
+    } else {
+      setTtsSpeaking(true);
+      ttsSpeakingRef.current = true;
+      speakBackend({
+        text,
+        lang: voiceLang,
+        onEnded: () => {
+          setTtsSpeaking(false);
+          ttsSpeakingRef.current = false;
+          onDone?.();
+        },
+        onError: () => {
+          setTtsSpeaking(false);
+          ttsSpeakingRef.current = false;
+          showVoiceToast(t('ttsUnavailable'));
+          onDone?.();
+        },
+      });
+    }
+  }, [speak, showVoiceToast, t, voiceLang]);
+
   const cleanSpeechText = useCallback((text: string) => text
-    .replace(/```[\s\S]*?```/g, ' bloque de código. ')
+    .replace(/```[\s\S]*?```/g, t('ttsCodeBlockReplacement'))
     .replace(/`[^`]*`/g, '')
     .replace(/\[(.*?)\]\(.*?\)/g, '$1')
     .replace(/[#*_>~|]/g, '')
@@ -603,6 +922,8 @@ function getLastUserText(messages: ChatMessage[], beforeMsg?: ChatMessage): stri
     if (v) u.voice = v;
     u.onend = () => {
       stopTtsPump();
+      ttsActiveKeyRef.current = null;
+      setTtsActiveKey(null);
       ttsSpeakingRef.current = false;
       setTtsSpeaking(false);
       const done = ttsEndRef.current ?? onDone;
@@ -619,7 +940,7 @@ function getLastUserText(messages: ChatMessage[], beforeMsg?: ChatMessage): stri
       setTtsSpeaking(false);
       const done = ttsEndRef.current ?? onDone;
       ttsEndRef.current = null;
-      showVoiceToast(t('ttsUnavailable'));
+      if (!ttsCancellingRef.current) showVoiceToast(t('ttsUnavailable'));
       done?.();
     };
     ttsSpeakingRef.current = true;
@@ -632,10 +953,36 @@ function getLastUserText(messages: ChatMessage[], beforeMsg?: ChatMessage): stri
       stopTtsPump();
       ttsSpeakingRef.current = false;
       setTtsSpeaking(false);
-      showVoiceToast(t('ttsUnavailable'));
+      if (!ttsCancellingRef.current) showVoiceToast(t('ttsUnavailable'));
       onDone?.();
     }
   }, [cleanSpeechText, pickVoice, showVoiceToast, startTtsPump, stopTtsPump, t, ttsSupported, voiceLang]);
+
+  // Some browsers occasionally omit SpeechSynthesisUtterance.onend. Keep the
+  // indicator tied to the actual browser queue so it cannot remain stuck on
+  // “TrinaxAI is speaking” after audio has finished.
+  useEffect(() => {
+    if (!ttsSpeaking || !ttsSupported) return undefined;
+    let idleSince = 0;
+    const timer = window.setInterval(() => {
+      const active = window.speechSynthesis.speaking || window.speechSynthesis.pending;
+      if (active || ttsTailRef.current) {
+        idleSince = 0;
+        return;
+      }
+      if (!idleSince) idleSince = Date.now();
+      if (Date.now() - idleSince < 700) return;
+      stopTtsPump();
+      ttsActiveKeyRef.current = null;
+      setTtsActiveKey(null);
+      ttsSpeakingRef.current = false;
+      setTtsSpeaking(false);
+      const done = ttsEndRef.current;
+      ttsEndRef.current = null;
+      done?.();
+    }, 250);
+    return () => window.clearInterval(timer);
+  }, [stopTtsPump, ttsSpeaking, ttsSupported]);
 
   const flushVoiceTts = useCallback((force = false, onDone?: () => void) => {
     const clean = cleanSpeechText(ttsTailRef.current);
@@ -654,7 +1001,31 @@ function getLastUserText(messages: ChatMessage[], beforeMsg?: ChatMessage): stri
 
   // ── Imagen adjunta (visión) ──
   const [attachedImage, setAttachedImage] = useState<string | null>(null);
+  const [attachedImageFile, setAttachedImageFile] = useState<File | null>(null);
+  const [previewAttachment, setPreviewAttachment] = useState<{ attachment: ChatDocumentAttachment; url: string } | null>(null);
+  const [isSmallViewport, setIsSmallViewport] = useState(false);
+  const [textPreview, setTextPreview] = useState<string | null>(null);
   const [imageError, setImageError] = useState('');
+  const openStoredAttachment = useCallback(async (attachment: ChatDocumentAttachment, inlineUrl?: string) => {
+    const url = inlineUrl || await getChatAttachmentUrl(attachment.storageKey, attachment.mimeType);
+    if (url) setPreviewAttachment({ attachment, url });
+  }, []);
+  useEffect(() => {
+    const media = window.matchMedia('(max-width: 639px)');
+    const update = () => setIsSmallViewport(media.matches);
+    update();
+    media.addEventListener?.('change', update);
+    return () => media.removeEventListener?.('change', update);
+  }, []);
+  useEffect(() => {
+    let cancelled = false;
+    setTextPreview(null);
+    if (!previewAttachment) return undefined;
+    const isText = previewAttachment.attachment.mimeType?.startsWith('text/') || /\.(md|txt|csv|json|xml|html|css|js|ts|tsx|jsx|py|java|c|cpp|h|log)$/i.test(previewAttachment.attachment.name);
+    if (!isText) return undefined;
+    fetch(previewAttachment.url).then((response) => response.text()).then((text) => { if (!cancelled) setTextPreview(text); }).catch(() => { if (!cancelled) setTextPreview(null); });
+    return () => { cancelled = true; };
+  }, [previewAttachment, isSmallViewport]);
   const [researchMode, setResearchMode] = useState<boolean>(() => {
     try { return localStorage.getItem('tc-research-mode') === '1'; } catch { return false; }
   });
@@ -674,10 +1045,12 @@ function getLastUserText(messages: ChatMessage[], beforeMsg?: ChatMessage): stri
     if (!file) return;
     try {
       setImageError('');
+      setAttachedImageFile(file);
       setAttachedImage(await prepareImageForVision(file));
     } catch (err: unknown) {
       setAttachedImage(null);
-      setImageError(err instanceof Error ? err.message : 'No se pudo preparar la imagen.');
+      setAttachedImageFile(null);
+      setImageError(err instanceof Error ? err.message : t('imagePrepFailed'));
     } finally {
       e.target.value = '';
     }
@@ -687,7 +1060,7 @@ function getLastUserText(messages: ChatMessage[], beforeMsg?: ChatMessage): stri
 
   // Built-in slash-command helpers (must be declared before handleSendText).
   const runBuiltinDeepResearch = useCallback(async (query: string, baseMessages: ChatMessage[]) => {
-    const placeholder: ChatMessage = { role: 'assistant', content: '🔍 *Deep research en curso...*' };
+    const placeholder: ChatMessage = { role: 'assistant', content: t('deepResearchInProgress') };
     const withPlaceholder = [...baseMessages, placeholder];
     onMessagesChange(withPlaceholder);
     try {
@@ -700,7 +1073,7 @@ function getLastUserText(messages: ChatMessage[], beforeMsg?: ChatMessage): stri
       };
       onMessagesChange([...baseMessages, finalMsg]);
     } catch (err) {
-      const msg = err instanceof Error ? err.message.slice(0, 400) : 'Deep research failed';
+      const msg = err instanceof Error ? err.message.slice(0, 400) : t('deepResearchFailed');
       onMessagesChange([...baseMessages, { role: 'assistant', content: `❌ ${msg}` }]);
     }
   }, [activeCollectionsForRequest, onMessagesChange]);
@@ -708,11 +1081,11 @@ function getLastUserText(messages: ChatMessage[], beforeMsg?: ChatMessage): stri
   const runBuiltinSummarize = useCallback(async (baseMessages: ChatMessage[]) => {
     const summaryPrompt: ChatMessage = {
       role: 'user',
-      content: `Summarize the key points of this conversation in 5-7 bullet points, plus 1-2 sentences on the overall conclusion. Conversation:\n\n${
+      content: `${lang === 'es' ? 'Resume los puntos clave de esta conversación en 5-7 viñetas y añade 1-2 frases con la conclusión general.' : 'Summarize the key points of this conversation in 5-7 bullet points, plus 1-2 sentences on the overall conclusion.'} ${lang === 'es' ? 'Conversación' : 'Conversation'}:\n\n${
         baseMessages.map((m) => `[${m.role}] ${m.content}`).join('\n\n').slice(-3000)
       }`,
     };
-    const withPlaceholder = [...baseMessages, { role: 'assistant' as const, content: '✍️ *Resumiendo conversación...*' }];
+    const withPlaceholder = [...baseMessages, { role: 'assistant' as const, content: t('summarizingConversation') }];
     onMessagesChange(withPlaceholder);
     try {
       const { content, meta } = await sendMessage([...baseMessages, summaryPrompt], 'ollama');
@@ -727,7 +1100,7 @@ function getLastUserText(messages: ChatMessage[], beforeMsg?: ChatMessage): stri
       const msg = err instanceof Error ? err.message.slice(0, 400) : assistantErrorMessage(err);
       onMessagesChange([...baseMessages, { role: 'assistant', content: `❌ ${msg}` }]);
     }
-  }, [onMessagesChange, sendMessage, assistantErrorMessage]);
+  }, [lang, onMessagesChange, sendMessage, assistantErrorMessage]);
 
   const handleSendText = useCallback(async (raw: string, opts?: { viaVoice?: boolean; continueCall?: boolean }) => {
     let trimmed = raw.trim();
@@ -742,7 +1115,7 @@ function getLastUserText(messages: ChatMessage[], beforeMsg?: ChatMessage): stri
     if (trimmed.startsWith('/')) {
       const head = trimmed.split(' ')[0].slice(1).toLowerCase();
       const tail = trimmed.includes(' ') ? trimmed.slice(trimmed.indexOf(' ') + 1) : '';
-      const builtin = findBuiltin(head);
+      const builtin = findBuiltin(head, lang);
       if (builtin) {
         setInput('');
         resetInputHeight();
@@ -754,7 +1127,7 @@ function getLastUserText(messages: ChatMessage[], beforeMsg?: ChatMessage): stri
           case 'navigate_docs':     onNavigate?.('docs');     return;
           case 'export_markdown':   exportMarkdown(); return;
           case 'deep_research': {
-            const prompt = tail || 'Give me a thorough overview.';
+            const prompt = tail || (lang === 'es' ? 'Dame una visión general detallada.' : 'Give me a thorough overview.');
             const userMsg: ChatMessage = { role: 'user', content: prompt };
             onMessagesChange([...messages, userMsg]);
             requestAnimationFrame(() => scrollToBottom('smooth'));
@@ -784,6 +1157,17 @@ function getLastUserText(messages: ChatMessage[], beforeMsg?: ChatMessage): stri
     if (projectNotes) {
       contextMessages.push({ role: 'system', content: `Project memory (user-defined, always injected):\n${projectNotes}` });
     }
+    if (folderContext.length) {
+      const relatedChats = folderContext.map((chat) => {
+        const transcript = chat.messages
+          .filter((message) => message.role === 'user' || message.role === 'assistant')
+          .slice(-12)
+          .map((message) => `${message.role === 'user' ? 'Usuario' : 'TrinaxAI'}: ${(message.displayContent ?? message.content).slice(0, 2500)}`)
+          .join('\n');
+        return `CHAT "${chat.title}"\n${transcript}`;
+      }).join('\n\n');
+      contextMessages.push({ role: 'system', content: `Contexto de la carpeta actual. Usa estos chats como referencia cuando sea relevante; no inventes datos y no menciones este bloque salvo que el usuario lo pida:\n\n${relatedChats}` });
+    }
     try {
       const now = Date.now();
       const cache = memoryCacheRef.current;
@@ -806,12 +1190,23 @@ function getLastUserText(messages: ChatMessage[], beforeMsg?: ChatMessage): stri
       + doc.content
       + '\n```'
     )).join('');
-    const messageContent = `${trimmed || t('analyzeAttachedFiles')}${docContext}`;
+    const displayContent = trimmed || t('analyzeAttachedFiles');
+    const messageContent = `${displayContent}${docContext}`;
+    const storedDocuments = await Promise.all(docs.map((doc) => storeChatAttachment(doc.file, 'document').catch(() => ({ name: doc.name, size: doc.size }))));
+    const storedImage = attachedImageFile
+      ? await storeChatAttachment(attachedImageFile, 'image').catch(() => undefined)
+      : undefined;
+    const documentAttachments: ChatDocumentAttachment[] = docs.map((doc, index) => ({
+      ...storedDocuments[index], name: doc.name, size: doc.size, truncated: doc.truncated, kind: 'document',
+    }));
+    if (storedImage) documentAttachments.unshift(storedImage);
 
     const userMsg: ChatMessage = {
       role: 'user',
       content: messageContent,
+      displayContent,
       image: image || undefined,
+      documentAttachments: documentAttachments.length ? documentAttachments : undefined,
       inputMode: opts?.viaVoice ? 'voice' : 'text',
     };
     const updated = [...messages, userMsg];
@@ -820,6 +1215,7 @@ function getLastUserText(messages: ChatMessage[], beforeMsg?: ChatMessage): stri
     setInput('');
     resetInputHeight();
     setAttachedImage(null);
+    setAttachedImageFile(null);
     setAttachedDocs([]);
 
     // Deep-research mode short-circuits to /v1/research when there's no image/voice.
@@ -861,11 +1257,14 @@ function getLastUserText(messages: ChatMessage[], beforeMsg?: ChatMessage): stri
           },
         } : {}),
       });
+      const cancelledByUser = wasAborted() && !content;
       const assistantMsg: ChatMessage = {
-        role: 'assistant', content,
+        role: 'assistant',
+        content: cancelledByUser ? `_${t('requestCancelled')}_` : content,
         sources: meta.sources, model: meta.model, project: meta.project,
       };
       onMessagesChange([...updated, assistantMsg]);
+      if (cancelledByUser) return;
       if (opts?.viaVoice) {
         const onDone = () => {
           if (opts.continueCall && callModeRef.current) {
@@ -878,7 +1277,7 @@ function getLastUserText(messages: ChatMessage[], beforeMsg?: ChatMessage): stri
             if (!ttsSpeakingRef.current) flushVoiceTts(true, ttsEndRef.current ?? undefined);
           }, 120);
         } else {
-          speak(content, onDone);
+          speakWithFallback(content, onDone);
         }
       }
     } catch (err: unknown) {
@@ -890,7 +1289,10 @@ function getLastUserText(messages: ChatMessage[], beforeMsg?: ChatMessage): stri
         window.setTimeout(() => startVoiceRef.current(true), 800);
       }
     }
-  }, [attachedImage, attachedDocs, messages, streaming, engine, sendMessage, onMessagesChange, speak, activeCollectionsForRequest, t, resetInputHeight, assistantErrorMessage, researchMode, onNavigate, exportMarkdown, runBuiltinDeepResearch, runBuiltinSummarize, scrollToBottom]);
+  }, [attachedImage, attachedImageFile, attachedDocs, messages, streaming, engine, sendMessage, onMessagesChange, speak, activeCollectionsForRequest, t, resetInputHeight, assistantErrorMessage, researchMode, onNavigate, exportMarkdown, runBuiltinDeepResearch, runBuiltinSummarize, scrollToBottom, folderContext]);
+
+  // Keep the ref in sync so voice callbacks (declared earlier) can call handleSendText.
+  handleSendTextRef.current = handleSendText;
 
   const handleSend = useCallback(() => { handleSendText(input); }, [handleSendText, input]);
 
@@ -908,9 +1310,12 @@ function getLastUserText(messages: ChatMessage[], beforeMsg?: ChatMessage): stri
     setCallMode(false);
     callModeRef.current = false;
     recognitionRef.current?.abort?.();
+    backendRecorderStopRef.current?.();
+    backendRecorderStopRef.current = null;
+    releaseWakeLock();
     abort();
     stopSpeak();
-  }, [abort, stopSpeak]);
+  }, [abort, stopSpeak, releaseWakeLock]);
 
   const startVoiceCapture = useCallback((continuous: boolean) => {
     if (streaming) return;
@@ -950,7 +1355,7 @@ function getLastUserText(messages: ChatMessage[], beforeMsg?: ChatMessage): stri
       if (stopAfterError) return;
       const text = finalText.trim();
       if (text) {
-        handleSendText(text, { viaVoice: true, continueCall: continuous });
+        handleSendTextRef.current(text, { viaVoice: true, continueCall: continuous });
       } else if (continuous && callModeRef.current) {
         window.setTimeout(() => startVoiceRef.current(true), 500);
       } else {
@@ -991,7 +1396,7 @@ function getLastUserText(messages: ChatMessage[], beforeMsg?: ChatMessage): stri
       callModeRef.current = false;
       showVoiceToast(t('voiceRecognitionFailed'), 'warning');
     }
-  }, [handleSendText, secureVoiceContext, showVoiceToast, streaming, t, voiceLang, voiceSupported]);
+  }, [secureVoiceContext, showVoiceToast, streaming, t, voiceLang, voiceSupported]);
 
   useEffect(() => {
     startVoiceRef.current = startVoiceCapture;
@@ -999,27 +1404,28 @@ function getLastUserText(messages: ChatMessage[], beforeMsg?: ChatMessage): stri
 
   // ── Dictado por voz → auto-envío → respuesta hablada (TTS) ──
   const toggleVoice = useCallback(() => {
-    if (!voiceSupported) {
-      showVoiceToast(t('voiceRecognitionUnsupported'), 'warning');
+    if (callMode) {
+      handleStop();
       return;
     }
     if (!secureVoiceContext) {
       showVoiceToast(t('voiceNeedsSecureContext'), 'error');
       return;
     }
-    if (callMode) {
-      setCallMode(false);
-      callModeRef.current = false;
-      recognitionRef.current?.abort?.();
-      stopSpeak();
-      setListening(false);
+    if (!voiceSupported && !detectBackendVoice()) {
+      showVoiceToast(t('voiceRecognitionUnsupported'), 'warning');
       return;
     }
     setCallMode(true);
     callModeRef.current = true;
-    unlockSpeech();
-    startVoiceCapture(true);
-  }, [callMode, secureVoiceContext, showVoiceToast, startVoiceCapture, stopSpeak, t, unlockSpeech, voiceSupported]);
+    requestWakeLock();
+    if (voiceSupported) {
+      unlockSpeech();
+      startVoiceCapture(true);
+    } else {
+      startBackendVoiceCapture(true);
+    }
+  }, [callMode, secureVoiceContext, showVoiceToast, startVoiceCapture, startBackendVoiceCapture, handleStop, t, unlockSpeech, voiceSupported, requestWakeLock]);
 
   // Start editing a user message
   const startEdit = useCallback(
@@ -1027,9 +1433,9 @@ function getLastUserText(messages: ChatMessage[], beforeMsg?: ChatMessage): stri
       if (streaming) abort(true);
       stopSpeak();
       setEditingIndex(index);
-      setEditingText(messages[index].content);
+      setEditingText(messageDisplayContent(messages[index]));
     },
-    [messages, streaming, abort, stopSpeak],
+    [messages, streaming, abort, stopSpeak, messageDisplayContent],
   );
 
   // Save edit: trim messages after the edited one and resend
@@ -1106,10 +1512,46 @@ function getLastUserText(messages: ChatMessage[], beforeMsg?: ChatMessage): stri
     }
   }, [messages, streaming, abort, stopSpeak, onMessagesChange, engine, sendMessage, activeCollectionsForRequest, assistantErrorMessage]);
 
+  // ── Compute display chips (after all callbacks / refs are in scope) ──
+  const displayChips = chipDefsRef.current.map((def, i) => {
+    let action: () => void;
+    switch (def.kind) {
+      case 'navigate':
+        action = () => onNavigate?.(def.page as 'indexing' | 'settings' | 'browser' | 'memory' | 'docs');
+        break;
+      case 'slash': {
+        const cmd = def.labelKey === 'quickChipSummarize'
+          ? (lang === 'es' ? '/resumir' : '/summarize')
+          : def.command!;
+        action = () => { setInput(cmd); inputRef.current?.focus(); };
+        break;
+      }
+      case 'callMode':
+        action = () => { toggleVoice(); };
+        break;
+      case 'pickImage':
+        action = () => { setInput(t(def.promptKey as any)); fileInputRef.current?.click(); };
+        break;
+      case 'pickFile':
+        action = () => { setInput(t(def.promptKey as any)); docInputRef.current?.click(); };
+        break;
+      case 'toggleResearch':
+        action = () => { setResearchMode(prev => !prev); };
+        break;
+      default: // prompt
+        action = () => { setInput(t(def.promptKey as any)); inputRef.current?.focus(); };
+    }
+    return { label: t(def.labelKey as any), icon: def.icon, action, idx: i };
+  });
+
   return (
     <div className="flex flex-col h-full min-h-0 min-w-0 max-w-full overflow-hidden transition-colors duration-300">
-      {/* Navbar — items centered vertically with proper safe-area padding */}
-      <nav className={`shrink-0 flex items-center px-2 sm:px-3 border-b ${isDark ? 'bg-black/80 border-white/[0.06]' : 'bg-white/90 border-gray-200'} backdrop-blur-xl`}
+      {/* Navbar — items centered vertically with proper safe-area padding.
+          `relative z-50` lifts the whole navbar's stacking context above the
+          messages area below it, so the export dropdown renders on top and
+          stays clickable (its backdrop-blur creates a stacking context that
+          would otherwise trap the menu behind the messages). */}
+      <nav className={`relative z-50 shrink-0 flex items-center px-2 sm:px-3 border-b ${isDark ? 'bg-black/80 border-white/[0.06]' : 'bg-white/90 border-gray-200'} backdrop-blur-xl`}
            style={{ minHeight: '44px', paddingTop: 'env(safe-area-inset-top, 0px)' }}>
         {/* Left: menu button + animated branding */}
         <div className="flex items-center shrink-0 gap-1">
@@ -1130,37 +1572,73 @@ function getLastUserText(messages: ChatMessage[], beforeMsg?: ChatMessage): stri
         </div>
 
         {/* Right: toggle + actions */}
-        <div className="flex items-center gap-1 sm:gap-2 md:gap-3 ml-auto">
-          <div className="flex items-center gap-0.5 sm:gap-1">
-            <button
-              onClick={exportMarkdown}
-              disabled={messages.length === 0}
-              className={`p-2 sm:p-2 rounded-xl transition-colors ${
-                messages.length === 0
-                  ? isDark ? 'text-white/20 cursor-not-allowed' : 'text-gray-300 cursor-not-allowed'
-                  : isDark ? 'text-white/55 hover:text-white hover:bg-white/[0.06]' : 'text-gray-600 hover:text-gray-800 hover:bg-gray-100'
-              }`}
-              aria-label={t('exportMarkdown')}
-              title={t('exportMarkdown')}
-            >
-              <MdDownload size={18} />
-            </button>
-            <button
-              onClick={exportPdf}
-              disabled={messages.length === 0}
-              className={`p-2 sm:p-2 rounded-xl transition-colors ${
-                messages.length === 0
-                  ? isDark ? 'text-white/20 cursor-not-allowed' : 'text-gray-300 cursor-not-allowed'
-                  : isDark ? 'text-white/55 hover:text-white hover:bg-white/[0.06]' : 'text-gray-600 hover:text-gray-800 hover:bg-gray-100'
-              }`}
-              aria-label={t('exportPdf')}
-              title={t('exportPdf')}
-            >
-              <MdPictureAsPdf size={18} />
-            </button>
+        <div className="flex items-center gap-0.5 sm:gap-2 md:gap-3 ml-auto">
+          <div className="flex items-center gap-0">
+            {/* Download button with format dropdown */}
+            <div className="relative">
+              <button
+                onClick={() => setExportMenuOpen((v) => !v)}
+                disabled={messages.length === 0}
+                className={`h-8 w-8 sm:h-9 sm:w-9 rounded-lg sm:rounded-xl transition-colors flex items-center justify-center ${
+                  messages.length === 0
+                    ? isDark ? 'text-white/20 cursor-not-allowed' : 'text-gray-300 cursor-not-allowed'
+                    : isDark ? 'text-white/55 hover:text-white hover:bg-white/[0.06]' : 'text-gray-600 hover:text-gray-800 hover:bg-gray-100'
+                }`}
+                aria-label={t('exportChat')}
+                title={t('exportChat')}
+              >
+                <MdDownload size={17} />
+              </button>
+              <AnimatePresence>
+                {exportMenuOpen && messages.length > 0 && (
+                  <>
+                    <div className="fixed inset-0 z-40" onClick={() => setExportMenuOpen(false)} />
+                    <motion.div
+                      initial={{ opacity: 0, scale: 0.92, y: -4 }}
+                      animate={{ opacity: 1, scale: 1, y: 0 }}
+                      exit={{ opacity: 0, scale: 0.92, y: -4 }}
+                      transition={{ duration: 0.15 }}
+                      className={`absolute right-0 top-full mt-1.5 z-50 w-48 rounded-xl border py-1 shadow-lg backdrop-blur-xl ${
+                        isDark
+                          ? 'border-white/[0.08] bg-[#1a1a1a]/95 shadow-black/40'
+                          : 'border-gray-200 bg-white/95 shadow-gray-200/80'
+                      }`}
+                    >
+                      <button
+                        onClick={() => { exportMarkdown(); setExportMenuOpen(false); }}
+                        className={`w-full text-left px-4 py-2.5 text-sm flex items-center gap-3 transition-colors ${
+                          isDark ? 'text-white/70 hover:text-white hover:bg-white/[0.05]' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                        }`}
+                      >
+                        <MdDownload size={16} />
+                        {t('exportAsMd')}
+                      </button>
+                      <button
+                        onClick={() => { exportPdf(); setExportMenuOpen(false); }}
+                        className={`w-full text-left px-4 py-2.5 text-sm flex items-center gap-3 transition-colors ${
+                          isDark ? 'text-white/70 hover:text-white hover:bg-white/[0.05]' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                        }`}
+                      >
+                        <MdDescription size={16} />
+                        {t('exportAsPdf')}
+                      </button>
+                      <button
+                        onClick={() => { exportWord(); setExportMenuOpen(false); }}
+                        className={`w-full text-left px-4 py-2.5 text-sm flex items-center gap-3 transition-colors ${
+                          isDark ? 'text-white/70 hover:text-white hover:bg-white/[0.05]' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                        }`}
+                      >
+                        <MdDescription size={16} />
+                        {t('exportAsWord')}
+                      </button>
+                    </motion.div>
+                  </>
+                )}
+              </AnimatePresence>
+            </div>
             <button
               onClick={() => setResearchMode((v) => !v)}
-              className={`p-2 sm:p-2 rounded-xl transition-colors ${
+              className={`h-8 w-8 sm:h-9 sm:w-9 rounded-lg sm:rounded-xl transition-colors flex items-center justify-center ${
                 researchMode
                   ? 'bg-[#006bbd]/20 text-[#006bbd] ring-1 ring-[#006bbd]/40 animate-soft-pulse'
                   : isDark ? 'text-white/55 hover:text-white hover:bg-white/[0.06]' : 'text-gray-600 hover:text-gray-800 hover:bg-gray-100'
@@ -1168,7 +1646,7 @@ function getLastUserText(messages: ChatMessage[], beforeMsg?: ChatMessage): stri
               aria-label={t('toggleDeepResearch')}
               title={t('deepResearchTitle')}
             >
-              <MdScience size={18} />
+              <MdScience size={17} />
             </button>
           </div>
           <ToggleSwitch engine={engine} onChange={onEngineChange} />
@@ -1205,26 +1683,31 @@ function getLastUserText(messages: ChatMessage[], beforeMsg?: ChatMessage): stri
               {motd}
             </motion.p>
           </AnimatePresence>
-          {/* Quick-start chips */}
-          <div className="flex flex-wrap items-center justify-center gap-2 max-w-sm">
-            {[
-              { label: t('quickChipIndex'), icon: '📂', action: () => onNavigate?.('indexing') },
-              { label: t('quickChipExplain'), icon: '💡', action: () => { setInput(t('quickChipExplainPrompt')); inputRef.current?.focus(); } },
-              { label: t('quickChipSummarize'), icon: '📝', action: () => { setInput('/summarize'); inputRef.current?.focus(); } },
-              { label: t('quickChipResearch'), icon: '🔬', action: () => { setInput('/research '); inputRef.current?.focus(); } },
-            ].map((chip) => (
+          {/* Quick-start chips — 2 random suggestions per new chat */}
+          <div className="flex flex-wrap items-center justify-center gap-2.5 max-w-md">
+            {displayChips.map((chip) => (
               <motion.button
-                key={chip.label}
-                whileTap={{ scale: 0.95 }}
+                key={chip.label + chip.idx}
+                initial={{ opacity: 0, y: 10, scale: 0.9 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                transition={{
+                  duration: 0.45,
+                  delay: 0.15 + chip.idx * 0.09,
+                  ease: [0.16, 1, 0.3, 1],
+                }}
+                whileHover={{ scale: 1.05, y: -2 }}
+                whileTap={{ scale: 0.96 }}
                 onClick={chip.action}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
+                className={`chip-elegant relative flex items-center gap-2 pl-2 pr-3.5 py-1.5 rounded-full text-xs font-medium border overflow-hidden ${
                   isDark
-                    ? 'bg-white/[0.04] border-white/[0.08] text-white/60 hover:bg-white/[0.08] hover:text-white/80'
-                    : 'bg-gray-100 border-gray-200 text-gray-600 hover:bg-gray-200 hover:text-gray-800'
+                    ? 'text-white/70 border-white/[0.09] bg-gradient-to-b from-white/[0.06] to-white/[0.015]'
+                    : 'text-gray-600 border-gray-200/80 bg-gradient-to-b from-white to-gray-50'
                 }`}
               >
-                <span className="text-sm">{chip.icon}</span>
-                <span>{chip.label}</span>
+                <span className="chip-elegant-icon flex items-center justify-center w-5 h-5 rounded-full text-[13px] leading-none shrink-0">
+                  {chip.icon}
+                </span>
+                <span className="relative z-[1] whitespace-nowrap">{chip.label}</span>
               </motion.button>
             ))}
           </div>
@@ -1364,10 +1847,39 @@ function getLastUserText(messages: ChatMessage[], beforeMsg?: ChatMessage): stri
                                bg-[#006bbd] text-white transition-all group/msg"
                   >
                     {msg.image && (
-                      <img src={msg.image} alt={t('attachedImage')}
-                           className="rounded-lg mb-2 max-h-52 max-w-full w-auto object-contain" />
+                      <button type="button" onClick={() => openStoredAttachment({ name: t('attachedImage'), size: 0, mimeType: 'image/*', kind: 'image' }, msg.image)}>
+                        <img src={msg.image} alt={t('attachedImage')} className="rounded-lg mb-2 max-h-52 max-w-full w-auto object-contain" />
+                      </button>
                     )}
-                    {msg.content && <p className="chat-plain-text min-w-0 max-w-full whitespace-pre-wrap">{msg.content}</p>}
+                    {!msg.image && msg.documentAttachments?.some((doc) => doc.kind === 'image') && (
+                      <div className="mb-2 flex flex-wrap gap-1.5">
+                        {msg.documentAttachments.filter((doc) => doc.kind === 'image').map((doc, docIndex) => (
+                          <button type="button" key={`image-${doc.id || docIndex}`} onClick={() => openStoredAttachment(doc)} className="inline-flex items-center gap-1.5 rounded-lg bg-white/15 px-2 py-1 text-[11px] text-white/90">
+                            <MdImage size={14} /> {doc.name || t('attachedImage')}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    {msg.documentAttachments?.length ? (
+                      <div className="mb-2 flex max-w-full flex-wrap gap-1.5">
+                        {msg.documentAttachments.filter((doc) => doc.kind !== 'image').map((doc, docIndex) => (
+                          <button type="button" onClick={() => openStoredAttachment(doc)}
+                            key={`${doc.name}-${docIndex}`}
+                            className="inline-flex min-w-0 max-w-full items-center gap-1.5 rounded-lg bg-white/15 px-2 py-1 text-[11px] text-white/90"
+                          >
+                            <MdUploadFile size={14} className="shrink-0" />
+                            <span className="min-w-0 max-w-48 truncate">{doc.name}</span>
+                            {formatAttachmentSize(doc.size) && (
+                              <span className="shrink-0 text-white/60">{formatAttachmentSize(doc.size)}</span>
+                            )}
+                            {doc.truncated && <span className="shrink-0 text-amber-200">{t('truncated')}</span>}
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
+                    {messageDisplayContent(msg) && (
+                      <p className="chat-plain-text min-w-0 max-w-full whitespace-pre-wrap">{messageDisplayContent(msg)}</p>
+                    )}
                   </div>
                   <div className="mt-1 flex items-center gap-1">
                     <button
@@ -1381,7 +1893,7 @@ function getLastUserText(messages: ChatMessage[], beforeMsg?: ChatMessage): stri
                       <MdEdit size={15} />
                     </button>
                     <button
-                      onClick={() => copyMessage(visibleMessageContent(msg.content), `msg-copy-${i}`)}
+                      onClick={() => copyMessage(messageDisplayContent(msg), `msg-copy-${i}`)}
                       className={`p-1 rounded-md transition-colors ${
                         copiedKey === `msg-copy-${i}`
                           ? 'text-[#006bbd] bg-[#006bbd]/10'
@@ -1428,7 +1940,9 @@ function getLastUserText(messages: ChatMessage[], beforeMsg?: ChatMessage): stri
               <div className="chat-bubble-wrap min-w-0">
                 <div className={`chat-bubble min-w-0 overflow-hidden px-4 py-2.5 rounded-2xl rounded-bl-md text-sm leading-relaxed ${isDark ? 'bg-white/[0.06] text-white/90' : 'bg-gray-100 text-gray-800'}`}>
                   {streamedText ? (
-                    <MarkdownContent text={visibleMessageContent(streamedText)} isDark={isDark} />
+                    <p className="chat-plain-text min-w-0 max-w-full whitespace-pre-wrap">
+                      {visibleMessageContent(streamedText)}
+                    </p>
                   ) : (
                     <div className="flex items-center gap-1.5">
                       <span className={`text-xs ${isDark ? 'text-white/50' : 'text-gray-400'}`}>
@@ -1460,7 +1974,7 @@ function getLastUserText(messages: ChatMessage[], beforeMsg?: ChatMessage): stri
                 isDark
                   ? 'border-white/[0.08] bg-black/85 text-white/80 hover:bg-[#006bbd] hover:text-white'
                   : 'border-gray-200 bg-white/95 text-gray-600 hover:bg-[#006bbd] hover:text-white'
-              } ${streaming ? 'animate-bounce' : ''}`}
+              }`}
               aria-label={t('scrollToBottom')}
               title={t('scrollToBottom')}
             >
@@ -1524,8 +2038,22 @@ function getLastUserText(messages: ChatMessage[], beforeMsg?: ChatMessage): stri
             })}
           </div>
         )}
-        {docUploadStatus && (
-          <p className={`mb-2 text-xs ${isDark ? 'text-white/45' : 'text-gray-500'}`}>{docUploadStatus}</p>
+        {(docUploadStatus || docConvertProgress) && (
+          <div className={`mb-2 rounded-xl border px-3 py-2 ${isDark ? 'bg-white/[0.03] border-white/[0.08]' : 'bg-gray-50 border-gray-200'}`}>
+            {docUploadStatus && (
+              <p className={`text-xs ${isDark ? 'text-white/55' : 'text-gray-600'}`}>{docUploadStatus}</p>
+            )}
+            {docConvertProgress && (
+              <div className="mt-2">
+                <div className={`h-1.5 w-full overflow-hidden rounded-full ${isDark ? 'bg-white/[0.08]' : 'bg-gray-200'}`}>
+                  <div
+                    className="h-full rounded-full bg-[#006bbd] transition-all duration-300"
+                    style={{ width: `${Math.max(2, Math.min(100, docConvertProgress.progress))}%` }}
+                  />
+                </div>
+              </div>
+            )}
+          </div>
         )}
         {attachedDocs.length > 0 && (
           <div className={`mb-2 rounded-xl border px-3 py-2 space-y-2 ${isDark ? 'bg-white/[0.03] border-white/[0.08]' : 'bg-gray-50 border-gray-200'}`}>
@@ -1600,7 +2128,7 @@ function getLastUserText(messages: ChatMessage[], beforeMsg?: ChatMessage): stri
           onChange={onPickDocs}
         />
         <div
-          className={`flex items-end gap-1 sm:gap-2 rounded-2xl border px-2 sm:px-3 py-2 transition-all duration-300 relative focus-within:animate-border-glow ${
+          className={`flex items-center gap-1 sm:gap-2 rounded-2xl border px-2 sm:px-3 py-1.5 transition-all duration-300 relative focus-within:animate-border-glow ${
             isDark
               ? 'bg-white/[0.04] border-white/[0.08] focus-within:border-[#006bbd]/40 focus-within:shadow-[0_0_20px_rgba(0,107,189,0.15)]'
               : 'bg-gray-100 border-gray-200 focus-within:border-[#006bbd]/40 focus-within:shadow-[0_0_20px_rgba(0,107,189,0.1)]'
@@ -1612,15 +2140,18 @@ function getLastUserText(messages: ChatMessage[], beforeMsg?: ChatMessage): stri
                 {customPrompts.current.filter(p => p.name.includes(slashFilter)).map(p => (
                   <button key={p.name} onClick={() => {
                     if (p.builtin) {
+                      // Navigation commands execute directly. Chat commands are
+                      // only inserted; selecting an option must never submit a
+                      // stale input value such as just "/".
+                      if (p.kind === 'navigate_settings') { setSlashOpen(false); onNavigate?.('settings'); return; }
+                      if (p.kind === 'navigate_indexing') { setSlashOpen(false); onNavigate?.('indexing'); return; }
+                      if (p.kind === 'navigate_browser') { setSlashOpen(false); onNavigate?.('browser'); return; }
+                      if (p.kind === 'navigate_memory') { setSlashOpen(false); onNavigate?.('memory'); return; }
+                      if (p.kind === 'navigate_docs') { setSlashOpen(false); onNavigate?.('docs'); return; }
+                      if (p.kind === 'export_markdown') { setSlashOpen(false); exportMarkdown(); return; }
                       setInput('/' + p.name + ' ');
                       setSlashOpen(false);
                       inputRef.current?.focus();
-                      window.setTimeout(() => {
-                        const ta = inputRef.current;
-                        if (!ta) return;
-                        ta.focus();
-                        handleSend();
-                      }, 30);
                     } else {
                       setInput('/'+p.name+' '); setSlashOpen(false); inputRef.current?.focus();
                     }
@@ -1631,7 +2162,7 @@ function getLastUserText(messages: ChatMessage[], beforeMsg?: ChatMessage): stri
                       <span className="text-[8px] font-bold uppercase tracking-wider px-1 py-0.5 rounded bg-[#006bbd]/15 text-[#006bbd]">{t('builtInCommand')}</span>
                     )}
                     <span className={`truncate ${isDark ? 'text-white/30' : 'text-gray-400'}`}>
-                      {p.builtin ? (getBuiltinHint(p.name, lang)) : (p.text || '').slice(0, 50) + '…'}
+                      {p.builtin ? getBuiltinHint(p.name, lang) : (p.text || '').slice(0, 50) + '…'}
                     </span>
                   </button>
                 ))}
@@ -1648,7 +2179,7 @@ function getLastUserText(messages: ChatMessage[], beforeMsg?: ChatMessage): stri
             rows={1}
             placeholder={t('typeMessage')}
             aria-label={t('typeMessage')}
-            className={`flex-1 min-w-0 min-h-[40px] max-h-[160px] bg-transparent text-sm resize-none outline-none overflow-y-auto py-2 leading-6 ${isDark ? 'text-white placeholder-white/30' : 'text-gray-800 placeholder-gray-400'}`}
+            className={`flex-1 min-w-0 min-h-[40px] max-h-[160px] bg-transparent text-sm resize-none outline-none overflow-y-auto py-1.5 leading-6 ${isDark ? 'text-white placeholder-white/30' : 'text-gray-800 placeholder-gray-400'}`}
             disabled={streaming}
           />
 
@@ -1723,6 +2254,40 @@ function getLastUserText(messages: ChatMessage[], beforeMsg?: ChatMessage): stri
           )}
         </div>
       </div>
+      <AnimatePresence>
+        {previewAttachment && (
+          <motion.div
+            className="fixed inset-0 z-[80] flex items-center justify-center bg-black/75 p-4"
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            onClick={() => { if (previewAttachment.url.startsWith('blob:')) URL.revokeObjectURL(previewAttachment.url); setPreviewAttachment(null); }}
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.94, y: 18 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.94, y: 18 }}
+              className={`relative flex max-h-[90vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl ${isDark ? 'bg-[#111]' : 'bg-white'}`}
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className={`flex items-center justify-between border-b px-4 py-3 text-sm ${isDark ? 'border-white/[0.08] text-white/80' : 'border-gray-200 text-gray-800'}`}>
+                <span className="min-w-0 truncate">{previewAttachment.attachment.name}</span>
+                <div className="flex items-center gap-2">
+                  <a href={previewAttachment.url} download={previewAttachment.attachment.name} className="rounded-lg bg-[#006bbd] px-3 py-1.5 text-xs text-white">{t('download')}</a>
+                  <button type="button" onClick={() => { if (previewAttachment.url.startsWith('blob:')) URL.revokeObjectURL(previewAttachment.url); setPreviewAttachment(null); }} className="rounded-lg p-1" aria-label={t('close')}><MdClose size={20} /></button>
+                </div>
+              </div>
+              <div className="min-h-0 flex-1 overflow-auto p-3">
+                {(previewAttachment.attachment.kind === 'image' || previewAttachment.attachment.mimeType?.startsWith('image/')) ? (
+                  <img src={previewAttachment.url} alt={previewAttachment.attachment.name} className="mx-auto max-h-[78vh] max-w-full object-contain" />
+                ) : (previewAttachment.attachment.mimeType?.startsWith('text/') || /\.(md|txt|csv|json|xml|html|css|js|ts|tsx|jsx|py|java|c|cpp|h|log)$/i.test(previewAttachment.attachment.name)) ? (
+                  <iframe title={previewAttachment.attachment.name} srcDoc={textPreview === null ? '' : textPreviewDocument(textPreview)} className="h-[78vh] w-full rounded-lg bg-white" />
+                ) : previewAttachment.attachment.mimeType === 'application/pdf' || previewAttachment.attachment.name.toLowerCase().endsWith('.pdf') ? (
+                  <object data={previewAttachment.url} type="application/pdf" className="h-[78vh] w-full rounded-lg"><iframe title={previewAttachment.attachment.name} src={previewAttachment.url} className="h-full w-full" /><a href={previewAttachment.url} download={previewAttachment.attachment.name}>{t('download')}</a></object>
+                ) : (
+                  <div className={`p-6 text-center text-sm ${isDark ? 'text-white/60' : 'text-gray-600'}`}>{t('downloadFileToOpen')}</div>
+                )}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

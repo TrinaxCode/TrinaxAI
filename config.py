@@ -11,7 +11,9 @@ from __future__ import annotations
 
 import os
 import ssl
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
+
+from trinaxai_core import VALID_PROFILES, _positive_float, _positive_int
 
 if TYPE_CHECKING:
     from llama_index.embeddings.ollama import OllamaEmbedding
@@ -19,14 +21,23 @@ if TYPE_CHECKING:
 
 
 def _env_int(name: str, default: int, *, minimum: int = 1, maximum: int | None = None) -> int:
-    try:
-        value = int(os.getenv(name, str(default)))
-    except (TypeError, ValueError):
-        return default
-    value = max(minimum, value)
-    if maximum is not None:
-        value = min(maximum, value)
-    return value
+    """Read an int env var, clamped to [minimum, maximum]; falls back on bad input.
+
+    Thin wrapper over ``trinaxai_core._positive_int`` so parsing/clamping stays
+    consistent across config/index/core.
+    """
+    return _positive_int(
+        os.getenv(name, default), default, minimum=minimum, maximum=maximum
+    )
+
+
+def _env_float(
+    name: str, default: float, *, minimum: float = 0.0, maximum: float | None = None
+) -> float:
+    """Read a float env var, clamped; falls back on bad input."""
+    return _positive_float(
+        os.getenv(name, default), default, minimum=minimum, maximum=maximum
+    )
 
 
 # ==================== PATHS ====================
@@ -69,35 +80,7 @@ if TRINAXAI_PERFORMANCE_MODE not in {"fast", "balanced", "quality"}:
     TRINAXAI_PERFORMANCE_MODE = "fast"
 
 # Validate profile — warn on unknown values but don't crash.
-_VALID_PROFILES = {
-    "4gb",
-    "4g",
-    "8gb",
-    "8g",
-    "16gb",
-    "max",
-    "high",
-    "ultra",
-    "gpu",
-    "64gb",
-    "64g",
-    "4090",
-    "rtx",
-    "workstation",
-    "max_quality",
-    "quality",
-    "potente",
-    "32gb",
-    "32g",
-    "alto",
-    "low",
-    "min",
-    "minimo",
-    "lite",
-    "light",
-    "bajo",
-}
-if TRINAXAI_PROFILE not in _VALID_PROFILES:
+if TRINAXAI_PROFILE not in VALID_PROFILES:
     print(
         f"[TrinaxAI] Unknown TRINAXAI_PROFILE='{TRINAXAI_PROFILE}'. Falling back to '16gb'."
     )
@@ -134,20 +117,36 @@ _QUALITY_MODE = TRINAXAI_PERFORMANCE_MODE == "quality"
 
 # ── Model fleet for AUTO-ROUTING ──
 # The router selects the model based on the query. Low-resource profiles default
-# to 1B/1.5B models so Windows laptops with 8 GB RAM do not pull the 16 GB set.
-_DEFAULT_MODEL_GENERAL = "llama3.2:1b" if _LOW_RESOURCE_PROFILE else "llama3.2:3b"
-_DEFAULT_MODEL_CODE = "qwen2.5-coder:1.5b" if _LOW_RESOURCE_PROFILE else "qwen2.5-coder:3b"
+# to smaller models so Windows laptops with 8 GB RAM do not pull the 16 GB set.
+#
+# The whole text fleet is standardised on the Qwen family: every pick is
+# tool-calling capable AND non-thinking (never emits <think> blocks, which the
+# RAG pipeline does not strip), so agentic/tool-use flows work cleanly.
+# Qwen3-*-Instruct-2507 tags carry a quantization suffix on Ollama (the bare
+# alias does not resolve), hence the explicit -q4_K_M.
+_QWEN3_GENERAL_SMALL = "qwen3:4b-instruct-2507-q4_K_M"  # 8gb / 16gb chat + fast
+_QWEN3_GENERAL_BIG = "qwen3:30b-a3b-instruct-2507-q4_K_M"  # max / ultra chat (MoE, 3B active)
+_DEFAULT_MODEL_GENERAL = _QWEN3_GENERAL_BIG if _MAX_QUALITY_PROFILE else _QWEN3_GENERAL_SMALL
+_DEFAULT_MODEL_CODE = (
+    "qwen2.5-coder:7b"
+    if _MAX_QUALITY_PROFILE
+    else "qwen2.5-coder:1.5b"
+    if _LOW_RESOURCE_PROFILE
+    else "qwen2.5-coder:3b"
+)
+# Fast/trivial: tiny llama on 8 GB, otherwise the same small Qwen3 as general chat.
+_DEFAULT_MODEL_FAST = "llama3.2:1b" if _LOW_RESOURCE_PROFILE else _QWEN3_GENERAL_SMALL
 MODEL_GENERAL = os.getenv("TRINAXAI_MODEL_GENERAL", _DEFAULT_MODEL_GENERAL)  # non-code chat
 MODEL_CODE = os.getenv("TRINAXAI_MODEL_CODE", _DEFAULT_MODEL_CODE)  # regular code
 MODEL_DEEP = os.getenv(
     "TRINAXAI_MODEL_DEEP",
-    "qwen2.5-coder:14b"
-    if _ULTRA_PROFILE
-    else "qwen2.5-coder:7b"
+    "qwen3-coder:30b"
     if _MAX_QUALITY_PROFILE
-    else MODEL_CODE,
-)  # complex code (14b on ultra, 7b on powerful profile, 3b default)
-MODEL_FAST = os.getenv("TRINAXAI_MODEL_FAST", MODEL_GENERAL)  # trivial / ultra-fast
+    else "qwen2.5-coder:7b"
+    if not _LOW_RESOURCE_PROFILE
+    else "qwen2.5-coder:3b",
+)  # complex code (qwen3-coder:30b MoE on max/ultra, 7b on 16gb, 3b on 8gb)
+MODEL_FAST = os.getenv("TRINAXAI_MODEL_FAST", _DEFAULT_MODEL_FAST)  # trivial / ultra-fast
 
 # Default model (when auto-router is disabled).
 LLM_MODEL = os.getenv("TRINAXAI_LLM", MODEL_CODE)
@@ -182,12 +181,15 @@ EMBED_PRESETS = {
         "label": "Fast (all-minilm, smallest)",
     },
 }
-_EMBED_PRESET_DEFAULT = "lite" if _LOW_RESOURCE_PROFILE else "balanced"
+# bge-m3 (balanced) is the default on every profile: it is only ~1.2 GB yet
+# multilingual, whereas the lite/fast presets are English-leaning. Low-RAM users
+# can still opt into lite/fast via TRINAXAI_EMBED_PRESET.
+_EMBED_PRESET_DEFAULT = "balanced"
 _EMBED_PRESET = os.getenv("TRINAXAI_EMBED_PRESET", _EMBED_PRESET_DEFAULT).strip().lower()
 EMBED_PRESET = _EMBED_PRESET if _EMBED_PRESET in EMBED_PRESETS else "balanced"
 EMBED_MODEL = os.getenv("TRINAXAI_EMBED", EMBED_PRESETS[EMBED_PRESET]["model"])
-EMBED_DIMS = int(
-    os.getenv("TRINAXAI_EMBED_DIMS", str(EMBED_PRESETS[EMBED_PRESET]["dims"]))
+EMBED_DIMS = _env_int(
+    "TRINAXAI_EMBED_DIMS", int(EMBED_PRESETS[EMBED_PRESET]["dims"]), minimum=1, maximum=32768
 )
 
 # Quantization hints (Phase 4.2). Ollama respects OLLAMA_NUM_GPU at runtime.
@@ -205,22 +207,22 @@ TRINAXAI_AGGRESSIVE_QUANT = os.getenv("TRINAXAI_AGGRESSIVE_QUANT", "0").strip() 
 TRINAXAI_OCR = os.getenv("TRINAXAI_OCR", "0").strip() in {"1", "true", "yes", "on"}
 
 # Context window. Must fit: prompt + top_k chunks + response.
-NUM_CTX = int(
-    os.getenv(
-        "TRINAXAI_NUM_CTX",
-        "16384"
-        if _ULTRA_PROFILE
-        else "8192"
-        if _MAX_QUALITY_PROFILE
-        else "2048"
-        if _LOW_RESOURCE_PROFILE
-        else "4096",
-    )
+NUM_CTX = _env_int(
+    "TRINAXAI_NUM_CTX",
+    16384
+    if _ULTRA_PROFILE
+    else 8192
+    if _MAX_QUALITY_PROFILE
+    else 2048
+    if _LOW_RESOURCE_PROFILE
+    else 4096,
+    minimum=512,
+    maximum=131072,
 )
 # Threads per request. 8 (not 16) avoids oversubscription: with several concurrent
 # embeddings, 16 threads/req makes slots fight for the CPU and everything goes
 # SLOWER on modest hardware. 8 threads/req is usually a balanced value.
-NUM_THREAD = int(os.getenv("TRINAXAI_NUM_THREAD", "8"))
+NUM_THREAD = _env_int("TRINAXAI_NUM_THREAD", 8, minimum=1, maximum=256)
 # Concurrent embeddings. On 16 GB we use 2 workers to avoid competing with the
 # LLM; the powerful profile bumps to 4 if RAM is free.
 EMBED_WORKERS = _env_int(
@@ -266,24 +268,24 @@ EMBED_KEEP_ALIVE = (
     os.getenv("TRINAXAI_EMBED_KEEP_ALIVE", _EMBED_KEEP_ALIVE_DEFAULT).strip()
     or _EMBED_KEEP_ALIVE_DEFAULT
 )
-REQUEST_TIMEOUT = float(os.getenv("TRINAXAI_TIMEOUT", "300"))
+REQUEST_TIMEOUT = _env_float("TRINAXAI_TIMEOUT", 300.0, minimum=1.0, maximum=86400.0)
 
 # ==================== CHUNKING ====================
 # Prose (md, txt, pdf, configs): token-based chunking.
-_CHUNK_SIZE_DEFAULT = "1536" if _ULTRA_PROFILE else "896" if _FAST_MODE else "1024"
-CHUNK_SIZE = int(os.getenv("TRINAXAI_CHUNK_SIZE", _CHUNK_SIZE_DEFAULT))
-CHUNK_OVERLAP = int(
-    os.getenv(
-        "TRINAXAI_CHUNK_OVERLAP",
-        "220" if _ULTRA_PROFILE else "96" if _FAST_MODE else "150",
-    )
+_CHUNK_SIZE_DEFAULT = 1536 if _ULTRA_PROFILE else 896 if _FAST_MODE else 1024
+CHUNK_SIZE = _env_int("TRINAXAI_CHUNK_SIZE", _CHUNK_SIZE_DEFAULT, minimum=64, maximum=8192)
+CHUNK_OVERLAP = _env_int(
+    "TRINAXAI_CHUNK_OVERLAP",
+    220 if _ULTRA_PROFILE else 96 if _FAST_MODE else 150,
+    minimum=0,
+    maximum=CHUNK_SIZE,
 )
 # Code: AST-based chunking (respects functions/classes), measured in lines.
-CODE_CHUNK_LINES = int(os.getenv("TRINAXAI_CODE_CHUNK_LINES", "60"))
-CODE_CHUNK_LINES_OVERLAP = int(
-    os.getenv("TRINAXAI_CODE_CHUNK_LINES_OVERLAP", "8" if _FAST_MODE else "12")
+CODE_CHUNK_LINES = _env_int("TRINAXAI_CODE_CHUNK_LINES", 60, minimum=1, maximum=10000)
+CODE_CHUNK_LINES_OVERLAP = _env_int(
+    "TRINAXAI_CODE_CHUNK_LINES_OVERLAP", 8 if _FAST_MODE else 12, minimum=0, maximum=CODE_CHUNK_LINES
 )
-CODE_MAX_CHARS = int(os.getenv("TRINAXAI_CODE_MAX_CHARS", "2000"))
+CODE_MAX_CHARS = _env_int("TRINAXAI_CODE_MAX_CHARS", 2000, minimum=100, maximum=100000)
 
 # ==================== RETRIEVAL ====================
 # Final chunks injected into the LLM as context.
@@ -300,9 +302,7 @@ _TOP_K_DEFAULT = (
     if _FAST_MODE
     else "5"
 )
-SIMILARITY_TOP_K = int(
-    os.getenv("TRINAXAI_SIMILARITY_TOP_K", _TOP_K_DEFAULT)
-)
+SIMILARITY_TOP_K = _env_int("TRINAXAI_SIMILARITY_TOP_K", int(_TOP_K_DEFAULT), minimum=1, maximum=100)
 # Candidates each retriever (vector / BM25) contributes before fusion.
 # With reranking we ask for MORE candidates (the reranker narrows to the best).
 _FUSION_CANDIDATES_DEFAULT = (
@@ -318,8 +318,8 @@ _FUSION_CANDIDATES_DEFAULT = (
     if _FAST_MODE
     else "12"
 )
-FUSION_CANDIDATES = int(
-    os.getenv("TRINAXAI_FUSION_CANDIDATES", _FUSION_CANDIDATES_DEFAULT)
+FUSION_CANDIDATES = _env_int(
+    "TRINAXAI_FUSION_CANDIDATES", int(_FUSION_CANDIDATES_DEFAULT), minimum=1, maximum=200
 )
 RETRIEVAL_CACHE_SECONDS = _env_int(
     "TRINAXAI_RETRIEVAL_CACHE_SECONDS", 20 if _FAST_MODE else 10, minimum=0, maximum=3600
@@ -333,27 +333,75 @@ SOURCES_CACHE_SECONDS = _env_int(
 # to the LLM. bge-reranker-v2-m3 = multilingual (Spanish), state of the art.
 RERANK_ENABLED = os.getenv("TRINAXAI_RERANK", "0") == "1"
 RERANK_MODEL = os.getenv("TRINAXAI_RERANK_MODEL", "BAAI/bge-reranker-v2-m3")
-RERANK_TOP_N = int(os.getenv("TRINAXAI_RERANK_TOP_N", str(SIMILARITY_TOP_K)))
+RERANK_TOP_N = _env_int("TRINAXAI_RERANK_TOP_N", SIMILARITY_TOP_K, minimum=1, maximum=100)
 
 
-def make_llm(temperature: float = 0.0, model: str | None = None) -> Ollama:
-    """Create the Ollama LLM (qwen2.5-coder: non-thinking, fast on CPU)."""
+def make_llm(
+    temperature: float = 0.0,
+    model: str | None = None,
+    *,
+    keep_alive: str | int | None = None,
+    aggressive_quant: bool | None = None,
+    num_ctx: int | None = None,
+    num_predict: int | None = None,
+    top_p: float | None = None,
+    top_k: int | None = None,
+    repeat_penalty: float | None = None,
+    stop: tuple[str, ...] | list[str] | None = None,
+) -> Ollama:
+    """Create the Ollama LLM (qwen2.5-coder: non-thinking, fast on CPU).
+
+    The sampling knobs (``num_ctx``/``num_predict``/``top_p``/``top_k``/
+    ``repeat_penalty``/``stop``) are optional and backwards-compatible: when a
+    caller passes ``None`` the parameter is simply not sent, reproducing the
+    historical behaviour (only ``num_ctx``+``num_thread`` reached Ollama).
+    The generation pipeline (``app/generation``) uses them to give each task
+    type its own decoding regime; direct callers keep the old defaults.
+    """
     from llama_index.llms.ollama import Ollama
+
+    effective_ctx = int(num_ctx) if num_ctx else NUM_CTX
+    runtime_kwargs: dict[str, Any] = {"num_ctx": effective_ctx, "num_thread": NUM_THREAD}
+    # Only inject sampling knobs when explicitly provided so existing call
+    # sites (and Ollama's own model defaults) are untouched.
+    if num_predict is not None:
+        runtime_kwargs["num_predict"] = int(num_predict)
+    if top_p is not None:
+        runtime_kwargs["top_p"] = float(top_p)
+    if top_k is not None:
+        runtime_kwargs["top_k"] = int(top_k)
+    if repeat_penalty is not None:
+        runtime_kwargs["repeat_penalty"] = float(repeat_penalty)
+    if stop:
+        runtime_kwargs["stop"] = list(stop)
+
+    use_aggressive = (
+        TRINAXAI_AGGRESSIVE_QUANT if aggressive_quant is None else aggressive_quant
+    )
+    if use_aggressive:
+        runtime_kwargs["num_gpu"] = 0
 
     return Ollama(
         model=model or LLM_MODEL,
         base_url=OLLAMA_BASE_URL,
         temperature=temperature,
         request_timeout=REQUEST_TIMEOUT,
-        keep_alive=KEEP_ALIVE,
-        context_window=NUM_CTX,
-        additional_kwargs={"num_ctx": NUM_CTX, "num_thread": NUM_THREAD},
+        keep_alive=KEEP_ALIVE if keep_alive is None else keep_alive,
+        context_window=effective_ctx,
+        additional_kwargs=runtime_kwargs,
     )
 
 
 def make_embed() -> OllamaEmbedding:
     """Create the Ollama embedder using bge-m3's full 8K window."""
     from llama_index.embeddings.ollama import OllamaEmbedding
+
+    embed_kwargs = {
+        "num_thread": NUM_THREAD,
+        "num_ctx": 4096 if _ULTRA_PROFILE else 2048,
+    }
+    if TRINAXAI_AGGRESSIVE_QUANT:
+        embed_kwargs["num_gpu"] = 0
 
     return OllamaEmbedding(
         model_name=EMBED_MODEL,
@@ -362,10 +410,7 @@ def make_embed() -> OllamaEmbedding:
         embed_batch_size=EMBED_BATCH_SIZE,
         num_workers=EMBED_WORKERS,  # concurrent requests to Ollama
         # Ultra uses larger chunks; the rest keep context bounded for RAM.
-        ollama_additional_kwargs={
-            "num_thread": NUM_THREAD,
-            "num_ctx": 4096 if _ULTRA_PROFILE else 2048,
-        },
+        ollama_additional_kwargs=embed_kwargs,
     )
 
 
@@ -421,28 +466,65 @@ REQUIRED_EXTS = [
     ".rb",
     ".php",
     ".rs",
+    ".swift",
+    ".kt",
+    ".kts",
+    ".scala",
+    ".dart",
+    ".lua",
+    ".pl",
+    ".pm",
+    ".erl",
+    ".ex",
+    ".exs",
+    ".clj",
+    ".fs",
+    ".fsx",
+    ".vb",
+    ".asm",
+    ".s",
+    ".r",
+    ".jl",
+    ".m",
     ".sh",
+    ".bash",
+    ".zsh",
+    ".fish",
     ".ps1",
+    ".bat",
+    ".cmd",
     ".dockerfile",
     ".sql",
     ".graphql",
+    ".gql",
     ".cjs",
     ".mjs",
     # config / data
     ".json",
+    ".jsonl",
+    ".ipynb",
     ".yml",
     ".yaml",
     ".toml",
     ".xml",
     ".ini",
+    ".cfg",
+    ".conf",
+    ".properties",
+    ".env",
     ".csv",
+    ".tsv",
     # prose / documents
     ".md",
     ".mdx",
     ".txt",
     ".rst",
+    ".tex",
+    ".bib",
+    ".log",
     ".pdf",
     ".docx",
+    ".pptx",
 ]
 
 # Aggressive exclusion: third-party deps, builds, binaries, caches.
@@ -544,9 +626,24 @@ EXCLUDE_DIR_NAMES = {
 
 # Max size per file. Avoids giant generated CSV/HTML that would produce
 # thousands of useless chunks. Generous but bounded.
-MAX_FILE_BYTES = int(os.getenv("TRINAXAI_MAX_FILE_BYTES", str(3 * 1024 * 1024)))
-UPLOAD_MAX_FILES = int(os.getenv("TRINAXAI_UPLOAD_MAX_FILES", "2500"))
-UPLOAD_MAX_BYTES = int(os.getenv("TRINAXAI_UPLOAD_MAX_BYTES", str(512 * 1024 * 1024)))
+MAX_FILE_BYTES = _env_int("TRINAXAI_MAX_FILE_BYTES", 3 * 1024 * 1024, minimum=1024)
+DOCUMENT_MAX_FILE_BYTES = _env_int(
+    "TRINAXAI_DOCUMENT_MAX_FILE_BYTES", 250 * 1024 * 1024, minimum=1024
+)
+LARGE_DOCUMENT_EXTENSIONS = {".pdf", ".docx", ".pptx"}
+
+
+def max_file_bytes(path: str) -> int:
+    """Use a higher limit for document containers with embedded media."""
+    return (
+        DOCUMENT_MAX_FILE_BYTES
+        if os.path.splitext(path.lower())[1] in LARGE_DOCUMENT_EXTENSIONS
+        else MAX_FILE_BYTES
+    )
+
+
+UPLOAD_MAX_FILES = _env_int("TRINAXAI_UPLOAD_MAX_FILES", 2500, minimum=1)
+UPLOAD_MAX_BYTES = _env_int("TRINAXAI_UPLOAD_MAX_BYTES", 512 * 1024 * 1024, minimum=1024)
 
 
 # ==================== MODEL AUTO-ROUTER ====================
@@ -628,24 +725,71 @@ _DEEP_HINTS = (
     "revisa",
 )
 
+_GENERAL_TOPIC_HINTS = (
+    "clima", "weather", "receta", "cocina", "comida", "viaje", "vacaciones",
+    "película", "pelicula", "música", "musica", "deporte", "salud", "ejercicio",
+    "historia", "geografía", "geografia", "capital de", "quién es", "quien es",
+    "qué es", "que es", "cuéntame", "cuentame", "consejo", "traduce",
+    "traducción", "translation", "recipe", "travel", "movie", "music",
+    "who is", "what is",
+)
+_TOPIC_SHIFT_HINTS = (
+    "cambiando de tema", "cambio de tema", "otra cosa", "ahora hablemos",
+    "dejando el código", "dejando el codigo", "new topic", "change of topic",
+    "switching topics", "let's talk about",
+)
 
-def route_model(text: str) -> str:
-    """Pick the best model based on the query (heuristic, offline, instant).
 
-    Complex -> 7b/14b · Code -> coder 3b · Chat -> general. Trivial -> fast.
+def route_model(text: str, previous_model: str | None = None) -> str:
+    """Pick a model instantly, with affinity for the already-warm model.
+
+    Technical intent switches immediately to the coder. Ambiguous follow-ups keep
+    the previous model to avoid expensive Ollama model churn.
     """
     if not AUTO_ROUTE or not text:
         return LLM_MODEL
     t = text.lower()
     is_code = ("`" in text) or any(h in t for h in _CODE_HINTS)
-    is_deep = len(text) > 600 or any(h in t for h in _DEEP_HINTS)
-    if is_deep:
-        return MODEL_DEEP  # complex (code or not) -> large model
+    deep_signals = sum(h in t for h in _DEEP_HINTS)
+    is_deep_code = is_code and (len(text) > 1_200 or deep_signals >= 2)
+    if is_deep_code:
+        candidate = MODEL_DEEP
+    elif is_code:
+        candidate = MODEL_CODE
+    elif len(text.strip()) < 25:
+        candidate = MODEL_FAST
+    else:
+        candidate = MODEL_GENERAL
+
+    text_models = {MODEL_CODE, MODEL_DEEP, MODEL_GENERAL, MODEL_FAST}
+    if not previous_model or previous_model not in text_models or previous_model == candidate:
+        return candidate
     if is_code:
-        return MODEL_CODE  # regular code -> coder 3b
-    if len(text.strip()) < 25:
-        return MODEL_FAST  # greeting / trivial -> ultra-fast
-    return MODEL_GENERAL  # general chat -> llama3.2
+        return candidate
+    explicit_general = any(h in t for h in _TOPIC_SHIFT_HINTS) or any(
+        h in t for h in _GENERAL_TOPIC_HINTS
+    )
+    return candidate if explicit_general else previous_model
+
+
+def route_model_for_messages(messages: list[dict]) -> str:
+    """Route a conversation using its last real model or inferred prior intent."""
+    chat = [m for m in messages if m.get("role") in {"user", "assistant"}]
+    user_turns = [m for m in chat if m.get("role") == "user"]
+    if not user_turns:
+        return LLM_MODEL
+    current = str(user_turns[-1].get("content", ""))
+    previous_model = next(
+        (
+            str(m.get("model", "")).strip()
+            for m in reversed(chat[:-1])
+            if m.get("role") == "assistant" and str(m.get("model", "")).strip()
+        ),
+        None,
+    )
+    if previous_model is None and len(user_turns) >= 2:
+        previous_model = route_model(str(user_turns[-2].get("content", "")))
+    return route_model(current, previous_model=previous_model)
 
 
 def make_reranker():
@@ -697,3 +841,15 @@ def create_ssl_context(verify: bool | None = None) -> "ssl.SSLContext | None":
     ctx.check_hostname = False
     ctx.verify_mode = ssl.CERT_NONE
     return ctx
+
+
+# ==================== VOICE (STT / TTS) ====================
+# Local-first voice backend. Used only as a fallback when the browser does not
+# support Web Speech API (e.g. Firefox) or when local TTS voices are missing.
+# Motor local de voz. Solo se usa como fallback cuando el navegador no soporta
+# Web Speech API (p. ej. Firefox) o cuando no hay voces locales de TTS.
+VOICE_STT_MODEL = os.getenv("TRINAXAI_VOICE_STT_MODEL", "base").strip()
+VOICE_TTS_ENGINE = os.getenv("TRINAXAI_VOICE_TTS_ENGINE", "").strip().lower()
+VOICE_MAX_AUDIO_BYTES = _env_int("TRINAXAI_VOICE_MAX_AUDIO_BYTES", 30 * 1024 * 1024, minimum=1024)
+VOICE_TTS_MAX_CHARS = _env_int("TRINAXAI_VOICE_TTS_MAX_CHARS", 1200, minimum=1, maximum=100000)
+VOICE_RATE_LIMIT_PER_MINUTE = _env_int("TRINAXAI_VOICE_RATE_LIMIT_PER_MINUTE", 30, minimum=1, maximum=100000)

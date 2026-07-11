@@ -33,6 +33,9 @@ let syncTimer: number | undefined;
 let applyingRemote = false;
 let syncBackoffUntil = 0;
 let syncFailureCount = 0;
+let remoteStateEtag: string | null = null;
+let localStateRevision = 0;
+let lastSyncedRevision = -1;
 
 type SyncMeta = Record<string, { updatedAt: number; hash: string }>;
 type ChatDeleted = Record<string, number>;
@@ -183,9 +186,19 @@ function mergeSessions(localRaw: string | undefined, remoteRaw: string | undefin
   return JSON.stringify([...byId.values()].sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0)));
 }
 
-async function fetchRemoteState(signal?: AbortSignal): Promise<Record<string, string>> {
-  const response = await fetch(`${APP_CONFIG.ragBase}/app-state`, { signal });
+function statesEqual(left: Record<string, string>, right: Record<string, string>): boolean {
+  const leftKeys = Object.keys(left);
+  const rightKeys = Object.keys(right);
+  return leftKeys.length === rightKeys.length
+    && leftKeys.every((key) => left[key] === right[key]);
+}
+
+async function fetchRemoteState(signal?: AbortSignal): Promise<Record<string, string> | null> {
+  const headers = remoteStateEtag ? { 'If-None-Match': remoteStateEtag } : undefined;
+  const response = await fetch(`${APP_CONFIG.ragBase}/app-state`, { signal, headers });
+  if (response.status === 304) return null;
   if (!response.ok) return {};
+  remoteStateEtag = response.headers.get('ETag') || remoteStateEtag;
   const data = await response.json();
   return data?.values && typeof data.values === 'object' ? data.values : {};
 }
@@ -198,6 +211,7 @@ async function pushRemoteState(values: Record<string, string>, signal?: AbortSig
     signal,
   });
   if (!response.ok) throw new Error(`Shared state sync failed: ${response.status}`);
+  remoteStateEtag = response.headers.get('ETag') || remoteStateEtag;
 }
 
 function criticalLocalState(): Record<string, string> {
@@ -279,12 +293,20 @@ export async function syncSharedStateOnce(timeoutMs = 1800, force = false): Prom
   const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
   try {
     const remote = await fetchRemoteState(controller.signal);
-    applyRemoteState(remote);
-    try {
-      await pushRemoteState(snapshotLocalState(), controller.signal);
-    } catch {
-      await pushRemoteState(criticalLocalState(), controller.signal);
+    if (remote) applyRemoteState(remote);
+    const local = snapshotLocalState();
+    const revisionAtSnapshot = localStateRevision;
+    const needsPush = remote
+      ? !statesEqual(local, remote)
+      : revisionAtSnapshot !== lastSyncedRevision;
+    if (needsPush) {
+      try {
+        await pushRemoteState(local, controller.signal);
+      } catch {
+        await pushRemoteState(criticalLocalState(), controller.signal);
+      }
     }
+    if (revisionAtSnapshot === localStateRevision) lastSyncedRevision = revisionAtSnapshot;
     syncFailureCount = 0;
     syncBackoffUntil = 0;
   } catch {
@@ -317,6 +339,7 @@ function installLocalStorageSyncHooks(): void {
     const before = this.getItem(key);
     setItem.call(this, key, value);
     if (!applyingRemote && key.startsWith(STORAGE_PREFIX) && !EXCLUDED_KEYS.has(key) && key !== META_KEY && before !== value) {
+      localStateRevision += 1;
       scheduleSharedStateSync();
     }
   };
@@ -324,6 +347,7 @@ function installLocalStorageSyncHooks(): void {
     const hadValue = this.getItem(key) !== null;
     removeItem.call(this, key);
     if (!applyingRemote && key.startsWith(STORAGE_PREFIX) && !EXCLUDED_KEYS.has(key) && key !== META_KEY && hadValue) {
+      localStateRevision += 1;
       scheduleSharedStateSync();
     }
   };

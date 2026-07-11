@@ -13,10 +13,27 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/licencia-AGPL--3.0--or--later-blue.svg" alt="AGPL-3.0-or-later"></a>
   <a href="#-inicio-rápido"><img src="https://img.shields.io/badge/potenciado_por-Ollama-black.svg" alt="Ollama"></a>
   <a href="#-plataformas-soportadas"><img src="https://img.shields.io/badge/plataforma-Linux|macOS|Windows-lightgrey.svg" alt="Plataformas"></a>
-  <a href="#-instalación-pwa"><img src="https://img.shields.io/badge/PWA-listo-brightgreen.svg" alt="PWA"></a>
+  <a href="chat-pwa/README.es.md"><img src="https://img.shields.io/badge/PWA-listo-brightgreen.svg" alt="PWA"></a>
 </p>
 
 > **⭐ Si TrinaxAI te ayuda, ¡dale una estrella al repo! Ayuda a que otros lo encuentren.**
+
+---
+
+## 📋 Estado del Proyecto
+
+TrinaxAI es **estable y mantenido activamente**. Las funciones principales (chat, RAG, PWA, CLI, voz, visión) están maduras. Foco actual: pruebas, endurecimiento de seguridad y documentación para contribuidores.
+
+| Área | Estado |
+|------|--------|
+| Backend API (FastAPI) | ✅ Estable |
+| RAG con búsqueda híbrida | ✅ Estable |
+| PWA (React 19 + Vite 6) | ✅ Estable |
+| CLI (`trinaxai`) | ✅ Estable |
+| Instaladores multiplataforma | 🧪 Linux probado en CI; Windows/macOS con validación de sintaxis |
+| Cobertura de pruebas | 🚧 Creciendo |
+| Documentación de arquitectura | 📝 Mejorando |
+| Soporte Docker | 📅 Planeado |
 
 ---
 
@@ -39,7 +56,7 @@ TrinaxAI es un **asistente de IA local** que combina una interfaz de chat tipo C
 - 🗂️ **Colecciones de conocimiento** — Crea espacios RAG separados y consulta uno o varios
 - 🧭 **Memoria local** — "recuerda que..." persiste entre dispositivos
 - 🎤 **Modo llamada** — Reconocimiento de voz + texto a voz
-- 📸 **Visión** — Analiza imágenes con qwen2.5-vl
+- 📸 **Visión** — Analiza imágenes con qwen3-vl
 - 💻 **CLI para desarrolladores** — `trinaxai ask`, `trinaxai chat`, `trinaxai index`, `trinaxai doctor`
 - 🌐 **Bilingüe** — Español e inglés, auto-detectado
 - 🌓 **Modo claro/oscuro** — Auto-detectado del sistema
@@ -49,22 +66,52 @@ TrinaxAI es un **asistente de IA local** que combina una interfaz de chat tipo C
 
 ---
 
+## 🧭 Vista General
+
+TrinaxAI tiene dos rutas de chat: Ollama directo para conversación general/visión y FastAPI para recuperación sobre contenido indexado. La PWA llega a ambos mediante proxies same-origin de Vite.
+
+```mermaid
+flowchart LR
+  U["Usuario"] --> PWA["React PWA :3334"]
+  U --> CLI["CLI trinaxai"]
+  PWA -->|"/api/ollama · NDJSON"| OL["Ollama :11434"]
+  PWA -->|"/api/rag · SSE/JSON"| API["FastAPI :3333"]
+  CLI --> API
+  CLI --> OL
+  API --> R["Recuperación híbrida<br/>vector + BM25"]
+  R --> S["Almacenamiento LlamaIndex<br/>storage/"]
+  API --> OL
+  IDX["index.py"] --> S
+  SRC["Proyectos / documentos"] --> IDX
+  API --> DATA["Colecciones · memoria<br/>watcher · estado PWA"]
+```
+
+Las consultas RAG recuperan candidatos vectoriales y BM25, pueden reordenarlos y piden a Ollama sintetizar una respuesta con citas. El chat directo omite el índice. `service_manager.py` supervisa servicios en Linux, macOS y Windows; no depende exclusivamente de systemd.
+
+---
+
 ## 📸 Capturas de pantalla
 
-<!-- TODO: Agregar capturas del chat PWA, demo CLI y vista móvil -->
-<p align="center">
-  <em>Próximamente. Por ahora: ejecuta <code>./install.sh && trinaxai chat</code> para verlo en vivo.</em>
-</p>
+Próximamente. Si quieres contribuir, captura las siguientes vistas en resolución 1440×900 (PNG, optimizado con `pngquant`):
+
+| Captura | Ruta | Descripción |
+|---|---|---|
+| Chat | `docs/assets/screenshots/chat.png` | Interfaz principal de chat con citas RAG |
+| Indexación | `docs/assets/screenshots/indexing.png` | Indexación de colecciones con barra de progreso |
+| Configuración | `docs/assets/screenshots/settings.png` | Panel de configuración con modelos |
+| PWA Móvil | `docs/assets/screenshots/mobile-pwa.png` | PWA instalada en pantalla de inicio móvil |
+
+Ejecuta `./install.sh && trinaxai start`, abre `https://localhost:3334` y envía un PR con tus capturas.
 
 ---
 
 ## 🖥️ Plataformas Soportadas
 
-| SO | Instalador | Gestor de Servicios |
-|---|---|---|
-| **Linux** (Ubuntu, Debian, Fedora, Arch) | `install.sh` | systemd de usuario |
-| **macOS** (Intel + Apple Silicon) | `install.sh` | launchctl |
-| **Windows** (10/11, PowerShell) | `install.ps1` | supervisor de subprocesos |
+| SO | Instalador | Gestor de Servicios | Estado de validación |
+|---|---|---|---|
+| **Linux** (Ubuntu, Debian, Fedora, Arch) | `install.sh` | systemd de usuario | Soportado y probado en CI en Ubuntu |
+| **macOS** (Intel + Apple Silicon) | `install.sh` | launchctl | Instalador disponible; CI con validación de sintaxis Python/CLI/bash |
+| **Windows** (10/11, PowerShell) | `install.ps1` | supervisor de subprocesos | Instalador disponible; CI con validación de sintaxis Python/CLI/PowerShell |
 
 Guías completas: [Linux](docs/INSTALL_LINUX.md) · [macOS](docs/INSTALL_MACOS.md) · [Windows](docs/INSTALL_WINDOWS.md)
 <br>Guías en español: [Linux](docs/INSTALL_LINUX.es.md) · [macOS](docs/INSTALL_MACOS.es.md) · [Windows](docs/INSTALL_WINDOWS.es.md)
@@ -106,10 +153,12 @@ cd TrinaxAI
 
 | Flag | Descripción |
 |------|-------------|
-| `--interactive` | Preguntar antes de cada paso opcional |
+| `--interactive` | Instalación guiada; pregunta antes de cada paso opcional (por defecto) |
+| `--non-interactive` | Instalación automática para CI/scripts |
 | `--no-models` | No descargar modelos de Ollama |
 | `--no-vision` | No descargar modelo de visión |
 | `--no-autostart` | No activar inicio automático |
+| `--no-auto-update` | No activar la comprobación semanal segura en GitHub |
 | `--no-start` | No iniciar TrinaxAI después de instalar |
 | `--profile 8gb\|16gb\|max\|ultra` | Forzar perfil de hardware |
 | `--lan-system` | Activar control de sistema desde LAN (genera token admin) |
@@ -119,8 +168,8 @@ Por defecto, el **control de sistema desde LAN está desactivado** — ningún d
 ### Actualizar y desinstalar
 
 ```bash
-./update.sh      # Actualizador guiado
-./uninstall.sh   # Desinstalador guiado
+./update.sh      # Actualizador guiado; pregunta backup, modelos, autostart, reinicio, auditoría
+./uninstall.sh   # Desinstalador guiado; pregunta cada elemento removible
 ```
 
 En Windows usa scripts nativos de PowerShell:
@@ -129,6 +178,10 @@ En Windows usa scripts nativos de PowerShell:
 powershell -ExecutionPolicy Bypass -File .\update.ps1
 powershell -ExecutionPolicy Bypass -File .\uninstall.ps1
 ```
+
+Las dependencias requeridas se instalan/actualizan automáticamente. Las opciones como descarga de modelos, inicio automático, eliminación de datos y reinicios se preguntan por defecto.
+
+Las instalaciones nuevas activan automáticamente una comprobación semanal. Primero descarga el actualizador más reciente, sincroniza `origin/main`, renueva dependencias Python/npm, recompila la PWA y reinicia TrinaxAI. Conserva `.env`, configuración, índices, modelos, certificados y datos personales. El resultado queda en `logs/auto-update.log` y el desinstalador elimina también la tarea programada.
 
 ### Abrir la PWA
 
@@ -153,20 +206,20 @@ trinaxai                  # REPL interactivo
 trinaxai ask "..."        # Pregunta única
 trinaxai chat             # Chat interactivo
 trinaxai index .          # Indexar el directorio actual
-trinaxai browse           # Explorar colecciones indexadas
+trinaxai browse list-collections
 trinaxai doctor           # Verificación de salud del sistema
 trinaxai start            # Iniciar todos los servicios
-trinaxai stop             # Detener todos los servicios
-trinaxai watch            # Iniciar watcher de archivos
-trinaxai research "..."   # Investigación profunda multi-pasada
+trinaxai stop             # Detener IA; mantener disponible la PWA
+trinaxai watch start --paths . --collection default
+trinaxai research --query "..." --depth 2
 trinaxai export           # Exportar una conversación
-trinaxai memory           # Gestionar entradas de memoria persistente
-trinaxai collections      # Listar o gestionar colecciones RAG
-trinaxai --engine rag     # Forzar motor RAG
-trinaxai --engine ollama  # Forzar motor Ollama
+trinaxai memory list      # Gestionar memoria persistente
+trinaxai collections list # Listar o gestionar colecciones RAG
+trinaxai chat --engine rag
+trinaxai chat --engine ollama
 ```
 
-La CLI auto-detecta si usar Ollama o RAG según tu consulta. Funciona con el mismo backend que la PWA — sin configuración adicional.
+El motor predeterminado de la CLI es Ollama; selecciona `--engine rag` cuando necesites contexto indexado. Consulta la [referencia completa de CLI](docs/CLI_REFERENCE.es.md).
 
 ---
 
@@ -186,8 +239,8 @@ La CLI auto-detecta si usar Ollama o RAG según tu consulta. Funciona con el mis
 │  └─────┬──────────────────────────────┘   │
 │        │                                   │
 │  ┌─────┴──────┐                            │
-│  │  Ollama    │  qwen2.5 • llama3.2       │
-│  │  :11434    │  bge-m3 • moondream       │
+│  │  Ollama    │  qwen3 • qwen2.5-coder    │
+│  │  :11434    │  bge-m3 • qwen3-vl        │
 │  └────────────┘                            │
 └──────────────────────────────────────────┘
 ```
@@ -208,6 +261,16 @@ TrinaxAI es **local-first por diseño**. Esto es lo que significa en la práctic
 | **CORS** | localhost + tu IP LAN por defecto | Personaliza con `TRINAXAI_CORS_ORIGINS` |
 
 **El control de sistema desde LAN está desactivado por defecto.** Actívalo explícitamente durante la instalación (`--lan-system`) o configura `TRINAXAI_ALLOW_LAN_SYSTEM=1` en `.env`. Al activarlo, se genera automáticamente un `TRINAXAI_ADMIN_TOKEN` fuerte.
+
+Ajustes de rendimiento para hardware local:
+
+```bash
+TRINAXAI_INDEX_BATCH_SIZE=100
+TRINAXAI_RATE_LIMIT_PER_MINUTE=30
+TRINAXAI_EMBED_WORKERS=2
+TRINAXAI_EMBED_BATCH=8
+TRINAXAI_EMBED_KEEP_ALIVE=15m
+```
 
 ### Recomendaciones para acceso LAN / remoto
 
@@ -243,7 +306,11 @@ pip install -e .
 trinaxai doctor
 ```
 
-Guía completa: [docs/DEVELOPER_GUIDE.md](docs/DEVELOPER_GUIDE.md).
+Guía completa: [docs/DEVELOPER_GUIDE.es.md](docs/DEVELOPER_GUIDE.es.md).
+
+## 📚 Documentación
+
+Usa el [índice de documentación](docs/README.es.md) para navegar todo el conjunto. Referencias clave: [arquitectura](docs/ARCHITECTURE.es.md), [configuración](docs/CONFIGURATION.es.md), [CLI](docs/CLI_REFERENCE.es.md), [API HTTP](docs/API_REFERENCE.es.md) y [PWA](chat-pwa/README.es.md).
 
 ---
 
@@ -286,7 +353,7 @@ python3 test_system.py --verbose
 | `backup.sh` / `update.sh` / `uninstall.sh` | Scripts de mantenimiento Linux/macOS |
 | `update.ps1` / `uninstall.ps1` | Scripts de mantenimiento Windows |
 | `install.sh` / `install.ps1` | Instaladores en un comando |
-| `chat-pwa/` | Frontend React PWA |
+| `chat-pwa/` | Frontend React PWA ([README](chat-pwa/README.es.md)) |
 | `scripts/public_readiness.py` | Auditoría pre-release |
 | `test_system.py` | Verificación de salud del sistema |
 
@@ -298,7 +365,7 @@ python3 test_system.py --verbose
 R: No. Todo corre localmente. Las únicas llamadas de red son a Ollama (localhost:11434), la API RAG (localhost:3333) y Google Fonts (en la PWA). Ningún chat, código o documento sale de tu máquina.
 
 **P: ¿Qué modelos se recomiendan?**  
-R: El instalador auto-detecta la RAM. 8 GB usa `llama3.2:1b`, `qwen2.5-coder:1.5b` y `nomic-embed-text`. 16 GB usa `llama3.2:3b`, `qwen2.5-coder:3b` y `bge-m3`. Visita [canirun.ai](https://www.canirun.ai) para ver qué soporta tu hardware.
+R: El instalador auto-detecta la RAM. 8 GB usa `qwen3:4b-instruct-2507-q4_K_M`, `llama3.2:1b` (rápido), `qwen2.5-coder:1.5b` y `bge-m3`. 16 GB usa `qwen3:4b-instruct-2507-q4_K_M`, `qwen2.5-coder:3b` y `bge-m3`. Visita [canirun.ai](https://www.canirun.ai) para ver qué soporta tu hardware.
 
 **P: ¿Puedo usarlo desde mi teléfono?**  
 R: Sí. Abre `https://[TU-IP-LOCAL]:3334` desde cualquier dispositivo en la misma WiFi. La PWA es instalable en iOS y Android.
@@ -322,7 +389,7 @@ R: AGPL-3.0-or-later. Libre para uso personal y comercial. Ver [LICENSE](LICENSE
 Ver [ROADMAP.md](ROADMAP.md) para el plan completo. Destacados:
 
 - ✅ **Hecho** — Chat, RAG, voz, visión, PWA, CLI, instaladores, watcher, modo research
-- 🔜 **Próximo** — Explorador visual de proyectos, resumen de conversaciones, plantillas de prompts
+- 🔜 **Próximo** — Árbol jerárquico de conocimiento, resumen de conversaciones y mejor telemetría de indexación
 - 📅 **Planeado** — Docker/Compose, servidor MCP, integración Obsidian, suite de benchmarks
 
 ---

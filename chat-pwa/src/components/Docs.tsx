@@ -6,7 +6,7 @@ import { useTheme } from '../theme/ThemeContext';
 
 interface Props { onBack: () => void; }
 
-type Section = 'intro' | 'install' | 'config' | 'models' | 'indexing' | 'files' | 'security' | 'api' | 'pwa' | 'troubleshoot' | 'contributing';
+type Section = 'intro' | 'about' | 'install' | 'config' | 'models' | 'indexing' | 'files' | 'security' | 'api' | 'pwa' | 'troubleshoot' | 'contributing';
 
 interface DocSection {
   id: Section;
@@ -17,6 +17,7 @@ interface DocSection {
 
 const sections: DocSection[] = [
   { id: 'intro', labelEs: 'Introduccion', labelEn: 'Introduction', icon: '' },
+  { id: 'about', labelEs: 'Acerca de', labelEn: 'About', icon: '' },
   { id: 'install', labelEs: 'Instalacion', labelEn: 'Installation', icon: '' },
   { id: 'config', labelEs: 'Configuracion', labelEn: 'Configuration', icon: '' },
   { id: 'models', labelEs: 'Modelos', labelEn: 'Models', icon: '' },
@@ -50,11 +51,11 @@ export default function Docs({ onBack }: Props) {
     <motion.div className={`h-full min-w-0 max-w-full overflow-hidden flex flex-col ${isDark ? 'bg-black' : 'bg-white'}`} initial={{opacity:0}} animate={{opacity:1}}>
       {/* Header */}
       <div className={`shrink-0 flex items-center gap-3 px-4 pt-[env(safe-area-inset-top,0px)] pb-3 border-b ${isDark ? 'border-white/[0.06]' : 'border-gray-200'}`}>
-        <button onClick={onBack} aria-label={isEs ? 'Volver' : 'Go back'} className={`p-2 -ml-2 ${isDark ? 'text-white/60 hover:text-white' : 'text-gray-500 hover:text-gray-800'} active:scale-90 transition-transform`}>
+        <button onClick={onBack} aria-label={t('docsBack')} className={`p-2 -ml-2 ${isDark ? 'text-white/60 hover:text-white' : 'text-gray-500 hover:text-gray-800'} active:scale-90 transition-transform`}>
           <MdArrowBack size={20} />
         </button>
         <img src="/logo-of-app.webp" alt="TrinaxAI" className="w-10 h-10 rounded-xl" />
-        <span className={`text-sm font-medium ${isDark ? 'text-white/80' : 'text-gray-800'}`}>{isEs ? 'Documentacion' : 'Documentation'}</span>
+        <span className={`text-sm font-medium ${isDark ? 'text-white/80' : 'text-gray-800'}`}>{t('docsTitle')}</span>
       </div>
 
       <div className="flex-1 flex min-h-0 min-w-0 max-w-full">
@@ -117,7 +118,7 @@ export default function Docs({ onBack }: Props) {
 │        │                                   │
 │  ┌─────┴──────┐                            │
 │  │   Ollama   │  qwen2.5 · llama3.2       │
-│  │   :11434   │  bge-m3 · moondream       │
+│  │   :11434   │  bge-m3 · qwen2.5-vl      │
 │  └────────────┘                            │
 └──────────────────────────────────────────┘`}</pre>
               </div>
@@ -127,10 +128,102 @@ export default function Docs({ onBack }: Props) {
                 <ul className={`text-sm space-y-2 ${textSub}`}>
                   <li>🔒 <strong className={textMain}>{isEs ? '100% Privado' : '100% Private'}</strong> — {isEs ? 'Tus datos nunca salen de tu máquina. No se envía nada a servidores externos.' : 'Your data never leaves your machine. Nothing is sent to external servers.'}</li>
                   <li>💰 <strong className={textMain}>{isEs ? 'Gratis y Open Source' : 'Free & Open Source'}</strong> — {isEs ? 'Licencia AGPL-3.0-or-later. Sin costos ocultos, sin suscripciones.' : 'AGPL-3.0-or-later license. No hidden costs, no subscriptions.'}</li>
-                  <li>⚡ <strong className={textMain}>{isEs ? 'Rápido' : 'Fast'}</strong> — {isEs ? 'Respuestas en milisegundos. Sin latencia de red.' : 'Responses in milliseconds. No network latency.'}</li>
+                  <li>⚡ <strong className={textMain}>{isEs ? 'Local' : 'Local'}</strong> — {isEs ? 'Sin viajes a una nube externa; la velocidad depende de tu hardware y del modelo.' : 'No external-cloud round trips; speed depends on your hardware and model.'}</li>
                   <li>🧠 <strong className={textMain}>{isEs ? 'Conoce tu código' : 'Knows your code'}</strong> — {isEs ? 'El RAG indexa tus proyectos. La IA responde con contexto real de tu trabajo.' : 'RAG indexes your projects. The AI responds with real context from your work.'}</li>
                   <li>🌍 <strong className={textMain}>{isEs ? 'Multi-plataforma' : 'Cross-platform'}</strong> — Linux, macOS, Windows. PWA en iOS y Android.</li>
                 </ul>
+              </div>
+            </div>
+          )}
+
+          {/* ABOUT */}
+          {active === 'about' && (
+            <div className="space-y-6">
+              <h1 className={`text-2xl font-bold ${textMain}`}>{isEs ? 'Acerca de TrinaxAI' : 'About TrinaxAI'}</h1>
+
+              <h2 className={`text-lg font-semibold ${textMain}`}>{isEs ? 'Por qué existe TrinaxAI' : 'Why TrinaxAI Exists'}</h2>
+              <div className={`p-5 rounded-2xl border ${sectionBg}`}>
+                <p className={`text-sm leading-relaxed ${textSub}`}>
+                  {isEs
+                    ? 'TrinaxAI nació de una convicción simple: la IA debe pertenecer a todos, no solo a las grandes tecnológicas. En un mundo donde los asistentes de IA exigen suscripciones a la nube, recolectan tus datos e imponen límites de uso, TrinaxAI toma el camino opuesto.'
+                    : 'TrinaxAI was born from a simple conviction: AI should belong to everyone, not just big tech companies. In a world where AI assistants increasingly require cloud subscriptions, collect your data, and impose usage limits, TrinaxAI takes the opposite path.'}
+                </p>
+                <p className={`text-sm leading-relaxed mt-3 ${textSub}`}>
+                  {isEs
+                    ? 'Es un asistente de IA 100% local y de código abierto que se ejecuta completamente en tu máquina. Sin nube. Sin suscripciones. Sin límites. La visión es clara: ofrecer a desarrolladores, estudiantes y usuarios comunes la misma experiencia potente de IA que obtendrían de productos comerciales, pero con privacidad, libertad y control total.'
+                    : 'It is a 100% local, open-source AI assistant that runs entirely on your machine. No cloud. No subscriptions. No limits. The vision is clear: give developers, students, and everyday users the same powerful AI experience they would get from commercial products, but with privacy, freedom, and full control.'}
+                </p>
+              </div>
+
+              <h2 className={`text-lg font-semibold ${textMain}`}>{isEs ? 'Principios fundamentales' : 'Core Principles'}</h2>
+              <div className={`p-5 rounded-2xl border ${sectionBg}`}>
+                <ul className={`text-sm space-y-2 ${textSub}`}>
+                  <li>🏠 <strong className={textMain}>{isEs ? 'Local-first' : 'Local-first'}</strong> — {isEs ? 'Todo se ejecuta en tu máquina a través de Ollama. Sin claves API.' : 'Everything runs on your machine via Ollama. No API keys required.'}</li>
+                  <li>🔒 <strong className={textMain}>{isEs ? 'Privacidad' : 'Privacy-respecting'}</strong> — {isEs ? 'Tu código, tus chats, tus documentos se quedan contigo.' : 'Your code, your chats, your documents stay with you.'}</li>
+                  <li>📖 <strong className={textMain}>{isEs ? 'Código abierto' : 'Open-source'}</strong> — AGPL-3.0-or-later. {isEs ? 'La comunidad puede auditar, bifurcar y mejorar.' : 'The community can audit, fork, and improve.'}</li>
+                  <li>🚀 <strong className={textMain}>{isEs ? 'Calidad de producción' : 'Production-grade'}</strong> — {isEs ? 'Funciones reales: RAG con búsqueda híbrida, modo voz, visión, PWA, CLI.' : 'Real features: RAG with hybrid search, voice mode, vision, PWA, CLI.'}</li>
+                  <li>🌐 <strong className={textMain}>{isEs ? 'Bilingüe por diseño' : 'Bilingual by design'}</strong> — {isEs ? 'Español e inglés, detectados automáticamente. Creado por un desarrollador latinoamericano para una audiencia global.' : 'Spanish and English, auto-detected. Built by a Latin American developer for a global audience.'}</li>
+                </ul>
+              </div>
+
+              <h2 className={`text-lg font-semibold ${textMain}`}>{isEs ? 'El creador — TrinaxCode' : 'The Creator — TrinaxCode'}</h2>
+              <div className={`p-5 rounded-2xl border ${sectionBg}`}>
+                <p className={`text-sm leading-relaxed ${textSub}`}>
+                  {isEs
+                    ? 'TrinaxCode es un Full Stack Web Developer radicado en Tuxtla Gutiérrez, Chiapas, México, originario de Nicaragua. Su filosofía: "Impacto en producción, no demos de tutorial." No construye portafolios llenos de clones — construye productos que la gente realmente usa, que rankean en Google y resuelven problemas reales.'
+                    : 'TrinaxCode is a Full Stack Web Developer based in Tuxtla Gutiérrez, Chiapas, México, originally from Nicaragua. His philosophy: "Production impact over tutorial demos." He doesn\'t build portfolios full of clones — he builds products people actually use, that rank on Google and solve real problems.'}
+                </p>
+
+                <h3 className={`text-sm font-semibold mt-4 ${textMain}`}>{isEs ? 'Trayectoria' : 'Background'}</h3>
+                <ul className={`text-sm space-y-1.5 mt-2 ${textSub}`}>
+                  <li>🎓 <strong>Harvard CS50x & CS50W</strong> — {isEs ? 'Certificado Profesional de Harvard en Programación Web.' : 'Harvard Professional Certificate in Web Programming.'}</li>
+                  <li>🏫 <strong>Stanford Code in Place 2026</strong> — {isEs ? 'Participante seleccionado en la iniciativa internacional de Stanford.' : 'Selected participant in Stanford\'s international CS education initiative.'}</li>
+                  <li>💻 <strong>Full Stack</strong> — React, TypeScript, Django, PostgreSQL, Firebase, Node.js.</li>
+                  <li>📱 <strong>{isEs ? 'Creador de contenido' : 'Content creator'}</strong> — +60K {isEs ? 'seguidores en TikTok compartiendo conocimiento de programación en español.' : 'followers on TikTok sharing coding knowledge in Spanish.'}</li>
+                </ul>
+
+                <h3 className={`text-sm font-semibold mt-4 ${textMain}`}>{isEs ? 'Proyectos destacados' : 'Featured Projects'}</h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
+                  {[
+                    { name: 'Rednura Web', descEs: 'E-commerce de suplementos naturales. #1 en Tuxtla Gutiérrez.', descEn: 'Natural supplements e-commerce. #1 in Tuxtla Gutiérrez.' },
+                    { name: 'Belcons Remodeling', descEs: 'Plataforma full-stack para empresa de remodelación en EE.UU.', descEn: 'Full-stack platform for a US remodeling company.' },
+                    { name: 'CEDAS Montessori', descEs: 'Sitio institucional para escuela Montessori.', descEn: 'Institutional site for a Montessori school.' },
+                    { name: 'Iglesia Adventista El Jobo', descEs: 'Portal comunitario con +10,000 visitas.', descEn: 'Community portal with +10,000 visits.' },
+                  ].map((p) => (
+                    <div key={p.name} className={`p-3 rounded-lg border ${sectionBg}`}>
+                      <p className={`text-xs font-semibold ${textMain}`}>{p.name}</p>
+                      <p className={`text-[11px] mt-1 ${textMuted}`}>{isEs ? p.descEs : p.descEn}</p>
+                    </div>
+                  ))}
+                </div>
+
+                <h3 className={`text-sm font-semibold mt-4 ${textMain}`}>{isEs ? 'Conecta' : 'Connect'}</h3>
+                <div className="flex flex-wrap gap-2 mt-2">
+                  {[
+                    { label: 'GitHub', href: 'https://github.com/TrinaxCode' },
+                    { label: 'LinkedIn', href: 'https://www.linkedin.com/in/trinaxcode/' },
+                    { label: 'X', href: 'https://x.com/TrinaxCode' },
+                    { label: 'Email', href: 'mailto:trinaxcode@gmail.com' },
+                  ].map((link) => (
+                    <a key={link.label} href={link.href} target="_blank" rel="noopener noreferrer"
+                      className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+                        isDark
+                          ? 'border-white/[0.08] text-white/60 hover:text-white hover:border-white/[0.15] hover:bg-white/[0.04]'
+                          : 'border-gray-200 text-gray-500 hover:text-gray-800 hover:border-gray-300 hover:bg-gray-50'
+                      }`}
+                    >
+                      {link.label}
+                    </a>
+                  ))}
+                </div>
+              </div>
+
+              <div className={`p-4 rounded-2xl border text-center ${isDark ? 'bg-[#006bbd]/10 border-[#006bbd]/20' : 'bg-[#006bbd]/5 border-[#006bbd]/20'}`}>
+                <p className={`text-sm ${isDark ? 'text-[#006bbd]' : 'text-[#006bbd]'}`}>
+                  {isEs
+                    ? 'TrinaxAI está abierto a contribuidores, colaboradores y a cualquiera que crea que la IA debe ser libre, privada y local.'
+                    : 'TrinaxAI is open to contributors, collaborators, and anyone who believes AI should be free, private, and local.'}
+                </p>
               </div>
             </div>
           )}
@@ -281,10 +374,10 @@ python service_manager.py start`}</pre>
                 <h3 className={`font-semibold ${textMain}`}>{isEs ? 'Variables de entorno' : 'Environment Variables'}</h3>
                 <pre className={`text-xs font-mono p-3 rounded-lg ${codeBg}`}>{`TRINAXAI_CORS_ORIGINS=https://localhost:3334,https://YOUR-LAN-IP:3334
 TRINAXAI_INDEX_DIR=~/Documents
-TRINAXAI_PROFILE=ultra  # low, medium, high, ultra
-VITE_TRINAXAI_RAG_TARGET=http://localhost:3333
-VITE_TRINAXAI_VISION_MODEL=qwen2.5vl:3b
-VITE_TRINAXAI_VISION_QUALITY_MODEL=qwen2.5vl:7b`}</pre>
+TRINAXAI_PROFILE=ultra  # 4gb, 8gb, 16gb, max, ultra
+TRINAXAI_RAG_TARGET=http://localhost:3333
+VITE_TRINAXAI_VISION_MODEL=qwen3-vl:4b
+VITE_TRINAXAI_VISION_QUALITY_MODEL=qwen3-vl:8b`}</pre>
                 <p className={`text-xs ${textMuted}`}>
                   {isEs
                     ? 'Ultra activa contexto 16K, más workers de embeddings y modelos profundos para máquinas con 32GB+ RAM y GPU potente. El reranker es opcional con requirements-rerank.txt.'
@@ -315,15 +408,15 @@ VITE_TRINAXAI_VISION_QUALITY_MODEL=qwen2.5vl:7b`}</pre>
                     <tbody>
                       <tr><td className="py-1.5">{isEs ? 'Complejo / +600 chars' : 'Complex / >600 chars'}</td><td className="font-mono text-[#4ea3e0]">qwen2.5-coder:7b *</td></tr>
                       <tr><td className="py-1.5">{isEs ? 'Código detectado' : 'Code detected'}</td><td className="font-mono text-[#4ea3e0]">qwen2.5-coder:3b</td></tr>
-                      <tr><td className="py-1.5">{isEs ? 'Chat general' : 'General chat'}</td><td className="font-mono text-[#4ea3e0]">llama3.2:3b</td></tr>
-                      <tr><td className="py-1.5">{isEs ? 'Trivial (-25 chars)' : 'Trivial (&lt;25 chars)'}</td><td className="font-mono text-[#4ea3e0]">llama3.2:3b</td></tr>
-                      <tr><td className="py-1.5">{isEs ? 'Visión (rápido)' : 'Vision (fast)'}</td><td className="font-mono text-[#4ea3e0]">qwen2.5vl:3b</td></tr>
-                      <tr><td className="py-1.5">{isEs ? 'Visión (calidad)' : 'Vision (quality)'}</td><td className="font-mono text-[#4ea3e0]">qwen2.5vl:7b</td></tr>
+                      <tr><td className="py-1.5">{isEs ? 'Chat general' : 'General chat'}</td><td className="font-mono text-[#4ea3e0]">qwen3:4b-instruct-2507</td></tr>
+                      <tr><td className="py-1.5">{isEs ? 'Trivial (-25 chars)' : 'Trivial (&lt;25 chars)'}</td><td className="font-mono text-[#4ea3e0]">qwen3:4b-instruct-2507</td></tr>
+                      <tr><td className="py-1.5">{isEs ? 'Visión (rápido)' : 'Vision (fast)'}</td><td className="font-mono text-[#4ea3e0]">qwen3-vl:4b</td></tr>
+                      <tr><td className="py-1.5">{isEs ? 'Visión (calidad)' : 'Vision (quality)'}</td><td className="font-mono text-[#4ea3e0]">qwen3-vl:8b</td></tr>
                       <tr><td className="py-1.5">{isEs ? 'Embeddings' : 'Embeddings'}</td><td className="font-mono text-[#4ea3e0]">bge-m3</td></tr>
                     </tbody>
                   </table>
                 </div>
-                <p className={`text-[11px] ${textMuted}`}>* {isEs ? 'En perfil Ultra: qwen2.5-coder:14b. En perfil bajo (8gb): qwen2.5-coder:3b.' : 'On Ultra profile: qwen2.5-coder:14b. On low profile (8gb): qwen2.5-coder:3b.'}</p>
+                <p className={`text-[11px] ${textMuted}`}>* {isEs ? 'En perfiles Max/Ultra: qwen3-coder:30b. En perfil bajo (8gb): qwen2.5-coder:3b.' : 'On Max/Ultra profiles: qwen3-coder:30b. On low profile (8gb): qwen2.5-coder:3b.'}</p>
               </div>
             </div>
           )}
@@ -359,18 +452,18 @@ python index.py
 curl -X POST http://localhost:3333/system/reload
 
 # TrinaxAI CLI interactivo
-python trinaxai_cli.py --engine rag` : `# Full indexing
+trinaxai chat --engine rag` : `# Full indexing
 python index.py
 
 # Reload index in the API
 curl -X POST http://localhost:3333/system/reload
 
 # Interactive TrinaxAI CLI
-python trinaxai_cli.py --engine rag`}</pre>
+trinaxai chat --engine rag`}</pre>
                 <p className={`text-xs ${textMuted}`}>
                   {isEs
-                    ? 'query.py sigue existiendo como wrapper compatible, pero el nombre nuevo es TrinaxAI CLI: trinaxai_cli.py.'
-                    : 'query.py still exists as a compatible wrapper, but the new name is TrinaxAI CLI: trinaxai_cli.py.'}
+                    ? 'Instala la CLI desde la raíz con pip install -e .; query.py se conserva como wrapper de compatibilidad.'
+                    : 'Install the CLI from the repository root with pip install -e .; query.py remains as a compatibility wrapper.'}
                 </p>
               </div>
             </div>

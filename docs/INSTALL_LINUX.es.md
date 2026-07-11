@@ -40,7 +40,17 @@ Desde una terminal:
 curl -fsSL https://raw.githubusercontent.com/TrinaxCode/TrinaxAI/main/install.sh | bash
 ```
 
-El instalador clona el proyecto en `~/trinaxai` si todavia no existe, detecta tu RAM, crea `.env`, instala dependencias necesarias y prepara la PWA automaticamente. Las opciones como descargar modelos, control LAN, autoarranque e iniciar servicios se preguntan por defecto. Usa `./install.sh --non-interactive` para instalaciones automatizadas.
+Una instalacion nueva se guarda en `$XDG_DATA_HOME/trinaxai` (normalmente `~/.local/share/trinaxai`), manteniendo compatibilidad con instalaciones anteriores en `~/trinaxai`. Puedes elegir otra ruta con `bash -s -- --install-dir /ruta`. El instalador detecta tu RAM, crea `.env`, instala dependencias y prepara la PWA.
+
+Despues puedes administrarla desde cualquier carpeta:
+
+```bash
+trinaxai doctor
+trinaxai update
+trinaxai uninstall
+```
+
+`trinaxai uninstall -y` usa opciones seguras y conserva indices y modelos salvo que pidas eliminarlos.
 
 Si ya clonaste el repositorio:
 
@@ -166,14 +176,14 @@ Modelos base:
 
 ```bash
 ollama pull qwen2.5-coder:3b
-ollama pull llama3.2:3b
+ollama pull qwen3:4b-instruct-2507-q4_K_M
 ollama pull bge-m3
 ```
 
 Vision:
 
 ```bash
-ollama pull qwen2.5vl:3b
+ollama pull qwen3-vl:4b
 ```
 
 Equipos con mas memoria:
@@ -185,8 +195,8 @@ ollama pull qwen2.5-coder:7b
 Perfil ultra:
 
 ```bash
-ollama pull qwen2.5-coder:14b
-ollama pull qwen2.5vl:7b
+ollama pull qwen3-coder:30b
+ollama pull qwen3-vl:32b
 ```
 
 ## Indexar tus archivos
@@ -341,6 +351,8 @@ cd ~/trinaxai
 ```
 
 El actualizador pregunta si quieres crear backup, descargar codigo nuevo, actualizar modelos, cambiar autoarranque, reiniciar servicios y correr la auditoria. Las dependencias Python/npm y el build de la PWA siguen siendo automaticos.
+
+El instalador también activa un timer persistente de usuario que comprueba GitHub cada semana y ejecuta una actualización segura sin preguntas. Consulta `logs/auto-update.log` o desactívalo con `python scripts/auto_update.py disable`.
 
 Si actualizas manualmente:
 

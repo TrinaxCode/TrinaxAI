@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import plistlib
 import tempfile
 import unittest
 from pathlib import Path
@@ -95,6 +96,26 @@ class ServiceManagerPersistenceTests(unittest.TestCase):
                         ["/usr/bin/systemctl", "enable", "ai-rag.service"],
                     ],
                 )
+
+    def test_macos_autostart_plist_handles_spaces_and_xml_characters(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp) / "User & Family"
+            base_dir = home / "Application Support" / "TrinaxAI"
+            base_dir.mkdir(parents=True)
+            completed = SimpleNamespace(returncode=0, stdout="", stderr="")
+            with (
+                patch.object(sm.platform, "system", return_value="Darwin"),
+                patch.object(sm.Path, "home", return_value=home),
+                patch.object(sm.subprocess, "run", return_value=completed),
+            ):
+                result = sm.enable_autostart(str(base_dir))
+
+            plist = home / "Library" / "LaunchAgents" / "com.trinaxcode.trinaxai.plist"
+            with plist.open("rb") as handle:
+                payload = plistlib.load(handle)
+            self.assertTrue(result.running)
+            self.assertEqual(payload["WorkingDirectory"], str(base_dir))
+            self.assertEqual(payload["ProgramArguments"][-1], str(base_dir))
 
 
 if __name__ == "__main__":

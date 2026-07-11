@@ -362,6 +362,28 @@ class TestRuntimeAuthorizeSystem:
         for host in ["127.0.0.2", "127.255.255.255", "0:0:0:0:0:0:0:1"]:
             rag_api._authorize_system(_make_request(client_host=host))
 
+    def test_runtime_rejects_untrusted_browser_origin_even_on_loopback(self, monkeypatch):
+        import rag_api
+
+        monkeypatch.setattr(rag_api, "ADMIN_TOKEN", "")
+        request = _make_request(
+            client_host="127.0.0.1",
+            headers={"Origin": "https://malicious.example"},
+        )
+        with pytest.raises(HTTPException) as exc:
+            rag_api._authorize_system(request)
+        assert exc.value.status_code == 403
+
+    def test_runtime_accepts_trusted_pwa_origin(self, monkeypatch):
+        import rag_api
+
+        monkeypatch.setattr(rag_api, "ADMIN_TOKEN", "")
+        request = _make_request(
+            client_host="127.0.0.1",
+            headers={"Origin": "https://localhost:3334"},
+        )
+        rag_api._authorize_system(request)
+
 
 # ── No dangerous command execution ──
 

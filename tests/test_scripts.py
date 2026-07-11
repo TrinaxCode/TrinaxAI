@@ -53,6 +53,29 @@ def test_windows_installer_has_automatic_ollama_fallback() -> None:
     assert "O=Ollama Inc\\." in script
 
 
+def test_installers_support_client_first_install_locations() -> None:
+    posix = (ROOT / "install.sh").read_text(encoding="utf-8")
+    windows = (ROOT / "install.ps1").read_text(encoding="utf-8")
+
+    assert "--install-dir" in posix
+    assert "TRINAXAI_HOME" in posix
+    assert "XDG_DATA_HOME" in posix
+    assert "Application Support" in posix
+    assert "[string]$InstallDir" in windows
+    assert "TrinaxAI/archive/refs/heads/main.zip" in windows
+    assert "TRINAXAI_HOME=" in windows
+
+
+def test_uninstallers_remove_cli_registration_and_trusted_certificates() -> None:
+    posix = (ROOT / "uninstall.sh").read_text(encoding="utf-8")
+    windows = (ROOT / "uninstall.ps1").read_text(encoding="utf-8")
+
+    assert '.local/bin/trinaxai' in posix
+    assert "trinaxai-local.crt" in posix
+    assert "Remove-UserPath" in windows
+    assert "Remove-TrinaxAICertificates" in windows
+
+
 def test_windows_installer_configures_rag_transport_and_lan_firewall() -> None:
     script = (ROOT / "install.ps1").read_text(encoding="utf-8")
 
@@ -68,17 +91,42 @@ def test_installers_use_light_models_for_8gb_profile() -> None:
         script = (ROOT / script_name).read_text(encoding="utf-8")
         assert "llama3.2:1b" in script
         assert "qwen2.5-coder:1.5b" in script
-        assert "nomic-embed-text" in script
-        assert "moondream" in script
+        assert "bge-m3" in script
+        assert "qwen3-vl:2b" in script
 
 
 def test_windows_update_and_uninstall_scripts_exist() -> None:
     update = (ROOT / "update.ps1").read_text(encoding="utf-8")
     uninstall = (ROOT / "uninstall.ps1").read_text(encoding="utf-8")
 
-    assert "git pull --ff-only" in update
+    assert "Sync-TrinaxRepository" in update
+    assert "git fetch --prune origin main" in update
     assert "npm run build" in update
     assert "service_manager.py" in update
     assert "Type UNINSTALL to continue" in uninstall
     assert "Remove-TrinaxAIFirewallRules" in uninstall
     assert "service_manager.py" in uninstall
+
+
+def test_installers_manage_weekly_automatic_updates() -> None:
+    posix_install = (ROOT / "install.sh").read_text(encoding="utf-8")
+    windows_install = (ROOT / "install.ps1").read_text(encoding="utf-8")
+    posix_uninstall = (ROOT / "uninstall.sh").read_text(encoding="utf-8")
+    windows_uninstall = (ROOT / "uninstall.ps1").read_text(encoding="utf-8")
+
+    assert "scripts/auto_update.py enable" in posix_install
+    assert '"scripts\\auto_update.py" "enable"' in windows_install
+    assert "trinaxai-update.timer" in posix_uninstall
+    assert "TrinaxAI Weekly Update" in windows_uninstall
+
+
+def test_updaters_support_old_archive_installations_and_scheduled_mode() -> None:
+    posix = (ROOT / "update.sh").read_text(encoding="utf-8")
+    windows = (ROOT / "update.ps1").read_text(encoding="utf-8")
+
+    assert "--scheduled" in posix
+    assert "git init -q" in posix
+    assert "git fetch --prune origin main" in posix
+    assert "[switch]$Scheduled" in windows
+    assert "git init -q" in windows
+    assert "git fetch --prune origin main" in windows

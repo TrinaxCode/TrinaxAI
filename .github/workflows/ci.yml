@@ -49,6 +49,7 @@ jobs:
               pytest -q
               tests/test_cli_parser.py
               tests/test_cli_commands.py
+              tests/test_cli_runtime.py
               tests/test_core_config.py
               tests/test_config_profiles.py
               tests/test_usage_summary.py
@@ -116,6 +117,8 @@ jobs:
           trinaxai doctor
           trinaxai ask --help
           trinaxai index --help
+          trinaxai update --help
+          trinaxai uninstall --help
 
   scripts:
     name: scripts (${{ matrix.os }})

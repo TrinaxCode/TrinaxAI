@@ -1,9 +1,10 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
-import type { ChatSession, ChatMessage, ChatEngine } from '../lib/api';
+import type { ChatSession, ChatMessage, ChatEngine, ChatFolder } from '../lib/api';
 import { uid, generateTitle } from '../lib/api';
 import { markChatSessionDeleted, onSharedStateUpdated, scheduleSharedStateSync } from '../lib/sharedState';
 
 const STORAGE_KEY = 'tc-chat-sessions';
+const FOLDERS_STORAGE_KEY = 'tc-chat-folders';
 const STORAGE_BACKUP_KEY = 'tc-chat-sessions-backup';
 const MAX_STORED_SESSIONS = 80;
 const MAX_STORED_IMAGE_CHARS = 180_000;
@@ -87,6 +88,13 @@ function loadSessions(): ChatSession[] {
   return [];
 }
 
+function loadFolders(): ChatFolder[] {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(FOLDERS_STORAGE_KEY) || '[]');
+    return Array.isArray(parsed) ? parsed.filter((folder) => folder?.id && folder?.name) : [];
+  } catch { return []; }
+}
+
 function estimateSize(sessions: ChatSession[]): number {
   try {
     return new Blob([JSON.stringify(sessions)]).size;
@@ -150,11 +158,15 @@ function saveSessions(sessions: ChatSession[]): void {
 
 export function useChatHistory() {
   const [initialState] = useState(() => {
+    // Always start on a fresh chat instead of resuming the previous one.
+    // Past chats stay available in the sidebar; App.tsx creates a new blank
+    // session automatically because activeId begins as null.
     const list = loadSessions();
-    return { sessions: list, activeId: list.length > 0 ? list[0].id : null };
+    return { sessions: list, activeId: null };
   });
   const [sessions, setSessions] = useState<ChatSession[]>(initialState.sessions);
   const [activeId, setActiveId] = useState<string | null>(initialState.activeId);
+  const [folders, setFolders] = useState<ChatFolder[]>(() => loadFolders());
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const latestSessionsRef = useRef<ChatSession[]>(initialState.sessions);
@@ -178,21 +190,30 @@ export function useChatHistory() {
     return next;
   }, []);
 
+  const persistFolders = useCallback((next: ChatFolder[]) => {
+    setFolders(next);
+    try { localStorage.setItem(FOLDERS_STORAGE_KEY, JSON.stringify(next)); } catch { /* quota handled by chat persistence */ }
+  }, []);
+
   const activeSession = sessions.find((s) => s.id === activeId) ?? null;
 
   const lastSyncRawRef = useRef<string | null>(null);
 
   useEffect(() => onSharedStateUpdated(() => {
+    setFolders(loadFolders());
     const raw = localStorage.getItem('tc-chat-sessions');
     if (raw === lastSyncRawRef.current) return;
     lastSyncRawRef.current = raw;
     const list = loadSessions();
     setSessions(list);
-    setActiveId((current) => current && list.some((s) => s.id === current) ? current : list[0]?.id ?? null);
+    // Keep the current chat if it still exists; otherwise fall back to a fresh
+    // chat (activeId = null) rather than resuming a previous one. App.tsx
+    // creates a new blank session when there is no active chat.
+    setActiveId((current) => current && list.some((s) => s.id === current) ? current : null);
   }), []);
 
   const createSession = useCallback(
-    (engine: ChatEngine = 'ollama', title = defaultNewChatTitle()) => {
+    (engine: ChatEngine = 'ollama', title = defaultNewChatTitle(), folderId?: string) => {
       const session: ChatSession = {
         id: uid(),
         title,
@@ -200,6 +221,7 @@ export function useChatHistory() {
         engine,
         createdAt: Date.now(),
         updatedAt: Date.now(),
+        folderId,
       };
       persist((prev) => [session, ...prev.filter((s) => s.id !== session.id && !isBlankDefaultSession(s))]);
       setActiveId(session.id);
@@ -269,6 +291,23 @@ export function useChatHistory() {
     [activeId, persist],
   );
 
+  const createFolder = useCallback((name: string) => {
+    const trimmed = name.trim();
+    if (!trimmed) return null;
+    const folder: ChatFolder = { id: uid(), name: trimmed, createdAt: Date.now(), updatedAt: Date.now() };
+    persistFolders([folder, ...folders]);
+    return folder;
+  }, [folders, persistFolders]);
+
+  const moveSessionToFolder = useCallback((id: string, folderId?: string) => {
+    persist((prev) => prev.map((session) => session.id === id ? { ...session, folderId, updatedAt: Date.now() } : session));
+  }, [persist]);
+
+  const deleteFolder = useCallback((id: string) => {
+    persistFolders(folders.filter((folder) => folder.id !== id));
+    persist((prev) => prev.map((session) => session.folderId === id ? { ...session, folderId: undefined, updatedAt: Date.now() } : session));
+  }, [folders, persist, persistFolders]);
+
   return {
     sessions,
     activeSession,
@@ -278,5 +317,9 @@ export function useChatHistory() {
     selectSession,
     updateSession,
     setEngine,
+    folders,
+    createFolder,
+    moveSessionToFolder,
+    deleteFolder,
   };
 }

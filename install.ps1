@@ -4,8 +4,10 @@ param(
   [switch]$NoModels,
   [switch]$NoVision,
   [switch]$NoAutostart,
+  [switch]$NoAutoUpdate,
   [switch]$NoStart,
   [switch]$LanSystem,
+  [string]$InstallDir = "",
   [ValidateSet("8gb", "16gb", "max", "ultra")]
   [string]$Profile = ""
 )
@@ -437,7 +439,54 @@ Write-Host " TrinaxAI - Local AI Assistant for Windows " -ForegroundColor Blue
 Write-Host "==========================================" -ForegroundColor Blue
 Write-Host " Privacy: 100% local. Nothing leaves your machine." -ForegroundColor Cyan
 
-$Repo = Split-Path -Parent $MyInvocation.MyCommand.Path
+$ScriptPath = $MyInvocation.MyCommand.Path
+$LocalRepo = if ($ScriptPath) { Split-Path -Parent $ScriptPath } else { "" }
+$InstallDirWasProvided = -not [string]::IsNullOrWhiteSpace($InstallDir)
+if (-not $InstallDir) { $InstallDir = Join-Path $env:LOCALAPPDATA "TrinaxAI" }
+$LocalRepoIsTarget = $false
+if ($LocalRepo -and $InstallDirWasProvided) {
+  $LocalRepoIsTarget = ([IO.Path]::GetFullPath($LocalRepo) -eq [IO.Path]::GetFullPath($InstallDir))
+}
+
+# Support the true one-command flow:
+#   irm https://raw.githubusercontent.com/TrinaxCode/TrinaxAI/main/install.ps1 | iex
+if (
+  -not $LocalRepo -or
+  -not (Test-Path (Join-Path $LocalRepo "pyproject.toml")) -or
+  ($InstallDirWasProvided -and -not $LocalRepoIsTarget)
+) {
+  $Repo = [IO.Path]::GetFullPath($InstallDir)
+  if ((Test-Path $Repo) -and -not (Test-Path (Join-Path $Repo "pyproject.toml"))) {
+    throw "Install directory exists but is not a TrinaxAI installation: $Repo"
+  }
+  if (-not (Test-Path (Join-Path $Repo "pyproject.toml"))) {
+    Write-Step "0/6 Download TrinaxAI"
+    $TempRoot = Join-Path $env:TEMP ("trinaxai-" + [guid]::NewGuid().ToString("N"))
+    $Archive = Join-Path $TempRoot "trinaxai.zip"
+    New-Item -ItemType Directory -Force -Path $TempRoot | Out-Null
+    Invoke-WebRequest -Uri "https://github.com/TrinaxCode/TrinaxAI/archive/refs/heads/main.zip" -OutFile $Archive -UseBasicParsing
+    Expand-Archive -LiteralPath $Archive -DestinationPath $TempRoot -Force
+    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $Repo) | Out-Null
+    Move-Item -LiteralPath (Join-Path $TempRoot "TrinaxAI-main") -Destination $Repo
+    Remove-Item -LiteralPath $TempRoot -Recurse -Force
+    "Managed by the TrinaxAI installer." | Set-Content -Encoding UTF8 (Join-Path $Repo ".trinaxai-managed")
+  }
+  $Forward = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", (Join-Path $Repo "install.ps1"), "-InstallDir", $Repo)
+  if ($Interactive) { $Forward += "-Interactive" }
+  if ($NonInteractive) { $Forward += "-NonInteractive" }
+  if ($NoModels) { $Forward += "-NoModels" }
+  if ($NoVision) { $Forward += "-NoVision" }
+  if ($NoAutostart) { $Forward += "-NoAutostart" }
+  if ($NoAutoUpdate) { $Forward += "-NoAutoUpdate" }
+  if ($NoStart) { $Forward += "-NoStart" }
+  if ($LanSystem) { $Forward += "-LanSystem" }
+  if ($Profile) { $Forward += @("-Profile", $Profile) }
+  $PowerShellHost = try { (Get-Process -Id $PID).Path } catch { "powershell.exe" }
+  & $PowerShellHost @Forward
+  exit $LASTEXITCODE
+}
+
+$Repo = $LocalRepo
 Set-Location $Repo
 
 $RamGb = [math]::Round((Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory / 1GB)
@@ -470,36 +519,42 @@ if ((-not $NonInteractive) -and $Mode -match "^[Aa]") {
   Write-Ok "Automatic setup selected: profile=$Profile"
 }
 
-$ModelGeneral = "llama3.2:3b"
+$ModelGeneral = "qwen3:4b-instruct-2507-q4_K_M"
 $ModelCode = "qwen2.5-coder:3b"
-$ModelDeep = "qwen2.5-coder:3b"
-$ModelFast = "llama3.2:3b"
+$ModelDeep = "qwen2.5-coder:7b"
+$ModelFast = "qwen3:4b-instruct-2507-q4_K_M"
 $EmbedPreset = "balanced"
 $EmbedModel = "bge-m3"
 $EmbedDims = "1024"
 $EmbedBatch = "8"
 $EmbedKeepAlive = "15m"
-$VisionModel = "qwen2.5vl:3b"
-$VisionQualityModel = "qwen2.5vl:7b"
+$VisionModel = "qwen3-vl:4b"
+$VisionQualityModel = "qwen3-vl:8b"
 if ($Profile -eq "8gb") {
-  $ModelGeneral = "llama3.2:1b"
+  $ModelGeneral = "qwen3:4b-instruct-2507-q4_K_M"
   $ModelCode = "qwen2.5-coder:1.5b"
-  $ModelDeep = "qwen2.5-coder:1.5b"
+  $ModelDeep = "qwen2.5-coder:3b"
   $ModelFast = "llama3.2:1b"
-  $EmbedPreset = "lite"
-  $EmbedModel = "nomic-embed-text"
-  $EmbedDims = "768"
+  $EmbedPreset = "balanced"
+  $EmbedModel = "bge-m3"
+  $EmbedDims = "1024"
   $EmbedBatch = "1"
   $EmbedKeepAlive = "5m"
-  $VisionModel = "moondream"
-  $VisionQualityModel = "qwen2.5vl:3b"
+  $VisionModel = "qwen3-vl:2b"
+  $VisionQualityModel = "qwen3-vl:4b"
 } elseif ($Profile -eq "max") {
-  $ModelDeep = "qwen2.5-coder:7b"
-  $VisionModel = "qwen2.5vl:7b"
+  $ModelGeneral = "qwen3:30b-a3b-instruct-2507-q4_K_M"
+  $ModelCode = "qwen2.5-coder:7b"
+  $ModelDeep = "qwen3-coder:30b"
+  $VisionModel = "qwen3-vl:8b"
+  $VisionQualityModel = "qwen3-vl:32b"
   $EmbedKeepAlive = "30m"
 } elseif ($Profile -eq "ultra") {
-  $ModelDeep = "qwen2.5-coder:14b"
-  $VisionModel = "qwen2.5vl:7b"
+  $ModelGeneral = "qwen3:30b-a3b-instruct-2507-q4_K_M"
+  $ModelCode = "qwen2.5-coder:7b"
+  $ModelDeep = "qwen3-coder:30b"
+  $VisionModel = "qwen3-vl:8b"
+  $VisionQualityModel = "qwen3-vl:32b"
   $EmbedBatch = "16"
   $EmbedKeepAlive = "30m"
 }
@@ -564,6 +619,7 @@ if ($LanIp) { $Cors += ",https://$($LanIp):3334,http://$($LanIp):3334,https://$(
 
 $EnvLines = @(
   "# TrinaxAI generated configuration",
+  "TRINAXAI_HOME=`"$Repo`"",
   "TRINAXAI_PROFILE=$Profile",
   "TRINAXAI_PERFORMANCE_MODE=fast",
   "TRINAXAI_HOST=0.0.0.0",
@@ -592,7 +648,7 @@ $EnvLines = @(
   "TRINAXAI_ALLOW_LAN_SYSTEM=$EnableLanSystem",
   "TRINAXAI_ADMIN_TOKEN=$AdminToken",
   "TRINAXAI_CORS_ORIGINS=$Cors",
-  "TRINAXAI_INDEX_DIR=$($env:USERPROFILE)\Documents"
+  "TRINAXAI_INDEX_DIR=`"$($env:USERPROFILE)\Documents`""
 )
 if ($Profile -eq "ultra") {
   $EnvLines += @(
@@ -736,10 +792,18 @@ if (-not $NoAutostart) {
   & ".\.venv\Scripts\python.exe" "service_manager.py" "enable-autostart" "--base-dir" $Repo
   Write-Ok "Auto-start enabled"
 }
+if (-not $NoAutoUpdate -and (Test-Path "scripts\auto_update.py")) {
+  Write-Host "  Enabling safe weekly updates from GitHub..." -ForegroundColor Cyan
+  & ".\.venv\Scripts\python.exe" "scripts\auto_update.py" "enable" "--base-dir" $Repo
+  if ($LASTEXITCODE -eq 0) { Write-Ok "Automatic updates enabled (weekly)" }
+  else { Write-Warn "Could not enable the weekly update task." }
+}
 Write-Host "Then open:" -ForegroundColor Cyan
 Write-Host "  https://localhost:3334"
 Write-Host "CLI:" -ForegroundColor Cyan
 Write-Host "  trinaxai"
+Write-Host "Updates:" -ForegroundColor Cyan
+Write-Host "  Automatic check every week"
 if ($LanIp) { Write-Host "  https://$($LanIp):3334" }
 Write-Host ""
 if ($EnableLanSystem -eq 1) {

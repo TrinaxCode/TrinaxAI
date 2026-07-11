@@ -25,7 +25,7 @@ function Root() {
       if (r) {
         setInterval(async () => {
           if (r.installing || r.waiting) return;
-          await r.update();
+          await r.update().catch(() => undefined);
         }, 60 * 60 * 1000);
       }
     },

@@ -36,10 +36,10 @@ Install Python with the `Add python.exe to PATH` option checked.
 
 ## Recommended guided install
 
-Open PowerShell in the project folder and run:
+Open PowerShell and run the guided one-command installer. It downloads TrinaxAI to `%LOCALAPPDATA%\TrinaxAI` by default:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\install.ps1
+irm https://raw.githubusercontent.com/TrinaxCode/TrinaxAI/main/install.ps1 | iex
 ```
 
 The installer:
@@ -56,13 +56,21 @@ The installer:
 
 Required dependencies are installed automatically. Optional choices such as models, LAN system control, startup, and service start are prompted by default. Use `-NonInteractive` for scripted installs. The installer should not send you to a browser to download Ollama manually.
 
-If you don't have the project yet:
+If you already have the project or want to select another install directory:
 
 ```powershell
-git clone https://github.com/TrinaxCode/TrinaxAI.git $env:USERPROFILE\trinaxai
-cd $env:USERPROFILE\trinaxai
-powershell -ExecutionPolicy Bypass -File .\install.ps1
+powershell -ExecutionPolicy Bypass -File .\install.ps1 -InstallDir "D:\Apps\TrinaxAI"
 ```
+
+After installation, manage TrinaxAI from any directory:
+
+```powershell
+trinaxai doctor
+trinaxai update
+trinaxai uninstall
+```
+
+`trinaxai uninstall` is guided. `trinaxai uninstall -y` uses safe defaults and preserves indexes and Ollama models unless their removal is explicitly requested.
 
 ## Install dependencies manually
 
@@ -176,14 +184,14 @@ Base:
 
 ```powershell
 ollama pull qwen2.5-coder:3b
-ollama pull llama3.2:3b
+ollama pull qwen3:4b-instruct-2507-q4_K_M
 ollama pull bge-m3
 ```
 
 Vision:
 
 ```powershell
-ollama pull qwen2.5vl:3b
+ollama pull qwen3-vl:4b
 ```
 
 Machines with 16 GB or more:
@@ -195,8 +203,8 @@ ollama pull qwen2.5-coder:7b
 Machines with 32 GB or more:
 
 ```powershell
-ollama pull qwen2.5-coder:14b
-ollama pull qwen2.5vl:7b
+ollama pull qwen3-coder:30b
+ollama pull qwen3-vl:32b
 ```
 
 ## Index your files
@@ -319,6 +327,8 @@ powershell -ExecutionPolicy Bypass -File .\update.ps1
 
 The updater asks whether to create a backup, pull latest code, update models, change autostart, restart services, and run the readiness audit. Python/npm dependencies and the PWA build still run automatically.
 
+The installer creates a weekly Windows task named `TrinaxAI Weekly Update`. It fetches the newest updater, refreshes the complete application, preserves user data, and records its result in `logs\auto-update.log`.
+
 ## Backups
 
 Back up manually:
@@ -364,7 +374,7 @@ To access from a phone/tablet, Windows Defender Firewall must allow Node/Python 
 | PowerShell permission error | Run with `-ExecutionPolicy Bypass`. |
 | PWA cannot open from phone | Run PowerShell as Administrator and re-run `install.ps1` so it can add Private-network firewall rules for TCP 3333/3334. Also verify same Wi-Fi. |
 | HTTPS API shows invalid certificate | Normal with a local certificate; accept the warning. |
-| Out of memory | Use the `8gb` profile. It installs `llama3.2:1b`, `qwen2.5-coder:1.5b`, and `nomic-embed-text` by default. |
+| Out of memory | Use the `8gb` profile. It installs `qwen3:4b-instruct-2507-q4_K_M`, `llama3.2:1b` (fast), `qwen2.5-coder:1.5b`, and `bge-m3` by default. |
 
 ## Note on WSL
 

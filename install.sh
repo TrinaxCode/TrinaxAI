@@ -18,9 +18,11 @@ Usage:
   ./install.sh --no-models     Skip model downloads
   ./install.sh --no-vision     Skip vision model download
   ./install.sh --no-autostart  Do not enable boot autostart
+  ./install.sh --no-auto-update Do not enable the weekly automatic update
   ./install.sh --no-start      Do not start TrinaxAI after install
   ./install.sh --lan-system    Enable LAN system-control endpoints (requires admin token)
   ./install.sh --profile 8gb|16gb|max|ultra
+  ./install.sh --install-dir PATH  Choose the application directory
   ./install.sh --help          Show this help
 
 What it does:
@@ -32,6 +34,7 @@ What it does:
   6. Builds the PWA frontend (Node.js required)
   7. Asks whether to pull recommended Ollama models
   8. Asks whether to enable auto-start on boot and start TrinaxAI now
+  9. Enables a safe weekly GitHub update check
 
 Supported: Linux (apt/dnf/pacman/zypper/apk), macOS (Homebrew), Windows (Git Bash / WSL2)
 
@@ -42,9 +45,11 @@ Environment variables:
   TRINAXAI_INSTALL_MODELS=0     Skip model downloads
   TRINAXAI_INSTALL_VISION=0     Skip vision model download
   TRINAXAI_ENABLE_AUTOSTART=0   Skip boot autostart
+  TRINAXAI_ENABLE_AUTO_UPDATE=0 Skip weekly automatic updates
   TRINAXAI_START_NOW=0          Skip starting TrinaxAI at the end
   TRINAXAI_ALLOW_LAN_SYSTEM=1   Enable LAN system-control endpoints
   TRINAXAI_ADMIN_TOKEN=...      Admin token required for sensitive system endpoints
+  TRINAXAI_HOME=...             Application directory override
 EOF
   exit 0
 }
@@ -57,10 +62,12 @@ fi
 INSTALL_MODELS="${TRINAXAI_INSTALL_MODELS:-1}"
 INSTALL_VISION="${TRINAXAI_INSTALL_VISION:-1}"
 ENABLE_AUTOSTART="${TRINAXAI_ENABLE_AUTOSTART:-1}"
+ENABLE_AUTO_UPDATE="${TRINAXAI_ENABLE_AUTO_UPDATE:-1}"
 START_NOW="${TRINAXAI_START_NOW:-1}"
 PROFILE_OVERRIDE="${TRINAXAI_PROFILE:-}"
 ENABLE_LAN_SYSTEM="${TRINAXAI_ALLOW_LAN_SYSTEM:-0}"
 ADMIN_TOKEN="${TRINAXAI_ADMIN_TOKEN:-}"
+INSTALL_DIR="${TRINAXAI_HOME:-}"
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
@@ -70,6 +77,7 @@ while [ "$#" -gt 0 ]; do
     --no-models) INSTALL_MODELS=0; INSTALL_VISION=0;;
     --no-vision) INSTALL_VISION=0;;
     --no-autostart) ENABLE_AUTOSTART=0;;
+    --no-auto-update) ENABLE_AUTO_UPDATE=0;;
     --no-start) START_NOW=0;;
     --lan-system) ENABLE_LAN_SYSTEM=1;;
     --profile)
@@ -77,6 +85,12 @@ while [ "$#" -gt 0 ]; do
       PROFILE_OVERRIDE="${1:-}"
       ;;
     --profile=*) PROFILE_OVERRIDE="${1#*=}";;
+    --install-dir)
+      shift
+      INSTALL_DIR="${1:-}"
+      [ -n "$INSTALL_DIR" ] || { echo "--install-dir requires a path" >&2; exit 2; }
+      ;;
+    --install-dir=*) INSTALL_DIR="${1#*=}";;
     *)
       echo "Unknown option: $1" >&2
       usage
@@ -90,6 +104,48 @@ print_ok()    { echo -e "  ${GREEN}[OK]${NC} $1"; }
 print_warn()  { echo -e "  ${YELLOW}[!]${NC} $1"; }
 print_err()   { echo -e "  ${RED}[X]${NC} $1"; }
 print_info()  { echo -e "  ${CYAN}[i]${NC} $1"; }
+ensure_cli_path() {
+  case ":$PATH:" in
+    *":$HOME/.local/bin:"*) return 0 ;;
+  esac
+  local profile line
+  case "${SHELL:-}" in
+    */fish)
+      profile="$HOME/.config/fish/config.fish"
+      line='fish_add_path "$HOME/.local/bin"'
+      ;;
+    */zsh)
+      profile="$HOME/.zshrc"
+      line='export PATH="$HOME/.local/bin:$PATH"'
+      ;;
+    */bash)
+      if [ "${OS:-}" = "macos" ]; then profile="$HOME/.bash_profile"; else profile="$HOME/.bashrc"; fi
+      line='export PATH="$HOME/.local/bin:$PATH"'
+      ;;
+    *)
+      profile="$HOME/.profile"
+      line='export PATH="$HOME/.local/bin:$PATH"'
+      ;;
+  esac
+  mkdir -p "$(dirname "$profile")"
+  if ! grep -Fq '# >>> TrinaxAI CLI >>>' "$profile" 2>/dev/null; then
+    printf '\n%s\n%s\n%s\n' '# >>> TrinaxAI CLI >>>' "$line" '# <<< TrinaxAI CLI <<<' >> "$profile"
+    print_ok "CLI PATH saved in $profile"
+  fi
+  PATH="$HOME/.local/bin:$PATH"
+  export PATH
+}
+as_root() {
+  if [ "$(id -u 2>/dev/null || echo 1)" = "0" ]; then
+    "$@"
+  elif command -v sudo >/dev/null 2>&1; then
+    sudo "$@"
+  else
+    print_err "Administrator access is required for: $*"
+    print_info "Install the system dependencies manually, then run this installer again."
+    return 127
+  fi
+}
 ask() {
   local prompt="$1" reply=""
   if [ "${INTERACTIVE:-1}" != "1" ]; then
@@ -221,13 +277,13 @@ ensure_https_certificate() {
       print_warn "Could not auto-trust the certificate. Add $cert_crt to Keychain Access and trust it."
   elif [ "$OS" = "linux" ]; then
     if command -v update-ca-certificates >/dev/null 2>&1; then
-      sudo cp "$cert_crt" /usr/local/share/ca-certificates/trinaxai-local.crt >/dev/null 2>&1 && \
-      sudo update-ca-certificates >/dev/null 2>&1 && \
+      as_root cp "$cert_crt" /usr/local/share/ca-certificates/trinaxai-local.crt >/dev/null 2>&1 && \
+      as_root update-ca-certificates >/dev/null 2>&1 && \
         print_ok "HTTPS certificate trusted in system CA store" || \
         print_warn "Could not auto-trust the certificate. Import $cert_crt manually in your browser/system."
     elif command -v update-ca-trust >/dev/null 2>&1; then
-      sudo cp "$cert_crt" /etc/pki/ca-trust/source/anchors/trinaxai-local.crt >/dev/null 2>&1 && \
-      sudo update-ca-trust >/dev/null 2>&1 && \
+      as_root cp "$cert_crt" /etc/pki/ca-trust/source/anchors/trinaxai-local.crt >/dev/null 2>&1 && \
+      as_root update-ca-trust >/dev/null 2>&1 && \
         print_ok "HTTPS certificate trusted in system CA store" || \
         print_warn "Could not auto-trust the certificate. Import $cert_crt manually in your browser/system."
     else
@@ -239,25 +295,25 @@ ensure_https_certificate() {
 install_linux_deps() {
   print_info "Installing packages (Python, Node.js, npm, curl, git, unzip)..."
   if command -v apt-get >/dev/null 2>&1; then
-    sudo apt-get update -qq
+    as_root apt-get update -qq
     # npm ships with NodeSource/Node.js, but the distro npm package may conflict.
     # Try nodejs + npm together; if that fails, install nodejs alone.
-    sudo apt-get install -y python3 python3-pip python3-venv curl git unzip ufw openssl
+    as_root apt-get install -y python3 python3-pip python3-venv curl git unzip ufw openssl
     if ! command -v node >/dev/null 2>&1; then
-      sudo apt-get install -y nodejs npm 2>/dev/null || sudo apt-get install -y nodejs || true
+      as_root apt-get install -y nodejs npm 2>/dev/null || as_root apt-get install -y nodejs || true
     fi
     if ! command -v npm >/dev/null 2>&1; then
       print_warn "npm was not installed. Node.js may be missing or installed from NodeSource."
       print_info "Install Node.js 18+ with npm from https://nodejs.org or use your package manager."
     fi
   elif command -v dnf >/dev/null 2>&1; then
-    sudo dnf install -y python3 python3-pip nodejs npm curl git unzip openssl
+    as_root dnf install -y python3 python3-pip nodejs npm curl git unzip openssl
   elif command -v pacman >/dev/null 2>&1; then
-    sudo pacman -Sy --needed --noconfirm python python-pip nodejs npm curl git unzip openssl
+    as_root pacman -Sy --needed --noconfirm python python-pip nodejs npm curl git unzip openssl
   elif command -v zypper >/dev/null 2>&1; then
-    sudo zypper --non-interactive install python3 python3-pip nodejs npm curl git unzip openssl
+    as_root zypper --non-interactive install python3 python3-pip nodejs npm curl git unzip openssl
   elif command -v apk >/dev/null 2>&1; then
-    sudo apk add python3 py3-pip py3-virtualenv nodejs npm curl git unzip openssl
+    as_root apk add python3 py3-pip py3-virtualenv nodejs npm curl git unzip openssl
   else
     print_warn "Unknown Linux package manager. Install Python 3.10+, pip, venv, Node.js 18+, npm, curl, git, unzip manually."
   fi
@@ -270,6 +326,16 @@ case "$(uname -s)" in
   MINGW*|MSYS*|CYGWIN*) OS="windows";;
 esac
 
+if [ -z "$INSTALL_DIR" ]; then
+  if [ -f "$HOME/trinaxai/rag_api.py" ]; then
+    INSTALL_DIR="$HOME/trinaxai"
+  elif [ "$OS" = "macos" ]; then
+    INSTALL_DIR="$HOME/Library/Application Support/TrinaxAI"
+  else
+    INSTALL_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/trinaxai"
+  fi
+fi
+
 if [ "$OS" = "windows" ] && [ -f "install.ps1" ] && command -v powershell.exe >/dev/null 2>&1; then
   PS_ARGS=("-ExecutionPolicy" "Bypass" "-File" "$(pwd -W 2>/dev/null || pwd)/install.ps1")
   [ "$INTERACTIVE" = "1" ] && PS_ARGS+=("-Interactive")
@@ -277,6 +343,7 @@ if [ "$OS" = "windows" ] && [ -f "install.ps1" ] && command -v powershell.exe >/
   [ "$INSTALL_MODELS" = "1" ] || PS_ARGS+=("-NoModels")
   [ "$INSTALL_VISION" = "1" ] || PS_ARGS+=("-NoVision")
   [ "$ENABLE_AUTOSTART" = "1" ] || PS_ARGS+=("-NoAutostart")
+  [ "$ENABLE_AUTO_UPDATE" = "1" ] || PS_ARGS+=("-NoAutoUpdate")
   [ "$START_NOW" = "1" ] || PS_ARGS+=("-NoStart")
   [ "$ENABLE_LAN_SYSTEM" = "1" ] && PS_ARGS+=("-LanSystem")
   [ -z "$PROFILE_OVERRIDE" ] || PS_ARGS+=("-Profile" "$PROFILE_OVERRIDE")
@@ -293,20 +360,29 @@ echo -e "  ${CYAN}Privacy:${NC} 100% local — nothing leaves your machine"
 echo ""
 
 # ── Clone repo if running from piped script ──
-REPO_DIR="${HOME}/trinaxai"
-if [ ! -f "rag_api.py" ] && [ ! -f "install.sh" ]; then
+REPO_DIR="$INSTALL_DIR"
+MANAGED_INSTALL=0
+if [ ! -f "rag_api.py" ]; then
   print_header "0/6 Cloning TrinaxAI repository"
   if [ -d "$REPO_DIR" ]; then
-    print_ok "Repository already exists at $REPO_DIR"
+    if [ ! -f "$REPO_DIR/rag_api.py" ] || [ ! -f "$REPO_DIR/pyproject.toml" ]; then
+      print_err "Install directory exists but is not a TrinaxAI installation: $REPO_DIR"
+      print_info "Choose another location with --install-dir PATH."
+      exit 1
+    fi
+    print_ok "Existing TrinaxAI installation found at $REPO_DIR"
     cd "$REPO_DIR"
   else
+    mkdir -p "$(dirname "$REPO_DIR")"
     git clone https://github.com/TrinaxCode/TrinaxAI.git "$REPO_DIR" 2>/dev/null || {
-      print_warn "Could not clone repo. Downloading as ZIP..."
-      curl -fsSL -o /tmp/trinaxai.zip https://github.com/TrinaxCode/TrinaxAI/archive/main.zip
-      unzip -qo /tmp/trinaxai.zip -d /tmp/
-      mv /tmp/TrinaxAI-main "$REPO_DIR"
-      rm /tmp/trinaxai.zip
+      print_warn "Could not clone repo. Downloading a source archive..."
+      temp_dir="$(mktemp -d "${TMPDIR:-/tmp}/trinaxai.XXXXXX")"
+      curl -fsSL -o "$temp_dir/trinaxai.tar.gz" https://github.com/TrinaxCode/TrinaxAI/archive/refs/heads/main.tar.gz
+      tar -xzf "$temp_dir/trinaxai.tar.gz" -C "$temp_dir"
+      mv "$temp_dir/TrinaxAI-main" "$REPO_DIR"
+      rm -rf "$temp_dir"
     }
+    MANAGED_INSTALL=1
     cd "$REPO_DIR"
     print_ok "Repository ready at $REPO_DIR"
   fi
@@ -316,6 +392,9 @@ fi
 
 SCRIPT_DIR="$REPO_DIR"
 cd "$SCRIPT_DIR"
+if [ "$MANAGED_INSTALL" = "1" ]; then
+  printf '%s\n' "Managed by the TrinaxAI installer." > .trinaxai-managed
+fi
 
 if [ "$OS" = "windows" ] && [ -f "install.ps1" ] && command -v powershell.exe >/dev/null 2>&1; then
   PS_ARGS=("-ExecutionPolicy" "Bypass" "-File" "$(pwd -W 2>/dev/null || pwd)/install.ps1")
@@ -324,6 +403,7 @@ if [ "$OS" = "windows" ] && [ -f "install.ps1" ] && command -v powershell.exe >/
   [ "$INSTALL_MODELS" = "1" ] || PS_ARGS+=("-NoModels")
   [ "$INSTALL_VISION" = "1" ] || PS_ARGS+=("-NoVision")
   [ "$ENABLE_AUTOSTART" = "1" ] || PS_ARGS+=("-NoAutostart")
+  [ "$ENABLE_AUTO_UPDATE" = "1" ] || PS_ARGS+=("-NoAutoUpdate")
   [ "$START_NOW" = "1" ] || PS_ARGS+=("-NoStart")
   [ "$ENABLE_LAN_SYSTEM" = "1" ] && PS_ARGS+=("-LanSystem")
   [ -z "$PROFILE_OVERRIDE" ] || PS_ARGS+=("-Profile" "$PROFILE_OVERRIDE")
@@ -339,6 +419,11 @@ elif [ "$OS" = "macos" ]; then
   if ! command -v brew &>/dev/null; then
     print_info "Installing Homebrew..."
     /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" || true
+    if [ -x /opt/homebrew/bin/brew ]; then
+      eval "$(/opt/homebrew/bin/brew shellenv)"
+    elif [ -x /usr/local/bin/brew ]; then
+      eval "$(/usr/local/bin/brew shellenv)"
+    fi
   fi
   brew install python@3.11 node curl git openssl 2>/dev/null || true
   print_ok "macOS dependencies ready"
@@ -348,6 +433,27 @@ elif [ "$OS" = "windows" ]; then
   print_info "  • Git from https://git-scm.com"
   print_info "  • WSL2 recommended for full functionality"
 fi
+
+PYTHON_BIN=""
+for candidate in python3.13 python3.12 python3.11 python3.10 python3 python; do
+  if command -v "$candidate" >/dev/null 2>&1 && "$candidate" -c 'import sys; raise SystemExit(sys.version_info < (3, 10))' 2>/dev/null; then
+    PYTHON_BIN="$(command -v "$candidate")"
+    break
+  fi
+done
+if [ -z "$PYTHON_BIN" ]; then
+  print_err "Python 3.10 or newer was not found."
+  exit 1
+fi
+if ! command -v node >/dev/null 2>&1 || ! node -e 'process.exit(Number(process.versions.node.split(".")[0]) >= 18 ? 0 : 1)' 2>/dev/null; then
+  print_err "Node.js 18 or newer is required. Install an active Node.js LTS release and run the installer again."
+  exit 1
+fi
+if ! command -v npm >/dev/null 2>&1; then
+  print_err "npm was not found next to Node.js. Install the complete Node.js distribution and retry."
+  exit 1
+fi
+print_ok "Runtime versions ready: $($PYTHON_BIN --version 2>&1), Node $(node --version)"
 
 # ── Profile and .env ──
 print_header "1.5/6 TrinaxAI Profile"
@@ -387,36 +493,42 @@ else
 fi
 print_ok "Automatic setup selected: profile=$PROFILE"
 
-MODEL_GENERAL="llama3.2:3b"
+MODEL_GENERAL="qwen3:4b-instruct-2507-q4_K_M"
 MODEL_CODE="qwen2.5-coder:3b"
-MODEL_DEEP="qwen2.5-coder:3b"
-MODEL_FAST="llama3.2:3b"
+MODEL_DEEP="qwen2.5-coder:7b"
+MODEL_FAST="qwen3:4b-instruct-2507-q4_K_M"
 EMBED_PRESET="balanced"
 EMBED_MODEL="bge-m3"
 EMBED_DIMS="1024"
 EMBED_BATCH="8"
 EMBED_KEEP_ALIVE="15m"
-VISION_MODEL="qwen2.5vl:3b"
-VISION_QUALITY_MODEL="qwen2.5vl:7b"
+VISION_MODEL="qwen3-vl:4b"
+VISION_QUALITY_MODEL="qwen3-vl:8b"
 if [ "$PROFILE" = "8gb" ]; then
-  MODEL_GENERAL="llama3.2:1b"
+  MODEL_GENERAL="qwen3:4b-instruct-2507-q4_K_M"
   MODEL_CODE="qwen2.5-coder:1.5b"
-  MODEL_DEEP="qwen2.5-coder:1.5b"
+  MODEL_DEEP="qwen2.5-coder:3b"
   MODEL_FAST="llama3.2:1b"
-  EMBED_PRESET="lite"
-  EMBED_MODEL="nomic-embed-text"
-  EMBED_DIMS="768"
+  EMBED_PRESET="balanced"
+  EMBED_MODEL="bge-m3"
+  EMBED_DIMS="1024"
   EMBED_BATCH="1"
   EMBED_KEEP_ALIVE="5m"
-  VISION_MODEL="moondream"
-  VISION_QUALITY_MODEL="qwen2.5vl:3b"
+  VISION_MODEL="qwen3-vl:2b"
+  VISION_QUALITY_MODEL="qwen3-vl:4b"
 elif [ "$PROFILE" = "max" ]; then
-  MODEL_DEEP="qwen2.5-coder:7b"
-  VISION_MODEL="qwen2.5vl:7b"
+  MODEL_GENERAL="qwen3:30b-a3b-instruct-2507-q4_K_M"
+  MODEL_CODE="qwen2.5-coder:7b"
+  MODEL_DEEP="qwen3-coder:30b"
+  VISION_MODEL="qwen3-vl:8b"
+  VISION_QUALITY_MODEL="qwen3-vl:32b"
   EMBED_KEEP_ALIVE="30m"
 elif [ "$PROFILE" = "ultra" ]; then
-  MODEL_DEEP="qwen2.5-coder:14b"
-  VISION_MODEL="qwen2.5vl:7b"
+  MODEL_GENERAL="qwen3:30b-a3b-instruct-2507-q4_K_M"
+  MODEL_CODE="qwen2.5-coder:7b"
+  MODEL_DEEP="qwen3-coder:30b"
+  VISION_MODEL="qwen3-vl:8b"
+  VISION_QUALITY_MODEL="qwen3-vl:32b"
   EMBED_BATCH="16"
   EMBED_KEEP_ALIVE="30m"
 fi
@@ -459,7 +571,7 @@ if [ "$ENABLE_LAN_SYSTEM" != "1" ]; then
 fi
 
 if [ "$ENABLE_LAN_SYSTEM" = "1" ] && [ -z "$ADMIN_TOKEN" ]; then
-  ADMIN_TOKEN="$(openssl rand -hex 32 2>/dev/null || python3 -c 'import secrets; print(secrets.token_hex(32))' 2>/dev/null || true)"
+  ADMIN_TOKEN="$(openssl rand -hex 32 2>/dev/null || "$PYTHON_BIN" -c 'import secrets; print(secrets.token_hex(32))' 2>/dev/null || true)"
   if [ -z "$ADMIN_TOKEN" ]; then
     print_err "Could not generate admin token. Install openssl or Python 3.6+."
     exit 1
@@ -473,6 +585,7 @@ cat > .env <<EOF
 # See .env.example for all available options.
 
 # Profile (auto-detected: $AUTO_PROFILE, RAM: ${RAM_GB:-unknown} GB)
+TRINAXAI_HOME="$SCRIPT_DIR"
 TRINAXAI_PROFILE=$PROFILE
 TRINAXAI_PERFORMANCE_MODE=fast
 
@@ -552,11 +665,10 @@ fi
 # ── 3. Python Environment ──
 print_header "3/6 Python Virtual Environment"
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$SCRIPT_DIR"
 
 if [ ! -d ".venv" ]; then
-  python3 -m venv .venv || python -m venv .venv || {
+  "$PYTHON_BIN" -m venv .venv || {
     print_err "Could not create Python virtual environment."
     print_info "Install Python 3.10+ with venv support, then rerun ./install.sh"
     exit 1
@@ -572,16 +684,16 @@ else
   exit 1
 fi
 
-pip install --upgrade pip
+python -m pip install --upgrade pip
 
 if [ -f "requirements.txt" ]; then
-  pip install -r requirements.txt
+  python -m pip install -r requirements.txt
   print_ok "Python packages installed"
 else
   print_warn "requirements.txt not found — skipping"
 fi
 
-pip install -e .
+python -m pip install -e .
 print_ok "TrinaxAI CLI installed in editable mode"
 
 if [ "$OS" = "linux" ] || [ "$OS" = "macos" ]; then
@@ -590,10 +702,7 @@ if [ "$OS" = "linux" ] || [ "$OS" = "macos" ]; then
   if [ -x "$CLI_TARGET" ]; then
     ln -sfn "$CLI_TARGET" "$HOME/.local/bin/trinaxai"
     print_ok "CLI command linked: $HOME/.local/bin/trinaxai"
-    case ":$PATH:" in
-      *":$HOME/.local/bin:"*) ;;
-      *) print_warn "Add $HOME/.local/bin to PATH or reload your shell, then run: trinaxai";;
-    esac
+    ensure_cli_path
   else
     print_warn "CLI entry point was not found at $CLI_TARGET"
   fi
@@ -670,7 +779,7 @@ if [ "$INSTALL_MODELS" = "1" ]; then
     fi
   else
     print_warn "Ollama is not available yet; skipping model downloads. TrinaxAI will still install."
-    print_info "After installing/starting Ollama, run: ollama pull llama3.2:3b && ollama pull qwen2.5-coder:3b && ollama pull bge-m3"
+    print_info "After installing/starting Ollama, run: ollama pull qwen3:4b-instruct-2507-q4_K_M && ollama pull qwen2.5-coder:3b && ollama pull bge-m3"
   fi
 else
   print_info "Skipping model download. You can pull them later with: ollama pull <model>"
@@ -701,6 +810,13 @@ if [ "$ENABLE_AUTOSTART" = "1" ]; then
   fi
 fi
 
+if [ "$ENABLE_AUTO_UPDATE" = "1" ] && [ -f "$SCRIPT_DIR/scripts/auto_update.py" ]; then
+  print_info "Enabling safe weekly updates from GitHub…"
+  python scripts/auto_update.py enable --base-dir "$SCRIPT_DIR" && \
+    print_ok "Automatic updates enabled (weekly)" || \
+    print_warn "Could not enable the weekly task. Run: python scripts/auto_update.py enable"
+fi
+
 if [ "$ENABLE_AUTOSTART" = "1" ]; then
   python service_manager.py enable-autostart --base-dir "$SCRIPT_DIR" && \
     print_ok "Auto-start enabled" || \
@@ -721,8 +837,10 @@ echo -e "  ${BLUE}Ollama API:${NC}    http://localhost:11434"
 echo ""
 echo -e "  ${BLUE}Quick start:${NC}   ./startup_ai.sh"
 echo -e "  ${BLUE}CLI:${NC}           trinaxai"
+echo -e "  ${BLUE}New terminal:${NC}  Open one if your current shell cannot find the new CLI yet"
 echo -e "  ${BLUE}Shutdown:${NC}     ./shutdown_ai.sh"
 echo -e "  ${BLUE}System test:${NC}   python test_system.py --verbose"
+echo -e "  ${BLUE}Updates:${NC}       Automatic check every week"
 echo -e "  ${BLUE}Docs:${NC}         https://github.com/TrinaxCode/TrinaxAI"
 echo ""
 echo -e "  ${YELLOW}From your phone:${NC} https://[YOUR-LAN-IP]:3334"

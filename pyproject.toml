@@ -43,10 +43,18 @@ server = [
   "bm25s>=0.2",
   "docx2txt>=0.9",
   "pypdf>=5.0",
+  "python-pptx>=1.0.2",
   "tree-sitter>=0.22",
   "tree-sitter-language-pack>=0.9",
   "psutil>=6.0",
   "watchdog>=6.0",
+  "openai-whisper>=20231117",
+  "pyttsx3>=2.90",
+  "soundfile>=0.12",
+  "numpy>=1.24",
+]
+voice_quality = [
+  "piper-tts>=1.2",
 ]
 rerank = [
   "llama-index-postprocessor-sbert-rerank>=0.3",
@@ -59,7 +67,7 @@ dev = [
   "pip-audit>=2.7",
 ]
 all = [
-  "trinaxai[server,rerank,dev]",
+  "trinaxai[server,rerank,dev,voice_quality]",
 ]
 
 [project.scripts]

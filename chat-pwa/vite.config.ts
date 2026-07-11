@@ -116,7 +116,17 @@ function installSystemControl(server: any): void {
     const token = req.headers['x-admin-token'] as string | undefined;
     const adminToken = process.env.TRINAXAI_ADMIN_TOKEN;
     const peer = req.socket?.remoteAddress || '127.0.0.1';
-    const authorized = (adminToken && token === adminToken) || isLoopback(peer) || (allowLanSystem && isPrivateLan(peer));
+    const origin = String(req.headers.origin || '');
+    const trustedBrowserOrigin = !origin || (() => {
+      try {
+        const parsed = new URL(origin);
+        return ['3334', '3335'].includes(parsed.port) && isPrivateLan(parsed.hostname);
+      } catch {
+        return false;
+      }
+    })();
+    const authorized = (adminToken && token === adminToken)
+      || (trustedBrowserOrigin && (isLoopback(peer) || (allowLanSystem && isPrivateLan(peer))));
     if (!authorized) {
       res.statusCode = 403;
       res.setHeader('Content-Type', 'application/json');
@@ -203,9 +213,9 @@ export default defineConfig({
         categories: ['productivity', 'utilities'],
         theme_color: '#000000',
         background_color: '#000000',
-        display: 'fullscreen',
-        display_override: ['fullscreen', 'standalone', 'minimal-ui'],
-        orientation: 'portrait-primary',
+        display: 'standalone',
+        display_override: ['window-controls-overlay', 'standalone', 'minimal-ui'],
+        orientation: 'any',
         scope: '/',
         start_url: '/',
         icons: [

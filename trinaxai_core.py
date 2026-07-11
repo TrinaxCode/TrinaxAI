@@ -2,8 +2,14 @@
 
 from __future__ import annotations
 
+import json
+import os
 import re
+import shutil
+import time
 from collections.abc import Mapping
+from contextlib import contextmanager
+from pathlib import Path
 from typing import Any
 
 SAFE_DEFAULTS = {
@@ -43,6 +49,8 @@ _VALID_PROFILES = {
     "light",
     "bajo",
 }
+# Public alias — single source of truth for valid hardware profiles.
+VALID_PROFILES = _VALID_PROFILES
 
 
 def sanitize_collection_id(value: str | None, *, fallback: str = "collection") -> str:
@@ -50,9 +58,93 @@ def sanitize_collection_id(value: str | None, *, fallback: str = "collection") -
     return (slug or fallback)[:48]
 
 
+def _process_is_alive(pid: int) -> bool:
+    if pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    except OSError:
+        return False
+    return True
+
+
+@contextmanager
+def exclusive_process_lock(
+    path: str | os.PathLike[str],
+    *,
+    timeout: float = 3600.0,
+    poll_interval: float = 0.25,
+):
+    """Portable inter-process lock based on atomic directory creation.
+
+    The owner PID is recorded so locks left by a crashed indexer can be safely
+    reclaimed. A directory is used instead of platform-specific flock APIs so
+    the same index store behaves consistently on Linux, macOS, and Windows.
+    """
+    lock_dir = Path(path)
+    owner_file = lock_dir / "owner.json"
+    deadline = time.monotonic() + max(0.0, timeout)
+    lock_dir.parent.mkdir(parents=True, exist_ok=True)
+
+    while True:
+        try:
+            lock_dir.mkdir()
+            owner_file.write_text(
+                json.dumps({"pid": os.getpid(), "created_at": time.time()}),
+                encoding="utf-8",
+            )
+            break
+        except FileExistsError:
+            stale = False
+            try:
+                owner = json.loads(owner_file.read_text(encoding="utf-8"))
+                stale = not _process_is_alive(int(owner.get("pid", 0)))
+            except (OSError, ValueError, TypeError):
+                try:
+                    stale = time.time() - lock_dir.stat().st_mtime > 24 * 60 * 60
+                except OSError:
+                    stale = False
+            if stale:
+                try:
+                    shutil.rmtree(lock_dir)
+                except OSError:
+                    pass
+                continue
+            if time.monotonic() >= deadline:
+                raise TimeoutError(f"Timed out waiting for process lock: {lock_dir}")
+            time.sleep(max(0.01, poll_interval))
+
+    try:
+        yield
+    finally:
+        try:
+            owner = json.loads(owner_file.read_text(encoding="utf-8"))
+            if int(owner.get("pid", -1)) == os.getpid():
+                shutil.rmtree(lock_dir)
+        except (OSError, ValueError, TypeError):
+            pass
+
+
 def _positive_int(value: Any, fallback: int, *, minimum: int = 1, maximum: int | None = None) -> int:
     try:
         parsed = int(str(value).strip())
+    except (TypeError, ValueError):
+        return fallback
+    parsed = max(minimum, parsed)
+    if maximum is not None:
+        parsed = min(maximum, parsed)
+    return parsed
+
+
+def _positive_float(
+    value: Any, fallback: float, *, minimum: float = 0.0, maximum: float | None = None
+) -> float:
+    try:
+        parsed = float(str(value).strip())
     except (TypeError, ValueError):
         return fallback
     parsed = max(minimum, parsed)

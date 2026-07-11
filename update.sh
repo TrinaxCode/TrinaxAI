@@ -2,6 +2,14 @@
 # TrinaxAI updater. Keeps local data, updates code/deps, rebuilds PWA.
 set -euo pipefail
 
+RED='\033[0;31m'; GREEN='\033[0;32m'; BLUE='\033[0;34m'
+YELLOW='\033[1;33m'; CYAN='\033[0;36m'; NC='\033[0m'; BOLD='\033[1m'
+
+print_step() { echo -e "\n${BLUE}${BOLD}┌─ $1${NC}"; }
+print_ok()   { echo -e "  ${GREEN}✓${NC} $1"; }
+print_warn() { echo -e "  ${YELLOW}⚠${NC} $1"; }
+print_info() { echo -e "  ${CYAN}›${NC} $1"; }
+
 usage() {
   cat <<EOF
 TrinaxAI Updater
@@ -21,6 +29,7 @@ Usage:
   ./update.sh --enable-autostart Enable boot autostart after update
   ./update.sh --disable-autostart Disable boot autostart after update
   ./update.sh --no-audit         Skip public readiness audit
+  ./update.sh --scheduled        Safe unattended weekly update
   ./update.sh --help             Show this help
 
 What it asks:
@@ -63,6 +72,7 @@ fi
 CREATE_BACKUP="${TRINAXAI_UPDATE_BACKUP:-1}"
 PULL_CODE="${TRINAXAI_UPDATE_PULL:-1}"
 RUN_AUDIT="${TRINAXAI_UPDATE_AUDIT:-1}"
+SCHEDULED=0
 
 PULL_MODELS="${TRINAXAI_UPDATE_MODELS:-0}"
 PULL_MODELS_SET=0
@@ -96,6 +106,11 @@ while [ "$#" -gt 0 ]; do
     --disable-autostart) AUTOSTART_ACTION="disable";;
     --keep-autostart) AUTOSTART_ACTION="keep";;
     --no-audit) RUN_AUDIT=0;;
+    --scheduled)
+      SCHEDULED=1; INTERACTIVE=0; NONINTERACTIVE=1; CREATE_BACKUP=0
+      PULL_CODE=1; PULL_MODELS=0; PULL_MODELS_SET=1
+      RESTART_AFTER=1; RESTART_SET=1; RUN_AUDIT=0
+      ;;
     *) echo "Unknown option: $1" >&2; usage;;
   esac
   shift
@@ -133,7 +148,7 @@ ask_yes_no() {
   return 1
 }
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="${TRINAXAI_UPDATE_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
 cd "$ROOT"
 
 is_windows() {
@@ -214,7 +229,7 @@ configured_models() {
   add_unique_model "$(env_value TRINAXAI_EMBED)"
   add_unique_model "$(env_value VITE_TRINAXAI_VISION_MODEL)"
   if [ "${#MODELS[@]}" -eq 0 ]; then
-    MODELS=(qwen2.5-coder:3b llama3.2:3b bge-m3 qwen2.5vl:3b)
+    MODELS=(qwen2.5-coder:3b qwen3:4b-instruct-2507-q4_K_M bge-m3 qwen3-vl:4b)
   fi
 }
 
@@ -274,9 +289,59 @@ run_service_manager() {
   fi
 }
 
+sync_repository() {
+  local remote="https://github.com/TrinaxCode/TrinaxAI.git" dirty=0 managed=0
+  [ -f .trinaxai-managed ] && managed=1
+  command -v git >/dev/null 2>&1 || {
+    print_warn "Git is unavailable; source code update skipped."
+    return 1
+  }
+  print_info "Fetching the latest TrinaxAI source from GitHub…"
+  if [ ! -d .git ]; then
+    git init -q
+    [ "$managed" = "1" ] && printf '%s\n' '.trinaxai-managed' >> .git/info/exclude
+    git remote add origin "$remote"
+    git fetch --prune origin main
+    git reset --hard origin/main
+    print_ok "Archive installation converted to an updateable Git repository"
+    return 0
+  fi
+  if [ "$managed" = "1" ] && ! grep -Fqx '.trinaxai-managed' .git/info/exclude 2>/dev/null; then
+    printf '%s\n' '.trinaxai-managed' >> .git/info/exclude
+  fi
+  if git remote get-url origin >/dev/null 2>&1; then
+    git remote set-url origin "$remote"
+  else
+    git remote add origin "$remote"
+  fi
+  if [ -n "$(git status --porcelain --untracked-files=normal)" ]; then dirty=1; fi
+  if [ "$dirty" = "1" ]; then
+    if [ "$managed" = "1" ]; then
+      git stash push --include-untracked -m "TrinaxAI automatic pre-update $(date +%Y%m%d-%H%M%S)"
+      print_warn "Local code changes were preserved in Git stash"
+    else
+      print_warn "Local developer changes detected; update stopped to protect them."
+      return 1
+    fi
+  fi
+  git fetch --prune origin main
+  if git merge --ff-only origin/main; then
+    print_ok "Repository synchronized with origin/main"
+  elif [ "$managed" = "1" ]; then
+    git reset --hard origin/main
+    print_ok "Managed installation synchronized with origin/main"
+  else
+    print_warn "The local branch diverged from origin/main; update stopped safely."
+    return 1
+  fi
+}
+
 export PYTHONDONTWRITEBYTECODE=1
 
-echo "== TrinaxAI guided update =="
+echo -e "\n${BLUE}${BOLD}╔══════════════════════════════════════════╗${NC}"
+echo -e "${BLUE}${BOLD}║          TrinaxAI · Smart Update          ║${NC}"
+echo -e "${BLUE}${BOLD}╚══════════════════════════════════════════╝${NC}"
+if [ "$SCHEDULED" = "1" ]; then print_info "Weekly automatic maintenance"; else print_info "Your data and settings stay untouched"; fi
 
 if [ "$CREATE_BACKUP" = "1" ]; then
   if ask_yes_no "Create a backup before updating?" y; then
@@ -348,17 +413,15 @@ if [ "$RUN_AUDIT" = "1" ]; then
 fi
 
 if [ "$CREATE_BACKUP" = "1" ] && [ -f "./backup.sh" ]; then
+  print_step "Backup"
   bash ./backup.sh create || echo "[!] Backup failed; continuing update."
 elif [ "$CREATE_BACKUP" = "1" ]; then
   echo "[!] backup.sh not found; backup skipped."
 fi
 
 if [ "$PULL_CODE" = "1" ]; then
-  if [ -d ".git" ] && command -v git >/dev/null 2>&1; then
-    git pull --ff-only
-  else
-    echo "[!] Git repository not detected. Download the latest release manually."
-  fi
+  print_step "Source Code"
+  sync_repository
 fi
 
 if [ "$REMOVE_OLLAMA" = "1" ]; then
@@ -372,12 +435,14 @@ elif [ "$REPAIR_OLLAMA" = "1" ]; then
   repair_ollama || echo "[!] Ollama repair failed."
 fi
 
-echo "== Required dependency refresh =="
+print_step "Python Dependencies"
 "${PYTHON_CMD[@]}" -m pip install --upgrade pip
 "${PYTHON_CMD[@]}" -m pip install -r requirements.txt
 "${PYTHON_CMD[@]}" -m pip install -e .
+print_ok "Python environment refreshed"
 
 if [ -d "chat-pwa" ] && [ "${#NPM_CMD[@]}" -gt 0 ]; then
+  print_step "Web App"
   if ! (cd chat-pwa && "${NPM_CMD[@]}" install && "${NPM_CMD[@]}" run build); then
     if is_windows; then
       cat >&2 <<'EOF'
@@ -389,6 +454,7 @@ EOF
     fi
     exit 1
   fi
+  print_ok "PWA dependencies installed and production build created"
 elif [ -d "chat-pwa" ]; then
   echo "[!] npm not found; skipped PWA rebuild."
 fi
@@ -420,8 +486,12 @@ elif [ "$RUN_AUDIT" = "1" ]; then
 fi
 
 if [ "$RESTART_AFTER" = "1" ]; then
+  print_step "Restart"
   run_service_manager stop-all
   run_service_manager start
 else
   echo "Update complete. Restart later with ./startup_ai.sh or trinaxai restart."
 fi
+
+echo -e "\n${GREEN}${BOLD}✓ TrinaxAI is up to date${NC}"
+print_info "Settings, indexes, models, and personal data were preserved."

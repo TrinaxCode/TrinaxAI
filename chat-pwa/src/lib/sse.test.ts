@@ -44,7 +44,9 @@ describe('SSE stream parser', () => {
     expect(parseRagSseLine('data: {"choices":[{"delta":{"content":""}}]}')).toEqual({});
   });
 
-  it('handles trinaxai_error gracefully', () => {
-    expect(parseRagSseLine('data: {"trinaxai_error":"fail"}')).toEqual({});
+  it('surfaces backend stream errors', () => {
+    expect(parseRagSseLine('data: {"trinaxai_error":"model failed"}')).toEqual({
+      error: 'model failed',
+    });
   });
 });

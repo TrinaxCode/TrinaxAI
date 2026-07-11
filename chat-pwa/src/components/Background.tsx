@@ -30,13 +30,16 @@ const Background = memo(function Background({ isDark }: BackgroundProps) {
       ctx!.scale(dpr, dpr);
     }
 
-    const layers: [number, number, number, number, number][] = [
-      [0.55, 40, 0.008, 0.0004, 0.13],
-      [0.60, 45, 0.010, 0.00055, 0.09],
-      [0.65, 30, 0.007, 0.00065, 0.06],
+    const layers: [number, number, number, number, number, number, number, number][] = [
+      // baseY, amp, freq, speed, alpha, r, g, b
+      [0.62, 80, 0.005, 0.0003, 0.16, 0, 107, 189],
+      [0.70, 60, 0.008, 0.0005, 0.12, 0, 130, 210],
+      [0.78, 90, 0.004, 0.0004, 0.10, 0, 80, 160],
+      [0.86, 50, 0.010, 0.0006, 0.08, 10, 140, 220],
+      [0.94, 70, 0.006, 0.00035, 0.06, 0, 107, 189],
     ];
 
-    const color = [0, 107, 189];
+    const darkColor = [0, 107, 189];
     const lightColor = [30, 144, 220];
 
     let lastFrame = 0;
@@ -46,7 +49,7 @@ const Background = memo(function Background({ isDark }: BackgroundProps) {
     function draw(now: number) {
       ctx!.clearRect(0, 0, width, height);
 
-      for (const [baseY, amp, freq, speed, alpha] of layers) {
+      for (const [baseY, amp, freq, speed, alpha, lr, lg, lb] of layers) {
         ctx!.beginPath();
         const y0 = height * baseY;
         const elapsed = now;
@@ -68,9 +71,8 @@ const Background = memo(function Background({ isDark }: BackgroundProps) {
         ctx!.lineTo(-2, height + 10);
         ctx!.closePath();
 
-        const [r, g, b] = isDark ? color : lightColor;
         const adjustedAlpha = isDark ? alpha : alpha * 0.55;
-        ctx!.fillStyle = `rgba(${r}, ${g}, ${b}, ${adjustedAlpha})`;
+        ctx!.fillStyle = `rgba(${lr}, ${lg}, ${lb}, ${adjustedAlpha})`;
         ctx!.fill();
       }
     }

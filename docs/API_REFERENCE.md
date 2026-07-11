@@ -1,336 +1,158 @@
 # TrinaxAI API Reference
 
-The RAG API is a FastAPI server (default port **3333**) that powers the PWA, CLI, and any third-party integrations. System endpoints require authorization. Chat endpoints are open but constrained by the configured CORS allowlist.
+The FastAPI service connects the PWA and CLI to RAG, memory, voice, and local administration. Its default managed URL is `https://localhost:3333`. Live schema endpoints are `/docs`, `/redoc`, and `/openapi.json`.
 
----
+## Authorization
 
-## Authentication
+Protected endpoints allow a request when the TCP peer is loopback, `X-Admin-Token` is valid, or the peer is private and LAN system control is explicitly enabled. A supplied invalid token returns `403`; `X-Forwarded-For` is not trusted.
 
-System endpoints (`/system/*`, `/app-state`, `/v1/memory`, collection CRUD) require authorization:
+Chat, STT, and TTS use separate per-IP rate-limit buckets. General defaults are 30 requests per 60 seconds.
 
-- **localhost** — allowed by default.
-- **private LAN** — disabled by default. Enable explicitly with `TRINAXAI_ALLOW_LAN_SYSTEM=1`.
-- **Admin token** — set `TRINAXAI_ADMIN_TOKEN` in `.env` and pass it as the `X-Admin-Token: <token>` header.
+```bash
+curl -k https://localhost:3333/health
+curl -k -H "X-Admin-Token: $TOKEN" https://localhost:3333/v1/memory
+```
 
-Chat endpoints (`/v1/chat/completions`, `/health`) are open to trusted origins (CORS filter on private IPs + ports 3334/3335).
+## Endpoint map
 
----
+| Method and path | Access | Purpose |
+|---|---|---|
+| `POST /v1/chat/completions` | Rate limited | JSON or SSE RAG chat. |
+| `POST /v1/research` | Protected | Multi-pass RAG research; JSON response. |
+| `GET /v1/voice/capabilities` | Public | Available local voice engines. |
+| `POST /v1/voice/stt`, `POST /v1/voice/tts` | Rate limited | Local speech recognition/synthesis. |
+| `GET/DELETE /v1/sources/*` | Protected | Browse or remove indexed sources/chunks. |
+| `/v1/memory/*`, `/v1/watch/*` | Protected | Memory and filesystem watcher. |
+| `POST /v1/usage`, `GET /v1/stats` | Protected | Local-only usage data. |
+| `GET /health`, `GET /resources` | Public | Service health and RAM data. |
+| `GET /app-state` | Public | Shared PWA state with ETag support. |
+| `PUT/DELETE /app-state` | Protected | Synchronize or reset PWA state. |
+| `POST /attachments`, `GET /attachments/{attachment_id}` | Public | Store/retrieve host-backed chat attachments. |
+| `POST /documents/extract` | Public | Temporary document text extraction. |
+| `GET /collections` | Public | Collection metadata. |
+| `POST/PATCH/DELETE /collections/*` | Protected | Collection administration. |
+| `/system/*` | Protected | Services, indexing, reload, and self-test. |
 
-## Chat & Retrieval
+## RAG chat
 
-### `POST /v1/chat/completions`
+```http
+POST /v1/chat/completions
+Content-Type: application/json
+```
 
-OpenAI-compatible chat endpoint with RAG retrieval. Supports SSE streaming.
-
-**Request:**
 ```json
 {
-  "model": "auto",
-  "messages": [
-    {"role": "user", "content": "How does the auth module work?"},
-    {"role": "assistant", "content": "..."}
-  ],
+  "model": null,
+  "messages": [{"role": "user", "content": "How does authorization work?"}],
   "stream": true,
-  "collections": ["default", "my-project"]
+  "collections": ["default"],
+  "keep_alive": "10m",
+  "aggressive_quant": false
 }
 ```
 
-**Response (streaming SSE):**
-```
-data: {"trinaxai":{"model":"qwen2.5-coder:7b","project":"Insider"}}
-data: {"choices":[{"delta":{"content":"The auth module..."}}]}
-data: {"trinaxai_sources":[{"file":"auth.py","snippet":"...","score":0.89}]}
-data: [DONE]
-```
+`messages` accepts 1–100 `system`, `user`, or `assistant` objects, requires a user message, and allows up to 2,000,000 total characters. A null/empty model enables routing. Up to 50 collection IDs are accepted.
 
-**Non-streaming:**
+With `stream=false`, the result is an OpenAI-shaped `chat.completion` plus `trinaxai` source metadata. With `stream=true`, SSE events contain `trinaxai` metadata, `choices[].delta.content`, `trinaxai_sources`, and finally `[DONE]`. A missing index produces an informative response rather than an HTTP failure.
+
+## Research
+
 ```json
 {
-  "choices": [{"message": {"role": "assistant", "content": "..."}}],
-  "trinaxai": {"model": "qwen2.5-coder:7b", "sources": [...]}
-}
-```
-
-| Field | Notes |
-|---|---|
-| `model` | `"auto"` (default) or any Ollama model name |
-| `stream` | `true` for SSE, `false` for single JSON response |
-| `collections` | Optional list of collection IDs to search |
-
----
-
-### `POST /v1/research`
-
-Deep multi-pass research query with sub-question decomposition.
-
-**Request:**
-```json
-{
-  "query": "Compare authentication patterns across the project",
+  "query": "Compare persistence mechanisms",
+  "collections": ["default"],
   "depth": 2,
-  "collections": ["default"]
+  "model": null,
+  "keep_alive": "10m",
+  "aggressive_quant": false
 }
 ```
 
-**Response:** SSE stream with research pass results and final synthesis.
+`POST /v1/research` clamps depth to 1–3 and returns JSON fields `answer`, `sub_questions`, `sources`, `passes`, and `model`.
 
----
+## Sources and collections
 
-## System Control
-
-### `POST /system/shutdown`
-
-Shuts down Ollama + RAG API. **Requires authorization.**
-
-Returns `{"ok": true, "output": "AI shutdown initiated. ..."}`.
-
-### `POST /system/startup`
-
-Starts Ollama + RAG API. **Requires authorization.**
-
-Returns `{"ok": true|false, "output": "...", "error": "..."}`.
-
-### `POST /system/stop-all`
-
-Stops all services immediately. **Requires authorization.**
-
-### `POST /system/reload`
-
-Hot-reloads the RAG index from `storage/`. **Requires authorization.**
-
-Returns `{"ok": true}` or error.
-
-### `POST /system/self-test`
-
-Runs automated health checks: Ollama, embeddings, RAG query. **Requires authorization.**
-
-Returns `{"ok": true|false, "results": {"ollama": bool, "embedding": bool, "rag_query": bool, "rag_indexed": bool}}`.
-
----
-
-## Indexing
-
-### `POST /system/index-upload`
-
-Upload a folder for indexing (browser file picker). **Requires authorization.**
-
-**Request:** `multipart/form-data` with files from a folder.
-
-**Response:** `{"job_id": "abc123", "status": "starting"}`
-
-### `GET /system/index-jobs/{job_id}`
-
-Poll an index job's progress.
-
-**Response:**
-```json
-{
-  "status": "indexing",
-  "progress": 65,
-  "phase": "embedding",
-  "eta": 12
-}
+```http
+GET    /v1/sources?collection=default
+GET    /v1/sources/{collection}/{file}/chunks?limit=50&offset=0&q=text
+DELETE /v1/sources/{collection}/{file}
+DELETE /v1/sources/{collection}
 ```
 
-### `POST /system/index-jobs/{job_id}/cancel`
+File paths may contain slashes and must be URL-encoded. Chunk limits are clamped to 1–500. Deleting all sources from the default collection is rejected.
 
-Cancel a running index job. **Requires authorization.**
-
----
-
-## Collections
-
-### `GET /collections`
-
-List all RAG collections.
-
-**Response:** `["default", "my-project", "docs"]`
-
-### `POST /collections`
-
-Create a collection. **Requires authorization.**
-
-**Request:** `{"name": "My Project"}`
-
-### `PUT /collections/{collection_id}`
-
-Rename a collection. **Requires authorization.**
-
-**Request:** `{"name": "New Name"}`
-
-### `DELETE /collections/{collection_id}`
-
-Delete a collection and all its chunks. **Requires authorization.**
-
----
-
-## Knowledge Browser
-
-### `GET /v1/sources`
-
-List indexed files with chunk counts in a collection.
-
-**Query:** `?collection=default`
-
-**Response:**
-```json
-[
-  {"file": "app/auth.py", "project": "Insider", "chunks": 45, "collection": "General"}
-]
+```http
+GET    /collections
+POST   /collections                 {"name":"Documentation"}
+PATCH  /collections/{collection_id} {"name":"New name"}
+DELETE /collections/{collection_id}
 ```
 
-### `GET /v1/sources/{file_path}`
+Collection listing returns `{ok, collections}`. The default collection cannot be deleted. Removing collection metadata and clearing its indexed sources are distinct operations.
 
-Get full chunks for a specific file.
+## Browser indexing
 
-**Query:** `?collection=default&limit=50`
+`POST /system/index-upload` accepts multipart `files` plus optional `label`, `collection_id`, `embed_model`, `aggressive_quant`, and `watch_id`. It returns a `job_id` and upload summary while indexing continues in the background.
 
----
-
-## Memory
-
-### `GET /v1/memory`
-
-List all persistent memory entries.
-
-**Response:** `[{"id": "abc", "text": "User prefers Python", "tags": ["pref"]}]`
-
-### `POST /v1/memory`
-
-Add a memory entry. **Requires authorization.**
-
-**Request:** `{"text": "User prefers Python 3.12+", "tags": ["pref", "python"]}`
-
-### `DELETE /v1/memory/{memory_id}`
-
-Delete a memory entry. **Requires authorization.**
-
-### `POST /v1/memory/refresh`
-
-Refresh the auto-summary from memory entries. **Requires authorization.**
-
-### `GET /v1/memory/summary`
-
-Get the current auto-summary text.
-
----
-
-## File Watcher
-
-### `POST /v1/watch/start`
-
-Start the file system watcher. **Requires authorization.** Requires `watchdog` pip package.
-
-**Request:** `{"paths": ["/home/user/projects"], "collection": "default"}`
-
-### `POST /v1/watch/stop`
-
-Stop the file watcher. **Requires authorization.**
-
-### `GET /v1/watch/status`
-
-Get watcher status: running, watching paths, event count.
-
----
-
-## Stats
-
-### `GET /v1/stats`
-
-Get usage statistics from `storage/usage.jsonl`.
-
-**Response:**
-```json
-{
-  "total_messages": 1523,
-  "estimated_tokens": 450000,
-  "top_models": {"qwen2.5-coder:3b": 800},
-  "top_collections": {"default": 1200}
-}
+```http
+GET  /system/index-jobs/{job_id}
+POST /system/index-jobs/{job_id}/cancel
+DELETE /system/index-imports  {"path":"...","collection_id":"..."}
 ```
 
----
+The delete operation only accepts safe paths inside managed local imports.
 
-## Health & Telemetry
+## Memory, watcher, and usage
 
-### `GET /health`
+```http
+GET    /v1/memory
+POST   /v1/memory             {"text":"...","tags":["preference"]}
+DELETE /v1/memory/{memory_id}
+POST   /v1/memory/refresh     {"scope":null}
+GET    /v1/memory/summary
 
-System status overview.
+POST /v1/watch/start          {"paths":["/path"],"collection":"default"}
+POST /v1/watch/stop
+GET  /v1/watch/status
 
-**Response:**
-```json
-{
-  "status": "ok",
-  "models": ["qwen2.5-coder:3b", "llama3.2:3b", "bge-m3"],
-  "indexed": true,
-  "profile": "16gb",
-  "projects": ["Insider", "MyApp"],
-  "features": {"reranker": false, "ocr": false, "watcher": false}
-}
+POST /v1/usage               {"engine":"ollama","model":"...","est_tokens":100}
+GET  /v1/stats
 ```
 
-### `GET /resources`
+The watcher requires `watchdog` and existing directories. Usage data never leaves local storage.
 
-Basic local RAM/VRAM telemetry. Requires `psutil`.
+## Shared state
 
-**Response:**
-```json
-{
-  "ram": {"total_gb": 32, "used_gb": 12, "percent": 37.5},
-  "ollama_processes": 2
-}
+- `GET /app-state` returns `{ok, values}` with an `ETag`, supports `If-None-Match`, and may return `304`.
+- `PUT /app-state` accepts `{"values":{"tc-key":"string-value"}}`; only string `tc-*` entries are retained.
+- `DELETE /app-state` additionally requires `X-TrinaxAI-Confirm: reset-app-state` and resets local runtime data.
+
+The default state limit is 6 MiB (`TRINAXAI_APP_STATE_MAX_BYTES`).
+
+## Attachments, documents, and voice
+
+`POST /attachments` accepts one multipart file and stores it under `storage/chat_attachments/` so synchronized conversations can open it in another browser. It returns the ID, name, size, MIME type, and a `server:` storage key. `GET /attachments/{attachment_id}` returns safe image, PDF, and text types inline; unknown types are downloaded with `nosniff`. `DELETE /attachments/{attachment_id}` is protected like other system operations. Defaults are 250 MiB per file, 1 GiB total, and 1,000 retained files. Uploads and downloads are rate limited. These routes remain public within the configured network boundary; do not expose the API to untrusted clients.
+
+`POST /documents/extract` accepts one multipart file and returns `{ok, name, text, chars, truncated}`. PDF, DOCX, and PPTX have specialized extraction; text formats are decoded directly. Extraction does not index the document.
+
+```http
+GET  /v1/voice/capabilities
+POST /v1/voice/stt   multipart: file, lang=en
+POST /v1/voice/tts   {"text":"Hello","lang":"en"}
 ```
 
----
+TTS returns audio bytes with the detected content type. STT/TTS return `501` if no suitable local backend is installed.
 
-## App State (Cross-Device Sync)
+## System and diagnostics
 
-### `GET /app-state`
-
-Read shared configuration stored in `storage/app_state.json`.
-
-### `PUT /app-state`
-
-Save shared state (settings, chat history, preferences). **Requires authorization.**
-
-**Request:** `{"values": {"theme": "dark", "language": "en"}}`
-
-### `DELETE /app-state`
-
-Nuclear reset of shared state to host defaults. **Requires authorization.**
-
----
-
-## Document Extraction
-
-### `POST /documents/extract`
-
-Extract text from PDF/DOCX/TXT for temporary analysis (not indexed).
-
-**Request:** `multipart/form-data` with file.
-
-**Response:** `{"ok": true, "name": "doc.pdf", "text": "...", "chars": 5000, "truncated": false}`
-
----
-
-## Error Codes
-
-| HTTP | Meaning |
+| Endpoint | Result |
 |---|---|
-| 200 | Success |
-| 400 | Bad request (missing params, invalid data) |
-| 401 | Unauthorized (system endpoint without token) |
-| 404 | Not found (collection, job, memory) |
-| 429 | Rate limited (30 req/min per IP) |
-| 500 | Internal error |
-| 501 | Not implemented (e.g., watchdog missing) |
-| 503 | Service unavailable (Ollama down, index not loaded) |
+| `POST /system/shutdown` | Stop AI while leaving the PWA available. |
+| `POST /system/startup` | Start AI services. |
+| `POST /system/stop-all` | Stop all services. |
+| `POST /system/reload` | Reload the persisted index in memory. |
+| `POST /system/self-test` | Check Ollama, embeddings, and RAG/index state. |
+| `GET /health` | Models, profile, collections, index state, and feature flags. |
+| `GET /resources` | RAM values in bytes; VRAM is currently `null`. |
 
----
-
-## Rate Limiting
-
-- **30 requests per minute** per IP address
-- Window: 60 seconds rolling
-- Affects: chat completions and system endpoints
-- Returns HTTP 429 when exceeded
+FastAPI errors use `{"detail":"message"}`. Common statuses are `400`, `403`, `404`, `409`, `413`, `422`, `429`, `500`, `501`, and `503`. See [configuration](CONFIGURATION.md) for limits and network settings.

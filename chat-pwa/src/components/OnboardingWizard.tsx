@@ -13,13 +13,13 @@ interface Props {
 }
 
 const DEFAULT_MODELS = {
-  chat: 'llama3.2:3b',
-  deep: 'qwen2.5-coder:3b',
-  vision: 'qwen2.5vl:3b',
-  visionQuality: 'qwen2.5vl:7b',
+  chat: 'qwen3:4b-instruct-2507-q4_K_M',
+  deep: 'qwen2.5-coder:7b',
+  vision: 'qwen3-vl:4b',
+  visionQuality: 'qwen3-vl:8b',
   embed: 'bge-m3',
   code: 'qwen2.5-coder:3b',
-  fast: 'llama3.2:3b',
+  fast: 'qwen3:4b-instruct-2507-q4_K_M',
 };
 
 type Step = 1 | 2 | 3 | 4 | 5 | 6;
@@ -49,6 +49,11 @@ export default function OnboardingWizard({ onComplete }: Props) {
   const [testResults, setTestResults] = useState<Record<string, boolean> | null>(null);
   const [copiedCmd, setCopiedCmd] = useState<string | null>(null);
   const indexAbortRef = useRef<AbortController | null>(null);
+
+  // Abort any in-flight indexing poll if the wizard unmounts mid-run.
+  useEffect(() => {
+    return () => indexAbortRef.current?.abort();
+  }, []);
 
   const copyToClipboard = useCallback(async (text: string, key: string) => {
     try {

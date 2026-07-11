@@ -12,22 +12,37 @@ export interface SendOptions {
   collections?: string[];
 }
 
-const MAX_QUEUE = 500;
+const MAX_BUFFER_CHARS = 8192;
+
+export function streamFlushSize(pendingChars: number): number {
+  if (pendingChars > 4096) return 512;
+  if (pendingChars > 1024) return 128;
+  return 32;
+}
 
 export function useStreamChat() {
   const [streaming, setStreaming] = useState(false);
   const [streamedText, setStreamedText] = useState('');
   const [streamedMeta, setStreamedMeta] = useState<StreamMeta>({});
   const abortRef = useRef<AbortController | null>(null);
-  const queueRef = useRef<string[]>([]);
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const queueRef = useRef('');
+  const frameRef = useRef<number | null>(null);
+  const fallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const accumRef = useRef('');
   const metaRef = useRef<StreamMeta>({});
   const discardAbortRef = useRef(false);
   const runIdRef = useRef(0);
+  const wasAbortedRef = useRef(false);
 
   const killTimer = useCallback(() => {
-    if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
+    if (frameRef.current !== null) {
+      window.cancelAnimationFrame(frameRef.current);
+      frameRef.current = null;
+    }
+    if (fallbackTimerRef.current) {
+      clearTimeout(fallbackTimerRef.current);
+      fallbackTimerRef.current = null;
+    }
   }, []);
 
   // Cleanup on unmount: kill timer and abort any pending stream
@@ -38,15 +53,30 @@ export function useStreamChat() {
     };
   }, [killTimer]);
 
-  const startTimer = useCallback(() => {
-    killTimer();
-    timerRef.current = setInterval(() => {
-      const q = queueRef.current;
-      if (q.length === 0) return;
-      accumRef.current += q.splice(0, 10).join('');
-      setStreamedText(accumRef.current);
-    }, 16);
-  }, [killTimer]);
+  const flushQueue = useCallback(() => {
+    frameRef.current = null;
+    fallbackTimerRef.current = null;
+    const pending = queueRef.current;
+    if (!pending) return;
+    // Keep the typewriter effect even when an endpoint delivers a complete
+    // response in one network chunk (RAG commonly does this).
+    const visible = pending.slice(0, streamFlushSize(pending.length));
+    queueRef.current = pending.slice(visible.length);
+    accumRef.current += visible;
+    setStreamedText(accumRef.current);
+    if (queueRef.current) {
+      fallbackTimerRef.current = setTimeout(flushQueue, 18);
+    }
+  }, []);
+
+  const scheduleFlush = useCallback(() => {
+    if (frameRef.current !== null || fallbackTimerRef.current) return;
+    if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
+      frameRef.current = window.requestAnimationFrame(flushQueue);
+      return;
+    }
+    fallbackTimerRef.current = setTimeout(flushQueue, 16);
+  }, [flushQueue]);
 
   const sendMessage = useCallback(
     async (messages: ChatMessage[], engine: ChatEngine, options?: SendOptions): Promise<SendResult> => {
@@ -55,7 +85,7 @@ export function useStreamChat() {
       discardAbortRef.current = false;
       abortRef.current?.abort();
       killTimer();
-      queueRef.current = [];
+      queueRef.current = '';
       accumRef.current = '';
       metaRef.current = {};
       setStreamedMeta({});
@@ -63,9 +93,9 @@ export function useStreamChat() {
       const ctrl = new AbortController();
       abortRef.current = ctrl;
 
+      wasAbortedRef.current = false;
       setStreaming(true);
       setStreamedText('');
-      startTimer();
 
       const onMeta = (m: StreamMeta) => {
         if (runId !== runIdRef.current) return;
@@ -76,22 +106,33 @@ export function useStreamChat() {
       try {
         const handleToken = (token: string) => {
           if (runId !== runIdRef.current) return;
-          const q = queueRef.current;
-          if (q.length < MAX_QUEUE) {
-            for (const c of token) q.push(c);
+          queueRef.current += token;
+          if (queueRef.current.length >= MAX_BUFFER_CHARS) {
+            flushQueue();
           } else {
-            // Queue saturated (background tab throttling): flush directly
-            accumRef.current += token;
+            scheduleFlush();
           }
-          options?.onToken?.(token, accumRef.current + queueRef.current.join(''));
+          options?.onToken?.(token, accumRef.current + queueRef.current);
         };
         const streamOptions = { collections: options?.collections };
         const full = engine === 'rag'
           ? await streamRag(messages, handleToken, ctrl.signal, onMeta, streamOptions)
           : await streamOllama(messages, handleToken, ctrl.signal, onMeta, streamOptions);
         if (runId !== runIdRef.current) throw new Error('TRINAXAI_SILENT_ABORT');
+        // Do not replace the animated text with the complete answer before
+        // the queued characters have been painted.
+        scheduleFlush();
+        await new Promise<void>((resolve) => {
+          const waitForAnimation = () => {
+            if (!queueRef.current && frameRef.current === null && !fallbackTimerRef.current) {
+              resolve();
+              return;
+            }
+            window.setTimeout(waitForAnimation, 16);
+          };
+          waitForAnimation();
+        });
         accumRef.current = full;
-        queueRef.current = [];
         setStreamedText(full);
         killTimer();
         return { content: full, meta: metaRef.current };
@@ -104,7 +145,7 @@ export function useStreamChat() {
           if (discardAbortRef.current) {
             throw new Error('TRINAXAI_SILENT_ABORT');
           }
-          return { content: accumRef.current || '', meta: metaRef.current };
+          return { content: accumRef.current + queueRef.current, meta: metaRef.current };
         }
         throw err;
       } finally {
@@ -115,16 +156,19 @@ export function useStreamChat() {
         }
       }
     },
-    [startTimer, killTimer],
+    [flushQueue, scheduleFlush, killTimer],
   );
 
   const abort = useCallback((discard = false) => {
+    wasAbortedRef.current = true;
     discardAbortRef.current = discard;
     if (discard) runIdRef.current += 1;
     abortRef.current?.abort();
     killTimer();
-    queueRef.current = [];
+    queueRef.current = '';
   }, [killTimer]);
 
-  return { streaming, streamedText, streamedMeta, sendMessage, abort };
+  const wasAborted = useCallback(() => wasAbortedRef.current, []);
+
+  return { streaming, streamedText, streamedMeta, sendMessage, abort, wasAborted };
 }

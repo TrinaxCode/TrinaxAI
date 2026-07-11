@@ -9,7 +9,7 @@ import ChatSidebar from './components/ChatSidebar';
 import ChatInterface from './components/ChatInterface';
 import { useChatHistory } from './hooks/useChatHistory';
 import { onSharedStateUpdated, startSharedStateSync, syncSharedStateOnce } from './lib/sharedState';
-import type { ChatEngine, ChatMessage } from './lib/api';
+import type { ChatEngine, ChatMessage, ChatSession } from './lib/api';
 
 const Settings = lazy(() => import('./components/Settings'));
 const OnboardingWizard = lazy(() => import('./components/OnboardingWizard'));
@@ -34,6 +34,45 @@ export default function App() {
   const { isDark } = useTheme();
   const { t } = useI18n();
   const resizeTimerRef = useRef<number>(0);
+  const prevPageRef = useRef<Page>('chat');
+  const [chatAnimKey, setChatAnimKey] = useState(0);
+
+  // Swipe gesture — context-aware navigation on mobile
+  const touchStartX = useRef(0);
+  const touchStartY = useRef(0);
+
+  const handleTouchStart = useCallback((e: React.TouchEvent) => {
+    const t = e.touches[0];
+    touchStartX.current = t.clientX;
+    touchStartY.current = t.clientY;
+  }, []);
+
+  const handleTouchEnd = useCallback((e: React.TouchEvent) => {
+    const t = e.changedTouches[0];
+    const dx = t.clientX - touchStartX.current;
+    const dy = t.clientY - touchStartY.current;
+    // Only react to clearly horizontal swipes
+    if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+
+    if (dx > 0) {
+      // Swipe RIGHT →
+      if (page !== 'chat') {
+        // In a sub-page → go back to chat with animation
+        prevPageRef.current = page;
+        setChatAnimKey((k) => k + 1);
+        setPage('chat');
+      } else if (!sidebarOpen) {
+        // In chat with sidebar closed → open sidebar
+        setSidebarOpen(true);
+      }
+    } else {
+      // Swipe LEFT ←
+      if (sidebarOpen) {
+        // Sidebar open → close it
+        setSidebarOpen(false);
+      }
+    }
+  }, [page, sidebarOpen]);
 
   useEffect(() => {
     try { sessionStorage.removeItem('trinaxai-resetting'); } catch { /* ignore */ }
@@ -70,15 +109,10 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    let cancelled = false;
-    syncSharedStateOnce().finally(() => {
-      if (!cancelled) {
-        setShowIntro(true);
-        setSharedReady(true);
-        startSharedStateSync();
-      }
-    });
-    return () => { cancelled = true; };
+    // Local state is immediately usable. Remote/LAN state syncs in the
+    // background so an unavailable RAG service never delays PWA startup.
+    setSharedReady(true);
+    startSharedStateSync();
   }, []);
 
   // Handle intro completion → check if onboarding needed
@@ -119,6 +153,10 @@ export default function App() {
     selectSession,
     updateSession,
     setEngine,
+    folders,
+    createFolder,
+    moveSessionToFolder,
+    deleteFolder,
   } = useChatHistory();
 
   // Create a chat only when there is no active session AND onboarding is done.
@@ -129,6 +167,12 @@ export default function App() {
   }, [showIntro, sharedReady, showOnboarding, activeSession, createSession, t]);
 
   const currentEngine: ChatEngine = activeSession?.engine ?? 'ollama';
+  const folderContext = activeSession?.folderId
+    ? sessions
+      .filter((session) => session.folderId === activeSession.folderId && session.id !== activeSession.id)
+      .slice(0, 12)
+      .map((session: ChatSession) => ({ title: session.title, messages: session.messages }))
+    : [];
 
   const handleEngineChange = (engine: ChatEngine) => {
     setEngine(engine);
@@ -140,6 +184,7 @@ export default function App() {
 
   const handleCreate = useCallback((engine: ChatEngine) => {
     createSession(engine, t('newChat'));
+    setSidebarOpen(false);
   }, [createSession, t]);
 
   const handleNavigate = useCallback((target: NavigateTarget) => {
@@ -155,6 +200,12 @@ export default function App() {
     setSettingsSection(target === 'memory' ? 'memory' : target === 'indexing' ? 'indexing' : 'general');
     setPage('settings');
   }, []);
+
+  const handleBackToChat = useCallback(() => {
+    prevPageRef.current = page;
+    setChatAnimKey((k) => k + 1);
+    setPage('chat');
+  }, [page]);
 
   return (
     <div className="app-shell w-full max-w-full min-w-0 overflow-hidden relative transition-colors duration-300">
@@ -188,47 +239,50 @@ export default function App() {
               activeId={activeId}
               isOpen={sidebarOpen}
               onToggle={() => setSidebarOpen((v) => !v)}
-              onSelect={selectSession}
+              onSelect={(id) => { selectSession(id); setSidebarOpen(false); }}
               onDelete={deleteSession}
               onCreate={handleCreate}
               onSettings={() => { setPage('settings'); setSidebarOpen(false); }}
-              onDocs={() => { setPage('docs'); setSidebarOpen(false); }}
               onBrowser={() => { setPage('browser'); setSidebarOpen(false); }}
               engine={currentEngine}
+              folders={folders}
+              onCreateFolder={createFolder}
+              onMoveToFolder={moveSessionToFolder}
+              onDeleteFolder={deleteFolder}
             />
           </ErrorBoundary>
 
           {/* Main Area */}
           <main
-            className={`flex-1 h-full min-h-0 transition-all duration-300 ${
+            className={`relative flex-1 h-full min-h-0 overflow-hidden transition-all duration-300 ${
               sidebarOpen ? 'md:ml-72' : ''
             }`}
+            onTouchStart={handleTouchStart}
+            onTouchEnd={handleTouchEnd}
           >
             <ErrorBoundary>
-            {page === 'settings' ? (
-              <Suspense fallback={<div className="h-full flex items-center justify-center text-black/20 dark:text-white/20 text-sm">{t('loading')}</div>}>
-                <Settings key="settings" onBack={() => setPage('chat')} initialSection={settingsSection} />
-              </Suspense>
-            ) : page === 'docs' ? (
-              <Suspense fallback={<div className="h-full flex items-center justify-center text-black/20 dark:text-white/20 text-sm">{t('loading')}</div>}>
-                <Docs key="docs" onBack={() => setPage('chat')} />
-              </Suspense>
-            ) : page === 'browser' ? (
-              <Suspense fallback={<div className="h-full flex items-center justify-center text-black/20 dark:text-white/20 text-sm">{t('loading')}</div>}>
-                <KnowledgeBrowser onBack={() => setPage('chat')} />
-              </Suspense>
-            ) : activeSession ? (
-              <ChatInterface
-                key={activeSession.id}
-                messages={activeSession.messages}
-                engine={currentEngine}
-                onMessagesChange={handleMessagesChange}
-                onEngineChange={handleEngineChange}
-                onMenuToggle={() => setSidebarOpen((v) => !v)}
-                sidebarOpen={sidebarOpen}
-                onNavigate={handleNavigate}
-              />
-            ) : (
+            {activeSession && page === 'chat' ? (
+              <motion.div
+                key={`chat-${chatAnimKey}`}
+                className="h-full"
+                initial={prevPageRef.current !== 'chat' ? { x: -40, opacity: 0 } : false}
+                animate={{ x: 0, opacity: 1 }}
+                transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+                onAnimationComplete={() => { prevPageRef.current = 'chat'; }}
+              >
+                <ChatInterface
+                  key={activeSession.id}
+                  messages={activeSession.messages}
+                  engine={currentEngine}
+                  onMessagesChange={handleMessagesChange}
+                  onEngineChange={handleEngineChange}
+                  onMenuToggle={() => setSidebarOpen((v) => !v)}
+                  sidebarOpen={sidebarOpen}
+                  onNavigate={handleNavigate}
+                  folderContext={folderContext}
+                />
+              </motion.div>
+            ) : page === 'chat' ? (
               <>
                 {/* Menu button when no active chat */}
                 {!sidebarOpen && (
@@ -269,6 +323,32 @@ export default function App() {
                 </button>
               </div>
             </>
+            ) : null}
+            {page !== 'chat' && (
+              <AnimatePresence>
+                <motion.div
+                  key={page}
+                  className="absolute inset-0 z-30 min-h-0"
+                  initial={{ x: 60, opacity: 0 }}
+                  animate={{ x: 0, opacity: 1 }}
+                  exit={{ x: 60, opacity: 0 }}
+                  transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+                >
+                {page === 'settings' ? (
+                  <Suspense fallback={<div className="h-full flex items-center justify-center text-black/20 dark:text-white/20 text-sm">{t('loading')}</div>}>
+                    <Settings key="settings" onBack={handleBackToChat} initialSection={settingsSection} />
+                  </Suspense>
+                ) : page === 'docs' ? (
+                  <Suspense fallback={<div className="h-full flex items-center justify-center text-black/20 dark:text-white/20 text-sm">{t('loading')}</div>}>
+                    <Docs key="docs" onBack={handleBackToChat} />
+                  </Suspense>
+                ) : page === 'browser' ? (
+                  <Suspense fallback={<div className="h-full flex items-center justify-center text-black/20 dark:text-white/20 text-sm">{t('loading')}</div>}>
+                    <KnowledgeBrowser onBack={handleBackToChat} />
+                  </Suspense>
+                ) : null}
+                </motion.div>
+              </AnimatePresence>
             )}
             </ErrorBoundary>
           </main>

@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import ipaddress
 import os
+import re
 
 from fastapi import HTTPException, Request
 
@@ -63,6 +64,19 @@ def authorize_system(request: Request) -> None:
                 status_code=403,
                 detail="Invalid admin token.",
             )
+    origin = request.headers.get("Origin", "").strip()
+    if origin:
+        allowed = {
+            item.strip()
+            for item in os.getenv("TRINAXAI_CORS_ORIGINS", "").split(",")
+            if item.strip()
+        }
+        pattern = os.getenv(
+            "TRINAXAI_CORS_ORIGIN_REGEX",
+            r"https?://(localhost|127\.0\.0\.1|10\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+|172\.(1[6-9]|2\d|3[0-1])\.\d+\.\d+):(3334|3335)",
+        )
+        if origin not in allowed and not re.fullmatch(pattern, origin):
+            raise HTTPException(status_code=403, detail="Untrusted browser origin.")
     client_ip = _client_host(request)
     if not _is_local_client(client_ip) and not (
         ALLOW_LAN_SYSTEM and _is_lan_client(client_ip)

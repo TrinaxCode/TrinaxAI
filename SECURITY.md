@@ -39,12 +39,12 @@ TrinaxAI is a **local-first** application — it runs entirely on your machine. 
 
 | Component | Risk | Notes |
 |-----------|------|-------|
-| **RAG API** (`rag_api.py`) | Medium | Binds to `0.0.0.0` by default when configured for LAN access. System endpoints are protected — disabled by default, require admin token or localhost when enabled. |
+| **RAG API** (`rag_api.py`) | Medium | Can bind to `0.0.0.0`. Administrative endpoints require loopback, an opted-in private LAN, or an admin token; chat and selected upload/read routes remain reachable within the configured network boundary. |
 | **PWA Frontend** (`chat-pwa/`) | Low | Static React app. Served over self-signed HTTPS. CSP headers recommended for production. |
 | **CLI** (`trinaxai_cli/`) | Low | Local terminal tool. No network listeners. |
 | **Shell Scripts** (`install.sh`, `backup.sh`, `uninstall.sh`) | Low | `sudo` usage is confined to service management. Backup extraction validates tarball contents before unpacking. Uninstall requires typed confirmation before destructive actions. |
 | **Ollama** | Medium | Ollama has no built-in authentication. The installer binds it to `127.0.0.1` by default. If exposed on the LAN (`OLLAMA_HOST=0.0.0.0`), anyone on your network can use your models. |
-| **Folder Uploads** | Low | Uploaded files are sanitized (`_safe_rel_path`, `_collection_slug`) and sandboxed to `local_sources/collections/`. Path traversal is blocked. |
+| **Uploads** | Medium | Folder indexing is protected and sandboxed to `local_sources/collections/`. Chat attachments and temporary extraction are not authenticated; file-size limits apply and the API must remain on a trusted network. |
 
 ## Out of Scope
 
@@ -63,7 +63,7 @@ TrinaxAI's threat model assumes:
 
 ### Attack vectors considered
 
-- **LAN attacker** (same WiFi, no auth): By default, system endpoints are disabled. An attacker can only access read-only endpoints (`/health`, `/resources`, `/app-state`, `/collections`). Chat is rate-limited.
+- **LAN attacker** (same WiFi, no auth): Protected administration remains unavailable by default. If the API is reachable, public routes include health/resources, collection/app-state reads, rate-limited chat/voice, temporary document extraction, and chat attachment upload/download. Treat the LAN as trusted or bind the API to loopback.
 - **LAN attacker + misconfiguration** (`ALLOW_LAN_SYSTEM=1`, no token): Full system control (shutdown, startup, indexing, file uploads). **This is why it's disabled by default.**
 - **Remote attacker** (internet): Should be impossible if ports are not forwarded. Use a VPN for remote access.
 - **Malicious tarball** (`backup.sh restore`): Tarball contents are validated before extraction — absolute paths and `..` entries are rejected.

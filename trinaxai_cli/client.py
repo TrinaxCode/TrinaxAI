@@ -31,6 +31,7 @@ class TrinaxAPIClient:
         self.verify_tls = bool(verify_tls)
         self.timeout = timeout
         self._client = httpx.Client(base_url=self.base_url, verify=self.verify_tls, timeout=timeout)
+        self._ollama_clients: dict[str, Any] = {}
         self._prefer_local_https_if_needed()
 
     def close(self) -> None:
@@ -38,6 +39,31 @@ class TrinaxAPIClient:
             self._client.close()
         except Exception:
             pass
+        for ollama_client in self._ollama_clients.values():
+            try:
+                ollama_client.close()
+            except Exception:
+                pass
+        self._ollama_clients.clear()
+
+    def stream_ollama(self, base_url: str, body: dict[str, Any], *, timeout: float = 120.0) -> Any:
+        """Open a streaming Ollama request, reusing the connection between turns."""
+        ollama_client = self._ollama_client(base_url)
+        return ollama_client.stream("POST", "/api/chat", json=body, timeout=timeout)
+
+    def _ollama_client(self, base_url: str) -> Any:
+        normalized = base_url.rstrip("/")
+        ollama_client = self._ollama_clients.get(normalized)
+        if ollama_client is None:
+            ollama_client = httpx.Client(base_url=normalized, timeout=self.timeout)
+            self._ollama_clients[normalized] = ollama_client
+        return ollama_client
+
+    def list_ollama_models(self, base_url: str) -> list[dict[str, Any]]:
+        """Return the models installed in the configured local Ollama instance."""
+        response = self._ollama_client(base_url).get("/api/tags", timeout=5.0)
+        response.raise_for_status()
+        return list(response.json().get("models") or [])
 
     def __enter__(self) -> "TrinaxAPIClient":
         return self

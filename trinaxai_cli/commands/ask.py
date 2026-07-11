@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from trinaxai_cli.commands.chat import _send_to_rag
+from trinaxai_cli.commands.chat import _resolve_engine, _stream_answer, new_session_name
 from trinaxai_cli.session import Session
 
 
@@ -20,14 +20,15 @@ def run(args: Any, client: Any, ui: Any, config: Any) -> int:
         ui.error("Usage: trinaxai ask \"your question\"")
         return 2
     messages = [{"role": "user", "content": prompt}]
-    with Session(getattr(args, "session", None) or "default") as session:
+    collections = _collections(getattr(args, "collections", None))
+    engine = _resolve_engine(args, config, collections)
+    with Session(getattr(args, "session", None) or new_session_name()) as session:
         session.append("user", prompt)
         try:
-            answer = _send_to_rag(client, messages, _collections(getattr(args, "collections", None)))
+            answer = _stream_answer(client, ui, messages, engine, collections, None)
         except Exception as exc:
-            ui.error(f"Cannot reach the local RAG API: {exc}")
+            ui.error(f"Cannot reach the local AI service: {exc}")
             ui.info("Start TrinaxAI with: trinaxai start")
             return 1
         session.append("assistant", answer)
-    ui.markdown(answer)
     return 0

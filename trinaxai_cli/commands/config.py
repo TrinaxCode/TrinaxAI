@@ -24,7 +24,7 @@ def run(args: Any, client: Any, ui: Any, config: CLIConfig) -> int:
         ["defaults.model", config.model],
         ["defaults.collections", ", ".join(config.collections)],
         ["ui.color", config.ui_color],
-        ["project_root", str(_system.PROJECT_ROOT)],
+        ["install_root", str(_system.project_root() or "(not found)")],
     ]
     for key in [
         "TRINAXAI_PROFILE",

@@ -19,23 +19,27 @@ Esta hoja de ruta mantiene la V1 enfocada en la estabilidad antes de ampliar el 
 - [x] CLI para desarrolladores (`trinaxai ask`, `trinaxai chat`, `trinaxai index`, `trinaxai doctor`)
 - [x] Configuración segura por defecto: control LAN desactivado, token admin auto-generado
 - [x] README bilingüe, FAQ, modelo de seguridad y guías de instalación
+- [x] Explorador de conocimiento para colecciones, archivos, chunks, búsqueda y borrado
+- [x] Trabajos de indexación en segundo plano con progreso, ETA y cancelación
+- [x] Plantillas de prompts reutilizables en la PWA
+- [x] OpenAPI, Swagger UI y ReDoc generados por FastAPI
+- [x] Suites pytest del backend y Vitest del frontend en CI
 
 ---
 
 ## 🔜 En progreso / Próximo plazo
 
 - [ ] **Capturas de pantalla y GIFs de demostración** — Evidencia visual de la PWA y CLI en acción
-- [ ] **Explorador visual de proyectos** — Vista de árbol de archivos indexados en la PWA
+- [ ] **Vista de árbol de conocimiento** — Añadir carpetas jerárquicas al explorador existente
 - [ ] **Resumen de conversaciones** — Auto-resumen de chats largos para preservar contexto
-- [ ] **Eventos de indexación estructurados** — Progreso más detallado para mejor ETA
-- [ ] **Plantillas de prompts** — Guardar y reutilizar prompts personalizados por colección
-- [ ] **Expansión de CI** — Agregar CodeQL, Gitleaks, Semgrep, Trivy y pytest
+- [ ] **Telemetría de indexación** — Mejorar tiempos por fase y ETA para importaciones muy grandes
+- [ ] **Expansión de seguridad en CI** — Agregar CodeQL, Gitleaks, Semgrep y Trivy
 
 ---
 
 ## 📅 Planeado
 
-- [ ] **Cobertura de pruebas** — pytest para backend, vitest + Testing Library para frontend
+- [ ] **Ampliación de cobertura** — Añadir pruebas de interacción/accesibilidad y elevar cobertura de ramas del backend
 - [ ] **Despliegue con Docker/Compose** — Stack contenerizado reproducible (usuarios avanzados)
 - [ ] **Más perfiles de modelos** — Detección automática para GPU potentes (RTX 4090, M2 Ultra)
 - [ ] **Ajuste de límites de tasa** — Límites configurables por usuario
@@ -49,7 +53,6 @@ Esta hoja de ruta mantiene la V1 enfocada en la estabilidad antes de ampliar el 
 - [ ] **Sistema de plugins** — Extensiones mediante entry points de Python
 - [ ] **Notificaciones push en móvil** — Sincronización en segundo plano del service worker
 - [ ] **Soporte multiusuario** — Colecciones, memoria e historial por usuario
-- [ ] **Documentación OpenAPI/Swagger** — Generada automáticamente desde FastAPI
 - [ ] **Streaming WebSocket** — Chat bidireccional para menor latencia
 - [ ] **Suite de benchmarks** — Pruebas de regresión de rendimiento para recuperación e indexación
 
@@ -57,4 +60,4 @@ Esta hoja de ruta mantiene la V1 enfocada en la estabilidad antes de ampliar el 
 
 ## Contribuir
 
-¿Quieres trabajar en algo? Revisa los [issues](https://github.com/TrinaxCode/TrinaxAI/issues) o abre una discusión. PRs bienvenidas — consulta [CONTRIBUTING.md](CONTRIBUTING.md).
+¿Quieres trabajar en algo? Revisa los [issues](https://github.com/TrinaxCode/TrinaxAI/issues) o abre una discusión. PRs bienvenidas — consulta [CONTRIBUTING.es.md](CONTRIBUTING.es.md).
