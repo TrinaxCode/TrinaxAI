@@ -39,9 +39,20 @@ def terminate_process_group(process: subprocess.Popen, *, grace_seconds: float =
 
     if sys.platform == "win32":
         try:
-            process.send_signal(getattr(signal, "CTRL_BREAK_EVENT", signal.SIGTERM))
-        except (OSError, ValueError):
-            process.terminate()
+            taskkill = os.path.join(
+                os.environ.get("SystemRoot", r"C:\Windows"),
+                "System32",
+                "taskkill.exe",
+            )
+            subprocess.run(  # noqa: S603 - fixed Windows system binary and argv
+                [taskkill, "/PID", str(process.pid), "/T", "/F"],
+                check=False,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=grace_seconds,
+            )
+        except (OSError, ValueError, subprocess.TimeoutExpired):
+            process.kill()
     else:
         try:
             os.killpg(os.getpgid(process.pid), signal.SIGTERM)
