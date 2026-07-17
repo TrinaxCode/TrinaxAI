@@ -10,9 +10,11 @@ export interface SendResult {
 export interface SendOptions {
   onToken?: (token: string, fullText: string) => void;
   collections?: string[];
+  temporary?: boolean;
 }
 
 const MAX_BUFFER_CHARS = 8192;
+export const FIRST_TOKEN_TIMEOUT_MS = 30_000;
 
 export function streamFlushSize(pendingChars: number): number {
   if (pendingChars > 4096) return 512;
@@ -92,6 +94,8 @@ export function useStreamChat() {
 
       const ctrl = new AbortController();
       abortRef.current = ctrl;
+      let firstTokenTimer: ReturnType<typeof setTimeout> | null = null;
+      let firstTokenTimedOut = false;
 
       wasAbortedRef.current = false;
       setStreaming(true);
@@ -104,8 +108,13 @@ export function useStreamChat() {
       };
 
       try {
+        firstTokenTimer = setTimeout(() => {
+          firstTokenTimedOut = true;
+          ctrl.abort();
+        }, FIRST_TOKEN_TIMEOUT_MS);
         const handleToken = (token: string) => {
           if (runId !== runIdRef.current) return;
+          if (firstTokenTimer) { clearTimeout(firstTokenTimer); firstTokenTimer = null; }
           queueRef.current += token;
           if (queueRef.current.length >= MAX_BUFFER_CHARS) {
             flushQueue();
@@ -114,7 +123,7 @@ export function useStreamChat() {
           }
           options?.onToken?.(token, accumRef.current + queueRef.current);
         };
-        const streamOptions = { collections: options?.collections };
+        const streamOptions = { collections: options?.collections, temporary: options?.temporary };
         const full = engine === 'rag'
           ? await streamRag(messages, handleToken, ctrl.signal, onMeta, streamOptions)
           : await streamOllama(messages, handleToken, ctrl.signal, onMeta, streamOptions);
@@ -142,6 +151,7 @@ export function useStreamChat() {
           throw new Error('TRINAXAI_SILENT_ABORT');
         }
         if (err instanceof DOMException && err.name === 'AbortError') {
+          if (firstTokenTimedOut) throw new Error('TrinaxAI no respondió a tiempo. Intenta nuevamente o comprueba el servicio de IA.');
           if (discardAbortRef.current) {
             throw new Error('TRINAXAI_SILENT_ABORT');
           }
@@ -149,6 +159,7 @@ export function useStreamChat() {
         }
         throw err;
       } finally {
+        if (firstTokenTimer) clearTimeout(firstTokenTimer);
         if (runId === runIdRef.current) {
           killTimer();
           setStreaming(false);
@@ -158,6 +169,48 @@ export function useStreamChat() {
     },
     [flushQueue, scheduleFlush, killTimer],
   );
+
+  /** Reveal a complete non-streaming response with the same buffered cadence
+   * used by Ollama/RAG token streams (web search and deep research use this). */
+  const revealText = useCallback(async (text: string): Promise<string> => {
+    const runId = runIdRef.current + 1;
+    runIdRef.current = runId;
+    discardAbortRef.current = false;
+    abortRef.current?.abort();
+    abortRef.current = null;
+    killTimer();
+    queueRef.current = text;
+    accumRef.current = '';
+    metaRef.current = {};
+    wasAbortedRef.current = false;
+    setStreamedMeta({});
+    setStreamedText('');
+    setStreaming(true);
+    scheduleFlush();
+
+    try {
+      await new Promise<void>((resolve) => {
+        const waitForAnimation = () => {
+          if (runId !== runIdRef.current || (!queueRef.current && frameRef.current === null && !fallbackTimerRef.current)) {
+            resolve();
+            return;
+          }
+          window.setTimeout(waitForAnimation, 16);
+        };
+        waitForAnimation();
+      });
+      if (runId !== runIdRef.current) throw new Error('TRINAXAI_SILENT_ABORT');
+      const revealed = wasAbortedRef.current ? accumRef.current : text;
+      accumRef.current = revealed;
+      setStreamedText(revealed);
+      return revealed;
+    } finally {
+      if (runId === runIdRef.current) {
+        killTimer();
+        setStreaming(false);
+      }
+    }
+  }, [killTimer, scheduleFlush]);
 
   const abort = useCallback((discard = false) => {
     wasAbortedRef.current = true;
@@ -170,5 +223,5 @@ export function useStreamChat() {
 
   const wasAborted = useCallback(() => wasAbortedRef.current, []);
 
-  return { streaming, streamedText, streamedMeta, sendMessage, abort, wasAborted };
+  return { streaming, streamedText, streamedMeta, sendMessage, revealText, abort, wasAborted };
 }

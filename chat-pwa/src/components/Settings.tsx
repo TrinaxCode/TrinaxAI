@@ -1,6 +1,6 @@
-import { useRef, useState, useEffect, useMemo } from 'react';
+import { useRef, useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { MdArrowBack, MdAdd, MdDelete, MdTranslate, MdDarkMode, MdLightMode, MdBook, MdRefresh, MdStorage, MdWarning, MdPowerSettingsNew, MdRocketLaunch, MdStop, MdVisibility, MdMemory, MdBarChart, MdAutoFixHigh, MdBookOnline, MdFlashOn, MdPerson, MdCheck } from 'react-icons/md';
+import { MdArrowBack, MdAdd, MdDelete, MdTranslate, MdDarkMode, MdLightMode, MdBook, MdRefresh, MdStorage, MdPowerSettingsNew, MdRocketLaunch, MdStop, MdPerson, MdCheck, MdFolder, MdTune, MdKeyboardArrowDown, MdKeyboardArrowRight, MdVolumeOff, MdVolumeUp } from 'react-icons/md';
 import { useI18n } from '../i18n/I18nContext';
 import { useTheme } from '../theme/ThemeContext';
 import { useToast } from './Toast';
@@ -8,26 +8,33 @@ import ConfirmModal from './ConfirmModal';
 import StatusDots from './StatusDots';
 import WatcherCard from './WatcherCard';
 import MemoryPanel from './MemoryPanel';
+import FolderPicker from './FolderPicker';
+import DevicePairingCard from './DevicePairingCard';
 import StatsPanel from './StatsPanel';
 import RecentIndexes from './RecentIndexes';
-import { DEFAULT_MODEL_SETTINGS, MODEL_KEYS, MODEL_PRESETS, OLLAMA_KEEP_ALIVE_DEFAULT, cancelIndexJob, createCollection, deleteCollection, folderLabelFromFiles, getCollections, getIndexJob, indexableFilesFrom, modelSetting, renameCollection, resetSharedAppState, startFolderIndex, type Collection, type IndexJobStatus, type ModelPreset } from '../lib/api';
+import { DEFAULT_MODEL_SETTINGS, MODEL_KEYS, MODEL_PRESETS, OLLAMA_KEEP_ALIVE_DEFAULT, cancelIndexJob, createCollection, deleteCollection, folderLabelFromFiles, getCollections, getIndexJob, indexableFilesFrom, modelSetting, renameCollection, resetSharedAppState, retryIndexJob, startFolderIndex, systemRequestHeaders, type Collection, type IndexJobStatus, type ModelPreset } from '../lib/api';
 import { APP_CONFIG } from '../lib/config';
 import { syncSharedStateOnce } from '../lib/sharedState';
 import { NICKNAME_KEY, isValidProfileName } from '../lib/userProfile';
+import { systemFetch } from '../lib/authHeaders';
+import { audioManager } from '../services/audioManager';
 
 type SettingsSection = 'general' | 'indexing' | 'prompts' | 'memory' | 'stats';
 
 interface Props {
   onBack: () => void;
+  onOpenDocs: () => void;
   initialSection?: SettingsSection;
+  onSectionChange?: (section: SettingsSection) => void;
+  canManageSystem?: boolean;
 }
 interface CustomPrompt { name: string; text: string; }
 
 const PROMPTS_KEY = 'tc-prompts';
 const LEGACY_PROMPT_KEYS = ['tc-ollama-prompts', 'tc-rag-prompts'];
 
-const DEF_OLLAMA_ES = 'Eres TrinaxAI, asistente de IA local-first y open-source. Fuiste creado por TrinaxCode — Full Stack Developer de Tuxtla Gutiérrez, Chiapas (originario de Nicaragua), enfocado en React, TypeScript, Python, Django, PostgreSQL y Firebase. GitHub: https://github.com/TrinaxCode. LinkedIn: https://linkedin.com/in/trinaxcode. Si el usuario pregunta quién te creó, habla de TrinaxCode y comparte los links. Responde claro, útil y sin inventar datos.';
-const DEF_OLLAMA_EN = 'You are TrinaxAI, a local-first open-source AI assistant. You were created by TrinaxCode — a Full Stack Developer from Tuxtla Gutiérrez, Chiapas (originally from Nicaragua), focused on React, TypeScript, Python, Django, PostgreSQL, and Firebase. GitHub: https://github.com/TrinaxCode. LinkedIn: https://linkedin.com/in/trinaxcode. If the user asks who created you, talk about TrinaxCode and share the links. Be clear, useful, and do not invent facts.';
+const DEF_OLLAMA_ES = 'Eres TrinaxAI, asistente de IA local-first y open-source. Tu repositorio oficial es https://github.com/TrinaxCode/TrinaxAI. Si preguntan quién eres, preséntate brevemente, explica que puedes ayudar con chat, RAG, voz, visión y desarrollo, y comparte ese enlace. Fuiste creado por TrinaxCode — Full Stack Developer de Tuxtla Gutiérrez, Chiapas (originario de Nicaragua), enfocado en React, TypeScript, Python, Django, PostgreSQL y Firebase. Si preguntan por tu creador, responde de forma clara y factual; si piden sus enlaces o redes, comparte GitHub https://github.com/TrinaxCode, LinkedIn https://www.linkedin.com/in/trinaxcode/, X https://x.com/TrinaxCode, TikTok https://www.tiktok.com/@trinaxcode, Instagram https://www.instagram.com/trinaxcode/, Facebook https://www.facebook.com/TrinaxCode, ORCID https://orcid.org/0009-0009-2321-9834, correo mailto:trinaxcode@gmail.com y WhatsApp https://wa.me/529618533231. No inventes datos.';
+const DEF_OLLAMA_EN = 'You are TrinaxAI, a local-first open-source AI assistant. Your official repository is https://github.com/TrinaxCode/TrinaxAI. When asked who you are, introduce yourself briefly, explain that you can help with chat, RAG, voice, vision and development, and share that link. You were created by TrinaxCode — a Full Stack Developer from Tuxtla Gutiérrez, Chiapas (originally from Nicaragua), focused on React, TypeScript, Python, Django, PostgreSQL and Firebase. When asked about your creator, give a clear factual answer; for their links or social media share GitHub https://github.com/TrinaxCode, LinkedIn https://www.linkedin.com/in/trinaxcode/, X https://x.com/TrinaxCode, TikTok https://www.tiktok.com/@trinaxcode, Instagram https://www.instagram.com/trinaxcode/, Facebook https://www.facebook.com/TrinaxCode, ORCID https://orcid.org/0009-0009-2321-9834, email mailto:trinaxcode@gmail.com and WhatsApp https://wa.me/529618533231. Do not invent facts.';
 const DEF_SHARED_ES = `${DEF_OLLAMA_ES} Si hay contexto indexado, úsalo cuando sea relevante y distingue claramente entre datos encontrados y explicaciones generales.`;
 const DEF_SHARED_EN = `${DEF_OLLAMA_EN} When indexed context is available, use it when relevant and clearly distinguish found facts from general explanations.`;
 
@@ -55,14 +62,19 @@ function loadPrompts(lang: 'es' | 'en'): CustomPrompt[] {
   }
 }
 
-export default function Settings({ onBack, initialSection = 'general' }: Props) {
+export default function Settings({ onBack, onOpenDocs, initialSection = 'general', onSectionChange, canManageSystem = true }: Props) {
   const { t, lang, setLang } = useI18n();
   const { theme, cycleTheme, isDark } = useTheme();
   const toast = useToast();
   const [section, setSection] = useState<SettingsSection>(initialSection);
+  const [soundEffects, setSoundEffects] = useState(() => audioManager.enabled());
+  const changeSection = (next: SettingsSection) => {
+    setSection(next);
+    onSectionChange?.(next);
+  };
 
   useEffect(() => {
-    setSection(initialSection);
+    changeSection(initialSection);
   }, [initialSection]);
 
   // Allow external callers (e.g. /memory slash command) to jump to a specific section.
@@ -70,7 +82,7 @@ export default function Settings({ onBack, initialSection = 'general' }: Props) 
     const onJump = (e: Event) => {
       const detail = (e as CustomEvent).detail as { section?: string } | undefined;
       if (detail?.section && ['general', 'indexing', 'prompts', 'memory', 'stats'].includes(detail.section)) {
-        setSection(detail.section as typeof section);
+        changeSection(detail.section as typeof section);
       }
     };
     window.addEventListener('tc-open-section', onJump as EventListener);
@@ -78,13 +90,17 @@ export default function Settings({ onBack, initialSection = 'general' }: Props) 
   }, []);
 
   useEffect(() => {
-    const onMem = () => setSection('memory');
+    const onMem = () => changeSection('memory');
     window.addEventListener('tc-open-memory-tab', onMem);
     return () => window.removeEventListener('tc-open-memory-tab', onMem);
   }, []);
   const [sd, setSd] = useState(false); const [su, setSu] = useState(false);
   const [nickname, setNicknameValue] = useState(() => localStorage.getItem(NICKNAME_KEY) || '');
   const [nicknameEditing, setNicknameEditing] = useState(false);
+  const [agentWorkspace, setAgentWorkspace] = useState(() => {
+    try { return localStorage.getItem('tc-agent-workspace') || ''; } catch { return ''; }
+  });
+  const [agentPickerOpen, setAgentPickerOpen] = useState(false);
   const saveNickname = () => {
     const trimmed = nickname.trim();
     if (!trimmed) {
@@ -130,6 +146,29 @@ export default function Settings({ onBack, initialSection = 'general' }: Props) 
   const indexAbortRef = useRef<AbortController | null>(null);
   const clearJobTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [, refreshLocalSettings] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    let timer = 0;
+    try {
+      const saved = JSON.parse(localStorage.getItem('tc-last-index-import') || 'null');
+      if (!saved?.jobId) return undefined;
+      const poll = async () => {
+        try {
+          const job = await getIndexJob(String(saved.jobId));
+          if (cancelled) return;
+          setIndexJob(job);
+          const active = ['saving', 'indexing'].includes(job.status);
+          setIndexing(active);
+          if (active) timer = window.setTimeout(poll, 1000);
+        } catch {
+          if (!cancelled) timer = window.setTimeout(poll, 2500);
+        }
+      };
+      void poll();
+    } catch { /* no resumable job */ }
+    return () => { cancelled = true; window.clearTimeout(timer); };
+  }, []);
 
   const setLocalSetting = (key: string, value: string) => {
     localStorage.setItem(key, value);
@@ -213,7 +252,7 @@ export default function Settings({ onBack, initialSection = 'general' }: Props) 
   };
   const sys = async (a:'shutdown'|'startup'|'stop-all') => {
     const s = a === 'shutdown' ? setSd : a === 'startup' ? setSu : setStoppingAll; s(true);
-    try { const r=await fetch(`/api/system/${a}`,{method:'POST'}); const d=await r.json();
+    try { const r=await fetch(`/api/system/${a}`,{method:'POST', headers: systemRequestHeaders()}); const d=await r.json();
       toast.toast(d.ok?t('executedOk'):`${d.error||d.output}`, d.ok?'success':'error'); }
     catch { toast.toast(t('noConnection'), 'error'); } finally { s(false); }
   };
@@ -328,10 +367,13 @@ export default function Settings({ onBack, initialSection = 'general' }: Props) 
     saving: 'indexPhaseSaving',
     queued: 'indexPhaseQueued',
     starting: 'indexPhaseStarting',
+    extracting: 'indexPhaseExtracting',
     indexing: 'indexPhaseIndexing',
     chunking: 'indexPhaseChunking',
     embedding: 'indexPhaseEmbedding',
     saving_index: 'indexPhaseSavingIndex',
+    timeout: 'indexPhaseTimeout',
+    interrupted: 'indexPhaseInterrupted',
     finishing: 'indexPhaseFinishing',
     completed: 'indexPhaseCompleted',
     cancelled: 'indexPhaseCancelled',
@@ -355,7 +397,7 @@ export default function Settings({ onBack, initialSection = 'general' }: Props) 
 
   return (<motion.div className={`h-full flex flex-col min-w-0 max-w-full overflow-x-hidden ${isDark ? 'bg-black' : 'bg-white'}`} initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}}>
     <div className={`shrink-0 flex items-center gap-3 px-4 pt-[env(safe-area-inset-top,0px)] pb-3 border-b ${isDark ? 'border-white/[0.06]' : 'border-gray-200'}`}>
-      <button onClick={onBack} className={`p-2 -ml-2 ${isDark ? 'text-white/60 hover:text-white' : 'text-gray-500 hover:text-gray-800'}`}><MdArrowBack size={20}/></button>
+      <button onClick={onBack} aria-label={t('back')} className={`p-2 -ml-2 ${isDark ? 'text-white/60 hover:text-white' : 'text-gray-500 hover:text-gray-800'}`}><MdArrowBack size={20}/></button>
       <span className={`text-sm font-medium ${textLabel}`}>{t('settingsTitle')}</span>
     </div>
     <div className={`shrink-0 flex gap-0.5 sm:gap-1 px-1 sm:px-2 pt-2 pb-1 border-b ${isDark ? 'border-white/[0.04]' : 'border-gray-100'} overflow-x-auto overscroll-x-contain`}>
@@ -368,7 +410,7 @@ export default function Settings({ onBack, initialSection = 'general' }: Props) 
       ] as const).map(([k, lbl]) => (
         <button
           key={k}
-          onClick={() => setSection(k)}
+          onClick={() => changeSection(k)}
           className={`shrink-0 px-1.5 sm:px-2 py-1 rounded-lg text-[10px] sm:text-[11px] font-medium transition-colors whitespace-nowrap ${
             section === k
               ? 'bg-[#006bbd]/15 text-[#006bbd]'
@@ -405,13 +447,16 @@ export default function Settings({ onBack, initialSection = 'general' }: Props) 
                   onChange={(e) => setNicknameValue(e.target.value)}
                   onKeyDown={(e) => { if (e.key === 'Enter') saveNickname(); if (e.key === 'Escape') { setNicknameValue(localStorage.getItem(NICKNAME_KEY) || ''); setNicknameEditing(false); } }}
                   placeholder={t('profileNicknameLabel')}
+                  aria-label={t('profileNicknameLabel')}
+                  name="nickname"
+                  autoComplete="off"
                   className={`min-w-0 flex-1 bg-transparent text-sm outline-none border-b ${isDark ? 'text-white/80 border-[#006bbd]/40 placeholder-white/20' : 'text-gray-800 border-[#006bbd]/40 placeholder-gray-400'} focus:border-[#006bbd] px-1 py-0.5`}
-                  autoFocus
                 />
                 <button
                   onClick={saveNickname}
                   className={`p-1.5 rounded-lg ${isDark ? 'text-[#006bbd] hover:bg-white/[0.06]' : 'text-[#006bbd] hover:bg-gray-100'}`}
                   title={t('save')}
+                  aria-label={t('save')}
                 >
                   <MdCheck size={18} />
                 </button>
@@ -471,21 +516,77 @@ export default function Settings({ onBack, initialSection = 'general' }: Props) 
         </div>
       </section>
 
+      <section>
+        <h3 className={`text-xs font-medium uppercase tracking-widest mb-3 ${textHeading}`}>{t('soundEffects')}</h3>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={soundEffects}
+          onClick={() => {
+            const enabled = !soundEffects;
+            setSoundEffects(enabled);
+            audioManager.setEnabled(enabled);
+            if (enabled) audioManager.play('tool-complete');
+          }}
+          className={`${bgCard} flex w-full items-center gap-3 rounded-xl border px-4 py-3 text-left`}
+        >
+          {soundEffects ? <MdVolumeUp size={20} className="text-[#006bbd]" /> : <MdVolumeOff size={20} className={textHeading} />}
+          <span className="min-w-0 flex-1">
+            <span className={`block text-sm font-medium ${isDark ? 'text-white/75' : 'text-gray-700'}`}>{t('soundEffects')}</span>
+            <span className={`block text-[11px] ${textHeading}`}>{t('soundEffectsHint')}</span>
+          </span>
+          <span className={`h-6 w-11 rounded-full p-0.5 transition-colors ${soundEffects ? 'bg-[#006bbd]' : isDark ? 'bg-white/15' : 'bg-gray-300'}`}>
+            <span className={`block h-5 w-5 rounded-full bg-white transition-transform ${soundEffects ? 'translate-x-5' : ''}`} />
+          </span>
+        </button>
+      </section>
+
       {/* ── System Section ── */}
       <section>
         <h3 className={`text-xs font-medium uppercase tracking-widest mb-3 ${textHeading}`}>{t('system')}</h3>
-        <div className="flex flex-col sm:flex-row gap-3">
-          <button onClick={() => setConfirmShutdown(true)} disabled={sd} className="min-w-0 flex-1 flex items-center justify-center gap-1.5 px-4 py-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm font-medium text-center hover:bg-red-500/20 disabled:opacity-50 active:scale-95 transition-all"><MdPowerSettingsNew className="shrink-0" size={16} /><span className="min-w-0 break-words">{sd?t('shuttingDown'):t('shutdownAI')}</span></button>
-          <button onClick={() => setConfirmStartup(true)} disabled={su} className="min-w-0 flex-1 flex items-center justify-center gap-1.5 px-4 py-3 rounded-xl bg-green-500/10 border border-green-500/20 text-green-400 text-sm font-medium text-center hover:bg-green-500/20 disabled:opacity-50 active:scale-95 transition-all"><MdRocketLaunch className="shrink-0" size={16} /><span className="min-w-0 break-words">{su?t('startingUp'):t('startupAI')}</span></button>
-        </div>
+        <DevicePairingCard isDark={isDark} />
+        {canManageSystem && <div className={`${bgCard} mb-3 rounded-xl border px-4 py-3 space-y-1.5`}>
+          <label className={`text-[10px] uppercase tracking-wider ${textHeading}`}>{t('agentSettingsTitle')} — {t('agentWorkspaceRootLabel')}</label>
+          <div className="flex items-center gap-2">
+            <input
+              type="text"
+              value={agentWorkspace}
+              spellCheck={false}
+              onChange={(event) => setAgentWorkspace(event.target.value)}
+              onBlur={(event) => { try { localStorage.setItem('tc-agent-workspace', event.target.value.trim()); } catch { /* ignore */ } }}
+              placeholder="~/Documents"
+              aria-label={`${t('agentSettingsTitle')} — ${t('agentWorkspaceRootLabel')}`}
+              name="agent-workspace"
+              autoComplete="off"
+              className={`min-w-0 flex-1 rounded-lg border bg-transparent px-3 py-2 font-mono text-xs outline-none ${isDark ? 'border-white/[0.08] text-white/80 placeholder-white/25' : 'border-gray-200 text-gray-800 placeholder-gray-400'}`}
+            />
+            <button
+              onClick={() => setAgentPickerOpen(true)}
+              className={`flex shrink-0 items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium ${isDark ? 'border-white/[0.08] text-white/70 hover:bg-white/[0.06]' : 'border-gray-200 text-gray-600 hover:bg-gray-100'}`}
+            >
+              <MdFolder size={14} className="text-[#006bbd]" /> {t('agentPickFolder')}
+            </button>
+          </div>
+          <p className={`text-[10px] ${textHeading}`}>{t('agentWorkspaceRootHint')}</p>
+        </div>}
+        {canManageSystem && <div className="flex flex-col sm:flex-row gap-3">
+          <button onClick={() => setConfirmShutdown(true)} disabled={sd} className="min-w-0 flex-1 flex items-center justify-center gap-1.5 px-4 py-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm font-medium text-center hover:bg-red-500/20 disabled:opacity-50 active:scale-95 transition-[background-color,opacity,transform]"><MdPowerSettingsNew className="shrink-0" size={16} /><span className="min-w-0 break-words">{sd?t('shuttingDown'):t('shutdownAI')}</span></button>
+          <button onClick={() => setConfirmStartup(true)} disabled={su} className="min-w-0 flex-1 flex items-center justify-center gap-1.5 px-4 py-3 rounded-xl bg-green-500/10 border border-green-500/20 text-green-400 text-sm font-medium text-center hover:bg-green-500/20 disabled:opacity-50 active:scale-95 transition-[background-color,opacity,transform]"><MdRocketLaunch className="shrink-0" size={16} /><span className="min-w-0 break-words">{su?t('startingUp'):t('startupAI')}</span></button>
+        </div>}
       </section>
 
       {/* ── Models Section (Advanced, collapsed) ── */}
-      <section className="min-w-0 max-w-full overflow-hidden">
+      {canManageSystem && <section className="min-w-0 max-w-full overflow-hidden">
         <button onClick={() => setModelsExpanded(v => !v)}
-          className={`w-full flex items-center justify-between text-xs font-medium uppercase tracking-widest mb-3 ${textHeading} hover:opacity-80`}>
-          <span>{t('modelCustomize')}</span>
-          <span className="text-[10px]">{modelsExpanded ? '▾' : '▸'}</span>
+          aria-expanded={modelsExpanded}
+          className={`mb-3 flex w-full items-center text-xs font-medium uppercase tracking-widest ${textHeading} hover:opacity-80`}>
+          <span className="inline-flex min-w-0 items-center gap-2">
+            <MdTune size={16} aria-hidden="true" />
+            <span className="truncate">{t('modelCustomize')}</span>
+            {modelsExpanded
+              ? <MdKeyboardArrowDown aria-hidden="true" size={19} className={isDark ? 'text-white' : 'text-black'} />
+              : <MdKeyboardArrowRight aria-hidden="true" size={19} className={isDark ? 'text-white' : 'text-black'} />}
+          </span>
         </button>
         {modelsExpanded && (
           <div className="space-y-2 min-w-0 max-w-full">
@@ -499,7 +600,6 @@ export default function Settings({ onBack, initialSection = 'general' }: Props) 
               { k: 'tc-models-chat', label: t('modelChat'), isEmbed: false },
               { k: 'tc-models-deep', label: t('modelDeep'), isEmbed: false },
               { k: 'tc-models-vision', label: t('modelVision'), isEmbed: false },
-              { k: 'tc-models-vision-quality', label: t('modelVisionQuality'), isEmbed: false },
               { k: 'tc-models-embed', label: t('modelEmbedding'), isEmbed: true },
               { k: 'tc-models-code', label: t('modelCode'), isEmbed: false },
               { k: 'tc-models-fast', label: t('modelFast'), isEmbed: false },
@@ -512,9 +612,9 @@ export default function Settings({ onBack, initialSection = 'general' }: Props) 
                     onChange={(e) => setLocalSetting(k, e.target.value)}
                     className={`min-w-0 flex-1 text-[11px] font-mono bg-transparent outline-none border-b border-transparent hover:border-[#006bbd]/30 focus:border-[#006bbd] px-1 py-0.5 transition-colors max-w-full ${isDark ? 'text-white/70' : 'text-gray-700'}`}
                   >
-                    <option value="bge-m3">bge-m3 · 1024d · multilingual (recommended)</option>
-                    <option value="nomic-embed-text">nomic-embed-text · 768d · faster</option>
-                    <option value="all-minilm">all-minilm · 384d · fastest (English)</option>
+                    <option value="bge-m3">bge-m3 · 1024d · {t('modelEmbeddingBge')}</option>
+                    <option value="nomic-embed-text">nomic-embed-text · 768d · {t('modelEmbeddingNomic')}</option>
+                    <option value="all-minilm">all-minilm · 384d · {t('modelEmbeddingMini')}</option>
                     <option value="mxbai-embed-large">mxbai-embed-large · 1024d</option>
                   </select>
                 ) : (
@@ -530,16 +630,16 @@ export default function Settings({ onBack, initialSection = 'general' }: Props) 
             ))}
             <div className="flex flex-col sm:flex-row gap-2">
               <button onClick={async () => {
-                const models = Array.from(new Set(MODEL_KEYS.map(k => getModel(k)).filter(Boolean)));
+                const models = Array.from(new Set(MODEL_KEYS.filter(k => k !== 'tc-models-vision').map(k => getModel(k)).filter(Boolean)));
                 for (const m of models) {
                   if (!m) continue;
                   toast.toast(t('modelPulling').replace('{model}', m), 'info');
                   try {
-                    await fetch(`${APP_CONFIG.ollamaBase}/api/pull`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({name: m, stream: false}) });
+                    await systemFetch(`${APP_CONFIG.ollamaBase}/api/pull`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({name: m, stream: false}) });
                     toast.toast(t('modelReady').replace('{model}', m), 'success');
                   } catch { toast.toast(t('modelPullFailed').replace('{model}', m), 'error'); }
                 }
-              }} className={`min-w-0 flex-1 px-3 py-2 rounded-lg text-xs font-medium break-words bg-[#006bbd] text-white hover:bg-[#0059a0] active:scale-95 transition-all`}>
+              }} className={`min-w-0 flex-1 px-3 py-2 rounded-lg text-xs font-medium break-words bg-[#006bbd] text-white hover:bg-[#0059a0] active:scale-95 transition-[background-color,transform]`}>
                 {t('modelSaveAndPull')}
               </button>
               <button onClick={() => {
@@ -588,7 +688,7 @@ export default function Settings({ onBack, initialSection = 'general' }: Props) 
                   let ok = 0;
                   for (const m of models) {
                     try {
-                      await fetch(`${APP_CONFIG.ollamaBase}/api/generate`, {
+                      await systemFetch(`${APP_CONFIG.ollamaBase}/api/generate`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ model: m, keep_alive: 0, prompt: '' }),
@@ -605,12 +705,12 @@ export default function Settings({ onBack, initialSection = 'general' }: Props) 
             </div>
           </div>
         )}
-      </section>
+      </section>}
 
       {/* ── Docs Link ── */}
       <section>
-        <button onClick={() => { window.location.hash = '#docs'; }}
-          className={`w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl border text-sm font-medium transition-all ${btnBase} active:scale-95`}>
+        <button onClick={onOpenDocs}
+          className={`w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl border text-sm font-medium transition-[background-color,color,border-color,transform] ${btnBase} active:scale-95`}>
           <MdBook size={16} />
           {t('viewDocs')}
         </button>
@@ -620,7 +720,7 @@ export default function Settings({ onBack, initialSection = 'general' }: Props) 
       <section className="pb-8">
         {!showRestore ? (
           <button onClick={() => setShowRestore(true)}
-            className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl border border-red-500/20 text-red-400 text-sm font-medium hover:bg-red-500/10 transition-all active:scale-95">
+            className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl border border-red-500/20 text-red-400 text-sm font-medium hover:bg-red-500/10 transition-[background-color,transform] active:scale-95">
             <MdRefresh size={16} />
             {t('restoreConfig')}
           </button>
@@ -641,18 +741,18 @@ export default function Settings({ onBack, initialSection = 'general' }: Props) 
               </button>
               <button onClick={doRestore}
                 disabled={restoreConfirm !== 'RESTAURAR' && restoreConfirm !== 'RESTORE'}
-                className="flex-1 py-2 rounded-lg text-xs font-medium bg-red-500/20 text-red-400 hover:bg-red-500/30 disabled:opacity-30 transition-all">
+                className="flex-1 py-2 rounded-lg text-xs font-medium bg-red-500/20 text-red-400 hover:bg-red-500/30 disabled:opacity-30 transition-[background-color,opacity]">
                 {t('restoreConfig')}
               </button>
             </div>
           </div>
         )}
-        <button onClick={() => setConfirmStopAll(true)}
+        {canManageSystem && <button onClick={() => setConfirmStopAll(true)}
           disabled={stoppingAll}
-          className="mt-3 w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl border border-red-500/30 text-red-400 text-sm font-medium hover:bg-red-500/10 transition-all active:scale-95">
+          className="mt-3 w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl border border-red-500/30 text-red-400 text-sm font-medium hover:bg-red-500/10 transition-[background-color,transform] active:scale-95">
           <MdPowerSettingsNew size={16} />
           {t('stopAllTrinaxAI')}
-        </button>
+        </button>}
       </section>
       </>)}
 
@@ -694,7 +794,7 @@ export default function Settings({ onBack, initialSection = 'general' }: Props) 
             {...{ webkitdirectory: '', directory: '' }}
           />
           <button onClick={() => folderInputRef.current?.click()} disabled={indexing}
-            className={`min-w-0 flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl border text-sm font-medium text-center transition-all ${btnBase} disabled:opacity-50 active:scale-95`}>
+            className={`min-w-0 flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl border text-sm font-medium text-center transition-[background-color,color,border-color,opacity,transform] ${btnBase} disabled:opacity-50 active:scale-95`}>
             <MdStorage className="shrink-0" size={16} />
             <span className="min-w-0 break-words">
               {indexing ? t('indexing') : lastIndexedLabel ? t('indexFolderSelected').replace('{folder}', lastIndexedLabel).replace('{count}', '—') : t('chooseFolderIndex')}
@@ -703,7 +803,7 @@ export default function Settings({ onBack, initialSection = 'general' }: Props) 
           {indexing && (
             <button
               onClick={cancelIndex}
-              className="px-4 py-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm font-medium hover:bg-red-500/20 active:scale-95 transition-all"
+              className="px-4 py-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm font-medium hover:bg-red-500/20 active:scale-95 transition-[background-color,transform]"
               aria-label={t('indexCancel')}
               title={t('indexCancel')}
             >
@@ -718,19 +818,22 @@ export default function Settings({ onBack, initialSection = 'general' }: Props) 
               <>
                 <div className="flex items-center justify-between gap-3">
                   <span className={`text-xs font-medium ${textLabel}`}>{phaseLabel(indexJob?.phase || (uploadProgress > 0 ? 'saving' : 'queued'))}</span>
-                  <span className={`text-xs tabular-nums ${textHeading}`}>{progress}%</span>
+                  <span className={`text-xs tabular-nums ${textHeading}`}>{indexJob && !indexJob.progress_exact ? t('indexIndeterminate') : `${progress}%`}</span>
                 </div>
-                <div className={`h-2 w-full overflow-hidden rounded-full ${isDark ? 'bg-white/[0.08]' : 'bg-gray-200'}`}>
+                {(uploadProgress > 0 && !indexJob || indexJob?.progress_exact) && <div className={`h-2 w-full overflow-hidden rounded-full ${isDark ? 'bg-white/[0.08]' : 'bg-gray-200'}`}>
                   <div
-                    className="h-full rounded-full bg-[#006bbd] transition-all duration-500"
+                    className="h-full rounded-full bg-[#006bbd] transition-[width] duration-500"
                     style={{ width: `${Math.min(100, Math.max(0, progress))}%` }}
                   />
-                </div>
+                </div>}
                 <div className={`flex flex-wrap items-center justify-between gap-2 text-[11px] ${textHeading}`}>
-                  <span>{t('indexEta')}: {formatEta(indexJob?.eta_seconds)}</span>
+                  <span>{t('indexElapsed')}: {indexJob?.elapsed_seconds ?? 0}s</span>
                   <span>{t('indexFiles')}: {indexJob?.saved ?? 0} / {selectedFolderFiles?.length ?? indexJob?.saved ?? 0}</span>
+                  {!!indexJob?.pages_total && <span>{t('indexPages')}: {indexJob.pages_processed}/{indexJob.pages_total}</span>}
+                  {!!indexJob?.chunks_generated && <span>{t('indexChunks')}: {indexJob.chunks_generated}</span>}
                   {!!indexJob?.skipped && <span>{t('indexSkipped')}: {indexJob.skipped}</span>}
                 </div>
+                {!!indexJob?.recent_activity && <p className={`text-[11px] ${textHeading}`}>{t('indexRecentActivity')}: {indexJob.recent_activity}</p>}
               </>
             ) : indexJob?.status === 'completed' ? (
               <div className="flex items-center justify-between gap-2">
@@ -741,19 +844,26 @@ export default function Settings({ onBack, initialSection = 'general' }: Props) 
                 </div>
                 <button
                   onClick={() => folderInputRef.current?.click()}
-                  className="shrink-0 flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-[#006bbd]/15 text-[#006bbd] hover:bg-[#006bbd]/25 active:scale-95 transition-all"
+                  className="shrink-0 flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-[#006bbd]/15 text-[#006bbd] hover:bg-[#006bbd]/25 active:scale-95 transition-[background-color,transform]"
                   title={t('chooseFolderIndex')}
                 >
                   <MdRefresh size={14} />
                   <span className="hidden sm:inline">{t('indexAgain')}</span>
                 </button>
               </div>
+            ) : indexJob?.status === 'failed' ? (
+              <div className="flex items-center justify-between gap-3 text-sm text-red-400">
+                <span><strong>{phaseLabel(indexJob.phase)}</strong>: {indexJob.error || t('indexFailed')}</span>
+                <button className="shrink-0 rounded-lg bg-[#006bbd]/15 px-3 py-1.5 text-xs text-[#4ea3e0]" onClick={async () => { const job = await retryIndexJob(indexJob.id); setIndexJob(job); setIndexing(true); }}>{t('retry')}</button>
+              </div>
+            ) : indexJob?.status === 'cancelled' ? (
+              <div className={`text-sm ${textLabel}`}>{t('indexCancelled')}</div>
             ) : null}
           </div>
         )}
       </section>
 
-      <RecentIndexes collections={collections} />
+      <RecentIndexes />
 
       {/* ── Collections Section ── */}
       <section>
@@ -883,6 +993,17 @@ ${t('indexMayTakeTime')}`}
         onConfirm={() => { if (promptDeleteName) del(promptDeleteName); }}
         onCancel={() => setPromptDeleteName(null)}
       />
+      {agentPickerOpen && (
+        <FolderPicker
+          initialPath={agentWorkspace}
+          onSelect={(path) => {
+            setAgentWorkspace(path);
+            try { localStorage.setItem('tc-agent-workspace', path); } catch { /* ignore */ }
+            setAgentPickerOpen(false);
+          }}
+          onClose={() => setAgentPickerOpen(false)}
+        />
+      )}
     </div>
   </motion.div>);
 }

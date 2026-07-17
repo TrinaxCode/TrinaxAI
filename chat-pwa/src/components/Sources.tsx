@@ -1,7 +1,7 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useId } from 'react';
 import { useTheme } from '../theme/ThemeContext';
 import { useI18n } from '../i18n/I18nContext';
-import { MdContentCopy, MdCheck, MdLibraryBooks } from 'react-icons/md';
+import { MdContentCopy, MdCheck, MdLibraryBooks, MdOpenInNew } from 'react-icons/md';
 import { escapeRegExp } from '../utils/str';
 import type { Source } from '../lib/api';
 
@@ -51,6 +51,7 @@ export default function Sources({ sources, model, project, query, onOpenInBrowse
   const [copiedIdx, setCopiedIdx] = useState<number | null>(null);
   const { isDark } = useTheme();
   const { t } = useI18n();
+  const sourcesId = useId();
   const terms = useMemo(() => extractTerms(query || ''), [query]);
 
   const hasSources = sources && sources.length > 0;
@@ -74,42 +75,72 @@ export default function Sources({ sources, model, project, query, onOpenInBrowse
       )}
       {hasSources && (
         <button
+          type="button"
           onClick={() => setOpen((v) => !v)}
           className={`hover:underline transition-colors ${isDark ? 'text-white/40 hover:text-white/70' : 'text-gray-400 hover:text-gray-600'}`}
+          aria-expanded={open}
+          aria-controls={sourcesId}
         >
           {open ? '▾' : '▸'} {sources!.length} {sources!.length === 1 ? t('source') : t('sources')}
         </button>
       )}
 
       {open && hasSources && (
-        <div className="w-full flex flex-col gap-1.5 mt-1">
+        <div id={sourcesId} className="w-full flex flex-col gap-1.5 mt-1">
           {sources!.map((s, i) => (
             <div
               key={`${s.file}-${i}`}
               className={`rounded-lg border px-2.5 py-1.5 ${isDark ? 'bg-black/40 border-white/[0.06]' : 'bg-gray-50 border-gray-200'}`}
             >
               <div className="flex items-center justify-between gap-2">
-                <span
-                  className={`text-[11px] font-mono truncate cursor-pointer hover:underline ${isDark ? 'text-[#4ea3e0]' : 'text-[#006bbd]'}`}
-                  onClick={() => copyPath(s.file, i)}
-                  title={`${s.file} — ${t('clickToCopy')}`}
-                >
-                  {s.file}
-                </span>
+                {s.url ? (
+                  <a
+                    href={s.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className={`min-w-0 truncate text-[11px] hover:underline ${isDark ? 'text-[#4ea3e0]' : 'text-[#006bbd]'}`}
+                    title={s.url}
+                  >
+                    {s.title || s.url}
+                  </a>
+                ) : (
+                  <button
+                    type="button"
+                    className={`min-w-0 truncate text-left text-[11px] font-mono hover:underline ${isDark ? 'text-[#4ea3e0]' : 'text-[#006bbd]'}`}
+                    onClick={() => copyPath(s.file, i)}
+                    title={`${s.file} — ${t('clickToCopy')}`}
+                    aria-label={`${t('copy')}: ${s.file}`}
+                  >
+                    {s.file}
+                  </button>
+                )}
                 <div className="flex items-center gap-2 shrink-0">
                   {s.score != null && (
                     <span className={`text-[9px] ${isDark ? 'text-white/30' : 'text-gray-400'}`}>{s.score}</span>
                   )}
                   <button
-                    onClick={() => copyPath(s.file, i)}
+                    type="button"
+                    onClick={() => copyPath(s.url || s.file, i)}
                     className={`p-0.5 rounded ${isDark ? 'text-white/25 hover:text-white/70' : 'text-gray-300 hover:text-gray-600'}`}
                     aria-label={t('copy')}
                     title={t('copy')}
                   >
                     {copiedIdx === i ? <MdCheck size={11} /> : <MdContentCopy size={11} />}
                   </button>
-                  {onOpenInBrowser && (
+                  {s.url ? (
+                    <a
+                      href={s.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className={`p-0.5 rounded ${isDark ? 'text-white/25 hover:text-white/70' : 'text-gray-300 hover:text-gray-600'}`}
+                      aria-label={`${t('openInBrowser')}: ${s.title || s.url}`}
+                      title={t('openInBrowser')}
+                    >
+                      <MdOpenInNew size={11} />
+                    </a>
+                  ) : onOpenInBrowser && (
                     <button
+                      type="button"
                       onClick={() => onOpenInBrowser(s.file, s.collection_id)}
                       className={`p-0.5 rounded ${isDark ? 'text-white/25 hover:text-white/70' : 'text-gray-300 hover:text-gray-600'}`}
                       aria-label={t('openInBrowser')}

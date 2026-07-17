@@ -56,8 +56,17 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => onSharedStateUpdated(() => {
     const stored = loadTheme();
+    if (stored === themeRef.current) {
+      // The React value may already match while the root class still reflects
+      // the pre-pairing browser preference. Keep both sources synchronized.
+      applyHtmlTheme(stored);
+      return;
+    }
     themeRef.current = stored;
-    setTheme(stored);
+    // Shared state is applied as one visual commit. Without updating the root
+    // class here, components using `isDark` and CSS using `.dark` disagree.
+    flushSync(() => setTheme(stored));
+    applyHtmlTheme(stored);
   }), []);
 
   const switchTheme = useCallback((next: Theme) => {

@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState, useCallback } from 'react';
 import { motion } from 'framer-motion';
-import { MdArrowBack, MdSearch, MdFolder, MdDescription, MdContentCopy, MdCheck, MdClose, MdFolderOpen, MdDelete, MdDeleteSweep, MdChevronRight, MdArrowForward } from 'react-icons/md';
+import { MdArrowBack, MdSearch, MdFolder, MdDescription, MdContentCopy, MdCheck, MdClose, MdFolderOpen, MdDelete, MdDeleteSweep, MdChevronRight } from 'react-icons/md';
 import { useTheme } from '../theme/ThemeContext';
 import { useI18n } from '../i18n/I18nContext';
 import { useToast } from './Toast';
 import { escapeRegExp } from '../utils/str';
-import { getCollections, getCollectionSources, getFileChunks, deleteSource, type Collection, type CollectionSourceRow, type FileChunk } from '../lib/api';
+import { getCollections, getCollectionSources, getFileChunks, deleteCollectionSources, deleteSource, type Collection, type CollectionSourceRow, type FileChunk } from '../lib/api';
 
 interface Props {
   onBack: () => void;
@@ -17,6 +17,11 @@ interface Props {
 interface PendingBrowserTarget {
   collection?: unknown;
   file?: unknown;
+  source_id?: unknown;
+}
+
+function sourceIdentity(file: string, sourceId?: string | null): string {
+  return `${sourceId || 'legacy'}\u0000${file}`;
 }
 
 function formatBytes(n: number): string {
@@ -35,13 +40,14 @@ export default function KnowledgeBrowser({ onBack, initialCollection, initialFil
   const [loadingSources, setLoadingSources] = useState(false);
   const [fileQuery, setFileQuery] = useState('');
   const [activeFile, setActiveFile] = useState<string | null>(initialFile || null);
+  const [activeSourceId, setActiveSourceId] = useState<string | null>(null);
   const [chunks, setChunks] = useState<FileChunk[]>([]);
   const [chunkTotal, setChunkTotal] = useState(0);
   const [loadingChunks, setLoadingChunks] = useState(false);
   const [chunkQuery, setChunkQuery] = useState('');
   const [copiedChunkId, setCopiedChunkId] = useState<string | null>(null);
   const [deletingFile, setDeletingFile] = useState<string | null>(null);
-  const [confirmDelete, setConfirmDelete] = useState<{ file: string; name: string } | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<{ file: string; name: string; sourceId: string | null } | null>(null);
   // Mobile: which panel is visible ('collections' | 'files' | 'chunks')
   const [mobileView, setMobileView] = useState<'collections' | 'files' | 'chunks'>('collections');
 
@@ -50,7 +56,7 @@ export default function KnowledgeBrowser({ onBack, initialCollection, initialFil
     const c = new AbortController();
     getCollections(c.signal)
       .then((items) => {
-        const next = items.length ? items : [{ id: 'default', name: 'General', created_at: Date.now() / 1000, updated_at: Date.now() / 1000 }];
+        const next = items.length ? items : [{ id: 'default', name: t('generalCollection'), created_at: Date.now() / 1000, updated_at: Date.now() / 1000 }];
         setCollections(next);
         if (!next.some((x) => x.id === activeCollectionId)) {
           setActiveCollectionId(next[0].id);
@@ -58,7 +64,7 @@ export default function KnowledgeBrowser({ onBack, initialCollection, initialFil
       })
       .catch(() => undefined);
     return () => c.abort();
-  }, []);
+  }, [t]);
 
   // Consume any pending open-in-browser target on first render.
   useEffect(() => {
@@ -71,9 +77,13 @@ export default function KnowledgeBrowser({ onBack, initialCollection, initialFil
       const file = typeof target.file === 'string' && target.file.trim()
         ? target.file.trim()
         : '';
+      const sourceId = typeof target.source_id === 'string' && target.source_id.trim()
+        ? target.source_id.trim()
+        : null;
       setActiveCollectionId(collection);
       if (file) {
         setActiveFile(file);
+        setActiveSourceId(sourceId);
         setFileQuery(file.split('/').pop() || file);
       }
     }
@@ -102,7 +112,11 @@ export default function KnowledgeBrowser({ onBack, initialCollection, initialFil
     setLoadingChunks(true);
     const q = chunkQuery.trim();
     // Server-side search when the user has typed a query; otherwise fetch all.
-    const opts: Parameters<typeof getFileChunks>[2] = { limit: 500, signal: c.signal };
+    const opts: Parameters<typeof getFileChunks>[2] = {
+      limit: 500,
+      sourceId: activeSourceId,
+      signal: c.signal,
+    };
     if (q) opts.q = q;
     // Debounce server-side searches to avoid hammering the API while typing.
     const delay = q ? 220 : 0;
@@ -119,7 +133,7 @@ export default function KnowledgeBrowser({ onBack, initialCollection, initialFil
         .finally(() => setLoadingChunks(false));
     }, delay);
     return () => { c.abort(); window.clearTimeout(id); };
-  }, [activeCollectionId, activeFile, chunkQuery]);
+  }, [activeCollectionId, activeFile, activeSourceId, chunkQuery]);
 
   const filteredSources = useMemo(() => {
     const q = fileQuery.trim().toLowerCase();
@@ -150,14 +164,16 @@ export default function KnowledgeBrowser({ onBack, initialCollection, initialFil
     return () => c.abort();
   }, [activeCollectionId]);
 
-  const handleDeleteFile = useCallback(async (file: string) => {
-    setDeletingFile(file);
+  const handleDeleteFile = useCallback(async (file: string, sourceId: string | null) => {
+    const identity = sourceIdentity(file, sourceId);
+    setDeletingFile(identity);
     try {
-      const res = await deleteSource(activeCollectionId, file);
+      const res = await deleteSource(activeCollectionId, file, sourceId);
       toast.toast(t('sourceDeleted').replace('{file}', file.split('/').pop() || file).replace('{count}', String(res.deleted)), 'info');
       // If we're viewing this file, clear the view
-      if (activeFile === file) {
+      if (activeFile === file && activeSourceId === sourceId) {
         setActiveFile(null);
+        setActiveSourceId(null);
         setChunks([]);
         setChunkTotal(0);
       }
@@ -169,7 +185,24 @@ export default function KnowledgeBrowser({ onBack, initialCollection, initialFil
       setDeletingFile(null);
       setConfirmDelete(null);
     }
-  }, [activeCollectionId, activeFile, refreshSources, t, toast]);
+  }, [activeCollectionId, activeFile, activeSourceId, refreshSources, t, toast]);
+
+  const handleDeleteAll = useCallback(async () => {
+    setDeletingFile('__all__');
+    try {
+      const result = await deleteCollectionSources(activeCollectionId);
+      toast.toast(t('allSourcesDeleted').replace('{count}', String(result.deleted)), 'info');
+      setActiveFile(null);
+      setActiveSourceId(null);
+      setChunks([]);
+      setChunkTotal(0);
+      refreshSources();
+    } catch {
+      toast.toast(t('sourceDeleteFailed'), 'error');
+    } finally {
+      setDeletingFile(null);
+    }
+  }, [activeCollectionId, refreshSources, t, toast]);
 
   const bg = isDark ? 'bg-black text-white' : 'bg-white text-gray-900';
   const border = isDark ? 'border-white/[0.06]' : 'border-gray-200';
@@ -195,12 +228,16 @@ export default function KnowledgeBrowser({ onBack, initialCollection, initialFil
       ) : (
         filteredSources.map((s) => (
           <div
-            key={s.file}
+            key={sourceIdentity(s.file, s.source_id)}
             className={`group flex items-center border-b ${border}`}
           >
             <button
-              onClick={() => { setActiveFile(s.file); if (compact) setMobileView('chunks'); }}
-              className={`flex-1 min-w-0 text-left px-3 py-2 ${activeFile === s.file ? selected : `${muted} ${hover}`}`}
+              onClick={() => {
+                setActiveFile(s.file);
+                setActiveSourceId(s.source_id || null);
+                if (compact) setMobileView('chunks');
+              }}
+              className={`flex-1 min-w-0 text-left px-3 py-2 ${activeFile === s.file && activeSourceId === (s.source_id || null) ? selected : `${muted} ${hover}`}`}
             >
               <div className="flex items-center gap-2 min-w-0">
                 <MdDescription size={14} className="shrink-0 opacity-70" />
@@ -210,17 +247,27 @@ export default function KnowledgeBrowser({ onBack, initialCollection, initialFil
                 <span>{s.chunks} {t('chunksUnit')}</span>
                 <span>·</span>
                 <span>{formatBytes(s.size)}</span>
+                {s.source_id && (
+                  <>
+                    <span>·</span>
+                    <span className="truncate" title={s.source_id}>{s.source_id}</span>
+                  </>
+                )}
               </div>
             </button>
             <button
               onClick={(e) => {
                 e.stopPropagation();
-                setConfirmDelete({ file: s.file, name: s.file.split('/').pop() || s.file });
+                setConfirmDelete({
+                  file: s.file,
+                  name: s.file.split('/').pop() || s.file,
+                  sourceId: s.source_id || null,
+                });
               }}
-              disabled={deletingFile === s.file}
+              disabled={deletingFile === sourceIdentity(s.file, s.source_id)}
               className="shrink-0 p-2 mr-1 rounded-lg opacity-0 group-hover:opacity-100
                          text-red-400/70 hover:text-red-400 hover:bg-red-400/10
-                         disabled:opacity-30 transition-all"
+                         disabled:opacity-30 transition-[background-color,color,border-color,opacity,transform]"
               aria-label={`${t('delete')} ${s.file}`}
               title={t('delete')}
             >
@@ -306,10 +353,10 @@ export default function KnowledgeBrowser({ onBack, initialCollection, initialFil
     <div className={`h-full flex flex-col min-w-0 ${bg}`}>
       {/* Header */}
       <div className={`shrink-0 flex items-center gap-3 px-4 pt-[env(safe-area-inset-top,0px)] pb-3 border-b ${border}`}>
-        <button onClick={onBack} className={`p-2 -ml-2 ${isDark ? 'text-white/60 hover:text-white' : 'text-gray-500 hover:text-gray-800'}`}>
+        <button onClick={onBack} aria-label={t('back')} className={`p-2 -ml-2 ${isDark ? 'text-white/60 hover:text-white' : 'text-gray-500 hover:text-gray-800'}`}>
           <MdArrowBack size={20} />
         </button>
-        <span className="text-sm font-medium">{t('knowledgeBrowser')}</span>
+        <h1 className="text-sm font-medium">{t('knowledgeBrowser')}</h1>
       </div>
 
       {/* ── Desktop: 3-column layout (sm+) ── */}
@@ -320,7 +367,7 @@ export default function KnowledgeBrowser({ onBack, initialCollection, initialFil
           {collections.map((col) => (
             <button
               key={col.id}
-              onClick={() => { setActiveCollectionId(col.id); setActiveFile(null); }}
+              onClick={() => { setActiveCollectionId(col.id); setActiveFile(null); setActiveSourceId(null); }}
               className={`w-full text-left flex items-center gap-2 px-3 py-2 text-sm ${col.id === activeCollectionId ? selected : `${muted} ${hover}`}`}
             >
               <MdFolder size={14} className="shrink-0 opacity-70" />
@@ -337,6 +384,9 @@ export default function KnowledgeBrowser({ onBack, initialCollection, initialFil
               value={fileQuery}
               onChange={(e) => setFileQuery(e.target.value)}
               placeholder={t('searchFiles')}
+              aria-label={t('searchFiles')}
+              name="knowledge-file-search"
+              autoComplete="off"
               className={`min-w-0 flex-1 bg-transparent text-sm outline-none ${placeholder} ${isDark ? 'text-white/80' : 'text-gray-800'}`}
             />
             {fileQuery && (
@@ -348,18 +398,7 @@ export default function KnowledgeBrowser({ onBack, initialCollection, initialFil
               <button
                 onClick={() => {
                   if (confirm(t('deleteAllSourcesConfirm'))) {
-                    setDeletingFile('__all__');
-                    Promise.all(sources.map((s) => deleteSource(activeCollectionId, s.file).catch(() => ({ deleted: 0 }))))
-                      .then((results) => {
-                        const total = results.reduce((sum, r) => sum + (r.deleted || 0), 0);
-                        toast.toast(t('allSourcesDeleted').replace('{count}', String(total)), 'info');
-                        setActiveFile(null);
-                        setChunks([]);
-                        setChunkTotal(0);
-                        refreshSources();
-                      })
-                      .catch(() => toast.toast(t('sourceDeleteFailed'), 'error'))
-                      .finally(() => setDeletingFile(null));
+                    void handleDeleteAll();
                   }
                 }}
                 disabled={deletingFile === '__all__'}
@@ -388,7 +427,7 @@ export default function KnowledgeBrowser({ onBack, initialCollection, initialFil
               {collections.map((col) => (
                 <button
                   key={col.id}
-                  onClick={() => { setActiveCollectionId(col.id); setActiveFile(null); setMobileView('files'); }}
+                  onClick={() => { setActiveCollectionId(col.id); setActiveFile(null); setActiveSourceId(null); setMobileView('files'); }}
                   className={`w-full flex items-center justify-between gap-2 px-4 py-3 border-b ${border} ${col.id === activeCollectionId ? selected : `${muted} ${hover}`}`}
                 >
                   <div className="flex items-center gap-2 min-w-0">
@@ -407,7 +446,7 @@ export default function KnowledgeBrowser({ onBack, initialCollection, initialFil
           <div className="flex-1 flex flex-col min-h-0">
             <div className={`shrink-0 flex items-center gap-2 px-2 py-2 border-b ${border} ${panelBg}`}>
               <button
-                onClick={() => { setMobileView('collections'); setActiveFile(null); }}
+                onClick={() => { setMobileView('collections'); setActiveFile(null); setActiveSourceId(null); }}
                 className={`p-1.5 rounded-lg ${muted} ${hover}`}
                 aria-label={t('back')}
               >
@@ -420,18 +459,7 @@ export default function KnowledgeBrowser({ onBack, initialCollection, initialFil
                 <button
                   onClick={() => {
                     if (confirm(t('deleteAllSourcesConfirm'))) {
-                      setDeletingFile('__all__');
-                      Promise.all(sources.map((s) => deleteSource(activeCollectionId, s.file).catch(() => ({ deleted: 0 }))))
-                        .then((results) => {
-                          const total = results.reduce((sum, r) => sum + (r.deleted || 0), 0);
-                          toast.toast(t('allSourcesDeleted').replace('{count}', String(total)), 'info');
-                          setActiveFile(null);
-                          setChunks([]);
-                          setChunkTotal(0);
-                          refreshSources();
-                        })
-                        .catch(() => toast.toast(t('sourceDeleteFailed'), 'error'))
-                        .finally(() => setDeletingFile(null));
+                      void handleDeleteAll();
                     }
                   }}
                   disabled={deletingFile === '__all__'}
@@ -448,6 +476,9 @@ export default function KnowledgeBrowser({ onBack, initialCollection, initialFil
                 value={fileQuery}
                 onChange={(e) => setFileQuery(e.target.value)}
                 placeholder={t('searchFiles')}
+                aria-label={t('searchFiles')}
+                name="knowledge-mobile-file-search"
+                autoComplete="off"
                 className={`min-w-0 flex-1 bg-transparent text-sm outline-none ${placeholder} ${isDark ? 'text-white/80' : 'text-gray-800'}`}
               />
               {fileQuery && (
@@ -506,9 +537,9 @@ export default function KnowledgeBrowser({ onBack, initialCollection, initialFil
 
       {/* Confirm delete dialog */}
       {confirmDelete && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={() => setConfirmDelete(null)}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm" onClick={() => setConfirmDelete(null)}>
           <div
-            className={`mx-4 w-full max-w-sm rounded-2xl border p-5 shadow-2xl ${isDark ? 'bg-gray-900 border-white/[0.08]' : 'bg-white border-gray-200'}`}
+            className={`w-full max-w-sm max-h-[calc(100dvh_-_2rem)] overflow-y-auto rounded-2xl border p-5 shadow-2xl ${isDark ? 'bg-gray-900 border-white/[0.08]' : 'bg-white border-gray-200'}`}
             onClick={(e) => e.stopPropagation()}
           >
             <p className={`text-sm font-medium mb-1 ${isDark ? 'text-white' : 'text-gray-900'}`}>{t('deleteSourceConfirm')}</p>
@@ -521,11 +552,11 @@ export default function KnowledgeBrowser({ onBack, initialCollection, initialFil
                 {t('cancel')}
               </button>
               <button
-                onClick={() => handleDeleteFile(confirmDelete.file)}
-                disabled={deletingFile === confirmDelete.file}
+                onClick={() => handleDeleteFile(confirmDelete.file, confirmDelete.sourceId)}
+                disabled={deletingFile === sourceIdentity(confirmDelete.file, confirmDelete.sourceId)}
                 className="px-4 py-2 rounded-lg text-xs font-medium bg-red-500/20 text-red-400 hover:bg-red-500/30 disabled:opacity-40"
               >
-                {deletingFile === confirmDelete.file ? t('deleting') : t('delete')}
+                {deletingFile === sourceIdentity(confirmDelete.file, confirmDelete.sourceId) ? t('deleting') : t('delete')}
               </button>
             </div>
           </div>

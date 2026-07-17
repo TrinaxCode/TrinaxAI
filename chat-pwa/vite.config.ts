@@ -2,15 +2,51 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 import { execFile, spawn } from 'child_process';
+import { createHmac, randomBytes } from 'node:crypto';
 import fs from 'node:fs';
 import http from 'node:http';
 import https from 'node:https';
+import net from 'node:net';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import net from 'node:net';
+
+import {
+  isAllowedOllamaProxyRequest,
+  isAuthorizedScopedProxyPeer,
+  isAuthorizedSystemProxyPeer,
+  deviceTokenHasScope,
+  isLoopbackAddress,
+  isPrivateLanAddress,
+  normalizeAddress,
+} from './vite-security';
+import { acquireInferenceProcessLock } from './inference-lock';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '..');
+const PWA_SECURITY_HEADERS = {
+  'Content-Security-Policy': [
+    "default-src 'self'",
+    "base-uri 'self'",
+    "form-action 'self'",
+    "frame-ancestors 'none'",
+    "object-src 'none'",
+    "script-src 'self'",
+    "style-src 'self' 'unsafe-inline'",
+    "font-src 'self' data:",
+    "img-src 'self' data: blob:",
+    "media-src 'self' data: blob:",
+    "connect-src 'self' ws: wss:",
+    "worker-src 'self' blob:",
+    "manifest-src 'self'",
+  ].join('; '),
+  'Strict-Transport-Security': 'max-age=31536000',
+  'X-Content-Type-Options': 'nosniff',
+  'Referrer-Policy': 'no-referrer',
+  'Permissions-Policy': 'camera=(self), microphone=(self), geolocation=(), payment=(), usb=()',
+  'X-Frame-Options': 'DENY',
+  'Cross-Origin-Opener-Policy': 'same-origin',
+  'Cross-Origin-Resource-Policy': 'same-origin',
+};
 const certKey = path.join(__dirname, 'certs', 'localhost-key.pem');
 const certFile = path.join(__dirname, 'certs', 'localhost.pem');
 const certPfx = path.join(__dirname, 'certs', 'trinaxai-local.pfx');
@@ -23,6 +59,219 @@ const httpsConfig = fs.existsSync(certPfx)
 
 function env(name: string, fallback: string): string {
   return process.env[name] || fallback;
+}
+
+const PROXY_IDENTITY_HEADERS = [
+  'x-trinaxai-proxy',
+  'x-trinaxai-client-ip',
+  'x-trinaxai-proxy-timestamp',
+  'x-trinaxai-proxy-nonce',
+  'x-trinaxai-proxy-signature',
+] as const;
+
+let proxySecretCache: string | undefined;
+const ollamaRateBuckets = new Map<string, { tokens: number; updatedAt: number }>();
+
+function deviceRegistryPath(): string {
+  const configured = process.env.TRINAXAI_DEVICE_REGISTRY;
+  return configured
+    ? (path.isAbsolute(configured) ? configured : path.resolve(repoRoot, configured))
+    : path.join(repoRoot, 'storage', 'device_pairing.json');
+}
+
+function deviceSecretPath(): string {
+  const configured = process.env.TRINAXAI_DEVICE_SECRET_FILE;
+  return configured
+    ? (path.isAbsolute(configured) ? configured : path.resolve(repoRoot, configured))
+    : path.join(repoRoot, 'storage', '.device_secret');
+}
+
+function pairedDeviceGrants(token: string, scope: string): boolean {
+  if (!token) return false;
+  try {
+    const registryFile = deviceRegistryPath();
+    const secretFile = deviceSecretPath();
+    if (fs.statSync(registryFile).size > 1024 * 1024 || fs.statSync(secretFile).size > 4096) return false;
+    const registry = JSON.parse(fs.readFileSync(registryFile, 'utf8')) as unknown;
+    const secret = fs.readFileSync(secretFile, 'ascii').trim();
+    try { fs.chmodSync(registryFile, 0o600); fs.chmodSync(secretFile, 0o600); } catch { /* best effort */ }
+    return deviceTokenHasScope(token, scope, registry, secret);
+  } catch {
+    return false;
+  }
+}
+
+function proxySecret(): string {
+  if (proxySecretCache !== undefined) return proxySecretCache;
+  const configured = (process.env.TRINAXAI_PROXY_SECRET || '').trim();
+  if (configured) {
+    proxySecretCache = configured;
+    return proxySecretCache;
+  }
+
+  const secretPath = process.env.TRINAXAI_PROXY_SECRET_FILE
+    ? path.resolve(process.env.TRINAXAI_PROXY_SECRET_FILE)
+    : path.join(repoRoot, 'storage', '.proxy_secret');
+  try {
+    proxySecretCache = fs.readFileSync(secretPath, 'utf8').trim();
+    try { fs.chmodSync(secretPath, 0o600); } catch { /* best effort on Windows/read-only stores */ }
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+      proxySecretCache = '';
+      return proxySecretCache;
+    }
+    const generated = randomBytes(32).toString('hex');
+    try {
+      fs.mkdirSync(path.dirname(secretPath), { recursive: true });
+      fs.writeFileSync(secretPath, generated, { encoding: 'utf8', flag: 'wx', mode: 0o600 });
+      proxySecretCache = generated;
+    } catch (writeError) {
+      if ((writeError as NodeJS.ErrnoException).code === 'EEXIST') {
+        try {
+          proxySecretCache = fs.readFileSync(secretPath, 'utf8').trim();
+          try { fs.chmodSync(secretPath, 0o600); } catch { /* best effort */ }
+        } catch { proxySecretCache = ''; }
+      } else {
+        proxySecretCache = '';
+      }
+    }
+  }
+  return proxySecretCache || '';
+}
+
+function signProxyIdentity(
+  secret: string,
+  clientIp: string,
+  timestamp: string,
+  nonce: string,
+  method: string,
+  pathname: string,
+): string {
+  const payload = ['v1', clientIp, timestamp, nonce, method.toUpperCase(), pathname].join('\n');
+  return createHmac('sha256', secret).update(payload, 'utf8').digest('hex');
+}
+
+function attachSignedProxyIdentity(proxyReq: any, req: any): void {
+  for (const header of PROXY_IDENTITY_HEADERS) proxyReq.removeHeader(header);
+  const secret = proxySecret();
+  if (!secret) return;
+  const clientIp = normalizeAddress(req.socket?.remoteAddress || 'unknown');
+  if (net.isIP(clientIp) === 0) return;
+  const timestamp = String(Math.floor(Date.now() / 1000));
+  const nonce = randomBytes(16).toString('hex');
+  const pathname = new URL(String(proxyReq.path || '/'), 'http://localhost').pathname;
+  const signature = signProxyIdentity(secret, clientIp, timestamp, nonce, req.method || 'GET', pathname);
+  proxyReq.setHeader('X-TrinaxAI-Proxy', 'v1');
+  proxyReq.setHeader('X-TrinaxAI-Client-IP', clientIp);
+  proxyReq.setHeader('X-TrinaxAI-Proxy-Timestamp', timestamp);
+  proxyReq.setHeader('X-TrinaxAI-Proxy-Nonce', nonce);
+  proxyReq.setHeader('X-TrinaxAI-Proxy-Signature', signature);
+}
+
+function sendProxyError(res: any, status: number, error: string): void {
+  res.statusCode = status;
+  res.setHeader('Content-Type', 'application/json');
+  res.setHeader('Cache-Control', 'no-store');
+  res.end(JSON.stringify({ ok: false, error }));
+}
+
+function ollamaProxyRateLimit(): number {
+  const configured = Number(process.env.TRINAXAI_OLLAMA_PROXY_RATE_LIMIT || 30);
+  return Number.isFinite(configured) ? Math.max(1, Math.floor(configured)) : 30;
+}
+
+function ollamaRateAllowed(peer: string): boolean {
+  const max = ollamaProxyRateLimit();
+  const now = Date.now();
+  const previous = ollamaRateBuckets.get(peer) || { tokens: max, updatedAt: now };
+  const tokens = Math.min(max, previous.tokens + ((now - previous.updatedAt) * max / 60_000));
+  if (tokens < 1) {
+    ollamaRateBuckets.set(peer, { tokens, updatedAt: now });
+    return false;
+  }
+  if (!ollamaRateBuckets.has(peer) && ollamaRateBuckets.size >= 2000) {
+    const oldest = [...ollamaRateBuckets.entries()]
+      .sort((left, right) => left[1].updatedAt - right[1].updatedAt)[0]?.[0];
+    if (oldest) ollamaRateBuckets.delete(oldest);
+  }
+  ollamaRateBuckets.set(peer, { tokens: tokens - 1, updatedAt: now });
+  return true;
+}
+
+function installProxyBoundary(server: any): void {
+  server.middlewares.use((req: any, res: any, next: () => void) => {
+    const pathname = new URL(req.url || '/', 'http://localhost').pathname;
+    if (!pathname.startsWith('/api/rag') && !pathname.startsWith('/api/ollama')) {
+      next();
+      return;
+    }
+
+    // A browser must never be able to supply the gateway-only identity headers.
+    for (const header of PROXY_IDENTITY_HEADERS) delete req.headers[header];
+    const peer = normalizeAddress(req.socket?.remoteAddress || 'unknown');
+
+    if (pathname.startsWith('/api/rag')) {
+      if (!isLoopbackAddress(peer) && !proxySecret()) {
+        sendProxyError(res, 503, 'Trusted RAG proxy identity is unavailable.');
+        return;
+      }
+      next();
+      return;
+    }
+
+    if (!isAllowedOllamaProxyRequest(req.method || 'GET', pathname)) {
+      sendProxyError(res, 404, 'Ollama operation is not exposed by TrinaxAI.');
+      return;
+    }
+    const suppliedToken = String(req.headers['x-admin-token'] || '');
+    const deviceToken = String(req.headers['x-trinaxai-device-token'] || '');
+    const adminToken = process.env.TRINAXAI_ADMIN_TOKEN || '';
+    const requiredScope = pathname === '/api/ollama/api/pull' ? 'system' : 'chat';
+    const authorized = (requiredScope === 'chat' && isPrivateLanAddress(peer)) || isAuthorizedScopedProxyPeer(
+      peer,
+      suppliedToken,
+      adminToken,
+      deviceToken,
+      pairedDeviceGrants(deviceToken, requiredScope),
+    );
+    if (!authorized) {
+      sendProxyError(res, 403, `Ollama access requires a paired ${requiredScope} device or administrator.`);
+      return;
+    }
+    // Ollama has no use for TrinaxAI's credential; do not forward it.
+    delete req.headers['x-admin-token'];
+    delete req.headers['x-trinaxai-device-token'];
+    if (!ollamaRateAllowed(peer)) {
+      res.setHeader('Retry-After', String(Math.max(1, Math.ceil(60 / ollamaProxyRateLimit()))));
+      sendProxyError(res, 429, 'Too many Ollama requests.');
+      return;
+    }
+    const lockDir = process.env.TRINAXAI_INFERENCE_LOCK_FILE
+      ? path.resolve(process.env.TRINAXAI_INFERENCE_LOCK_FILE)
+      : path.join(repoRoot, 'storage', '.inference.lock');
+    const timeoutMs = Math.max(
+      1_000,
+      Number(process.env.TRINAXAI_INFERENCE_QUEUE_TIMEOUT || 600) * 1_000,
+    );
+    void acquireInferenceProcessLock(lockDir, { timeoutMs }).then((release) => {
+      if (req.destroyed || res.writableEnded) {
+        release();
+        return;
+      }
+      let released = false;
+      const releaseOnce = () => {
+        if (released) return;
+        released = true;
+        release();
+      };
+      res.once('finish', releaseOnce);
+      res.once('close', releaseOnce);
+      next();
+    }).catch(() => {
+      res.setHeader('Retry-After', String(Math.ceil(timeoutMs / 1000)));
+      sendProxyError(res, 503, 'Local inference queue timed out.');
+    });
+  });
 }
 
 function userHome(): string {
@@ -75,14 +324,17 @@ function proxyConfig() {
       target: env('TRINAXAI_RAG_TARGET', env('VITE_TRINAXAI_RAG_TARGET', 'http://127.0.0.1:3333')),
       changeOrigin: true,
       secure: false,
-      xfwd: true,
+      xfwd: false,
       rewrite: (proxyPath: string) => proxyPath.replace(/^\/api\/rag/, ''),
+      configure: (proxy: any) => {
+        proxy.on('proxyReq', attachSignedProxyIdentity);
+      },
     },
     '/api/ollama': {
       target: env('TRINAXAI_OLLAMA_TARGET', 'http://127.0.0.1:11434'),
       changeOrigin: true,
       secure: false,
-      xfwd: true,
+      xfwd: false,
       headers: { Origin: env('TRINAXAI_OLLAMA_TARGET', 'http://127.0.0.1:11434') },
       rewrite: (proxyPath: string) => proxyPath.replace(/^\/api\/ollama/, ''),
     },
@@ -92,41 +344,35 @@ function proxyConfig() {
 function installSystemControl(server: any): void {
   const ragTarget = env('TRINAXAI_RAG_TARGET', env('VITE_TRINAXAI_RAG_TARGET', 'http://127.0.0.1:3333'));
   const allowLanSystem = ['1', 'true', 'yes', 'on'].includes((process.env.TRINAXAI_ALLOW_LAN_SYSTEM || '').toLowerCase());
-  const isLoopback = (host: string): boolean => {
-    const clean = host.replace(/^::ffff:/, '');
-    if (['127.0.0.1', '::1', 'localhost'].includes(clean)) return true;
-    if (net.isIP(clean) === 0) return false;
-    return clean.startsWith('127.');
-  };
-  const isPrivateLan = (host: string): boolean => {
-    const clean = host.replace(/^::ffff:/, '');
-    if (isLoopback(clean)) return true;
-    if (net.isIP(clean) === 0) return false;
-    if (clean.startsWith('10.') || clean.startsWith('192.168.')) return true;
-    const parts = clean.split('.').map((part) => Number(part));
-    if (parts.length === 4 && parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) return true;
-    // IPv6 link-local (fe80::/10) — common on Windows dual-stack networks
-    if (net.isIPv6(clean) && clean.startsWith('fe80:')) return true;
-    // IPv6 unique local (fc00::/7 fd00::/8)
-    if (net.isIPv6(clean) && (clean.startsWith('fd') || clean.startsWith('fc'))) return true;
-    return false;
-  };
   server.middlewares.use('/api/system', async (req: any, res: any) => {
     if (req.method !== 'POST') { res.statusCode = 405; res.end(); return; }
     const token = req.headers['x-admin-token'] as string | undefined;
+    const deviceToken = String(req.headers['x-trinaxai-device-token'] || '');
     const adminToken = process.env.TRINAXAI_ADMIN_TOKEN;
     const peer = req.socket?.remoteAddress || '127.0.0.1';
     const origin = String(req.headers.origin || '');
     const trustedBrowserOrigin = !origin || (() => {
       try {
         const parsed = new URL(origin);
-        return ['3334', '3335'].includes(parsed.port) && isPrivateLan(parsed.hostname);
+        return ['3334', '3335'].includes(parsed.port) && isPrivateLanAddress(parsed.hostname);
       } catch {
         return false;
       }
     })();
-    const authorized = (adminToken && token === adminToken)
-      || (trustedBrowserOrigin && (isLoopback(peer) || (allowLanSystem && isPrivateLan(peer))));
+    const scopedAuthorized = isAuthorizedScopedProxyPeer(
+      peer,
+      token || '',
+      adminToken || '',
+      deviceToken,
+      pairedDeviceGrants(deviceToken, 'system'),
+    );
+    const legacyLanAuthorized = !token && !deviceToken && isAuthorizedSystemProxyPeer(
+      peer,
+      '',
+      adminToken || '',
+      allowLanSystem,
+    );
+    const authorized = trustedBrowserOrigin && (scopedAuthorized || legacyLanAuthorized);
     if (!authorized) {
       res.statusCode = 403;
       res.setHeader('Content-Type', 'application/json');
@@ -188,14 +434,16 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
-      registerType: 'autoUpdate',
+      // Keep an update waiting until the person explicitly applies it. Reloading
+      // a chat automatically can interrupt a streamed answer or lose a draft.
+      registerType: 'prompt',
       includeAssets: [
+        'favicon.svg',
+        'favicon-96x96.png',
         'favicon.ico',
-        'favicon-16x16.png',
-        'favicon-32x32.png',
         'apple-touch-icon.png',
-        'android-chrome-192x192.png',
-        'android-chrome-512x512.png',
+        'web-app-manifest-192x192.png',
+        'web-app-manifest-512x512.png',
         'logo-of-app.webp',
         'logo-for-ai.webp',
         'logo-for-user.webp',
@@ -226,13 +474,13 @@ export default defineConfig({
             purpose: 'any',
           },
           {
-            src: '/android-chrome-192x192.png',
+            src: '/web-app-manifest-192x192.png',
             sizes: '192x192',
             type: 'image/png',
             purpose: 'any maskable',
           },
           {
-            src: '/android-chrome-512x512.png',
+            src: '/web-app-manifest-512x512.png',
             sizes: '512x512',
             type: 'image/png',
             purpose: 'any maskable',
@@ -244,18 +492,19 @@ export default defineConfig({
             short_name: 'Chat',
             description: 'Start a new chat session',
             url: '/',
-            icons: [{ src: '/android-chrome-192x192.png', sizes: '192x192' }],
+            icons: [{ src: '/web-app-manifest-192x192.png', sizes: '192x192' }],
           },
           {
             name: 'Settings',
             short_name: 'Settings',
             description: 'Open app settings',
             url: '/#settings',
-            icons: [{ src: '/android-chrome-192x192.png', sizes: '192x192' }],
+            icons: [{ src: '/web-app-manifest-192x192.png', sizes: '192x192' }],
           },
         ],
       },
       workbox: {
+        cleanupOutdatedCaches: true,
         globPatterns: ['**/*.{js,css,html,ico,png,webp,svg,woff2}'],
         navigateFallback: '/index.html',
         navigateFallbackDenylist: [/^\/api\//],
@@ -279,45 +528,25 @@ export default defineConfig({
             },
           },
           {
-            // Google Fonts stylesheets
-            urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
-            handler: 'StaleWhileRevalidate',
-            options: {
-              cacheName: 'google-fonts-stylesheets',
-              expiration: { maxEntries: 5, maxAgeSeconds: 60 * 60 * 24 * 365 },
-            },
-          },
-          {
-            // Google Fonts webfont files
-            urlPattern: /^https:\/\/fonts\.gstatic\.com\/.*/i,
-            handler: 'CacheFirst',
-            options: {
-              cacheName: 'google-fonts-webfonts',
-              expiration: { maxEntries: 10, maxAgeSeconds: 60 * 60 * 24 * 365 },
-            },
-          },
-          {
-            // Read-only API calls (collections, sources, memory, health) — NetworkFirst
-            urlPattern: /\/api\/(rag|ollama)\/(collections|sources|chunks|memory|health|tags)/i,
+            // Cache only harmless service metadata. RAG sources, chunks and
+            // memories can contain private local information and must always
+            // come from the backend rather than remain in a browser cache.
+            urlPattern: /\/api\/rag\/health/i,
             handler: 'NetworkFirst',
             options: {
-              cacheName: 'api-readonly',
-              networkTimeoutSeconds: 5,
-              expiration: { maxEntries: 50, maxAgeSeconds: 5 * 60 },
-            },
-          },
-          {
-            // System/reload endpoint
-            urlPattern: /\/api\/system\/reload/i,
-            handler: 'NetworkFirst',
-            options: {
-              cacheName: 'api-system',
-              expiration: { maxEntries: 5, maxAgeSeconds: 60 },
+              cacheName: 'api-metadata',
+              networkTimeoutSeconds: 3,
+              expiration: { maxEntries: 10, maxAgeSeconds: 60 },
             },
           },
         ],
       },
     }),
+    {
+      name: 'trinaxai-proxy-boundary',
+      configureServer: installProxyBoundary,
+      configurePreviewServer: installProxyBoundary,
+    },
     {
       name: 'trinaxai-system-control',
       configureServer: installSystemControl,
@@ -328,12 +557,14 @@ export default defineConfig({
     https: httpsConfig,
     host: '0.0.0.0',
     port: 3334,
+    headers: PWA_SECURITY_HEADERS,
     proxy: proxyConfig(),
   },
   preview: {
     https: httpsConfig,
     host: '0.0.0.0',
     port: 3334,
+    headers: PWA_SECURITY_HEADERS,
     proxy: proxyConfig(),
   },
   build: {

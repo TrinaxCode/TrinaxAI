@@ -40,6 +40,27 @@ describe('SSE stream parser', () => {
     expect(result.meta?.sources?.[0].file).toBe('a.py');
   });
 
+  it('parses retrieval decisions from preview and final metadata', () => {
+    expect(parseRagSseLine('data: {"trinaxai":{"model":"qwen","project":null,"mode":"knowledge","rag_used":true,"collections":["docs"]}}')).toEqual({
+      meta: {
+        model: 'qwen',
+        project: null,
+        mode: 'knowledge',
+        rag_used: true,
+        collections: ['docs'],
+      },
+    });
+    expect(parseRagSseLine('data: {"trinaxai_sources":[],"trinaxai_retrieval":{"mode":"knowledge","rag_used":true,"result_count":4,"collections":["docs"]}}')).toEqual({
+      meta: {
+        sources: [],
+        mode: 'knowledge',
+        rag_used: true,
+        result_count: 4,
+        collections: ['docs'],
+      },
+    });
+  });
+
   it('handles empty content token', () => {
     expect(parseRagSseLine('data: {"choices":[{"delta":{"content":""}}]}')).toEqual({});
   });

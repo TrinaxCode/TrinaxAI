@@ -5,21 +5,21 @@ import { useI18n } from '../i18n/I18nContext';
 import { useTheme } from '../theme/ThemeContext';
 import { APP_CONFIG } from '../lib/config';
 import { cancelIndexJob, folderLabelFromFiles, getIndexJob, indexableFilesFrom, startFolderIndex, type IndexJobStatus } from '../lib/api';
+import { systemFetch } from '../lib/authHeaders';
 import { syncSharedStateOnce } from '../lib/sharedState';
-import { FaGithub } from 'react-icons/fa';
 
 interface Props {
   onComplete: () => void;
+  canConfigureSystem: boolean;
 }
 
 const DEFAULT_MODELS = {
-  chat: 'qwen3:4b-instruct-2507-q4_K_M',
-  deep: 'qwen2.5-coder:7b',
-  vision: 'qwen3-vl:4b',
-  visionQuality: 'qwen3-vl:8b',
+  chat: 'qwen3.5:9b',
+  deep: 'qwen3.5:9b',
+  vision: 'qwen3-vl:4b-instruct',
   embed: 'bge-m3',
   code: 'qwen2.5-coder:3b',
-  fast: 'qwen3:4b-instruct-2507-q4_K_M',
+  fast: 'granite4:3b',
 };
 
 type Step = 1 | 2 | 3 | 4 | 5 | 6;
@@ -30,7 +30,7 @@ const stepVariants = {
   exit: { opacity: 0, x: -40, scale: 0.97 },
 };
 
-export default function OnboardingWizard({ onComplete }: Props) {
+export default function OnboardingWizard({ onComplete, canConfigureSystem }: Props) {
   const { t, lang, setLang } = useI18n();
   const { isDark, setTheme } = useTheme();
   const [step, setStep] = useState<Step>(1);
@@ -63,14 +63,20 @@ export default function OnboardingWizard({ onComplete }: Props) {
     } catch { /* ignore */ }
   }, []);
 
+  const visibleSteps: Step[] = canConfigureSystem ? [1, 2, 3, 4, 5, 6] : [1, 2, 3, 6];
+
   const saveAndNext = useCallback(() => {
-    if (step < 6) setStep((s) => (s + 1) as Step);
+    const currentIndex = visibleSteps.indexOf(step);
+    const nextStep = visibleSteps[currentIndex + 1];
+    if (nextStep) setStep(nextStep);
     else finish();
-  }, [step]);
+  }, [step, canConfigureSystem]);
 
   const prev = useCallback(() => {
-    if (step > 1) setStep((s) => (s - 1) as Step);
-  }, [step]);
+    const currentIndex = visibleSteps.indexOf(step);
+    const previousStep = visibleSteps[currentIndex - 1];
+    if (previousStep) setStep(previousStep);
+  }, [step, canConfigureSystem]);
 
   const finish = useCallback(() => {
     setFinishing(true);
@@ -79,25 +85,29 @@ export default function OnboardingWizard({ onComplete }: Props) {
     if (preferredName) localStorage.setItem('tc-user-nickname', preferredName);
     localStorage.removeItem('tc-user-name');
     localStorage.removeItem('tc-user-avatar');
-    const models = modelChoice === 'custom' ? customModels : DEFAULT_MODELS;
-    localStorage.setItem('tc-models-chat', models.chat);
-    localStorage.setItem('tc-models-deep', models.deep);
-    localStorage.setItem('tc-models-vision', models.vision);
-    localStorage.setItem('tc-models-vision-quality', models.visionQuality);
-    localStorage.setItem('tc-models-embed', models.embed);
-    localStorage.setItem('tc-models-code', models.code);
-    localStorage.setItem('tc-models-fast', models.fast);
+    if (canConfigureSystem) {
+      const models = modelChoice === 'custom' ? customModels : DEFAULT_MODELS;
+      localStorage.setItem('tc-models-chat', models.chat);
+      localStorage.setItem('tc-models-deep', models.deep);
+      localStorage.setItem('tc-models-vision', models.vision);
+      localStorage.removeItem('tc-models-vision-quality');
+      localStorage.setItem('tc-models-embed', models.embed);
+      localStorage.setItem('tc-models-code', models.code);
+      localStorage.setItem('tc-models-fast', models.fast);
+    }
     syncSharedStateOnce(2500, true).finally(() => {
       setFinishing(false);
       onComplete();
     });
-  }, [nickname, modelChoice, customModels, onComplete]);
+  }, [nickname, modelChoice, customModels, canConfigureSystem, onComplete]);
 
   const runSystemTest = useCallback(async () => {
     setTestResults(null);
     const results: Record<string, boolean> = {};
     try {
-      const r = await fetch(`${APP_CONFIG.ollamaBase}/api/tags`, { signal: AbortSignal.timeout(5000) });
+      const r = await systemFetch(`${APP_CONFIG.ollamaBase}/api/tags`, {
+        signal: AbortSignal.timeout(5000),
+      });
       results.ollama = r.ok;
     } catch { results.ollama = false; }
     try {
@@ -114,7 +124,9 @@ export default function OnboardingWizard({ onComplete }: Props) {
 
   const checkOllama = useCallback(async () => {
     try {
-      const r = await fetch(`${APP_CONFIG.ollamaBase}/api/tags`, { signal: AbortSignal.timeout(5000) });
+      const r = await systemFetch(`${APP_CONFIG.ollamaBase}/api/tags`, {
+        signal: AbortSignal.timeout(5000),
+      });
       setOllamaDetected(r.ok);
     } catch { setOllamaDetected(false); }
   }, []);
@@ -172,7 +184,6 @@ export default function OnboardingWizard({ onComplete }: Props) {
     { key: 'chat' as const, label: t('modelChat') },
     { key: 'deep' as const, label: t('modelDeep') },
     { key: 'vision' as const, label: t('modelVision') },
-    { key: 'visionQuality' as const, label: t('modelVisionQuality') },
     { key: 'embed' as const, label: t('modelEmbedding') },
     { key: 'code' as const, label: t('modelCode') },
     { key: 'fast' as const, label: t('modelFast') },
@@ -191,16 +202,20 @@ export default function OnboardingWizard({ onComplete }: Props) {
 
   return (
     <motion.div
-      className={`fixed inset-0 z-50 flex flex-col items-center justify-center ${bg} px-4 transition-colors duration-300`}
+      className={`fixed inset-0 z-50 flex flex-col items-center justify-center overflow-y-auto ${bg} px-4 py-6 transition-colors duration-300`}
+      style={{
+        paddingTop: 'max(1.5rem, calc(env(safe-area-inset-top, 0px) + 1rem))',
+        paddingBottom: 'max(1.5rem, calc(env(safe-area-inset-bottom, 0px) + 1rem))',
+      }}
       initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
     >
-      <div className="w-full max-w-lg flex flex-col gap-5 sm:gap-6 px-1 sm:px-0">
+      <div className="my-auto w-full max-w-lg flex flex-col gap-5 sm:gap-6 px-1 sm:px-0">
         {/* Progress dots */}
         <div className="flex justify-center gap-2">
-          {([1,2,3,4,5,6] as Step[]).map((s) => (
+          {visibleSteps.map((s) => (
             <motion.div
               key={s}
-              className={`h-1.5 rounded-full transition-all duration-300 ${stepDot(s)}`}
+              className={`h-1.5 rounded-full transition-[width,background-color] duration-300 ${stepDot(s)}`}
               animate={{ width: step === s ? 24 : 8 }}
             />
           ))}
@@ -218,7 +233,7 @@ export default function OnboardingWizard({ onComplete }: Props) {
                     key={l}
                     whileTap={{ scale: 0.96 }}
                     onClick={() => setLang(l)}
-                    className={`p-5 rounded-2xl border-2 text-center transition-all ${lang === l ? selectedCard : `border-transparent ${cardBg} hover:border-white/10`}`}
+                    className={`p-5 rounded-2xl border-2 text-center transition-[background-color,color,border-color,box-shadow,transform] ${lang === l ? selectedCard : `border-transparent ${cardBg} hover:border-white/10`}`}
                   >
                     <span className="text-3xl">{l === 'es' ? '🇪🇸' : '🇺🇸'}</span>
                     <p className={`mt-2 font-medium ${textMain}`}>{l === 'es' ? 'Español' : 'English'}</p>
@@ -239,7 +254,7 @@ export default function OnboardingWizard({ onComplete }: Props) {
                     key={mode}
                     whileTap={{ scale: 0.96 }}
                     onClick={() => setTheme(mode)}
-                    className={`p-5 rounded-2xl border-2 text-center transition-all ${(mode === 'dark') === isDark ? selectedCard : `border-transparent ${cardBg} hover:border-white/10`}`}
+                    className={`p-5 rounded-2xl border-2 text-center transition-[background-color,color,border-color,box-shadow,transform] ${(mode === 'dark') === isDark ? selectedCard : `border-transparent ${cardBg} hover:border-white/10`}`}
                   >
                     <div className={`mx-auto w-16 h-10 rounded-lg mb-2 border ${mode === 'dark' ? 'bg-gray-900 border-gray-700' : 'bg-white border-gray-300'}`}>
                       <div className={`h-2 w-8 mx-auto mt-1.5 rounded ${mode === 'dark' ? 'bg-gray-700' : 'bg-gray-200'}`} />
@@ -264,14 +279,13 @@ export default function OnboardingWizard({ onComplete }: Props) {
                   onChange={(e) => setNickname(e.target.value)}
                   placeholder={t('onboardingStep3NicknameLabel')}
                   className={`w-full px-4 py-3 rounded-xl border text-sm outline-none focus:border-[#006bbd]/40 transition-colors ${inputBg}`}
-                  autoFocus
                 />
               </div>
             </motion.div>
           )}
 
           {/* Step 4: Models */}
-          {step === 4 && (
+          {canConfigureSystem && step === 4 && (
             <motion.div key="s4" variants={stepVariants} initial="enter" animate="center" exit="exit" transition={{ duration: 0.25 }} className="flex flex-col gap-4">
               <h2 className={`text-2xl font-semibold text-center ${textMain}`}>{t('onboardingStep5Title')}</h2>
               <p className={`text-sm text-center ${textSub}`}>{t('onboardingStep5Desc')}</p>
@@ -287,7 +301,7 @@ export default function OnboardingWizard({ onComplete }: Props) {
                         else if (choice === 'test') { setModelChoice('test'); runSystemTest(); }
                         else setModelChoice(choice);
                       }}
-                      className={`w-full p-4 rounded-xl border text-left transition-all ${modelChoice === choice ? selectedCard : `${cardBg} hover:border-white/10`}`}
+                      className={`w-full p-4 rounded-xl border text-left transition-[background-color,color,border-color,box-shadow,transform] ${modelChoice === choice ? selectedCard : `${cardBg} hover:border-white/10`}`}
                     >
                       <p className={`font-medium text-sm ${textMain}`}>{t(`onboardingStep5${choice === 'default' ? 'Default' : choice === 'custom' ? 'Custom' : 'AutoTest'}` as any)}</p>
                       <p className={`text-xs mt-1 ${textSub}`}>{t(`onboardingStep5${choice === 'default' ? 'Default' : choice === 'custom' ? 'Custom' : 'AutoTest'}Desc` as any)}</p>
@@ -346,7 +360,6 @@ export default function OnboardingWizard({ onComplete }: Props) {
                         value={customModels[modelKeys[customStep].key]}
                         onChange={(e) => setCustomModels((m) => ({ ...m, [modelKeys[customStep].key]: e.target.value }))}
                         className={`w-full px-3 py-2 rounded-lg border text-sm outline-none ${inputBg}`}
-                        autoFocus
                       />
                       <div className="flex gap-2">
                         <motion.button whileTap={{ scale: 0.96 }} onClick={() => setCustomStep((s) => s + 1)} className={`flex-1 py-2 rounded-lg text-sm font-medium ${btnPrimary}`}>
@@ -365,7 +378,7 @@ export default function OnboardingWizard({ onComplete }: Props) {
           )}
 
           {/* Step 5: Ollama + Indexing */}
-          {step === 5 && (
+          {canConfigureSystem && step === 5 && (
             <motion.div key="s5" variants={stepVariants} initial="enter" animate="center" exit="exit" transition={{ duration: 0.25 }} className="flex flex-col gap-5">
               <h2 className={`text-2xl font-semibold text-center ${textMain}`}>{t('onboardingStep6Title')}</h2>
               <p className={`text-sm text-center ${textSub}`}>{t('onboardingStep6Desc')}</p>
@@ -444,7 +457,7 @@ export default function OnboardingWizard({ onComplete }: Props) {
                   }}
                   {...{ webkitdirectory: '', directory: '' }}
                 />
-                <motion.button whileTap={{ scale: 0.96 }} onClick={() => folderInputRef.current?.click()} disabled={indexing} className={`w-full py-3 rounded-xl text-sm font-medium transition-all ${btnSecondary} disabled:opacity-50`}>
+                <motion.button whileTap={{ scale: 0.96 }} onClick={() => folderInputRef.current?.click()} disabled={indexing} className={`w-full py-3 rounded-xl text-sm font-medium transition-[background-color,color,border-color,opacity] ${btnSecondary} disabled:opacity-50`}>
                   {selectedFolderName
                     ? t('indexFolderSelected').replace('{folder}', selectedFolderName).replace('{count}', String(selectedFolderCount))
                     : t('chooseFolder')}
@@ -458,7 +471,7 @@ export default function OnboardingWizard({ onComplete }: Props) {
                           <span className={textSub}>{indexProgress}%</span>
                         </div>
                         <div className={`h-2 w-full overflow-hidden rounded-full ${isDark ? 'bg-white/[0.08]' : 'bg-gray-200'}`}>
-                          <div className="h-full rounded-full bg-[#006bbd] transition-all duration-500" style={{ width: `${Math.min(100, indexProgress)}%` }} />
+                          <div className="h-full rounded-full bg-[#006bbd] transition-[width] duration-500" style={{ width: `${Math.min(100, indexProgress)}%` }} />
                         </div>
                         <button onClick={cancelIndex} className="w-full py-2 rounded-lg text-xs font-medium bg-red-500/10 text-red-400 hover:bg-red-500/20">
                           {t('indexCancel')}
@@ -490,10 +503,9 @@ export default function OnboardingWizard({ onComplete }: Props) {
               <p className={`text-sm ${textSub}`}>{t('onboardingStep7Desc')}</p>
 
               <div className={`w-full p-4 rounded-xl ${cardBg} space-y-2 text-left text-sm`}>
-                <p className={textSub}>🌐 {t('language')}: <strong className={textMain}>{lang === 'es' ? 'Español' : 'English'}</strong></p>
-                <p className={textSub}>🎨 {t('theme')}: <strong className={textMain}>{isDark ? t('darkMode') : t('lightMode')}</strong></p>
                 <p className={textSub}>👤 {t('onboardingStep3NameLabel')}: <strong className={textMain}>{nickname || t('onboardingDefaultName')}</strong></p>
-                <p className={textSub}>🧠 {t('onboardingStep5Title')}: <strong className={textMain}>{modelChoice === 'custom' ? t('modelCustomize') : t('modelUseDefaults')}</strong></p>
+                <p className={textSub}>🎨 {t('theme')}: <strong className={textMain}>{isDark ? t('darkMode') : t('lightMode')}</strong></p>
+                <p className={textSub}>🌐 {t('language')}: <strong className={textMain}>{lang === 'es' ? 'Español' : 'English'}</strong></p>
               </div>
 
               <motion.button
@@ -504,18 +516,6 @@ export default function OnboardingWizard({ onComplete }: Props) {
                 {t('onboardingStartNow')}
               </motion.button>
 
-              <div className="flex flex-col items-center gap-1 mt-2">
-                <a href={APP_CONFIG.repoUrl} target="_blank" rel="noopener noreferrer" className={`flex items-center gap-2 text-sm ${textSub} hover:text-[#006bbd] transition-colors`}>
-                  <FaGithub size={18} />
-                  <span>{APP_CONFIG.repoUrl.replace(/^https?:\/\//, '')}</span>
-                </a>
-                <p className={`text-xs mt-1`}>
-                  <a href={APP_CONFIG.repoUrl} target="_blank" rel="noopener noreferrer" className="text-[#006bbd] hover:underline">
-                    {t('onboardingStarRepo')}
-                  </a>
-                </p>
-                <p className={`text-xs ${isDark ? 'text-white/30' : 'text-gray-400'}`}>{t('onboardingStarRepoDesc')}</p>
-              </div>
             </motion.div>
           )}
         </AnimatePresence>

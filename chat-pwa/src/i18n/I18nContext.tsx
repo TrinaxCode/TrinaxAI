@@ -9,11 +9,10 @@ function loadLang(): Lang {
     const stored = localStorage.getItem(LANG_KEY);
     if (stored === 'en' || stored === 'es') return stored;
     // Detect browser language
-    const nav = navigator.language?.slice(0, 2);
-    if (nav === 'en') return 'en';
-    return 'es'; // default Spanish
+    const nav = navigator.language?.slice(0, 2).toLowerCase();
+    return nav === 'es' ? 'es' : 'en';
   } catch {
-    return 'es';
+    return 'en';
   }
 }
 

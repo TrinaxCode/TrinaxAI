@@ -22,7 +22,7 @@ const ToggleSwitch = memo(function ToggleSwitch({ engine, onChange }: ToggleSwit
       <button
         onClick={() => onChange('ollama')}
         aria-pressed={!isRag}
-        className={`text-[11px] font-medium tracking-wide whitespace-nowrap px-1 sm:px-2 py-1 rounded-lg transition-all active:scale-95 ${
+        className={`text-[11px] font-medium tracking-wide whitespace-nowrap px-1 sm:px-2 py-1 rounded-lg transition-[background-color,color,opacity,transform] active:scale-95 ${
           !isRag ? activeText : inactiveText
         }`}
       >
@@ -34,7 +34,7 @@ const ToggleSwitch = memo(function ToggleSwitch({ engine, onChange }: ToggleSwit
         aria-checked={isRag}
         aria-label={t('ragEngine')}
         onClick={() => onChange(isRag ? 'ollama' : 'rag')}
-        className={`relative w-8 h-4 sm:w-10 sm:h-5 rounded-full transition-all duration-300 active:scale-95 shrink-0 ${
+        className={`relative w-8 h-4 sm:w-10 sm:h-5 rounded-full transition-[background-color,box-shadow,transform] duration-300 active:scale-95 shrink-0 ${
           isRag ? 'bg-[#006bbd] shadow-[0_0_10px_rgba(0,107,189,0.4)]' : isDark ? 'bg-white/[0.15]' : 'bg-gray-400'
         }`}
       >
@@ -49,7 +49,7 @@ const ToggleSwitch = memo(function ToggleSwitch({ engine, onChange }: ToggleSwit
       <button
         onClick={() => onChange('rag')}
         aria-pressed={isRag}
-        className={`text-[11px] font-medium tracking-wide whitespace-nowrap px-1 sm:px-2 py-1 rounded-lg transition-all ${
+        className={`text-[11px] font-medium tracking-wide whitespace-nowrap px-1 sm:px-2 py-1 rounded-lg transition-[background-color,color,opacity] ${
           isRag ? activeText : inactiveText
         }`}
       >

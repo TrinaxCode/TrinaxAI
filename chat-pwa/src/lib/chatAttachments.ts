@@ -1,4 +1,8 @@
-import { RAG_BASE, type ChatDocumentAttachment } from './api';
+import type { ChatDocumentAttachment } from './api';
+import { APP_CONFIG } from './config';
+import { systemRequestHeaders } from './authHeaders';
+
+const RAG_BASE = APP_CONFIG.ragBase;
 
 const DB_NAME = 'trinaxai-chat-files';
 const STORE_NAME = 'files';
@@ -21,7 +25,11 @@ export async function storeChatAttachment(file: File, kind: ChatDocumentAttachme
   try {
     const form = new FormData();
     form.append('file', file, file.name);
-    const response = await fetch(`${RAG_BASE}/attachments`, { method: 'POST', body: form });
+    const response = await fetch(`${RAG_BASE}/attachments`, {
+      method: 'POST',
+      body: form,
+      headers: systemRequestHeaders(),
+    });
     if (!response.ok) throw new Error(`Attachment upload failed: ${response.status}`);
     const stored = await response.json() as {
       id: string;
@@ -50,7 +58,37 @@ export async function storeChatAttachment(file: File, kind: ChatDocumentAttachme
     request.onerror = () => reject(request.error);
   });
   db.close();
-  return { id, storageKey: id, name: file.name, size: file.size, mimeType: file.type || 'application/octet-stream', kind };
+  return { id, storageKey: id, name: file.name, size: file.size, mimeType: file.type || 'application/octet-stream', kind, localOnly: true };
+}
+
+export async function deleteChatAttachment(attachment: ChatDocumentAttachment): Promise<void> {
+  const storageKey = attachment.storageKey;
+  if (!storageKey) return;
+  if (storageKey.startsWith('server:')) {
+    const attachmentId = storageKey.slice('server:'.length);
+    if (/^[0-9a-f]{32}$/.test(attachmentId)) {
+      await fetch(`${RAG_BASE}/attachments/${attachmentId}`, {
+        method: 'DELETE',
+        headers: systemRequestHeaders(),
+      }).then((response) => {
+        if (!response.ok && response.status !== 404) throw new Error(`Attachment delete failed: ${response.status}`);
+      });
+    }
+    return;
+  }
+  if (typeof indexedDB === 'undefined') return;
+  const db = await openDb();
+  await new Promise<void>((resolve, reject) => {
+    const request = db.transaction(STORE_NAME, 'readwrite').objectStore(STORE_NAME).delete(storageKey);
+    request.onsuccess = () => resolve();
+    request.onerror = () => reject(request.error);
+  });
+  db.close();
+}
+
+export async function deleteChatAttachments(messages: Array<{ documentAttachments?: ChatDocumentAttachment[] }>): Promise<void> {
+  const attachments = messages.flatMap((message) => message.documentAttachments ?? []);
+  await Promise.allSettled(attachments.map(deleteChatAttachment));
 }
 
 export async function getChatAttachmentUrl(storageKey?: string, mimeType?: string): Promise<string | null> {
@@ -58,7 +96,17 @@ export async function getChatAttachmentUrl(storageKey?: string, mimeType?: strin
   if (storageKey.startsWith('server:')) {
     const attachmentId = storageKey.slice('server:'.length);
     if (/^[0-9a-f]{32}$/.test(attachmentId)) {
-      return `${RAG_BASE}/attachments/${attachmentId}`;
+      try {
+        const response = await fetch(`${RAG_BASE}/attachments/${attachmentId}`, {
+          headers: systemRequestHeaders(),
+        });
+        if (!response.ok) return null;
+        const blob = await response.blob();
+        const typedBlob = mimeType && blob.type !== mimeType ? new Blob([blob], { type: mimeType }) : blob;
+        return URL.createObjectURL(typedBlob);
+      } catch {
+        return null;
+      }
     }
     return null;
   }

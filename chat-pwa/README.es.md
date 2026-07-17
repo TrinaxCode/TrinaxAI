@@ -1,6 +1,6 @@
 # PWA de Chat de TrinaxAI
 
-Frontend de TrinaxAI construido con React 19, TypeScript y Vite 6. Incluye chat directo con Ollama, chat RAG con citas, visión, documentos adjuntos, voz local, explorador de conocimiento y comportamiento instalable como PWA.
+Frontend 1.1.0 de TrinaxAI construido con React 19, TypeScript y Vite 6, bajo licencia AGPL-3.0-or-later. Incluye chat directo con Ollama, RAG con citas, búsqueda web opcional, investigación profunda, agente con herramientas, visión, documentos, voz local, memoria y una PWA instalable.
 
 [English](README.md) · [Índice de documentación](../docs/README.es.md) · [Referencia de API](../docs/API_REFERENCE.es.md)
 
@@ -47,7 +47,7 @@ src/
 │   ├── Settings.tsx         modelos, índice, prompts, memoria y métricas
 │   ├── KnowledgeBrowser.tsx fuentes y chunks indexados
 │   └── Docs.tsx             ayuda integrada
-├── hooks/                   historial, streaming y modo voz
+├── hooks/                   historial y ciclo de streaming
 ├── lib/
 │   ├── api.ts               cliente HTTP y parsers SSE/NDJSON
 │   ├── config.ts            resolución de URLs same-origin
@@ -64,10 +64,42 @@ src/
 
 - **Ollama:** `streamOllama()` usa `/api/ollama/api/chat`, compacta historial y procesa NDJSON. Un router heurístico selecciona modelos general, código, profundo o rápido.
 - **RAG:** `streamRag()` usa `/api/rag/v1/chat/completions`, procesa SSE y conserva metadatos y citas `trinaxai_sources`.
+- **Internet:** consulta DuckDuckGo, Brave Search o SearXNG, muestra fuentes y realiza lecturas acotadas de páginas públicas protegidas contra SSRF.
+- **Investigación:** descompone consultas, combina web y conocimiento local autorizado y sintetiza respuestas con fuentes.
+- **Agente:** comparte motor con la CLI, confina archivos al workspace y pide aprobación antes de escribir, editar o ejecutar comandos.
 - **Visión:** las imágenes se reducen a un lado máximo de 768 px y se convierten a JPEG antes de la inferencia.
 - **Documentos:** PDF, DOCX, PPTX y texto pueden extraerse temporalmente con `/documents/extract`; esto no los indexa.
 - **Indexación:** el navegador filtra extensiones, sube una carpeta a `/system/index-upload` y consulta el progreso del trabajo.
-- **Voz:** se usan capacidades del navegador cuando existen; el respaldo local consulta `/v1/voice/capabilities`, `/stt` y `/tts`.
+- **Voz:** los controles de `ChatInterface` usan capacidades del navegador cuando existen; el respaldo local consulta `/v1/voice/capabilities`, `/stt` y `/tts`.
+
+## Emparejar un navegador
+
+Un navegador LAN puede usar el chat Ollama sin emparejarse, pero no puede leer
+datos privados ni usar RAG, memoria, archivos, indexación, agente o controles
+del sistema hasta consumir un código corto de un solo uso.
+
+1. En la PWA host, abre **Configuración → Dispositivo emparejado → Generar
+   código de emparejamiento**.
+2. En el otro equipo abre `https://IP-LOCAL-DEL-HOST:3334`, elige la opción de
+   instalación existente, introduce el código, nombra el dispositivo y confirma.
+3. Vuelve a la PWA host para revisar o revocar el equipo. Si quieres, instala la
+   PWA desde el menú del navegador.
+
+El token inicial concede `chat,read_private`. Los scopes elevados `index`,
+`system` o `agent` deben concederse deliberadamente sólo al equipo que los
+necesite; la CLI del host sigue disponible para seleccionar scopes y administrar.
+
+La PWA conserva el bearer en `sessionStorage`, lo envía como
+`X-TrinaxAI-Device-Token`, muestra dispositivo/scopes y permite autorrevocación.
+Cerrar la sesión elimina el token en claro local. El host puede revisar/revocar
+con `trinaxai pair list` y `trinaxai pair revoke ID`. Pairing identifica un
+dispositivo, no una cuenta de usuario.
+
+La memoria persistente se recupera por consulta. Antes del turno, la PWA pide a
+`POST /v1/memory/context` solo entradas activas relevantes y las envuelve como
+datos explícitamente no confiables. Nunca inyecta el resumen global ni el
+scratchpad local `tc-project-memory`. El panel muestra tipo, provenance,
+expiración y edición, y exige confirmación antes de borrar.
 
 ## Estado y persistencia
 
@@ -80,7 +112,7 @@ src/
 | `storage/app_state.json` | Selección de estado `tc-*` compartido mediante FastAPI. |
 | Almacenamiento RAG | Colecciones, chunks, memoria y métricas; pertenece al backend. |
 
-`sharedState.ts` usa ETags, fusiona sesiones y registros de eliminación, y sincroniza en segundo plano sin bloquear el arranque. Es sincronización para un host/LAN de confianza, no un sistema de cuentas multiusuario.
+`sharedState.ts` usa una revisión monótona del servidor y ETags. Las mutaciones del navegador se persisten como operaciones incrementales `set`/`delete` con un ID estable de dispositivo; ante un `409`, las operaciones pendientes se rebasan sobre la revisión canónica y se reintentan. El sondeo periódico recibe `304` cuando no cambia nada y ya no vuelve a hashear ni subir un snapshot completo. Las sesiones y sus registros de eliminación conservan la fusión estructurada. La sincronización no bloquea el arranque y exige `read_private` (o privilegio local/admin); sigue siendo sincronización entre dispositivos, no un sistema de cuentas multiusuario.
 
 Al adjuntar un archivo, la PWA intenta guardarlo primero en FastAPI para que una conversación sincronizada pueda abrirlo desde otro dispositivo. Si el backend no está disponible o es antiguo, conserva una copia solo en IndexedDB.
 
@@ -88,9 +120,8 @@ Al adjuntar un archivo, la PWA intenta guardarlo primero en FastAPI para que una
 
 `vite-plugin-pwa` genera manifest y service worker Workbox:
 
-- `CacheFirst` para JS, CSS e imágenes locales.
-- `StaleWhileRevalidate`/`CacheFirst` para Google Fonts.
-- `NetworkFirst` con timeout de cinco segundos para algunas lecturas de API.
+- `StaleWhileRevalidate` para JS/CSS y `CacheFirst` para imágenes locales.
+- `NetworkFirst` solo para salud pública; datos privados de API no entran en el runtime cache.
 - Fallback de navegación a `/index.html`, excepto rutas `/api/*`.
 - Comprobación de actualizaciones cada hora y aviso mediante `PwaUpdater`.
 
@@ -100,9 +131,16 @@ Al adjuntar un archivo, la PWA intenta guardarlo primero en FastAPI para que una
 
 Consulta la [referencia completa de configuración](../docs/CONFIGURATION.es.md). Las variables `VITE_TRINAXAI_*` se fijan al construir; los destinos `TRINAXAI_RAG_TARGET` y `TRINAXAI_OLLAMA_TARGET` se leen al ejecutar Vite.
 
-Vite usa `certs/trinaxai-local.pfx` o el par `certs/localhost-key.pem`/`certs/localhost.pem`. Sin esos archivos sirve HTTP. Nunca confirmes certificados o claves.
+Vite usa `chat-pwa/certs/trinaxai-local.pfx` o el par `chat-pwa/certs/localhost-key.pem`/`chat-pwa/certs/localhost.pem`. Sin esos archivos sirve HTTP. Nunca confirmes certificados o claves.
 
-El middleware `/api/system/*` acepta loopback, un token administrador válido o una LAN privada habilitada explícitamente. FastAPI aplica además su propia autorización. No publiques Vite ni Ollama directamente en Internet; usa VPN o proxy autenticado.
+El gateway valida capability admin/de dispositivo, elimina identidad de proxy
+aportada por cliente y firma el peer original para `/api/rag`; FastAPI solo
+acepta esa identidad desde loopback. `/api/ollama` exige `chat`, tiene allowlist fija, rate limit acotado y
+lock de inferencia cross-process: no permite pull/create/delete de modelos.
+Lecturas privadas y mutaciones de FastAPI exigen autorización. `/api/system/*`
+aplica la misma frontera de credencial/capability antes de acciones fijas.
+No publiques el gateway en Internet; usa VPN/TLS autenticado y conserva FastAPI
+y Ollama en loopback.
 
 ## Validación
 
@@ -124,6 +162,8 @@ Al añadir texto de interfaz, incorpora claves equivalentes en español e inglé
 - **Backend offline:** abre `/api/rag/health` desde el origen de la PWA y ejecuta `trinaxai doctor`.
 - **Ollama offline:** comprueba `ollama list` y `/api/ollama/api/tags`.
 - **Interfaz antigua:** aplica el aviso de actualización o elimina service worker y datos del sitio.
-- **El teléfono no controla servicios:** es el valor seguro; habilita control LAN solo en una red confiable.
+- **El teléfono no usa una función protegida:** empareja desde el host y concede
+  el scope exacto. Otorga `system` solo si debe controlar servicios; no repartas
+  el token admin como atajo.
 - **Micrófono:** revisa permiso, contexto seguro y `/api/rag/v1/voice/capabilities`.
 - **Vite sirve HTTP:** instala/genera los certificados locales esperados.

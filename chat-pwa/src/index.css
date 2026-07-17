@@ -95,6 +95,33 @@
     overflow: hidden;
   }
 
+  .skip-link {
+    position: fixed;
+    inset-block-start: max(0.75rem, env(safe-area-inset-top, 0px));
+    inset-inline-start: max(0.75rem, env(safe-area-inset-left, 0px));
+    z-index: 120;
+    padding: 0.65rem 0.9rem;
+    border-radius: 0.65rem;
+    background: #006bbd;
+    color: #fff;
+    font-size: 0.875rem;
+    font-weight: 600;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+    transform: none;
+  }
+
+  .skip-link:focus-visible {
+    width: auto;
+    height: auto;
+    overflow: visible;
+    clip-path: none;
+    white-space: normal;
+  }
+
   /* Custom scrollbar — WebKit (Chrome, Safari, Edge) */
   ::-webkit-scrollbar {
     width: 5px;
@@ -140,9 +167,39 @@
     outline-offset: 2px;
     border-radius: 4px;
   }
+
+  /* Keep every interactive transition on the same fluid curve. Individual
+     duration utilities still control how fast each component moves. */
+  button,
+  a,
+  [role='button'] {
+    transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+  }
 }
 
 @layer components {
+  :root {
+    --sidebar-history-logo-size: 3rem;
+    --agent-avatar-color: #ffffff;
+  }
+
+  html.light {
+    --agent-avatar-color: #6b7280;
+  }
+
+  .sidebar-history-header {
+    min-height: calc(var(--sidebar-history-logo-size) + 0.75rem);
+  }
+
+  .sidebar-history-logo {
+    width: var(--sidebar-history-logo-size);
+    height: var(--sidebar-history-logo-size);
+  }
+
+  .agent-empty-avatar {
+    color: var(--agent-avatar-color);
+  }
+
   /* Glassmorphism utility — dark only for now */
   .glass {
     background: rgba(255, 255, 255, 0.04);
@@ -205,6 +262,27 @@
     will-change: transform, opacity;
   }
 
+  /* The blur is intentionally isolated to the overlay layer. This keeps the
+     glass effect while letting the rest of the app remain on its own layer. */
+  .sidebar-backdrop {
+    -webkit-backdrop-filter: blur(12px) saturate(115%);
+    backdrop-filter: blur(12px) saturate(115%);
+    transform: translateZ(0);
+    contain: paint;
+  }
+
+  .sidebar-surface {
+    -webkit-backdrop-filter: blur(16px) saturate(135%);
+    backdrop-filter: blur(16px) saturate(135%);
+    transform: translateZ(0);
+  }
+
+  /* Keep the light sidebar solid: the glass blur is reserved for dark mode. */
+  html.light .sidebar-surface {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+
   /* Safe area padding shortcuts */
   .pb-safe {
     padding-bottom: env(safe-area-inset-bottom, 0px);
@@ -239,11 +317,19 @@
 }
 
 .animate-brand {
-  animation: brand-shift 6s ease-in-out infinite;
+  color: #4ea3e0;
+  animation: brand-shift 4s ease-in-out infinite;
 }
 
 html.light .animate-brand {
+  color: #006bbd;
   animation-name: brand-shift-light;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-brand {
+    animation: none;
+  }
 }
 
 /* Floating logo */
@@ -263,7 +349,7 @@ html.light .animate-brand {
 }
 
 .animate-glow {
-  animation: glow-pulse 2.5s ease-in-out infinite;
+  box-shadow: 0 0 20px rgba(0, 107, 189, 0.24), 0 0 36px rgba(0, 107, 189, 0.08);
 }
 
 /* Subtle shimmer sweep */
@@ -285,7 +371,8 @@ html.light .animate-brand {
 }
 
 .animate-border-glow {
-  animation: border-glow 2.5s ease-in-out infinite;
+  border-color: rgba(0, 107, 189, 0.5);
+  box-shadow: 0 0 18px rgba(0, 107, 189, 0.13);
 }
 
 /* Soft pulsing opacity */
@@ -308,6 +395,48 @@ html.light .animate-brand {
   animation: fade-up 0.4s ease-out forwards;
 }
 
+/* ============================================
+   Intro / welcome splash — pure-CSS entrance.
+   Runs on the COMPOSITOR (opacity/transform only), so it stays smooth even
+   while the heavy chat UI mounts on the main thread behind the opaque splash.
+   Do NOT reintroduce width/layout-animating properties here (the old loading
+   line animated `width`, which forces layout every frame and stutters).
+   ============================================ */
+@keyframes intro-logo {
+  from { opacity: 0; transform: scale(0.6); }
+  to   { opacity: 1; transform: scale(1); }
+}
+.animate-intro-logo {
+  animation: intro-logo 1s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes intro-title {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.animate-intro-title {
+  animation: intro-title 0.8s cubic-bezier(0.16, 1, 0.3, 1) 0.35s both;
+}
+
+/* Loading line grows via scaleX (compositor) instead of width (layout). */
+@keyframes intro-line {
+  from { transform: scaleX(0); }
+  to   { transform: scaleX(1); }
+}
+.animate-intro-line {
+  transform: scaleX(0);
+  animation: intro-line 1.4s ease-in-out 0.6s both;
+}
+
+/* Splash fade-out — toggled by adding the class when the intro ends. */
+@keyframes intro-fade-out {
+  from { opacity: 1; }
+  to   { opacity: 0; }
+}
+.animate-intro-out {
+  animation: intro-fade-out 0.4s ease-in-out both;
+}
+
 /* Scale in bounce */
 @keyframes scale-bounce {
   0%   { transform: scale(0.9); opacity: 0; }
@@ -320,60 +449,68 @@ html.light .animate-brand {
 }
 
 /* ============================================
-   Quick-start chips — elegant glass pills.
-   Entrance + hover motion are handled by framer-motion (opacity/transform),
-   so CSS never sets the `animation` shorthand on the button (that caused the
-   old invisible-but-clickable bug). CSS only decorates: surface, border,
-   brand glow, and icon disc.
+   Agent mode entrance / exit motion
    ============================================ */
-.chip-elegant {
-  transition:
-    border-color 0.35s ease,
-    background-color 0.35s ease,
-    box-shadow 0.35s ease,
-    color 0.25s ease;
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+
+/* History drawer — slide in from the left */
+@keyframes agent-drawer-in {
+  from { transform: translateX(-100%); }
+  to   { transform: translateX(0); }
+}
+.animate-drawer-in {
+  animation: agent-drawer-in 0.28s cubic-bezier(0.16, 1, 0.3, 1) both;
   will-change: transform;
 }
 
-/* Icon sits in a soft brand-tinted disc that lifts on hover */
-.chip-elegant-icon {
-  background: rgba(0, 107, 189, 0.10);
-  transition:
-    background-color 0.35s ease,
-    transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+/* History drawer — slide out to the left */
+@keyframes agent-drawer-out {
+  from { transform: translateX(0); }
+  to   { transform: translateX(-100%); }
 }
-html.dark .chip-elegant-icon {
-  background: rgba(78, 163, 224, 0.12);
-}
-.chip-elegant:hover .chip-elegant-icon {
-  transform: scale(1.14) rotate(-5deg);
-  background: rgba(0, 107, 189, 0.20);
-}
-html.dark .chip-elegant:hover .chip-elegant-icon {
-  background: rgba(78, 163, 224, 0.22);
+.animate-drawer-out {
+  animation: agent-drawer-out 0.24s cubic-bezier(0.4, 0, 1, 1) both;
+  will-change: transform;
 }
 
-/* Hover surface + brand glow aura */
-html.dark .chip-elegant:hover {
-  color: rgba(255, 255, 255, 0.95);
-  border-color: rgba(78, 163, 224, 0.45);
-  background-color: rgba(78, 163, 224, 0.09);
-  box-shadow:
-    0 6px 18px rgba(0, 0, 0, 0.28),
-    0 0 0 1px rgba(78, 163, 224, 0.16),
-    0 0 20px rgba(0, 107, 189, 0.20);
+/* Backdrop overlay fade */
+@keyframes agent-overlay-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
 }
-html.light .chip-elegant:hover {
-  color: #004d8a;
-  border-color: rgba(0, 107, 189, 0.42);
-  background-color: rgba(0, 107, 189, 0.05);
-  box-shadow:
-    0 6px 16px rgba(0, 107, 189, 0.12),
-    0 0 0 1px rgba(0, 107, 189, 0.14),
-    0 0 16px rgba(0, 107, 189, 0.12);
+.animate-overlay-in {
+  animation: agent-overlay-in 0.28s ease-out both;
+}
+@keyframes agent-overlay-out {
+  from { opacity: 1; }
+  to   { opacity: 0; }
+}
+.animate-overlay-out {
+  animation: agent-overlay-out 0.24s ease-in both;
+}
+
+/* Robot avatar drop-in for the agent empty state */
+@keyframes agent-avatar-in {
+  from { opacity: 0; transform: translateY(-14px) scale(0.7); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+.animate-agent-avatar {
+  animation: agent-avatar-in 0.6s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* Modal (folder picker) — scale + fade entrance / exit */
+@keyframes modal-in {
+  from { opacity: 0; transform: translateY(10px) scale(0.96); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+.animate-modal-in {
+  animation: modal-in 0.24s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+@keyframes modal-out {
+  from { opacity: 1; transform: translateY(0) scale(1); }
+  to   { opacity: 0; transform: translateY(10px) scale(0.96); }
+}
+.animate-modal-out {
+  animation: modal-out 0.2s cubic-bezier(0.4, 0, 1, 1) both;
 }
 
 /* ============================================
@@ -509,50 +646,6 @@ html.light .prose code:not(pre code) {
   }
 }
 
-.chat-markdown {
-  min-width: 0;
-  max-width: 100%;
-  max-inline-size: 100%;
-  overflow: hidden;
-  overflow-wrap: anywhere;
-  word-break: break-word;
-}
-
-.chat-markdown > * {
-  max-width: 100%;
-}
-
-.chat-markdown p,
-.chat-markdown li,
-.chat-markdown blockquote,
-.chat-markdown h1,
-.chat-markdown h2,
-.chat-markdown h3,
-.chat-markdown h4 {
-  overflow-wrap: anywhere;
-  word-break: break-word;
-}
-
-.chat-markdown a {
-  overflow-wrap: anywhere;
-  word-break: break-all;
-}
-
-.chat-markdown pre {
-  display: block;
-  max-width: 100%;
-  overflow-x: auto;
-  overscroll-behavior-x: contain;
-  white-space: pre-wrap;
-  word-break: break-word;
-  -webkit-overflow-scrolling: touch;
-}
-
-.chat-markdown code {
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-
 /* ============================================
    Theme Switch — Circular Reveal Animation
    (View Transition API)
@@ -583,60 +676,6 @@ html.light .prose code:not(pre code) {
   }
 }
 
-.chat-markdown table {
-  display: block;
-  width: max-content;
-  max-width: 100%;
-  overflow-x: auto;
-  overscroll-behavior-x: contain;
-  -webkit-overflow-scrolling: touch;
-}
-
-.chat-messages,
-.chat-row {
-  inline-size: 100%;
-  max-inline-size: 100%;
-  min-inline-size: 0;
-  overflow-x: hidden;
-}
-
-.chat-row > * {
-  min-inline-size: 0;
-}
-
-.chat-bubble-wrap {
-  flex: 0 1 auto;
-  width: fit-content;
-  max-width: min(80%, calc(100vw - 5rem));
-  min-width: 0;
-  overflow-x: hidden;
-}
-
-.chat-bubble {
-  width: fit-content;
-  max-width: 100%;
-  min-width: 0;
-  overflow-wrap: anywhere;
-  word-break: normal;
-}
-
-.chat-plain-text {
-  overflow-wrap: anywhere;
-  word-break: normal;
-  max-inline-size: 100%;
-}
-
-@media (max-width: 640px) {
-  .chat-bubble-wrap {
-    width: fit-content;
-    max-width: calc(100vw - 4.25rem);
-  }
-
-  .chat-markdown {
-    font-size: 0.92rem;
-    line-height: 1.58;
-  }
-}
 
 /* ============================================
    Mobile-specific responsive overrides
@@ -662,25 +701,6 @@ html.light .prose code:not(pre code) {
   }
 }
 
-/* Small phone landscape / very narrow viewports */
-@media (max-width: 380px) {
-  .chat-markdown {
-    font-size: 0.85rem;
-  }
-
-  .chat-bubble {
-    padding-left: 0.75rem;
-    padding-right: 0.75rem;
-  }
-}
-
-/* Tablet and larger: reduce bubble max-width for readability */
-@media (min-width: 768px) {
-  .chat-bubble-wrap {
-    width: fit-content;
-    max-width: min(70%, 42rem);
-  }
-}
 
 /* Prevent sticky hover states on touch devices */
 @media (hover: none) and (pointer: coarse) {

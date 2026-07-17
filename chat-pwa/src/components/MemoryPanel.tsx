@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { motion } from 'framer-motion';
-import { MdAdd, MdDelete, MdAutoFixHigh, MdRefresh } from 'react-icons/md';
+import { MdAdd, MdAutoFixHigh, MdClose, MdDelete, MdEdit, MdSave } from 'react-icons/md';
 import { useI18n } from '../i18n/I18nContext';
 import { useTheme } from '../theme/ThemeContext';
 import { useToast } from './Toast';
-import { listMemories, addMemory, deleteMemory, refreshMemorySummary, getMemorySummary, type MemoryEntry, type MemorySummary } from '../lib/api';
+import { listMemories, addMemory, deleteMemory, refreshMemorySummary, getMemorySummary, updateMemory, type MemoryEntry, type MemorySummary } from '../lib/api';
+import ConfirmModal from './ConfirmModal';
 
 const PROJECT_MEMORY_KEY = 'tc-project-memory';
 
@@ -20,8 +21,14 @@ export default function MemoryPanel() {
   const [summary, setSummary] = useState<MemorySummary>({ summary: '', count: 0, updated_at: 0 });
   const [newText, setNewText] = useState('');
   const [newTags, setNewTags] = useState('');
+  const [newKind, setNewKind] = useState<MemoryEntry['kind']>('note');
+  const [newExpiry, setNewExpiry] = useState('');
   const [projectNotes, setProjectNotes] = useState<string>(loadProjectMemory);
   const [refreshing, setRefreshing] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editText, setEditText] = useState('');
+  const [editKind, setEditKind] = useState<MemoryEntry['kind']>('note');
+  const [pendingDelete, setPendingDelete] = useState<string | null>(null);
   const connectionToastShownRef = useRef(false);
 
   const showConnectionErrorOnce = useCallback((err: unknown) => {
@@ -44,8 +51,12 @@ export default function MemoryPanel() {
   useEffect(() => { void refresh(); }, [refresh]);
 
   useEffect(() => {
-    try { localStorage.setItem(PROJECT_MEMORY_KEY, projectNotes); } catch { /* ignore */ }
-  }, [projectNotes]);
+    try {
+      localStorage.setItem(PROJECT_MEMORY_KEY, projectNotes);
+    } catch {
+      showConnectionErrorOnce(new Error(t('memoryProjectSaveFailed')));
+    }
+  }, [projectNotes, showConnectionErrorOnce, t]);
 
   // Notify other components (e.g. ChatInterface) to drop their cached summary.
   const invalidateCache = useCallback(() => {
@@ -57,16 +68,21 @@ export default function MemoryPanel() {
     if (!text) return;
     const tags = newTags.split(',').map((t) => t.trim()).filter(Boolean);
     try {
-      await addMemory(text, tags);
+      const expiresAt = newExpiry
+        ? new Date(`${newExpiry}T23:59:59`).getTime() / 1000
+        : undefined;
+      await addMemory(text, tags, { kind: newKind, expiresAt });
       setNewText('');
       setNewTags('');
+      setNewKind('note');
+      setNewExpiry('');
       toast.toast(t('memoryAdded'), 'success');
       invalidateCache();
       await refresh();
     } catch (err) {
       showConnectionErrorOnce(err);
     }
-  }, [newText, newTags, toast, t, refresh, invalidateCache, showConnectionErrorOnce]);
+  }, [newText, newTags, newKind, newExpiry, toast, t, refresh, invalidateCache, showConnectionErrorOnce]);
 
   const del = useCallback(async (id: string) => {
     try {
@@ -77,6 +93,25 @@ export default function MemoryPanel() {
       showConnectionErrorOnce(err);
     }
   }, [refresh, invalidateCache, showConnectionErrorOnce]);
+
+  const beginEdit = useCallback((memory: MemoryEntry) => {
+    setEditingId(memory.id);
+    setEditText(memory.text);
+    setEditKind(memory.kind ?? 'note');
+  }, []);
+
+  const saveEdit = useCallback(async () => {
+    if (!editingId || !editText.trim()) return;
+    try {
+      await updateMemory(editingId, { text: editText.trim(), kind: editKind });
+      setEditingId(null);
+      invalidateCache();
+      await refresh();
+      toast.toast(t('memoryUpdated'), 'success');
+    } catch (err) {
+      showConnectionErrorOnce(err);
+    }
+  }, [editKind, editText, editingId, invalidateCache, refresh, showConnectionErrorOnce, t, toast]);
 
   const doRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -153,6 +188,28 @@ export default function MemoryPanel() {
           placeholder={t('memoryTextPlaceholder')}
           className={`w-full rounded-lg border px-3 py-2 text-xs outline-none focus:border-[#006bbd]/40 ${inputStyle}`}
         />
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <select
+            aria-label={t('memoryKindLabel')}
+            value={newKind}
+            onChange={(event) => setNewKind(event.target.value as MemoryEntry['kind'])}
+            className={`w-full rounded-lg border px-3 py-2 text-xs focus:border-[#006bbd]/40 ${inputStyle}`}
+          >
+            {(['fact', 'preference', 'decision', 'note'] as const).map((kind) => (
+              <option key={kind} value={kind}>{t(`memoryKind_${kind}`)}</option>
+            ))}
+          </select>
+          <label className={`flex items-center gap-2 rounded-lg border px-3 text-xs ${inputStyle}`}>
+            <span>{t('memoryExpiryLabel')}</span>
+            <input
+              type="date"
+              value={newExpiry}
+              min={new Date().toISOString().slice(0, 10)}
+              onChange={(event) => setNewExpiry(event.target.value)}
+              className="min-w-0 flex-1 bg-transparent py-2"
+            />
+          </label>
+        </div>
         <input
           value={newTags}
           onChange={(e) => setNewTags(e.target.value)}
@@ -181,9 +238,34 @@ export default function MemoryPanel() {
               className={`rounded-xl border p-3 flex items-start gap-2 ${cardBg}`}
             >
               <div className="flex-1 min-w-0">
-                <p className={`text-xs ${isDark ? 'text-white/80' : 'text-gray-800'} break-words`}>{m.text}</p>
+                {editingId === m.id ? (
+                  <div className="space-y-2">
+                    <input
+                      aria-label={t('memoryTextPlaceholder')}
+                      value={editText}
+                      onChange={(event) => setEditText(event.target.value)}
+                      className={`w-full rounded-lg border px-3 py-2 text-xs ${inputStyle}`}
+                    />
+                    <select
+                      aria-label={t('memoryKindLabel')}
+                      value={editKind}
+                      onChange={(event) => setEditKind(event.target.value as MemoryEntry['kind'])}
+                      className={`w-full rounded-lg border px-3 py-2 text-xs ${inputStyle}`}
+                    >
+                      {(['fact', 'preference', 'decision', 'note'] as const).map((kind) => (
+                        <option key={kind} value={kind}>{t(`memoryKind_${kind}`)}</option>
+                      ))}
+                    </select>
+                  </div>
+                ) : (
+                  <p className={`text-xs ${isDark ? 'text-white/80' : 'text-gray-800'} break-words`}>{m.text}</p>
+                )}
                 <div className={`mt-1.5 flex flex-wrap items-center gap-2 text-[10px] ${muted}`}>
                   <span>{new Date(m.created_at * 1000).toLocaleString()}</span>
+                  <span title={t('memoryWhyHint')}>
+                    {t(`memoryKind_${m.kind ?? 'note'}`)} · {t(`memoryProvenance_${m.provenance ?? 'manual'}`)}
+                  </span>
+                  {m.expires_at ? <span>{t('memoryExpires')}: {new Date(m.expires_at * 1000).toLocaleDateString()}</span> : null}
                   {m.tags?.length ? (
                     <span className="flex flex-wrap gap-1">
                       {m.tags.map((tag) => (
@@ -193,8 +275,26 @@ export default function MemoryPanel() {
                   ) : null}
                 </div>
               </div>
+              {editingId === m.id ? (
+                <div className="flex shrink-0 gap-1">
+                  <button onClick={() => void saveEdit()} className="rounded-lg p-1.5 text-emerald-500" aria-label={t('save')}>
+                    <MdSave size={14} />
+                  </button>
+                  <button onClick={() => setEditingId(null)} className={`rounded-lg p-1.5 ${muted}`} aria-label={t('cancel')}>
+                    <MdClose size={14} />
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => beginEdit(m)}
+                  className={`shrink-0 p-1.5 rounded-lg ${isDark ? 'text-white/25 hover:text-white/70 hover:bg-white/[0.05]' : 'text-gray-300 hover:text-gray-700 hover:bg-gray-100'}`}
+                  aria-label={t('edit')}
+                >
+                  <MdEdit size={14} />
+                </button>
+              )}
               <button
-                onClick={() => del(m.id)}
+                onClick={() => setPendingDelete(m.id)}
                 className={`shrink-0 p-1.5 rounded-lg ${isDark ? 'text-white/25 hover:text-red-400 hover:bg-white/[0.05]' : 'text-gray-300 hover:text-red-500 hover:bg-gray-100'}`}
                 aria-label={t('delete')}
               >
@@ -204,6 +304,20 @@ export default function MemoryPanel() {
           ))
         )}
       </div>
+      <ConfirmModal
+        open={pendingDelete !== null}
+        title={t('delete')}
+        message={t('memoryDeleteConfirm')}
+        confirmLabel={t('delete')}
+        cancelLabel={t('cancel')}
+        danger
+        onCancel={() => setPendingDelete(null)}
+        onConfirm={() => {
+          const id = pendingDelete;
+          setPendingDelete(null);
+          if (id) void del(id);
+        }}
+      />
     </section>
   );
 }

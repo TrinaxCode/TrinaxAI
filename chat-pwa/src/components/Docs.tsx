@@ -6,7 +6,7 @@ import { useTheme } from '../theme/ThemeContext';
 
 interface Props { onBack: () => void; }
 
-type Section = 'intro' | 'about' | 'install' | 'config' | 'models' | 'indexing' | 'files' | 'security' | 'api' | 'pwa' | 'troubleshoot' | 'contributing';
+type Section = 'intro' | 'about' | 'install' | 'config' | 'models' | 'indexing' | 'agent' | 'research' | 'files' | 'security' | 'api' | 'pwa' | 'troubleshoot' | 'contributing';
 
 interface DocSection {
   id: Section;
@@ -22,10 +22,12 @@ const sections: DocSection[] = [
   { id: 'config', labelEs: 'Configuracion', labelEn: 'Configuration', icon: '' },
   { id: 'models', labelEs: 'Modelos', labelEn: 'Models', icon: '' },
   { id: 'indexing', labelEs: 'Indexacion', labelEn: 'Indexing', icon: '' },
+  { id: 'agent', labelEs: 'Agente', labelEn: 'Agent', icon: '' },
+  { id: 'research', labelEs: 'Internet e investigacion', labelEn: 'Internet & research', icon: '' },
   { id: 'files', labelEs: 'Archivos', labelEn: 'Files', icon: '' },
   { id: 'security', labelEs: 'Seguridad', labelEn: 'Security', icon: '' },
-  { id: 'api', labelEs: 'API Reference', labelEn: 'API Reference', icon: '' },
-  { id: 'pwa', labelEs: 'Guia PWA', labelEn: 'PWA Guide', icon: '' },
+  { id: 'api', labelEs: 'Referencia de API', labelEn: 'API Reference', icon: '' },
+  { id: 'pwa', labelEs: 'Guía de PWA', labelEn: 'PWA Guide', icon: '' },
   { id: 'troubleshoot', labelEs: 'Solucion de problemas', labelEn: 'Troubleshooting', icon: '' },
   { id: 'contributing', labelEs: 'Contribuir', labelEn: 'Contributing', icon: '' },
 ];
@@ -54,7 +56,7 @@ export default function Docs({ onBack }: Props) {
         <button onClick={onBack} aria-label={t('docsBack')} className={`p-2 -ml-2 ${isDark ? 'text-white/60 hover:text-white' : 'text-gray-500 hover:text-gray-800'} active:scale-90 transition-transform`}>
           <MdArrowBack size={20} />
         </button>
-        <img src="/logo-of-app.webp" alt="TrinaxAI" className="w-10 h-10 rounded-xl" />
+        <img src="/logo-of-app.webp" alt="TrinaxAI" className="w-10 h-10 rounded-xl" width={40} height={40} />
         <span className={`text-sm font-medium ${isDark ? 'text-white/80' : 'text-gray-800'}`}>{t('docsTitle')}</span>
       </div>
 
@@ -97,8 +99,8 @@ export default function Docs({ onBack }: Props) {
               <div className={`p-5 rounded-2xl border ${sectionBg}`}>
                 <p className={`text-sm leading-relaxed ${textSub}`}>
                   {isEs
-                    ? 'TrinaxAI es un asistente de inteligencia artificial 100% local, open-source y diseñado para ser increíblemente fácil de usar. Corre completamente en tu máquina usando Ollama para modelos de lenguaje y un sistema RAG (Retrieval-Augmented Generation) que indexa tus proyectos. Sin nube, sin suscripciones, sin límites. Todo privado.'
-                    : 'TrinaxAI is a 100% local, open-source AI assistant designed to be incredibly easy to use. It runs entirely on your machine using Ollama for language models and a custom RAG (Retrieval-Augmented Generation) system that indexes your projects. No cloud, no subscriptions, no limits. Completely private.'}
+                    ? 'TrinaxAI 1.1.0 es un asistente open-source bajo AGPL-3.0-or-later. La inferencia, RAG y datos persistidos funcionan localmente con Ollama; solo la búsqueda web opcional, las descargas y los destinos remotos que configures usan Internet.'
+                    : 'TrinaxAI 1.1.0 is an open-source assistant under AGPL-3.0-or-later. Inference, RAG, and persisted data run locally with Ollama; only optional web search, downloads, and remote targets you configure use the Internet.'}
                 </p>
               </div>
 
@@ -107,18 +109,19 @@ export default function Docs({ onBack }: Props) {
                 <pre className={`text-[10px] leading-tight font-mono ${isDark ? 'text-white/50' : 'text-gray-600'} p-3`}>{`┌──────────────────────────────────────────┐
 │              Your Device                 │
 │  ┌──────────┐  ┌─────────────────────┐   │
-│  │PWA(React)│  │ VSCode (Continue)   │   │
-│  │  :3334   │  │ continue-config.yaml│   │
+│  │PWA(React)│  │  CLI (trinaxai)     │   │
+│  │  :3334   │  │  chat · agent · rag │   │
 │  └─────┬─────┘  └──────────┬──────────┘   │
 │        │                   │               │
 │  ┌─────┴───────────────────┴──────────┐   │
 │  │    RAG API (FastAPI) :3333         │   │
-│  │ LlamaIndex · bge-m3 · BM25        │   │
+│  │ generation pipeline · LlamaIndex  │   │
+│  │ bge-m3 · BM25 · rerank            │   │
 │  └─────┬──────────────────────────────┘   │
 │        │                                   │
 │  ┌─────┴──────┐                            │
-│  │   Ollama   │  qwen2.5 · llama3.2       │
-│  │   :11434   │  bge-m3 · qwen2.5-vl      │
+│  │   Ollama   │  qwen3.5 · qwen2.5-coder  │
+│  │   :11434   │  bge-m3 · qwen3-vl        │
 │  └────────────┘                            │
 └──────────────────────────────────────────┘`}</pre>
               </div>
@@ -126,10 +129,12 @@ export default function Docs({ onBack }: Props) {
               <h2 className={`text-lg font-semibold ${textMain}`}>{isEs ? '¿Por qué TrinaxAI?' : 'Why TrinaxAI?'}</h2>
               <div className={`p-5 rounded-2xl border ${sectionBg}`}>
                 <ul className={`text-sm space-y-2 ${textSub}`}>
-                  <li>🔒 <strong className={textMain}>{isEs ? '100% Privado' : '100% Private'}</strong> — {isEs ? 'Tus datos nunca salen de tu máquina. No se envía nada a servidores externos.' : 'Your data never leaves your machine. Nothing is sent to external servers.'}</li>
+                  <li>🔒 <strong className={textMain}>{isEs ? 'Privado por defecto' : 'Private by default'}</strong> — {isEs ? 'Chats, índice y memoria se quedan en el host; el modo Internet es explícito.' : 'Chats, index, and memory stay on the host; Internet mode is explicit.'}</li>
                   <li>💰 <strong className={textMain}>{isEs ? 'Gratis y Open Source' : 'Free & Open Source'}</strong> — {isEs ? 'Licencia AGPL-3.0-or-later. Sin costos ocultos, sin suscripciones.' : 'AGPL-3.0-or-later license. No hidden costs, no subscriptions.'}</li>
                   <li>⚡ <strong className={textMain}>{isEs ? 'Local' : 'Local'}</strong> — {isEs ? 'Sin viajes a una nube externa; la velocidad depende de tu hardware y del modelo.' : 'No external-cloud round trips; speed depends on your hardware and model.'}</li>
                   <li>🧠 <strong className={textMain}>{isEs ? 'Conoce tu código' : 'Knows your code'}</strong> — {isEs ? 'El RAG indexa tus proyectos. La IA responde con contexto real de tu trabajo.' : 'RAG indexes your projects. The AI responds with real context from your work.'}</li>
+                  <li>🤖 <strong className={textMain}>{isEs ? 'Agente con herramientas' : 'Tool-using agent'}</strong> — {isEs ? 'Lee, escribe y ejecuta dentro de una carpeta autorizada.' : 'Reads, writes, and runs inside an authorized workspace.'}</li>
+                  <li>🌍 <strong className={textMain}>{isEs ? 'Internet opcional' : 'Optional Internet'}</strong> — {isEs ? 'Búsqueda web e investigación con fuentes cuando tú las activas.' : 'Sourced web search and research when you enable them.'}</li>
                   <li>🌍 <strong className={textMain}>{isEs ? 'Multi-plataforma' : 'Cross-platform'}</strong> — Linux, macOS, Windows. PWA en iOS y Android.</li>
                 </ul>
               </div>
@@ -374,10 +379,9 @@ python service_manager.py start`}</pre>
                 <h3 className={`font-semibold ${textMain}`}>{isEs ? 'Variables de entorno' : 'Environment Variables'}</h3>
                 <pre className={`text-xs font-mono p-3 rounded-lg ${codeBg}`}>{`TRINAXAI_CORS_ORIGINS=https://localhost:3334,https://YOUR-LAN-IP:3334
 TRINAXAI_INDEX_DIR=~/Documents
-TRINAXAI_PROFILE=ultra  # 4gb, 8gb, 16gb, max, ultra
+TRINAXAI_PROFILE=ultra  # 8gb, 16gb, max, ultra
 TRINAXAI_RAG_TARGET=http://localhost:3333
-VITE_TRINAXAI_VISION_MODEL=qwen3-vl:4b
-VITE_TRINAXAI_VISION_QUALITY_MODEL=qwen3-vl:8b`}</pre>
+VITE_TRINAXAI_VISION_MODEL=qwen3-vl:4b-instruct`}</pre>
                 <p className={`text-xs ${textMuted}`}>
                   {isEs
                     ? 'Ultra activa contexto 16K, más workers de embeddings y modelos profundos para máquinas con 32GB+ RAM y GPU potente. El reranker es opcional con requirements-rerank.txt.'
@@ -394,29 +398,47 @@ VITE_TRINAXAI_VISION_QUALITY_MODEL=qwen3-vl:8b`}</pre>
               <div className={`p-5 rounded-2xl border ${sectionBg} space-y-4`}>
                 <p className={`text-sm ${textSub}`}>
                   {isEs
-                    ? 'TrinaxAI usa un sistema de auto-enrutamiento que selecciona el mejor modelo según tu consulta:'
-                    : 'TrinaxAI uses an auto-routing system that selects the best model based on your query:'}
+                    ? 'TrinaxAI mantiene una flota Qwen especializada por rol y elige el modelo de texto correcto por turno. El pipeline de generación inteligente usa un clasificador determinista (sin llamada extra al modelo) para decidir modelo, parámetros y prompt.'
+                    : 'TrinaxAI keeps a role-specific Qwen fleet and picks the right text model per turn. Its deterministic classifier (no extra model call) selects the model, decoding parameters, and prompt.'}
                 </p>
+                <h3 className={`font-semibold ${textMain}`}>{isEs ? 'Ranuras de la flota (perfil 16GB)' : 'Fleet slots (16GB profile)'}</h3>
                 <div className="max-w-full overflow-x-auto">
                   <table className={`w-full text-xs ${textSub}`}>
                     <thead>
                       <tr className={textMuted}>
-                        <th className="text-left py-2">{isEs ? 'Condición' : 'Condition'}</th>
+                        <th className="text-left py-2">{isEs ? 'Ranura' : 'Slot'}</th>
+                        <th className="text-left py-2">{isEs ? 'Se usa para' : 'Used for'}</th>
                         <th className="text-left py-2">{isEs ? 'Modelo' : 'Model'}</th>
                       </tr>
                     </thead>
                     <tbody>
-                      <tr><td className="py-1.5">{isEs ? 'Complejo / +600 chars' : 'Complex / >600 chars'}</td><td className="font-mono text-[#4ea3e0]">qwen2.5-coder:7b *</td></tr>
-                      <tr><td className="py-1.5">{isEs ? 'Código detectado' : 'Code detected'}</td><td className="font-mono text-[#4ea3e0]">qwen2.5-coder:3b</td></tr>
-                      <tr><td className="py-1.5">{isEs ? 'Chat general' : 'General chat'}</td><td className="font-mono text-[#4ea3e0]">qwen3:4b-instruct-2507</td></tr>
-                      <tr><td className="py-1.5">{isEs ? 'Trivial (-25 chars)' : 'Trivial (&lt;25 chars)'}</td><td className="font-mono text-[#4ea3e0]">qwen3:4b-instruct-2507</td></tr>
-                      <tr><td className="py-1.5">{isEs ? 'Visión (rápido)' : 'Vision (fast)'}</td><td className="font-mono text-[#4ea3e0]">qwen3-vl:4b</td></tr>
-                      <tr><td className="py-1.5">{isEs ? 'Visión (calidad)' : 'Vision (quality)'}</td><td className="font-mono text-[#4ea3e0]">qwen3-vl:8b</td></tr>
-                      <tr><td className="py-1.5">{isEs ? 'Embeddings' : 'Embeddings'}</td><td className="font-mono text-[#4ea3e0]">bge-m3</td></tr>
+                      <tr><td className="py-1.5">General</td><td className="py-1.5">{isEs ? 'Chat, razonamiento, matemáticas' : 'Chat, reasoning, math'}</td><td className="font-mono text-[#4ea3e0]">qwen3.5:9b</td></tr>
+                      <tr><td className="py-1.5">Code</td><td className="py-1.5">{isEs ? 'Generación de código' : 'Code generation'}</td><td className="font-mono text-[#4ea3e0]">qwen2.5-coder:3b</td></tr>
+                      <tr><td className="py-1.5">Deep</td><td className="py-1.5">{isEs ? 'Tareas complejas / multi-archivo' : 'Complex / multi-file tasks'}</td><td className="font-mono text-[#4ea3e0]">qwen3.5:9b</td></tr>
+                      <tr><td className="py-1.5">Fast</td><td className="py-1.5">{isEs ? 'Preguntas muy cortas' : 'Very short prompts'}</td><td className="font-mono text-[#4ea3e0]">granite4:3b</td></tr>
+                      <tr><td className="py-1.5">{isEs ? 'Visión' : 'Vision'}</td><td className="py-1.5">{isEs ? 'Análisis de imágenes' : 'Image analysis'}</td><td className="font-mono text-[#4ea3e0]">qwen3-vl:4b-instruct</td></tr>
+                      <tr><td className="py-1.5">Embeddings</td><td className="py-1.5">{isEs ? 'Indexación / búsqueda' : 'Indexing / search'}</td><td className="font-mono text-[#4ea3e0]">bge-m3</td></tr>
                     </tbody>
                   </table>
                 </div>
-                <p className={`text-[11px] ${textMuted}`}>* {isEs ? 'En perfiles Max/Ultra: qwen3-coder:30b. En perfil bajo (8gb): qwen2.5-coder:3b.' : 'On Max/Ultra profiles: qwen3-coder:30b. On low profile (8gb): qwen2.5-coder:3b.'}</p>
+                <p className={`text-[11px] ${textMuted}`}>
+                  {isEs
+                    ? 'Perfiles: 8GB usa vision 2B; 16GB usa 4B; Max usa 8B; Ultra usa 30B-A3B MoE. Todo es sobrescribible en .env y vision se descarga al primer analisis de imagen.'
+                    : 'Profiles: 8GB uses vision 2B; 16GB uses 4B; Max uses 8B; Ultra uses 30B-A3B MoE. Everything is overridable in .env and vision downloads on first image analysis.'}
+                </p>
+                <h3 className={`font-semibold ${textMain}`}>{isEs ? 'Regímenes del pipeline' : 'Pipeline regimes'}</h3>
+                <ul className={`text-sm space-y-1.5 ${textSub}`}>
+                  <li>• <strong className={textMain}>Grounded-QA</strong> — {isEs ? 'responde solo desde el contexto RAG y cita las fuentes.' : 'answers only from RAG context and cites sources.'}</li>
+                  <li>• <strong className={textMain}>Code</strong> — {isEs ? 'genera código con decodificación precisa.' : 'generates code with precise decoding.'}</li>
+                  <li>• <strong className={textMain}>Reasoning</strong> — {isEs ? 'matemáticas/ciencia/algoritmos paso a paso, con LaTeX.' : 'step-by-step math/science/algorithms, with LaTeX.'}</li>
+                  <li>• <strong className={textMain}>Creative</strong> — {isEs ? 'escritura y diseño con más temperatura.' : 'writing and design with higher temperature.'}</li>
+                  <li>• <strong className={textMain}>Explain</strong> — {isEs ? 'explicaciones y preguntas generales.' : 'explanations and general questions.'}</li>
+                </ul>
+                <p className={`text-[11px] ${textMuted}`}>
+                  {isEs
+                    ? 'Tras generar, una validación determinista (sin LLM) revisa el código —parseo, delimitadores balanceados, marcadores esperados— y aplica un pase de corrección si hace falta.'
+                    : 'After generating, a deterministic (no-LLM) validation checks the code — parsing, balanced delimiters, expected markers — and applies one correction pass if needed.'}
+                </p>
               </div>
             </div>
           )}
@@ -462,9 +484,94 @@ curl -X POST http://localhost:3333/system/reload
 trinaxai chat --engine rag`}</pre>
                 <p className={`text-xs ${textMuted}`}>
                   {isEs
-                    ? 'Instala la CLI desde la raíz con pip install -e .; query.py se conserva como wrapper de compatibilidad.'
-                    : 'Install the CLI from the repository root with pip install -e .; query.py remains as a compatibility wrapper.'}
+                    ? 'Instala la CLI desde la raíz con pip install -e . y usa trinaxai chat para consultas interactivas.'
+                    : 'Install the CLI from the repository root with pip install -e . and use trinaxai chat for interactive queries.'}
                 </p>
+              </div>
+            </div>
+          )}
+
+          {/* AGENT */}
+          {active === 'agent' && (
+            <div className="space-y-5">
+              <h1 className={`text-2xl font-bold ${textMain}`}>{isEs ? 'Agente' : 'Agent'}</h1>
+              <div className={`p-5 rounded-2xl border ${sectionBg} space-y-4`}>
+                <p className={`text-sm ${textSub}`}>
+                  {isEs
+                    ? 'El Agente de TrinaxAI es un asistente programador con herramientas, 100% local y privado. Trabaja dentro de una carpeta (workspace) que tú eliges y ejecuta un bucle de razonamiento + uso de herramientas hasta terminar la tarea.'
+                    : "TrinaxAI's Agent is a private, local tool-using coding assistant. It works inside a workspace folder you choose and runs a reasoning + tool-use loop until the task is done."}
+                </p>
+                <h3 className={`font-semibold ${textMain}`}>{isEs ? 'Herramientas (en sandbox)' : 'Tools (sandboxed)'}</h3>
+                <ul className={`text-sm space-y-1.5 ${textSub}`}>
+                  <li>📖 <code className="font-mono text-[#4ea3e0]">read_file</code> · <code className="font-mono text-[#4ea3e0]">list_dir</code> · <code className="font-mono text-[#4ea3e0]">glob</code> · <code className="font-mono text-[#4ea3e0]">grep</code> — {isEs ? 'exploran y leen archivos.' : 'explore and read files.'}</li>
+                  <li>✏️ <code className="font-mono text-[#4ea3e0]">write_file</code> · <code className="font-mono text-[#4ea3e0]">edit_file</code> — {isEs ? 'crean y modifican archivos (piden confirmación).' : 'create and modify files (ask for approval).'}</li>
+                  <li>⚙️ <code className="font-mono text-[#4ea3e0]">run_command</code> — {isEs ? 'ejecuta comandos en un sandbox sin red (pide confirmación).' : 'runs commands in a networkless sandbox (asks for approval).'}</li>
+                </ul>
+                <div className={`p-3 rounded-lg text-xs ${isDark ? 'bg-[#006bbd]/10 text-[#006bbd]' : 'bg-[#006bbd]/5 text-[#006bbd]'}`}>
+                  🔒 {isEs
+                    ? 'Todas las herramientas están confinadas al workspace: se rechazan rutas con ".." o symlinks que escapen. Las acciones peligrosas (escribir, editar, ejecutar) requieren tu aprobación salvo que uses el modo yolo explícitamente.'
+                    : 'All tools are confined to the workspace: paths with ".." or escaping symlinks are rejected. Dangerous actions (write, edit, run) require your approval unless you explicitly enable yolo mode.'}
+                </div>
+                <h3 className={`font-semibold ${textMain}`}>{isEs ? 'Cómo usarlo' : 'How to use it'}</h3>
+                <p className={`text-sm ${textSub}`}>
+                  {isEs
+                    ? 'En la PWA, abre la vista de Agente y elige una carpeta de trabajo. Desde la terminal, usa la CLI:'
+                    : 'In the PWA, open the Agent view and pick a working folder. From the terminal, use the CLI:'}
+                </p>
+                <pre className={`text-xs font-mono p-3 rounded-lg ${codeBg}`}>{isEs ? `# Agente interactivo en la carpeta actual
+trinaxai agent --workspace .
+
+# Una sola tarea y salir
+trinaxai agent --prompt "añade tests al modulo utils"
+
+# Sin confirmaciones (solo en carpetas de confianza)
+trinaxai agent --yolo` : `# Interactive agent in the current folder
+trinaxai agent --workspace .
+
+# Run a single task and exit
+trinaxai agent --prompt "add tests to the utils module"
+
+# No approval prompts (trusted folders only)
+trinaxai agent --yolo`}</pre>
+                <p className={`text-xs ${textMuted}`}>
+                  {isEs
+                    ? 'El mismo motor impulsa la CLI y el endpoint /v1/agent de la API. Requiere un modelo con soporte de herramientas (la flota Qwen lo tiene).'
+                    : 'The same engine powers the CLI and the API /v1/agent endpoint. It requires a tool-capable model (the Qwen fleet supports this).'}
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* INTERNET AND RESEARCH */}
+          {active === 'research' && (
+            <div className="space-y-5">
+              <h1 className={`text-2xl font-bold ${textMain}`}>{isEs ? 'Internet e investigación' : 'Internet and research'}</h1>
+              <div className={`p-5 rounded-2xl border ${sectionBg} space-y-4`}>
+                <p className={`text-sm ${textSub}`}>
+                  {isEs
+                    ? 'El chat normal y RAG no necesitan Internet. Activa el modo Internet cuando necesites noticias, versiones, documentación o datos actuales; TrinaxAI indicará las fuentes usadas.'
+                    : 'Normal chat and RAG do not need the Internet. Enable Internet mode for news, versions, documentation, or current facts; TrinaxAI identifies the sources it used.'}
+                </p>
+                <h3 className={`font-semibold ${textMain}`}>{isEs ? 'Proveedores' : 'Providers'}</h3>
+                <ul className={`text-sm space-y-1.5 ${textSub}`}>
+                  <li><strong className={textMain}>DuckDuckGo</strong> — {isEs ? 'funciona sin clave.' : 'works without an API key.'}</li>
+                  <li><strong className={textMain}>Brave Search</strong> — {isEs ? 'se usa al configurar TRINAXAI_BRAVE_SEARCH_API_KEY.' : 'used when TRINAXAI_BRAVE_SEARCH_API_KEY is configured.'}</li>
+                  <li><strong className={textMain}>SearXNG</strong> — {isEs ? 'permite usar tu propia instancia.' : 'supports your self-hosted instance.'}</li>
+                </ul>
+                <h3 className={`font-semibold ${textMain}`}>{isEs ? 'Investigación profunda' : 'Deep research'}</h3>
+                <p className={`text-sm ${textSub}`}>
+                  {isEs
+                    ? 'Descompone la pregunta en varias búsquedas, puede combinar fuentes web con colecciones RAG autorizadas y entrega una síntesis citada. La profundidad se limita de 1 a 3 pasadas.'
+                    : 'It decomposes a question into several searches, can combine web sources with authorized RAG collections, and returns a cited synthesis. Depth is bounded from 1 to 3 passes.'}
+                </p>
+                <div className={`p-3 rounded-lg text-xs ${isDark ? 'bg-amber-500/10 text-amber-300' : 'bg-amber-50 text-amber-800'}`}>
+                  {isEs
+                    ? 'Privacidad: las consultas del modo Internet se envían al proveedor elegido. TrinaxAI bloquea destinos locales/privados al leer páginas y limita tamaño, redirecciones y tiempo.'
+                    : 'Privacy: Internet-mode queries are sent to the selected provider. TrinaxAI blocks local/private page targets and limits size, redirects, and time.'}
+                </div>
+                <pre className={`text-xs font-mono p-3 rounded-lg ${codeBg}`}>{isEs ? `# CLI
+trinaxai research --query "compara las versiones actuales" --depth 2` : `# CLI
+trinaxai research --query "compare the current versions" --depth 2`}</pre>
               </div>
             </div>
           )}
@@ -541,21 +648,24 @@ TRINAXAI_ADMIN_TOKEN=<strong-random-token>`}</pre>
           {/* API */}
           {active === 'api' && (
             <div className="space-y-5">
-              <h1 className={`text-2xl font-bold ${textMain}`}>API Reference</h1>
+              <h1 className={`text-2xl font-bold ${textMain}`}>{t('docsApiReference')}</h1>
               <div className={`p-5 rounded-2xl border ${sectionBg} space-y-4`}>
                 {[
                   { method: 'GET', path: '/health', descEs: 'Estado del sistema: modelos, índice, proyectos', descEn: 'System status: models, index, projects' },
-                  { method: 'POST', path: '/v1/chat/completions', descEs: 'Chat RAG con streaming SSE (OpenAI-compatible)', descEn: 'RAG chat with SSE streaming (OpenAI-compatible)' },
-                  { method: 'POST', path: '/system/shutdown', descEs: 'Apagar Ollama + RAG API (requiere auth)', descEn: 'Shutdown Ollama + RAG API (requires auth)' },
-                  { method: 'POST', path: '/system/startup', descEs: 'Encender Ollama + RAG API y mantener la PWA disponible', descEn: 'Start Ollama + RAG API and keep the PWA available' },
-                  { method: 'POST', path: '/system/reload', descEs: 'Recargar índice después de index.py', descEn: 'Reload index after index.py' },
-                  { method: 'POST', path: '/system/index-upload', descEs: 'Importar carpeta elegida en navegador e indexarla', descEn: 'Import a browser-selected folder and index it' },
-                  { method: 'GET', path: '/collections', descEs: 'Listar colecciones RAG', descEn: 'List RAG collections' },
-                  { method: 'POST', path: '/collections', descEs: 'Crear colección RAG', descEn: 'Create RAG collection' },
                   { method: 'GET', path: '/resources', descEs: 'Telemetría local básica de RAM/VRAM', descEn: 'Basic local RAM/VRAM telemetry' },
-                  { method: 'GET', path: '/app-state', descEs: 'Leer configuración e historial compartidos entre dispositivos', descEn: 'Read shared settings and chat history across devices' },
-                  { method: 'PUT', path: '/app-state', descEs: 'Guardar configuración e historial compartidos localmente', descEn: 'Save shared local settings and chat history' },
-                  { method: 'DELETE', path: '/app-state', descEs: 'Restaurar estado, fuentes e índice del host', descEn: 'Factory reset host state, sources, and index' },
+                  { method: 'POST', path: '/v1/chat/completions', descEs: 'Chat RAG con streaming SSE (OpenAI-compatible)', descEn: 'RAG chat with SSE streaming (OpenAI-compatible)' },
+                  { method: 'POST', path: '/v1/agent', descEs: 'Agente con herramientas (SSE); /v1/agent/approve y /v1/agent/browse', descEn: 'Tool-using agent (SSE); plus /v1/agent/approve and /v1/agent/browse' },
+                  { method: 'POST', path: '/v1/research', descEs: 'Investigación profunda multipaso', descEn: 'Multi-pass deep research' },
+                  { method: 'GET', path: '/v1/memory', descEs: 'Memoria local (GET/POST/PATCH/DELETE, context, summary)', descEn: 'Local memory (GET/POST/PATCH/DELETE, context, summary)' },
+                  { method: 'GET', path: '/v1/sources', descEs: 'Listar/borrar fuentes indexadas y ver sus chunks', descEn: 'List/delete indexed sources and view their chunks' },
+                  { method: 'POST', path: '/v1/watch/start', descEs: 'Vigilante de archivos (start/stop/status)', descEn: 'File watcher (start/stop/status)' },
+                  { method: 'POST', path: '/v1/pairing/claim', descEs: 'Emparejar un dispositivo LAN con un código de un uso', descEn: 'Pair a LAN device with a one-time code' },
+                  { method: 'POST', path: '/v1/voice/stt', descEs: 'Voz-a-texto y /v1/voice/tts texto-a-voz', descEn: 'Speech-to-text, plus /v1/voice/tts text-to-speech' },
+                  { method: 'GET', path: '/collections', descEs: 'Listar/crear/editar/borrar colecciones RAG', descEn: 'List/create/edit/delete RAG collections' },
+                  { method: 'POST', path: '/documents/extract', descEs: 'Extraer texto de un documento (PDF/Office/…)', descEn: 'Extract text from a document (PDF/Office/…)' },
+                  { method: 'GET', path: '/v1/stats', descEs: 'Estadísticas de uso; /v1/usage registra eventos', descEn: 'Usage statistics; /v1/usage records events' },
+                  { method: 'POST', path: '/system/reload', descEs: 'Recargar índice; también shutdown/startup/index-upload', descEn: 'Reload index; also shutdown/startup/index-upload' },
+                  { method: 'GET', path: '/app-state', descEs: 'Estado compartido entre dispositivos (GET/PUT/DELETE)', descEn: 'Cross-device shared state (GET/PUT/DELETE)' },
                 ].map((ep) => (
                   <div key={ep.path} className={`p-3 rounded-lg border ${sectionBg}`}>
                     <div className="flex items-center gap-2">
@@ -565,11 +675,16 @@ TRINAXAI_ADMIN_TOKEN=<strong-random-token>`}</pre>
                     <p className={`text-xs mt-1 ${textSub}`}>{isEs ? ep.descEs : ep.descEn}</p>
                   </div>
                 ))}
-                <h3 className={`font-semibold ${textMain}`}>SSE Stream Format</h3>
-                <pre className={`text-xs font-mono p-3 rounded-lg ${codeBg}`}>{`data: {"trinaxai":{"model":"qwen2.5-coder:3b","project":"Insider"}}
+                <h3 className={`font-semibold ${textMain}`}>{t('docsSseStreamFormat')}</h3>
+                <pre className={`text-xs font-mono p-3 rounded-lg ${codeBg}`}>{`data: {"trinaxai":{"model":"qwen3.5:4b","project":"Insider"}}
 data: {"choices":[{"delta":{"content":"Hello!"}}]}
 data: {"trinaxai_sources":[{"file":"app.py","snippet":"..."}]}
 data: [DONE]`}</pre>
+                <p className={`text-[11px] ${textMuted}`}>
+                  {isEs
+                    ? 'La API se sirve en :3333. La PWA la alcanza vía el proxy del mismo origen /api/rag/*. Los endpoints privados requieren un dispositivo emparejado o acceso local. Especificación completa: /openapi.json.'
+                    : 'The API is served on :3333. The PWA reaches it via the same-origin /api/rag/* proxy. Private endpoints require a paired device or local access. Full spec: /openapi.json.'}
+                </p>
               </div>
             </div>
           )}
@@ -577,38 +692,44 @@ data: [DONE]`}</pre>
           {/* PWA */}
           {active === 'pwa' && (
             <div className="space-y-5">
-              <h1 className={`text-2xl font-bold ${textMain}`}>PWA Guide</h1>
+              <h1 className={`text-2xl font-bold ${textMain}`}>{t('docsPwaGuide')}</h1>
               <div className={`p-5 rounded-2xl border ${sectionBg} space-y-4`}>
                 <p className={`text-sm ${textSub}`}>
                   {isEs
                     ? 'TrinaxAI es una Progressive Web App. Puedes instalarla como una app nativa en cualquier dispositivo.'
                     : 'TrinaxAI is a Progressive Web App. You can install it as a native app on any device.'}
                 </p>
-                <h3 className={`font-semibold ${textMain}`}>📱 iOS (Safari)</h3>
+                <h3 className={`font-semibold ${textMain}`}>{t('docsIosSafari')}</h3>
                 <ol className={`text-sm space-y-1 ${textSub} list-decimal pl-4`}>
                   <li>{isEs ? 'Abre Safari y navega a https://[TU_IP]:3334' : 'Open Safari and go to https://[YOUR_IP]:3334'}</li>
                   <li>{isEs ? 'Toca el botón Compartir (📤)' : 'Tap the Share button (📤)'}</li>
                   <li>{isEs ? 'Selecciona "Añadir a la pantalla de inicio"' : 'Select "Add to Home Screen"'}</li>
                   <li>{isEs ? 'Toca "Añadir"' : 'Tap "Add"'}</li>
                 </ol>
-                <h3 className={`font-semibold ${textMain}`}>🤖 Android (Chrome)</h3>
+                <h3 className={`font-semibold ${textMain}`}>{t('docsAndroidChrome')}</h3>
                 <ol className={`text-sm space-y-1 ${textSub} list-decimal pl-4`}>
                   <li>{isEs ? 'Abre Chrome y navega a https://[TU_IP]:3334' : 'Open Chrome and go to https://[YOUR_IP]:3334'}</li>
                   <li>{isEs ? 'Toca los 3 puntos ⋮ → "Instalar aplicación"' : 'Tap 3 dots ⋮ → "Install app"'}</li>
                 </ol>
-                <h3 className={`font-semibold ${textMain}`}>💻 Desktop</h3>
+                <h3 className={`font-semibold ${textMain}`}>{t('docsDesktop')}</h3>
                 <p className={`text-sm ${textSub}`}>
                   {isEs
                     ? 'Chrome/Edge: icono de instalación en la barra de direcciones.'
                     : 'Chrome/Edge: install icon in the address bar.'}
                 </p>
-                <h3 className={`font-semibold ${textMain}`}>{isEs ? 'Conectar desde el teléfono' : 'Connect from your phone'}</h3>
+                <h3 className={`font-semibold ${textMain}`}>{isEs ? 'Conectar otro dispositivo' : 'Connect another device'}</h3>
                 <ol className={`text-sm space-y-1 ${textSub} list-decimal pl-4`}>
-                  <li>{isEs ? 'Asegúrate de que el teléfono esté en la misma red WiFi' : 'Make sure your phone is on the same WiFi network'}</li>
+                  <li>{isEs ? 'Asegúrate de que ambos equipos estén en la misma red privada' : 'Make sure both devices are on the same private network'}</li>
                   <li>{isEs ? 'Encuentra tu IP local: ip addr show | grep 192.168' : 'Find your local IP: ip addr show | grep 192.168'}</li>
-                  <li>{isEs ? 'Abre https://[TU_IP_LOCAL]:3334 en el navegador del teléfono' : 'Open https://[YOUR_LOCAL_IP]:3334 in your phone browser'}</li>
-                  <li>{isEs ? 'Si no conecta, verifica el firewall (puertos 3333, 3334, 11434)' : 'If it doesn\'t connect, check your firewall (ports 3333, 3334, 11434)'}</li>
+                  <li>{isEs ? 'En la PWA host abre Configuración → Dispositivo emparejado → Generar código' : 'In the host PWA open Settings → Paired device → Generate pairing code'}</li>
+                  <li>{isEs ? 'Abre https://[TU_IP_LOCAL]:3334 en el otro equipo, elige la instalación existente e introduce el código' : 'Open https://[YOUR_LOCAL_IP]:3334 on the other device, choose the existing installation, and enter the code'}</li>
+                  <li>{isEs ? 'Si no conecta, permite el puerto 3334 del gateway; FastAPI y Ollama deben seguir en loopback' : 'If it does not connect, allow gateway port 3334; FastAPI and Ollama should remain on loopback'}</li>
                 </ol>
+                <p className={`text-sm ${textSub}`}>
+                  {isEs
+                    ? 'La red sólo permite llegar al chat básico. RAG, historial, memoria, archivos, indexación, agente y acciones del sistema requieren emparejamiento y scopes explícitos. El host concede chat/read_private por defecto y debe autorizar index, agent o system sólo cuando hagan falta.'
+                    : 'Network access only reaches basic chat. RAG, history, memory, files, indexing, the agent, and system actions require pairing and explicit scopes. The host grants chat/read_private by default and should authorize index, agent, or system only when needed.'}
+                </p>
                 <h3 className={`font-semibold ${textMain}`}>{isEs ? 'Certificado HTTPS local' : 'Local HTTPS certificate'}</h3>
                 <p className={`text-sm ${textSub}`}>
                   {isEs
@@ -636,10 +757,10 @@ data: [DONE]`}</pre>
                 <h3 className={`font-semibold ${textMain}`}>{isEs ? 'Imágenes' : 'Images'}</h3>
                 <p className={`text-sm ${textSub}`}>
                   {isEs
-                    ? 'Las imágenes se reducen antes de enviarse al modelo de visión para evitar respuestas lentas y consumo excesivo de memoria. El modelo rápido se usa por defecto; pide “máxima calidad” solo cuando necesites más detalle.'
-                    : 'Images are resized before being sent to the vision model to avoid slow responses and excessive memory use. The fast model is used by default; ask for “maximum quality” only when you need more detail.'}
+                    ? 'Las imágenes se reducen antes de enviarse al modelo de visión para evitar respuestas lentas y consumo excesivo de memoria. En 16GB se usa qwen3-vl:4b-instruct por defecto; si no está instalado, TrinaxAI lo descarga al primer análisis de imagen.'
+                    : 'Images are resized before being sent to the vision model to avoid slow responses and excessive memory use. On 16GB, qwen3-vl:4b-instruct is the default; if it is not installed, TrinaxAI downloads it on first image analysis.'}
                 </p>
-                <h3 className={`font-semibold ${textMain}`}>🔧 Continue.dev (VSCode)</h3>
+                <h3 className={`font-semibold ${textMain}`}>{t('docsContinue')}</h3>
                 <p className={`text-sm ${textSub}`}>
                   {isEs
                     ? 'TrinaxAI incluye un archivo continue-config.yaml para la extensión Continue.dev en VSCode y forks (Cursor, Windsurf, etc.). Cópialo a ~/.continue/config.yaml y podrás usar TrinaxAI directamente desde tu editor.'
@@ -670,7 +791,7 @@ cp continue-config.yaml ~/.continue/config.yaml
               <div className={`p-5 rounded-2xl border ${sectionBg} space-y-4`}>
                 {[
                   { qEs: 'Ollama no responde', qEn: 'Ollama not responding', aEs: 'Abre Configuración y pulsa Encender IA, o ejecuta ./startup_ai.sh desde la carpeta de TrinaxAI. También puedes revisar el estado con python service_manager.py status.', aEn: 'Open Settings and press Start AI, or run ./startup_ai.sh from the TrinaxAI folder. You can also check status with python service_manager.py status.' },
-                  { qEs: 'La PWA no conecta desde el teléfono', qEn: 'PWA won\'t connect from phone', aEs: 'Verifica que el firewall permita los puertos 3333, 3334, 11434. En Linux: sudo ufw allow 3334/tcp. Asegúrate de usar https:// (no http).', aEn: 'Check firewall allows ports 3333, 3334, 11434. On Linux: sudo ufw allow 3334/tcp. Make sure to use https:// (not http).' },
+                  { qEs: 'La PWA no conecta desde el teléfono', qEn: 'PWA won\'t connect from phone', aEs: 'Permite el puerto 3334 del gateway en la red privada. Mantén 3333 y 11434 bloqueados y usa https://.', aEn: 'Allow gateway port 3334 on the private network. Keep 3333 and 11434 blocked and use https://.' },
                   { qEs: 'La indexación dice que no conecta al backend', qEn: 'Indexing says it cannot connect to the backend', aEs: 'Abre Configuración y pulsa Encender IA. Si usas el teléfono, abre la URL de red que muestra Vite, por ejemplo https://TU_IP:3334 o 3335. El backend RAG debe estar accesible desde la máquina host.', aEn: 'Open Settings and press Start AI. If you are on a phone, open the network URL shown by Vite, for example https://YOUR_IP:3334 or 3335. The RAG backend must be reachable from the host machine.' },
                   { qEs: 'Apagar IA o Encender IA no funciona', qEn: 'Shutdown AI or Start AI does not work', aEs: 'Estas acciones se ejecutan en la máquina que hospeda TrinaxAI. Verifica que service_manager.py, startup_ai.sh y shutdown_ai.sh existan y que la PWA se esté sirviendo desde el instalador de TrinaxAI.', aEn: 'These actions run on the machine hosting TrinaxAI. Check that service_manager.py, startup_ai.sh, and shutdown_ai.sh exist and that the PWA is being served by the TrinaxAI installer.' },
                   { qEs: 'La configuración no aparece en otro dispositivo', qEn: 'Settings do not appear on another device', aEs: 'Los dispositivos deben abrir la misma instancia de TrinaxAI y poder acceder a la API RAG. La sincronización es local, no cloud: se guarda en storage/app_state.json del host.', aEn: 'Devices must open the same TrinaxAI instance and reach the RAG API. Sync is local, not cloud: it is stored in storage/app_state.json on the host.' },

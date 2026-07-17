@@ -4,7 +4,14 @@ import { MdDelete, MdFolder, MdRefresh, MdSync, MdVisibility, MdVisibilityOff } 
 import { useI18n } from '../i18n/I18nContext';
 import { useTheme } from '../theme/ThemeContext';
 import { useToast } from './Toast';
-import { deleteIndexedImport, startFolderIndex } from '../lib/api';
+import {
+  deleteIndexedImport,
+  getWatchStatus,
+  startFolderIndex,
+  startWatch,
+  stopWatch,
+  type WatchJobStatus,
+} from '../lib/api';
 
 interface Props {
   collections: Array<{ id: string; name: string }>;
@@ -59,8 +66,11 @@ export default function WatcherCard({ collections }: Props) {
   const [folders, setFolders] = useState<WatchedFolder[]>([]);
   const [collectionId, setCollectionId] = useState(() => collections[0]?.id || 'default');
   const [running, setRunning] = useState(false);
+  const [serverWatching, setServerWatching] = useState(false);
+  const [hostPath, setHostPath] = useState('');
   const [events, setEvents] = useState(0);
   const [busy, setBusy] = useState(false);
+  const [serverJob, setServerJob] = useState<WatchJobStatus | null>(null);
 
   const updateFolders = useCallback((next: WatchedFolder[]) => {
     foldersRef.current = next;
@@ -133,18 +143,80 @@ export default function WatcherCard({ collections }: Props) {
     }
   }, [t, toast, updateFolders]);
 
+  const toggleWatcher = useCallback(async () => {
+    if (running) {
+      if (serverWatching) await stopWatch().catch(() => undefined);
+      setServerWatching(false);
+      setServerJob(null);
+      setRunning(false);
+      return;
+    }
+    const normalizedPath = hostPath.trim();
+    if (normalizedPath) {
+      setBusy(true);
+      try {
+        await startWatch({ paths: [normalizedPath], collection: collectionId });
+        setServerWatching(true);
+        setRunning(true);
+      } catch (error) {
+        toast.toast(error instanceof Error ? error.message.slice(0, 180) : t('watcherSyncFailed'), 'error');
+      } finally {
+        setBusy(false);
+      }
+      return;
+    }
+    if (!foldersRef.current.some((folder) => folder.handle)) {
+      toast.toast(t('watcherPickerUnsupported'), 'warning');
+      return;
+    }
+    setRunning(true);
+  }, [collectionId, hostPath, running, serverWatching, t, toast]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const refreshStatus = async () => {
+      try {
+        const status = await getWatchStatus(controller.signal);
+        setServerJob(status.job || null);
+        if (status.running) {
+          setEvents(status.events_seen);
+          setServerWatching(true);
+          setRunning(true);
+        } else if (serverWatching) {
+          setServerWatching(false);
+          setRunning(false);
+        }
+      } catch {
+        // The regular API health indicator owns connectivity errors.
+      }
+    };
+    void refreshStatus();
+    const timer = serverWatching ? window.setInterval(() => void refreshStatus(), 2500) : undefined;
+    return () => {
+      controller.abort();
+      if (timer !== undefined) window.clearInterval(timer);
+    };
+  }, [serverWatching]);
+
   useEffect(() => {
     if (!running) return;
+    let syncInFlight = false;
     const timer = window.setInterval(() => {
+      if (document.hidden || syncInFlight) return;
+      syncInFlight = true;
       void (async () => {
-        for (const folder of foldersRef.current) {
-          if (!folder.handle) continue;
-          try {
-            const files = await filesFromHandle(folder.handle);
-            if (fingerprint(files) !== folder.fingerprint) await syncFolder(folder, files);
-          } catch {
-            toast.toast(t('watcherSyncFailed'), 'error');
+        try {
+          for (const folder of foldersRef.current) {
+            if (!folder.handle) continue;
+            try {
+              const files = await filesFromHandle(folder.handle);
+              if (fingerprint(files) !== folder.fingerprint) await syncFolder(folder, files);
+            } catch {
+              toast.toast(t('watcherSyncFailed'), 'error');
+            }
           }
+        } finally {
+          syncInFlight = false;
         }
       })();
     }, 10000);
@@ -165,16 +237,30 @@ export default function WatcherCard({ collections }: Props) {
           <div className={`text-sm font-medium ${label}`}>{t('watcherTitle')}</div>
           <div className={`text-[11px] ${muted} mt-0.5`}>{running ? t('watcherActive').replace('{count}', String(events)) : t('watcherInactive')}</div>
         </div>
-        <button onClick={() => setRunning((value) => !value)} disabled={busy || folders.length === 0} className={`px-3 py-1.5 rounded-lg text-xs font-medium disabled:opacity-30 transition-colors flex items-center gap-1.5 ${running ? 'bg-red-500/10 border border-red-500/20 text-red-400 hover:bg-red-500/20' : 'bg-[#006bbd] text-white hover:bg-[#0059a0]'}`}>
+        <button onClick={() => void toggleWatcher()} disabled={busy || (folders.length === 0 && !hostPath.trim())} className={`px-3 py-1.5 rounded-lg text-xs font-medium disabled:opacity-30 transition-colors flex items-center gap-1.5 ${running ? 'bg-red-500/10 border border-red-500/20 text-red-400 hover:bg-red-500/20' : 'bg-[#006bbd] text-white hover:bg-[#0059a0]'}`}>
           {running ? <><MdVisibilityOff size={14} /> {t('stop')}</> : <><MdVisibility size={14} /> {t('start')}</>}
         </button>
       </div>
 
       <div className="flex gap-2">
         <button onClick={() => void chooseFolder()} disabled={busy} className="rounded-lg bg-[#006bbd] px-3 py-2 text-xs font-medium text-white hover:bg-[#0059a0] disabled:opacity-50 flex items-center gap-1.5"><MdFolder size={15} />{t('watcherAddFolder')}</button>
-        <select value={collectionId} onChange={(event) => setCollectionId(event.target.value)} className={`min-w-0 flex-1 rounded-lg border px-3 py-2 text-xs outline-none ${field}`}>
+        <select value={collectionId} onChange={(event) => setCollectionId(event.target.value)} aria-label={t('collectionsLabel')} name="watcher-collection" className={`min-w-0 flex-1 rounded-lg border px-3 py-2 text-xs outline-none ${field}`}>
           {(collections.length ? collections : [{ id: 'default', name: 'General' }]).map((collection) => <option key={collection.id} value={collection.id}>{collection.name} ({folders.filter((folder) => folder.collectionId === collection.id).length})</option>)}
         </select>
+      </div>
+
+      <div className="space-y-1">
+        <input
+          value={hostPath}
+          onChange={(event) => setHostPath(event.target.value)}
+          disabled={running}
+          placeholder={t('watcherHostPath')}
+          aria-label={t('watcherHostPath')}
+          name="watcher-host-path"
+          autoComplete="off"
+          className={`w-full rounded-lg border px-3 py-2 text-xs outline-none ${field}`}
+        />
+        <p className={`text-[10px] ${muted}`}>{t('watcherHostPathDesc')}</p>
       </div>
 
       {visibleFolders.length > 0 && <div className="space-y-1.5">
@@ -186,6 +272,13 @@ export default function WatcherCard({ collections }: Props) {
 
       <p className={`text-[11px] ${muted} flex items-center gap-1.5`}><MdRefresh size={12} className="opacity-60" />{t('watcherChooseFolders')}</p>
       {running && <p className={`text-[11px] ${muted} flex items-center gap-1.5`}><MdSync size={12} className="opacity-60" />{t('watcherAutoReindexDesc')}</p>}
+      {serverJob && serverJob.status !== 'idle' && <p className={`text-[11px] ${muted}`} aria-live="polite">
+        {t('watcherIndexStatus').replace('{status}', serverJob.status)}
+        {serverJob.pending_events > 0 ? ` · ${t('watcherPendingEvents').replace('{count}', String(serverJob.pending_events))}` : ''}
+      </p>}
+      {serverJob?.last_error && <p className="text-[11px] text-red-400" role="alert">
+        {t('watcherLastError').replace('{error}', serverJob.last_error.slice(0, 500))}
+      </p>}
     </section>
   );
 }

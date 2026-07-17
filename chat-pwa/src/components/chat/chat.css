@@ -1,0 +1,252 @@
+/* Chat-specific presentation lives with the components that consume it. */
+
+/* ============================================
+   Quick-start chips — elegant glass pills.
+   Entrance + hover motion are handled by framer-motion (opacity/transform),
+   so CSS never sets the `animation` shorthand on the button (that caused the
+   old invisible-but-clickable bug). CSS only decorates: surface, border,
+   brand glow, and icon disc.
+   ============================================ */
+.chip-elegant {
+  transition:
+    border-color 0.35s ease,
+    background-color 0.35s ease,
+    box-shadow 0.35s ease,
+    color 0.25s ease;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+/* Long conversations keep their scroll geometry but skip layout/paint work for
+   rows far outside the viewport. The intrinsic size is refined after first view. */
+.chat-row {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 112px;
+}
+
+/* Icon sits in a soft brand-tinted disc that lifts on hover */
+.chip-elegant-icon {
+  background: rgba(0, 107, 189, 0.10);
+  transition:
+    background-color 0.35s ease,
+    transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+html.dark .chip-elegant-icon {
+  background: rgba(78, 163, 224, 0.12);
+}
+.chip-elegant:hover .chip-elegant-icon {
+  transform: scale(1.14) rotate(-5deg);
+  background: rgba(0, 107, 189, 0.20);
+}
+html.dark .chip-elegant:hover .chip-elegant-icon {
+  background: rgba(78, 163, 224, 0.22);
+}
+
+/* Hover surface + brand glow aura */
+html.dark .chip-elegant:hover {
+  color: rgba(255, 255, 255, 0.95);
+  border-color: rgba(78, 163, 224, 0.45);
+  background-color: rgba(78, 163, 224, 0.09);
+  box-shadow:
+    0 6px 18px rgba(0, 0, 0, 0.28),
+    0 0 0 1px rgba(78, 163, 224, 0.16),
+    0 0 20px rgba(0, 107, 189, 0.20);
+}
+html.light .chip-elegant:hover {
+  color: #004d8a;
+  border-color: rgba(0, 107, 189, 0.42);
+  background-color: rgba(0, 107, 189, 0.05);
+  box-shadow:
+    0 6px 16px rgba(0, 107, 189, 0.12),
+    0 0 0 1px rgba(0, 107, 189, 0.14),
+    0 0 16px rgba(0, 107, 189, 0.12);
+}
+
+
+.chat-markdown {
+  min-width: 0;
+  max-width: 100%;
+  max-inline-size: 100%;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  line-height: 1.7;
+  text-wrap: pretty;
+}
+
+.chat-markdown > * {
+  max-width: 100%;
+}
+
+/* Keep long AI answers easy to scan even when the Markdown renderer receives
+   plain HTML defaults.  These explicit rhythm rules also apply consistently
+   without Tailwind's typography plugin. */
+.chat-markdown > :first-child {
+  margin-top: 0;
+}
+
+.chat-markdown > :last-child {
+  margin-bottom: 0;
+}
+
+.chat-markdown p,
+.chat-markdown ul,
+.chat-markdown ol,
+.chat-markdown pre,
+.chat-markdown table,
+.chat-markdown blockquote {
+  margin-block: 0 1rem;
+}
+
+.chat-markdown h1,
+.chat-markdown h2,
+.chat-markdown h3,
+.chat-markdown h4 {
+  margin-block: 1.45rem 0.6rem;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.chat-markdown h1 { font-size: 1.35em; }
+.chat-markdown h2 { font-size: 1.2em; }
+.chat-markdown h3,
+.chat-markdown h4 { font-size: 1.08em; }
+
+.chat-markdown ul,
+.chat-markdown ol {
+  padding-inline-start: 1.35rem;
+}
+
+.chat-markdown li + li {
+  margin-top: 0.38rem;
+}
+
+.chat-markdown p,
+.chat-markdown li,
+.chat-markdown blockquote,
+.chat-markdown h1,
+.chat-markdown h2,
+.chat-markdown h3,
+.chat-markdown h4 {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.chat-markdown a {
+  overflow-wrap: anywhere;
+  word-break: break-all;
+}
+
+.chat-markdown pre {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  white-space: pre-wrap;
+  word-break: break-word;
+  -webkit-overflow-scrolling: touch;
+}
+
+.chat-markdown blockquote {
+  padding: 0.15rem 0 0.15rem 0.9rem;
+  border-inline-start: 3px solid rgba(0, 107, 189, 0.55);
+}
+
+.chat-markdown code {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+
+.chat-markdown table {
+  display: block;
+  width: max-content;
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+.chat-messages,
+.chat-row {
+  inline-size: 100%;
+  max-inline-size: 100%;
+  min-inline-size: 0;
+  overflow-x: hidden;
+}
+
+.chat-row > * {
+  min-inline-size: 0;
+}
+
+.chat-bubble-wrap {
+  flex: 0 1 auto;
+  width: fit-content;
+  max-width: min(80%, 46rem, calc(100dvw - 5rem));
+  min-width: 0;
+  overflow-x: hidden;
+}
+
+.chat-bubble {
+  width: fit-content;
+  max-width: 100%;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: normal;
+  line-height: 1.65;
+}
+
+.chat-plain-text {
+  overflow-wrap: anywhere;
+  word-break: normal;
+  max-inline-size: 100%;
+  line-height: 1.65;
+  text-wrap: pretty;
+}
+
+@media (max-width: 640px) {
+  .chat-bubble-wrap {
+    /* Reserve room for the avatar, row gap and message-area padding. */
+    max-width: min(100%, calc(100dvw - 4.5rem));
+  }
+
+  .chat-markdown {
+    font-size: 0.94rem;
+    line-height: 1.68;
+  }
+
+  .chat-markdown p,
+  .chat-markdown ul,
+  .chat-markdown ol,
+  .chat-markdown pre,
+  .chat-markdown table,
+  .chat-markdown blockquote {
+    margin-bottom: 0.9rem;
+  }
+
+  .chat-markdown pre {
+    padding: 0.75rem 0.85rem;
+    font-size: 0.82rem;
+  }
+}
+
+/* Small phone landscape / very narrow viewports */
+@media (max-width: 380px) {
+  .chat-markdown {
+    font-size: 0.9rem;
+  }
+
+  .chat-bubble {
+    padding-left: 0.75rem;
+    padding-right: 0.75rem;
+  }
+}
+
+/* Tablet and larger: reduce bubble max-width for readability */
+@media (min-width: 768px) {
+  .chat-bubble-wrap {
+    width: fit-content;
+    max-width: min(72%, 46rem);
+  }
+}

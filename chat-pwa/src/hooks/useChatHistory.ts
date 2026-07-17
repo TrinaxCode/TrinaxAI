@@ -1,7 +1,9 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import type { ChatSession, ChatMessage, ChatEngine, ChatFolder } from '../lib/api';
-import { uid, generateTitle } from '../lib/api';
+import { uid, generateTitle } from '../lib/chatUtils';
 import { markChatSessionDeleted, onSharedStateUpdated, scheduleSharedStateSync } from '../lib/sharedState';
+import { deleteChatAttachments } from '../lib/chatAttachments';
+import { LOCAL_DEVICE_WIPE_EVENT } from '../lib/deviceWipe';
 
 const STORAGE_KEY = 'tc-chat-sessions';
 const FOLDERS_STORAGE_KEY = 'tc-chat-folders';
@@ -121,7 +123,9 @@ function compactForStorage(sessions: ChatSession[], stripAllImages = false): Cha
 
 function saveSessions(sessions: ChatSession[]): void {
   if (isRestoreInProgress()) return;
-  let compacted = sessions.filter(s => s.messages.length > 0);
+  // Temporary chats intentionally live only in React memory: never persist or
+  // sync them, even after they contain messages.
+  let compacted = sessions.filter((session) => !session.temporary && session.messages.length > 0);
   compacted = compactForStorage(compacted);
   // Progressive compaction: trim until under localStorage quota
   while (estimateSize(compacted) > MAX_TOTAL_BYTES && compacted.length > 5) {
@@ -170,13 +174,16 @@ export function useChatHistory() {
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const latestSessionsRef = useRef<ChatSession[]>(initialState.sessions);
+  const wipedRef = useRef(false);
 
   const flushPendingSave = useCallback(() => {
     clearTimeout(debounceRef.current);
+    if (wipedRef.current) return;
     saveSessions(latestSessionsRef.current);
   }, []);
 
   const persist = useCallback((updater: ChatSession[] | ((prev: ChatSession[]) => ChatSession[])) => {
+    if (wipedRef.current) return [];
     let next: ChatSession[] = [];
     setSessions((prev) => {
       const updated = typeof updater === 'function' ? updater(prev) : updater;
@@ -191,6 +198,7 @@ export function useChatHistory() {
   }, []);
 
   const persistFolders = useCallback((next: ChatFolder[]) => {
+    if (wipedRef.current) return;
     setFolders(next);
     try { localStorage.setItem(FOLDERS_STORAGE_KEY, JSON.stringify(next)); } catch { /* quota handled by chat persistence */ }
   }, []);
@@ -199,21 +207,50 @@ export function useChatHistory() {
 
   const lastSyncRawRef = useRef<string | null>(null);
 
+  useEffect(() => {
+    const wipe = () => {
+      wipedRef.current = true;
+      clearTimeout(debounceRef.current);
+      latestSessionsRef.current = [];
+      lastSyncRawRef.current = null;
+      setSessions([]);
+      setFolders([]);
+      setActiveId(null);
+    };
+    window.addEventListener(LOCAL_DEVICE_WIPE_EVENT, wipe);
+    return () => window.removeEventListener(LOCAL_DEVICE_WIPE_EVENT, wipe);
+  }, []);
+
   useEffect(() => onSharedStateUpdated(() => {
     setFolders(loadFolders());
     const raw = localStorage.getItem('tc-chat-sessions');
     if (raw === lastSyncRawRef.current) return;
     lastSyncRawRef.current = raw;
     const list = loadSessions();
-    setSessions(list);
+    // A shared-state refresh must not erase the in-memory-only temporary chat.
+    const temporarySessions = latestSessionsRef.current.filter((session) => session.temporary);
+    const next = [...temporarySessions, ...list];
+    latestSessionsRef.current = next;
+    setSessions(next);
     // Keep the current chat if it still exists; otherwise fall back to a fresh
     // chat (activeId = null) rather than resuming a previous one. App.tsx
     // creates a new blank session when there is no active chat.
-    setActiveId((current) => current && list.some((s) => s.id === current) ? current : null);
+    setActiveId((current) => current && next.some((session) => session.id === current) ? current : null);
   }), []);
 
   const createSession = useCallback(
-    (engine: ChatEngine = 'ollama', title = defaultNewChatTitle(), folderId?: string) => {
+    (
+      engine: ChatEngine = 'ollama',
+      title = defaultNewChatTitle(),
+      folderId?: string,
+      temporary = false,
+    ) => {
+      // Older temporary chats may predate the attachment opt-out below. Remove
+      // any of their files when the user starts another conversation.
+      const discardedTemporary = latestSessionsRef.current.filter((existing) => existing.temporary);
+      if (discardedTemporary.length) {
+        void Promise.all(discardedTemporary.map((existing) => deleteChatAttachments(existing.messages)));
+      }
       const session: ChatSession = {
         id: uid(),
         title,
@@ -222,8 +259,12 @@ export function useChatHistory() {
         createdAt: Date.now(),
         updatedAt: Date.now(),
         folderId,
+        temporary,
       };
-      persist((prev) => [session, ...prev.filter((s) => s.id !== session.id && !isBlankDefaultSession(s))]);
+      persist((prev) => [
+        session,
+        ...prev.filter((existing) => existing.id !== session.id && !existing.temporary && !isBlankDefaultSession(existing)),
+      ]);
       setActiveId(session.id);
       return session;
     },
@@ -253,7 +294,9 @@ export function useChatHistory() {
 
   const deleteSession = useCallback(
     (id: string) => {
-      markChatSessionDeleted(id);
+      const deleted = sessions.find((session) => session.id === id);
+      if (deleted) void deleteChatAttachments(deleted.messages);
+      if (!deleted?.temporary) markChatSessionDeleted(id);
       const updated = sessions.filter((s) => s.id !== id);
       persist(updated);
       if (activeId === id) {

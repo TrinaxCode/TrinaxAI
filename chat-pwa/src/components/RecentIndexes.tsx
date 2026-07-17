@@ -5,7 +5,7 @@ import { useI18n } from '../i18n/I18nContext';
 import { useTheme } from '../theme/ThemeContext';
 import { useToast } from './Toast';
 import ConfirmModal from './ConfirmModal';
-import { deleteIndexedImport, startWatch, type Collection } from '../lib/api';
+import { deleteIndexedImport, startWatch } from '../lib/api';
 
 interface RecentIndex {
   label: string;
@@ -72,9 +72,7 @@ function saveRecent(items: RecentIndex[]) {
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(items.slice(0, MAX_ENTRIES))); } catch { /* ignore */ }
 }
 
-interface Props { collections: Collection[] }
-
-export default function RecentIndexes({ collections }: Props) {
+export default function RecentIndexes() {
   const { t } = useI18n();
   const { isDark } = useTheme();
   const toast = useToast();
@@ -84,7 +82,11 @@ export default function RecentIndexes({ collections }: Props) {
 
   // Refresh after each successful index — poll localStorage every 3s while mounted.
   useEffect(() => {
-    const id = window.setInterval(() => setItems(loadRecent()), 3000);
+    const id = window.setInterval(() => {
+      if (document.hidden) return;
+      const next = loadRecent();
+      setItems((current) => JSON.stringify(current) === JSON.stringify(next) ? current : next);
+    }, 3000);
     return () => window.clearInterval(id);
   }, []);
 

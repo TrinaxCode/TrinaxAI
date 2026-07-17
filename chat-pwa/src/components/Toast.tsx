@@ -1,11 +1,13 @@
 import { createContext, useContext, useState, useCallback, useRef, useEffect, type ReactNode } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { MdClose } from 'react-icons/md';
+import { MdCheckCircleOutline, MdClose, MdErrorOutline, MdInfoOutline, MdWarningAmber } from 'react-icons/md';
+import { useI18n } from '../i18n/I18nContext';
 
 interface Toast {
   id: number;
   message: string;
   type: 'success' | 'error' | 'info' | 'warning';
+  exiting?: boolean;
 }
 
 interface ToastContextValue {
@@ -14,7 +16,17 @@ interface ToastContextValue {
 
 const ToastContext = createContext<ToastContextValue | null>(null);
 
+const TOAST_DURATION_MS: Record<Toast['type'], number> = {
+  success: 3500,
+  info: 3500,
+  warning: 4500,
+  // Error messages often include an actionable backend detail, so leave them
+  // visible long enough to read on a small screen.
+  error: 6000,
+};
+
 export function ToastProvider({ children }: { children: ReactNode }) {
+  const { t } = useI18n();
   const [toasts, setToasts] = useState<Toast[]>([]);
   const nextIdRef = useRef(0);
   const timersRef = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map());
@@ -42,64 +54,68 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, [clearTimer]);
 
+  const requestDismiss = useCallback((id: number) => {
+    // Mark as exiting so the exit animation plays, then remove after it ends
+    clearTimer(id);
+    setToasts((prev) => prev.map((t) => t.id === id ? { ...t, exiting: true } : t));
+    const handle = setTimeout(() => {
+      timersRef.current.delete(id);
+      setToasts((prev) => prev.filter((t) => t.id !== id));
+    }, 250);
+    timersRef.current.set(id, handle);
+  }, [clearTimer]);
+
   const toast = useCallback((message: string, type: Toast['type'] = 'info') => {
     const id = ++nextIdRef.current;
     setToasts((prev) => [...prev, { id, message, type }]);
     const handle = setTimeout(() => {
-      timersRef.current.delete(id);
-      setToasts((prev) => prev.filter((t) => t.id !== id));
-    }, 3500);
+      requestDismiss(id);
+    }, TOAST_DURATION_MS[type]);
     timersRef.current.set(id, handle);
-  }, []);
+  }, [requestDismiss]);
 
   const typeStyles: Record<Toast['type'], string> = {
-    success: 'border-green-500/30 bg-green-500/10 text-green-400',
-    error: 'border-red-500/30 bg-red-500/10 text-red-400',
-    info: 'border-[#006bbd]/30 bg-[#006bbd]/10 text-[#006bbd]',
-    warning: 'border-amber-500/30 bg-amber-500/10 text-amber-400',
+    success: 'border-emerald-400/35 bg-emerald-950/95 text-emerald-100 shadow-emerald-950/30',
+    error: 'border-red-400/45 bg-red-950/95 text-red-50 shadow-red-950/40',
+    info: 'border-[#2588d4]/45 bg-[#062b4b]/95 text-blue-50 shadow-[#021629]/40',
+    warning: 'border-amber-400/45 bg-amber-950/95 text-amber-50 shadow-amber-950/40',
+  };
+  const typeIcon: Record<Toast['type'], ReactNode> = {
+    success: <MdCheckCircleOutline size={18} />,
+    error: <MdErrorOutline size={19} />,
+    info: <MdInfoOutline size={18} />,
+    warning: <MdWarningAmber size={19} />,
   };
 
   return (
     <ToastContext.Provider value={{ toast }}>
       {children}
-      {/* Desktop: top-center toasts */}
-      <div className="hidden sm:flex fixed top-0 left-1/2 -translate-x-1/2 z-[100] flex-col items-center gap-2 pointer-events-none"
-           style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 12px)' }}
-           role="alert"
-           aria-live="polite">
+      {/* A single top stack keeps errors close to the app header on every
+          viewport and clear of the mobile composer/keyboard. */}
+      <div
+        className="fixed top-0 left-1/2 z-[100] flex w-[calc(100%_-_2rem)] max-w-[260px] -translate-x-1/2 flex-col items-center gap-1 pointer-events-none"
+        style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 12px)' }}
+        aria-label={t('notifications')}
+      >
         <AnimatePresence>
-          {toasts.map((t) => (
+          {toasts.map((notice) => (
             <motion.div
-              key={t.id}
-              initial={{ opacity: 0, y: 20, scale: 0.95 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: -10, scale: 0.95 }}
-              className={`pointer-events-auto flex items-center gap-2 px-4 py-2.5 rounded-xl border text-xs font-medium shadow-lg ${typeStyles[t.type]}`}
+              key={notice.id}
+              initial={{ opacity: 0, y: -14, scale: 0.97 }}
+              animate={notice.exiting ? { opacity: 0, y: -10, scale: 0.97 } : { opacity: 1, y: 0, scale: 1 }}
+              transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+              role={notice.type === 'error' ? 'alert' : 'status'}
+              aria-live={notice.type === 'error' ? 'assertive' : 'polite'}
+              className={`pointer-events-auto grid w-full grid-cols-[1.25rem_minmax(0,1fr)_1.25rem] items-center gap-1 rounded-xl border px-2.5 py-2 text-[11px] font-medium leading-4 shadow-xl backdrop-blur-xl ${typeStyles[notice.type]}`}
             >
-              <span>{t.message}</span>
-              <button onClick={() => dismiss(t.id)} className="opacity-50 hover:opacity-100 transition-opacity">
-                <MdClose size={14} />
-              </button>
-            </motion.div>
-          ))}
-        </AnimatePresence>
-      </div>
-      {/* Mobile: bottom toasts (avoids notch overlap) */}
-      <div className="flex sm:hidden fixed bottom-0 left-1/2 -translate-x-1/2 z-[100] flex-col-reverse items-center gap-2 pointer-events-none"
-           style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 16px)' }}
-           role="alert"
-           aria-live="polite">
-        <AnimatePresence>
-          {toasts.map((t) => (
-            <motion.div
-              key={t.id}
-              initial={{ opacity: 0, y: -20, scale: 0.95 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 10, scale: 0.95 }}
-              className={`pointer-events-auto flex items-center gap-2 px-4 py-2.5 rounded-xl border text-xs font-medium shadow-lg ${typeStyles[t.type]}`}
-            >
-              <span>{t.message}</span>
-              <button onClick={() => dismiss(t.id)} className="opacity-50 hover:opacity-100 transition-opacity">
+              <span className="grid h-5 w-5 place-items-center" aria-hidden="true">{typeIcon[notice.type]}</span>
+              <span className="min-w-0 break-words text-center">{notice.message}</span>
+              <button
+                type="button"
+                onClick={() => requestDismiss(notice.id)}
+                className="grid h-5 w-5 place-items-center rounded-full text-current/70 transition-colors hover:bg-white/15 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
+                aria-label={t('close')}
+              >
                 <MdClose size={14} />
               </button>
             </motion.div>

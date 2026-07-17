@@ -1,4 +1,4 @@
-import { StrictMode } from 'react';
+import { StrictMode, useEffect, useRef } from 'react';
 import { createRoot } from 'react-dom/client';
 import { useRegisterSW } from 'virtual:pwa-register/react';
 import { ThemeProvider } from './theme/ThemeContext';
@@ -17,19 +17,25 @@ if (typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout !== 'functi
 }
 
 function Root() {
+  const updateTimerRef = useRef<number | undefined>(undefined);
   const {
     needRefresh: [needRefresh, setNeedRefresh],
     updateServiceWorker,
   } = useRegisterSW({
     onRegisteredSW(_swUrl, r) {
       if (r) {
-        setInterval(async () => {
-          if (r.installing || r.waiting) return;
+        // React StrictMode can register twice in development. Clear the prior
+        // poller first so updates are checked once per hour, not once per mount.
+        window.clearInterval(updateTimerRef.current);
+        updateTimerRef.current = window.setInterval(async () => {
+          if (document.hidden || r.installing || r.waiting) return;
           await r.update().catch(() => undefined);
         }, 60 * 60 * 1000);
       }
     },
   });
+
+  useEffect(() => () => window.clearInterval(updateTimerRef.current), []);
 
   const handleRefresh = () => {
     updateServiceWorker(true).then(() => {

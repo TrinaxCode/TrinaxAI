@@ -1,6 +1,6 @@
 # TrinaxAI Chat PWA
 
-React 19, TypeScript, and Vite 6 frontend for TrinaxAI. It provides direct Ollama chat, RAG chat with citations, image analysis, document attachments, local voice mode, knowledge browsing, settings, and installable PWA behavior.
+TrinaxAI 1.1.0 frontend built with React 19, TypeScript, and Vite 6 under AGPL-3.0-or-later. It provides direct Ollama chat, cited RAG, optional web search, deep research, a tool-using agent, image analysis, documents, local voice, memory, and installable PWA behavior.
 
 [Versión en español](README.es.md) · [Project documentation](../docs/README.md) · [API reference](../docs/API_REFERENCE.md)
 
@@ -59,8 +59,7 @@ src/
 │   └── PwaUpdater.tsx       update notification
 ├── hooks/
 │   ├── useChatHistory.ts    session/folder persistence
-│   ├── useStreamChat.ts     stream lifecycle and cancellation
-│   └── useVoiceMode.ts      browser/server voice orchestration
+│   └── useStreamChat.ts     stream lifecycle and cancellation
 ├── lib/
 │   ├── api.ts               backend/Ollama client and stream parsers
 │   ├── config.ts            same-origin URL resolution
@@ -84,6 +83,12 @@ src/
 
 `streamRag()` posts OpenAI-shaped messages to `/api/rag/v1/chat/completions`. It parses Server-Sent Events, including `trinaxai` metadata and `trinaxai_sources` citations. Active collection IDs are included with the request.
 
+### Web search, research, and agent
+
+- Internet mode queries DuckDuckGo, Brave Search, or SearXNG, displays sources, and performs bounded SSRF-protected reads of public pages.
+- Deep research decomposes a question, combines the web with authorized local knowledge, and synthesizes a sourced answer.
+- The Agent view shares its engine with the CLI, confines file access to the selected workspace, and requests approval before writes, edits, or commands.
+
 ### Attachments and vision
 
 - Images are resized to a maximum side of 768 px and encoded as JPEG before Ollama vision inference.
@@ -93,13 +98,41 @@ src/
 
 ### Voice
 
-`useVoiceMode` prefers browser speech capabilities where available and falls back to:
+Voice controls in `ChatInterface` prefer browser speech capabilities where available and fall back to:
 
 - `GET /v1/voice/capabilities`
 - `POST /v1/voice/stt` for local Whisper transcription
 - `POST /v1/voice/tts` for a locally available TTS backend
 
 Voice availability varies by OS, browser permissions, installed Python extras, and local audio support. See the API response instead of assuming a particular TTS engine exists.
+
+## Pairing a browser
+
+A LAN browser may use Ollama chat without pairing, but it cannot read private
+data or use RAG, memory, files, indexing, the agent, or system controls until it
+claims a short, single-use code.
+
+1. In the host PWA, open **Settings → Paired device → Generate pairing code**.
+2. On the other device, open `https://HOST-LAN-IP:3334`, choose the existing
+   installation option, enter the code, name the device, and pair it.
+3. Return to the host PWA to review or revoke the device. Install the PWA from
+   the browser menu if desired.
+
+The default token grants `chat,read_private`. Elevated `index`, `system`, or
+`agent` scopes must be granted deliberately for a device that needs them; the
+host CLI remains available for explicit scope selection and administration.
+
+The PWA keeps the bearer in `sessionStorage`, attaches it as
+`X-TrinaxAI-Device-Token`, shows the active device/scopes, and can revoke itself.
+Closing the browser session removes the local clear token. The host can review
+or revoke any device with `trinaxai pair list` and `trinaxai pair revoke ID`.
+Pairing identifies a device, not a user account.
+
+Persistent memory is query-scoped. Before a turn, the PWA asks
+`POST /v1/memory/context` for active relevant entries and wraps the result in an
+explicit untrusted-data block. It never injects the global memory summary or the
+local `tc-project-memory` scratchpad. The memory panel exposes kind, provenance,
+expiry and editing, and requires confirmation before deletion.
 
 ## State and data ownership
 
@@ -114,7 +147,7 @@ The frontend deliberately uses several storage layers:
 | FastAPI `app_state.json` | Selected `tc-*` values | Enables synchronization between browsers on the same host. |
 | FastAPI RAG storage | Collections, chunks, memory, usage | Not owned by the frontend. |
 
-`sharedState.ts` performs conditional pulls using ETags, merges session/deletion metadata, and pushes changes. Sync begins in the background so an unavailable RAG backend does not block startup. Treat this as trusted-LAN synchronization, not multi-user account storage.
+`sharedState.ts` uses a server-side monotonic revision and ETag. Browser mutations are persisted as incremental `set`/`delete` operations with a stable device ID; a `409` response rebases pending operations on the authoritative revision before retrying. The periodic poll receives `304` when unchanged and does not re-hash or upload a complete snapshot. Session and deletion records keep their structured merge behavior. Sync begins in the background so an unavailable RAG backend does not block startup. Access requires `read_private` (or admin/local privilege); this remains device synchronization, not a multi-user account system.
 
 ## PWA behavior
 
@@ -123,7 +156,9 @@ The frontend deliberately uses several storage layers:
 - Display modes: `standalone`, with `window-controls-overlay` preferred when supported.
 - Shortcuts: New Chat and Settings.
 - Precaching: built JS/CSS/HTML plus icons, fonts, and images matching the configured patterns.
-- Runtime cache: `CacheFirst` for local static assets/images; Google Fonts use `StaleWhileRevalidate`/`CacheFirst`; selected read-only API URLs use `NetworkFirst` with a five-second timeout.
+- Runtime cache: `StaleWhileRevalidate` for built JS/CSS, `CacheFirst` for local
+  images, and `NetworkFirst` only for the public health response. Private API
+  data is not stored in Workbox runtime caches.
 - Navigation fallback: `/index.html`, excluding `/api/*`.
 - Updates: the app checks the service worker hourly and shows `PwaUpdater` when a refresh is needed.
 
@@ -139,16 +174,23 @@ Frontend URL resolution lives in `src/lib/config.ts`. See the full [configuratio
 | `VITE_TRINAXAI_DEV_RAG_BASE` / `VITE_TRINAXAI_DEV_OLLAMA_BASE` | Browser development bases. |
 | `TRINAXAI_RAG_TARGET` / `TRINAXAI_OLLAMA_TARGET` | Server-side Vite proxy targets. |
 | `VITE_TRINAXAI_VISION_MODEL` | Fast vision model. |
-| `VITE_TRINAXAI_VISION_QUALITY_MODEL` | Quality vision model. |
-| `VITE_TRINAXAI_KEEP_ALIVE` | Direct-chat keep-alive default. |
+| `VITE_TRINAXAI_KEEP_ALIVE` | Direct-chat keep-alive default (optional; defaults to `10m` in the client). |
 
-Vite loads `certs/trinaxai-local.pfx` first, or `certs/localhost-key.pem` plus `certs/localhost.pem`. Certificate files are local secrets/artifacts and must not be committed.
+Vite loads `chat-pwa/certs/trinaxai-local.pfx` first, or `chat-pwa/certs/localhost-key.pem` plus `chat-pwa/certs/localhost.pem`. Certificate files are local secrets/artifacts and must not be committed.
 
 ## System-control boundary
 
-The custom Vite middleware handles `/api/system/{shutdown,startup,stop-all,index,reload}`. It accepts loopback clients, a valid `X-Admin-Token`, or private-LAN clients only when LAN system control is explicitly enabled. FastAPI independently protects sensitive RAG endpoints.
+The custom gateway validates paired-device/admin capability, strips
+client-supplied proxy-identity headers and attaches a fresh HMAC-signed original
+peer to `/api/rag`. FastAPI only accepts that identity from loopback.
+`/api/ollama` requires `chat`, has a fixed method/path allowlist, its own bounded
+rate window, and a cross-process inference lock;
+it cannot administer model pull/create/delete. Private FastAPI reads as well as
+mutations require authorization. `/api/system/*` applies the same remote
+credential/capability boundary before invoking fixed lifecycle actions.
 
-Do not expose the Vite server directly to the public Internet. Use a VPN or an authenticated, TLS-terminating reverse proxy, and keep Ollama bound to loopback.
+Do not expose the gateway directly to the public Internet. Use a VPN or an
+authenticated TLS terminator, and keep both FastAPI and Ollama bound to loopback.
 
 ## Testing and contribution
 
@@ -173,6 +215,8 @@ When changing UI text, add matching Spanish and English keys in `src/i18n/transl
 - **Backend appears offline:** open `/api/rag/health` through the PWA origin, then check `trinaxai doctor`.
 - **Ollama appears offline:** check `ollama list` and `/api/ollama/api/tags` through the PWA origin.
 - **Old UI after a build:** use the update prompt or unregister the service worker and clear site data in browser development tools.
-- **LAN device cannot control services:** this is the secure default; configure LAN system control and a token only for a trusted network.
+- **LAN device cannot use a protected feature:** pair it from the host and grant
+  the exact scope. Grant `system` only to a device that should control services;
+  do not distribute the admin token as a convenience workaround.
 - **Microphone fails:** verify browser permission and secure context, then inspect `/api/rag/v1/voice/capabilities`.
 - **HTTPS becomes HTTP:** generate/install local certificates; Vite only enables HTTPS when certificate files exist.

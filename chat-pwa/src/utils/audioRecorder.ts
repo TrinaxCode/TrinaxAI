@@ -15,12 +15,41 @@ function selectMimeType(): string {
 
 export interface AudioRecorder {
   stop: () => void;
+  cancel: () => void;
 }
 
-export async function startAudioRecorder(
+let activeRecorder: AudioRecorder | null = null;
+let pendingRecorder: Promise<AudioRecorder> | null = null;
+
+export function stopAudioRecorder(): void {
+  activeRecorder?.cancel();
+  activeRecorder = null;
+}
+
+export function startAudioRecorder(
   callbacks: RecorderCallbacks,
   silenceMs = 1500,
   threshold = 0.015,
+): Promise<AudioRecorder> {
+  if (pendingRecorder) return pendingRecorder;
+  stopAudioRecorder();
+  pendingRecorder = createAudioRecorder(callbacks, silenceMs, threshold)
+    .then((recorder) => {
+      const wrapped: AudioRecorder = {
+        stop: () => { recorder.stop(); if (activeRecorder === wrapped) activeRecorder = null; },
+        cancel: () => { recorder.cancel(); if (activeRecorder === wrapped) activeRecorder = null; },
+      };
+      activeRecorder = wrapped;
+      return wrapped;
+    })
+    .finally(() => { pendingRecorder = null; });
+  return pendingRecorder;
+}
+
+async function createAudioRecorder(
+  callbacks: RecorderCallbacks,
+  silenceMs: number,
+  threshold: number,
 ): Promise<AudioRecorder> {
   const mimeType = selectMimeType();
   if (!mimeType) throw new Error('noAudioMimeType');
@@ -41,10 +70,12 @@ export async function startAudioRecorder(
   analyser.smoothingTimeConstant = 0.3;
 
   const data = new Uint8Array(analyser.fftSize);
+  const audioTracks = stream.getTracks().filter((track) => track.kind === 'audio');
   let lastVoice = Date.now();
   let rafId = 0;
   let started = false;
   let cleaned = false;
+  let cancelled = false;
   let startWatchdog = 0;
 
   const cleanup = () => {
@@ -53,11 +84,20 @@ export async function startAudioRecorder(
     if (startWatchdog) { clearTimeout(startWatchdog); startWatchdog = 0; }
     if (rafId) cancelAnimationFrame(rafId);
     void audioCtx.close().catch(() => undefined);
+    audioTracks.forEach((track) => track.removeEventListener('ended', onTrackEnded));
     stream.getTracks().forEach((t) => t.stop());
   };
 
+  const onTrackEnded = () => {
+    if (cleaned || cancelled) return;
+    cleanup();
+    callbacks.onError(new Error('microphoneDisconnected'));
+  };
+  audioTracks.forEach((track) => track.addEventListener('ended', onTrackEnded, { once: true }));
+
   mediaRecorder.onstop = () => {
     cleanup();
+    if (cancelled) return;
     const blob = new Blob(chunks, { type: mimeType });
     callbacks.onSilence(blob);
   };
@@ -71,6 +111,11 @@ export async function startAudioRecorder(
     if (rafId) cancelAnimationFrame(rafId);
     try { mediaRecorder.stop(); } catch {}
     cleanup();
+  };
+
+  const cancel = () => {
+    cancelled = true;
+    stop();
   };
 
   const check = () => {
@@ -110,5 +155,5 @@ export async function startAudioRecorder(
     }
   }, 5000);
 
-  return { stop };
+  return { stop, cancel };
 }

@@ -11,6 +11,7 @@ export default function StatusDots() {
   useEffect(() => {
     let alive = true;
     const tick = async () => {
+      if (document.hidden) return;
       const r = await checkStatus();
       if (alive) setS(r);
     };
