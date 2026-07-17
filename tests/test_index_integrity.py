@@ -247,6 +247,9 @@ def test_atomic_publish_rolls_back_an_ordinary_failure(tmp_path) -> None:
 
 
 def test_interrupted_publish_is_rolled_back_on_next_run(tmp_path) -> None:
+    class SimulatedInterruption(BaseException):
+        pass
+
     storage = tmp_path / "storage"
     storage.mkdir()
     manifest = storage / "manifest.json"
@@ -262,9 +265,9 @@ def test_interrupted_publish_is_rolled_back_on_next_run(tmp_path) -> None:
 
     def interrupt_after_first(relative: str, _target: Path) -> None:
         if relative == "docstore.json":
-            raise KeyboardInterrupt
+            raise SimulatedInterruption
 
-    with pytest.raises(KeyboardInterrupt):
+    with pytest.raises(SimulatedInterruption):
         publish_index_generation(
             fake,
             {"new": 2},
@@ -304,6 +307,9 @@ def test_atomic_publish_commits_manifest_last(tmp_path) -> None:
 
 
 def test_recovery_keeps_generation_when_unique_commit_marker_was_written(tmp_path, monkeypatch) -> None:
+    class SimulatedInterruption(BaseException):
+        pass
+
     storage = tmp_path / "storage"
     storage.mkdir()
     manifest = storage / "manifest.json"
@@ -313,10 +319,10 @@ def test_recovery_keeps_generation_when_unique_commit_marker_was_written(tmp_pat
     cleanup = index_storage._cleanup_transaction
 
     def interrupt_cleanup(*_args, **_kwargs) -> None:
-        raise KeyboardInterrupt
+        raise SimulatedInterruption
 
     monkeypatch.setattr(index_storage, "_cleanup_transaction", interrupt_cleanup)
-    with pytest.raises(KeyboardInterrupt):
+    with pytest.raises(SimulatedInterruption):
         publish_index_generation(
             fake,
             {"same": 1},
