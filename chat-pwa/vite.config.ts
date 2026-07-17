@@ -51,7 +51,9 @@ const certKey = path.join(__dirname, 'certs', 'localhost-key.pem');
 const certFile = path.join(__dirname, 'certs', 'localhost.pem');
 const certPfx = path.join(__dirname, 'certs', 'trinaxai-local.pfx');
 const pfxPassphrase = process.env.TRINAXAI_CERT_PASSPHRASE || 'trinaxai-local';
-const httpsConfig = fs.existsSync(certPfx)
+const httpsConfig = process.env.CI === 'true'
+  ? undefined
+  : fs.existsSync(certPfx)
   ? { pfx: fs.readFileSync(certPfx), passphrase: pfxPassphrase }
   : fs.existsSync(certKey) && fs.existsSync(certFile)
     ? { key: fs.readFileSync(certKey), cert: fs.readFileSync(certFile) }

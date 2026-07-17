@@ -4,6 +4,8 @@ All notable changes to TrinaxAI are documented here. This project follows [Keep 
 
 ## [Unreleased]
 
+## [1.1.0] — 2026-07-16
+
 ### Added
 - Persistent global sound-effects preference and centralized cues for generation, tools, files, Agent Mode, voice, Call Mode, cancellation, errors, and confirmations.
 - Durable file-index jobs with real phase/page/chunk/batch progress, cancellation, retry, deduplication, stage/total timeouts, and reconnectable status polling.
@@ -19,8 +21,6 @@ All notable changes to TrinaxAI are documented here. This project follows [Keep 
 ### Changed
 - Failed or cancelled indexing attempts preserve a safe retry path and never publish partial index generations.
 - Search Mode and RAG surface explicit recoverable errors when providers, streams, indexes, or models are unavailable.
-
-## [1.1.0] — 2026-07-14
 
 ### Added
 - Local-first PWA with Ollama chat, RAG, voice, image analysis, and phone/LAN access

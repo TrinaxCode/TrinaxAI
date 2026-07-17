@@ -115,8 +115,8 @@ def test_attached_document_does_not_route_to_coder():
     spec = _spec(_with_attachment("resume este documento"))
     assert spec.regime is Regime.EXPLAIN
     assert spec.model != config.MODEL_CODE
-    # A terse "resume" carrying a large file must not be downgraded to FAST.
-    assert spec.model != config.MODEL_FAST
+    # MODEL_FAST may intentionally alias MODEL_GENERAL on smaller installations.
+    assert spec.model == config.MODEL_GENERAL
 
 
 def test_attached_document_dump_does_not_inflate_score():

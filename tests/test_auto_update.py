@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import os
 import plistlib
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
+
+import pytest
 
 from scripts import auto_update
 
@@ -32,6 +35,7 @@ def test_macos_weekly_update_uses_calendar_and_handles_spaces(tmp_path: Path) ->
     assert payload["ProgramArguments"][-1] == str(base_dir)
 
 
+@pytest.mark.skipif(os.name == "nt", reason="systemd paths require POSIX semantics")
 def test_linux_weekly_update_creates_persistent_timer(tmp_path: Path) -> None:
     home = tmp_path / "home"
     base_dir = tmp_path / "TrinaxAI"

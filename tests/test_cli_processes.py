@@ -57,8 +57,13 @@ def test_wait_timeout_terminates_complete_posix_group(monkeypatch) -> None:
 
     signals: list[tuple[int, signal.Signals]] = []
     monkeypatch.setattr(processes.sys, "platform", "linux")
-    monkeypatch.setattr(processes.os, "getpgid", lambda pid: pid)
-    monkeypatch.setattr(processes.os, "killpg", lambda pid, sig: signals.append((pid, sig)))
+    monkeypatch.setattr(processes.os, "getpgid", lambda pid: pid, raising=False)
+    monkeypatch.setattr(
+        processes.os,
+        "killpg",
+        lambda pid, sig: signals.append((pid, sig)),
+        raising=False,
+    )
     process = FakeProcess()
 
     with pytest.raises(subprocess.TimeoutExpired):

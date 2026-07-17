@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -59,7 +60,8 @@ def test_registry_never_persists_clear_codes_or_tokens_and_claim_is_single_use(p
     code = created["code"]
     initial = pairing_store.read_text(encoding="utf-8")
     assert code.replace("-", "") not in initial
-    assert pairing_store.stat().st_mode & 0o077 == 0
+    if os.name == "posix":
+        assert pairing_store.stat().st_mode & 0o077 == 0
 
     claimed = claim_pairing_code(code, "Family tablet", now=101)
     token = claimed["token"]
