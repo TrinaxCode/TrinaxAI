@@ -47,7 +47,7 @@ jobs:
           - os: macos-latest
             pytest-command: pytest -q
           - os: windows-latest
-            pytest-command: pytest -q
+            pytest-command: pytest -q --full-trace
     steps:
       - name: Checkout
         uses: actions/checkout@v4
