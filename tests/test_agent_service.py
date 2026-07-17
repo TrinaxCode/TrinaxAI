@@ -19,6 +19,7 @@ class AgentRouteRegistrationTests(unittest.TestCase):
         paths = {r.path for router in ROUTERS for r in router.routes}
         self.assertIn("/v1/agent", paths)
         self.assertIn("/v1/agent/approve", paths)
+        self.assertIn("/v1/agent/cancel", paths)
 
 
 class AgentServiceHelperTests(unittest.TestCase):
@@ -313,6 +314,22 @@ class AgentApprovalFlowTests(unittest.TestCase):
         self.assertFalse(session["cancelled"].is_set())
         self.svc._drop_session(session_id)
         self.assertTrue(session["cancelled"].is_set())
+
+    def test_cancel_endpoint_stops_active_engine_immediately(self) -> None:
+        from app.schemas import AgentCancelRequest
+
+        session_id, session = self.svc._register_session(("device", "device-a"))
+        engine = MagicMock()
+        session["engine"] = engine
+        request = MagicMock()
+        request.state.trinaxai_identity = {"kind": "device", "id": "device-a"}
+
+        result = asyncio.run(self.svc.agent_cancel(AgentCancelRequest(session_id=session_id), request))
+
+        self.assertEqual(result, {"ok": True, "cancelled": True})
+        self.assertTrue(session["cancelled"].is_set())
+        engine.cancel.assert_called_once_with()
+        self.svc._drop_session(session_id)
 
 
 if __name__ == "__main__":

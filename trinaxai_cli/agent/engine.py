@@ -168,7 +168,8 @@ class AgentEngine:
         # the planner's draft so the UI never flashes unverified claims before
         # the corrected answer replaces them.
         review_mode = bool(self.verifier_model and _is_code_review_request(messages))
-        self._suppress_stream = review_mode
+        requires_tools = _requires_tool_action(messages)
+        self._suppress_stream = review_mode or requires_tools
         for _ in range(self.max_steps):
             self._raise_if_cancelled()
             # Prune old tool chatter so the request stays inside the context
@@ -191,6 +192,19 @@ class AgentEngine:
             if not tool_calls:
                 used_tools = any(m.get("role") == "tool" for m in messages)
                 streamed = bool(reply.get("_streamed"))
+                if requires_tools and not used_tools:
+                    if not nudged:
+                        nudged = True
+                        messages.append({
+                            "role": "user",
+                            "content": (
+                                "You do have file and shell tools. Use them now to inspect the workspace "
+                                "and complete the requested creation or modification. Do not answer with "
+                                "an example or claim that you cannot create files."
+                            ),
+                        })
+                        continue
+                    raise RuntimeError("The selected model did not use the Agent tools required for this task.")
                 # A final answer with real substance ends the loop.
                 if _is_final_answer(content, used_tools):
                     if review_mode and used_tools:
@@ -227,6 +241,8 @@ class AgentEngine:
                 result = self._execute_call(call)
                 name, _ = _parse_tool_call(call)
                 messages.append({"role": "tool", "content": _untrusted_tool_result(name, result)})
+            if not review_mode:
+                self._suppress_stream = False
             if content:
                 final_answer = content
         # Ran out of steps.
@@ -602,6 +618,21 @@ _CODE_REVIEW_CUES = (
     "proyecto",
     "project",
 )
+
+_TOOL_ACTION_RE = re.compile(
+    r"\b(?:crea|crear|construye|haz|mejora|mejorar|modifica|editar?|actualiza|"
+    r"create|build|make|improve|modify|edit|update)\b.{0,80}\b(?:p[aá]gina|sitio|web|"
+    r"html|css|archivo|proyecto|c[oó]digo|website|page|file|project|code)\b",
+    re.IGNORECASE | re.DOTALL,
+)
+
+
+def _requires_tool_action(messages: list[dict[str, Any]]) -> bool:
+    latest = next(
+        (str(message.get("content") or "") for message in reversed(messages) if message.get("role") == "user"),
+        "",
+    )
+    return bool(_TOOL_ACTION_RE.search(latest))
 
 
 def _is_code_review_request(messages: list[dict[str, Any]]) -> bool:

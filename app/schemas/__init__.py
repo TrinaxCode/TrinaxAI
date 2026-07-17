@@ -2,6 +2,7 @@
 
 from .api import (
     AgentApprovalRequest,
+    AgentCancelRequest,
     AgentRequest,
     AppStateOperation,
     AppStateRequest,
@@ -21,6 +22,7 @@ from .api import (
 
 __all__ = [
     "AgentApprovalRequest",
+    "AgentCancelRequest",
     "AgentRequest",
     "AppStateOperation",
     "AppStateRequest",

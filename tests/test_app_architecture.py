@@ -13,6 +13,7 @@ EXPECTED_OPERATIONS = {
     ("POST", "/v1/chat/completions"),
     ("POST", "/v1/agent"),
     ("POST", "/v1/agent/approve"),
+    ("POST", "/v1/agent/cancel"),
     ("GET", "/v1/agent/browse"),
     ("GET", "/v1/sources"),
     ("GET", "/v1/sources/{collection}/{file}/chunks"),

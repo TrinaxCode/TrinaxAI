@@ -28,6 +28,7 @@ import uuid
 from contextlib import contextmanager
 from pathlib import Path
 
+from app.schemas import AgentCancelRequest
 from app.security.admin_auth import authorize_scope
 from trinaxai_cli.agent import DEFAULT_TOOLS, AgentEngine, Tool  # noqa: E402
 from trinaxai_cli.agent.engine import AgentCancelled  # noqa: E402
@@ -549,6 +550,22 @@ async def agent_approve(req: AgentApprovalRequest, request: Request):
             pending["event"].set()
             return {"ok": True, "approved": bool(req.approved)}
     raise HTTPException(status_code=404, detail="No pending approval with that id (it may have timed out).")
+
+
+async def agent_cancel(req: AgentCancelRequest, request: Request):
+    """Cancel Ollama, approvals and tools for one running browser session."""
+    with _SESSIONS_LOCK:
+        session = _SESSIONS.get(req.session_id)
+    if session is None or session["identity_key"] != _identity_key(request):
+        raise HTTPException(status_code=404, detail="Agent session is no longer running.")
+    session["cancelled"].set()
+    engine = session.get("engine")
+    if engine is not None:
+        engine.cancel()
+    for pending in session["approvals"].values():
+        pending["approved"] = False
+        pending["event"].set()
+    return {"ok": True, "cancelled": True}
 
 
 def _browse_start_dir(path: str | None) -> Path:

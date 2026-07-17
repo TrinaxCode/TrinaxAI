@@ -503,21 +503,21 @@ export async function resolveAgentModel(candidate: string): Promise<string> {
   const fastModel = modelSetting('tc-models-fast', DEFAULT_MODEL_SETTINGS['tc-models-fast']);
   const codeModel = modelSetting('tc-models-code', DEFAULT_MODEL_SETTINGS['tc-models-code']);
   const chatModel = modelSetting('tc-models-chat', DEFAULT_MODEL_SETTINGS['tc-models-chat']);
-  const safeCandidate = candidate === fastModel ? codeModel : candidate;
   await availableOllamaModels();
-  const supportsTools = (model: string) => ollamaModelCapabilities.get(model)?.has('tools')
-    || ollamaModelCapabilities.get(`${model}:latest`)?.has('tools');
-  if (supportsTools(safeCandidate)) {
-    console.info(`[TrinaxAI router] selected ${safeCandidate}: installed model supports tools`);
-    return safeCandidate;
+  const supportsAgentTools = (model: string) => !/^qwen2\.5-coder:/i.test(model)
+    && (ollamaModelCapabilities.get(model)?.has('tools')
+      || ollamaModelCapabilities.get(`${model}:latest`)?.has('tools'));
+  if (supportsAgentTools(candidate)) {
+    console.info(`[TrinaxAI router] selected ${candidate}: installed model supports reliable Agent tools`);
+    return candidate;
   }
-  for (const fallback of [codeModel, chatModel]) {
-    if (supportsTools(fallback)) {
-      console.info(`[TrinaxAI router] selected ${fallback}: ${candidate} lacks tools or is unavailable`);
+  for (const fallback of [DEFAULT_MODEL_SETTINGS['tc-models-chat'], chatModel, fastModel]) {
+    if (supportsAgentTools(fallback)) {
+      console.info(`[TrinaxAI router] selected ${fallback}: ${candidate} is unreliable for Agent tools`);
       return fallback;
     }
   }
-  throw new ApiError(`No installed model supports Agent tools (requested: ${candidate}).`, 424, 'model_incompatible');
+  throw new ApiError(`No installed model supports reliable Agent tools (requested: ${candidate}; code model: ${codeModel}).`, 424, 'model_incompatible');
 }
 
 async function availableOllamaModels(): Promise<string[]> {
@@ -1110,6 +1110,13 @@ export async function runResearch(
       });
       break;
     } catch (error) {
+      if (error instanceof ApiError && error.status === 404) {
+        throw new ApiError(
+          'El servicio RAG activo pertenece a una versión anterior y no incluye Search Mode. Reinicia TrinaxAI para cargar el backend actual.',
+          503,
+          'rag_version_mismatch',
+        );
+      }
       if (attempt || !(error instanceof ApiError) || error.status !== 0) {
         if (opts.signal?.aborted) throw new DOMException('Research request cancelled.', 'AbortError');
         if (timeoutSignal.aborted) throw new ApiError('Research dependency check timed out.', 408, 'timeout');
@@ -2152,6 +2159,14 @@ export async function approveAgentAction(sessionId: string, approvalId: string, 
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ session_id: sessionId, approval_id: approvalId, approved }),
+  });
+}
+
+export async function cancelAgentRun(sessionId: string): Promise<void> {
+  await apiJson<{ ok: boolean }>(`${RAG_BASE}/v1/agent/cancel`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ session_id: sessionId }),
   });
 }
 

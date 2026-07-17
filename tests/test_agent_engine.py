@@ -14,6 +14,7 @@ from trinaxai_cli.agent.engine import (
     _is_code_review_request,
     _is_final_answer,
     _parse_tool_call,
+    _requires_tool_action,
     _tool_calls_from_text,
 )
 from trinaxai_cli.agent.extract import DOCUMENT_EXTENSIONS, is_document
@@ -310,6 +311,14 @@ class AgentParserTests(unittest.TestCase):
 
 
 class MeaningfulAnswerTests(unittest.TestCase):
+    def test_creation_and_improvement_requests_require_tools(self) -> None:
+        for prompt in (
+            "Crea una página web de cumpleaños",
+            "Mejora mucho más la web para que sea increíble",
+            "Improve the website project",
+        ):
+            self.assertTrue(_requires_tool_action([{"role": "user", "content": prompt}]), prompt)
+
     def test_junk_after_tool_use_is_rejected(self) -> None:
         # After tools ran, a stray one-word fragment signals a blown context.
         for junk in ["", "  ", "\n", "el", "a", "x"]:
@@ -401,6 +410,23 @@ class EngineLoopTests(unittest.TestCase):
             answer = engine.run([{"role": "user", "content": "hi"}])
             self.assertEqual(answer, "Listo, todo bien.")
             self.assertEqual(len(engine.requests), 1)
+
+    def test_creation_refusal_is_rejected_and_the_model_must_use_tools(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            engine = _ScriptedEngine(root, replies=[
+                {"content": "Lo siento, no puedo crear una página web."},
+                {"content": "", "tool_calls": [{"function": {"name": "write_file", "arguments": {
+                    "path": "index.html", "content": "<h1>Feliz cumpleaños</h1>",
+                }}}]},
+                {"content": "Creé y mejoré la página de cumpleaños."},
+            ])
+
+            answer = engine.run([{"role": "user", "content": "Crea una página web de cumpleaños"}])
+
+            self.assertTrue((root / "index.html").exists())
+            self.assertIn("Creé", answer)
+            self.assertTrue(any("You do have file and shell tools" in str(m.get("content", "")) for m in engine.requests[1]))
 
     def test_terse_answer_without_tools_is_accepted(self) -> None:
         with TemporaryDirectory() as tmp:

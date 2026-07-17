@@ -7,6 +7,7 @@ import { DOCUMENT_FILE_ACCEPT, IMAGE_FILE_ACCEPT } from '../lib/attachmentAccept
 import {
   agentWorkspaceRoot,
   approveAgentAction,
+  cancelAgentRun,
   describeImageForAgent,
   prepareImageForVision,
   extractDocumentText,
@@ -515,11 +516,14 @@ export default function AgentInterface({ onBack, initialRequest, onRequestConsum
   }, [execute, initialRequest, onRequestConsumed]);
 
   const stop = useCallback(() => {
+    const sessionId = agentRunSessionRef.current;
+    if (sessionId) void cancelAgentRun(sessionId).catch(() => undefined);
     abortRef.current?.abort();
     cancelAgentTypewriter();
     runningRef.current = false;
     setRunning(false);
     setAnalyzingImage(false);
+    setAgentActivity('');
   }, [cancelAgentTypewriter]);
 
   const persistWorkspace = useCallback((value: string) => {

@@ -163,6 +163,12 @@ class AgentApprovalRequest(BaseModel):
     approved: bool
 
 
+class AgentCancelRequest(BaseModel):
+    """Cancel one running agent session."""
+
+    session_id: str = Field(pattern=r"^[0-9a-f]{32}$")
+
+
 class MemoryCreateRequest(BaseModel):
     text: str = Field(min_length=1, max_length=config.MEMORY_TEXT_MAX_CHARS)
     tags: list[str] | None = Field(default=None, max_length=config.MEMORY_MAX_TAGS)

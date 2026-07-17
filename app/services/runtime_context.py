@@ -47,6 +47,7 @@ from app.generation.spec import Regime
 from app.generation.validate import validate_output
 from app.schemas import (
     AgentApprovalRequest,
+    AgentCancelRequest,
     AgentRequest,
     AppStateRequest,
     ChatRequest,

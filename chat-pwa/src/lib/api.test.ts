@@ -86,6 +86,16 @@ describe('api helpers', () => {
     } finally { vi.unstubAllGlobals(); }
   });
 
+  it('identifies a stale RAG process when the Search Mode route is missing', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ detail: 'Not Found' }), { status: 404 })));
+    try {
+      await expect(runResearch('consulta', { webSearch: true })).rejects.toMatchObject({
+        code: 'rag_version_mismatch',
+        message: expect.stringContaining('Reinicia TrinaxAI'),
+      });
+    } finally { vi.unstubAllGlobals(); }
+  });
+
   it('detects explicit web-search requests without confusing web-development prompts', () => {
     expect(isWebSearchRequest('Busca en internet las noticias más recientes')).toBe(true);
     expect(isWebSearchRequest('Search the web for the current documentation')).toBe(true);
@@ -117,15 +127,15 @@ describe('api helpers', () => {
     } finally { vi.unstubAllGlobals(); }
   });
 
-  it('rejects an incompatible Agent model in favor of an installed tools model', async () => {
+  it('rejects a coder model in Agent Mode even when Ollama advertises tools', async () => {
     clearOllamaModelAvailabilityCache();
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ models: [
-      { name: 'plain:latest', capabilities: ['completion'] },
       { name: 'qwen2.5-coder:3b', capabilities: ['completion', 'tools'] },
+      { name: 'granite4:3b', capabilities: ['completion', 'tools'] },
     ] }), { status: 200 }));
     vi.stubGlobal('fetch', fetchMock);
     try {
-      await expect(resolveAgentModel('plain:latest')).resolves.toBe('qwen2.5-coder:3b');
+      await expect(resolveAgentModel('qwen2.5-coder:3b')).resolves.toBe('granite4:3b');
     } finally { vi.unstubAllGlobals(); }
   });
 
