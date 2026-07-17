@@ -154,7 +154,7 @@ Recommended starting values:
 
 ```bash
 TRINAXAI_PROFILE=16gb
-TRINAXAI_HOST=0.0.0.0
+TRINAXAI_HOST=127.0.0.1
 TRINAXAI_PORT=3333
 TRINAXAI_INDEX_DIR=~/Documents
 TRINAXAI_ALLOW_LAN_SYSTEM=0
@@ -178,32 +178,19 @@ TRINAXAI_CORS_ORIGINS=https://localhost:3334,http://localhost:3334,https://192.1
 
 ## Download models
 
-Base models:
+Recommended `16gb` profile:
 
 ```bash
 ollama pull qwen2.5-coder:3b
-ollama pull qwen3:4b-instruct-2507-q4_K_M
+ollama pull qwen3.5:9b
+ollama pull granite4:3b
 ollama pull bge-m3
 ```
 
-Vision:
-
-```bash
-ollama pull qwen3-vl:4b
-```
-
-Machines with more memory:
-
-```bash
-ollama pull qwen2.5-coder:7b
-```
-
-Ultra profile:
-
-```bash
-ollama pull qwen3-coder:30b
-ollama pull qwen3-vl:32b
-```
+For `8gb`, `max`, and `ultra`, use the exact current fleet in the
+[Models & profiles table](../README.md#-models--profiles). The installer pulls
+the text/RAG set automatically. Vision models download on first image analysis;
+manual pulls are only needed for custom setups.
 
 ## Index your files
 
@@ -358,16 +345,20 @@ cd ~/trinaxai
 
 The updater asks whether to create a backup, pull latest code, update models, change autostart, restart services, and run the readiness audit. Python/npm dependencies and the PWA build still run automatically.
 
-The installer also enables a persistent user timer that checks GitHub weekly and runs a safe unattended update. Inspect its history in `logs/auto-update.log`; disable it with `python scripts/auto_update.py disable`.
+The installer also enables a persistent user timer that checks GitHub weekly
+and records whether an update is available in `logs/auto-update.log`. It is
+check-only: it does not download/execute an updater or modify services. Review
+the tagged release and run the local guided updater manually. Disable the check
+with `python scripts/auto_update.py disable`.
 
 If you update manually:
 
 ```bash
 git pull
 source .venv/bin/activate
-python -m pip install -r requirements.txt
+python -m pip install --require-hashes -r requirements.lock
 cd chat-pwa
-npm install
+npm ci
 npm run build
 cd ..
 ```
@@ -379,6 +370,12 @@ Create a backup:
 ```bash
 ./backup.sh create
 ```
+
+The archive is created through a temporary file, published with mode `0600`,
+and contains `.env` plus private chats, attachments, sources and indexes. Encrypt
+copies moved off-host. Restore validates paths and entry types, extracts to
+staging, and rolls back a failed replacement; still test restoration before an
+upgrade.
 
 Manually back up the important files:
 

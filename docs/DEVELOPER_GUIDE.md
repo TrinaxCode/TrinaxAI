@@ -28,24 +28,30 @@ cp .env.example .env
 ```
 .
 ├── config.py              # Central configuration (models, profiles, chunking)
-├── rag_api.py             # FastAPI backend (RAG, memory, collections, watcher)
+├── rag_api.py             # Backward-compatible API entry point
 ├── index.py               # Document indexer (AST-aware, incremental)
+├── app/
+│   ├── main.py            # Canonical FastAPI application factory
+│   ├── routes/            # Small HTTP routers grouped by domain
+│   ├── schemas/           # Shared Pydantic request/response contracts
+│   ├── services/          # Chat, sources, memory, indexing, system, etc.
+│   └── security/          # Authorization and rate limiting
 ├── trinaxai_cli/          # Terminal interface (modular, subcommands)
 ├── trinaxai_cli.py        # Legacy standalone CLI (deprecated)
 ├── service_manager.py     # Cross-platform service supervisor
 ├── test_system.py         # Automated health checks
 │
 ├── chat-pwa/              # React PWA frontend
-│   ├── src/components/    # 18 React components
+│   ├── src/components/    # React UI components
 │   ├── src/lib/           # API layer, config, shared state, user profile
-│   ├── src/hooks/         # useChatHistory, useStreamChat, useZenMode
-│   ├── src/i18n/          # Spanish/English translations (~250 keys)
+│   ├── src/hooks/         # useChatHistory and useStreamChat
+│   ├── src/i18n/          # Spanish/English translations
 │   └── vite.config.ts     # Build config, PWA plugin, API proxy
 │
 ├── scripts/               # Release tooling (public_readiness.py)
 ├── docs/                  # Documentation (API ref, architecture, dev guide)
 ├── storage/               # Persisted indexes, manifest, collections
-├── certs/                 # Self-signed HTTPS certs for local dev
+├── chat-pwa/certs/        # Local HTTPS certificates (generated locally)
 └── .github/               # CI, PR template, issue templates
 ```
 
@@ -67,7 +73,7 @@ cp .env.example .env
 - Use `const` for non-reassigned bindings
 - Components are functional with hooks, no class components (except `ErrorBoundary`)
 - i18n: add new strings to `translations.ts` in both `es` and `en`
-- CSS: Tailwind utility classes; custom CSS only in `index.css`
+- CSS: Tailwind utilities plus component-local CSS next to complex components
 
 ### Shell Scripts
 
@@ -93,26 +99,29 @@ cp .env.example .env
 
 ## Adding a New API Endpoint
 
-1. Add the endpoint function in `rag_api.py`:
+1. Add business logic to the matching module in `app/services/`.
+2. Register it in the matching `app/routes/*.py` router:
    ```python
-   @app.get("/v1/my-feature")
+   @router.get("/v1/my-feature")
    async def my_feature(request: Request):
-       # No auth needed for read endpoints
+       # Classify the data explicitly. Private reads need authorize_system
+       # (prefer a router dependency); only intentionally public telemetry such
+       # as health/resources should omit authorization.
        return {"ok": True}
    ```
 
    For system endpoints that modify state:
    ```python
-   @app.post("/system/my-action")
+   @router.post("/system/my-action")
    async def my_action(request: Request):
-       _authorize_system(request)
+       authorize_system(request)
        # ...
        return {"ok": True}
    ```
 
-2. Add to the API reference in `docs/API_REFERENCE.md`
-3. Add to the in-app docs in `Docs.tsx` API section
-4. If the PWA needs it, add the fetch function in `chat-pwa/src/lib/api.ts`
+3. Add or update the Pydantic contract in `app/schemas/`.
+4. Add a route-contract test and update `docs/API_REFERENCE.md`.
+5. If the PWA needs it, add the fetch function in `chat-pwa/src/lib/api.ts`.
 
 ---
 
@@ -195,7 +204,9 @@ npm run dev
 ```
 
 ### Service Worker Caching
-The PWA uses `vite-plugin-pwa` with `registerType: 'autoUpdate'`. During development, the service worker is **not** registered to avoid caching issues. To test PWA features:
+The PWA uses `vite-plugin-pwa` with `registerType: 'prompt'`, so an update waits
+for the user instead of interrupting a stream or draft. During development, the
+service worker is **not** registered to avoid caching issues. To test PWA features:
 
 ```bash
 npm run build

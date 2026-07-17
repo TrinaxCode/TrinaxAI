@@ -23,6 +23,7 @@ chat-pwa/coverage/
 chat-pwa/test-results/
 chat-pwa/playwright-report/
 chat-pwa/blob-report/
+chat-pwa/visual-audit/
 chat-pwa/.eslintcache
 npm-debug.log*
 yarn-debug.log*

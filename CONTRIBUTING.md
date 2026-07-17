@@ -102,7 +102,7 @@ trinaxai doctor
 python3 test_system.py --verbose
 ```
 
-See `docs/PUBLIC_RELEASE.md` for the full release checklist.
+Run `make readiness` before opening a release-oriented pull request.
 
 ## Commit Style
 

@@ -2,7 +2,23 @@
 
 Todos los cambios notables en TrinaxAI se documentan aquí. Este proyecto sigue el formato [Keep a Changelog](https://keepachangelog.com/).
 
-## [1.0.0] — Sin publicar
+## [Sin publicar]
+
+### Añadido
+- Preferencia global persistente para efectos de sonido y señales centralizadas de generación, herramientas, archivos, agente, voz, llamada, errores y confirmaciones.
+- Trabajos persistentes de indexación con progreso real por etapa/página/chunk/lote, cancelación, reintento, deduplicación, timeouts y reconexión.
+- Cobertura de regresión para ciclo de vida del micrófono, SSE, fallos/recuperación de indexación, duplicados, temporales y PDFs textuales de 160 páginas.
+
+### Corregido
+- STT y Call Mode comparten un único ciclo de micrófono y liberan pistas, Web Audio, reinicios, TTS y transcripciones pendientes al salir o desmontar.
+- Las esperas del primer token y la indexación de adjuntos tienen límites recuperables en vez de carga infinita.
+- Los PDFs grandes usan lotes acotados y CI/`make setup` completan correctamente una instalación limpia.
+- Monitores globales, timers de notificaciones, vistas previas y listeners de subida liberan sus recursos.
+
+### Cambiado
+- Search Mode y RAG muestran errores recuperables explícitos; una indexación fallida nunca publica una generación parcial.
+
+## [1.1.0] — 2026-07-14
 
 ### Añadido
 - PWA local-first con chat de Ollama, RAG, voz, análisis de imágenes y acceso por teléfono/LAN
@@ -15,6 +31,9 @@ Todos los cambios notables en TrinaxAI se documentan aquí. Este proyecto sigue 
 - Paquete CLI modular (`trinaxai_cli/`) con subcomandos: browse, collections, doctor, export, index, memory, obsidian, research, watch
 - Memoria de conversaciones (hechos explícitos de "recuerda que" persistidos localmente)
 - Modo de investigación profunda con descomposición RAG en múltiples pasadas
+- Búsqueda web opcional con DuckDuckGo, Brave Search o SearXNG y lectura acotada de páginas públicas
+- Agente compartido por CLI/PWA con workspaces autorizados, aprobación por sesión y cancelación cooperativa
+- Emparejamiento LAN por capacidades; el chat local permanece disponible sin exponer datos privados
 - Observador del sistema de archivos para reindexado automático ante cambios
 - Sincronización de estado compartido entre dispositivos mediante backend local
 - Agregación de estadísticas de uso a partir de logs JSONL
@@ -35,12 +54,10 @@ Todos los cambios notables en TrinaxAI se documentan aquí. Este proyecto sigue 
 ### Cambiado
 - Identidad de producto más sólida: el asistente se identifica como TrinaxAI, no como el autor del proyecto
 - Licenciado bajo AGPL-3.0-or-later
-- query.py marcado como obsoleto en favor del paquete trinaxai_cli/
 - Manifiesto PWA: corregida discrepancia de display, añadidas categorías, dir, lang, atajos, display_override
 - Iconos PWA: eliminados tamaños duplicados de Apple touch icon, mejorado manejo de pantalla de inicio
 - README reescrito con sección CLI, modelo de seguridad, FAQ y estructura mejorada
 - SECURITY.md ampliado con modelo de amenazas y recomendaciones de despliegue
-- ROADMAP reorganizado en Hecho / En Progreso / Planeado / Ideas Futuras
 
 ### Corregido
 - La compactación del historial de chat evita errores de cuota en localStorage
@@ -64,4 +81,10 @@ Todos los cambios notables en TrinaxAI se documentan aquí. Este proyecto sigue 
 - Eliminada dependencia requests no utilizada de requirements.txt
 - Código muerto eliminado: importAndIndexFolder de api.ts, import ssl no utilizado de config.py
 
-[1.0.0]: https://github.com/TrinaxCode/TrinaxAI
+## [1.0.0] — 2026-06-28
+
+### Añadido
+- Publicación pública inicial de TrinaxAI.
+
+[1.1.0]: https://github.com/TrinaxCode/TrinaxAI/compare/v1.0.0...v1.1.0
+[1.0.0]: https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.0.0

@@ -3,32 +3,28 @@
 ## High-Level Overview
 
 ```
-┌──────────────────────────────────────────┐
-│              Your Device                 │
-│  ┌──────────┐  ┌─────────────────────┐   │
-│  │PWA(React)│  │ VSCode (Continue)   │   │
-│  │  :3334   │  │ continue-config.yaml│   │
-│  └─────┬─────┘  └──────────┬──────────┘   │
-│        │                   │               │
-│  ┌─────┴───────────────────┴──────────┐   │
-│  │    RAG API (FastAPI) :3333         │   │
-│  │ LlamaIndex · bge-m3 · BM25        │   │
-│  └─────┬──────────────────────────────┘   │
-│        │                                   │
-│  ┌─────┴──────┐                            │
-│  │   Ollama   │  qwen3 · qwen2.5-coder    │
-│  │   :11434   │  bge-m3 · qwen3-vl        │
-│  └────────────┘                            │
-└──────────────────────────────────────────┘
+LAN browser ── HTTPS ──► PWA gateway :3334 ──► allowlisted Ollama chat
+                         └─ paired token ─────► RAG/private capabilities
+                                                     │
+                          signed peer/method/path HMAC│ allowlisted model calls
+                                                     ▼
+Local CLI ───────────────────────────────► FastAPI :3333 ──► Ollama :11434
+                                            loopback          loopback
+                                               │
+                                               └──► LlamaIndex · vector + BM25
 ```
 
 TrinaxAI is a **three-tier local stack**:
 
 1. **PWA Frontend** (React 19 + TypeScript + Vite) on port 3334
-2. **RAG API** (FastAPI + LlamaIndex) on port 3333
-3. **Ollama** (model runtime) on port 11434
+2. **RAG API** (FastAPI + LlamaIndex) on loopback port 3333
+3. **Ollama** (model runtime) on loopback port 11434
 
-Everything runs on localhost or a trusted private LAN. No cloud dependencies.
+The PWA gateway on 3334 is the LAN-facing boundary. It forwards to the two
+loopback services, signs the verified original peer for FastAPI and exposes only
+the Ollama operations the UI needs. Inference and persisted data run on the host
+by default. Installing dependencies/models, opt-in research and configured
+external endpoints can use the network.
 
 ---
 
@@ -38,37 +34,45 @@ Everything runs on localhost or a trusted private LAN. No cloud dependencies.
 
 The single source of truth for all subsystems. Defines:
 
-- **Model fleet** — `MODEL_GENERAL`, `MODEL_CODE`, `MODEL_DEEP`, `MODEL_FAST` (all tool-calling capable and non-thinking, i.e. agent-ready)
+- **Model fleet** — `MODEL_GENERAL`, `MODEL_CODE`, `MODEL_DEEP`, and `MODEL_FAST`; their concrete names come from the active profile and can be overridden in `.env`.
 - **Hardware profiles** — auto-tuned by `TRINAXAI_PROFILE` (4gb/8gb/16gb/max/ultra)
 - **Embedding presets** — bge-m3 balanced, nomic lite, all-minilm fast
 - **Factory functions** — `make_llm()`, `make_embed()`, `make_reranker()`
 - **Auto-router** — `route_model()` heuristic classifier (no LLM call needed)
 - **File rules** — what to index, what to skip, chunk sizes per profile
 
-### `rag_api.py` — FastAPI Backend (2000+ lines)
+### `app/` — Modular FastAPI Backend
 
-The heart of the system. Key subsystems:
+`app/main.py` owns application creation, middleware, exception handlers and
+lifespan initialization. `app/routes/` defines the HTTP layer, `app/schemas/`
+owns validation contracts, and `app/services/` contains focused domain logic.
+`app/services/engine_state.py` is the only mutable engine-state source.
+`rag_api.py` is only a backward-compatible launcher/facade.
+
+Key subsystems:
 
 | Feature | Implementation |
 |---|---|
 | **Hybrid retrieval** | Vector (bge-m3) + BM25 (keyword) → reciprocal rank fusion |
-| **Reranking** | Cross-encoder (bge-reranker-v2-m3) reorders candidates |
+| **Reranking** | Optional cross-encoder (bge-reranker-v2-m3) reorders candidates when enabled |
 | **Collections** | Separate namespaces within the same vector store |
 | **Project detection** | Heuristic from file paths and user query |
-| **Memory** | Explicit "remember that" facts stored and auto-summarized |
-| **Deep research** | Multi-pass decomposition with sub-question RAG |
+| **Memory** | Typed facts/preferences/decisions/notes with provenance and expiry; each turn retrieves only relevant active entries |
+| **Research** | Multi-pass local/web retrieval; bounded page reads expose `full_page` or `snippet_only` provenance |
+| **Device pairing** | Single-use codes issue revocable bearer capabilities with explicit scopes; only keyed hashes persist |
 | **File watcher** | watchdogs file system for auto-reindexing |
-| **Rate limiting** | Token bucket, 30 req/min per IP, thread-safe |
+| **Rate limiting** | Monotonic token bucket per verified IP/bucket; capacity 30 and full refill over 60 s by default |
 | **Usage stats** | JSONL-based local analytics |
-| **App state sync** | Cross-device shared key-value store |
+| **App state sync** | Schema-v2 operations with explicit deletes, server revision, ETag/CAS and conflict merge |
 
 ### `index.py` — Document Indexer
 
 - **File collection** — Aggressive directory pruning skips `node_modules`, `.git`, `venv`, etc.
 - **AST-aware chunking** — `CodeSplitter` for 15+ languages, `SentenceSplitter` for prose
-- **Incremental mode** — Manifest tracks file→mtime, only re-indexes changed/new files
-- **Collection support** — Each chunk tagged with `collection_id` metadata
-- **Output** — LlamaIndex `VectorStoreIndex` persisted to `storage/`
+- **Incremental mode** — Content fingerprints include BLAKE2b-256 plus extractor/chunker/embedding pipeline versions
+- **Multi-source collections** — Each independently synchronized root has a stable `source_id`; the same relative path may exist in several roots
+- **Crash-safe publication** — Index files and manifest stage together, publish under a durable journal/generation marker, and roll back after an interrupted commit
+- **Collection support** — Each chunk carries `collection_id`, `source_id`, relative path and provenance metadata
 
 ### `chat-pwa/` — React PWA Frontend
 
@@ -78,7 +82,7 @@ TypeScript components built with Tailwind CSS and framer-motion include:
 |---|---|
 | `ChatInterface` | Main chat UI with streaming, markdown, voice, slash commands |
 | `ChatSidebar` | Session history, folders, search, and export workflows |
-| `Settings` | 5-section config panel (general, indexing, prompts, memory, stats) |
+| `Settings` | Local model, indexing, prompt, memory, and statistics controls |
 | `KnowledgeBrowser` | Explore indexed chunks by collection→file→chunk |
 | `Sources` | Citation cards with file, project, snippet, score |
 | `OnboardingWizard` | First-time profile and model setup |
@@ -88,7 +92,9 @@ TypeScript components built with Tailwind CSS and framer-motion include:
 
 ### `trinaxai_cli/` — Terminal Interface
 
-Python package with subcommands: `chat`, `index`, `browse`, `research`, `memory`, `collections`, `watch`, `export`, `obsidian`, `doctor`.
+Python package with subcommands including `chat`, `agent`, `index`, `browse`,
+`research`, `memory`, `collections`, `watch`, `export`, `obsidian`, `pair`, and
+`doctor`.
 
 Uses `httpx` for API calls and `rich` for terminal formatting.
 
@@ -108,7 +114,7 @@ User types query in PWA
   │
   ├─ Slash command? → built-in handler (e.g., /index, /memory)
   ├─ Image attached? → routeVisionModel() → streamOllamaVision()
-  ├─ Docs attached? → extractDocumentText() → inject into prompt
+  ├─ Docs attached? → store attachment reference; extract bounded text for this turn
   │
   └─ Normal text:
        │
@@ -138,9 +144,11 @@ index.py starts
   │
   ├─ collect_files(root) → os.walk with aggressive pruning
   │
-  ├─ current_state(paths) → {source_key: mtime}
+  ├─ SourceContext(root, collection_id, source_id)
   │
-  ├─ read_manifest() → canonicalized key map (collection:path → mtime)
+  ├─ current_state(paths) → content + pipeline fingerprints
+  │
+  ├─ read_manifest() → canonicalized key map (collection:source:path)
   │
   ├─ Diff: new_files, changed, deleted
   │
@@ -150,7 +158,7 @@ index.py starts
   │
   ├─ Embed nodes (bge-m3, no LLM needed)
   │
-  └─ persist to storage/ + write_manifest()
+  └─ stage index + manifest → journaled publish → generation marker
 ```
 
 ---
@@ -159,12 +167,15 @@ index.py starts
 
 | Layer | Mechanism |
 |---|---|
-| **Network** | Configurable bind address plus explicit CORS origins/regex |
-| **Protected endpoints** | Require loopback, opted-in private LAN, or admin token (`TRINAXAI_ADMIN_TOKEN`) |
-| **LAN control** | `TRINAXAI_ALLOW_LAN_SYSTEM=0` disables LAN system access |
+| **Network** | FastAPI and Ollama loopback by default; PWA gateway is the only LAN-facing service |
+| **Gateway identity** | Client peer/method/path signed with fresh HMAC; backend ignores ordinary forwarding headers |
+| **Device identity** | Single-use pairing; `chat,read_private` by default; scoped, revocable bearer token retained only for the browser session |
+| **Protected endpoints** | Direct loopback, matching device scope, or administrator super-credential; invalid supplied credentials fail closed |
+| **Ollama facade** | Explicit method/path allowlist, peer authorization, monotonic token bucket and shared inference lock |
+| **Agent** | Registered workspace roots; path/symlink enforcement; networkless Linux bubblewrap; fail closed without isolation |
 | **TLS** | Managed services can use local certificates; `TRINAXAI_TLS_VERIFY` controls selected outgoing verification |
-| **Sudoers** | `setup_trinaxai.sh` creates `/etc/sudoers.d/trinaxai` for service control |
-| **Data** | All data stays on device — no cloud uploads, no telemetry |
+| **Sudoers** | Optional exact command points to a root-owned lifecycle wrapper, never repository-editable scripts |
+| **Data** | Host-backed by default; web search, model/dependency downloads and configured remote endpoints are explicit network paths |
 
 ---
 
@@ -176,10 +187,14 @@ storage/
 ├── index_store.json       # LlamaIndex index metadata
 ├── *_vector_store.json    # Persisted vector stores/namespaces
 ├── graph_store.json       # LlamaIndex graph store
-├── manifest.json          # File→mtime for incremental indexing
+├── manifest.json          # Source/path→content + pipeline fingerprints
+├── .index-generation.json # Durable active-generation commit marker
+├── .proxy_secret          # Private gateway/backend HMAC key
+├── .device_secret         # Private key for device-token/code hashes
+├── device_pairing.json    # Scoped devices and code/token keyed hashes
 ├── collections.json       # Collection metadata
 ├── usage.jsonl            # Usage statistics (JSON lines)
-├── app_state.json         # Cross-device shared state
+├── app_state.json         # Schema-v2 values + monotonic server revision
 ├── chat_attachments/      # Host-backed synchronized chat files
 ├── usage_summary.json     # Cached usage aggregate
 └── user_memory*.json      # Memory entries/summary when present
@@ -195,8 +210,14 @@ storage/
 - **Heuristic auto-routing** — no LLM call, instant and free
 - **Collections** — first-class concept throughout the stack
 - **PWA over Electron** — lighter, phone-friendly, no native toolchain
-- **Incremental everything** — manifest-based change detection, seconds not hours
-- **localStorage as primary store** — with backup, compaction, and cross-device sync
+- **Transactional incremental index** — content/pipeline fingerprints plus one
+  cross-process writer lock and recoverable generation publication
+- **Explicit multi-source identity** — `source_id` prevents one root from
+  replacing or deleting another root's namesake files
+- **Versioned browser sync** — localStorage remains the client store, while
+  server revisions, operations and explicit deletes prevent blind snapshot overwrite
+- **Scoped device pairing** — a short local/admin-authorized ceremony issues a
+  revocable capability without distributing the administrator secret
 
 ---
 
@@ -208,10 +229,10 @@ This section helps contributors find the right files for common tasks.
 
 | What to change | Where |
 |---|---|
-| Chat endpoint logic | `rag_api.py` → `/v1/chat/completions` — migrating to `app/routes/chat.py` |
+| Chat endpoint logic | `app/routes/chat.py` + `app/services/rag_service.py` |
 | RAG retrieval + synthesis | `app/services/rag_service.py` (`run_rag`, `build_engine`, `prepare_query`) |
-| SSE streaming | `rag_api.py` `generate_stream()` + `chat-pwa/src/lib/api.ts` `parseRagSseLine()` |
-| Prompt template | `app/services/rag_service.py` `qa_prompt_tmpl` |
+| SSE streaming | `app/services/rag_service.py` `generate_stream()` + `chat-pwa/src/lib/api.ts` |
+| Prompt template | `app/generation/prompts.py` (`GROUNDED_QA_TEMPLATE`) |
 | Model auto-routing | `config.py` `route_model()` |
 | Frontend chat UI | `chat-pwa/src/components/ChatInterface.tsx` |
 | Frontend streaming hook | `chat-pwa/src/hooks/useStreamChat.ts` |
@@ -224,16 +245,17 @@ This section helps contributors find the right files for common tasks.
 | Chunking strategy | `index.py` — `CodeSplitter` for code, `SentenceSplitter` for prose |
 | Embeddings model | `config.py` `make_embed()` |
 | Incremental indexing | `index.py` manifest logic + `config.py` `MANIFEST_PATH` |
-| Index upload (browser folder) | `rag_api.py` `/system/index-upload` |
-| File watcher | `rag_api.py` `_watch_Handler` class + `/v1/watch/*` endpoints |
+| Transaction publication/recovery | `trinaxai_index_storage.py` |
+| Index upload (browser folder) | `app/routes/system.py` + `app/services/system_service.py` |
+| File watcher | `app/services/watcher_service.py` + `app/routes/watcher.py` |
 
 ### Memory System
 
 | What to change | Where |
 |---|---|
 | Memory CRUD | `app/services/memory_service.py` |
-| Memory summary (LLM) | `app/services/memory_service.py` `memory_refresh()` |
-| Memory injection in chat | `rag_api.py` context injection in prompt chain |
+| Memory summary (LLM) | `app/services/memory_service.py` `_memory_refresh_sync()` |
+| Relevant turn memory | `POST /v1/memory/context` + `app/services/memory_service.py::memory_context_for_query()`; delimited as untrusted data |
 | Frontend memory panel | `chat-pwa/src/components/MemoryPanel.tsx` |
 
 ### Knowledge Collections
@@ -241,7 +263,7 @@ This section helps contributors find the right files for common tasks.
 | What to change | Where |
 |---|---|
 | Collection CRUD | `app/services/collection_service.py` |
-| Collection endpoints | `rag_api.py` `/collections/*` — migrating to `app/routes/collections.py` |
+| Collection endpoints | `app/routes/collections.py` |
 | Collection-based retrieval filter | `app/services/rag_service.py` `_cached_retrieve()` |
 | Frontend collection UI | `chat-pwa/src/components/KnowledgeBrowser.tsx` |
 
@@ -279,6 +301,11 @@ This section helps contributors find the right files for common tasks.
 # Specific test files
 .venv/bin/python -m pytest tests/test_security_endpoints.py -v
 .venv/bin/python -m pytest tests/test_rag_api_reset_and_sources.py -v
+
+# Deterministic metric tests and a live/saved-result golden evaluation
+.venv/bin/python -m pytest tests/test_rag_metrics.py -v
+.venv/bin/python scripts/evaluate_rag.py --api-url https://localhost:3333 \
+  --token "$TRINAXAI_ADMIN_TOKEN" --output rag-eval-report.json
 
 # Lint
 .venv/bin/python -m ruff check .
@@ -319,50 +346,42 @@ These areas require extra care when modifying:
 
 | Zone | Risk | Mitigation |
 |---|---|---|
-| `/system/*` endpoints | Process control (startup, shutdown, reload) | Runtime guard is `rag_api.py::_authorize_system`; extracted `app/security/admin_auth.py` must stay in sync until route migration completes |
+| `/system/*` endpoints | Process control (startup, shutdown, reload) | Canonical guard: `app/security/admin_auth.py::authorize_system` |
 | `/system/index-upload` | File system writes | Path traversal prevention, size limits, sanitized names |
 | `_factory_reset_runtime_state` | Data deletion | Confirmation header required, only clears `storage/` and `local_sources/` |
-| `_authorize_system` / `authorize_system` | Access control bypass | Keep runtime and extracted auth logic behavior equivalent during migration |
+| `authorize_system` | Access control bypass | Keep the single implementation in `app/security/admin_auth.py` covered by endpoint tests |
 | CORS configuration | Cross-origin access | Default: localhost + LAN only; configurable via `TRINAXAI_CORS_ORIGINS` |
 | `_spawn_service_manager` | Subprocess execution | Only predefined actions, detached process |
-| Rate limiting | DoS protection | Token bucket per IP, 30 req/min default |
+| PWA `/api/rag` proxy | Remote-to-loopback privilege confusion | Strip client identity and attach a fresh HMAC-signed original peer |
+| PWA `/api/ollama` proxy | Model/disk administration and scheduler bypass | Fixed allowlist, remote credential, monotonic token bucket and inference lock |
+| Device pairing registry | Token theft, replay and over-broad access | Single-use expiring codes, keyed hashes, mode-0600 atomic files, scopes and revocation |
+| Agent shell | Host access and process escape | Registered roots, bubblewrap without network, process-group kill, fail closed |
+| Rate limiting | DoS protection | Monotonic token bucket per verified IP/bucket, capacity 30 with 60 s refill by default |
 
 ---
 
-## How LAN / System Control Works
+## How LAN Authorization Works
 
-```
-                     ┌──────────────────────────────┐
-                     │    authorize_system(request)  │
-                     └─────────────┬────────────────┘
-                                   │
-                    ┌──────────────┴──────────────┐
-                    │  ADMIN_TOKEN configured?     │
-                    └──────┬─────────────┬────────┘
-                           │ Yes         │ No
-                           ▼             ▼
-              ┌──────────────────┐   ┌──────────────────┐
-              │ Token matches?   │   │ Localhost?        │
-              └──┬───────────┬───┘   └──┬───────────┬───┘
-                 │ Yes       │ No       │ Yes       │ No
-                 ▼           ▼          ▼           ▼
-              ✅ ALLOW    ❌ 403     ✅ ALLOW   ┌──────────────┐
-                                               │ LAN enabled?  │
-                                               └──┬────────┬──┘
-                                                  │ Yes    │ No
-                                                  ▼        ▼
-                                           ┌──────────┐ ❌ 403
-                                           │ LAN IP?  │
-                                           └──┬───┬───┘
-                                              │Yes│No
-                                              ▼   ▼
-                                           ✅  ❌ 403
-```
+1. The gateway removes client-supplied forwarding/TrinaxAI identity headers,
+   verifies the remote device/admin credential, and signs the verified peer,
+   method, path and freshness data for its loopback FastAPI request.
+2. FastAPI accepts that assertion only from loopback with the shared HMAC key;
+   stale, replayed, malformed or path-mismatched assertions fail closed.
+3. A real direct-loopback caller has local operator privilege. A valid admin
+   token has every scope. A paired token receives only its recorded scopes.
+4. Each route asks for its concrete scope: `chat`, `read_private`, `index`,
+   `system`, or `agent`. A supplied but invalid credential is never ignored.
+5. The legacy private-LAN fallback applies only to system control when explicitly
+   enabled and no admin token exists. All other unmatched requests return `403`.
+6. `agent_yolo` never enables remote HTTP auto-approval; remote dangerous tools
+   always require an approval decision.
 
 **Defaults:**
 - `TRINAXAI_ADMIN_TOKEN` — empty (not set). Localhost access works automatically.
-- `TRINAXAI_ALLOW_LAN_SYSTEM` — `0` (disabled). Phones/tablets on WiFi can use the PWA but cannot call system endpoints.
-- Enable LAN system control with `--lan-system` during install, which generates a strong random token.
+- Device pairing grants `chat,read_private` unless the host explicitly requests
+  more scopes. The clear token is returned once and held in PWA `sessionStorage`.
+- `TRINAXAI_ALLOW_LAN_SYSTEM` — `0`; the legacy system-control fallback remains
+  disabled. Prefer pairing and keep the admin super-credential on the host.
 
 **Testing the security model:**
 ```bash
@@ -375,12 +394,14 @@ These areas require extra care when modifying:
 
 These principles guide all design and contribution decisions:
 
-1. **Local-first** — Everything runs on the user's device. No cloud dependencies, no telemetry, no data exfiltration.
-2. **Privacy by default** — Chat data, indexed code, and documents never leave the machine. No accounts, no analytics.
+1. **Local-first** — Local inference and host-backed storage are the default. Network use still occurs for installation/model downloads and any endpoints a user configures remotely.
+2. **Privacy by default** — Chat data, indexed code, and documents are stored locally by default. There are no built-in accounts; local usage metrics remain on the host.
 3. **No mandatory cloud** — Ollama runs locally. Optional: users can point to a remote Ollama instance on their own infrastructure.
 4. **Confirmations for dangerous actions** — Factory reset, collection deletion, and system shutdown require explicit confirmation headers or interactive prompts.
-5. **Security by default** — LAN system control is disabled. Admin tokens are auto-generated when enabled. CORS is restricted to localhost + trusted LAN.
-6. **Backward compatibility** — Breaking changes require a migration path. The `rag_api.py` → `app/` migration is incremental.
+5. **Security by default** — Backends bind to loopback, LAN capabilities require
+   scoped pairing, the legacy LAN fallback is disabled, and CORS remains only an
+   additional browser control rather than identity.
+6. **Backward compatibility** — `rag_api.py` remains a thin compatibility facade; new code uses `app.main`, routers and services directly.
 7. **Cross-platform with evidence** — Linux is CI-tested on Ubuntu. Windows and macOS have installers plus CI syntax/smoke validation, but full end-to-end OS validation must remain explicit.
 8. **Accessible** — Spanish and English bilingual support. PWA works on mobile. CLI works over SSH.
 9. **Small, focused PRs** — Prefer small, well-tested changes over large refactors. Each PR should address one concern.
@@ -398,5 +419,3 @@ These principles guide all design and contribution decisions:
 - [PWA Documentation](../chat-pwa/README.md) — Frontend runtime and development
 - [Security Policy](../SECURITY.md) — Threat model and reporting
 - [Contributing Guide](../CONTRIBUTING.md) — PR process and guidelines
-- [Roadmap](../ROADMAP.md) — Planned features and milestones
-- [Public Release Checklist](PUBLIC_RELEASE.md) — Pre-release audit steps

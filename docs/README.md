@@ -1,6 +1,19 @@
 # TrinaxAI Documentation
 
-This directory is the entry point for TrinaxAI's technical and operational documentation. It documents the current branch. For critical settings and endpoints, also verify `.env.example` and FastAPI's generated OpenAPI specification.
+This directory is the entry point for the technical and operational documentation of **TrinaxAI 1.1.0**, released under **AGPL-3.0-or-later**. It documents the current branch. For critical settings and endpoints, also verify `.env.example` and FastAPI's generated OpenAPI specification.
+
+## 1.1.0 capabilities
+
+| Area | Includes | Reference |
+|---|---|---|
+| Local chat and AI | Ollama, streaming, multi-model routing, and task-aware generation | [Architecture](ARCHITECTURE.md) |
+| RAG | AST indexing, vector + BM25, reranking, citations, collections, and source browsing | [Configuration](CONFIGURATION.md) |
+| Internet | Optional DuckDuckGo/Brave/SearXNG search, safe page reads, and deep research | [API](API_REFERENCE.md) |
+| Agent | CLI and PWA, file/shell tools, workspaces, sandboxing, and approvals | [CLI](CLI_REFERENCE.md) |
+| Multimodal | Vision, attachments, document extraction, STT, and TTS | [PWA](../chat-pwa/README.md) |
+| Local data | Memory, history, synchronization, statistics, watcher, and backups | [Architecture](ARCHITECTURE.md) |
+| Devices | Installable PWA, offline shell, LAN, scoped pairing, and revocation | [Security](../SECURITY.md) |
+| Operations | Installers, updater, service manager, doctor, and hardware profiles | [README](../README.md) |
 
 ## Start here
 
@@ -9,6 +22,7 @@ This directory is the entry point for TrinaxAI's technical and operational docum
 | Install and use TrinaxAI | [Main README](../README.md) |
 | Understand components and data flows | [Architecture](ARCHITECTURE.md) |
 | Configure models, networking, RAG, and the PWA | [Configuration reference](CONFIGURATION.md) |
+| Look up any environment variable | [Environment variable inventory](ENVIRONMENT_VARIABLES.md) |
 | Use the terminal interface | [CLI reference](CLI_REFERENCE.md) |
 | Integrate an HTTP client | [API reference](API_REFERENCE.md) |
 | Develop and debug | [Developer guide](DEVELOPER_GUIDE.md) |
@@ -27,13 +41,11 @@ This directory is the entry point for TrinaxAI's technical and operational docum
 - Run `./backup.sh` before upgrades or index changes.
 - See [support](../SUPPORT.md) for help and [security](../SECURITY.md) for vulnerability reports.
 
-## Contributing and releasing
+## Project and contributing
 
 - [Contributing](../CONTRIBUTING.md)
 - [Code of Conduct](../CODE_OF_CONDUCT.md)
-- [Release checklist](PUBLIC_RELEASE.md)
 - [Changelog](../CHANGELOG.md)
-- [Roadmap](../ROADMAP.md)
 
 ## Sources of truth
 
@@ -41,8 +53,8 @@ This directory is the entry point for TrinaxAI's technical and operational docum
 |---|---|
 | Python dependencies and tasks | `pyproject.toml`, `requirements*.txt`, `Makefile` |
 | CLI commands and flags | `trinaxai_cli/app.py` |
-| HTTP endpoints | `rag_api.py`, `app/routes/voice.py`, `/openapi.json` |
-| Environment variables | `.env.example`, `config.py`, `service_manager.py`, `chat-pwa/vite.config.ts` |
+| HTTP endpoints | `app/routes/`, `app/main.py`, `/openapi.json` |
+| Environment variables | `docs/ENVIRONMENT_VARIABLES.md`, `.env.example` |
 | Frontend scripts | `chat-pwa/package.json` |
 | PWA manifest, caching, and proxies | `chat-pwa/vite.config.ts` |
 
@@ -52,4 +64,3 @@ This directory is the entry point for TrinaxAI's technical and operational docum
 - Commands run from the repository root unless `cd chat-pwa` is shown.
 - Default ports are `3334` (PWA), `3333` (RAG API), and `11434` (Ollama).
 - Local data paths (`storage/`, `local_sources/`, `logs/`, `backups/`) must not be committed.
-

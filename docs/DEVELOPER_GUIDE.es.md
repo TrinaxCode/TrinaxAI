@@ -28,24 +28,30 @@ cp .env.example .env
 ```
 .
 ├── config.py              # Configuración central (modelos, perfiles, chunking)
-├── rag_api.py             # Backend FastAPI (RAG, memoria, colecciones, watcher)
+├── rag_api.py             # Punto de entrada compatible de la API
 ├── index.py               # Indexador de documentos (con conciencia AST, incremental)
+├── app/
+│   ├── main.py            # Fábrica canónica de FastAPI
+│   ├── routes/            # Routers HTTP pequeños agrupados por dominio
+│   ├── schemas/           # Contratos Pydantic compartidos
+│   ├── services/          # Chat, fuentes, memoria, indexación, sistema, etc.
+│   └── security/          # Autorización y rate limiting
 ├── trinaxai_cli/          # Interfaz de terminal (modular, con subcomandos)
 ├── trinaxai_cli.py        # CLI autónomo heredado (deprecado)
 ├── service_manager.py     # Supervisor de servicios multiplataforma
 ├── test_system.py         # Verificaciones de salud automatizadas
 │
 ├── chat-pwa/              # Frontend PWA en React
-│   ├── src/components/    # 18 componentes React
+│   ├── src/components/    # Componentes de UI en React
 │   ├── src/lib/           # Capa de API, config, estado compartido, perfil de usuario
-│   ├── src/hooks/         # useChatHistory, useStreamChat, useZenMode
-│   ├── src/i18n/          # Traducciones español/inglés (~250 claves)
+│   ├── src/hooks/         # useChatHistory y useStreamChat
+│   ├── src/i18n/          # Traducciones español/inglés
 │   └── vite.config.ts     # Config de build, plugin PWA, proxy de API
 │
 ├── scripts/               # Herramientas de release (public_readiness.py)
 ├── docs/                  # Documentación (referencia de API, arquitectura, guía dev)
 ├── storage/               # Índices persistidos, manifiesto, colecciones
-├── certs/                 # Certificados HTTPS autofirmados para desarrollo local
+├── chat-pwa/certs/        # Certificados HTTPS locales (generados localmente)
 └── .github/               # CI, plantilla de PR, plantillas de issues
 ```
 
@@ -67,7 +73,7 @@ cp .env.example .env
 - Usa `const` para variables no reasignadas
 - Los componentes son funcionales con hooks, sin componentes de clase (excepto `ErrorBoundary`)
 - i18n: añade nuevas cadenas en `translations.ts` tanto en `es` como en `en`
-- CSS: clases de utilidad Tailwind; CSS personalizado solo en `index.css`
+- CSS: utilidades Tailwind y CSS local junto a componentes complejos
 
 ### Scripts de Shell
 
@@ -93,26 +99,29 @@ cp .env.example .env
 
 ## Añadir un Nuevo Endpoint de API
 
-1. Añade la función del endpoint en `rag_api.py`:
+1. Añade la lógica al módulo correspondiente de `app/services/`.
+2. Regístrala en el router correspondiente de `app/routes/*.py`:
    ```python
-   @app.get("/v1/my-feature")
+   @router.get("/v1/my-feature")
    async def my_feature(request: Request):
-       # No se necesita autenticación para endpoints de solo lectura
+       # Clasifica los datos: las lecturas privadas usan authorize_system
+       # (preferible como dependencia del router). Solo health/resources
+       # declarados públicos omiten autorización.
        return {"ok": True}
    ```
 
    Para endpoints de sistema que modifican el estado:
    ```python
-   @app.post("/system/my-action")
+   @router.post("/system/my-action")
    async def my_action(request: Request):
-       _authorize_system(request)
+       authorize_system(request)
        # ...
        return {"ok": True}
    ```
 
-2. Añádelo a la referencia de API en `docs/API_REFERENCE.es.md`
-3. Añádelo a la documentación integrada en la sección de API de `Docs.tsx`
-4. Si la PWA lo necesita, añade la función fetch en `chat-pwa/src/lib/api.ts`
+3. Añade o actualiza el contrato Pydantic en `app/schemas/`.
+4. Añade una prueba de contrato y actualiza `docs/API_REFERENCE.es.md`.
+5. Si la PWA lo necesita, añade la función fetch en `chat-pwa/src/lib/api.ts`.
 
 ---
 
@@ -195,7 +204,9 @@ npm run dev
 ```
 
 ### Caché del Service Worker
-La PWA usa `vite-plugin-pwa` con `registerType: 'autoUpdate'`. Durante el desarrollo, el service worker **no** se registra para evitar problemas de caché. Para probar funciones de PWA:
+La PWA usa `vite-plugin-pwa` con `registerType: 'prompt'`: una actualización
+espera la decisión de la persona y no interrumpe un stream o borrador. Durante
+desarrollo, el service worker **no** se registra para evitar cachés. Para probar:
 
 ```bash
 npm run build

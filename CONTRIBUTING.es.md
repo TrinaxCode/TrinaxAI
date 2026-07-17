@@ -102,7 +102,7 @@ trinaxai doctor
 python3 test_system.py --verbose
 ```
 
-Consulta `docs/PUBLIC_RELEASE.es.md` para el checklist completo de publicación.
+Ejecuta `make readiness` antes de abrir un pull request orientado a publicación.
 
 ## Estilo de commits
 

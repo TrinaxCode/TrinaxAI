@@ -152,7 +152,7 @@ Recommended values:
 
 ```text
 TRINAXAI_PROFILE=16gb
-TRINAXAI_HOST=0.0.0.0
+TRINAXAI_HOST=127.0.0.1
 TRINAXAI_PORT=3333
 TRINAXAI_INDEX_DIR=~/Documents
 TRINAXAI_ALLOW_LAN_SYSTEM=0
@@ -180,32 +180,19 @@ TRINAXAI_CORS_ORIGINS=https://localhost:3334,http://localhost:3334,https://192.1
 
 ## Download models
 
-Base:
+Recommended `16gb` profile:
 
 ```powershell
 ollama pull qwen2.5-coder:3b
-ollama pull qwen3:4b-instruct-2507-q4_K_M
+ollama pull qwen3.5:9b
+ollama pull granite4:3b
 ollama pull bge-m3
 ```
 
-Vision:
-
-```powershell
-ollama pull qwen3-vl:4b
-```
-
-Machines with 16 GB or more:
-
-```powershell
-ollama pull qwen2.5-coder:7b
-```
-
-Machines with 32 GB or more:
-
-```powershell
-ollama pull qwen3-coder:30b
-ollama pull qwen3-vl:32b
-```
+For every other profile, follow the current
+[Models & profiles table](../README.md#-models--profiles). The installer selects
+and pulls the text/RAG fleet automatically. Vision models download on first
+image analysis.
 
 ## Index your files
 
@@ -327,7 +314,10 @@ powershell -ExecutionPolicy Bypass -File .\update.ps1
 
 The updater asks whether to create a backup, pull latest code, update models, change autostart, restart services, and run the readiness audit. Python/npm dependencies and the PWA build still run automatically.
 
-The installer creates a weekly Windows task named `TrinaxAI Weekly Update`. It fetches the newest updater, refreshes the complete application, preserves user data, and records its result in `logs\auto-update.log`.
+The installer creates a weekly Windows task named `TrinaxAI Weekly Update`.
+Despite the historical name, it is check-only: it records update availability
+in `logs\auto-update.log` and never downloads/executes an updater or changes the
+installation. Review the tagged release and run `update.ps1` manually.
 
 ## Backups
 
@@ -342,6 +332,11 @@ If you have Git Bash:
 ```bash
 ./backup.sh create
 ```
+
+The archive contains `.env`, chats, attachments, sources and indexes. The
+script makes it private (`0600` where supported); encrypt off-host copies. A
+restore validates paths/types, stages extraction and rolls back failed
+replacement. Test restoration before upgrading.
 
 ## Uninstall
 
@@ -374,7 +369,7 @@ To access from a phone/tablet, Windows Defender Firewall must allow Node/Python 
 | PowerShell permission error | Run with `-ExecutionPolicy Bypass`. |
 | PWA cannot open from phone | Run PowerShell as Administrator and re-run `install.ps1` so it can add Private-network firewall rules for TCP 3333/3334. Also verify same Wi-Fi. |
 | HTTPS API shows invalid certificate | Normal with a local certificate; accept the warning. |
-| Out of memory | Use the `8gb` profile. It installs `qwen3:4b-instruct-2507-q4_K_M`, `llama3.2:1b` (fast), `qwen2.5-coder:1.5b`, and `bge-m3` by default. |
+| Out of memory | Use the `8gb` profile. Its defaults include `qwen3.5:4b`, `qwen3.5:0.8b` (fast), `qwen2.5-coder:1.5b`, and `bge-m3`; reduce context or choose smaller models if necessary. |
 
 ## Note on WSL
 

@@ -148,7 +148,7 @@ Valores recomendados para empezar:
 
 ```bash
 TRINAXAI_PROFILE=16gb
-TRINAXAI_HOST=0.0.0.0
+TRINAXAI_HOST=127.0.0.1
 TRINAXAI_PORT=3333
 TRINAXAI_INDEX_DIR=~/Documents
 TRINAXAI_ALLOW_LAN_SYSTEM=0
@@ -172,32 +172,19 @@ TRINAXAI_CORS_ORIGINS=https://localhost:3334,http://localhost:3334,https://192.1
 
 ## Descargar modelos
 
-Modelos base:
+Perfil `16gb` recomendado:
 
 ```bash
 ollama pull qwen2.5-coder:3b
-ollama pull qwen3:4b-instruct-2507-q4_K_M
+ollama pull qwen3.5:9b
+ollama pull granite4:3b
 ollama pull bge-m3
 ```
 
-Vision:
-
-```bash
-ollama pull qwen3-vl:4b
-```
-
-Equipos con mas memoria:
-
-```bash
-ollama pull qwen2.5-coder:7b
-```
-
-Perfil ultra:
-
-```bash
-ollama pull qwen3-coder:30b
-ollama pull qwen3-vl:32b
-```
+Para `8gb`, `max` y `ultra`, usa la flota vigente de la
+[tabla de modelos y perfiles](../README.es.md#-modelos-y-perfiles). El instalador
+descarga el conjunto de texto/RAG. Vision se descarga al analizar la primera
+imagen; los pulls manuales solo hacen falta en setups personalizados.
 
 ## Indexar tus archivos
 
@@ -352,16 +339,20 @@ cd ~/trinaxai
 
 El actualizador pregunta si quieres crear backup, descargar codigo nuevo, actualizar modelos, cambiar autoarranque, reiniciar servicios y correr la auditoria. Las dependencias Python/npm y el build de la PWA siguen siendo automaticos.
 
-El instalador también activa un timer persistente de usuario que comprueba GitHub cada semana y ejecuta una actualización segura sin preguntas. Consulta `logs/auto-update.log` o desactívalo con `python scripts/auto_update.py disable`.
+El instalador activa un timer que comprueba GitHub semanalmente y registra si
+hay una actualización en `logs/auto-update.log`. Es solo comprobación: no
+descarga/ejecuta un updater ni modifica servicios. Revisa el release etiquetado
+y ejecuta manualmente el actualizador local guiado. Desactívalo con
+`python scripts/auto_update.py disable`.
 
 Si actualizas manualmente:
 
 ```bash
 git pull
 source .venv/bin/activate
-python -m pip install -r requirements.txt
+python -m pip install --require-hashes -r requirements.lock
 cd chat-pwa
-npm install
+npm ci
 npm run build
 cd ..
 ```
@@ -373,6 +364,11 @@ Crear backup:
 ```bash
 ./backup.sh create
 ```
+
+El archive se publica con modo `0600` y contiene `.env`, chats, adjuntos,
+fuentes e índices privados. Cifra toda copia off-host. Restore valida rutas y
+tipos, extrae a staging y revierte un reemplazo fallido; aun así prueba la
+restauración antes de actualizar.
 
 Respaldar manualmente lo importante:
 

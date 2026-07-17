@@ -135,7 +135,7 @@ Recommended values:
 
 ```bash
 TRINAXAI_PROFILE=16gb
-TRINAXAI_HOST=0.0.0.0
+TRINAXAI_HOST=127.0.0.1
 TRINAXAI_PORT=3333
 TRINAXAI_INDEX_DIR=~/Documents
 TRINAXAI_ALLOW_LAN_SYSTEM=0
@@ -165,32 +165,19 @@ TRINAXAI_CORS_ORIGINS=https://localhost:3334,http://localhost:3334,https://192.1
 
 ## Download models
 
-Base:
+Recommended `16gb` profile:
 
 ```bash
 ollama pull qwen2.5-coder:3b
-ollama pull qwen3:4b-instruct-2507-q4_K_M
+ollama pull qwen3.5:9b
+ollama pull granite4:3b
 ollama pull bge-m3
 ```
 
-Vision:
-
-```bash
-ollama pull qwen3-vl:4b
-```
-
-Apple Silicon with 16 GB or more:
-
-```bash
-ollama pull qwen2.5-coder:7b
-```
-
-Machines with 32 GB or more:
-
-```bash
-ollama pull qwen3-coder:30b
-ollama pull qwen3-vl:32b
-```
+For every other profile, follow the current
+[Models & profiles table](../README.md#-models--profiles). The installer selects
+and pulls the text/RAG fleet automatically. Vision models download on first
+image analysis.
 
 ## Index your files
 
@@ -324,16 +311,19 @@ cd ~/trinaxai
 
 The updater asks whether to create a backup, pull latest code, update models, change autostart, restart services, and run the readiness audit. Python/npm dependencies and the PWA build still run automatically.
 
-The installer also creates a weekly LaunchAgent for safe automatic updates. Results are stored in `logs/auto-update.log`; disable it with `python scripts/auto_update.py disable`.
+The installer also creates a weekly check-only LaunchAgent. It records update
+availability in `logs/auto-update.log` but never downloads/executes an updater
+or changes the install. Review the tagged release and run the local updater
+manually; disable checks with `python scripts/auto_update.py disable`.
 
 Manual update:
 
 ```bash
 git pull
 source .venv/bin/activate
-python -m pip install -r requirements.txt
+python -m pip install --require-hashes -r requirements.lock
 cd chat-pwa
-npm install
+npm ci
 npm run build
 cd ..
 ```
@@ -343,6 +333,11 @@ cd ..
 ```bash
 ./backup.sh create
 ```
+
+The archive is published with mode `0600` and contains `.env`, chats,
+attachments, sources and indexes. Encrypt off-host copies. Restore validates
+paths/types, stages extraction and rolls back a failed replacement; test it
+before upgrading.
 
 Important data:
 

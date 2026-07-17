@@ -133,7 +133,7 @@ Valores recomendados:
 
 ```bash
 TRINAXAI_PROFILE=16gb
-TRINAXAI_HOST=0.0.0.0
+TRINAXAI_HOST=127.0.0.1
 TRINAXAI_PORT=3333
 TRINAXAI_INDEX_DIR=~/Documents
 TRINAXAI_ALLOW_LAN_SYSTEM=0
@@ -163,32 +163,19 @@ TRINAXAI_CORS_ORIGINS=https://localhost:3334,http://localhost:3334,https://192.1
 
 ## Descargar modelos
 
-Base:
+Perfil `16gb` recomendado:
 
 ```bash
 ollama pull qwen2.5-coder:3b
-ollama pull qwen3:4b-instruct-2507-q4_K_M
+ollama pull qwen3.5:9b
+ollama pull granite4:3b
 ollama pull bge-m3
 ```
 
-Vision:
-
-```bash
-ollama pull qwen3-vl:4b
-```
-
-Apple Silicon con 16 GB o mas:
-
-```bash
-ollama pull qwen2.5-coder:7b
-```
-
-Equipos con 32 GB o mas:
-
-```bash
-ollama pull qwen3-coder:30b
-ollama pull qwen3-vl:32b
-```
+Para los demás perfiles, consulta la
+[tabla vigente de modelos y perfiles](../README.es.md#-modelos-y-perfiles). El
+instalador selecciona y descarga automáticamente la flota de texto/RAG. Vision
+se descarga al analizar la primera imagen.
 
 ## Indexar tus archivos
 
@@ -322,16 +309,19 @@ cd ~/trinaxai
 
 El actualizador pregunta si quieres crear backup, descargar codigo nuevo, actualizar modelos, cambiar autoarranque, reiniciar servicios y correr la auditoria. Las dependencias Python/npm y el build de la PWA siguen siendo automaticos.
 
-El instalador también crea un LaunchAgent semanal para actualizaciones automáticas seguras. Los resultados quedan en `logs/auto-update.log`; puedes desactivarlo con `python scripts/auto_update.py disable`.
+El instalador crea un LaunchAgent semanal solo de comprobación. Registra
+disponibilidad en `logs/auto-update.log`, pero nunca descarga/ejecuta un updater
+ni cambia la instalación. Revisa el release y ejecuta manualmente el updater
+local; desactívalo con `python scripts/auto_update.py disable`.
 
 Actualizacion manual:
 
 ```bash
 git pull
 source .venv/bin/activate
-python -m pip install -r requirements.txt
+python -m pip install --require-hashes -r requirements.lock
 cd chat-pwa
-npm install
+npm ci
 npm run build
 cd ..
 ```
@@ -341,6 +331,10 @@ cd ..
 ```bash
 ./backup.sh create
 ```
+
+El archive se publica con modo `0600` y contiene `.env`, chats, adjuntos,
+fuentes e índices. Cifra copias off-host. Restore valida rutas/tipos, extrae a
+staging y revierte un reemplazo fallido; pruébalo antes de actualizar.
 
 Datos importantes:
 
