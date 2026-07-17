@@ -15,6 +15,37 @@ import sys
 from contextlib import contextmanager
 from typing import Any, Callable, Iterator, Sequence
 
+try:
+    from prompt_toolkit import PromptSession
+    from prompt_toolkit.completion import Completer, Completion
+    from prompt_toolkit.formatted_text import HTML
+    from prompt_toolkit.history import InMemoryHistory
+
+    _PROMPT_TOOLKIT = True
+except ImportError:  # pragma: no cover - fallback for minimal installations
+    PromptSession = None  # type: ignore[assignment,misc]
+    Completer = object  # type: ignore[assignment,misc]
+    Completion = None  # type: ignore[assignment,misc]
+    HTML = None  # type: ignore[assignment,misc]
+    InMemoryHistory = None  # type: ignore[assignment,misc]
+    _PROMPT_TOOLKIT = False
+
+
+class SlashCommandCompleter(Completer):
+    """Show and filter slash commands while the first token is being typed."""
+
+    def __init__(self, commands: Sequence[tuple[str, str]]) -> None:
+        self.commands = tuple(commands)
+
+    def get_completions(self, document: Any, complete_event: Any) -> Iterator[Any]:
+        before = document.text_before_cursor
+        if not before.startswith("/") or any(char.isspace() for char in before):
+            return
+        needle = before.casefold()
+        for name, summary in self.commands:
+            if name.casefold().startswith(needle):
+                yield Completion(name, start_position=-len(before), display_meta=summary)
+
 # ----------------------------------------------------------------- rich import
 _RICH: bool = False
 _rich_console_cls: Any = None
@@ -75,6 +106,7 @@ class Console:
         self.no_color = not _want_color(no_color)
         self._color_enabled = not self.no_color
         self._rich_console: Any = None
+        self._chat_session: Any = None
         if _RICH:
             try:
                 self._rich_console = _rich_console_cls(no_color=self.no_color, force_terminal=None)
@@ -176,22 +208,34 @@ class Console:
     # --------------------------------------------------------------- spinner
     @contextmanager
     def spinner(self, text: str) -> Iterator[None]:
+        progress: Any = None
         if _RICH and _rich_progress_cls is not None:
             try:
-                with _rich_progress_cls(
+                progress = _rich_progress_cls(
                     _rich_spinner_column_cls(),
                     _rich_text_column_cls(text),
                     transient=True,
                     console=self._rich_console,
-                ) as progress:
+                )
+            except Exception:
+                progress = None
+        if progress is not None:
+            # Do not catch exceptions raised by the command body here. A
+            # contextmanager may only yield once, and swallowing such an
+            # exception before falling back would trigger "generator didn't
+            # stop after throw()" instead of showing the real command error.
+            with progress:
+                try:
                     progress.start()
                     yield
-                return
-            except Exception:
-                pass
+                finally:
+                    progress.stop()
+            return
         print(f"... {text}")
-        yield
-        print("    done")
+        try:
+            yield
+        finally:
+            print("    done")
 
     @contextmanager
     def thinking(self, text: str = "TrinaxAI is thinking...") -> Iterator[Callable[[], None]]:
@@ -216,6 +260,116 @@ class Console:
             yield stop
         finally:
             stop()
+
+    # ---------------------------------------------------------------- branding
+    def banner(self, subtitle: str | None = None) -> None:
+        """Render the big TrinaxAI banner (gradient when colour is enabled)."""
+        try:
+            from trinaxai_cli import branding
+
+            branding.render_banner(self, subtitle=subtitle)
+        except Exception:
+            # Branding must never break startup.
+            self.print("TrinaxAI")
+
+    def clear(self) -> None:
+        """Clear terminal history for an immersive interactive launch."""
+        try:
+            from trinaxai_cli import branding
+
+            branding.clear_terminal()
+        except Exception:
+            pass
+
+    def set_title(self, title: str = "TrinaxAI") -> None:
+        """Set the terminal title (no-op without a TTY or with colour off)."""
+        if self.no_color:
+            return
+        try:
+            from trinaxai_cli import branding
+
+            branding.set_terminal_title(title)
+        except Exception:
+            pass
+
+    # ------------------------------------------------------------------ chat
+    def chat_prompt(
+        self,
+        mode: str | None = None,
+        slash_commands: Sequence[tuple[str, str]] = (),
+    ) -> str:
+        """Ask the user for a chat turn with a distinct, coloured speaker marker.
+
+        Renders as a green ``● You`` label so the user's turns are visually
+        separated from TrinaxAI's blue replies for quick visual scanning.
+        A leading blank line gives each turn breathing room. Raises
+        ``EOFError``/``KeyboardInterrupt`` so the REPL loop can exit on Ctrl-D.
+        """
+        hint = f" ({mode})" if mode else ""
+        if _PROMPT_TOOLKIT and sys.stdin.isatty() and sys.stdout.isatty():
+            if self._chat_session is None:
+                self._chat_session = PromptSession(history=InMemoryHistory())
+            completer = SlashCommandCompleter(slash_commands)
+            label = f"● You{hint}  "
+            try:
+                return self._chat_session.prompt(
+                    HTML(f"<b><ansigreen>{label}</ansigreen></b>"),
+                    completer=completer,
+                    complete_while_typing=True,
+                    reserve_space_for_menu=min(12, max(4, len(slash_commands))),
+                ).strip()
+            except (EOFError, KeyboardInterrupt):
+                raise
+            except Exception:
+                # Keep the CLI usable on unusual terminals.
+                pass
+        if _RICH and _rich_prompt_cls is not None and self._rich_console is not None:
+            try:
+                from trinaxai_cli import branding
+
+                self._rich_console.print("")
+                if self._color_enabled:
+                    question = (
+                        f"[bold {branding.USER_ACCENT}]● You[/]"
+                        f"[dim]{hint}[/dim]"
+                    )
+                else:
+                    question = f"● You{hint}"
+                prompt_obj = _rich_prompt_cls(question, console=self._rich_console)
+                prompt_obj.prompt_suffix = "  "
+                return prompt_obj()
+            except (EOFError, KeyboardInterrupt):
+                raise
+            except Exception:
+                pass
+        print("")
+        return input(f"● You{hint}  ").strip()
+
+    def assistant_label(self, name: str = "TrinaxAI") -> None:
+        """Print the blue ``● TrinaxAI`` speaker label on its own line.
+
+        Callers stream the answer on the lines that follow, so the transcript
+        reads as a chat with clearly attributed turns.
+        """
+        if self._rich_console is not None and self._color_enabled:
+            try:
+                from trinaxai_cli import branding
+
+                self._rich_console.print("")
+                self._rich_console.print(f"[bold {branding.BRAND_BLUE}]● {name}[/]")
+                return
+            except Exception:
+                pass
+        self.print("")
+        self.print(f"● {name}")
+
+    def reset_title(self) -> None:
+        try:
+            from trinaxai_cli import branding
+
+            branding.reset_terminal_title()
+        except Exception:
+            pass
 
     # ----------------------------------------------------------------- table
     def table(

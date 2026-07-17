@@ -7,8 +7,7 @@
 #  Hace 3 cosas:
 #   1. Optimiza Ollama (KEEP_ALIVE, 2 modelos cargados, paralelismo)
 #      -> arregla la lentitud (antes recargaba 3GB en cada consulta).
-#   2. Permite encender/apagar TrinaxAI desde la PWA sin contraseña
-#      (sudoers para startup_ai.sh y shutdown_ai.sh).
+#   2. Instala un wrapper de lifecycle mínimo y propiedad de root.
 #   3. Habilita y reinicia los servicios.
 # ============================================================
 # Guard: bash is required for brace expansion and arrays.
@@ -48,26 +47,40 @@ Environment="OLLAMA_KEEP_ALIVE=30m"
 Environment="OLLAMA_MAX_LOADED_MODELS=2"
 # Paralelismo para indexado rápido (python index.py) y varias peticiones.
 Environment="OLLAMA_NUM_PARALLEL=4"
-# Accesible desde el teléfono en la LAN.
-# ⚠️  SECURITY: Esto expone Ollama a toda tu red local SIN autenticación.
-#     Cualquier dispositivo en tu LAN puede usar tus modelos de IA.
-#     Recomendación: usa un firewall para restringir el puerto 11434,
-#     o configura una VPN (Tailscale/WireGuard) para acceso remoto seguro.
-Environment="OLLAMA_HOST=0.0.0.0"
-Environment="OLLAMA_ORIGINS=*"
+# Ollama nunca se publica directamente en la LAN. La PWA usa el gateway
+# autenticado de TrinaxAI, que aplica límites y una allowlist de operaciones.
+Environment="OLLAMA_HOST=127.0.0.1:11434"
+Environment="OLLAMA_ORIGINS=http://localhost:3334,http://127.0.0.1:3334"
 EOF
 echo -e "      ${GREEN}✓${NC} override.conf actualizado"
 
-echo -e "${BLUE}[2/4]${NC} Permisos sudo para encender/apagar desde la PWA..."
-echo -e "      ${RED}⚠${NC}  Los scripts startup_ai.sh y shutdown_ai.sh son ejecutables"
-echo -e "      ${RED}⚠${NC}  como root sin contraseña. Si un atacante compromete tu"
-echo -e "      ${RED}⚠${NC}  cuenta de usuario, podría modificarlos para ejecutar"
-echo -e "      ${RED}⚠${NC}  comandos arbitrarios como root."
-echo -e "      ${RED}⚠${NC}  Para producción, mueve estos scripts a /usr/local/lib/trinaxai/"
-echo -e "      ${RED}⚠${NC}  y actualiza la regla sudoers."
+echo -e "${BLUE}[2/4]${NC} Wrapper seguro para encender/apagar desde la PWA..."
+LIFECYCLE_DIR=/usr/local/libexec/trinaxai
+LIFECYCLE_WRAPPER=$LIFECYCLE_DIR/trinaxai-lifecycle
+install -d -o root -g root -m 0755 "$LIFECYCLE_DIR"
+cat > "$LIFECYCLE_WRAPPER" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+case "${1:-}" in
+  start-ai)
+    systemctl enable ollama.service ai-rag.service >/dev/null
+    systemctl start ollama.service ai-rag.service trinaxai-frontend.service
+    ;;
+  stop-ai)
+    systemctl disable --now ai-rag.service ollama.service >/dev/null
+    ;;
+  *)
+    echo "usage: trinaxai-lifecycle {start-ai|stop-ai}" >&2
+    exit 2
+    ;;
+esac
+EOF
+chown root:root "$LIFECYCLE_WRAPPER"
+chmod 0755 "$LIFECYCLE_WRAPPER"
 cat > /etc/sudoers.d/trinaxai <<EOF
-# Permite a la PWA ejecutar el arranque/apagado de TrinaxAI sin contraseña.
-$USER_NAME ALL=(root) NOPASSWD: $PROJ/startup_ai.sh, $PROJ/shutdown_ai.sh
+# Wrapper fijo, propiedad de root, con argumentos exactos. El repositorio y
+# sus scripts nunca se ejecutan como root.
+$USER_NAME ALL=(root) NOPASSWD: $LIFECYCLE_WRAPPER start-ai, $LIFECYCLE_WRAPPER stop-ai
 EOF
 chmod 0440 /etc/sudoers.d/trinaxai
 # Validar sintaxis sudoers; si falla, eliminar para no romper sudo.
@@ -91,7 +104,7 @@ Type=simple
 User=$USER_NAME
 WorkingDirectory=$PROJ
 EnvironmentFile=-$PROJ/.env
-ExecStart=$(which bash) -lc 'cd "$PROJ" && source .venv/bin/activate && exec python rag_api.py'
+ExecStart=$(which bash) -lc 'cd "$PROJ" && source .venv/bin/activate && if [ "\${TRINAXAI_RAG_HTTPS:-1}" != "0" ] && [ "\${TRINAXAI_RAG_HTTPS:-1}" != "false" ] && [ -f "$PROJ/chat-pwa/certs/localhost-key.pem" ] && [ -f "$PROJ/chat-pwa/certs/localhost.pem" ]; then exec python -m uvicorn app.main:app --host 127.0.0.1 --port \${TRINAXAI_PORT:-3333} --ssl-keyfile "$PROJ/chat-pwa/certs/localhost-key.pem" --ssl-certfile "$PROJ/chat-pwa/certs/localhost.pem"; else exec python -m uvicorn app.main:app --host 127.0.0.1 --port \${TRINAXAI_PORT:-3333}; fi'
 Restart=on-failure
 RestartSec=5
 
@@ -130,12 +143,14 @@ done
 # Asegurar la flota de modelos (auto-router + embeddings + visión).
 echo -e "      ${BLUE}·${NC} Verificando modelos (descarga los que falten)..."
 if [ "$PROFILE" = "8gb" ]; then
-    MODELS=(bge-m3 qwen3:4b-instruct-2507-q4_K_M llama3.2:1b qwen2.5-coder:1.5b qwen2.5-coder:3b qwen3-vl:2b qwen3-vl:4b)
-elif [ "$PROFILE" = "max" ] || [ "$PROFILE" = "ultra" ]; then
-    MODELS=(bge-m3 qwen3:30b-a3b-instruct-2507-q4_K_M qwen3:4b-instruct-2507-q4_K_M qwen2.5-coder:7b qwen3-coder:30b qwen3-vl:8b qwen3-vl:32b)
+    MODELS=(bge-m3 qwen3.5:0.8b qwen3.5:4b qwen2.5-coder:1.5b qwen3-vl:2b-instruct)
+elif [ "$PROFILE" = "ultra" ]; then
+    MODELS=(bge-m3 qwen3.5:4b qwen3.5:35b-a3b qwen2.5-coder:14b qwen3-vl:32b-instruct)
+elif [ "$PROFILE" = "max" ]; then
+    MODELS=(bge-m3 qwen3.5:4b qwen3.5:27b qwen2.5-coder:7b qwen3-vl:30b-a3b-instruct)
 else
     # 16gb (default)
-    MODELS=(bge-m3 qwen3:4b-instruct-2507-q4_K_M qwen2.5-coder:3b qwen2.5-coder:7b qwen3-vl:4b qwen3-vl:8b)
+    MODELS=(bge-m3 granite4:3b qwen3.5:9b qwen2.5-coder:3b qwen3-vl:8b-instruct)
 fi
 for m in "${MODELS[@]}"; do
     if ! sudo -u "$USER_NAME" ollama list 2>/dev/null | grep -qF "$m"; then
@@ -144,7 +159,7 @@ for m in "${MODELS[@]}"; do
 done
 # Eliminar modelos obsoletos (reemplazados por versiones más recientes en 2026).
 # Si usas estos modelos en otros proyectos, presiona Ctrl+C en los próximos 5 segundos.
-_LEGACY_MODELS=(nomic-embed-text llava:7b moondream qwen2.5vl:3b qwen2.5vl:7b llama3.2:3b qwen2.5-coder:1.5b qwen2.5-coder:14b)
+_LEGACY_MODELS=(nomic-embed-text llava:7b moondream qwen3-vl:2b qwen3-vl:4b qwen3-vl:8b qwen3-vl:32b llama3.2:3b qwen2.5-coder:1.5b qwen2.5-coder:14b)
 _PRESENT=()
 for m in "${_LEGACY_MODELS[@]}"; do
     sudo -u "$USER_NAME" ollama list 2>/dev/null | grep -qF "$m" && _PRESENT+=("$m") || true

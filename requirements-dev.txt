@@ -1,3 +1,5 @@
 pytest>=8.0
 ruff>=0.8
-pip-audit>=2.7
+pip-audit>=2.10.1
+bandit>=1.9.4
+pytest-cov>=7.0

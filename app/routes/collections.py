@@ -1,7 +1,11 @@
-"""Collection routes — CRUD for RAG collections.
+"""Knowledge collection CRUD routes."""
 
-Currently defined in rag_api.py. Will be migrated here incrementally.
-See app/services/collection_service.py for extracted logic.
-"""
+from fastapi import APIRouter
 
-# Route registration happens in rag_api.py for now.
+from app.services import collection_service as runtime
+
+router = APIRouter(tags=["collections"])
+router.add_api_route("/collections", runtime.collections_get, methods=["GET"])
+router.add_api_route("/collections", runtime.collections_create, methods=["POST"])
+router.add_api_route("/collections/{collection_id}", runtime.collections_update, methods=["PATCH"])
+router.add_api_route("/collections/{collection_id}", runtime.collections_delete, methods=["DELETE"])

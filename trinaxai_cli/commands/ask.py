@@ -22,6 +22,10 @@ def run(args: Any, client: Any, ui: Any, config: Any) -> int:
     messages = [{"role": "user", "content": prompt}]
     collections = _collections(getattr(args, "collections", None))
     engine = _resolve_engine(args, config, collections)
+    if engine == "rag" and not collections:
+        collections = list(getattr(config, "collections", None) or [])
+        if not collections:
+            collections = [getattr(config, "active_collection", "default")]
     with Session(getattr(args, "session", None) or new_session_name()) as session:
         session.append("user", prompt)
         try:

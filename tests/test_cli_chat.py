@@ -5,8 +5,41 @@ from contextlib import contextmanager
 from types import SimpleNamespace
 from typing import Any, Iterator
 
-from trinaxai_cli.commands import chat
+from trinaxai_cli import prompts
+from trinaxai_cli.commands import ask, chat
 from trinaxai_cli.config import CLIConfig
+from trinaxai_cli.ui import SlashCommandCompleter
+
+
+def test_slash_command_completer_opens_on_slash_and_filters() -> None:
+    from prompt_toolkit.completion import CompleteEvent
+    from prompt_toolkit.document import Document
+
+    completer = SlashCommandCompleter(
+        (("/agent", "Agentic mode"), ("/auto", "Automatic routing"), ("/web", "Web search"))
+    )
+    all_names = [
+        item.text
+        for item in completer.get_completions(Document("/", cursor_position=1), CompleteEvent())
+    ]
+    filtered = [
+        item.text
+        for item in completer.get_completions(Document("/ag", cursor_position=3), CompleteEvent())
+    ]
+
+    assert all_names == ["/agent", "/auto", "/web"]
+    assert filtered == ["/agent"]
+
+
+def test_bare_slash_prints_the_command_menu() -> None:
+    ui = FakeUI()
+
+    handled, exit_code = chat._handle_slash("/", [], object(), ui, CLIConfig(), chat.ChatState())
+
+    assert handled is True
+    assert exit_code is None
+    assert "Slash commands:" in ui.output
+    assert "/research" in ui.output
 
 
 class FakeResponse:
@@ -25,6 +58,13 @@ class FakeResponse:
         yield from self.lines
 
 
+def test_cli_identity_answers_are_complete_and_deterministic() -> None:
+    identity = prompts.canonical_identity_answer([{"role": "user", "content": "quien eres"}])
+    creator = prompts.canonical_identity_answer([{"role": "user", "content": "quien te creo"}])
+    assert identity and "TrinaxAI" in identity and "github.com/TrinaxCode/TrinaxAI" in identity
+    assert creator and "Full Stack Web Developer" in creator and "Tuxtla Gutiérrez" in creator
+
+
 class FakeClient:
     def __init__(self, response: FakeResponse, *, models: list[dict[str, Any]] | None = None) -> None:
         self.response = response
@@ -35,6 +75,7 @@ class FakeClient:
             {"id": "default", "name": "General Knowledge"},
             {"id": "code", "name": "Code Projects"},
         ]
+        self.relevant_memories: list[dict[str, Any]] = []
 
     def stream_ollama(self, base_url: str, body: dict[str, Any], *, timeout: float) -> FakeResponse:
         self.base_url = base_url
@@ -47,6 +88,31 @@ class FakeClient:
 
     def list_collections(self) -> list[dict[str, Any]]:
         return self.collections
+
+    def memory_context(self, _query: str) -> list[dict[str, Any]]:
+        return self.relevant_memories
+
+
+def test_stream_answer_injects_only_relevant_memory_into_general_cli(monkeypatch) -> None:
+    client = FakeClient(FakeResponse([json.dumps({"message": {"content": "ok"}, "done": True})]))
+    client.relevant_memories = [
+        {"id": "pref", "kind": "preference", "text": "Prefiere ejemplos en Python."}
+    ]
+    ui = FakeUI()
+    monkeypatch.setattr(chat._system, "env_value", lambda _key: "")
+
+    chat._stream_answer(
+        client,
+        ui,
+        [{"role": "user", "content": "Ayúdame"}],
+        "ollama",
+        [],
+        None,
+    )
+
+    assert client.payload["messages"][1]["role"] == "system"
+    assert "UNTRUSTED_MEMORY_DATA" in client.payload["messages"][1]["content"]
+    assert "Prefiere ejemplos en Python" in client.payload["messages"][1]["content"]
 
 
 class FakeUI:
@@ -77,6 +143,10 @@ class FakeUI:
 
     def print(self, value: Any = "", *, end: str = "\n") -> None:
         self.output += f"{value}{end}"
+
+    def assistant_label(self, name: str = "TrinaxAI") -> None:
+        self.print("")
+        self.print(f"● {name}")
 
     def prompt(self, question: str) -> str:
         return self.answers.pop(0)
@@ -113,7 +183,7 @@ def test_general_chat_streams_and_stops_thinking_on_first_token(monkeypatch) -> 
     assert answer == "¡Hola!"
     assert ui.thinking_started == 1
     assert ui.thinking_stopped == 1
-    assert ui.output == "trinaxai: ¡Hola!\n"
+    assert ui.output == "\n● TrinaxAI\n¡Hola!\n"
     assert client.base_url == "http://ollama.test:11434"
     assert client.payload["model"] == "llama-fast"
 
@@ -133,16 +203,36 @@ def test_general_payload_contains_only_current_chat_messages(monkeypatch) -> Non
     sent = client.payload["messages"]
     assert sent[1:] == current_chat
     assert all("otro chat" not in message["content"] for message in sent)
-    assert "other chats" in sent[0]["content"]
+    assert "otras conversaciones" in sent[0]["content"]
 
 
 def test_default_engine_matches_pwa_general_chat() -> None:
     config = CLIConfig()
+    assert config.api_verify_tls is True
     no_flags = SimpleNamespace(engine=None)
     assert config.engine == "ollama"
     assert chat._resolve_engine(no_flags, config, []) == "ollama"
     assert chat._resolve_engine(no_flags, config, ["docs"]) == "rag"
     assert chat._resolve_engine(SimpleNamespace(engine="general"), config, ["docs"]) == "ollama"
+
+
+def test_ask_rag_uses_configured_default_collection(monkeypatch) -> None:
+    config = CLIConfig(engine="rag", collections=["docs"], active_collection="docs")
+    ui = FakeUI()
+    captured: dict[str, Any] = {}
+
+    def stream_answer(client, ui_arg, messages, engine, collections, model):
+        captured.update(engine=engine, collections=collections)
+        return "ok"
+
+    monkeypatch.setattr(ask, "_stream_answer", stream_answer)
+    result = ask.run(
+        SimpleNamespace(prompt=["consulta"], collections=None, engine=None, session=None),
+        object(), ui, config,
+    )
+
+    assert result == 0
+    assert captured == {"engine": "rag", "collections": ["docs"]}
 
 
 def test_new_cli_chats_get_isolated_session_names() -> None:
@@ -210,3 +300,29 @@ def test_direct_model_and_rag_collection_commands(monkeypatch) -> None:
     assert state.model == "llama3.2:3b"
     assert state.engine == "rag"
     assert state.collections == ["code"]
+
+
+def test_slash_registry_has_unique_aliases_and_expected_public_commands() -> None:
+    aliases = [alias for command in chat.SLASH_COMMANDS for alias in command.names]
+
+    assert len(aliases) == len(set(aliases)) == len(chat.SLASH_REGISTRY)
+    assert {"/help", "/chat", "/agent", "/web", "/research", "/rag", "/status"} <= set(aliases)
+    assert chat.SLASH_REGISTRY["/general"] is chat.SLASH_REGISTRY["/chat"]
+
+
+def test_slash_registry_dispatches_inline_prompt_and_rejects_unknown() -> None:
+    client = FakeClient(FakeResponse([]))
+    ui = FakeUI()
+    state = chat.ChatState()
+
+    handled, exit_code = chat._handle_slash(
+        "/web latest local AI news", [], client, ui, CLIConfig(), state
+    )
+    unknown, unknown_exit = chat._handle_slash(
+        "/does-not-exist", [], client, ui, CLIConfig(), state
+    )
+
+    assert handled is True and exit_code is None
+    assert state.forced_mode == "web"
+    assert state.pending_input == "latest local AI news"
+    assert unknown is False and unknown_exit is None

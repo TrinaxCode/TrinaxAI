@@ -1,6 +1,9 @@
-"""Stats routes — GET /v1/stats, POST /v1/usage
+"""Local usage statistics routes."""
 
-Currently defined in rag_api.py. Will be migrated here incrementally.
-"""
+from fastapi import APIRouter
 
-# Route registration happens in rag_api.py for now.
+from app.services import usage_service as runtime
+
+router = APIRouter(tags=["stats"])
+router.add_api_route("/v1/usage", runtime.usage_record, methods=["POST"])
+router.add_api_route("/v1/stats", runtime.usage_stats, methods=["GET"])

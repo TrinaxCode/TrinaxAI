@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -21,41 +22,51 @@ SAFE_DEFAULTS = {
     "allow_lan_system": False,
 }
 
-_VALID_PROFILES = {
-    "4gb",
-    "4g",
-    "8gb",
-    "8g",
-    "16gb",
-    "max",
-    "high",
-    "ultra",
-    "gpu",
-    "64gb",
-    "64g",
-    "4090",
-    "rtx",
-    "workstation",
-    "max_quality",
-    "quality",
-    "potente",
-    "32gb",
-    "32g",
-    "alto",
-    "low",
-    "min",
-    "minimo",
-    "lite",
-    "light",
-    "bajo",
-}
-# Public alias — single source of truth for valid hardware profiles.
-VALID_PROFILES = _VALID_PROFILES
+VALID_PROFILES = frozenset(
+    {
+        "4gb",
+        "4g",
+        "8gb",
+        "8g",
+        "16gb",
+        "max",
+        "high",
+        "ultra",
+        "gpu",
+        "64gb",
+        "64g",
+        "4090",
+        "rtx",
+        "workstation",
+        "max_quality",
+        "quality",
+        "potente",
+        "32gb",
+        "32g",
+        "alto",
+        "low",
+        "min",
+        "minimo",
+        "lite",
+        "light",
+        "bajo",
+    }
+)
 
 
 def sanitize_collection_id(value: str | None, *, fallback: str = "collection") -> str:
     slug = re.sub(r"[^a-z0-9_-]+", "-", (value or "").strip().lower()).strip("-_")
     return (slug or fallback)[:48]
+
+
+def source_id_for_root(root: str, *, explicit_id: str | None = None) -> str:
+    """Return the stable source id shared by indexer and backend deletion."""
+    canonical_root = os.path.realpath(os.path.abspath(os.path.expanduser(root)))
+    identity_path = os.path.normcase(canonical_root).replace("\\", "/")
+    root_digest = hashlib.sha256(identity_path.encode("utf-8", errors="surrogatepass")).hexdigest()[:12]
+    basename = os.path.basename(canonical_root.rstrip(os.sep)) or "root"
+    generated_id = f"{sanitize_collection_id(basename, fallback='root')[:24]}-{root_digest}"
+    return sanitize_collection_id(explicit_id, fallback=generated_id) if explicit_id else generated_id
 
 
 def _process_is_alive(pid: int) -> bool:
@@ -155,7 +166,7 @@ def _positive_float(
 
 def validate_runtime_config(env: Mapping[str, str]) -> dict[str, Any]:
     profile = str(env.get("TRINAXAI_PROFILE", SAFE_DEFAULTS["profile"])).strip().lower()
-    if profile not in _VALID_PROFILES:
+    if profile not in VALID_PROFILES:
         profile = str(SAFE_DEFAULTS["profile"])
 
     base_url = str(env.get("OLLAMA_BASE_URL", SAFE_DEFAULTS["ollama_base_url"])).strip()

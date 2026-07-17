@@ -84,6 +84,45 @@ _RAG_LOOKUP = (
     "in the indexed", "from my docs", "qué dice el documento", "que dice el documento",
     "resume el archivo", "en el pdf", "en el código del proyecto",
 )
+# Mathematics / science / formal-proof domain. Strong signal that the task is
+# analytical reasoning, NOT code generation — even when a code snippet or the
+# word "algoritmo" also appears. This is the key fix for academic/analytical
+# prompts (exams, proofs, problem sets) being answered by the small coder model.
+_MATH_SCI = (
+    "ecuación", "ecuacion", "ecuaciones", "integral", "∫", "derivada", "derivar",
+    "límite", "limite", "lim ", "matriz", "matrices", "determinante", "eigen",
+    "polinomio", "gauss", "álgebra", "algebra", "cálculo", "calculo",
+    "trigonometr", "geometr", "teorema", "demuestra", "demostrar", "demostración",
+    "demostracion", "prueba que", "probar que", "demuéstralo", "demuestralo",
+    "inducción", "induccion", "induction", "prove", "proof", "theorem", "lemma",
+    "probabilidad", "probability", "combinatoria", "binomial", "factorial",
+    "varianza", "desviación", "desviacion", "distribución", "distribucion",
+    "bayes", "congruencia", "divisible", "número primo", "numero primo",
+    "módulo ", "modulo ", "física", "fisica", "physics", "química", "quimica",
+    "termodin", "aceleración", "aceleracion", "logaritmo", "exponencial",
+    "raíz cuadrada", "raiz cuadrada", "sistema de ecuaciones", "invertible",
+    "punto crítico", "punto critico", "puntos críticos", "puntos criticos",
+    "máximo", "mínimo", "inflexión", "inflexion", "integración por partes",
+    "integracion por partes", "media aritmética", "media aritmetica",
+)
+# Algorithm/theory *analysis* (reason about an algorithm, don't build an app):
+# recurrences, complexity proofs, classic graph/DP theory, P vs NP, TSP…
+_ANALYSIS = (
+    "recurrencia", "recurrence", "teorema maestro", "master theorem",
+    "complejidad temporal", "complejidad espacial", "complejidad del algoritmo",
+    "análisis de complejidad", "analisis de complejidad", "correctitud",
+    "correctness", "invariante", "invariant", "notación asintótica",
+    "notacion asintotica", "asintótic", "asintotic", "cota superior",
+    "cota inferior", "camino euleriano", "circuito euleriano", "euleriano",
+    "hamiltoniano", "camino más corto", "camino mas corto", "ruta más corta",
+    "ruta mas corta", "ruta óptima", "ruta optima", "ruta más barata",
+    "ruta mas barata", "árbol de expansión", "arbol de expansion",
+    "caminos mínimos", "caminos minimos", "dijkstra", "bellman-ford",
+    "bellman ford", "floyd-warshall", "floyd warshall", "kruskal", "prim",
+    "programación dinámica", "programacion dinamica", "backtracking",
+    "grafo ponderado", "np-completo", "np-complete", "np-hard", "np-duro",
+    "p vs np", "p versus np", "problema del viajante", "viajante", "tsp",
+)
 _GENERAL_TOPIC = (
     "clima", "weather", "receta", "cocina", "comida", "viaje", "película",
     "pelicula", "música", "musica", "deporte", "salud", "historia", "geografía",
@@ -110,6 +149,33 @@ class Classification:
     num_requirements: int = 0
     num_deliverables: int = 0
     extras: dict = field(default_factory=dict)
+
+
+# The PWA appends attached-document text as a suffix wrapped in a fenced block:
+#   \n\n[Archivo adjunto temporal: NAME (truncado)]\n```text\n...file text...\n```
+# That dump otherwise makes every attachment look like a CODE task (its ```text
+# fence sets ``has_fence``) and buries the user's real intent under file noise,
+# which is exactly what routed a "summarise this PDF" turn to the small coder.
+# The block is always appended at the END of the turn, so cutting from the first
+# marker to the end is exact and content-agnostic (safe even if the file text
+# itself contains code fences).
+_ATTACHMENT_MARKER = "[Archivo adjunto temporal:"
+
+
+def strip_attachment_context(text: str) -> str:
+    """Return ``text`` without any appended document-attachment block.
+
+    Classification, scoring and model selection must see the user's actual
+    instruction, not the dumped file contents. The full document text still
+    reaches the synthesis prompt through the normal query path; only the routing
+    signals are computed on the cleaned instruction.
+    """
+    if not text:
+        return text
+    idx = text.find(_ATTACHMENT_MARKER)
+    if idx == -1:
+        return text
+    return text[:idx].rstrip()
 
 
 def _count_any(text: str, needles) -> int:
@@ -150,7 +216,9 @@ def classify(text: str, history_text: str = "") -> Classification:
     warm code regime on ambiguous follow-ups; it never overrides an explicit
     signal in ``text``.
     """
-    raw = text or ""
+    original = text or ""
+    has_attachment = _ATTACHMENT_MARKER in original
+    raw = strip_attachment_context(original)
     t = raw.lower()
     has_fence = "```" in raw or ("`" in raw and raw.count("`") >= 2)
 
@@ -178,6 +246,13 @@ def classify(text: str, history_text: str = "") -> Classification:
     if _count_any(t, _GENERAL_TOPIC):
         cats.add("general")
 
+    math_hits = _count_any(t, _MATH_SCI)
+    analysis_hits = _count_any(t, _ANALYSIS)
+    if math_hits:
+        cats.add("math")
+    if analysis_hits:
+        cats.add("analysis")
+
     is_generation = bool(_count_any(t, _GENERATION_VERBS))
     if is_generation:
         cats.add("generation")
@@ -203,7 +278,21 @@ def classify(text: str, history_text: str = "") -> Classification:
     num_req = _count_requirements(raw)
     num_deliv = _count_any(t, _DELIVERABLE_HINTS)
 
-    regime = _pick_regime(cats, is_code, is_generation, is_question, history_text)
+    # Reasoning strength: maths + formal-analysis signal density. A genuine
+    # code-build task (generate + code + deliverables like the LRU cache) has
+    # zero of these, so it stays in CODE_GEN; an exam/proof/analysis lights them
+    # up and wins the reasoning regime.
+    reasoning_hits = math_hits + analysis_hits
+    reasoning_strong = reasoning_hits >= 2
+    is_code_build = is_generation and is_code
+
+    regime = _pick_regime(
+        cats, is_code, is_generation, is_question, history_text,
+        reasoning_strong=reasoning_strong,
+        reasoning_weak=reasoning_hits >= 1,
+        is_code_build=is_code_build,
+        has_attachment=has_attachment,
+    )
 
     return Classification(
         categories=frozenset(cats),
@@ -219,6 +308,11 @@ def classify(text: str, history_text: str = "") -> Classification:
 def _pick_regime(
     cats: set[str], is_code: bool, is_generation: bool, is_question: bool,
     history_text: str,
+    *,
+    reasoning_strong: bool = False,
+    reasoning_weak: bool = False,
+    is_code_build: bool = False,
+    has_attachment: bool = False,
 ) -> Regime:
     """Resolve the single behaviour regime from the detected categories."""
     # Explicit lookup into the user's own indexed material → grounded QA.
@@ -228,6 +322,25 @@ def _pick_regime(
     # Creative UI work: landing/design, especially when asked to *create* it.
     if "creative" in cats or ("frontend" in cats and is_generation):
         return Regime.CREATIVE
+
+    # Analytical reasoning: maths, science, proofs, probability, algorithm
+    # analysis (recurrences, complexity, graph theory, P vs NP…). This must beat
+    # CODE_GEN — an exam that mentions "algoritmo"/"grafo"/a code snippet is
+    # still a reasoning task, NOT a request to ship production code. We only
+    # yield to CODE_GEN when the user clearly wants to BUILD a code artifact
+    # (generation verb + code topic + deliverables) and the reasoning signal is
+    # not dominant.
+    if reasoning_strong or (reasoning_weak and not is_code_build):
+        return Regime.REASONING
+
+    # Attached document (PDF/office/text) with no code signal in the actual
+    # instruction → EXPLAIN, so the instruct model summarises/analyses the file
+    # instead of the small coder trying to "produce code". The attachment's own
+    # text is stripped before classification, so ``is_code`` reflects the user's
+    # instruction, not the file dump: a real "arréglame el bug de este código"
+    # keeps its code signal and falls through to the coder regime below.
+    if has_attachment and not is_code:
+        return Regime.EXPLAIN
 
     # A code *question* (what is / how does / explain), with no build verb →
     # explain regime, even though the topic is code.

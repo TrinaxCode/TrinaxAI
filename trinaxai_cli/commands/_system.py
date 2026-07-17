@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from trinaxai_cli.processes import run_process_group
 from trinaxai_cli.runtime import find_install_root
 
 
@@ -26,7 +27,7 @@ def run_service_action(action: str, ui: Any, *, timeout: int = 120) -> int:
         ui.error("Cannot locate the TrinaxAI installation. Set TRINAXAI_HOME or run the installer again.")
         return 1
     try:
-        proc = subprocess.run(
+        proc = run_process_group(
             [sys.executable, str(script), action, "--base-dir", str(root)],
             cwd=str(root),
             text=True,

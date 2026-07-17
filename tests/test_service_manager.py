@@ -30,6 +30,22 @@ class _FakeBackend:
 
 
 class ServiceManagerPersistenceTests(unittest.TestCase):
+    def test_health_probe_rejects_non_loopback_targets(self) -> None:
+        with patch.object(sm.urllib.request, "urlopen") as urlopen:
+            self.assertFalse(sm._wait_for_http("https://example.com/health", timeout_seconds=0))
+        urlopen.assert_not_called()
+
+    def test_direct_start_never_invokes_a_shell(self) -> None:
+        command = ["python", "-m", "uvicorn", "app:api", "--port", "3333 & calc.exe"]
+        process = SimpleNamespace(pid=4321)
+
+        with patch.object(sm.subprocess, "Popen", return_value=process) as popen:
+            result = sm._start_direct("rag_api", command=command)
+
+        self.assertTrue(result.running)
+        self.assertEqual(popen.call_args.args[0], command)
+        self.assertIs(popen.call_args.kwargs["shell"], False)
+
     def test_rag_command_uses_https_only_when_pem_files_exist(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             base_dir = Path(tmp)
@@ -47,6 +63,15 @@ class ServiceManagerPersistenceTests(unittest.TestCase):
             command = sm._rag_command("python", str(base_dir), env)
             self.assertIn("--ssl-keyfile", command)
             self.assertEqual(sm._rag_health_url(str(base_dir), env), "https://127.0.0.1:3333/health")
+
+    def test_rag_command_forces_loopback_unless_unsafe_override_is_explicit(self) -> None:
+        env = {"TRINAXAI_HOST": "0.0.0.0", "TRINAXAI_RAG_HTTPS": "0"}
+        command = sm._rag_command("python", "/tmp/trinaxai", env)
+        self.assertEqual(command[command.index("--host") + 1], "127.0.0.1")
+
+        env["TRINAXAI_UNSAFE_BIND_BACKEND"] = "1"
+        command = sm._rag_command("python", "/tmp/trinaxai", env)
+        self.assertEqual(command[command.index("--host") + 1], "0.0.0.0")
 
     def test_stop_ai_disables_boot_and_start_ai_reenables_it(self) -> None:
         fake_backend = _FakeBackend()

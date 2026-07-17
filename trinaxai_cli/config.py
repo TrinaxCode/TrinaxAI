@@ -26,7 +26,7 @@ else:  # pragma: no cover - project requires py>=3.10 but be defensive
 
 LOG = logging.getLogger(__name__)
 
-DEFAULT_BASE_URL = "http://localhost:3333"
+DEFAULT_BASE_URL = "https://localhost:3333"
 
 
 def _default_config_path() -> Path:
@@ -60,7 +60,9 @@ class CLIConfig:
     """
 
     api_base_url: str = DEFAULT_BASE_URL
-    api_verify_tls: bool = False
+    # Secure by default for every URL. Installers trust the local TrinaxAI CA;
+    # ad-hoc self-signed deployments must opt out explicitly with --insecure.
+    api_verify_tls: bool = True
 
     # Match the PWA: a new general chat talks directly to Ollama. RAG is
     # opt-in so unrelated indexed documents cannot hijack a casual prompt.

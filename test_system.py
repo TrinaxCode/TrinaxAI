@@ -131,6 +131,30 @@ def check_frontend(frontend_url: str) -> list[CheckResult]:
     return [CheckResult("PWA responde", code == 200, "Inicia: cd chat-pwa && npm run dev", "PWA")]
 
 
+def check_feature_dependencies() -> list[CheckResult]:
+    checks = [
+        ("PowerPoint (.pptx)", "pptx", "Ejecuta: pip install python-pptx"),
+        ("Excel (.xlsx)", "openpyxl", "Ejecuta: pip install openpyxl"),
+        ("RTF", "striprtf", "Ejecuta: pip install striprtf"),
+        ("Watcher", "watchdog", "Ejecuta: pip install watchdog"),
+    ]
+    results = []
+    for name, module, hint in checks:
+        try:
+            __import__(module)
+            available = True
+        except ImportError:
+            available = False
+        results.append(CheckResult(name, available, hint, "Herramientas"))
+    results.append(CheckResult(
+        "Conversión Office heredada",
+        bool(shutil.which("libreoffice") or shutil.which("soffice")),
+        "Instala LibreOffice para leer .ppt, .xls, .doc y OpenDocument",
+        "Herramientas",
+    ))
+    return results
+
+
 def check_resources() -> list[CheckResult]:
     results: list[CheckResult] = []
     try:
@@ -181,6 +205,7 @@ def run_checks(*, verbose: bool = False) -> list[CheckResult]:
     checks.extend(check_ollama(ollama_base, verbose=verbose))
     checks.extend(check_rag(rag_base, verbose=verbose))
     checks.extend(check_frontend(frontend_url))
+    checks.extend(check_feature_dependencies())
     checks.extend(check_resources())
     return checks
 

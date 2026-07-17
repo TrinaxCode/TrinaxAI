@@ -11,17 +11,13 @@ import shlex
 import shutil
 import subprocess
 import sys
-import tempfile
 import time
-import urllib.request
 from pathlib import Path
-
 
 TASK_NAME = "TrinaxAI Weekly Update"
 LINUX_SERVICE = "trinaxai-update.service"
 LINUX_TIMER = "trinaxai-update.timer"
 MAC_LABEL = "com.trinaxcode.trinaxai.update"
-UPDATE_BASE_URL = "https://raw.githubusercontent.com/TrinaxCode/TrinaxAI/main"
 
 
 def _run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
@@ -52,7 +48,7 @@ def enable(base_dir: Path) -> str:
             unit_dir = Path.home() / ".config" / "systemd" / "user"
             unit_dir.mkdir(parents=True, exist_ok=True)
             (unit_dir / LINUX_SERVICE).write_text(
-                "[Unit]\nDescription=Keep TrinaxAI up to date\nAfter=network-online.target\n\n"
+                "[Unit]\nDescription=Check for TrinaxAI updates\nAfter=network-online.target\n\n"
                 "[Service]\nType=oneshot\n"
                 f"WorkingDirectory={_quote_systemd(base_dir)}\n"
                 f"ExecStart={_quote_systemd(python)} {_quote_systemd(script)} run --base-dir {_quote_systemd(base_dir)}\n",
@@ -195,39 +191,39 @@ def run_update(base_dir: Path) -> int:
     os.close(fd)
 
     try:
-        is_windows = platform.system() == "Windows"
-        filename = "update.ps1" if is_windows else "update.sh"
-        suffix = ".ps1" if is_windows else ".sh"
-        with tempfile.TemporaryDirectory(prefix="trinaxai-update-") as temp_dir:
-            updater = Path(temp_dir) / f"update{suffix}"
-            request = urllib.request.Request(
-                f"{UPDATE_BASE_URL}/{filename}",
-                headers={"User-Agent": "TrinaxAI-AutoUpdater/1"},
+        # Executing a mutable script downloaded from ``main`` is not a secure
+        # update channel. Until signed release manifests are available, the
+        # scheduled task is deliberately check-only and asks the user to run
+        # the installed updater interactively after reviewing the release.
+        if not (base_dir / ".git").is_dir() or not shutil.which("git"):
+            _log(
+                base_dir,
+                "Update check skipped: no Git metadata; run 'trinaxai update' manually.",
             )
-            with urllib.request.urlopen(request, timeout=30) as response:
-                updater.write_bytes(response.read())
-            if is_windows:
-                command = [
-                    "powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass",
-                    "-File", str(updater), "-Scheduled", "-RepoRoot", str(base_dir),
-                ]
-            else:
-                command = ["bash", str(updater), "--scheduled"]
-            env = os.environ.copy()
-            env["TRINAXAI_UPDATE_ROOT"] = str(base_dir)
-            _log(base_dir, "Checking GitHub for a new TrinaxAI version…")
-            result = subprocess.run(
-                command,
-                cwd=base_dir,
-                env=env,
-                text=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                timeout=60 * 45,
+            return 0
+        local = _run(["git", "-C", str(base_dir), "rev-parse", "HEAD"])
+        remote = _run(
+            [
+                "git",
+                "ls-remote",
+                "https://github.com/TrinaxCode/TrinaxAI.git",
+                "refs/heads/main",
+            ]
+        )
+        if local.returncode or remote.returncode or not remote.stdout.strip():
+            detail = (remote.stderr or local.stderr or "could not resolve versions").strip()
+            raise RuntimeError(detail)
+        local_sha = local.stdout.strip()
+        remote_sha = remote.stdout.split()[0]
+        if local_sha == remote_sha:
+            _log(base_dir, f"No update available ({local_sha[:12]}).")
+        else:
+            _log(
+                base_dir,
+                f"Update available: {local_sha[:12]} -> {remote_sha[:12]}. "
+                "Run 'trinaxai update' interactively.",
             )
-            _log(base_dir, result.stdout or "Updater finished without output.")
-            _log(base_dir, f"Update finished with exit code {result.returncode}.")
-            return result.returncode
+        return 0
     except Exception as exc:
         _log(base_dir, f"Automatic update failed safely: {exc}")
         return 1

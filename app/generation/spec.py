@@ -21,12 +21,18 @@ class Regime(str, Enum):
       off unless the user references their own repo/docs.
     - CREATIVE:    UI/landing/design. High temperature, long output, no
       "answer only from context" restriction.
+    - REASONING:   maths, science, proofs, probability, logic and algorithm
+      design/analysis. Rigorous step-by-step work, generous output budget, a
+      low (but non-zero) temperature and the strongest available model. This is
+      the regime that stops academic/analytical prompts being answered by the
+      small *coder* model with a "produce production code" prompt.
     - EXPLAIN:     documentation/explanation prose. Medium temperature.
     """
 
     GROUNDED_QA = "grounded_qa"
     CODE_GEN = "code_gen"
     CREATIVE = "creative"
+    REASONING = "reasoning"
     EXPLAIN = "explain"
 
 
@@ -50,6 +56,7 @@ class TaskSpec:
     stop: tuple[str, ...] | None = None
 
     # Pipeline behaviour
+    retrieval_mode: str = "auto"
     use_rag: bool = True
     validate: bool = False
     max_fix_passes: int = 0
@@ -72,6 +79,7 @@ class TaskSpec:
         return (
             f"regime={self.regime.value} score={self.score} cats=[{cats}] "
             f"model={self.model} ctx={self.num_ctx} predict={self.num_predict} "
-            f"temp={self.temperature} rag={int(self.use_rag)} "
+            f"temp={self.temperature} retrieval={self.retrieval_mode} "
+            f"rag={int(self.use_rag)} "
             f"validate={int(self.validate)} fix={self.max_fix_passes}"
         )

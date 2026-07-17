@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "trinaxai"
-version = "1.0.0"
+version = "1.1.0"
 description = "TrinaxAI — local-first AI assistant with RAG, vision, voice, CLI, and PWA."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -15,7 +15,7 @@ authors = [
 ]
 keywords = ["ai", "rag", "ollama", "local-first", "pwa", "cli", "llama-index"]
 classifiers = [
-  "Development Status :: 4 - Beta",
+  "Development Status :: 5 - Production/Stable",
   "Environment :: Console",
   "Intended Audience :: Developers",
   "Operating System :: OS Independent",
@@ -26,6 +26,7 @@ classifiers = [
 ]
 dependencies = [
   "httpx>=0.28.1",
+  "prompt-toolkit>=3.0.48",
   "rich>=13.0",
 ]
 
@@ -44,11 +45,17 @@ server = [
   "docx2txt>=0.9",
   "pypdf>=5.0",
   "python-pptx>=1.0.2",
+  "openpyxl>=3.1",
+  "odfpy>=1.4.1",
+  "striprtf>=0.0.28",
   "tree-sitter>=0.22",
   "tree-sitter-language-pack>=0.9",
   "psutil>=6.0",
   "watchdog>=6.0",
-  "openai-whisper>=20231117",
+  "nltk>=3.10.0",
+]
+voice = [
+  "faster-whisper>=1.2.1",
   "pyttsx3>=2.90",
   "soundfile>=0.12",
   "numpy>=1.24",
@@ -63,19 +70,30 @@ rerank = [
 ]
 dev = [
   "pytest>=8.0",
+  "pytest-cov>=7.0",
   "ruff>=0.8",
-  "pip-audit>=2.7",
+  "pip-audit>=2.10.1",
+  "bandit>=1.9.4",
 ]
 all = [
-  "trinaxai[server,rerank,dev,voice_quality]",
+  "trinaxai[server,voice,rerank,dev,voice_quality]",
 ]
 
 [project.scripts]
 trinaxai = "trinaxai_cli.app:main"
 
 [tool.setuptools]
-packages = ["trinaxai_cli", "trinaxai_cli.commands"]
-py-modules = ["trinaxai_core"]
+py-modules = [
+  "config",
+  "index",
+  "rag_api",
+  "service_manager",
+  "trinaxai_core",
+  "trinaxai_index_storage",
+]
+
+[tool.setuptools.packages.find]
+include = ["app*", "trinaxai_cli*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

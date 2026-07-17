@@ -2,14 +2,32 @@
 __pycache__/
 *.py[cod]
 *.egg-info/
+*.egg
+build/
 dist/
 .venv/
 venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
 
 # Node / PWA
 chat-pwa/node_modules/
 chat-pwa/dist/
 chat-pwa/.vite/
+chat-pwa/coverage/
+chat-pwa/test-results/
+chat-pwa/playwright-report/
+chat-pwa/blob-report/
+chat-pwa/.eslintcache
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
 
 # Environment & Secrets
 .env
@@ -32,12 +50,16 @@ Thumbs.db
 *.swo
 *~
 
-# Storage (user data)
+# Runtime storage (indexes, documents, state, attachments, maintenance data)
 storage/
 storage.bak.nomic/
+storage.bak*/
+storage-*/
 local_sources/
 projects/
 backups/
+/*.pid
+/*.pid.lock
 
 # Logs
 *.log

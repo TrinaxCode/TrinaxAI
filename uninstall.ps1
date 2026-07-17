@@ -304,7 +304,7 @@ if ($RemoveOllamaModels) {
   Write-Step "4/4 Ollama models"
   $Ollama = Get-OllamaCommand
   if ($Ollama) {
-    foreach ($Model in @("qwen3:4b-instruct-2507-q4_K_M", "qwen3:30b-a3b-instruct-2507-q4_K_M", "qwen2.5-coder:1.5b", "qwen2.5-coder:3b", "qwen2.5-coder:7b", "qwen3-coder:30b", "llama3.2:1b", "bge-m3", "qwen3-vl:2b", "qwen3-vl:4b", "qwen3-vl:8b", "qwen3-vl:32b", "qwen2.5-coder:14b", "llama3.2:3b", "nomic-embed-text", "moondream", "qwen2.5vl:3b", "qwen2.5vl:7b", "llava:7b")) {
+    foreach ($Model in @("qwen3.5:9b", "qwen3.5:4b", "qwen3.5:2b", "qwen3.5:0.8b", "granite4:3b", "qwen3-vl:4b-instruct", "qwen3-vl:8b-instruct", "qwen3:4b-instruct-2507-q4_K_M", "qwen3:30b-a3b-instruct-2507-q4_K_M", "qwen2.5-coder:1.5b", "qwen2.5-coder:3b", "qwen2.5-coder:7b", "qwen3-coder:30b", "llama3.2:1b", "bge-m3", "qwen3-vl:2b", "qwen3-vl:4b", "qwen3-vl:8b", "qwen3-vl:32b", "qwen2.5-coder:14b", "llama3.2:3b", "nomic-embed-text", "moondream", "qwen2.5vl:3b", "qwen2.5vl:7b", "llava:7b")) {
       & $Ollama rm $Model 2>$null
     }
   } else {

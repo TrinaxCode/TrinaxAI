@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from trinaxai_cli.processes import run_process_group
 from trinaxai_cli.runtime import find_install_root
 
 
@@ -36,7 +37,10 @@ def run_script(script_stem: str, arguments: list[str], ui: Any) -> int:
         return 1
     try:
         command = command_for(script_stem, arguments, root)
-        return subprocess.run(command, cwd=root, check=False).returncode
+        return run_process_group(command, cwd=root, check=False, timeout=3600).returncode
+    except KeyboardInterrupt:
+        ui.warn(f"Interrupted; stopped {script.name} and its child processes.")
+        return 130
     except (OSError, subprocess.SubprocessError) as exc:
         ui.error(f"Could not run {script.name}: {exc}")
         return 1

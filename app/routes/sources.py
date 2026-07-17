@@ -1,6 +1,23 @@
-"""Source/knowledge browser routes — GET /v1/sources, GET /v1/sources/.../chunks
+"""Indexed source browsing and deletion routes."""
 
-Currently defined in rag_api.py. Will be migrated here incrementally.
-"""
+from fastapi import APIRouter
 
-# Route registration happens in rag_api.py for now.
+from app.services import sources_service as runtime
+
+router = APIRouter(tags=["sources"])
+router.add_api_route("/v1/sources", runtime.sources_list, methods=["GET"])
+router.add_api_route(
+    "/v1/sources/{collection}/{file:path}/chunks",
+    runtime.sources_chunks,
+    methods=["GET"],
+)
+router.add_api_route(
+    "/v1/sources/{collection}/{file:path}",
+    runtime.sources_delete,
+    methods=["DELETE"],
+)
+router.add_api_route(
+    "/v1/sources/{collection}",
+    runtime.sources_delete_collection,
+    methods=["DELETE"],
+)

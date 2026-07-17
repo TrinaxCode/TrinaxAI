@@ -1,11 +1,13 @@
-"""Deterministic output validators (Phase 6 of the audit).
+"""Deterministic output quality heuristics (Phase 6 of the audit).
 
 Cheap, local, no-LLM checks that inspect a generated answer and report what is
 missing or broken. They feed the generate→validate→fix policy (Phase 7): if a
 complex code/creative task comes back with syntax errors or missing deliverables,
 we run exactly one targeted correction pass.
 
-Validators never raise on bad input — they return structured findings.
+These checks are smoke tests, not a compiler or a proof of correctness. They
+never raise on bad input and return structured findings for one optional repair
+pass. Callers should label them as heuristics in user-facing surfaces.
 """
 
 from __future__ import annotations
@@ -50,16 +52,95 @@ def _check_python(code: str) -> list[str]:
     return errors
 
 
-def _balanced(code: str, open_c: str, close_c: str, label: str) -> list[str]:
-    # Naive but effective: ignores strings, good enough as a smoke test.
-    if code.count(open_c) != code.count(close_c):
-        return [f"Unbalanced {label} ({open_c}{close_c})."]
+def _mask_js_literals(code: str) -> str:
+    """Mask JS/TS strings, comments, templates and likely regex literals."""
+    out = list(code)
+    index = 0
+    state = "normal"
+    quote = ""
+    regex_class = False
+    previous_significant = ""
+    while index < len(code):
+        char = code[index]
+        nxt = code[index + 1] if index + 1 < len(code) else ""
+        if state == "normal":
+            if char in {"'", '"', "`"}:
+                state, quote = "string", char
+                out[index] = " "
+            elif char == "/" and nxt == "/":
+                state = "line_comment"
+                out[index] = out[index + 1] = " "
+                index += 1
+            elif char == "/" and nxt == "*":
+                state = "block_comment"
+                out[index] = out[index + 1] = " "
+                index += 1
+            elif char == "/" and previous_significant in {"", "=", "(", "[", "{", ":", ",", ";", "!", "?"}:
+                state = "regex"
+                regex_class = False
+                out[index] = " "
+            elif not char.isspace():
+                previous_significant = char
+        elif state == "string":
+            if char != "\n":
+                out[index] = " "
+            if char == "\\":
+                if index + 1 < len(code):
+                    if code[index + 1] != "\n":
+                        out[index + 1] = " "
+                    index += 1
+            elif char == quote:
+                state = "normal"
+                previous_significant = "v"
+        elif state == "line_comment":
+            if char == "\n":
+                state = "normal"
+            else:
+                out[index] = " "
+        elif state == "block_comment":
+            if char != "\n":
+                out[index] = " "
+            if char == "*" and nxt == "/":
+                out[index + 1] = " "
+                index += 1
+                state = "normal"
+        elif state == "regex":
+            if char != "\n":
+                out[index] = " "
+            if char == "\\":
+                if index + 1 < len(code):
+                    out[index + 1] = " "
+                    index += 1
+            elif char == "[":
+                regex_class = True
+            elif char == "]":
+                regex_class = False
+            elif char == "/" and not regex_class:
+                state = "normal"
+                previous_significant = "v"
+        index += 1
+    return "".join(out)
+
+
+def _check_balanced_pairs(code: str, label: str) -> list[str]:
+    pairs = {"(": ")", "[": "]", "{": "}"}
+    closing = {value: key for key, value in pairs.items()}
+    stack: list[tuple[str, int]] = []
+    for offset, char in enumerate(code):
+        if char in pairs:
+            stack.append((char, offset))
+        elif char in closing:
+            if not stack or stack[-1][0] != closing[char]:
+                return [f"Unbalanced {label}: unexpected {char} at offset {offset}."]
+            stack.pop()
+    if stack:
+        char, offset = stack[-1]
+        return [f"Unbalanced {label}: {char} opened at offset {offset} is not closed."]
     return []
 
 
 def _check_js_ts(code: str) -> list[str]:
-    errors = _balanced(code, "{", "}", "braces")
-    errors += _balanced(code, "(", ")", "parens")
+    errors = _check_balanced_pairs(_mask_js_literals(code), "JS/TS delimiters")
     if "rest of code" in code.lower():
         errors.append("JS/TS code contains placeholder (incomplete).")
     return errors
@@ -75,18 +156,28 @@ def _check_html(code: str, require_responsive: bool) -> list[str]:
     if require_responsive:
         if "viewport" not in low:
             errors.append("HTML: missing responsive <meta viewport>.")
-        # Landing pages usually inline their CSS in <style>; a real responsive
-        # layout needs media queries somewhere in that inline CSS too.
-        if "<style" in low and "@media" not in low:
-            errors.append("HTML: inline CSS has no @media query (not responsive).")
+        style_blocks = re.findall(r"<style[^>]*>(.*?)</style>", code, flags=re.I | re.S)
+        if style_blocks and not any(_has_responsive_css(style) for style in style_blocks):
+            errors.append("HTML: inline CSS has no responsive layout signal.")
     return errors
 
 
 def _check_css(code: str, require_responsive: bool) -> list[str]:
-    errors = _balanced(code, "{", "}", "CSS braces")
-    if require_responsive and "@media" not in code:
-        errors.append("CSS: no @media query despite responsive requirement.")
+    masked = re.sub(r"/\*.*?\*/|'(?:\\.|[^'\\])*'|\"(?:\\.|[^\"\\])*\"", "", code, flags=re.DOTALL)
+    errors = _check_balanced_pairs(masked, "CSS delimiters")
+    if require_responsive and not _has_responsive_css(code):
+        errors.append("CSS: no responsive layout signal (fluid sizing, flex/grid, media or container query).")
     return errors
+
+
+def _has_responsive_css(code: str) -> bool:
+    low = code.lower()
+    signals = (
+        "@media", "@container", "clamp(", "minmax(", "auto-fit", "auto-fill",
+        "display:flex", "display: flex", "display:grid", "display: grid",
+        "max-width", "inline-size", "vw", "dvw", "cqw",
+    )
+    return any(signal in low for signal in signals) or bool(re.search(r"\b(?:width|flex-basis)\s*:\s*\d+(?:\.\d+)?%", low))
 
 
 def validate_output(

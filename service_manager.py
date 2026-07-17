@@ -10,6 +10,7 @@ don't need to know which platform backend is in use.
 
 from __future__ import annotations
 
+import ipaddress
 import json
 import os
 import platform
@@ -21,6 +22,7 @@ import time
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
+from urllib.parse import urlsplit
 
 
 # ── Public data types ──────────────────────────────────────────────
@@ -75,6 +77,7 @@ SYSTEMD_SERVICE_ALIASES = {
     "rag_api": ["rag_api.service", "ai-rag.service"],
     "trinaxai-frontend": ["trinaxai-frontend.service"],
 }
+PRIVILEGED_LIFECYCLE_WRAPPER = Path("/usr/local/libexec/trinaxai/trinaxai-lifecycle")
 
 
 def _systemd_units(name: str) -> list[str]:
@@ -125,7 +128,11 @@ class _SystemdBackend(_Backend):
                     return ProcessState(
                         name=name, running=True, detail=f"started via systemd ({svc})"
                     )
-        except (subprocess.CalledProcessError, FileNotFoundError):
+        except (
+            subprocess.CalledProcessError,
+            subprocess.TimeoutExpired,
+            FileNotFoundError,
+        ):
             # Fall back to direct subprocess
             pass
         return _start_direct(name, command=command, cwd=cwd, env=env, log_file=log_file)
@@ -137,7 +144,11 @@ class _SystemdBackend(_Backend):
                 result = _run_systemctl(["stop", svc], timeout=30)
                 if result.returncode == 0:
                     stopped.append(svc)
-        except (subprocess.CalledProcessError, FileNotFoundError):
+        except (
+            subprocess.CalledProcessError,
+            subprocess.TimeoutExpired,
+            FileNotFoundError,
+        ):
             pass
         fallback = _stop_by_name(name)
         if stopped:
@@ -153,8 +164,21 @@ class _SystemdBackend(_Backend):
             for svc in _systemd_units(name):
                 r = _run_systemctl(["is-active", "--quiet", svc], timeout=5)
                 if r.returncode == 0:
+                    pid = None
+                    pid_result = _run_systemctl(
+                        ["show", svc, "--property=MainPID", "--value"],
+                        timeout=5,
+                    )
+                    try:
+                        parsed_pid = int(pid_result.stdout.strip())
+                        pid = parsed_pid if parsed_pid > 0 else None
+                    except (TypeError, ValueError):
+                        pass
                     return ProcessState(
-                        name=name, running=True, detail=f"active (systemd: {svc})"
+                        name=name,
+                        running=True,
+                        pid=pid,
+                        detail=f"active (systemd: {svc})",
                     )
         except (FileNotFoundError, subprocess.TimeoutExpired):
             pass
@@ -337,7 +361,6 @@ def _stop_by_name(name: str) -> ProcessState:
         except (FileNotFoundError, subprocess.TimeoutExpired):
             if shutil.which("killall"):
                 subprocess.run(["killall", name], timeout=10, capture_output=True)
-            pass
         return ProcessState(
             name=name, running=False, detail="stopped matching processes"
         )
@@ -370,6 +393,7 @@ def _start_direct(
     try:
         proc = subprocess.Popen(
             command,
+            shell=False,
             cwd=cwd,
             env=merged_env,
             stdout=log_fh,
@@ -387,6 +411,28 @@ def _start_direct(
     finally:
         if log_file and hasattr(log_fh, "close"):
             log_fh.close()
+
+
+def _reap_zombie_children() -> None:
+    """Reap any exited direct children so they don't linger as zombies.
+
+    Services launched via ``_start_direct`` stay children of the long-running
+    supervisor (``start_new_session`` detaches the session, not the parent).
+    When a service dies and ``watch`` restarts it, the old PID would otherwise
+    remain a zombie until this process exits. ``os.waitpid`` is unavailable on
+    Windows, where the OS cleans up handles on its own, so it is skipped there.
+    """
+    if sys.platform == "win32" or not hasattr(os, "waitpid"):
+        return
+    while True:
+        try:
+            pid, _ = os.waitpid(-1, os.WNOHANG)
+        except ChildProcessError:
+            return
+        except OSError:
+            return
+        if pid == 0:
+            return
 
 
 # ── Backend selection ──────────────────────────────────────────────
@@ -417,7 +463,7 @@ SUPERVISOR_SERVICE = "trinaxai-supervisor"
 FULL_SHUTDOWN_ORDER = [SUPERVISOR_SERVICE, *SHUTDOWN_ORDER]
 PROCESS_PATTERNS = {
     "ollama": ["ollama serve", "ollama"],
-    "rag_api": ["uvicorn rag_api:app", "rag_api.py", "rag_api"],
+    "rag_api": ["uvicorn app.main:app", "uvicorn rag_api:app", "rag_api.py", "rag_api"],
     "trinaxai-frontend": [
         "vite --host",
         "vite preview",
@@ -517,19 +563,32 @@ def _rag_uses_https(base_dir: str, env: dict[str, str]) -> bool:
 
 
 def _wait_for_http(url: str, timeout_seconds: float = 20.0) -> bool:
+    parsed = urlsplit(url)
+    try:
+        host_is_loopback = bool(parsed.hostname) and ipaddress.ip_address(parsed.hostname).is_loopback
+    except ValueError:
+        host_is_loopback = parsed.hostname == "localhost"
+    if parsed.scheme not in {"http", "https"} or not host_is_loopback:
+        return False
     deadline = time.time() + timeout_seconds
     context = None
     if url.startswith("https://"):
         import ssl
 
-        context = ssl._create_unverified_context()
+        # Local development uses a generated self-signed certificate. The URL
+        # was constrained above to HTTP(S) on loopback, so no remote identity is
+        # trusted through this readiness probe.
+        context = ssl._create_unverified_context()  # nosec B323
     while time.time() < deadline:
         try:
-            with urllib.request.urlopen(url, timeout=2, context=context) as response:
+            with urllib.request.urlopen(  # nosec B310 - scheme and loopback validated above
+                url, timeout=2, context=context
+            ) as response:
                 if 200 <= int(response.status) < 500:
                     return True
         except Exception:
-            time.sleep(0.75)
+            pass
+        time.sleep(0.75)
     return False
 
 
@@ -540,13 +599,27 @@ def _rag_health_url(base_dir: str, env: dict[str, str]) -> str:
 
 
 def _rag_command(python: str, base_dir: str, env: dict[str, str]) -> list[str]:
-    host = env.get("TRINAXAI_HOST", "0.0.0.0")
+    # The browser-facing gateway is the only LAN listener. Keeping FastAPI on
+    # loopback makes the signed proxy identity an actual trust boundary.
+    host = env.get("TRINAXAI_HOST", "127.0.0.1")
+    allow_unsafe_bind = env.get("TRINAXAI_UNSAFE_BIND_BACKEND", "0").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+    try:
+        is_loopback = ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        is_loopback = host.lower() == "localhost"
+    if not is_loopback and not allow_unsafe_bind:
+        host = "127.0.0.1"
     port = env.get("TRINAXAI_PORT", "3333")
     command = [
         python,
         "-m",
         "uvicorn",
-        "rag_api:app",
+        "app.main:app",
         "--host",
         host,
         "--port",
@@ -576,7 +649,7 @@ def _service_specs(base_dir: str) -> dict[str, dict]:
             ),
             mode,
             "--host",
-            "0.0.0.0",
+            "0.0.0.0",  # nosec B104 - intentional browser-facing LAN gateway
             "--port",
             "3334",
         ]
@@ -626,7 +699,7 @@ def _write_ai_enabled(base_dir: str, enabled: bool) -> None:
 
 
 def _try_privileged_wrapper(base_dir: str, action: str) -> list[ProcessState] | None:
-    """Use legacy sudoers wrappers for system-level installs when available."""
+    """Use the fixed, root-owned lifecycle wrapper for system installations."""
     if (
         platform.system() != "Linux"
         or os.getenv("TRINAXAI_PRIVILEGED_WRAPPER") == "1"
@@ -638,14 +711,13 @@ def _try_privileged_wrapper(base_dir: str, action: str) -> list[ProcessState] | 
 
     if action not in {"stop-ai", "start-ai"}:
         return None
-    script_name = "shutdown_ai.sh" if action == "stop-ai" else "startup_ai.sh"
-    script = Path(base_dir) / script_name
-    if not script.exists() or not os.access(script, os.X_OK):
+    wrapper = PRIVILEGED_LIFECYCLE_WRAPPER
+    if not wrapper.is_file() or not os.access(wrapper, os.X_OK):
         return None
 
     try:
         result = subprocess.run(
-            ["sudo", "-n", str(script)],
+            ["sudo", "-n", str(wrapper), action],
             timeout=90,
             capture_output=True,
             text=True,
@@ -656,6 +728,7 @@ def _try_privileged_wrapper(base_dir: str, action: str) -> list[ProcessState] | 
     if result.returncode != 0:
         detail = (result.stderr or result.stdout or "privileged wrapper failed").strip()
         return [ProcessState(action, False, detail=detail)]
+    _write_ai_enabled(base_dir, action != "stop-ai")
     return [
         ProcessState(
             action, action != "stop-ai", detail=(result.stdout or "ok").strip()
@@ -995,6 +1068,7 @@ def watch(base_dir: str, interval: int = 15) -> None:
     os.makedirs(os.path.join(base_dir, "logs"), exist_ok=True)
     print(f"TrinaxAI supervisor watching services every {interval}s")
     while True:
+        _reap_zombie_children()
         wanted = [FRONTEND_SERVICE]
         if _read_ai_enabled(base_dir):
             wanted = STARTUP_ORDER
@@ -1034,6 +1108,7 @@ if __name__ == "__main__":
     )
     parser.add_argument("--base-dir", default=str(Path(__file__).resolve().parent))
     parser.add_argument("--interval", type=int, default=15)
+    parser.add_argument("--json", action="store_true", help="Emit machine-readable status output")
     args = parser.parse_args()
 
     if args.action == "start":
@@ -1055,10 +1130,22 @@ if __name__ == "__main__":
         for item in stop_all_for_base(args.base_dir):
             print(f"{item.name}: {item.detail}")
     elif args.action == "status":
-        for item in status_all():
-            print(
-                f"{item.name}: {'running' if item.running else 'stopped'} {item.detail}"
-            )
+        items = status_all()
+        if args.json:
+            print(json.dumps([
+                {
+                    "name": item.name,
+                    "running": item.running,
+                    "pid": item.pid,
+                    "detail": item.detail,
+                }
+                for item in items
+            ], separators=(",", ":")))
+        else:
+            for item in items:
+                print(
+                    f"{item.name}: {'running' if item.running else 'stopped'} {item.detail}"
+                )
     elif args.action == "watch":
         watch(args.base_dir, args.interval)
     elif args.action == "enable-autostart":

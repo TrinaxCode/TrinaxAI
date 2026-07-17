@@ -21,7 +21,7 @@ from trinaxai_cli.config import CLIConfig
 from trinaxai_cli.ui import get_console
 
 LOG = logging.getLogger("trinaxai_cli")
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 
 
 # ----------------------------------------------------------------- argparse
@@ -30,7 +30,11 @@ def _build_parser() -> argparse.ArgumentParser:
     """Return the top-level argparse parser with all subcommands wired in."""
     parser = argparse.ArgumentParser(
         prog="trinaxai",
-        description="TrinaxAI CLI v2 - local-first terminal assistant.",
+        description=(
+            "TrinaxAI CLI — local-first terminal assistant. The default command opens a "
+            "unified REPL that auto-routes between chat, web search, deep research, the "
+            "private local coding agent and RAG."
+        ),
     )
     parser.add_argument("--api-url", help="RAG API base URL (overrides config).")
     parser.add_argument("--install-root", help="Full TrinaxAI installation directory (overrides auto-discovery).")
@@ -63,7 +67,7 @@ def _build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command", metavar="COMMAND")
 
     # Flat (no sub-subcommands) commands
-    chat_p = sub.add_parser("chat", help="Interactive REPL or single-shot prompt.")
+    chat_p = sub.add_parser("chat", help="Unified REPL (chat · web · research · agent · RAG) or single prompt.")
     chat_p.add_argument("--prompt", help="Run a single prompt and exit.")
     chat_p.add_argument("--session", help="Session name. A unique name is created when omitted.")
     chat_p.add_argument("--collections", help="Comma-separated collection ids.")
@@ -72,12 +76,28 @@ def _build_parser() -> argparse.ArgumentParser:
         choices=["general", "ollama", "rag"],
         help="Chat engine. General uses Ollama without indexed-document context.",
     )
+    chat_p.add_argument("--workspace", help="Agent workspace root for /agent turns (default: current dir).")
 
     ask_p = sub.add_parser("ask", help="Ask one question and exit.")
     ask_p.add_argument("prompt", nargs="+", help="Question or prompt to send to TrinaxAI.")
     ask_p.add_argument("--session", help="Session name. A unique name is created when omitted.")
     ask_p.add_argument("--collections", help="Comma-separated collection ids.")
     ask_p.add_argument("--engine", choices=["general", "ollama", "rag"])
+
+    agent_p = sub.add_parser(
+        "agent",
+        help="Agentic assistant: read, write and run code in a workspace.",
+    )
+    agent_p.add_argument("--prompt", help="Run a single task and exit.")
+    agent_p.add_argument("--workspace", help="Directory the agent operates in (default: current dir).")
+    agent_p.add_argument("--model", help="Ollama model to use (default: the tool-calling coder model).")
+    agent_p.add_argument("--session", help="Session name. A unique name is created when omitted.")
+    agent_p.add_argument("--max-steps", dest="max_steps", type=int, help="Max tool-use iterations (default: 25).")
+    agent_p.add_argument(
+        "--yolo",
+        action="store_true",
+        help="Auto-approve every action without confirmation (dangerous).",
+    )
 
     idx_p = sub.add_parser("index", help="Index a folder into the local RAG store.")
     idx_p.add_argument("path", nargs="?", help="Folder to index, for example: trinaxai index .")
@@ -108,8 +128,32 @@ def _build_parser() -> argparse.ArgumentParser:
     restart_p = sub.add_parser("restart", help="Restart TrinaxAI local services.")
     restart_p.add_argument("-y", "--yes", action="store_true", help="Skip confirmation.")
     sub.add_parser("models", help="List installed and recommended local models.")
+    pair_p = sub.add_parser("pair", help="Pair and manage trusted LAN devices.")
+    pair_sub = pair_p.add_subparsers(dest="pair_command", metavar="ACTION")
+    pair_start = pair_sub.add_parser("start", help="Generate a short, one-time pairing code.")
+    pair_start.add_argument(
+        "--scopes",
+        default="chat,read_private",
+        help="Comma-separated scopes granted to the device.",
+    )
+    pair_start.add_argument("--ttl", type=int, default=300, help="Code lifetime in seconds (60-900).")
+    pair_start.add_argument("--device-ttl-days", type=int, help="Optional device credential lifetime.")
+    pair_start.add_argument("--pwa-url", help="PWA origin used in the displayed pairing link.")
+    pair_sub.add_parser("list", help="List paired and revoked devices.")
+    pair_revoke = pair_sub.add_parser("revoke", help="Revoke one paired device.")
+    pair_revoke.add_argument("device_id", help="Device id shown by 'trinaxai pair list'.")
     sub.add_parser("config", help="Show active CLI and environment configuration.")
-    sub.add_parser("doctor", help="Run local health checks.")
+    doctor_p = sub.add_parser("doctor", help="Run local health checks.")
+    doctor_p.add_argument(
+        "--strict",
+        action="store_true",
+        help="Return a non-zero exit code when any critical health check fails.",
+    )
+    doctor_p.add_argument(
+        "--json",
+        action="store_true",
+        help="Emit machine-readable JSON instead of a human table.",
+    )
     sub.add_parser("version", help="Print TrinaxAI CLI version.")
     sub.add_parser("help", help="Show TrinaxAI CLI help.")
     update_p = sub.add_parser("update", help="Update code, dependencies and the PWA.")
@@ -128,7 +172,9 @@ def _build_parser() -> argparse.ArgumentParser:
     uninstall_p.add_argument("--remove-models", action="store_true")
     uninstall_p.add_argument("--remove-ollama", action="store_true")
     uninstall_p.add_argument("--keep-env", action="store_true")
-    sub.add_parser("mcp", help="Configure MCP server (placeholder).")
+    # Keep the reserved command parseable for compatibility, but do not
+    # advertise an integration that does not exist yet.
+    sub.add_parser("mcp", help=argparse.SUPPRESS)
     exp_p = sub.add_parser("export", help="Export a saved session.")
     exp_p.add_argument("--session", default="default")
     exp_p.add_argument("--format", default="md", choices=["md"])
@@ -209,8 +255,12 @@ def _dispatch(name: str, args: Any, client: Any, ui: Any, config: CLIConfig) -> 
 
 def main(argv: Sequence[str] | None = None) -> int:
     """Entry point.  Returns the process exit code."""
+    invocation_cwd = str(Path.cwd().resolve())
     parser = _build_parser()
     args = parser.parse_args(argv)
+    # Preserve where the person invoked TrinaxAI before config/imports or an
+    # installation wrapper can change process context.
+    setattr(args, "invocation_cwd", invocation_cwd)
 
     if args.install_root:
         os.environ["TRINAXAI_HOME"] = str(Path(args.install_root).expanduser())

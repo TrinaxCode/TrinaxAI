@@ -35,7 +35,8 @@ def run(args: Any, client: Any, ui: Any, config: Any) -> int:
                 ui.error("Cannot delete the 'default' collection.")
                 return 1
             if not ui.confirm(f"Delete collection '{cid}' and its indexed files?", default=False):
-                return 1
+                ui.info("Cancelled.")
+                return 0
             n = client.delete_collection(cid)
             ui.success(f"Deleted '{cid}' (nodes removed: {n})")
             return 0
@@ -44,7 +45,12 @@ def run(args: Any, client: Any, ui: Any, config: Any) -> int:
             if not cid:
                 ui.error("Collection id required.")
                 return 1
+            available = {item.get("id") for item in client.list_collections()}
+            if cid not in available:
+                ui.error(f"Collection '{cid}' does not exist.")
+                return 1
             config.active_collection = cid
+            config.collections = [cid]
             saved_to = config.save()
             ui.success(f"Active collection set to '{cid}' (saved to {saved_to}).")
             return 0

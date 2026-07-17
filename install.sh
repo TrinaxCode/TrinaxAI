@@ -16,7 +16,7 @@ Usage:
   ./install.sh --interactive   Guided install (default)
   ./install.sh --non-interactive  Automatic install for CI/scripts
   ./install.sh --no-models     Skip model downloads
-  ./install.sh --no-vision     Skip vision model download
+  ./install.sh --no-vision     Compatibility flag; vision downloads on first use
   ./install.sh --no-autostart  Do not enable boot autostart
   ./install.sh --no-auto-update Do not enable the weekly automatic update
   ./install.sh --no-start      Do not start TrinaxAI after install
@@ -32,7 +32,7 @@ What it does:
   4. Installs Ollama if missing
   5. Creates Python virtual environment and installs dependencies
   6. Builds the PWA frontend (Node.js required)
-  7. Asks whether to pull recommended Ollama models
+  7. Asks whether to pull recommended text/RAG Ollama models
   8. Asks whether to enable auto-start on boot and start TrinaxAI now
   9. Enables a safe weekly GitHub update check
 
@@ -43,7 +43,7 @@ Environment variables:
   TRINAXAI_INTERACTIVE=1        Ask before optional choices
   TRINAXAI_NONINTERACTIVE=1     Do not ask optional choices
   TRINAXAI_INSTALL_MODELS=0     Skip model downloads
-  TRINAXAI_INSTALL_VISION=0     Skip vision model download
+  TRINAXAI_INSTALL_VISION=0     Compatibility env; vision downloads on first use
   TRINAXAI_ENABLE_AUTOSTART=0   Skip boot autostart
   TRINAXAI_ENABLE_AUTO_UPDATE=0 Skip weekly automatic updates
   TRINAXAI_START_NOW=0          Skip starting TrinaxAI at the end
@@ -347,6 +347,7 @@ if [ "$OS" = "windows" ] && [ -f "install.ps1" ] && command -v powershell.exe >/
   [ "$START_NOW" = "1" ] || PS_ARGS+=("-NoStart")
   [ "$ENABLE_LAN_SYSTEM" = "1" ] && PS_ARGS+=("-LanSystem")
   [ -z "$PROFILE_OVERRIDE" ] || PS_ARGS+=("-Profile" "$PROFILE_OVERRIDE")
+  [ -z "$INSTALL_DIR" ] || PS_ARGS+=("-InstallDir" "$INSTALL_DIR")
   exec powershell.exe "${PS_ARGS[@]}"
 fi
 
@@ -407,6 +408,7 @@ if [ "$OS" = "windows" ] && [ -f "install.ps1" ] && command -v powershell.exe >/
   [ "$START_NOW" = "1" ] || PS_ARGS+=("-NoStart")
   [ "$ENABLE_LAN_SYSTEM" = "1" ] && PS_ARGS+=("-LanSystem")
   [ -z "$PROFILE_OVERRIDE" ] || PS_ARGS+=("-Profile" "$PROFILE_OVERRIDE")
+  [ -z "$INSTALL_DIR" ] || PS_ARGS+=("-InstallDir" "$INSTALL_DIR")
   exec powershell.exe "${PS_ARGS[@]}"
 fi
 
@@ -493,42 +495,40 @@ else
 fi
 print_ok "Automatic setup selected: profile=$PROFILE"
 
-MODEL_GENERAL="qwen3:4b-instruct-2507-q4_K_M"
+MODEL_GENERAL="qwen3.5:9b"
 MODEL_CODE="qwen2.5-coder:3b"
-MODEL_DEEP="qwen2.5-coder:7b"
-MODEL_FAST="qwen3:4b-instruct-2507-q4_K_M"
+MODEL_DEEP="qwen3.5:9b"
+MODEL_FAST="granite4:3b"
 EMBED_PRESET="balanced"
 EMBED_MODEL="bge-m3"
 EMBED_DIMS="1024"
 EMBED_BATCH="8"
 EMBED_KEEP_ALIVE="15m"
-VISION_MODEL="qwen3-vl:4b"
-VISION_QUALITY_MODEL="qwen3-vl:8b"
+VISION_MODEL="qwen3-vl:4b-instruct"
 if [ "$PROFILE" = "8gb" ]; then
-  MODEL_GENERAL="qwen3:4b-instruct-2507-q4_K_M"
+  MODEL_GENERAL="qwen3.5:4b"
   MODEL_CODE="qwen2.5-coder:1.5b"
-  MODEL_DEEP="qwen2.5-coder:3b"
-  MODEL_FAST="llama3.2:1b"
+  MODEL_DEEP="qwen3.5:4b"
+  MODEL_FAST="qwen3.5:0.8b"
   EMBED_PRESET="balanced"
   EMBED_MODEL="bge-m3"
   EMBED_DIMS="1024"
   EMBED_BATCH="1"
   EMBED_KEEP_ALIVE="5m"
-  VISION_MODEL="qwen3-vl:2b"
-  VISION_QUALITY_MODEL="qwen3-vl:4b"
+  VISION_MODEL="qwen3-vl:2b-instruct"
 elif [ "$PROFILE" = "max" ]; then
-  MODEL_GENERAL="qwen3:30b-a3b-instruct-2507-q4_K_M"
+  MODEL_GENERAL="qwen3.5:27b"
   MODEL_CODE="qwen2.5-coder:7b"
-  MODEL_DEEP="qwen3-coder:30b"
-  VISION_MODEL="qwen3-vl:8b"
-  VISION_QUALITY_MODEL="qwen3-vl:32b"
+  MODEL_DEEP="qwen3.5:27b"
+  MODEL_FAST="qwen3.5:4b"
+  VISION_MODEL="qwen3-vl:8b-instruct"
   EMBED_KEEP_ALIVE="30m"
 elif [ "$PROFILE" = "ultra" ]; then
-  MODEL_GENERAL="qwen3:30b-a3b-instruct-2507-q4_K_M"
-  MODEL_CODE="qwen2.5-coder:7b"
-  MODEL_DEEP="qwen3-coder:30b"
-  VISION_MODEL="qwen3-vl:8b"
-  VISION_QUALITY_MODEL="qwen3-vl:32b"
+  MODEL_GENERAL="qwen3.5:35b-a3b"
+  MODEL_CODE="qwen2.5-coder:14b"
+  MODEL_DEEP="qwen3.5:35b-a3b"
+  MODEL_FAST="qwen3.5:4b"
+  VISION_MODEL="qwen3-vl:30b-a3b-instruct"
   EMBED_BATCH="16"
   EMBED_KEEP_ALIVE="30m"
 fi
@@ -550,7 +550,6 @@ if [[ "$reply" =~ ^[Oo]$ ]]; then
   MODEL_FAST="$(ask_default "Fast model" "$MODEL_FAST")"
   EMBED_MODEL="$(ask_default "Embedding model for RAG" "$EMBED_MODEL")"
   VISION_MODEL="$(ask_default "Vision/image model" "$VISION_MODEL")"
-  VISION_QUALITY_MODEL="$(ask_default "High-quality vision model" "$VISION_QUALITY_MODEL")"
 fi
 
 # ── LAN System Control ──
@@ -590,9 +589,10 @@ TRINAXAI_PROFILE=$PROFILE
 TRINAXAI_PERFORMANCE_MODE=fast
 
 # Network
-TRINAXAI_HOST=0.0.0.0
+TRINAXAI_HOST=127.0.0.1
 TRINAXAI_PORT=3333
 OLLAMA_BASE_URL=http://localhost:11434
+OLLAMA_HOST=127.0.0.1:11434
 TRINAXAI_FRONTEND_URL=https://localhost:3334
 TRINAXAI_FRONTEND_MODE=preview
 TRINAXAI_RAG_HTTPS=1
@@ -615,7 +615,6 @@ TRINAXAI_EMBED_KEEP_ALIVE=$EMBED_KEEP_ALIVE
 
 # Vision
 VITE_TRINAXAI_VISION_MODEL=$VISION_MODEL
-VITE_TRINAXAI_VISION_QUALITY_MODEL=$VISION_QUALITY_MODEL
 
 # Reranking (off by default — enable for better precision)
 TRINAXAI_RERANK=0
@@ -686,7 +685,10 @@ fi
 
 python -m pip install --upgrade pip
 
-if [ -f "requirements.txt" ]; then
+if [ -f "requirements.lock" ]; then
+  python -m pip install -r requirements.lock
+  print_ok "Locked Python packages installed"
+elif [ -f "requirements.txt" ]; then
   python -m pip install -r requirements.txt
   print_ok "Python packages installed"
 else
@@ -749,7 +751,7 @@ echo "  General chat:   $MODEL_GENERAL"
 echo "  Code/router:    $MODEL_CODE"
 echo "  Deep analysis:  $MODEL_DEEP"
 echo "  Embeddings:     $EMBED_MODEL"
-echo "  Vision (opt):   $VISION_MODEL"
+echo "  Vision (lazy):  $VISION_MODEL"
 echo ""
 
 if [ "$INSTALL_MODELS" = "1" ]; then
@@ -767,19 +769,10 @@ if [ "$INSTALL_MODELS" = "1" ]; then
       ollama pull "$model" && print_ok "$model" || print_err "$model failed"
     done
 
-    if [ "$INSTALL_VISION" = "1" ]; then
-      if ask_yes_no "Download vision model ($VISION_MODEL)?" y; then
-        INSTALL_VISION=1
-      else
-        INSTALL_VISION=0
-      fi
-    fi
-    if [ "$INSTALL_VISION" = "1" ]; then
-      ollama pull "$VISION_MODEL" && print_ok "$VISION_MODEL" || print_err "$VISION_MODEL failed"
-    fi
+    print_info "Vision model $VISION_MODEL will download on first image analysis."
   else
     print_warn "Ollama is not available yet; skipping model downloads. TrinaxAI will still install."
-    print_info "After installing/starting Ollama, run: ollama pull qwen3:4b-instruct-2507-q4_K_M && ollama pull qwen2.5-coder:3b && ollama pull bge-m3"
+    print_info "After installing/starting Ollama, run: ollama pull qwen3.5:9b && ollama pull granite4:3b && ollama pull bge-m3"
   fi
 else
   print_info "Skipping model download. You can pull them later with: ollama pull <model>"

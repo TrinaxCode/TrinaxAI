@@ -9,12 +9,13 @@ import os
 import threading
 from typing import Any
 
-from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
 
 import config
+from app.security.admin_auth import require_scope
 from app.security.rate_limit import enforce_rate_limit
 from app.services.voice_service import (
     stt_available,
@@ -25,7 +26,11 @@ from app.services.voice_service import (
 )
 from trinaxai_core import _positive_int
 
-router = APIRouter(prefix="/voice", tags=["voice"])
+router = APIRouter(
+    prefix="/v1/voice",
+    tags=["voice"],
+    dependencies=[Depends(require_scope("chat"))],
+)
 _voice_slots = threading.BoundedSemaphore(
     _positive_int(os.getenv("TRINAXAI_VOICE_MAX_CONCURRENCY"), 1, minimum=1, maximum=4)
 )
@@ -91,9 +96,7 @@ async def voice_stt(
     if not data:
         raise HTTPException(status_code=400, detail="Empty audio file")
     try:
-        text = await run_in_threadpool(
-            _run_voice_task, transcribe_bytes, data, file.filename, lang
-        )
+        text = await run_in_threadpool(_run_voice_task, transcribe_bytes, data, file.filename, lang)
     except RuntimeError as e:
         raise HTTPException(status_code=501, detail=str(e)) from e
     except ValueError as e:
@@ -109,9 +112,7 @@ async def voice_tts(request: Request, req: TTSRequest) -> Response:
     """
     enforce_rate_limit(request, bucket="voice_tts")
     try:
-        audio_bytes, content_type = await run_in_threadpool(
-            _run_voice_task, synthesize, req.text, req.lang
-        )
+        audio_bytes, content_type = await run_in_threadpool(_run_voice_task, synthesize, req.text, req.lang)
     except RuntimeError as e:
         raise HTTPException(status_code=501, detail=str(e)) from e
     return Response(audio_bytes, media_type=content_type)

@@ -84,7 +84,7 @@ def complexity_score(text: str, cls: Classification) -> ScoreBreakdown:
 
     precision = _scale(sum(1 for h in _PRECISION_HINTS if h in t), 2, _W_PRECISION)
 
-    reasoning_hits = len(cls.categories & {"architecture", "algorithm", "debugging"})
+    reasoning_hits = len(cls.categories & {"architecture", "algorithm", "debugging", "math", "analysis"})
     reasoning = _scale(reasoning_hits, 2, _W_REASONING)
 
     multifile = _W_MULTIFILE if any(h in t for h in _MULTIFILE_HINTS) else 0

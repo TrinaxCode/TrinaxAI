@@ -166,9 +166,8 @@ function Get-ConfiguredModels {
   Add-Model $List (Read-EnvValue "TRINAXAI_MODEL_GENERAL")
   Add-Model $List (Read-EnvValue "TRINAXAI_MODEL_FAST")
   Add-Model $List (Read-EnvValue "TRINAXAI_EMBED")
-  Add-Model $List (Read-EnvValue "VITE_TRINAXAI_VISION_MODEL")
   if ($List.Count -eq 0) {
-    foreach ($Model in @("qwen2.5-coder:3b", "qwen3:4b-instruct-2507-q4_K_M", "bge-m3", "qwen3-vl:4b")) {
+    foreach ($Model in @("qwen2.5-coder:3b", "qwen3.5:9b", "granite4:3b", "bge-m3")) {
       Add-Model $List $Model
     }
   }
@@ -188,6 +187,9 @@ function Remove-ConfiguredModels {
 function New-TrinaxAIBackup {
   $BackupDir = Join-Path $Repo "backups"
   New-Item -ItemType Directory -Force -Path $BackupDir | Out-Null
+  if (Test-Cmd "icacls") {
+    & icacls $BackupDir /inheritance:r /grant:r "${env:USERNAME}:(OI)(CI)F" | Out-Null
+  }
   $Stamp = Get-Date -Format "yyyyMMdd-HHmmss"
   $ZipPath = Join-Path $BackupDir "trinaxai-backup-$Stamp.zip"
   $Items = @(".env", "storage", "local_sources", "chat-pwa\certs", "logs") |
@@ -198,6 +200,9 @@ function New-TrinaxAIBackup {
     return
   }
   Compress-Archive -Path $Items -DestinationPath $ZipPath -Force
+  if (Test-Cmd "icacls") {
+    & icacls $ZipPath /inheritance:r /grant:r "${env:USERNAME}:F" | Out-Null
+  }
   Write-Ok "Backup created: $ZipPath"
 }
 function Invoke-ServiceManager($Action) {
@@ -211,14 +216,7 @@ function Sync-TrinaxRepository {
   if (-not (Test-Cmd "git")) { throw "Git is required to update TrinaxAI." }
   Write-Info "Fetching the latest TrinaxAI source from GitHub..."
   if (-not (Test-Path ".git")) {
-    git init -q
-    if ($Managed) { Add-Content -Encoding UTF8 ".git\info\exclude" ".trinaxai-managed" }
-    git remote add origin $Remote
-    git fetch --prune origin main
-    if ($LASTEXITCODE -ne 0) { throw "Could not fetch origin/main." }
-    git reset --hard origin/main
-    Write-Ok "Archive installation converted to an updateable Git repository"
-    return
+    throw "Archive installations are not overwritten in place. Re-run the installer for a reviewed upgrade."
   }
   if ($Managed) {
     $Exclude = ".git\info\exclude"
@@ -231,36 +229,58 @@ function Sync-TrinaxRepository {
   else { git remote add origin $Remote }
   $Dirty = -not [string]::IsNullOrWhiteSpace((git status --porcelain --untracked-files=normal | Out-String))
   if ($Dirty) {
-    if ($Managed) {
-      $Stamp = Get-Date -Format "yyyyMMdd-HHmmss"
-      git stash push --include-untracked -m "TrinaxAI automatic pre-update $Stamp"
-      Write-Warn "Local code changes were preserved in Git stash"
-    } else {
-      throw "Local developer changes detected; update stopped to protect them."
-    }
+    throw "Local changes detected; update stopped to protect them. Commit or stash them explicitly first."
   }
+  $script:PreUpdateCommit = (git rev-parse HEAD).Trim()
+  $Dist = Join-Path $Repo "chat-pwa\dist"
+  if (Test-Path $Dist) {
+    $TempRoot = Join-Path ([IO.Path]::GetTempPath()) ("trinaxai-dist-" + [guid]::NewGuid().ToString("N"))
+    New-Item -ItemType Directory -Force -Path $TempRoot | Out-Null
+    $script:PwaDistBackup = Join-Path $TempRoot "dist"
+    Copy-Item -LiteralPath $Dist -Destination $script:PwaDistBackup -Recurse -Force
+  }
+  $script:RollbackActive = $true
   git fetch --prune origin main
   if ($LASTEXITCODE -ne 0) { throw "Could not fetch origin/main." }
   git merge --ff-only origin/main
   if ($LASTEXITCODE -eq 0) {
     Write-Ok "Repository synchronized with origin/main"
-  } elseif ($Managed) {
-    git reset --hard origin/main
-    Write-Ok "Managed installation synchronized with origin/main"
   } else {
     throw "The local branch diverged from origin/main; update stopped safely."
+  }
+}
+
+function Restore-FailedUpdate {
+  if (-not $script:RollbackActive -or [string]::IsNullOrWhiteSpace($script:PreUpdateCommit)) { return }
+  Write-Warn "Update failed; restoring the previously working source tree."
+  try {
+    git reset --hard $script:PreUpdateCommit | Out-Null
+  } catch {
+    Write-Warn "Automatic source rollback failed: $($_.Exception.Message)"
+  }
+  if ($script:PwaDistBackup -and (Test-Path $script:PwaDistBackup)) {
+    $Dist = Join-Path $Repo "chat-pwa\dist"
+    Remove-Item -LiteralPath $Dist -Recurse -Force -ErrorAction SilentlyContinue
+    Move-Item -LiteralPath $script:PwaDistBackup -Destination $Dist -Force -ErrorAction SilentlyContinue
   }
 }
 
 $Repo = if ($RepoRoot) { [IO.Path]::GetFullPath($RepoRoot) } else { Split-Path -Parent $MyInvocation.MyCommand.Path }
 Set-Location $Repo
 $PythonExe = Get-PythonExe
+$script:PreUpdateCommit = ""
+$script:PwaDistBackup = ""
+$script:RollbackActive = $false
+trap {
+  Restore-FailedUpdate
+  exit 1
+}
 
 Write-Host ""
 Write-Host "+========================================+" -ForegroundColor Blue
 Write-Host "|          TrinaxAI - Smart Update       |" -ForegroundColor Blue
 Write-Host "+========================================+" -ForegroundColor Blue
-if ($Scheduled) { Write-Info "Weekly automatic maintenance" }
+if ($Scheduled) { Write-Info "Weekly update check (no remote code execution)" }
 else { Write-Info "Your data and settings stay untouched" }
 
 $CreateBackup = -not $NoBackup
@@ -277,10 +297,10 @@ $InstallOllamaAfterRemove = $RemoveOllama
 if ($Scheduled) {
   $NonInteractive = $true
   $CreateBackup = $false
-  $PullCode = $true
+  $PullCode = $false
   $PullModels = $false
   $RunAudit = $false
-  $RestartAfter = $true
+  $RestartAfter = $false
 }
 
 if (-not $NonInteractive) {
@@ -304,6 +324,11 @@ if (-not $NonInteractive) {
 if (-not $PythonExe) {
   Write-Warn "Python was not found. Run install.ps1 first."
   exit 1
+}
+
+if ($Scheduled) {
+  Invoke-Python @("scripts\auto_update.py", "run", "--base-dir", $Repo)
+  exit $LASTEXITCODE
 }
 
 if ($CreateBackup) {
@@ -331,14 +356,15 @@ if ($RemoveOllamaApp) {
 
 Write-Step "3/7 Python dependencies"
 Invoke-Python @("-m", "pip", "install", "--upgrade", "pip")
-Invoke-Python @("-m", "pip", "install", "-r", "requirements.txt")
+$RequirementsFile = if (Test-Path "requirements.lock") { "requirements.lock" } else { "requirements.txt" }
+Invoke-Python @("-m", "pip", "install", "-r", $RequirementsFile)
 Invoke-Python @("-m", "pip", "install", "-e", ".")
 Write-Ok "Python dependencies updated"
 
 Write-Step "4/7 PWA frontend"
 if ((Test-Cmd "npm") -and (Test-Path "chat-pwa")) {
   Push-Location "chat-pwa"
-  npm install
+  if (Test-Path "package-lock.json") { npm ci } else { npm install }
   npm run build
   Pop-Location
   Write-Ok "PWA rebuilt"
@@ -384,3 +410,7 @@ if ($RestartAfter) {
 
 Write-Ok "TrinaxAI update finished"
 Write-Info "Settings, indexes, models, and personal data were preserved."
+$script:RollbackActive = $false
+if ($script:PwaDistBackup) {
+  Remove-Item -LiteralPath (Split-Path -Parent $script:PwaDistBackup) -Recurse -Force -ErrorAction SilentlyContinue
+}

@@ -39,6 +39,9 @@ def test_factory_reset_clears_runtime_index_data(tmp_path, monkeypatch) -> None:
     local_sources.mkdir(parents=True)
     (storage / "docstore.json").write_text("{}", encoding="utf-8")
     (storage / "usage.jsonl").write_text("{}", encoding="utf-8")
+    (storage / ".proxy_secret").write_text("gateway-secret", encoding="utf-8")
+    (storage / ".inference.lock").mkdir()
+    (storage / ".inference.lock" / "owner.json").write_text("{}", encoding="utf-8")
     (local_sources / "indexed.txt").write_text("indexed", encoding="utf-8")
 
     monkeypatch.setattr(rag_api.config, "BASE_DIR", str(base))
@@ -62,9 +65,14 @@ def test_factory_reset_clears_runtime_index_data(tmp_path, monkeypatch) -> None:
     assert rag_api._sources_cache == {}
     assert not (storage / "docstore.json").exists()
     assert not (storage / "usage.jsonl").exists()
+    assert (storage / ".proxy_secret").read_text(encoding="utf-8") == "gateway-secret"
+    assert (storage / ".inference.lock" / "owner.json").exists()
     assert not (local_sources / "indexed.txt").exists()
-    assert json.loads((storage / "app_state.json").read_text(encoding="utf-8")) == {
-        "tc-reset-at": "123"
+    app_state = json.loads((storage / "app_state.json").read_text(encoding="utf-8"))
+    assert app_state == {
+        "schema_version": 2,
+        "revision": 1,
+        "values": {"tc-reset-at": "123"},
     }
     collections = json.loads((storage / "collections.json").read_text(encoding="utf-8"))
     assert collections["collections"][0]["id"] == "default"
@@ -74,7 +82,7 @@ def test_app_state_get_uses_etag_for_unchanged_state(tmp_path, monkeypatch) -> N
     state_path = tmp_path / "app_state.json"
     state_path.write_text(json.dumps({"tc-theme": "dark"}), encoding="utf-8")
     monkeypatch.setattr(rag_api, "APP_STATE_PATH", str(state_path))
-    client = TestClient(rag_api.app)
+    client = TestClient(rag_api.app, client=("127.0.0.1", 50000))
 
     first = client.get("/app-state")
     etag = first.headers["etag"]
@@ -89,7 +97,7 @@ def test_app_state_put_does_not_echo_large_state(tmp_path, monkeypatch) -> None:
     state_path = tmp_path / "app_state.json"
     monkeypatch.setattr(rag_api, "APP_STATE_PATH", str(state_path))
     monkeypatch.setattr(rag_api, "ADMIN_TOKEN", "test-token")
-    client = TestClient(rag_api.app)
+    client = TestClient(rag_api.app, client=("127.0.0.1", 50000))
 
     response = client.put(
         "/app-state",
@@ -98,14 +106,19 @@ def test_app_state_put_does_not_echo_large_state(tmp_path, monkeypatch) -> None:
     )
 
     assert response.status_code == 200
-    assert response.json() == {"ok": True}
+    assert response.json() == {
+        "ok": True,
+        "schema_version": 2,
+        "revision": 1,
+        "applied": True,
+    }
     assert len(response.content) < 100
 
 
 def test_chat_attachment_is_available_to_another_client(tmp_path, monkeypatch) -> None:
     attachments = tmp_path / "chat_attachments"
     monkeypatch.setattr(rag_api, "CHAT_ATTACHMENTS_DIR", str(attachments))
-    client = TestClient(rag_api.app)
+    client = TestClient(rag_api.app, client=("127.0.0.1", 50000))
 
     uploaded = client.post(
         "/attachments",
@@ -115,7 +128,9 @@ def test_chat_attachment_is_available_to_another_client(tmp_path, monkeypatch) -
     assert uploaded.status_code == 200
     metadata = uploaded.json()
     assert metadata["storage_key"] == f"server:{metadata['id']}"
-    downloaded = TestClient(rag_api.app).get(f"/attachments/{metadata['id']}")
+    downloaded = TestClient(rag_api.app, client=("127.0.0.1", 50001)).get(
+        f"/attachments/{metadata['id']}"
+    )
     assert downloaded.status_code == 200
     assert downloaded.content == b"%PDF-shared"
     assert downloaded.headers["content-type"] == "application/pdf"
@@ -127,7 +142,7 @@ def test_chat_attachment_limit_removes_partial_file(tmp_path, monkeypatch) -> No
     monkeypatch.setattr(rag_api, "CHAT_ATTACHMENTS_DIR", str(attachments))
     monkeypatch.setattr(rag_api, "CHAT_ATTACHMENT_MAX_BYTES", 4)
 
-    response = TestClient(rag_api.app).post(
+    response = TestClient(rag_api.app, client=("127.0.0.1", 50000)).post(
         "/attachments",
         files={"file": ("large.pptx", b"12345", "application/octet-stream")},
     )
@@ -141,7 +156,7 @@ def test_chat_attachment_quota_removes_rejected_file(tmp_path, monkeypatch) -> N
     monkeypatch.setattr(rag_api, "CHAT_ATTACHMENTS_DIR", str(attachments))
     monkeypatch.setattr(rag_api, "CHAT_ATTACHMENTS_MAX_BYTES", 4)
 
-    response = TestClient(rag_api.app).post(
+    response = TestClient(rag_api.app, client=("127.0.0.1", 50000)).post(
         "/attachments",
         files={"file": ("large.txt", b"12345", "text/plain")},
     )
@@ -161,7 +176,9 @@ def test_legacy_unsafe_attachment_type_is_forced_to_download(tmp_path, monkeypat
     )
     monkeypatch.setattr(rag_api, "CHAT_ATTACHMENTS_DIR", str(attachments))
 
-    response = TestClient(rag_api.app).get(f"/attachments/{attachment_id}")
+    response = TestClient(rag_api.app, client=("127.0.0.1", 50000)).get(
+        f"/attachments/{attachment_id}"
+    )
 
     assert response.headers["content-type"] == "application/octet-stream"
     assert response.headers["content-disposition"].startswith("attachment")
@@ -180,7 +197,7 @@ def test_ensure_collection_sanitizes_path_segments(tmp_path, monkeypatch) -> Non
 
 
 def test_chat_rejects_empty_or_roleless_conversations() -> None:
-    client = TestClient(rag_api.app)
+    client = TestClient(rag_api.app, client=("127.0.0.1", 50000))
 
     empty = client.post("/v1/chat/completions", json={"messages": []})
     roleless = client.post(
@@ -193,7 +210,7 @@ def test_chat_rejects_empty_or_roleless_conversations() -> None:
 
 
 def test_chat_rejects_oversized_messages() -> None:
-    response = TestClient(rag_api.app).post(
+    response = TestClient(rag_api.app, client=("127.0.0.1", 50000)).post(
         "/v1/chat/completions",
         json={"messages": [{"role": "user", "content": "x" * 100_001}]},
     )

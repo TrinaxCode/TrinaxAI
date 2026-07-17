@@ -62,7 +62,7 @@ def route_cli_model(messages: list[dict], requested: str) -> str:
     route = getattr(config, "route_model", None)
     if callable(route):
         return route(current)
-    return getattr(config, "MODEL_GENERAL", getattr(config, "LLM_MODEL", "qwen3:4b-instruct-2507-q4_K_M"))
+    return getattr(config, "MODEL_GENERAL", getattr(config, "LLM_MODEL", "qwen3.5:4b"))
 
 
 def ask_ollama(messages: list[dict], model: str) -> tuple[str, str]:

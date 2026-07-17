@@ -27,6 +27,19 @@ def run(args: Any, client: Any, ui: Any, config: Any) -> int:
                     ui.info(f"  • {p}")
             else:
                 ui.warn("Watcher is not running.")
+            job = res.get("job") if isinstance(res.get("job"), dict) else {}
+            job_status = str(job.get("status") or "idle")
+            if job_status != "idle":
+                pending = int(job.get("pending_events") or 0)
+                active_root = str(job.get("active_root") or "")
+                detail = f"Indexer: {job_status}"
+                if pending:
+                    detail += f" · {pending} event(s) queued"
+                if active_root:
+                    detail += f" · {active_root}"
+                ui.info(detail)
+            if job.get("last_error"):
+                ui.error(f"Last watcher error: {job['last_error']}")
             return 0
         ui.error(f"Unknown action: {action}")
         return 1

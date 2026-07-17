@@ -519,42 +519,40 @@ if ((-not $NonInteractive) -and $Mode -match "^[Aa]") {
   Write-Ok "Automatic setup selected: profile=$Profile"
 }
 
-$ModelGeneral = "qwen3:4b-instruct-2507-q4_K_M"
+$ModelGeneral = "qwen3.5:9b"
 $ModelCode = "qwen2.5-coder:3b"
-$ModelDeep = "qwen2.5-coder:7b"
-$ModelFast = "qwen3:4b-instruct-2507-q4_K_M"
+$ModelDeep = "qwen3.5:9b"
+$ModelFast = "granite4:3b"
 $EmbedPreset = "balanced"
 $EmbedModel = "bge-m3"
 $EmbedDims = "1024"
 $EmbedBatch = "8"
 $EmbedKeepAlive = "15m"
-$VisionModel = "qwen3-vl:4b"
-$VisionQualityModel = "qwen3-vl:8b"
+$VisionModel = "qwen3-vl:4b-instruct"
 if ($Profile -eq "8gb") {
-  $ModelGeneral = "qwen3:4b-instruct-2507-q4_K_M"
+  $ModelGeneral = "qwen3.5:4b"
   $ModelCode = "qwen2.5-coder:1.5b"
-  $ModelDeep = "qwen2.5-coder:3b"
-  $ModelFast = "llama3.2:1b"
+  $ModelDeep = "qwen3.5:4b"
+  $ModelFast = "qwen3.5:0.8b"
   $EmbedPreset = "balanced"
   $EmbedModel = "bge-m3"
   $EmbedDims = "1024"
   $EmbedBatch = "1"
   $EmbedKeepAlive = "5m"
-  $VisionModel = "qwen3-vl:2b"
-  $VisionQualityModel = "qwen3-vl:4b"
+  $VisionModel = "qwen3-vl:2b-instruct"
 } elseif ($Profile -eq "max") {
-  $ModelGeneral = "qwen3:30b-a3b-instruct-2507-q4_K_M"
+  $ModelGeneral = "qwen3.5:27b"
   $ModelCode = "qwen2.5-coder:7b"
-  $ModelDeep = "qwen3-coder:30b"
-  $VisionModel = "qwen3-vl:8b"
-  $VisionQualityModel = "qwen3-vl:32b"
+  $ModelDeep = "qwen3.5:27b"
+  $ModelFast = "qwen3.5:4b"
+  $VisionModel = "qwen3-vl:8b-instruct"
   $EmbedKeepAlive = "30m"
 } elseif ($Profile -eq "ultra") {
-  $ModelGeneral = "qwen3:30b-a3b-instruct-2507-q4_K_M"
-  $ModelCode = "qwen2.5-coder:7b"
-  $ModelDeep = "qwen3-coder:30b"
-  $VisionModel = "qwen3-vl:8b"
-  $VisionQualityModel = "qwen3-vl:32b"
+  $ModelGeneral = "qwen3.5:35b-a3b"
+  $ModelCode = "qwen2.5-coder:14b"
+  $ModelDeep = "qwen3.5:35b-a3b"
+  $ModelFast = "qwen3.5:4b"
+  $VisionModel = "qwen3-vl:30b-a3b-instruct"
   $EmbedBatch = "16"
   $EmbedKeepAlive = "30m"
 }
@@ -574,7 +572,6 @@ if (-not $NonInteractive) {
     $ModelFast = Read-ModelValue "Fast model" $ModelFast
     $EmbedModel = Read-ModelValue "Embedding model for RAG" $EmbedModel
     $VisionModel = Read-ModelValue "Vision/image model" $VisionModel
-    $VisionQualityModel = Read-ModelValue "High-quality vision model" $VisionQualityModel
   }
 }
 
@@ -622,7 +619,7 @@ $EnvLines = @(
   "TRINAXAI_HOME=`"$Repo`"",
   "TRINAXAI_PROFILE=$Profile",
   "TRINAXAI_PERFORMANCE_MODE=fast",
-  "TRINAXAI_HOST=0.0.0.0",
+  "TRINAXAI_HOST=127.0.0.1",
   "TRINAXAI_PORT=3333",
   "TRINAXAI_HEALTH_URL=https://localhost:3333",
   "TRINAXAI_FRONTEND_URL=https://localhost:3334",
@@ -632,6 +629,7 @@ $EnvLines = @(
   "TRINAXAI_RAG_TARGET=https://127.0.0.1:3333",
   "VITE_TRINAXAI_RAG_TARGET=https://127.0.0.1:3333",
   "OLLAMA_BASE_URL=http://localhost:11434",
+  "OLLAMA_HOST=127.0.0.1:11434",
   "TRINAXAI_MODEL_GENERAL=$ModelGeneral",
   "TRINAXAI_MODEL_CODE=$ModelCode",
   "TRINAXAI_MODEL_DEEP=$ModelDeep",
@@ -643,7 +641,6 @@ $EnvLines = @(
   "TRINAXAI_EMBED_BATCH=$EmbedBatch",
   "TRINAXAI_EMBED_KEEP_ALIVE=$EmbedKeepAlive",
   "VITE_TRINAXAI_VISION_MODEL=$VisionModel",
-  "VITE_TRINAXAI_VISION_QUALITY_MODEL=$VisionQualityModel",
   "TRINAXAI_RERANK=0",
   "TRINAXAI_ALLOW_LAN_SYSTEM=$EnableLanSystem",
   "TRINAXAI_ADMIN_TOKEN=$AdminToken",
@@ -719,7 +716,8 @@ if (-not (Test-Path ".venv\Scripts\python.exe")) {
   exit 1
 }
 & ".\.venv\Scripts\python.exe" -m pip install --upgrade pip
-& ".\.venv\Scripts\python.exe" -m pip install -r requirements.txt
+$RequirementsFile = if (Test-Path "requirements.lock") { "requirements.lock" } else { "requirements.txt" }
+& ".\.venv\Scripts\python.exe" -m pip install -r $RequirementsFile
 & ".\.venv\Scripts\python.exe" -m pip install -e .
 $VenvScripts = Join-Path $Repo ".venv\Scripts"
 Add-UserPath $VenvScripts
@@ -744,16 +742,12 @@ Write-Host "  General chat: $ModelGeneral"
 Write-Host "  Code:         $ModelCode"
 Write-Host "  Deep:         $ModelDeep"
 Write-Host "  Embeddings:   $EmbedModel"
-Write-Host "  Vision:       $VisionModel"
+Write-Host "  Vision:       $VisionModel (downloads on first image analysis)"
 if (-not $NonInteractive) {
   $SkipModels = Read-Host "Download these Ollama models now? Choose N if you already have your own. [Y/n]"
   if ($SkipModels -match "^[Nn]") {
     $NoModels = $true
     Write-Warn "Model download skipped. The configured model names were still saved to .env."
-  }
-  if (-not $NoModels) {
-    $SkipVision = Read-Host "Download vision model ($VisionModel)? [Y/n]"
-    if ($SkipVision -match "^[Nn]") { $NoVision = $true }
   }
 }
 if (-not $NoModels -and (Ensure-OllamaRunning)) {
@@ -762,10 +756,7 @@ if (-not $NoModels -and (Ensure-OllamaRunning)) {
     Write-Host "  Pulling $Model..."
     & $OllamaExe pull $Model
   }
-  if (-not $NoVision) {
-    Write-Host "  Pulling $VisionModel..."
-    & $OllamaExe pull $VisionModel
-  }
+  Write-Host "  Vision model $VisionModel will download on first image analysis."
   Write-Ok "Models ready"
 } elseif ($NoModels) {
   Write-Warn "Model download skipped by flag."

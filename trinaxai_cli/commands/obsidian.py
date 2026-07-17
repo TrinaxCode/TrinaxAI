@@ -9,19 +9,25 @@ import shutil
 from pathlib import Path
 from typing import Any
 
+from trinaxai_cli.runtime import find_install_root
+from trinaxai_core import sanitize_collection_id
+
 
 def run(args: Any, client: Any, ui: Any, config: Any) -> int:
     vault = getattr(args, "vault", None)
     if not vault:
         ui.error("--vault PATH is required.")
         return 1
-    collection = getattr(args, "collection", None) or "obsidian"
+    collection = sanitize_collection_id(getattr(args, "collection", None) or "obsidian")
     vault_path = Path(vault).expanduser().resolve()
     if not vault_path.is_dir():
         ui.error(f"Not a directory: {vault_path}")
         return 1
 
-    dest = Path("local_sources/collections") / collection
+    # Keep imported notes with the installation, even when `trinaxai` is run
+    # from another directory.  This also aligns the source path with index.py.
+    project_root = find_install_root() or Path.cwd()
+    dest = project_root / "local_sources" / "collections" / collection
     dest.mkdir(parents=True, exist_ok=True)
 
     copied = 0

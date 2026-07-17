@@ -11,6 +11,9 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from trinaxai_cli.processes import spawn_process_group, wait_process_group
+from trinaxai_cli.runtime import find_install_root
+
 
 def run(args: Any, client: Any, ui: Any, config: Any) -> int:
     folder = getattr(args, "path", None) or getattr(args, "folder", None)
@@ -24,8 +27,9 @@ def run(args: Any, client: Any, ui: Any, config: Any) -> int:
     collection = getattr(args, "collection", None) or "default"
     append = bool(getattr(args, "append", False))
 
-    # Find index.py: prefer a sibling of the project root, otherwise cwd.
-    project_root = Path(__file__).resolve().parents[2]
+    # A packaged CLI can be launched from any directory. Prefer the full
+    # installation root over the current working directory or site-packages.
+    project_root = find_install_root() or Path(__file__).resolve().parents[2]
     candidates = [
         project_root / "index.py",
         Path.cwd() / "index.py",
@@ -47,21 +51,33 @@ def run(args: Any, client: Any, ui: Any, config: Any) -> int:
 
     ui.info(f"Indexing {folder_path} into collection '{collection}' (append={append})...")
     try:
-        proc = subprocess.Popen(
+        proc = spawn_process_group(
             [sys.executable, str(index_py)],
-            stdout=sys.stdout,
-            stderr=sys.stderr,
             env=env,
         )
-        rc = proc.wait()
+        timeout = max(60, int(os.getenv("TRINAXAI_INDEX_TIMEOUT", "3600")))
+        rc = wait_process_group(proc, timeout=timeout)
         if rc == 0:
-            ui.success("Indexing completed.")
+            try:
+                if client is None:
+                    raise RuntimeError("API client unavailable")
+                client.reload_index()
+            except Exception as exc:
+                # The files were indexed successfully. A stopped API can load
+                # them on its next start, so do not misreport the index job as
+                # failed merely because the hot reload was unavailable.
+                ui.warn(f"Indexing completed, but the live API could not reload it: {exc}")
+                return 0
+            ui.success("Indexing completed and the live RAG index was reloaded.")
             return 0
         ui.error(f"Indexer exited with code {rc}.")
         return rc or 1
     except KeyboardInterrupt:
         ui.warn("Interrupted.")
         return 130
+    except subprocess.TimeoutExpired:
+        ui.error("Indexing timed out; the indexer process group was stopped.")
+        return 124
     except Exception as exc:
         ui.error(f"index: {exc}")
         return 1

@@ -2,7 +2,7 @@
 # TrinaxAI updater. Keeps local data, updates code/deps, rebuilds PWA.
 set -euo pipefail
 
-RED='\033[0;31m'; GREEN='\033[0;32m'; BLUE='\033[0;34m'
+GREEN='\033[0;32m'; BLUE='\033[0;34m'
 YELLOW='\033[1;33m'; CYAN='\033[0;36m'; NC='\033[0m'; BOLD='\033[1m'
 
 print_step() { echo -e "\n${BLUE}${BOLD}┌─ $1${NC}"; }
@@ -29,7 +29,7 @@ Usage:
   ./update.sh --enable-autostart Enable boot autostart after update
   ./update.sh --disable-autostart Disable boot autostart after update
   ./update.sh --no-audit         Skip public readiness audit
-  ./update.sh --scheduled        Safe unattended weekly update
+  ./update.sh --scheduled        Check for updates only (never executes remote code)
   ./update.sh --help             Show this help
 
 What it asks:
@@ -87,6 +87,26 @@ RESTART_SET=0
 [ -n "${TRINAXAI_UPDATE_RESTART+x}" ] && RESTART_SET=1
 
 AUTOSTART_ACTION=""
+PRE_UPDATE_COMMIT=""
+PWA_DIST_BACKUP=""
+ROLLBACK_ACTIVE=0
+
+rollback_failed_update() {
+  local status=$?
+  trap - ERR INT TERM
+  if [ "$ROLLBACK_ACTIVE" = "1" ] && [ -n "$PRE_UPDATE_COMMIT" ] && [ -d .git ]; then
+    print_warn "Update failed; restoring the previously working source tree."
+    git reset --hard "$PRE_UPDATE_COMMIT" >/dev/null 2>&1 || true
+    if [ -n "$PWA_DIST_BACKUP" ] && [ -d "$PWA_DIST_BACKUP" ]; then
+      rm -rf -- "$ROOT/chat-pwa/dist"
+      mv -- "$PWA_DIST_BACKUP" "$ROOT/chat-pwa/dist" 2>/dev/null || true
+      PWA_DIST_BACKUP=""
+    fi
+  fi
+  exit "$status"
+}
+
+trap rollback_failed_update ERR INT TERM
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
@@ -107,9 +127,9 @@ while [ "$#" -gt 0 ]; do
     --keep-autostart) AUTOSTART_ACTION="keep";;
     --no-audit) RUN_AUDIT=0;;
     --scheduled)
-      SCHEDULED=1; INTERACTIVE=0; NONINTERACTIVE=1; CREATE_BACKUP=0
-      PULL_CODE=1; PULL_MODELS=0; PULL_MODELS_SET=1
-      RESTART_AFTER=1; RESTART_SET=1; RUN_AUDIT=0
+      SCHEDULED=1; INTERACTIVE=0; NONINTERACTIVE=1
+      PULL_CODE=0; PULL_MODELS=0; PULL_MODELS_SET=1
+      RESTART_AFTER=0; RESTART_SET=1; RUN_AUDIT=0
       ;;
     *) echo "Unknown option: $1" >&2; usage;;
   esac
@@ -198,6 +218,11 @@ else
   exit 1
 fi
 
+if [ "$SCHEDULED" = "1" ]; then
+  print_info "Scheduled maintenance is check-only; no remote code will be executed."
+  exec "${PYTHON_CMD[@]}" scripts/auto_update.py run --base-dir "$ROOT"
+fi
+
 NPM_CMD=()
 if is_windows && command -v npm.cmd >/dev/null 2>&1; then
   NPM_CMD=(npm.cmd)
@@ -227,9 +252,8 @@ configured_models() {
   add_unique_model "$(env_value TRINAXAI_MODEL_GENERAL)"
   add_unique_model "$(env_value TRINAXAI_MODEL_FAST)"
   add_unique_model "$(env_value TRINAXAI_EMBED)"
-  add_unique_model "$(env_value VITE_TRINAXAI_VISION_MODEL)"
   if [ "${#MODELS[@]}" -eq 0 ]; then
-    MODELS=(qwen2.5-coder:3b qwen3:4b-instruct-2507-q4_K_M bge-m3 qwen3-vl:4b)
+    MODELS=(qwen2.5-coder:3b qwen3.5:9b granite4:3b bge-m3)
   fi
 }
 
@@ -298,13 +322,8 @@ sync_repository() {
   }
   print_info "Fetching the latest TrinaxAI source from GitHub…"
   if [ ! -d .git ]; then
-    git init -q
-    [ "$managed" = "1" ] && printf '%s\n' '.trinaxai-managed' >> .git/info/exclude
-    git remote add origin "$remote"
-    git fetch --prune origin main
-    git reset --hard origin/main
-    print_ok "Archive installation converted to an updateable Git repository"
-    return 0
+    print_warn "Archive installations are not overwritten in place. Re-run the installer for a reviewed upgrade."
+    return 1
   fi
   if [ "$managed" = "1" ] && ! grep -Fqx '.trinaxai-managed' .git/info/exclude 2>/dev/null; then
     printf '%s\n' '.trinaxai-managed' >> .git/info/exclude
@@ -316,20 +335,18 @@ sync_repository() {
   fi
   if [ -n "$(git status --porcelain --untracked-files=normal)" ]; then dirty=1; fi
   if [ "$dirty" = "1" ]; then
-    if [ "$managed" = "1" ]; then
-      git stash push --include-untracked -m "TrinaxAI automatic pre-update $(date +%Y%m%d-%H%M%S)"
-      print_warn "Local code changes were preserved in Git stash"
-    else
-      print_warn "Local developer changes detected; update stopped to protect them."
-      return 1
-    fi
+    print_warn "Local changes detected; update stopped to protect them. Commit or stash them explicitly first."
+    return 1
   fi
+  PRE_UPDATE_COMMIT="$(git rev-parse HEAD)"
+  if [ -d "$ROOT/chat-pwa/dist" ]; then
+    PWA_DIST_BACKUP="$(mktemp -d "${TMPDIR:-/tmp}/trinaxai-dist.XXXXXX")/dist"
+    cp -a "$ROOT/chat-pwa/dist" "$PWA_DIST_BACKUP"
+  fi
+  ROLLBACK_ACTIVE=1
   git fetch --prune origin main
   if git merge --ff-only origin/main; then
     print_ok "Repository synchronized with origin/main"
-  elif [ "$managed" = "1" ]; then
-    git reset --hard origin/main
-    print_ok "Managed installation synchronized with origin/main"
   else
     print_warn "The local branch diverged from origin/main; update stopped safely."
     return 1
@@ -414,9 +431,10 @@ fi
 
 if [ "$CREATE_BACKUP" = "1" ] && [ -f "./backup.sh" ]; then
   print_step "Backup"
-  bash ./backup.sh create || echo "[!] Backup failed; continuing update."
+  bash ./backup.sh create
 elif [ "$CREATE_BACKUP" = "1" ]; then
-  echo "[!] backup.sh not found; backup skipped."
+  echo "[!] backup.sh not found; refusing an update without the requested backup." >&2
+  exit 1
 fi
 
 if [ "$PULL_CODE" = "1" ]; then
@@ -437,13 +455,17 @@ fi
 
 print_step "Python Dependencies"
 "${PYTHON_CMD[@]}" -m pip install --upgrade pip
-"${PYTHON_CMD[@]}" -m pip install -r requirements.txt
+if [ -f requirements.lock ]; then
+  "${PYTHON_CMD[@]}" -m pip install -r requirements.lock
+else
+  "${PYTHON_CMD[@]}" -m pip install -r requirements.txt
+fi
 "${PYTHON_CMD[@]}" -m pip install -e .
 print_ok "Python environment refreshed"
 
 if [ -d "chat-pwa" ] && [ "${#NPM_CMD[@]}" -gt 0 ]; then
   print_step "Web App"
-  if ! (cd chat-pwa && "${NPM_CMD[@]}" install && "${NPM_CMD[@]}" run build); then
+  if ! (cd chat-pwa && { [ ! -f package-lock.json ] || "${NPM_CMD[@]}" ci; } && { [ -f package-lock.json ] || "${NPM_CMD[@]}" install; } && "${NPM_CMD[@]}" run build); then
     if is_windows; then
       cat >&2 <<'EOF'
 [!] PWA build failed on Windows.
@@ -495,3 +517,8 @@ fi
 
 echo -e "\n${GREEN}${BOLD}✓ TrinaxAI is up to date${NC}"
 print_info "Settings, indexes, models, and personal data were preserved."
+ROLLBACK_ACTIVE=0
+if [ -n "$PWA_DIST_BACKUP" ]; then
+  rm -rf -- "$(dirname "$PWA_DIST_BACKUP")"
+fi
+trap - ERR INT TERM

@@ -13,12 +13,21 @@ bm25s>=0.2
 docx2txt>=0.9
 pypdf>=5.0
 python-pptx>=1.0.2
+openpyxl>=3.1
+odfpy>=1.4.1
+striprtf>=0.0.28
 tree-sitter>=0.22
 tree-sitter-language-pack>=0.9
 
 httpx>=0.28.1
+prompt-toolkit>=3.0.48
 psutil>=6.0
 rich>=13.0
 watchdog>=6.0
+nltk>=3.10.0
+
+# Voice (STT/TTS) is optional and not included here to keep the base install light.
+# For voice support install: `pip install trinaxai[voice]`
+# (adds faster-whisper, pyttsx3, soundfile, numpy). Higher-quality TTS: trinaxai[voice_quality].
 
 # Optional reranker: install with `pip install -r requirements-rerank.txt`.

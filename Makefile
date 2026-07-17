@@ -5,6 +5,7 @@ PYTHON ?= python3
 VENV_PYTHON := $(shell if test -f .venv/bin/python; then echo .venv/bin/python; \
                  elif test -f .venv/Scripts/python.exe; then echo .venv/Scripts/python.exe; \
                  else echo $(PYTHON); fi)
+REQUIREMENTS_FILE := $(if $(wildcard requirements.lock),requirements.lock,requirements.txt)
 
 help:
 	@echo "TrinaxAI — available targets:"
@@ -30,11 +31,13 @@ help:
 setup:
 	$(PYTHON) -m venv .venv
 	$(VENV_PYTHON) -m pip install --upgrade pip
-	$(VENV_PYTHON) -m pip install -r requirements.txt
-	cd chat-pwa && npm install
+	$(VENV_PYTHON) -m pip install -r $(REQUIREMENTS_FILE)
+	$(VENV_PYTHON) -m pip install -r requirements-dev.txt
+	$(VENV_PYTHON) -m pip install -e .
+	cd chat-pwa && npm ci
 
 frontend-install:
-	cd chat-pwa && npm install
+	cd chat-pwa && npm ci
 
 dev:
 	cd chat-pwa && npm run dev

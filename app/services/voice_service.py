@@ -25,7 +25,7 @@ _stt_model: Any | None = None
 def stt_available() -> bool:
     """Return True if the local Whisper backend is importable."""
     try:
-        import whisper  # noqa: F401
+        from faster_whisper import WhisperModel  # noqa: F401
 
         return True
     except ImportError:
@@ -33,15 +33,23 @@ def stt_available() -> bool:
 
 
 def _load_stt() -> Any:
-    """Load Whisper once and cache it."""
+    """Load faster-whisper once and cache it."""
     global _stt_model
     if _stt_model is not None:
         return _stt_model
-    import whisper
+    from faster_whisper import WhisperModel
 
     model_name = config.VOICE_STT_MODEL
-    _stt_model = whisper.load_model(model_name)
-    LOG.info("Whisper STT loaded: %s", model_name)
+    device = os.getenv("TRINAXAI_VOICE_DEVICE", "auto").strip() or "auto"
+    compute_type = os.getenv("TRINAXAI_VOICE_COMPUTE_TYPE", "default").strip() or "default"
+    download_root = os.path.join(config.PERSIST_DIR, "whisper")
+    _stt_model = WhisperModel(
+        model_name,
+        device=device,
+        compute_type=compute_type,
+        download_root=download_root,
+    )
+    LOG.info("faster-whisper STT loaded: %s (%s/%s)", model_name, device, compute_type)
     return _stt_model
 
 
@@ -49,7 +57,7 @@ def _suffix_from_filename(filename: str | None) -> str:
     """Pick a safe temp suffix from the uploaded filename."""
     if filename:
         ext = os.path.splitext(filename)[1].lower()
-        if ext in {".webm",".mp3",".mp4",".m4a",".ogg",".wav",".flac"}:
+        if ext in {".webm", ".mp3", ".mp4", ".m4a", ".ogg", ".wav", ".flac"}:
             return ext
     return ".webm"
 
@@ -96,8 +104,8 @@ def transcribe_bytes(data: bytes, filename: str | None, lang: str) -> str:
         kwargs: dict[str, Any] = {}
         if lang:
             kwargs["language"] = lang
-        result = model.transcribe(path, **kwargs)
-        return result.get("text", "").strip()
+        segments, _info = model.transcribe(path, **kwargs)
+        return " ".join(str(segment.text).strip() for segment in segments if segment.text).strip()
     finally:
         _cleanup_temp(path)
 

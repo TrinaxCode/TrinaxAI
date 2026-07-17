@@ -1,12 +1,9 @@
-"""Chat routes — POST /v1/chat/completions
+"""OpenAI-compatible chat endpoint."""
 
-Currently defined in rag_api.py. Will be migrated here incrementally.
-See app/services/rag_service.py for extracted RAG engine logic.
-"""
+from fastapi import APIRouter, Depends
 
-# Route registration happens in rag_api.py for now.
-# When migrated, this module will contain:
-#   from fastapi import APIRouter
-#   router = APIRouter()
-#   @router.post("/v1/chat/completions")
-#   async def chat(...): ...
+from app.security.admin_auth import require_scope
+from app.services import rag_service as runtime
+
+router = APIRouter(tags=["chat"], dependencies=[Depends(require_scope("chat"))])
+router.add_api_route("/v1/chat/completions", runtime.chat, methods=["POST"], name="chat")

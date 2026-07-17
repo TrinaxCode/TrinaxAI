@@ -1,6 +1,19 @@
 from __future__ import annotations
 
-from trinaxai_core import SAFE_DEFAULTS, sanitize_collection_id, validate_runtime_config
+from trinaxai_core import (
+    SAFE_DEFAULTS,
+    VALID_PROFILES,
+    sanitize_collection_id,
+    validate_runtime_config,
+)
+
+
+def test_valid_profiles_are_one_immutable_source_of_truth() -> None:
+    import config
+
+    assert isinstance(VALID_PROFILES, frozenset)
+    assert config.VALID_PROFILES is VALID_PROFILES
+    assert "16gb" in VALID_PROFILES
 
 
 def test_sanitize_collection_id_rejects_path_traversal_shapes() -> None:

@@ -6,6 +6,7 @@ Tests para los servicios de voz locales (fallback del modo llamada).
 from __future__ import annotations
 
 import io
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -17,7 +18,7 @@ class TestVoiceService:
     """Unit tests for voice_service helpers."""
 
     def test_stt_available_is_boolean(self):
-        # The result depends on whether openai-whisper is installed.
+        # The result depends on whether faster-whisper is installed.
         assert isinstance(voice_service.stt_available(), bool)
 
     def test_tts_available_backends_is_list(self):
@@ -40,7 +41,9 @@ class TestVoiceService:
     @patch.object(voice_service, "_load_stt")
     def test_transcribe_bytes_success(self, mock_load_stt, _mock_stt_available):
         mock_model = MagicMock()
-        mock_model.transcribe = MagicMock(return_value={"text": " hola mundo "})
+        mock_model.transcribe = MagicMock(
+            return_value=([SimpleNamespace(text=" hola "), SimpleNamespace(text="mundo ")], object())
+        )
         mock_load_stt.return_value = mock_model
 
         text = voice_service.transcribe_bytes(b"fake audio", "test.webm", "es")
@@ -73,7 +76,7 @@ class TestVoiceRoutes:
 
         from rag_api import app
 
-        yield TestClient(app)
+        yield TestClient(app, client=("127.0.0.1", 50000))
 
     def test_capabilities(self, client):
         response = client.get("/v1/voice/capabilities")

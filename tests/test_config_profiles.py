@@ -51,10 +51,10 @@ def test_config_8gb_profile_uses_light_defaults(tmp_path: Path) -> None:
     )
     data = json.loads(result.stdout)
 
-    assert data["general"] == "qwen3:4b-instruct-2507-q4_K_M"
+    assert data["general"] == "qwen3.5:4b"
     assert data["code"] == "qwen2.5-coder:1.5b"
-    assert data["deep"] == "qwen2.5-coder:3b"
-    assert data["fast"] == "llama3.2:1b"
+    assert data["deep"] == "qwen3.5:4b"
+    assert data["fast"] == "qwen3.5:0.8b"
     assert data["embed_preset"] == "balanced"
     assert data["embed"] == "bge-m3"
     assert data["batch"] == 1

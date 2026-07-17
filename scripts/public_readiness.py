@@ -4,6 +4,7 @@
 Checks for the release blockers that are easy to reintroduce:
 missing setup files, local machine paths/IPs, and incomplete i18n keys.
 """
+
 from __future__ import annotations
 
 import os
@@ -16,8 +17,16 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE_GLOBS = ("*.py", "*.sh", "*.md", "*.yaml", "*.yml", "*.ts", "*.tsx", "*.js")
 SKIP_PARTS = {
-    ".git", ".venv", "venv", "node_modules", "dist", "storage", "storage.bak.nomic",
-    "__pycache__", "projects", "local_sources",
+    ".git",
+    ".venv",
+    "venv",
+    "node_modules",
+    "dist",
+    "storage",
+    "storage.bak.nomic",
+    "__pycache__",
+    "projects",
+    "local_sources",
 }
 REQUIRED_FILES = [
     "README.md",
@@ -26,7 +35,6 @@ REQUIRED_FILES = [
     "CODE_OF_CONDUCT.md",
     "CHANGELOG.md",
     "LICENSE",
-    "ROADMAP.md",
     "SUPPORT.md",
     "TRADEMARK.md",
     "requirements.txt",
@@ -34,8 +42,9 @@ REQUIRED_FILES = [
     "backup.sh",
     "update.sh",
     "uninstall.sh",
-    "docs/PUBLIC_RELEASE.md",
-    "docs/PUBLIC_RELEASE.es.md",
+    "docs/README.md",
+    "docs/API_REFERENCE.md",
+    "docs/CONFIGURATION.md",
     "chat-pwa/package.json",
 ]
 ALLOW_HARDCODE_IN = {
@@ -46,6 +55,9 @@ ALLOW_HARDCODE_IN = {
     "docs/ARCHITECTURE.md",
     "docs/DEVELOPER_GUIDE.md",
     "scripts/public_readiness.py",
+    # Deliberate fake credentials used to exercise hashing/scanner behavior.
+    "tests/test_device_pairing.py",
+    "tests/test_public_readiness.py",
 }
 HARDCODE_PATTERNS = [
     re.compile(r"/home/trinaxcode"),
@@ -66,11 +78,23 @@ LOCAL_ARTIFACTS = [
 
 # Patterns that should NEVER appear in public repo files
 SECRET_PATTERNS = [
-    (re.compile(r"(?i)(api[_-]?key|apikey|secret[_-]?key|admin[_-]?token)\s*[:=]\s*['\"]?\w{8,}['\"]?"), "possible API key or token"),
+    (
+        re.compile(
+            r"(?i)\b(api[_-]?key|apikey|secret[_-]?key|admin[_-]?token)\b"
+            r"[ \t]*[:=][ \t]*(['\"])[A-Za-z0-9_./+=-]{8,}\2"
+        ),
+        "possible API key or token",
+    ),
     (re.compile(r"(?i)sk-[a-zA-Z0-9]{20,}"), "OpenAI-style API key"),
     (re.compile(r"(?i)(password|passwd)\s*[:=]\s*['\"]\S+['\"]"), "hardcoded password"),
     (re.compile(r"-----BEGIN (RSA |EC )?PRIVATE KEY-----"), "private key"),
-    (re.compile(r"(?i)(access[_-]?token|auth[_-]?token)\s*[:=]\s*['\"]?\w{16,}['\"]?"), "access token"),
+    (
+        re.compile(
+            r"(?i)\b(access[_-]?token|auth[_-]?token)\b"
+            r"\s*[:=]\s*(['\"])[A-Za-z0-9_./+=-]{16,}\2"
+        ),
+        "access token",
+    ),
 ]
 
 FILES_NEVER_COMMIT = {
@@ -101,7 +125,9 @@ def iter_source_files() -> list[Path]:
         dirnames[:] = [d for d in dirnames if d not in SKIP_PARTS and not d.startswith(".")]
         for filename in filenames:
             path = current / filename
-            if path.suffix in {".py", ".sh", ".md", ".yaml", ".yml", ".ts", ".tsx", ".js"} or path.name in {".env.example"}:
+            if path.suffix in {".py", ".sh", ".md", ".yaml", ".yml", ".ts", ".tsx", ".js"} or path.name in {
+                ".env.example"
+            }:
                 out.append(path)
     return out
 

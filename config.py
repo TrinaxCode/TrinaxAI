@@ -2,18 +2,21 @@
 TrinaxAI — Central shared configuration.
 
 Single source of truth for models, embeddings, chunking, and retrieval.
-index.py, rag_api.py, and query.py import from here to stay in sync.
+index.py and the API services import from here to stay in sync.
 
 Everything is overridable via environment variables (useful for systemd).
 """
 
 from __future__ import annotations
 
+import logging
 import os
 import ssl
 from typing import TYPE_CHECKING, Any
 
 from trinaxai_core import VALID_PROFILES, _positive_float, _positive_int
+
+LOG = logging.getLogger("trinaxai.config")
 
 if TYPE_CHECKING:
     from llama_index.embeddings.ollama import OllamaEmbedding
@@ -26,18 +29,12 @@ def _env_int(name: str, default: int, *, minimum: int = 1, maximum: int | None =
     Thin wrapper over ``trinaxai_core._positive_int`` so parsing/clamping stays
     consistent across config/index/core.
     """
-    return _positive_int(
-        os.getenv(name, default), default, minimum=minimum, maximum=maximum
-    )
+    return _positive_int(os.getenv(name, default), default, minimum=minimum, maximum=maximum)
 
 
-def _env_float(
-    name: str, default: float, *, minimum: float = 0.0, maximum: float | None = None
-) -> float:
+def _env_float(name: str, default: float, *, minimum: float = 0.0, maximum: float | None = None) -> float:
     """Read a float env var, clamped; falls back on bad input."""
-    return _positive_float(
-        os.getenv(name, default), default, minimum=minimum, maximum=maximum
-    )
+    return _positive_float(os.getenv(name, default), default, minimum=minimum, maximum=maximum)
 
 
 # ==================== PATHS ====================
@@ -61,28 +58,25 @@ DEFAULT_COLLECTION_NAME = "General"
 # Directory to index recursively (with subdirectories).
 # Override with TRINAXAI_INDEX_DIR (e.g. ~/Documents or ~/Projects).
 PROJECTS_DIRS = [
-    os.path.abspath(
-        os.path.expanduser(os.getenv("TRINAXAI_INDEX_DIR", os.path.dirname(BASE_DIR)))
-    ),
+    os.path.abspath(os.path.expanduser(os.getenv("TRINAXAI_INDEX_DIR", os.path.dirname(BASE_DIR)))),
 ]
 
 # ==================== MODELS ====================
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 TRINAXAI_PROFILE = os.getenv("TRINAXAI_PROFILE", "16gb").strip().lower()
-TRINAXAI_PERFORMANCE_MODE = (
-    os.getenv("TRINAXAI_PERFORMANCE_MODE", "fast").strip().lower() or "fast"
-)
+TRINAXAI_PERFORMANCE_MODE = os.getenv("TRINAXAI_PERFORMANCE_MODE", "fast").strip().lower() or "fast"
 if TRINAXAI_PERFORMANCE_MODE not in {"fast", "balanced", "quality"}:
-    print(
-        "[TrinaxAI] Unknown TRINAXAI_PERFORMANCE_MODE="
-        f"'{TRINAXAI_PERFORMANCE_MODE}'. Falling back to 'fast'."
+    LOG.warning(
+        "Unknown TRINAXAI_PERFORMANCE_MODE=%r; falling back to 'fast'",
+        TRINAXAI_PERFORMANCE_MODE,
     )
     TRINAXAI_PERFORMANCE_MODE = "fast"
 
 # Validate profile — warn on unknown values but don't crash.
 if TRINAXAI_PROFILE not in VALID_PROFILES:
-    print(
-        f"[TrinaxAI] Unknown TRINAXAI_PROFILE='{TRINAXAI_PROFILE}'. Falling back to '16gb'."
+    LOG.warning(
+        "Unknown TRINAXAI_PROFILE=%r; falling back to '16gb'",
+        TRINAXAI_PROFILE,
     )
     TRINAXAI_PROFILE = "16gb"
 
@@ -96,9 +90,7 @@ _ULTRA_PROFILE = TRINAXAI_PROFILE in {
     "workstation",
 }
 _MAX_QUALITY_PROFILE = (
-    TRINAXAI_PROFILE
-    in {"max", "high", "max_quality", "quality", "potente", "32gb", "32g", "alto"}
-    or _ULTRA_PROFILE
+    TRINAXAI_PROFILE in {"max", "high", "max_quality", "quality", "potente", "32gb", "32g", "alto"} or _ULTRA_PROFILE
 )
 _LOW_RESOURCE_PROFILE = TRINAXAI_PROFILE in {
     "4gb",
@@ -119,33 +111,34 @@ _QUALITY_MODE = TRINAXAI_PERFORMANCE_MODE == "quality"
 # The router selects the model based on the query. Low-resource profiles default
 # to smaller models so Windows laptops with 8 GB RAM do not pull the 16 GB set.
 #
-# The whole text fleet is standardised on the Qwen family: every pick is
-# tool-calling capable AND non-thinking (never emits <think> blocks, which the
-# RAG pipeline does not strip), so agentic/tool-use flows work cleanly.
-# Qwen3-*-Instruct-2507 tags carry a quantization suffix on Ollama (the bare
-# alias does not resolve), hence the explicit -q4_K_M.
-_QWEN3_GENERAL_SMALL = "qwen3:4b-instruct-2507-q4_K_M"  # 8gb / 16gb chat + fast
-_QWEN3_GENERAL_BIG = "qwen3:30b-a3b-instruct-2507-q4_K_M"  # max / ultra chat (MoE, 3B active)
-_DEFAULT_MODEL_GENERAL = _QWEN3_GENERAL_BIG if _MAX_QUALITY_PROFILE else _QWEN3_GENERAL_SMALL
+# The medium profile uses measured faster defaults (Granite 3B for chat and
+# Qwen 4B for deeper work). High/ultra profiles retain larger Qwen models.
+_PROFILE_MODEL = (
+    "qwen3.5:35b-a3b"
+    if _ULTRA_PROFILE
+    else "qwen3.5:27b"
+    if _MAX_QUALITY_PROFILE
+    else "qwen3.5:4b"
+    if _LOW_RESOURCE_PROFILE
+    else "qwen3.5:9b"
+)
+_DEFAULT_MODEL_GENERAL = "granite4:3b" if not _LOW_RESOURCE_PROFILE and not _MAX_QUALITY_PROFILE else _PROFILE_MODEL
 _DEFAULT_MODEL_CODE = (
-    "qwen2.5-coder:7b"
+    "qwen2.5-coder:14b"
+    if _ULTRA_PROFILE
+    else "qwen2.5-coder:7b"
     if _MAX_QUALITY_PROFILE
     else "qwen2.5-coder:1.5b"
     if _LOW_RESOURCE_PROFILE
     else "qwen2.5-coder:3b"
 )
-# Fast/trivial: tiny llama on 8 GB, otherwise the same small Qwen3 as general chat.
-_DEFAULT_MODEL_FAST = "llama3.2:1b" if _LOW_RESOURCE_PROFILE else _QWEN3_GENERAL_SMALL
+_DEFAULT_MODEL_FAST = "qwen3.5:0.8b" if _LOW_RESOURCE_PROFILE else "granite4:3b" if not _MAX_QUALITY_PROFILE else "qwen3.5:4b"
 MODEL_GENERAL = os.getenv("TRINAXAI_MODEL_GENERAL", _DEFAULT_MODEL_GENERAL)  # non-code chat
 MODEL_CODE = os.getenv("TRINAXAI_MODEL_CODE", _DEFAULT_MODEL_CODE)  # regular code
 MODEL_DEEP = os.getenv(
     "TRINAXAI_MODEL_DEEP",
-    "qwen3-coder:30b"
-    if _MAX_QUALITY_PROFILE
-    else "qwen2.5-coder:7b"
-    if not _LOW_RESOURCE_PROFILE
-    else "qwen2.5-coder:3b",
-)  # complex code (qwen3-coder:30b MoE on max/ultra, 7b on 16gb, 3b on 8gb)
+    "qwen3.5:4b" if not _LOW_RESOURCE_PROFILE and not _MAX_QUALITY_PROFILE else _PROFILE_MODEL,
+)  # complex reasoning/code
 MODEL_FAST = os.getenv("TRINAXAI_MODEL_FAST", _DEFAULT_MODEL_FAST)  # trivial / ultra-fast
 
 # Default model (when auto-router is disabled).
@@ -188,9 +181,7 @@ _EMBED_PRESET_DEFAULT = "balanced"
 _EMBED_PRESET = os.getenv("TRINAXAI_EMBED_PRESET", _EMBED_PRESET_DEFAULT).strip().lower()
 EMBED_PRESET = _EMBED_PRESET if _EMBED_PRESET in EMBED_PRESETS else "balanced"
 EMBED_MODEL = os.getenv("TRINAXAI_EMBED", EMBED_PRESETS[EMBED_PRESET]["model"])
-EMBED_DIMS = _env_int(
-    "TRINAXAI_EMBED_DIMS", int(EMBED_PRESETS[EMBED_PRESET]["dims"]), minimum=1, maximum=32768
-)
+EMBED_DIMS = _env_int("TRINAXAI_EMBED_DIMS", int(EMBED_PRESETS[EMBED_PRESET]["dims"]), minimum=1, maximum=32768)
 
 # Quantization hints (Phase 4.2). Ollama respects OLLAMA_NUM_GPU at runtime.
 # We just expose the env var and a profile tag for the /health endpoint.
@@ -209,13 +200,7 @@ TRINAXAI_OCR = os.getenv("TRINAXAI_OCR", "0").strip() in {"1", "true", "yes", "o
 # Context window. Must fit: prompt + top_k chunks + response.
 NUM_CTX = _env_int(
     "TRINAXAI_NUM_CTX",
-    16384
-    if _ULTRA_PROFILE
-    else 8192
-    if _MAX_QUALITY_PROFILE
-    else 2048
-    if _LOW_RESOURCE_PROFILE
-    else 4096,
+    16384 if _ULTRA_PROFILE else 8192 if _MAX_QUALITY_PROFILE else 2048 if _LOW_RESOURCE_PROFILE else 4096,
     minimum=512,
     maximum=131072,
 )
@@ -223,17 +208,14 @@ NUM_CTX = _env_int(
 # embeddings, 16 threads/req makes slots fight for the CPU and everything goes
 # SLOWER on modest hardware. 8 threads/req is usually a balanced value.
 NUM_THREAD = _env_int("TRINAXAI_NUM_THREAD", 8, minimum=1, maximum=256)
-# Concurrent embeddings. On 16 GB we use 2 workers to avoid competing with the
-# LLM; the powerful profile bumps to 4 if RAM is free.
+# Concurrent embeddings. Indexing runs as its own subprocess with NO LLM loaded
+# (index.py never sets Settings.llm), so the embedder gets the whole CPU — the
+# old "avoid competing with the LLM" cap of 2 left modern multi-core laptops
+# (e.g. an 8-core/16-thread Ryzen) idle. The 16 GB profile now issues 4 parallel
+# requests to Ollama; still fully overridable for RAM-tight machines.
 EMBED_WORKERS = _env_int(
     "TRINAXAI_EMBED_WORKERS",
-    6
-    if _ULTRA_PROFILE
-    else 4
-    if _MAX_QUALITY_PROFILE
-    else 1
-    if _LOW_RESOURCE_PROFILE
-    else 2,
+    6 if _ULTRA_PROFILE else 4 if _MAX_QUALITY_PROFILE else 1 if _LOW_RESOURCE_PROFILE else 4,
     minimum=1,
     maximum=16,
 )
@@ -265,10 +247,20 @@ elif _LOW_RESOURCE_PROFILE:
 else:
     _EMBED_KEEP_ALIVE_DEFAULT = "15m"
 EMBED_KEEP_ALIVE = (
-    os.getenv("TRINAXAI_EMBED_KEEP_ALIVE", _EMBED_KEEP_ALIVE_DEFAULT).strip()
-    or _EMBED_KEEP_ALIVE_DEFAULT
+    os.getenv("TRINAXAI_EMBED_KEEP_ALIVE", _EMBED_KEEP_ALIVE_DEFAULT).strip() or _EMBED_KEEP_ALIVE_DEFAULT
 )
 REQUEST_TIMEOUT = _env_float("TRINAXAI_TIMEOUT", 300.0, minimum=1.0, maximum=86400.0)
+
+# ==================== WEB SEARCH ====================
+# ``auto`` prefers a configured Brave key, then a configured SearXNG instance,
+# and finally DuckDuckGo HTML search (no account required). Search is only
+# invoked when a caller opts in or explicitly asks TrinaxAI to search online.
+WEB_SEARCH_PROVIDER = os.getenv("TRINAXAI_WEB_SEARCH_PROVIDER", "auto").strip().lower() or "auto"
+WEB_SEARCH_BRAVE_API_KEY = os.getenv("TRINAXAI_BRAVE_SEARCH_API_KEY", "").strip()
+WEB_SEARCH_SEARXNG_URL = os.getenv("TRINAXAI_SEARXNG_URL", "").strip()
+WEB_SEARCH_TIMEOUT = _env_float("TRINAXAI_WEB_SEARCH_TIMEOUT", 15.0, minimum=2.0, maximum=120.0)
+WEB_SEARCH_MAX_RESULTS = _env_int("TRINAXAI_WEB_SEARCH_MAX_RESULTS", 6, minimum=1, maximum=10)
+WEB_SEARCH_CACHE_SECONDS = _env_int("TRINAXAI_WEB_SEARCH_CACHE_SECONDS", 300, minimum=0, maximum=86400)
 
 # ==================== CHUNKING ====================
 # Prose (md, txt, pdf, configs): token-based chunking.
@@ -318,15 +310,11 @@ _FUSION_CANDIDATES_DEFAULT = (
     if _FAST_MODE
     else "12"
 )
-FUSION_CANDIDATES = _env_int(
-    "TRINAXAI_FUSION_CANDIDATES", int(_FUSION_CANDIDATES_DEFAULT), minimum=1, maximum=200
-)
+FUSION_CANDIDATES = _env_int("TRINAXAI_FUSION_CANDIDATES", int(_FUSION_CANDIDATES_DEFAULT), minimum=1, maximum=200)
 RETRIEVAL_CACHE_SECONDS = _env_int(
     "TRINAXAI_RETRIEVAL_CACHE_SECONDS", 20 if _FAST_MODE else 10, minimum=0, maximum=3600
 )
-SOURCES_CACHE_SECONDS = _env_int(
-    "TRINAXAI_SOURCES_CACHE_SECONDS", 30 if _FAST_MODE else 15, minimum=0, maximum=3600
-)
+SOURCES_CACHE_SECONDS = _env_int("TRINAXAI_SOURCES_CACHE_SECONDS", 30 if _FAST_MODE else 15, minimum=0, maximum=3600)
 
 # ── RERANKING (cross-encoder, big precision boost) ──
 # Reorders candidates by real relevance to the query before passing them
@@ -349,7 +337,7 @@ def make_llm(
     repeat_penalty: float | None = None,
     stop: tuple[str, ...] | list[str] | None = None,
 ) -> Ollama:
-    """Create the Ollama LLM (qwen2.5-coder: non-thinking, fast on CPU).
+    """Create the configured Ollama LLM.
 
     The sampling knobs (``num_ctx``/``num_predict``/``top_p``/``top_k``/
     ``repeat_penalty``/``stop``) are optional and backwards-compatible: when a
@@ -375,9 +363,7 @@ def make_llm(
     if stop:
         runtime_kwargs["stop"] = list(stop)
 
-    use_aggressive = (
-        TRINAXAI_AGGRESSIVE_QUANT if aggressive_quant is None else aggressive_quant
-    )
+    use_aggressive = TRINAXAI_AGGRESSIVE_QUANT if aggressive_quant is None else aggressive_quant
     if use_aggressive:
         runtime_kwargs["num_gpu"] = 0
 
@@ -388,6 +374,11 @@ def make_llm(
         request_timeout=REQUEST_TIMEOUT,
         keep_alive=KEEP_ALIVE if keep_alive is None else keep_alive,
         context_window=effective_ctx,
+        # Disable the model's reasoning phase: answers stream immediately instead
+        # of spending latency (and tokens) on hidden <think> output. Our fleet is
+        # already non-thinking, but this hard-guards any thinking model a user
+        # points TrinaxAI at, so a reply is always produced without a long wait.
+        thinking=False,
         additional_kwargs=runtime_kwargs,
     )
 
@@ -502,6 +493,8 @@ REQUIRED_EXTS = [
     # config / data
     ".json",
     ".jsonl",
+    ".ndjson",
+    ".geojson",
     ".ipynb",
     ".yml",
     ".yaml",
@@ -514,6 +507,8 @@ REQUIRED_EXTS = [
     ".env",
     ".csv",
     ".tsv",
+    ".ics",
+    ".vcf",
     # prose / documents
     ".md",
     ".mdx",
@@ -522,9 +517,27 @@ REQUIRED_EXTS = [
     ".tex",
     ".bib",
     ".log",
+    ".html",
+    ".htm",
+    ".xhtml",
+    ".epub",
+    ".eml",
+    ".srt",
+    ".vtt",
+    ".org",
+    ".adoc",
+    ".asciidoc",
     ".pdf",
+    ".doc",
     ".docx",
+    ".ppt",
     ".pptx",
+    ".xls",
+    ".xlsx",
+    ".odt",
+    ".ods",
+    ".odp",
+    ".rtf",
 ]
 
 # Aggressive exclusion: third-party deps, builds, binaries, caches.
@@ -627,23 +640,42 @@ EXCLUDE_DIR_NAMES = {
 # Max size per file. Avoids giant generated CSV/HTML that would produce
 # thousands of useless chunks. Generous but bounded.
 MAX_FILE_BYTES = _env_int("TRINAXAI_MAX_FILE_BYTES", 3 * 1024 * 1024, minimum=1024)
-DOCUMENT_MAX_FILE_BYTES = _env_int(
-    "TRINAXAI_DOCUMENT_MAX_FILE_BYTES", 250 * 1024 * 1024, minimum=1024
-)
-LARGE_DOCUMENT_EXTENSIONS = {".pdf", ".docx", ".pptx"}
+DOCUMENT_MAX_FILE_BYTES = _env_int("TRINAXAI_DOCUMENT_MAX_FILE_BYTES", 512 * 1024 * 1024, minimum=1024)
+LARGE_DOCUMENT_EXTENSIONS = {
+    ".pdf",
+    ".doc",
+    ".docx",
+    ".ppt",
+    ".pptx",
+    ".xls",
+    ".xlsx",
+    ".odt",
+    ".ods",
+    ".odp",
+    ".rtf",
+    ".epub",
+}
 
 
 def max_file_bytes(path: str) -> int:
     """Use a higher limit for document containers with embedded media."""
-    return (
-        DOCUMENT_MAX_FILE_BYTES
-        if os.path.splitext(path.lower())[1] in LARGE_DOCUMENT_EXTENSIONS
-        else MAX_FILE_BYTES
-    )
+    return DOCUMENT_MAX_FILE_BYTES if os.path.splitext(path.lower())[1] in LARGE_DOCUMENT_EXTENSIONS else MAX_FILE_BYTES
 
 
 UPLOAD_MAX_FILES = _env_int("TRINAXAI_UPLOAD_MAX_FILES", 2500, minimum=1)
-UPLOAD_MAX_BYTES = _env_int("TRINAXAI_UPLOAD_MAX_BYTES", 512 * 1024 * 1024, minimum=1024)
+UPLOAD_MAX_BYTES = _env_int("TRINAXAI_UPLOAD_MAX_BYTES", 2 * 1024 * 1024 * 1024, minimum=1024)
+INDEX_JOBS_PATH = os.path.join(PERSIST_DIR, "index_jobs.json")
+INDEX_STAGE_TIMEOUT = _env_int("TRINAXAI_INDEX_STAGE_TIMEOUT", 900, minimum=10, maximum=86400)
+INDEX_TOTAL_TIMEOUT = _env_int("TRINAXAI_INDEX_TIMEOUT", 3600, minimum=30, maximum=172800)
+
+# Persistent memory limits. These keep a single UI/API request from producing
+# an unbounded JSON store or an oversized summarization prompt.
+MEMORY_MAX_ENTRIES = _env_int("TRINAXAI_MEMORY_MAX_ENTRIES", 1000, minimum=1)
+MEMORY_MAX_FILE_BYTES = _env_int("TRINAXAI_MEMORY_MAX_FILE_BYTES", 4 * 1024 * 1024, minimum=1024)
+MEMORY_TEXT_MAX_CHARS = _env_int("TRINAXAI_MEMORY_TEXT_MAX_CHARS", 20_000, minimum=100)
+MEMORY_MAX_TAGS = _env_int("TRINAXAI_MEMORY_MAX_TAGS", 50, minimum=1)
+MEMORY_TAG_MAX_CHARS = _env_int("TRINAXAI_MEMORY_TAG_MAX_CHARS", 100, minimum=1)
+MEMORY_SUMMARY_MAX_CHARS = _env_int("TRINAXAI_MEMORY_SUMMARY_MAX_CHARS", 50_000, minimum=1000)
 
 
 # ==================== MODEL AUTO-ROUTER ====================
@@ -726,17 +758,52 @@ _DEEP_HINTS = (
 )
 
 _GENERAL_TOPIC_HINTS = (
-    "clima", "weather", "receta", "cocina", "comida", "viaje", "vacaciones",
-    "película", "pelicula", "música", "musica", "deporte", "salud", "ejercicio",
-    "historia", "geografía", "geografia", "capital de", "quién es", "quien es",
-    "qué es", "que es", "cuéntame", "cuentame", "consejo", "traduce",
-    "traducción", "translation", "recipe", "travel", "movie", "music",
-    "who is", "what is",
+    "clima",
+    "weather",
+    "receta",
+    "cocina",
+    "comida",
+    "viaje",
+    "vacaciones",
+    "película",
+    "pelicula",
+    "música",
+    "musica",
+    "deporte",
+    "salud",
+    "ejercicio",
+    "historia",
+    "geografía",
+    "geografia",
+    "capital de",
+    "quién es",
+    "quien es",
+    "qué es",
+    "que es",
+    "cuéntame",
+    "cuentame",
+    "consejo",
+    "traduce",
+    "traducción",
+    "translation",
+    "recipe",
+    "travel",
+    "movie",
+    "music",
+    "who is",
+    "what is",
 )
 _TOPIC_SHIFT_HINTS = (
-    "cambiando de tema", "cambio de tema", "otra cosa", "ahora hablemos",
-    "dejando el código", "dejando el codigo", "new topic", "change of topic",
-    "switching topics", "let's talk about",
+    "cambiando de tema",
+    "cambio de tema",
+    "otra cosa",
+    "ahora hablemos",
+    "dejando el código",
+    "dejando el codigo",
+    "new topic",
+    "change of topic",
+    "switching topics",
+    "let's talk about",
 )
 
 
@@ -766,9 +833,7 @@ def route_model(text: str, previous_model: str | None = None) -> str:
         return candidate
     if is_code:
         return candidate
-    explicit_general = any(h in t for h in _TOPIC_SHIFT_HINTS) or any(
-        h in t for h in _GENERAL_TOPIC_HINTS
-    )
+    explicit_general = any(h in t for h in _TOPIC_SHIFT_HINTS) or any(h in t for h in _GENERAL_TOPIC_HINTS)
     return candidate if explicit_general else previous_model
 
 
@@ -807,7 +872,7 @@ def make_reranker():
             from llama_index.postprocessor.sbert_rerank import SentenceTransformerRerank
         return SentenceTransformerRerank(model=RERANK_MODEL, top_n=RERANK_TOP_N)
     except (ImportError, ModuleNotFoundError, OSError) as e:  # torch/sentence-transformers not installed, etc.
-        print(f"[TrinaxAI] Reranker disabled ({str(e)[:80]})")
+        LOG.warning("Reranker disabled: %s", str(e)[:80])
         return None
 
 

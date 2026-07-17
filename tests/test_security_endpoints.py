@@ -6,6 +6,7 @@ localhost checks. Uses mocks — never executes real system commands.
 
 from __future__ import annotations
 
+import time
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -16,6 +17,7 @@ from app.security.admin_auth import (
     _client_host,
     _is_lan_client,
     _is_local_client,
+    authorize_lan_or_scope,
     authorize_system,
 )
 
@@ -78,7 +80,8 @@ class TestClientHost:
     def test_falls_back_when_no_client(self):
         req = MagicMock()
         req.client = None
-        assert _client_host(req) == "127.0.0.1"
+        req.headers = {}
+        assert _client_host(req) == "unknown"
 
 
 class TestLocalClient:
@@ -88,6 +91,31 @@ class TestLocalClient:
 
     def test_private_lan_is_not_local(self):
         assert _is_local_client("192.168.1.100") is False
+
+
+class TestLanDocumentAccess:
+    def test_unauthenticated_lan_peer_can_use_stateless_chat_feature(self):
+        request = _make_request(client_host="192.168.1.50")
+        authorize_lan_or_scope(request, "chat")
+        assert request.state.trinaxai_identity == {"kind": "lan", "scopes": ["chat"]}
+
+    def test_unauthenticated_public_peer_is_rejected(self):
+        request = _make_request(client_host="8.8.8.8")
+        with pytest.raises(HTTPException) as exc:
+            authorize_lan_or_scope(request, "chat")
+        assert exc.value.status_code == 403
+
+    def test_invalid_credential_cannot_fall_back_to_lan_access(self, monkeypatch):
+        import app.security.admin_auth as auth_mod
+
+        monkeypatch.setattr(auth_mod, "ADMIN_TOKEN", "valid-token")
+        request = _make_request(
+            client_host="192.168.1.50",
+            headers={"X-Admin-Token": "wrong-token"},
+        )
+        with pytest.raises(HTTPException) as exc:
+            authorize_lan_or_scope(request, "chat")
+        assert exc.value.status_code == 403
 
 
 # ── Admin token validation ──
@@ -143,6 +171,125 @@ class TestAdminToken:
             authorize_system(req)
         except HTTPException:
             pytest.fail("Localhost should be allowed even with admin token configured.")
+
+    def test_remote_token_is_mandatory_even_when_lan_is_enabled(self, monkeypatch):
+        """A configured credential must not silently fall back to LAN trust."""
+        import app.security.admin_auth as auth_mod
+
+        monkeypatch.setattr(auth_mod, "ADMIN_TOKEN", "secret123")
+        monkeypatch.setattr(auth_mod, "ALLOW_LAN_SYSTEM", True)
+        with pytest.raises(HTTPException) as exc:
+            authorize_system(_make_request(client_host="192.168.1.20"))
+        assert exc.value.status_code == 403
+        assert "token" in str(exc.value.detail).lower()
+
+
+class TestTrustedProxyIdentity:
+    def _signed_request(
+        self,
+        auth_mod,
+        *,
+        client_ip: str,
+        secret: bytes,
+        path: str = "/app-state",
+        method: str = "GET",
+    ):
+        timestamp = str(int(time.time()))
+        nonce = "a" * 32
+        signature = auth_mod._proxy_signature(
+            secret,
+            client_ip,
+            timestamp,
+            nonce,
+            method,
+            path,
+        )
+        request = _make_request(
+            client_host="127.0.0.1",
+            headers={
+                "X-TrinaxAI-Proxy": "v1",
+                "X-TrinaxAI-Client-IP": client_ip,
+                "X-TrinaxAI-Proxy-Timestamp": timestamp,
+                "X-TrinaxAI-Proxy-Nonce": nonce,
+                "X-TrinaxAI-Proxy-Signature": signature,
+            },
+        )
+        request.method = method
+        request.url.path = path
+        return request
+
+    def test_signed_proxy_preserves_remote_identity(self, monkeypatch):
+        import app.security.admin_auth as auth_mod
+
+        secret = b"gateway-test-secret"
+        monkeypatch.setattr(auth_mod, "_PROXY_SECRET", secret)
+        request = self._signed_request(auth_mod, client_ip="192.168.1.77", secret=secret)
+        assert _client_host(request) == "192.168.1.77"
+
+    def test_remote_via_loopback_proxy_cannot_bypass_admin_token(self, monkeypatch):
+        import app.security.admin_auth as auth_mod
+
+        secret = b"gateway-test-secret"
+        monkeypatch.setattr(auth_mod, "_PROXY_SECRET", secret)
+        monkeypatch.setattr(auth_mod, "ADMIN_TOKEN", "required-token")
+        monkeypatch.setattr(auth_mod, "ALLOW_LAN_SYSTEM", True)
+        request = self._signed_request(auth_mod, client_ip="192.168.1.77", secret=secret)
+        with pytest.raises(HTTPException) as exc:
+            authorize_system(request)
+        assert exc.value.status_code == 403
+
+    def test_forged_proxy_identity_is_rejected(self, monkeypatch):
+        import app.security.admin_auth as auth_mod
+
+        secret = b"gateway-test-secret"
+        monkeypatch.setattr(auth_mod, "_PROXY_SECRET", secret)
+        request = self._signed_request(auth_mod, client_ip="192.168.1.77", secret=b"wrong-secret")
+        with pytest.raises(HTTPException) as exc:
+            _client_host(request)
+        assert exc.value.status_code == 403
+
+    def test_proxy_assertion_from_non_loopback_peer_is_rejected(self, monkeypatch):
+        import app.security.admin_auth as auth_mod
+
+        secret = b"gateway-test-secret"
+        monkeypatch.setattr(auth_mod, "_PROXY_SECRET", secret)
+        request = self._signed_request(auth_mod, client_ip="192.168.1.77", secret=secret)
+        request.client.host = "192.168.1.10"
+        with pytest.raises(HTTPException) as exc:
+            _client_host(request)
+        assert exc.value.status_code == 403
+
+    def test_rate_limit_uses_verified_original_peer(self, monkeypatch):
+        import app.security.admin_auth as auth_mod
+        import app.security.rate_limit as rate_mod
+
+        secret = b"gateway-test-secret"
+        monkeypatch.setattr(auth_mod, "_PROXY_SECRET", secret)
+        monkeypatch.setattr(rate_mod, "_RATE_LIMIT_MAX", 1)
+        rate_mod.state.rate_limit_clients.clear()
+        rate_mod.state.rate_limit_last_prune = 0.0
+        first = self._signed_request(
+            auth_mod,
+            client_ip="192.168.1.77",
+            secret=secret,
+            path="/v1/chat/completions",
+            method="POST",
+        )
+        second = self._signed_request(
+            auth_mod,
+            client_ip="192.168.1.78",
+            secret=secret,
+            path="/v1/chat/completions",
+            method="POST",
+        )
+
+        rate_mod.enforce_rate_limit(first)
+        rate_mod.enforce_rate_limit(second)
+        with pytest.raises(HTTPException) as exc:
+            rate_mod.enforce_rate_limit(first)
+        assert exc.value.status_code == 429
+        assert int(exc.value.headers["Retry-After"]) >= 1
+        rate_mod.state.rate_limit_clients.clear()
 
 
 # ── LAN system control ──
@@ -383,6 +530,52 @@ class TestRuntimeAuthorizeSystem:
             headers={"Origin": "https://localhost:3334"},
         )
         rag_api._authorize_system(request)
+
+
+class TestPrivateDataEndpoints:
+    """Private state and attachment identifiers must not be public on LAN."""
+
+    def test_remote_app_state_requires_configured_token(self, tmp_path, monkeypatch):
+        import app.security.admin_auth as auth_mod
+        from app.main import app
+        from app.services import app_state_service
+
+        monkeypatch.setattr(auth_mod, "ADMIN_TOKEN", "private-token")
+        monkeypatch.setattr(auth_mod, "ALLOW_LAN_SYSTEM", True)
+        monkeypatch.setattr(app_state_service, "APP_STATE_PATH", str(tmp_path / "app_state.json"))
+        client = TestClient(app, client=("192.168.1.50", 50000))
+
+        denied = client.get("/app-state")
+        allowed = client.get("/app-state", headers={"X-Admin-Token": "private-token"})
+
+        assert denied.status_code == 403
+        assert allowed.status_code == 200
+        assert allowed.json()["values"] == {}
+
+    def test_remote_attachment_lookup_requires_token_before_id_lookup(self, monkeypatch):
+        import app.security.admin_auth as auth_mod
+        from app.main import app
+
+        monkeypatch.setattr(auth_mod, "ADMIN_TOKEN", "private-token")
+        monkeypatch.setattr(auth_mod, "ALLOW_LAN_SYSTEM", True)
+        client = TestClient(app, client=("192.168.1.50", 50000))
+
+        denied = client.get(f"/attachments/{'a' * 32}")
+        authenticated = client.get(
+            f"/attachments/{'a' * 32}",
+            headers={"X-Admin-Token": "private-token"},
+        )
+
+        assert denied.status_code == 403
+        assert authenticated.status_code == 404
+
+    def test_collection_names_are_private(self, monkeypatch):
+        import app.security.admin_auth as auth_mod
+        from app.main import app
+
+        monkeypatch.setattr(auth_mod, "ADMIN_TOKEN", "private-token")
+        client = TestClient(app, client=("192.168.1.50", 50000))
+        assert client.get("/collections").status_code == 403
 
 
 # ── No dangerous command execution ──
