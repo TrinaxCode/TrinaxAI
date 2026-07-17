@@ -6,9 +6,12 @@ import subprocess
 import tarfile
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[1]
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Bash scripts are validated on POSIX runners")
 def test_bash_scripts_parse() -> None:
     for script in [
         "install.sh",
@@ -28,6 +31,7 @@ def test_bash_scripts_parse() -> None:
         assert result.returncode == 0, f"{script}: {result.stderr}"
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Bash scripts are validated on POSIX runners")
 def test_backup_restore_rejects_path_traversal(tmp_path: Path) -> None:
     archive = tmp_path / "bad.tar.gz"
     payload = tmp_path / "payload.txt"
@@ -46,6 +50,7 @@ def test_backup_restore_rejects_path_traversal(tmp_path: Path) -> None:
     assert "path traversal" in result.stderr.lower()
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Bash scripts are validated on POSIX runners")
 def test_backup_is_private_and_restore_rejects_links(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()
