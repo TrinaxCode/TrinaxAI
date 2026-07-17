@@ -12,7 +12,11 @@ def main() -> int:
         [sys.executable, "-m", "pytest", "-q"],
         creationflags=flags,
         check=False,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
     )
+    sys.stdout.write(completed.stdout)
     return completed.returncode
 
 
