@@ -69,11 +69,22 @@ def _terminate_process_tree(process, *, grace_seconds: float = 2.0) -> None:
     try:
         if os.name == "posix":
             os.killpg(os.getpgid(process.pid), signal.SIGTERM)
-        elif hasattr(signal, "CTRL_BREAK_EVENT"):
-            process.send_signal(signal.CTRL_BREAK_EVENT)
+        elif os.name == "nt":
+            taskkill = os.path.join(
+                os.environ.get("SystemRoot", r"C:\Windows"),
+                "System32",
+                "taskkill.exe",
+            )
+            subprocess.run(  # noqa: S603 - fixed Windows system binary and argv
+                [taskkill, "/PID", str(process.pid), "/T", "/F"],
+                check=False,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=grace_seconds,
+            )
         else:
             process.terminate()
-    except (OSError, ProcessLookupError):
+    except (OSError, ProcessLookupError, subprocess.TimeoutExpired):
         return
     try:
         process.wait(timeout=grace_seconds)
