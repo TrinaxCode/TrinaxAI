@@ -95,7 +95,7 @@ def check_ollama(ollama_base: str, *, verbose: bool = False) -> list[CheckResult
         CheckResult(
             f"Modelos disponibles: {len(models)}",
             len(models) > 0,
-            "Ejecuta: ollama pull qwen2.5-coder:3b",
+            "Ejecuta: ollama pull qwen2.5-coder:1.5b",
             "Ollama",
             extra,
         ),
@@ -146,12 +146,14 @@ def check_feature_dependencies() -> list[CheckResult]:
         except ImportError:
             available = False
         results.append(CheckResult(name, available, hint, "Herramientas"))
-    results.append(CheckResult(
-        "Conversión Office heredada",
-        bool(shutil.which("libreoffice") or shutil.which("soffice")),
-        "Instala LibreOffice para leer .ppt, .xls, .doc y OpenDocument",
-        "Herramientas",
-    ))
+    results.append(
+        CheckResult(
+            "Conversión Office heredada",
+            bool(shutil.which("libreoffice") or shutil.which("soffice")),
+            "Instala LibreOffice para leer .ppt, .xls, .doc y OpenDocument",
+            "Herramientas",
+        )
+    )
     return results
 
 
@@ -186,7 +188,9 @@ def check_resources() -> list[CheckResult]:
                 import psutil
 
                 vmem = psutil.virtual_memory()
-                results.append(CheckResult(f"RAM disponible: {vmem.available / (1024**3):.1f} GB", True, group="Recursos"))
+                results.append(
+                    CheckResult(f"RAM disponible: {vmem.available / (1024**3):.1f} GB", True, group="Recursos")
+                )
             except ImportError:
                 pass
     except (OSError, FileNotFoundError):

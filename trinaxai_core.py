@@ -164,9 +164,7 @@ def _positive_int(value: Any, fallback: int, *, minimum: int = 1, maximum: int |
     return parsed
 
 
-def _positive_float(
-    value: Any, fallback: float, *, minimum: float = 0.0, maximum: float | None = None
-) -> float:
+def _positive_float(value: Any, fallback: float, *, minimum: float = 0.0, maximum: float | None = None) -> float:
     try:
         parsed = float(str(value).strip())
     except (TypeError, ValueError):

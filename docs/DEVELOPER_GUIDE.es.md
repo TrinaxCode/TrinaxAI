@@ -264,8 +264,11 @@ cp continue-config.yaml ~/.continue/config.yaml
 
 Antes de etiquetar un release, ejecuta:
 ```bash
-python scripts/public_readiness.py
-python test_system.py --verbose
-cd chat-pwa && npx tsc --noEmit && npm run build && cd ..
+make check
 git diff --check  # verifica que no haya espacios en blanco al final
 ```
+
+Usa un tag semántico como `v1.2.0` y mantenlo igual a las versiones de
+`pyproject.toml`, `chat-pwa/package.json`, `chat-pwa/package-lock.json` y
+`trinaxai_cli/app.py`. El workflow del tag repite los gates y publica el archivo
+fuente, instaladores shell y PowerShell, checksums y procedencia.

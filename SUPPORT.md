@@ -1,5 +1,7 @@
 # Support
 
+[Versión en español](docs/es/SUPPORT.md)
+
 TrinaxAI is a local-first open-source project. Community support happens in GitHub issues and discussions.
 
 ## Before Opening an Issue

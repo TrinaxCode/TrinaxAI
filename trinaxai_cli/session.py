@@ -11,6 +11,7 @@ Sessions are append-only JSONL files stored under
 The format is intentionally simple so it can be tailed, grepped, and
 re-imported by other tools.
 """
+
 from __future__ import annotations
 
 import json

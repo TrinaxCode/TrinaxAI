@@ -483,10 +483,10 @@ class _watch_Handler(_WDFileSystemEventHandler):
         stopped = not self._worker.is_alive()
         if had_work:
             with state.watcher["lock"]:
-                if (
-                    state.watcher.get("handler") in (None, self)
-                    and state.watcher.get("job_status") not in {"cancelled", "timed_out"}
-                ):
+                if state.watcher.get("handler") in (None, self) and state.watcher.get("job_status") not in {
+                    "cancelled",
+                    "timed_out",
+                }:
                     state.watcher["job_status"] = "cancelled"
                     state.watcher["pending_events"] = 0
                     state.watcher["active_root"] = None
@@ -590,9 +590,7 @@ def _prepare_watch_targets(
 ) -> tuple[dict[str, str], dict[str, str], dict[str, str]]:
     collections_root = os.path.abspath(os.path.join(config.LOCAL_SOURCES_DIR, "collections"))
     collection_name_by_id = {
-        item.get("id"): item.get("name", item.get("id", ""))
-        for item in _read_collections_unlocked()
-        if item.get("id")
+        item.get("id"): item.get("name", item.get("id", "")) for item in _read_collections_unlocked() if item.get("id")
     }
     mirror_roots: dict[str, str] = {}
     collection_ids: dict[str, str] = {}

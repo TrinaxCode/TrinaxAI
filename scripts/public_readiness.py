@@ -27,6 +27,8 @@ SKIP_PARTS = {
     "__pycache__",
     "projects",
     "local_sources",
+    "qa-test-workspace",
+    "qa-evidence-after-fixes",
 }
 REQUIRED_FILES = [
     "README.md",

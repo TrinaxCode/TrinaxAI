@@ -1,4 +1,5 @@
 """``trinaxai export`` — export a saved session as Markdown."""
+
 from __future__ import annotations
 
 from pathlib import Path

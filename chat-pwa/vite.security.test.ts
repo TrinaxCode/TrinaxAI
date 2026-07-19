@@ -18,7 +18,8 @@ describe('Vite security boundary', () => {
     expect(isAllowedOllamaProxyRequest('POST', '/api/ollama/api/generate')).toBe(true);
     expect(isAllowedOllamaProxyRequest('POST', '/api/ollama/api/pull')).toBe(true);
 
-    expect(isAllowedOllamaProxyRequest('DELETE', '/api/ollama/api/delete')).toBe(false);
+    expect(isAllowedOllamaProxyRequest('DELETE', '/api/ollama/api/delete')).toBe(true);
+    expect(isAllowedOllamaProxyRequest('POST', '/api/ollama/api/delete')).toBe(false);
     expect(isAllowedOllamaProxyRequest('POST', '/api/ollama/api/create')).toBe(false);
     expect(isAllowedOllamaProxyRequest('GET', '/api/ollama/api/ps')).toBe(false);
     expect(isAllowedOllamaProxyRequest('POST', '/api/ollama/api/tags')).toBe(false);

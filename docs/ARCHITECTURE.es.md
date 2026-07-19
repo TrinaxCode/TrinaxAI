@@ -167,7 +167,7 @@ index.py arranca
 |---|---|
 | **Red** | FastAPI/Ollama en loopback; solo el gateway PWA mira a LAN |
 | **Identidad gateway** | Peer/método/ruta con HMAC fresca; backend ignora forwarding ordinario |
-| **Identidad de dispositivo** | Pairing de un uso; `chat,read_private` por defecto; bearer con scopes/revocación solo en la sesión del navegador |
+| **Identidad de dispositivo** | Pairing de un uso; bearer revocable con scopes conservado en `localStorage` entre reinicios |
 | **Endpoints protegidos** | Loopback directo, scope de dispositivo o supercredencial admin; una credencial inválida falla cerrado |
 | **Fachada Ollama** | Allowlist método/ruta, autorización, token bucket monotónico y lock de inferencia |
 | **Agente** | Raíces registradas, paths/symlinks, bubblewrap Linux sin red y fallo cerrado sin aislamiento |
@@ -367,7 +367,7 @@ Estas áreas requieren cuidado extra al modificarlas:
    firmas obsoletas, repetidas, malformadas o de otra ruta fallan cerrado.
 3. Loopback directo tiene privilegio del operador local. Admin obtiene todos los
    scopes. Un token emparejado obtiene solo los scopes registrados.
-4. Cada ruta exige `chat`, `read_private`, `index`, `system` o `agent`. Una
+4. Cada ruta exige `chat`, `read_private`, `index`, `system`, `agent` o `web`. Una
    credencial enviada pero inválida nunca se ignora.
 5. El fallback legacy de LAN privada se limita a control de sistema, debe estar
    explícitamente activo y solo aplica sin token admin. El resto devuelve `403`.
@@ -377,7 +377,8 @@ Estas áreas requieren cuidado extra al modificarlas:
 **Valores por defecto:**
 - `TRINAXAI_ADMIN_TOKEN` — vacío (no configurado). El acceso desde localhost funciona automáticamente.
 - El pairing concede `chat,read_private` salvo que el host solicite más scopes.
-  El token en claro se entrega una vez y queda en `sessionStorage` de la PWA.
+  El token en claro se entrega una vez y queda en `localStorage` de la PWA hasta
+  autorrevocación, revocación del host o borrado remoto.
 - `TRINAXAI_ALLOW_LAN_SYSTEM` — `0`; el fallback legacy de control permanece
   apagado. Prefiere pairing y conserva la supercredencial admin en el host.
 
@@ -415,5 +416,5 @@ Estos principios guían todas las decisiones de diseño y contribución:
 - [Referencia de CLI](CLI_REFERENCE.es.md) — Comandos, flags y TOML
 - [Guía de Desarrollo](DEVELOPER_GUIDE.es.md) — Configuración local, convenciones y depuración
 - [Documentación de la PWA](../chat-pwa/README.es.md) — Ejecución y desarrollo del frontend
-- [Política de Seguridad](../SECURITY.es.md) — Modelo de amenazas y reporte
-- [Guía de Contribución](../CONTRIBUTING.es.md) — Proceso de PR y directrices
+- [Política de Seguridad](es/SECURITY.md) — Modelo de amenazas y reporte
+- [Guía de Contribución](es/CONTRIBUTING.md) — Proceso de PR y directrices

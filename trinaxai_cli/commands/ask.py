@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 from typing import Any
 
 from trinaxai_cli.commands.chat import _resolve_engine, _stream_answer, new_session_name
@@ -16,8 +17,18 @@ def _collections(value: Any) -> list[str]:
 
 def run(args: Any, client: Any, ui: Any, config: Any) -> int:
     prompt = " ".join(getattr(args, "prompt", [])).strip()
+    piped = ""
+    # A positional prompt wins without touching stdin, so interactive shells
+    # and callers that also inherit a pipe never block or consume it.
+    if not prompt and not sys.stdin.isatty():
+        piped = sys.stdin.read(1_048_577)
+        if len(piped) > 1_048_576:
+            ui.error("stdin prompt exceeds the 1 MiB limit.")
+            return 2
+        piped = piped.strip()
+    prompt = prompt or piped
     if not prompt:
-        ui.error("Usage: trinaxai ask \"your question\"")
+        ui.error('Usage: trinaxai ask "your question" or echo "your question" | trinaxai ask')
         return 2
     messages = [{"role": "user", "content": prompt}]
     collections = _collections(getattr(args, "collections", None))

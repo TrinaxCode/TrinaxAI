@@ -27,7 +27,7 @@ curl -k -H "X-Admin-Token: $TOKEN" https://localhost:3333/v1/memory
 curl -k -H "X-TrinaxAI-Device-Token: $DEVICE_TOKEN" https://localhost:3333/v1/memory
 ```
 
-Scopes disponibles: `chat`, `read_private`, `index`, `system`, `agent` y
+Scopes disponibles: `chat`, `read_private`, `index`, `system`, `agent`, `web` y
 `agent_yolo`. El token admin concede todos. Una credencial enviada pero inválida
 no se ignora aunque el peer sea loopback. El pairing por defecto solo concede
 `chat` y `read_private`; eleva scopes únicamente cuando sean necesarios.
@@ -37,7 +37,7 @@ no se ignora aunque el peer sea loopback. El pairing por defecto solo concede
 | Método y ruta | Protección | Propósito |
 |---|---|---|
 | `POST /v1/chat/completions`, `/v1/research` | `chat` + rate limit | Chat e investigación. |
-| `POST /v1/agent`, `/v1/agent/approve`, `GET /v1/agent/browse` | `agent` | Stream de agente, aprobación y raíces registradas. |
+| `POST /v1/agent`, `/v1/agent/approve`, `/v1/agent/cancel`, `GET /v1/agent/browse` | `agent` | Stream de agente, aprobación/cancelación y raíces registradas. |
 | `GET/POST /v1/voice/*` | `chat` + rate limit | Reconocimiento y síntesis de voz. |
 | `POST /documents/extract` | LAN/VPN o `chat` + rate limit | Extracción temporal sin persistencia. |
 | `GET /v1/sources` | `read_private` | Archivos indexados por colección. |
@@ -68,9 +68,11 @@ Hay un límite de cinco intentos por cliente cada cinco minutos. El token de
 dispositivo también se muestra una sola vez; en disco solo quedan hashes con
 clave. Los códigos duran entre 60 y 900 segundos y son single-use.
 
-La PWA guarda el bearer en `sessionStorage`: cerrar el navegador lo elimina de
-esa sesión. Registro y secreto de hashing son archivos atómicos separados modo
-`0600`. Pairing autentica dispositivo/capability; no es sistema multiusuario.
+La PWA guarda el bearer en `localStorage` para conservar la identidad entre
+reinicios del navegador/PWA; la revocación lo elimina cuando el cliente vuelve a
+comprobar su estado. Registro y secreto de hashing son archivos atómicos
+separados modo `0600`. Pairing autentica dispositivo/capability; no es sistema
+multiusuario.
 
 `GET /v1/pairing/me` y `DELETE /v1/pairing/me` usan la cabecera de dispositivo.
 `GET /v1/pairing/devices` y `DELETE /v1/pairing/devices/{id}` requieren
@@ -119,6 +121,10 @@ salida probablemente mal formada; no equivalen a compilar, typecheckear, probar
 en navegador ni demostrar corrección. Si no hay índice, responde un mensaje
 informativo sin fuentes en vez de fallar.
 
+### Configuración de búsqueda web
+
+`GET|PUT|DELETE /v1/settings/web-search` lee, actualiza o restablece la configuración local del host. `POST /v1/settings/web-search/test` prueba el proveedor desde el backend y `DELETE /v1/settings/web-search/credentials/brave` elimina explícitamente la clave administrada. Todas requieren acceso local/admin o un dispositivo con scope `system`; los secretos son de solo escritura y nunca se serializan.
+
 ### `POST /v1/research`
 
 ```json
@@ -140,6 +146,10 @@ del buscador. El fetch rechaza credenciales, esquemas no HTTP, destinos
 privados/loopback/link-local y redirects inseguros; resuelve una vez y conecta a
 la IP pública validada, con topes de redirects, bytes, texto y tiempo. `full_page`
 sigue siendo extracción acotada, no copia integral del sitio.
+
+`POST /v1/research/preflight` acepta el mismo request y comprueba Ollama, el
+modelo elegido, las colecciones locales y el proveedor web sin ejecutar la
+investigación completa.
 
 ## Fuentes y colecciones
 
@@ -244,7 +254,8 @@ archivo, 4 GiB total y 1,000 archivos.
 ## Agente
 
 `POST /v1/agent` transmite eventos SSE y una herramienta peligrosa pausa en
-`approval_request` hasta `/v1/agent/approve`. La aprobación debe incluir el
+`approval_request` hasta `/v1/agent/approve`. `POST /v1/agent/cancel` detiene una
+sesión activa de la misma identidad. La aprobación debe incluir el
 `session_id` del evento `start` y el `approval_id`,
 y usar la misma identidad autenticada que abrió el stream. El workspace debe descender de
 `TRINAXAI_AGENT_WORKSPACE_ROOTS`; se rechazan raíces del sistema. Yolo HTTP está

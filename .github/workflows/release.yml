@@ -3,7 +3,7 @@ name: Attested release
 on:
   push:
     tags:
-      - "v*"
+      - "v*.*.*"
 
 permissions:
   contents: write
@@ -105,7 +105,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Build deterministic source archive and checksums
+      - name: Build deterministic archive, installers and checksums
         shell: bash
         run: |
           set -euo pipefail
@@ -113,7 +113,9 @@ jobs:
           mkdir -p release
           git archive --format=tar --prefix="TrinaxAI-${version}/" "${GITHUB_SHA}" \
             | gzip -n > "release/TrinaxAI-${version}.tar.gz"
-          (cd release && sha256sum "TrinaxAI-${version}.tar.gz" > SHA256SUMS)
+          cp install.sh "release/TrinaxAI-${version}-installer.sh"
+          cp install.ps1 "release/TrinaxAI-${version}-installer.ps1"
+          (cd release && sha256sum TrinaxAI-* > SHA256SUMS)
 
       - name: Generate signed Sigstore provenance
         uses: actions/attest@v4

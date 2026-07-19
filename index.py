@@ -207,6 +207,7 @@ def _pipeline_version() -> str:
     payload = json.dumps(inputs, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return hashlib.sha256(payload).hexdigest()[:20]
 
+
 # Cache de CodeSplitters por lenguaje (crearlos es caro).
 _code_splitters: dict[str, object] = {}
 _prose_splitter = None
@@ -471,7 +472,9 @@ def _load_pdf_documents(path: str) -> list[Document]:
     for page_number, page in enumerate(reader.pages, start=1):
         text = (page.extract_text() or "").strip()
         if text:
-            documents.append(Document(text=f"[Page {page_number}]\n{text}", metadata={"file_path": path, "page": page_number}))
+            documents.append(
+                Document(text=f"[Page {page_number}]\n{text}", metadata={"file_path": path, "page": page_number})
+            )
         emit_progress("extracting", pages_total=total, pages_processed=page_number, determinate=True)
     if not documents:
         raise ValueError("PDF contains no extractable text; OCR may be required")
@@ -1156,11 +1159,7 @@ def _merge_final_state(
         prefix = f"{COLLECTION_ID}:"
         merged_state = {k: v for k, v in old_state.items() if not k.startswith(prefix)}
     else:
-        merged_state = {
-            k: v
-            for k, v in old_state.items()
-            if not _entry_belongs_to_source(k, v, source_context)
-        }
+        merged_state = {k: v for k, v in old_state.items() if not _entry_belongs_to_source(k, v, source_context)}
     merged_state.update(new_state)
     return merged_state
 
@@ -1270,14 +1269,10 @@ def run_manifest_recovery(
     source_context = context or _default_source_context()
     node_context = context
     existing_keys = {
-        key
-        for node in existing.docstore.docs.values()
-        if (key := _node_source_key(node, node_context)) is not None
+        key for node in existing.docstore.docs.values() if (key := _node_source_key(node, node_context)) is not None
     }
     active_prefix = (
-        f"{source_context.collection_id}:{source_context.source_id}:"
-        if context is not None
-        else f"{COLLECTION_ID}:"
+        f"{source_context.collection_id}:{source_context.source_id}:" if context is not None else f"{COLLECTION_ID}:"
     )
     deleted = sorted(key for key in existing_keys if key.startswith(active_prefix) and key not in new_state)
     paths = list(rel_to_path.values())
@@ -1290,9 +1285,7 @@ def run_manifest_recovery(
     )
 
     recovered: dict[str, dict] = {}
-    successful_keys = {
-        key for key, path in rel_to_path.items() if path in update.indexed_paths
-    }
+    successful_keys = {key for key, path in rel_to_path.items() if path in update.indexed_paths}
     for node in existing.docstore.docs.values():
         key = _node_source_key(node, node_context)
         if not key:

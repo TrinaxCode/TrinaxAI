@@ -34,7 +34,7 @@ def _api_results(golden: dict[str, Any], base_url: str, token: str, timeout: flo
             response.raise_for_status()
             payload = response.json()
             choices = payload.get("choices") or [{}]
-            answer = ((choices[0].get("message") or {}).get("content") or "")
+            answer = (choices[0].get("message") or {}).get("content") or ""
             metadata = payload.get("trinaxai") or {}
             results[str(case["id"])] = {
                 "answer": answer,

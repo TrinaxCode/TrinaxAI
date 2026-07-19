@@ -95,11 +95,7 @@ def _source_authority(url: str) -> str:
     host = (urlparse(url).hostname or "").rstrip(".").casefold()
     labels = host.split(".")
     government_suffix = bool(labels) and labels[-1] in {"gov", "mil"}
-    country_government_suffix = (
-        len(labels) >= 2
-        and len(labels[-1]) == 2
-        and labels[-2] in {"gov", "gob", "mil"}
-    )
+    country_government_suffix = len(labels) >= 2 and len(labels[-1]) == 2 and labels[-2] in {"gov", "gob", "mil"}
     return "primary" if government_suffix or country_government_suffix else "secondary"
 
 
@@ -212,6 +208,7 @@ def _open_pinned_response(
             connection: socket.socket
             if scheme == "https":
                 context = ssl.create_default_context()
+                context.minimum_version = ssl.TLSVersion.TLSv1_2
                 connection = context.wrap_socket(raw_socket, server_hostname=hostname)
             else:
                 connection = raw_socket
@@ -305,9 +302,11 @@ class _ReadableHTMLParser(HTMLParser):
             content = _clean_text(values.get("content"), 500)
             if content and key in {"author", "article:author", "byl"} and not self.author:
                 self.author = content
-            if content and key in {
-                "article:published_time", "date", "datepublished", "datecreated", "publishdate", "pubdate"
-            } and not self.published_at:
+            if (
+                content
+                and key in {"article:published_time", "date", "datepublished", "datecreated", "publishdate", "pubdate"}
+                and not self.published_at
+            ):
                 self.published_at = content
         elif tag == "link" and "canonical" in values.get("rel", "").casefold().split():
             self.canonical = values.get("href", "")[:2048]
@@ -666,12 +665,14 @@ def configured_provider() -> str:
     return "duckduckgo"
 
 
-def search_web(query: str, limit: int | None = None) -> tuple[list[dict[str, str]], str]:
+def search_web(
+    query: str, limit: int | None = None, *, provider: str | None = None
+) -> tuple[list[dict[str, str]], str]:
     """Search the web and return normalized, deduplicated results + provider."""
     clean_query = " ".join(str(query or "").split())
     if not clean_query:
         raise WebSearchError("The web search query is empty.")
-    configured = config.WEB_SEARCH_PROVIDER
+    configured = provider or config.WEB_SEARCH_PROVIDER
     if configured == "disabled":
         raise WebSearchError("Web search is disabled by TRINAXAI_WEB_SEARCH_PROVIDER.")
     max_results = max(1, min(int(limit or config.WEB_SEARCH_MAX_RESULTS), 10))

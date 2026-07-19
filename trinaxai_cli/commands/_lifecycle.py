@@ -1,4 +1,5 @@
 """Shared launcher for the platform-native update and uninstall scripts."""
+
 from __future__ import annotations
 
 import shutil

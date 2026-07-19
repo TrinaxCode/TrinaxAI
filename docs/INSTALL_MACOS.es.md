@@ -166,8 +166,9 @@ TRINAXAI_CORS_ORIGINS=https://localhost:3334,http://localhost:3334,https://192.1
 Perfil `16gb` recomendado:
 
 ```bash
-ollama pull qwen2.5-coder:3b
-ollama pull qwen3.5:9b
+ollama pull qwen2.5-coder:1.5b
+ollama pull qwen3.5:2b
+ollama pull qwen3.5:0.8b
 ollama pull granite4:3b
 ollama pull bge-m3
 ```

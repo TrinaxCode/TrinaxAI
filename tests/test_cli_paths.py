@@ -40,9 +40,7 @@ def test_obsidian_uses_install_root_and_safe_collection_id(monkeypatch, tmp_path
 
     client = _Client()
     ui = _UI()
-    result = obsidian.run(
-        SimpleNamespace(vault=str(vault), collection="../../Team Notes"), client, ui, None
-    )
+    result = obsidian.run(SimpleNamespace(vault=str(vault), collection="../../Team Notes"), client, ui, None)
 
     expected = install_root / "local_sources" / "collections" / "team-notes" / "notes" / "welcome.md"
     assert result == 0
@@ -73,7 +71,9 @@ def test_index_uses_install_root_when_called_outside_project(monkeypatch, tmp_pa
     monkeypatch.setattr(index.subprocess, "Popen", fake_popen)
     monkeypatch.chdir(tmp_path)
 
-    result = index.run(SimpleNamespace(path=str(source), folder=None, collection="default", append=False), None, _UI(), None)
+    result = index.run(
+        SimpleNamespace(path=str(source), folder=None, collection="default", append=False), None, _UI(), None
+    )
 
     assert result == 0
     assert launched["command"][1] == str(index_script)  # type: ignore[index]

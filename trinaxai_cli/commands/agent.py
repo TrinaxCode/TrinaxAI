@@ -8,6 +8,7 @@ Interactive REPL by default; ``--prompt`` runs a single task and exits. The
 agent operates on ``--workspace`` (default: the current directory) and cannot
 touch anything outside it.
 """
+
 from __future__ import annotations
 
 import time
@@ -16,6 +17,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
+import config as runtime_config
 from trinaxai_cli.agent import AgentEngine, Tool
 from trinaxai_cli.commands import _system
 from trinaxai_cli.session import Session
@@ -31,10 +33,16 @@ def _new_session_name() -> str:
     return f"agent-{time.strftime('%Y%m%d-%H%M%S')}-{uuid.uuid4().hex[:6]}"
 
 
-def _resolve_model(args: Any) -> str:
+def _resolve_model(args: Any, config: Any = None, text: str = "") -> str:
     requested = getattr(args, "model", None)
     if requested:
         return requested
+    router_config = config if callable(getattr(config, "route_model", None)) else runtime_config
+    if text:
+        selected = router_config.route_model(text)
+        if selected == getattr(router_config, "MODEL_CODE", None):
+            return getattr(router_config, "MODEL_GENERAL", None) or getattr(router_config, "MODEL_DEEP", selected)
+        return selected
     # The general model reliably emits native tool calls. A separate deep coder
     # model audits evidence-based review answers after the files have been read.
     return (
@@ -151,6 +159,8 @@ def build_agent_engine(
     omitted, static confirming callbacks are used.
     """
     root = Path(workspace or ".").expanduser().resolve()
+    if not root.is_dir():
+        raise ValueError(f"workspace does not exist or is not a directory: {root}")
     ollama_url = _system.env_value("OLLAMA_BASE_URL") or "http://localhost:11434"
     resolved_model = model or _resolve_model(SimpleNamespace(model=model))
     resolved_ctx = num_ctx if num_ctx is not None else _resolve_num_ctx(config)
@@ -182,16 +192,16 @@ def _resolve_num_ctx(config: Any) -> int:
 
 
 def _build_engine(args: Any, ui: Any, yolo: bool, config: Any = None) -> AgentEngine:
-    workspace = Path(
-        getattr(args, "workspace", None)
-        or getattr(args, "invocation_cwd", None)
-        or "."
-    ).expanduser().resolve()
+    invocation_cwd = Path(getattr(args, "invocation_cwd", None) or ".").expanduser().resolve()
+    requested = Path(getattr(args, "workspace", None) or ".").expanduser()
+    workspace = (requested if requested.is_absolute() else invocation_cwd / requested).resolve()
+    if not workspace.is_dir():
+        raise ValueError(f"workspace does not exist or is not a directory: {workspace}")
     ollama_url = _system.env_value("OLLAMA_BASE_URL") or "http://localhost:11434"
     max_steps = int(getattr(args, "max_steps", None) or 25)
     callbacks = _make_callbacks(ui, yolo)
     return AgentEngine(
-        model=_resolve_model(args),
+        model=_resolve_model(args, config, getattr(args, "prompt", None) or ""),
         verifier_model=_resolve_verifier_model(),
         workspace_root=workspace,
         ollama_url=ollama_url,
@@ -267,6 +277,7 @@ def run(args: Any, client: Any, ui: Any, config: Any) -> int:
                 ui.success("Conversation cleared.")
                 continue
             try:
+                engine.model = _resolve_model(args, config, task)
                 _run_task(engine, ui, messages, task, session)
             except KeyboardInterrupt:
                 ui.warn("\ninterrupted.")

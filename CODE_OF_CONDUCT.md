@@ -1,5 +1,7 @@
 # Code of Conduct
 
+[Versión en español](docs/es/CODE_OF_CONDUCT.md)
+
 TrinaxAI welcomes contributors who want to improve local-first AI.
 
 ## Expected Behavior

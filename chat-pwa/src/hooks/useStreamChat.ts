@@ -15,6 +15,13 @@ export interface SendOptions {
 
 const MAX_BUFFER_CHARS = 8192;
 export const FIRST_TOKEN_TIMEOUT_MS = 30_000;
+export const VISION_FIRST_TOKEN_TIMEOUT_MS = 120_000;
+
+export function firstTokenTimeoutMs(messages: ChatMessage[]): number {
+  return messages[messages.length - 1]?.image
+    ? VISION_FIRST_TOKEN_TIMEOUT_MS
+    : FIRST_TOKEN_TIMEOUT_MS;
+}
 
 export function streamFlushSize(pendingChars: number): number {
   if (pendingChars > 4096) return 512;
@@ -111,7 +118,7 @@ export function useStreamChat() {
         firstTokenTimer = setTimeout(() => {
           firstTokenTimedOut = true;
           ctrl.abort();
-        }, FIRST_TOKEN_TIMEOUT_MS);
+        }, firstTokenTimeoutMs(messages));
         const handleToken = (token: string) => {
           if (runId !== runIdRef.current) return;
           if (firstTokenTimer) { clearTimeout(firstTokenTimer); firstTokenTimer = null; }

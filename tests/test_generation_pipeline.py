@@ -17,6 +17,7 @@ def _spec(text: str, **kw):
 
 # ── Regime classification ─────────────────────────────────────────────────
 
+
 def test_landing_page_is_creative_regime():
     c = classify(
         "Crea una landing page moderna con glassmorphism, animaciones, un chat, "
@@ -27,10 +28,7 @@ def test_landing_page_is_creative_regime():
 
 
 def test_lru_cache_is_code_regime():
-    c = classify(
-        "Implementa una caché LRU + TTL en Python con complejidad O(1), "
-        "incluye tests y un benchmark"
-    )
+    c = classify("Implementa una caché LRU + TTL en Python con complejidad O(1), incluye tests y un benchmark")
     assert c.regime is Regime.CODE_GEN
     assert "algorithm" in c.categories
 
@@ -92,6 +90,7 @@ def test_debugging_routes_to_code():
 
 # ── Attached documents (PWA appends a fenced ```text dump) ────────────────
 
+
 # Mirrors the PWA's document-context suffix (ChatInterface.tsx). The ```text
 # fence used to set has_fence → is_code → CODE_GEN on the small coder, which
 # then answered a "summarise this PDF" turn with a truncated "El".
@@ -100,8 +99,7 @@ def _with_attachment(instruction: str, name: str = "informe.pdf") -> str:
         f"{instruction}\n\n[Archivo adjunto temporal: {name}]\n"
         "```text\n"
         "def build(): pass\nimport os\nconst x = () => 1;\n"
-        "Lorem ipsum dolor sit amet " * 400
-        + "\n```"
+        "Lorem ipsum dolor sit amet " * 400 + "\n```"
     )
 
 
@@ -122,9 +120,7 @@ def test_attached_document_does_not_route_to_coder():
 def test_attached_document_dump_does_not_inflate_score():
     # The huge file text must not push the turn into complex/deep decoding.
     lean = complexity_score("resume este documento", classify("resume este documento"))
-    withdoc = complexity_score(
-        "resume este documento", classify(_with_attachment("resume este documento"))
-    )
+    withdoc = complexity_score("resume este documento", classify(_with_attachment("resume este documento")))
     assert withdoc.mode == lean.mode
 
 
@@ -135,6 +131,7 @@ def test_attachment_with_explicit_code_fix_still_uses_code_regime():
 
 
 # ── Reasoning regime (maths / science / algorithm analysis) ───────────────
+
 
 def test_math_exam_is_reasoning_not_code():
     # A maths exam that mentions "algoritmo", a def-snippet and "grafo" must NOT
@@ -194,6 +191,7 @@ def test_long_prompt_grows_window_instead_of_truncating_output():
 
 # ── Complexity scoring ────────────────────────────────────────────────────
 
+
 def test_trivial_prompt_scores_low():
     c = classify("hola")
     assert complexity_score("hola", c).total <= 25
@@ -210,6 +208,7 @@ def test_lru_and_landing_reach_complex_mode():
 
 
 # ── TaskSpec resolution / decoding params ─────────────────────────────────
+
 
 def test_generation_disables_rag_and_sets_output_budget():
     s = _spec("Crea una función en Python que sume dos números", has_index=True)
@@ -266,6 +265,7 @@ def test_model_override_is_respected_but_regime_still_tuned():
 
 # ── Validators ────────────────────────────────────────────────────────────
 
+
 def test_validator_flags_python_syntax_error():
     bad = "```python\ndef f(:\n    pass\n```"
     r = validate_output(bad, regime="code_gen")
@@ -282,11 +282,7 @@ def test_validator_flags_missing_deliverables():
 
 def test_validator_passes_complete_answer():
     good = (
-        "```python\n"
-        "import time\n"
-        "def test_add():\n    assert add(1, 2) == 3\n"
-        "t = time.perf_counter()  # benchmark\n"
-        "```"
+        "```python\nimport time\ndef test_add():\n    assert add(1, 2) == 3\nt = time.perf_counter()  # benchmark\n```"
     )
     r = validate_output(good, regime="code_gen", deliverables=("tests", "benchmark"))
     assert r.ok

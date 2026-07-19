@@ -4,6 +4,22 @@ Todos los cambios notables en TrinaxAI se documentan aquí. Este proyecto sigue 
 
 ## [Sin publicar]
 
+## [1.2.0] — 2026-07-18
+
+### Añadido
+- Configuración de búsqueda web protegida por permiso de sistema, secretos write-only y pruebas de conexión para DuckDuckGo, Brave Search y SearXNG.
+
+### Cambiado
+- Los perfiles automáticos ahora cubren 1–8 GB, 9–31 GB, 32–63 GB y 64+ GB de RAM, conservando overrides de entorno y embeddings multilingües `bge-m3`.
+- Playwright usa un servidor aislado de TrinaxAI en un puerto dedicado y configurable.
+
+### Corregido
+- Generación, RAG, investigación, agente, memoria, pairing, servicios, búsqueda web y CLI ahora fallan de forma estable y preservan el estado compartido ante actualizaciones concurrentes.
+- Los instaladores ya no eliminan modelos de Ollama que puedan pertenecer a otros proyectos.
+
+### Seguridad
+- Agent valida los endpoints de Ollama antes del acceso de red; las puertas de release auditan dependencias, hallazgos estáticos de alta severidad y secretos.
+
 ### Añadido
 - Preferencia global persistente para efectos de sonido y señales centralizadas de generación, herramientas, archivos, agente, voz, llamada, errores y confirmaciones.
 - Trabajos persistentes de indexación con progreso real por etapa/página/chunk/lote, cancelación, reintento, deduplicación, timeouts y reconexión.
@@ -86,5 +102,6 @@ Todos los cambios notables en TrinaxAI se documentan aquí. Este proyecto sigue 
 ### Añadido
 - Publicación pública inicial de TrinaxAI.
 
+[1.2.0]: https://github.com/TrinaxCode/TrinaxAI/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/TrinaxCode/TrinaxAI/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.0.0

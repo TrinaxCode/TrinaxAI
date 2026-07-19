@@ -20,23 +20,44 @@ from app.generation.classifier import Classification
 # The key insight from the audit: hard tasks are often SHORT but densely packed
 # ("LRU + TTL, O(1), tests, benchmark"), so requirement/deliverable density
 # matters far more than raw length.
-_W_LENGTH = 10       # prompt length (weak proxy for spec size)
+_W_LENGTH = 10  # prompt length (weak proxy for spec size)
 _W_REQUIREMENTS = 24  # inline feature list + bullets + numbered items
 _W_DELIVERABLES = 22  # tests, benchmark, faq, responsive, ...
 _W_CREATIVITY = 12
-_W_PRECISION = 12    # O(1), correctness-critical wording
-_W_REASONING = 12    # architecture / algorithm / debugging depth
-_W_MULTIFILE = 8     # multiple files / components
+_W_PRECISION = 12  # O(1), correctness-critical wording
+_W_REASONING = 12  # architecture / algorithm / debugging depth
+_W_MULTIFILE = 8  # multiple files / components
 
 _PRECISION_HINTS = (
-    "o(1)", "o(n)", "o(log", "exacto", "preciso", "correcto", "sin errores",
-    "must compile", "compile", "thread-safe", "concurren", "atómico", "atomic",
-    "edge case", "caso límite", "invariante", "invariant",
+    "o(1)",
+    "o(n)",
+    "o(log",
+    "exacto",
+    "preciso",
+    "correcto",
+    "sin errores",
+    "must compile",
+    "compile",
+    "thread-safe",
+    "concurren",
+    "atómico",
+    "atomic",
+    "edge case",
+    "caso límite",
+    "invariante",
+    "invariant",
 )
 _MULTIFILE_HINTS = (
-    "varios archivos", "múltiples archivos", "multiple files", "cada archivo",
-    "estructura de carpetas", "proyecto completo", "full project", "monorepo",
-    "varios componentes", "múltiples componentes",
+    "varios archivos",
+    "múltiples archivos",
+    "multiple files",
+    "cada archivo",
+    "estructura de carpetas",
+    "proyecto completo",
+    "full project",
+    "monorepo",
+    "varios componentes",
+    "múltiples componentes",
 )
 
 
@@ -101,8 +122,7 @@ def complexity_score(text: str, cls: Classification) -> ScoreBreakdown:
 
     total = min(
         100,
-        length + requirements + deliverables + creativity
-        + precision + reasoning + multifile + combo,
+        length + requirements + deliverables + creativity + precision + reasoning + multifile + combo,
     )
     return ScoreBreakdown(
         total=total,

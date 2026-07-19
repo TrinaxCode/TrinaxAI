@@ -3,6 +3,7 @@
 Copies ``*.md`` files (skipping ``.obsidian/``) from the vault into
 ``local_sources/collections/<id>/`` so the existing indexer picks them up.
 """
+
 from __future__ import annotations
 
 import shutil

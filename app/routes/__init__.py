@@ -15,6 +15,7 @@ from .stats import router as stats_router
 from .system import router as system_router
 from .voice import router as voice_router
 from .watcher import router as watcher_router
+from .web_search_settings import router as web_search_settings_router
 
 ROUTERS = (
     voice_router,
@@ -32,6 +33,7 @@ ROUTERS = (
     documents_router,
     collections_router,
     system_router,
+    web_search_settings_router,
 )
 
 __all__ = ["ROUTERS"]

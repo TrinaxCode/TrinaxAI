@@ -10,11 +10,20 @@ class _UI:
         self.messages: list[str] = []
         self.rows = []
 
-    def success(self, message): self.messages.append(str(message))
-    def info(self, message): self.messages.append(str(message))
-    def warn(self, message): self.messages.append(str(message))
-    def error(self, message): self.messages.append(str(message))
-    def table(self, headers, rows, title=None): self.rows = rows
+    def success(self, message):
+        self.messages.append(str(message))
+
+    def info(self, message):
+        self.messages.append(str(message))
+
+    def warn(self, message):
+        self.messages.append(str(message))
+
+    def error(self, message):
+        self.messages.append(str(message))
+
+    def table(self, headers, rows, title=None):
+        self.rows = rows
 
 
 class _Client:
@@ -34,13 +43,18 @@ class _Client:
 
 def test_pair_start_prints_code_and_pwa_link() -> None:
     ui = _UI()
-    result = pair.run(SimpleNamespace(
-        pair_command="start",
-        scopes="chat,read_private",
-        ttl=300,
-        device_ttl_days=None,
-        pwa_url=None,
-    ), _Client(), ui, None)
+    result = pair.run(
+        SimpleNamespace(
+            pair_command="start",
+            scopes="chat,read_private",
+            ttl=300,
+            device_ttl_days=None,
+            pwa_url=None,
+        ),
+        _Client(),
+        ui,
+        None,
+    )
     assert result == 0
     assert any("ABCD-EFGH" in message for message in ui.messages)
     assert any("https://192.168.1.20:3334/#settings?pair=ABCD-EFGH" in message for message in ui.messages)

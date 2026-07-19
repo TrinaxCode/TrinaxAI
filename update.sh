@@ -253,7 +253,7 @@ configured_models() {
   add_unique_model "$(env_value TRINAXAI_MODEL_FAST)"
   add_unique_model "$(env_value TRINAXAI_EMBED)"
   if [ "${#MODELS[@]}" -eq 0 ]; then
-    MODELS=(qwen2.5-coder:3b qwen3.5:9b granite4:3b bge-m3)
+    MODELS=(qwen2.5-coder:1.5b qwen3.5:2b qwen3.5:0.8b granite4:3b bge-m3)
   fi
 }
 

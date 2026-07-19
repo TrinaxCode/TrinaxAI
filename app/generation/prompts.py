@@ -65,10 +65,22 @@ CREATOR_BIO = (
 )
 
 _CREATOR_TRIGGERS = (
-    "trinaxcode", "quién te creó", "quien te creo", "quién es tu creador",
-    "quien es tu creador", "sus enlaces", "sus links", "sus redes",
-    "redes de tu creador", "who created you", "who made you", "your creator",
-    "who is your creator", "tu creador", "origen", "creator links",
+    "trinaxcode",
+    "quién te creó",
+    "quien te creo",
+    "quién es tu creador",
+    "quien es tu creador",
+    "sus enlaces",
+    "sus links",
+    "sus redes",
+    "redes de tu creador",
+    "who created you",
+    "who made you",
+    "your creator",
+    "who is your creator",
+    "tu creador",
+    "origen",
+    "creator links",
 )
 
 

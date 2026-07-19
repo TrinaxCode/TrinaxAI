@@ -7,7 +7,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
-from trinaxai_cli.commands import collections, index
+from trinaxai_cli.client import TrinaxAPIClient, TrinaxAPIError
+from trinaxai_cli.commands import agent, ask, collections, index, memory
 from trinaxai_cli.config import CLIConfig
 
 
@@ -76,6 +77,16 @@ def test_cli_lifecycle_help() -> None:
     assert "--purge" in uninstall.stdout
 
 
+def test_agent_auto_router_uses_fast_tool_model_for_simple_code_tasks() -> None:
+    config = SimpleNamespace(
+        MODEL_CODE="qwen2.5-coder:3b",
+        MODEL_DEEP="qwen3.5:4b",
+        MODEL_GENERAL="granite4:3b",
+        route_model=lambda _text: "qwen2.5-coder:3b",
+    )
+    assert agent._resolve_model(SimpleNamespace(model=None), config, "crea un archivo README.md") == "granite4:3b"
+
+
 def test_cli_mcp_placeholder_is_hidden_and_nonzero() -> None:
     result = run_cli("mcp")
     output = result.stdout + result.stderr
@@ -111,6 +122,63 @@ def test_collections_use_rejects_unknown_collection() -> None:
     ui.error.assert_called_once()
 
 
+def test_collections_delete_resolves_unique_name() -> None:
+    client = MagicMock()
+    client.list_collections.return_value = [{"id": "docs-123", "name": "Docs"}]
+    client.delete_collection.return_value = 2
+    ui = MagicMock()
+    ui.confirm.return_value = True
+
+    result = collections.run(
+        SimpleNamespace(collections_command="delete", collection_id=None, name="Docs"), client, ui, CLIConfig()
+    )
+
+    assert result == 0
+    client.delete_collection.assert_called_once_with("docs-123")
+
+
+def test_memory_forget_rejects_disagreeing_ids() -> None:
+    ui = MagicMock()
+    result = memory.run(
+        SimpleNamespace(memory_command="forget", memory_id="one", memory_id_positional="two"),
+        MagicMock(),
+        ui,
+        CLIConfig(),
+    )
+    assert result == 1
+    ui.error.assert_called_once()
+
+
+def test_memory_list_parses_current_and_paginated_shapes() -> None:
+    client = object.__new__(TrinaxAPIClient)
+    client._get = MagicMock(return_value={"memories": [{"id": "one"}]})
+    assert client.list_memories() == [{"id": "one"}]
+    client._get.return_value = {"items": [{"id": "two"}], "next_cursor": None}
+    assert client.list_memories() == [{"id": "two"}]
+    client._get.return_value = {"unexpected": []}
+    with __import__("pytest").raises(TrinaxAPIError):
+        client.list_memories()
+
+
+def test_ask_reads_unicode_stdin_when_prompt_is_omitted(monkeypatch) -> None:
+    stdin = MagicMock()
+    stdin.isatty.return_value = False
+    stdin.read.return_value = "Explica café ☕\n"
+    monkeypatch.setattr(ask.sys, "stdin", stdin)
+    monkeypatch.setattr(ask, "_stream_answer", lambda *_args: "ok")
+    ui = MagicMock()
+
+    with patch("trinaxai_cli.commands.ask.Session"):
+        result = ask.run(
+            SimpleNamespace(prompt=[], collections=None, engine="ollama", session=None),
+            MagicMock(),
+            ui,
+            CLIConfig(),
+        )
+
+    assert result == 0
+
+
 def test_index_success_reloads_live_rag_index(tmp_path: Path) -> None:
     source = tmp_path / "source"
     source.mkdir()
@@ -129,3 +197,73 @@ def test_index_success_reloads_live_rag_index(tmp_path: Path) -> None:
 
     assert result == 0
     client.reload_index.assert_called_once_with()
+
+
+def test_cli_export_produces_markdown_with_session_name(tmp_path: Path) -> None:
+    from trinaxai_cli.commands import export
+    from trinaxai_cli.session import Session
+
+    session_records = [
+        {"role": "user", "content": "hello", "ts": 1000},
+        {"role": "assistant", "content": "hi there", "ts": 1001},
+    ]
+    with patch.object(Session, "load", return_value=session_records):
+        ui = MagicMock()
+        args = SimpleNamespace(session="test", format="md", output=str(tmp_path / "out.md"))
+        result = export.run(args, MagicMock(), ui, MagicMock())
+
+    assert result == 0
+    output_file = tmp_path / "out.md"
+    assert output_file.exists()
+    content = output_file.read_text()
+    assert "# TrinaxAI session: test" in content
+    assert "hello" in content
+    assert "hi there" in content
+    ui.success.assert_called_once()
+
+
+def test_cli_export_rejects_empty_session() -> None:
+    from trinaxai_cli.commands import export
+    from trinaxai_cli.session import Session
+
+    with patch.object(Session, "load", return_value=[]):
+        ui = MagicMock()
+        args = SimpleNamespace(session="empty", format="md", output=None)
+        result = export.run(args, MagicMock(), ui, MagicMock())
+
+    assert result == 1
+    ui.error.assert_called_once()
+
+
+def test_cli_config_masks_secret_keys() -> None:
+    from trinaxai_cli.commands import _system, config
+
+    ui = MagicMock()
+    cli_config = CLIConfig()
+    with (
+        patch.dict(os.environ, {"TRINAXAI_ADMIN_TOKEN": "secret123"}),
+        patch.object(_system, "load_dotenv_values", return_value={}),
+    ):
+        result = config.run(SimpleNamespace(), MagicMock(), ui, cli_config)
+
+    assert result == 0
+    ui.table.assert_called_once()
+    # ui.table(headers, rows, title=...): headers[0], rows[1]
+    rows = ui.table.call_args[0][1]
+    admin_row = next((r for r in rows if r[0] == "TRINAXAI_ADMIN_TOKEN"), None)
+    assert admin_row is not None, f"TRINAXAI_ADMIN_TOKEN not found in rows: {[r[0] for r in rows]}"
+    assert "secret123" not in admin_row[1]
+
+
+def test_cli_version_prints_version_string() -> None:
+    from trinaxai_cli.app import VERSION
+    from trinaxai_cli.commands import version
+
+    ui = MagicMock()
+    result = version.run(SimpleNamespace(), MagicMock(), ui, MagicMock())
+
+    assert result == 0
+    ui.print.assert_called_once()
+    printed = ui.print.call_args[0][0]
+    assert "TrinaxAI CLI" in printed
+    assert VERSION in printed

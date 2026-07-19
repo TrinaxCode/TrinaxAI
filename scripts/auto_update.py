@@ -62,9 +62,7 @@ def enable(base_dir: Path) -> str:
                 encoding="utf-8",
             )
             reload_result = _run(["systemctl", "--user", "daemon-reload"])
-            enable_result = _run(
-                ["systemctl", "--user", "enable", "--now", LINUX_TIMER]
-            )
+            enable_result = _run(["systemctl", "--user", "enable", "--now", LINUX_TIMER])
             if not reload_result.returncode and not enable_result.returncode:
                 return f"weekly systemd timer enabled: {unit_dir / LINUX_TIMER}"
         if shutil.which("crontab"):
@@ -80,10 +78,7 @@ def enable(base_dir: Path) -> str:
             )
             wrapper.chmod(0o700)
             current = _run(["crontab", "-l"])
-            lines = [
-                line for line in current.stdout.splitlines()
-                if "# TrinaxAI weekly update" not in line
-            ]
+            lines = [line for line in current.stdout.splitlines() if "# TrinaxAI weekly update" not in line]
             lines.append(f"17 3 * * 0 {shlex.quote(str(wrapper))} # TrinaxAI weekly update")
             result = _run(["crontab", "-"], input="\n".join(lines) + "\n")
             if not result.returncode:
@@ -96,9 +91,7 @@ def enable(base_dir: Path) -> str:
         plist = plist_dir / f"{MAC_LABEL}.plist"
         payload = {
             "Label": MAC_LABEL,
-            "ProgramArguments": [
-                str(python), str(script), "run", "--base-dir", str(base_dir)
-            ],
+            "ProgramArguments": [str(python), str(script), "run", "--base-dir", str(base_dir)],
             "StartCalendarInterval": {"Weekday": 1, "Hour": 3, "Minute": 0},
             "RunAtLoad": False,
             "WorkingDirectory": str(base_dir),
@@ -119,22 +112,29 @@ def enable(base_dir: Path) -> str:
         command_file = state_dir / "weekly-update.cmd"
         wrapper = state_dir / "weekly-update.vbs"
         command_file.write_text(
-            "@echo off\r\n"
-            f'cd /d "{base_dir}"\r\n'
-            f'"{python}" "{script}" run --base-dir "{base_dir}"\r\n',
+            f'@echo off\r\ncd /d "{base_dir}"\r\n"{python}" "{script}" run --base-dir "{base_dir}"\r\n',
             encoding="utf-8",
         )
         escaped_command = str(command_file).replace('"', '""')
         wrapper.write_text(
-            'Set shell = CreateObject("WScript.Shell")\r\n'
-            f'shell.Run """{escaped_command}""", 0, False\r\n',
+            f'Set shell = CreateObject("WScript.Shell")\r\nshell.Run """{escaped_command}""", 0, False\r\n',
             encoding="utf-8",
         )
         result = _run(
             [
-                "schtasks", "/Create", "/F", "/SC", "WEEKLY", "/D", "SUN",
-                "/ST", "03:00", "/TN", TASK_NAME,
-                "/TR", f'wscript.exe //B //Nologo "{wrapper}"',
+                "schtasks",
+                "/Create",
+                "/F",
+                "/SC",
+                "WEEKLY",
+                "/D",
+                "SUN",
+                "/ST",
+                "03:00",
+                "/TN",
+                TASK_NAME,
+                "/TR",
+                f'wscript.exe //B //Nologo "{wrapper}"',
             ]
         )
         if result.returncode:
@@ -155,14 +155,9 @@ def disable(base_dir: Path) -> str:
             _run(["systemctl", "--user", "daemon-reload"])
         if shutil.which("crontab"):
             current = _run(["crontab", "-l"])
-            lines = [
-                line for line in current.stdout.splitlines()
-                if "# TrinaxAI weekly update" not in line
-            ]
+            lines = [line for line in current.stdout.splitlines() if "# TrinaxAI weekly update" not in line]
             _run(["crontab", "-"], input="\n".join(lines) + "\n")
-        (base_dir / "storage" / "maintenance" / "weekly-update.sh").unlink(
-            missing_ok=True
-        )
+        (base_dir / "storage" / "maintenance" / "weekly-update.sh").unlink(missing_ok=True)
     elif system == "Darwin":
         plist = Path.home() / "Library" / "LaunchAgents" / f"{MAC_LABEL}.plist"
         if plist.exists():
@@ -220,8 +215,7 @@ def run_update(base_dir: Path) -> int:
         else:
             _log(
                 base_dir,
-                f"Update available: {local_sha[:12]} -> {remote_sha[:12]}. "
-                "Run 'trinaxai update' interactively.",
+                f"Update available: {local_sha[:12]} -> {remote_sha[:12]}. Run 'trinaxai update' interactively.",
             )
         return 0
     except Exception as exc:

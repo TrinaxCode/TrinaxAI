@@ -3,6 +3,7 @@
 Wraps the RAG API (FastAPI) with typed methods for each command. The CLI
 modules call this client and never touch HTTP directly.
 """
+
 from __future__ import annotations
 
 import os
@@ -40,7 +41,7 @@ class TrinaxAPIClient:
         if httpx is None:
             raise RuntimeError("httpx is required for the TrinaxAI CLI (install via requirements.txt).")
         self.base_url = (base_url or "https://localhost:3333").rstrip("/")
-        self.verify_tls: bool | str = self._resolve_local_ca(verify_tls)
+        self.verify_tls = self._resolve_local_ca(verify_tls)
         self.timeout = timeout
         request_headers: dict[str, str] = {}
         admin_token = os.getenv("TRINAXAI_ADMIN_TOKEN", "").strip()
@@ -59,13 +60,17 @@ class TrinaxAPIClient:
         self._ollama_clients: dict[str, Any] = {}
         self._prefer_local_https_if_needed()
 
-    def _resolve_local_ca(self, verify_tls: bool | str) -> bool | str:
+    def _resolve_local_ca(self, verify_tls: bool | str) -> ssl.SSLContext:
         """Use an explicit/local CA for loopback HTTPS without disabling TLS."""
-        if verify_tls is not True:
-            return verify_tls
+        if verify_tls is False:
+            raise ValueError("TLS certificate verification cannot be disabled")
+        context = ssl.create_default_context()
+        if isinstance(verify_tls, str):
+            context.load_verify_locations(cafile=verify_tls)
+            return context
         parsed = urlparse(self.base_url)
         if parsed.hostname not in {"localhost", "127.0.0.1", "::1"}:
-            return True
+            return context
 
         configured = os.getenv("TRINAXAI_CA_FILE", "").strip()
         candidates: list[Path] = [Path(configured).expanduser()] if configured else []
@@ -80,7 +85,8 @@ class TrinaxAPIClient:
 
         for candidate in candidates:
             if candidate.is_file():
-                return str(candidate)
+                context.load_verify_locations(cafile=str(candidate))
+                return context
 
         root = os.getenv("TRINAXAI_HOME", "").strip()
         install_root = Path(root).expanduser() if root else Path(__file__).resolve().parents[1]
@@ -89,10 +95,11 @@ class TrinaxAPIClient:
             try:
                 certificate = ssl._ssl._test_decode_cert(str(leaf))  # type: ignore[attr-defined]
                 if certificate.get("issuer") == certificate.get("subject"):
-                    return str(leaf)
+                    context.load_verify_locations(cafile=str(leaf))
+                    return context
             except (OSError, ValueError, ssl.SSLError):
                 pass
-        return True
+        return context
 
     def close(self) -> None:
         try:
@@ -137,7 +144,7 @@ class TrinaxAPIClient:
             return None
         return urlunparse(parsed._replace(scheme="https"))
 
-    def _switch_base_url(self, base_url: str, *, verify_tls: bool | str | None = None) -> None:
+    def _switch_base_url(self, base_url: str, *, verify_tls: ssl.SSLContext | None = None) -> None:
         self.close()
         self.base_url = base_url.rstrip("/")
         if verify_tls is not None:
@@ -163,7 +170,7 @@ class TrinaxAPIClient:
         try:
             # Never silently downgrade certificate verification merely because
             # the candidate is localhost. The installer trusts TrinaxAI's local
-            # CA; custom certificates use --insecure as an explicit opt-out.
+            # CA; custom certificates must provide a trusted CA file.
             with httpx.Client(base_url=candidate, verify=self.verify_tls, timeout=probe_timeout) as probe:
                 r = probe.get("/health")
                 if r.status_code < 500:
@@ -191,8 +198,7 @@ class TrinaxAPIClient:
         except httpx.TransportError as exc:
             raise TrinaxAPIError(
                 0,
-                f"cannot reach the RAG API at {self.base_url} "
-                f"({exc.__class__.__name__}); is TrinaxAI running?",
+                f"cannot reach the RAG API at {self.base_url} ({exc.__class__.__name__}); is TrinaxAI running?",
             ) from exc
         return self._handle(r)
 
@@ -246,11 +252,14 @@ class TrinaxAPIClient:
         ttl_seconds: int = 300,
         device_ttl_days: int | None = None,
     ) -> dict[str, Any]:
-        return self._post("/v1/pairing/start", {
-            "scopes": scopes,
-            "ttl_seconds": ttl_seconds,
-            "device_ttl_days": device_ttl_days,
-        })
+        return self._post(
+            "/v1/pairing/start",
+            {
+                "scopes": scopes,
+                "ttl_seconds": ttl_seconds,
+                "device_ttl_days": device_ttl_days,
+            },
+        )
 
     def list_paired_devices(self) -> list[dict[str, Any]]:
         return list(self._get("/v1/pairing/devices").get("devices") or [])
@@ -274,14 +283,18 @@ class TrinaxAPIClient:
 
     def delete_collection(self, cid: str) -> int:
         from urllib.parse import quote
+
         return int((self._delete(f"/collections/{quote(cid, safe='')}") or {}).get("deleted_nodes") or 0)
 
     # ── Sources / Browse ──
     def list_sources(self, collection: str) -> dict[str, Any]:
         return self._get("/v1/sources", [("collection", collection)])
 
-    def list_chunks(self, collection: str, file: str, limit: int = 50, offset: int = 0, q: str | None = None) -> dict[str, Any]:
+    def list_chunks(
+        self, collection: str, file: str, limit: int = 50, offset: int = 0, q: str | None = None
+    ) -> dict[str, Any]:
         from urllib.parse import quote
+
         # `quote(..., safe="/")` preserves the slashes inside the path while
         # encoding spaces and other unsafe characters.
         path = f"/v1/sources/{quote(collection, safe='')}/{quote(file, safe='/')}/chunks"
@@ -302,7 +315,20 @@ class TrinaxAPIClient:
 
     # ── Memory ──
     def list_memories(self) -> list[dict[str, Any]]:
-        return self._get("/v1/memory").get("memories") or []
+        data = self._get("/v1/memory")
+        if isinstance(data, list):
+            memories = data
+        elif isinstance(data, dict):
+            memories = data.get("memories")
+            if memories is None and isinstance(data.get("data"), dict):
+                memories = data["data"].get("memories")
+            if memories is None:
+                memories = data.get("items")
+        else:
+            memories = None
+        if not isinstance(memories, list) or any(not isinstance(item, dict) for item in memories):
+            raise TrinaxAPIError(0, "unexpected memory-list response from the backend", data)
+        return memories
 
     def add_memory(self, text: str, tags: list[str] | None = None) -> dict[str, Any]:
         return self._post("/v1/memory", {"text": text, "tags": tags or []})

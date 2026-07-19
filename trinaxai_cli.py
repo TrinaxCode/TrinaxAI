@@ -18,9 +18,10 @@ import urllib.request
 try:
     import config
 except ImportError:
+
     class _FallbackConfig:
         OLLAMA_BASE_URL = "http://localhost:11434"
-        LLM_MODEL = "qwen2.5-coder:3b"
+        LLM_MODEL = "qwen2.5-coder:1.5b"
         NUM_CTX = 4096
         NUM_THREAD = 8
 
@@ -37,9 +38,7 @@ OLLAMA_URL = f"{config.OLLAMA_BASE_URL.rstrip('/')}/api/chat"
 
 def _post_json(url: str, payload: dict, *, verify_tls: bool = True) -> dict:
     data = json.dumps(payload).encode("utf-8")
-    req = urllib.request.Request(
-        url, data=data, headers={"Content-Type": "application/json"}, method="POST"
-    )
+    req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"}, method="POST")
     context = config.create_ssl_context(verify_tls)
     try:
         with urllib.request.urlopen(req, timeout=300, context=context) as response:
@@ -52,11 +51,7 @@ def route_cli_model(messages: list[dict], requested: str) -> str:
     if requested and requested.lower() not in {"auto", "router"}:
         return requested
     current = next(
-        (
-            str(m.get("content", ""))
-            for m in reversed(messages)
-            if m.get("role") == "user"
-        ),
+        (str(m.get("content", "")) for m in reversed(messages) if m.get("role") == "user"),
         "",
     )
     route = getattr(config, "route_model", None)
@@ -95,9 +90,7 @@ def ask_ollama(messages: list[dict], model: str) -> tuple[str, str]:
     return data.get("message", {}).get("content", ""), used_model
 
 
-def ask_rag(
-    messages: list[dict], collections: list[str] | None = None
-) -> tuple[str, str]:
+def ask_rag(messages: list[dict], collections: list[str] | None = None) -> tuple[str, str]:
     payload = {
         "messages": messages,
         "stream": False,
@@ -124,11 +117,7 @@ def print_status(engine: str, model: str) -> None:
 
 def run_once(prompt: str, engine: str, model: str, collections: list[str]) -> int:
     messages = [{"role": "user", "content": prompt}]
-    answer, used_model = (
-        ask_rag(messages, collections)
-        if engine == "rag"
-        else ask_ollama(messages, model)
-    )
+    answer, used_model = ask_rag(messages, collections) if engine == "rag" else ask_ollama(messages, model)
     print(answer)
     print(f"\n[model: {used_model}]")
     return 0
@@ -163,11 +152,7 @@ def repl(engine: str, model: str, collections: list[str]) -> int:
 
         messages.append({"role": "user", "content": prompt})
         try:
-            answer, used_model = (
-                ask_rag(messages, collections)
-                if engine == "rag"
-                else ask_ollama(messages, model)
-            )
+            answer, used_model = ask_rag(messages, collections) if engine == "rag" else ask_ollama(messages, model)
         except (urllib.error.URLError, OSError, json.JSONDecodeError, KeyError, ValueError) as exc:
             print(f"Error: {exc}")
             continue
@@ -177,9 +162,7 @@ def repl(engine: str, model: str, collections: list[str]) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="TrinaxAI CLI local assistant")
-    parser.add_argument(
-        "prompt", nargs="*", help="Prompt to run once. Omit for interactive mode."
-    )
+    parser.add_argument("prompt", nargs="*", help="Prompt to run once. Omit for interactive mode.")
     parser.add_argument("--engine", choices=["ollama", "rag"], default="ollama")
     parser.add_argument("--model", default="auto")
     parser.add_argument("--collection", action="append", default=["default"])

@@ -92,11 +92,7 @@ def _evaluate_case(case: dict[str, Any], result: dict[str, Any], k_values: tuple
     reciprocal_rank = (1.0 / first_rank) if first_rank else 0.0
     ideal = [1] * min(len(expected), len(ranked))
     ndcg = (_dcg(relevant_flags) / _dcg(ideal)) if ideal else float(not ranked)
-    citation_precision = (
-        sum(relevant_flags) / len(relevant_flags)
-        if relevant_flags
-        else float(not should_answer)
-    )
+    citation_precision = sum(relevant_flags) / len(relevant_flags) if relevant_flags else float(not should_answer)
 
     answer = str(result.get("answer") or "")
     terms = [_normalise(term) for term in case.get("answer_contains") or [] if str(term).strip()]
@@ -128,10 +124,7 @@ def evaluate_results(
     if not k_values or any(k <= 0 for k in k_values):
         raise ValueError("k_values must contain positive integers")
     cases = golden.get("cases") or []
-    evaluated = [
-        _evaluate_case(case, results.get(str(case["id"]), {}), k_values)
-        for case in cases
-    ]
+    evaluated = [_evaluate_case(case, results.get(str(case["id"]), {}), k_values) for case in cases]
     metric_names = [f"recall_at_{k}" for k in k_values] + [
         "reciprocal_rank",
         "ndcg",
@@ -140,10 +133,7 @@ def evaluate_results(
         "no_answer_correct",
     ]
     count = len(evaluated)
-    metrics = {
-        name: (sum(float(case[name]) for case in evaluated) / count if count else 0.0)
-        for name in metric_names
-    }
+    metrics = {name: (sum(float(case[name]) for case in evaluated) / count if count else 0.0) for name in metric_names}
     latencies = sorted(
         float(result["latency_ms"])
         for result in results.values()

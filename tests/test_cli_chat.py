@@ -18,14 +18,8 @@ def test_slash_command_completer_opens_on_slash_and_filters() -> None:
     completer = SlashCommandCompleter(
         (("/agent", "Agentic mode"), ("/auto", "Automatic routing"), ("/web", "Web search"))
     )
-    all_names = [
-        item.text
-        for item in completer.get_completions(Document("/", cursor_position=1), CompleteEvent())
-    ]
-    filtered = [
-        item.text
-        for item in completer.get_completions(Document("/ag", cursor_position=3), CompleteEvent())
-    ]
+    all_names = [item.text for item in completer.get_completions(Document("/", cursor_position=1), CompleteEvent())]
+    filtered = [item.text for item in completer.get_completions(Document("/ag", cursor_position=3), CompleteEvent())]
 
     assert all_names == ["/agent", "/auto", "/web"]
     assert filtered == ["/agent"]
@@ -93,11 +87,27 @@ class FakeClient:
         return self.relevant_memories
 
 
+def test_rag_stream_payload_forces_knowledge_mode() -> None:
+    response = FakeResponse(['data: {"choices":[{"delta":{"content":"ok"}}]}', "data: [DONE]"])
+    client = FakeClient(response)
+    client._client = SimpleNamespace(stream=lambda *args, **kwargs: response)
+
+    chat._stream_from_rag(client, FakeUI(), [{"role": "user", "content": "marker"}], ["docs"])
+
+    # Capture the shared constructor used by both ask and chat.
+    def capture(_method, _path, **kwargs):
+        client.payload = kwargs["json"]
+        return response
+
+    client._client.stream = capture
+    chat._stream_from_rag(client, FakeUI(), [{"role": "user", "content": "marker"}], ["docs"])
+    assert client.payload["mode"] == "knowledge"
+    assert client.payload["collections"] == ["docs"]
+
+
 def test_stream_answer_injects_only_relevant_memory_into_general_cli(monkeypatch) -> None:
     client = FakeClient(FakeResponse([json.dumps({"message": {"content": "ok"}, "done": True})]))
-    client.relevant_memories = [
-        {"id": "pref", "kind": "preference", "text": "Prefiere ejemplos en Python."}
-    ]
+    client.relevant_memories = [{"id": "pref", "kind": "preference", "text": "Prefiere ejemplos en Python."}]
     ui = FakeUI()
     monkeypatch.setattr(chat._system, "env_value", lambda _key: "")
 
@@ -228,7 +238,9 @@ def test_ask_rag_uses_configured_default_collection(monkeypatch) -> None:
     monkeypatch.setattr(ask, "_stream_answer", stream_answer)
     result = ask.run(
         SimpleNamespace(prompt=["consulta"], collections=None, engine=None, session=None),
-        object(), ui, config,
+        object(),
+        ui,
+        config,
     )
 
     assert result == 0
@@ -315,12 +327,8 @@ def test_slash_registry_dispatches_inline_prompt_and_rejects_unknown() -> None:
     ui = FakeUI()
     state = chat.ChatState()
 
-    handled, exit_code = chat._handle_slash(
-        "/web latest local AI news", [], client, ui, CLIConfig(), state
-    )
-    unknown, unknown_exit = chat._handle_slash(
-        "/does-not-exist", [], client, ui, CLIConfig(), state
-    )
+    handled, exit_code = chat._handle_slash("/web latest local AI news", [], client, ui, CLIConfig(), state)
+    unknown, unknown_exit = chat._handle_slash("/does-not-exist", [], client, ui, CLIConfig(), state)
 
     assert handled is True and exit_code is None
     assert state.forced_mode == "web"

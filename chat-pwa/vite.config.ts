@@ -51,6 +51,7 @@ const certKey = path.join(__dirname, 'certs', 'localhost-key.pem');
 const certFile = path.join(__dirname, 'certs', 'localhost.pem');
 const certPfx = path.join(__dirname, 'certs', 'trinaxai-local.pfx');
 const pfxPassphrase = process.env.TRINAXAI_CERT_PASSPHRASE || 'trinaxai-local';
+const localCa = fs.existsSync(certFile) ? fs.readFileSync(certFile) : undefined;
 const httpsConfig = process.env.CI === 'true'
   ? undefined
   : fs.existsSync(certPfx)
@@ -93,9 +94,18 @@ function pairedDeviceGrants(token: string, scope: string): boolean {
   try {
     const registryFile = deviceRegistryPath();
     const secretFile = deviceSecretPath();
-    if (fs.statSync(registryFile).size > 1024 * 1024 || fs.statSync(secretFile).size > 4096) return false;
-    const registry = JSON.parse(fs.readFileSync(registryFile, 'utf8')) as unknown;
-    const secret = fs.readFileSync(secretFile, 'ascii').trim();
+    const readBounded = (file: string, maxBytes: number, encoding: BufferEncoding): string => {
+      const descriptor = fs.openSync(file, 'r');
+      try {
+        const stat = fs.fstatSync(descriptor);
+        if (!stat.isFile() || stat.size > maxBytes) throw new Error('invalid device credential file');
+        return fs.readFileSync(descriptor, encoding);
+      } finally {
+        fs.closeSync(descriptor);
+      }
+    };
+    const registry = JSON.parse(readBounded(registryFile, 1024 * 1024, 'utf8')) as unknown;
+    const secret = readBounded(secretFile, 4096, 'ascii').trim();
     try { fs.chmodSync(registryFile, 0o600); fs.chmodSync(secretFile, 0o600); } catch { /* best effort */ }
     return deviceTokenHasScope(token, scope, registry, secret);
   } catch {
@@ -311,7 +321,7 @@ function postReload(ragTarget: string): void {
     port: url.port,
     path: url.pathname,
     method: 'POST',
-    rejectUnauthorized: false,
+    ...(url.protocol === 'https:' && isLoopbackAddress(url.hostname) && localCa ? { ca: localCa } : {}),
     family: 4,
   };
   const client = url.protocol === 'https:' ? https : http;
@@ -321,11 +331,20 @@ function postReload(ragTarget: string): void {
 }
 
 function proxyConfig() {
+  const ragTarget = env('TRINAXAI_RAG_TARGET', env('VITE_TRINAXAI_RAG_TARGET', 'http://127.0.0.1:3333'));
+  const ollamaTarget = env('TRINAXAI_OLLAMA_TARGET', 'http://127.0.0.1:11434');
+  const trustedAgent = (target: string) => {
+    const url = new URL(target);
+    return url.protocol === 'https:' && isLoopbackAddress(url.hostname) && localCa
+      ? new https.Agent({ ca: localCa })
+      : undefined;
+  };
   return {
     '/api/rag': {
-      target: env('TRINAXAI_RAG_TARGET', env('VITE_TRINAXAI_RAG_TARGET', 'http://127.0.0.1:3333')),
+      target: ragTarget,
+      agent: trustedAgent(ragTarget),
       changeOrigin: true,
-      secure: false,
+      secure: true,
       xfwd: false,
       rewrite: (proxyPath: string) => proxyPath.replace(/^\/api\/rag/, ''),
       configure: (proxy: any) => {
@@ -333,11 +352,12 @@ function proxyConfig() {
       },
     },
     '/api/ollama': {
-      target: env('TRINAXAI_OLLAMA_TARGET', 'http://127.0.0.1:11434'),
+      target: ollamaTarget,
+      agent: trustedAgent(ollamaTarget),
       changeOrigin: true,
-      secure: false,
+      secure: true,
       xfwd: false,
-      headers: { Origin: env('TRINAXAI_OLLAMA_TARGET', 'http://127.0.0.1:11434') },
+      headers: { Origin: ollamaTarget },
       rewrite: (proxyPath: string) => proxyPath.replace(/^\/api\/ollama/, ''),
     },
   };
@@ -416,7 +436,13 @@ function installSystemControl(server: any): void {
     } else if (action === 'reload') {
       const reloadUrl = new URL('/system/reload', ragTarget);
       const client = reloadUrl.protocol === 'https:' ? https : http;
-      const req = client.request({ hostname: reloadUrl.hostname, port: reloadUrl.port, path: reloadUrl.pathname, method: 'POST', rejectUnauthorized: false }, (ragRes: any) => {
+      const req = client.request({
+        hostname: reloadUrl.hostname,
+        port: reloadUrl.port,
+        path: reloadUrl.pathname,
+        method: 'POST',
+        ...(reloadUrl.protocol === 'https:' && isLoopbackAddress(reloadUrl.hostname) && localCa ? { ca: localCa } : {}),
+      }, (ragRes: any) => {
         let body = '';
         ragRes.on('data', (d: string) => body += d);
         ragRes.on('end', () => {
@@ -448,9 +474,7 @@ export default defineConfig({
         'web-app-manifest-512x512.png',
         'logo-of-app.webp',
         'logo-for-ai.webp',
-        'logo-for-user.webp',
         'new-logo-for-AI.webp',
-        'new-logo-for-user.webp',
         'offline.html',
       ],
       manifest: {

@@ -1,4 +1,5 @@
 """Cross-platform discovery of the full TrinaxAI installation."""
+
 from __future__ import annotations
 
 import os
@@ -37,9 +38,7 @@ def install_candidates() -> list[Path]:
             candidates.append(Path(local) / "TrinaxAI")
         candidates.append(Path.home() / "trinaxai")
     elif sys.platform == "darwin":
-        candidates.extend(
-            [Path.home() / "Library" / "Application Support" / "TrinaxAI", Path.home() / "trinaxai"]
-        )
+        candidates.extend([Path.home() / "Library" / "Application Support" / "TrinaxAI", Path.home() / "trinaxai"])
     else:
         data_home = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local" / "share"))
         candidates.extend([data_home / "trinaxai", Path.home() / "trinaxai"])
@@ -65,7 +64,6 @@ def require_install_root() -> Path:
     if root is None:
         checked = ", ".join(str(path) for path in install_candidates())
         raise FileNotFoundError(
-            "No full TrinaxAI installation was found. Set TRINAXAI_HOME to its directory. "
-            f"Checked: {checked}"
+            f"No full TrinaxAI installation was found. Set TRINAXAI_HOME to its directory. Checked: {checked}"
         )
     return root

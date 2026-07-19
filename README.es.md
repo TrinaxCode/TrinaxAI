@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0--or--later-blue.svg" alt="AGPL-3.0-or-later"></a>
-  <a href="CHANGELOG.es.md"><img src="https://img.shields.io/badge/version-1.1.0-006bbd.svg" alt="Versión 1.1.0"></a>
+  <a href="CHANGELOG.es.md"><img src="https://img.shields.io/badge/version-1.2.0-006bbd.svg" alt="Versión 1.2.0"></a>
   <a href="#-inicio-rápido"><img src="https://img.shields.io/badge/powered_by-Ollama-black.svg" alt="Ollama"></a>
   <a href="#️-plataformas-compatibles"><img src="https://img.shields.io/badge/platform-Linux|macOS|Windows-lightgrey.svg" alt="Plataformas"></a>
   <a href="chat-pwa/README.es.md"><img src="https://img.shields.io/badge/PWA-lista-brightgreen.svg" alt="PWA"></a>
@@ -120,9 +120,11 @@ Cualquier teléfono, tablet o computadora de la misma red privada puede abrir
 Cada dispositivo debe confiar en el certificado HTTPS local. Un equipo LAN
 puede acceder al chat básico antes de emparejarse, pero RAG, historial
 sincronizado, memoria, archivos, indexación, agente y control del sistema exigen
-permisos explícitos. El emparejamiento concede `chat,read_private` por defecto.
-Concede `index`, `agent` o `system` sólo cuando haga falta; el host conserva el
-control y puede revocarlos. Consulta la [guía completa de la PWA](chat-pwa/README.es.md#emparejar-un-navegador).
+permisos explícitos. La PWA host genera un código de interfaz completa con
+`chat,read_private,index,system,agent`; usa `trinaxai pair start --scopes ...`
+para un equipo con privilegio mínimo (la CLI usa `chat,read_private` por
+defecto). El host puede revocar el acceso de inmediato. Consulta la
+[guía completa de la PWA](chat-pwa/README.es.md#emparejar-un-navegador).
 
 ---
 
@@ -167,7 +169,7 @@ cámara o shell que el usuario o navegador no haya autorizado.
 - 🔄 **Sincronización de estado y uso** — sincronización versionada de ajustes/historial con revisiones seguras ante conflictos, borrados explícitos y estadísticas locales.
 - 🛡️ **Seguridad local-first** — servicios en loopback, emparejamiento por scopes, gateway firmado con HMAC, agente en sandbox.
 
-**Versión estable:** 1.1.0 · **Licencia:** [AGPL-3.0-or-later](LICENSE)
+**Versión del proyecto:** 1.2.0 · **Licencia:** [AGPL-3.0-or-later](LICENSE)
 
 ---
 
@@ -278,14 +280,14 @@ El instalador elige un **perfil de hardware** según tu RAM. Los perfiles soport
 
 | Rol | Low (`8gb`) | Medium (`16gb`) | High (`max`) | Ultra |
 |---|---|---|---|---|
-| **Chat / razonamiento** | `qwen3.5:4b` | `granite4:3b` | `qwen3.5:27b` | `qwen3.5:35b-a3b` (MoE) |
-| **Código** | `qwen2.5-coder:1.5b` | `qwen2.5-coder:3b` | `qwen2.5-coder:7b` | `qwen2.5-coder:14b` |
-| **Profundo** | `qwen3.5:4b` | `qwen3.5:4b` | `qwen3.5:27b` | `qwen3.5:35b-a3b` (MoE) |
+| **Chat / razonamiento** | `qwen3.5:0.8b` | `granite4:3b` | `qwen3.5:27b` | `qwen3.5:35b-a3b` (MoE) |
+| **Código** | `qwen2.5-coder:1.5b` | `qwen2.5-coder:1.5b` | `qwen2.5-coder:14b` | `qwen3-coder:30b` (MoE) |
+| **Profundo** | `qwen3.5:0.8b` | `qwen3.5:2b` | `qwen3.5:27b` | `qwen3.5:35b-a3b` (MoE) |
 | **Visión** | `qwen3-vl:2b-instruct` | `qwen3-vl:4b-instruct` | `qwen3-vl:8b-instruct` | `qwen3-vl:30b-a3b-instruct` (MoE) |
-| **Rápido** | `qwen3.5:0.8b` | `granite4:3b` | `qwen3.5:4b` | `qwen3.5:4b` |
+| **Rápido** | `qwen3.5:0.8b` | `qwen3.5:0.8b` | `qwen3.5:4b` | `qwen3.5:4b` |
 | **Embeddings** | `bge-m3` (1024d) | `bge-m3` | `bge-m3` | `bge-m3` |
 
-El **pipeline de generación** usa Qwen 3.5 para chat/razonamiento, Qwen 2.5 Coder para código y un Qwen3-VL Instruct especializado para visión. Los modelos de visión se descargan al analizar la primera imagen, así la instalación y los updates no se bloquean por un pull grande. Confirma los nombres con `ollama list` y ajusta `.env` si cambias de modelo. Mira [docs/CONFIGURATION.es.md](docs/CONFIGURATION.es.md) y [docs/ENVIRONMENT_VARIABLES.md](docs/ENVIRONMENT_VARIABLES.md).
+El **pipeline de generación** dirige cada solicitud entre los modelos general, profundo, de código y rápido del perfil; para visión usa el Qwen3-VL Instruct correspondiente. Los modelos de visión se descargan al analizar la primera imagen, así la instalación y los updates no se bloquean por un pull grande. Confirma los nombres con `ollama list` y ajusta `.env` si cambias de modelo. Mira [docs/CONFIGURATION.es.md](docs/CONFIGURATION.es.md) y [docs/ENVIRONMENT_VARIABLES.md](docs/ENVIRONMENT_VARIABLES.md).
 
 ---
 
@@ -304,7 +306,7 @@ TrinaxAI es **local-first por diseño.**
 | **Agente** | Herramientas de archivo confinadas a las raíces registradas; la shell en Linux usa bubblewrap sin red | Mantén el yolo HTTP desactivado; nunca habilites el escape sin sandbox de forma remota |
 | **CORS** | localhost + tu IP LAN | Personaliza con `TRINAXAI_CORS_ORIGINS` |
 
-Para acceso LAN/remoto: usa un firewall para bloquear los puertos 3333/11434, una VPN (Tailscale/WireGuard) en vez de exponer puertos, y `trinaxai pair start` con los mínimos scopes. Modelo de amenazas completo y reporte: [SECURITY.es.md](SECURITY.es.md).
+Para acceso LAN/remoto: usa un firewall para bloquear los puertos 3333/11434, una VPN (Tailscale/WireGuard) en vez de exponer puertos, y `trinaxai pair start` con los mínimos scopes. Modelo de amenazas completo y reporte: [política de seguridad](docs/es/SECURITY.md).
 
 ---
 
@@ -386,7 +388,7 @@ Compartir WiFi no concede datos privados ni funciones privilegiadas.
 Sí. Además de código, el indexador extrae texto de PDF/Office, Markdown/texto/datos, HTML, EPUB, correo, subtítulos, calendarios, contactos y notebooks. La reindexación es incremental; los binarios/media se omiten.
 
 **¿Qué licencia?**
-AGPL-3.0-or-later — libre para uso personal y comercial. Mira [LICENSE](LICENSE) y [TRADEMARK.es.md](TRADEMARK.es.md).
+AGPL-3.0-or-later — libre para uso personal y comercial. Mira [LICENSE](LICENSE) y la [política de marca](docs/es/TRADEMARK.md).
 
 ---
 
@@ -394,13 +396,13 @@ AGPL-3.0-or-later — libre para uso personal y comercial. Mira [LICENSE](LICENS
 
 ## 🤝 Contribuir
 
-¡PRs bienvenidos! — mira [CONTRIBUTING.es.md](CONTRIBUTING.es.md). Reporta bugs · sugiere funciones · mejora la docs · traduce · envía PRs.
+¡PRs bienvenidos! — mira [cómo contribuir](docs/es/CONTRIBUTING.md). Reporta bugs · sugiere funciones · mejora la docs · traduce · envía PRs.
 
 ---
 
 ## 📄 Licencia
 
-AGPL-3.0-or-later — mira [LICENSE](LICENSE). Uso de nombre/logo: [TRADEMARK.es.md](TRADEMARK.es.md).
+AGPL-3.0-or-later — mira [LICENSE](LICENSE). Uso de nombre/logo: [política de marca](docs/es/TRADEMARK.md).
 
 ---
 

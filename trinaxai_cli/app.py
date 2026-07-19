@@ -7,6 +7,7 @@ Subcommand modules live in :mod:`trinaxai_cli.commands` and are imported
 lazily by :func:`_dispatch` so that ``--help`` stays fast and partial
 installs (one command's deps missing) do not break the others.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -21,10 +22,11 @@ from trinaxai_cli.config import CLIConfig
 from trinaxai_cli.ui import get_console
 
 LOG = logging.getLogger("trinaxai_cli")
-VERSION = "1.1.0"
+VERSION = "1.2.0"
 
 
 # ----------------------------------------------------------------- argparse
+
 
 def _build_parser() -> argparse.ArgumentParser:
     """Return the top-level argparse parser with all subcommands wired in."""
@@ -38,11 +40,6 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--api-url", help="RAG API base URL (overrides config).")
     parser.add_argument("--install-root", help="Full TrinaxAI installation directory (overrides auto-discovery).")
-    parser.add_argument(
-        "--insecure",
-        action="store_true",
-        help="Disable TLS certificate verification.",
-    )
     parser.add_argument(
         "--config",
         help="Path to config TOML (overrides $TRINAXAI_CONFIG and XDG search).",
@@ -79,7 +76,7 @@ def _build_parser() -> argparse.ArgumentParser:
     chat_p.add_argument("--workspace", help="Agent workspace root for /agent turns (default: current dir).")
 
     ask_p = sub.add_parser("ask", help="Ask one question and exit.")
-    ask_p.add_argument("prompt", nargs="+", help="Question or prompt to send to TrinaxAI.")
+    ask_p.add_argument("prompt", nargs="*", help="Question to send, or omit it to read UTF-8 text from stdin.")
     ask_p.add_argument("--session", help="Session name. A unique name is created when omitted.")
     ask_p.add_argument("--collections", help="Comma-separated collection ids.")
     ask_p.add_argument("--engine", choices=["general", "ollama", "rag"])
@@ -201,6 +198,7 @@ def _build_parser() -> argparse.ArgumentParser:
     ma.add_argument("--text", help="Memory text (else prompted).")
     ma.add_argument("--tags", help="Comma-separated tags.")
     mf = mem_sub.add_parser("forget", help="Forget a memory by id (prefix ok).")
+    mf.add_argument("memory_id_positional", nargs="?", help="Memory id or prefix.")
     mf.add_argument("--memory-id", dest="memory_id", help="Memory id or prefix.")
     mem_sub.add_parser("refresh", help="Refresh the memory index.")
     mem_sub.add_parser("summary", help="Show the current summary.")
@@ -213,6 +211,7 @@ def _build_parser() -> argparse.ArgumentParser:
     cc.add_argument("--name", help="Collection name.")
     cd = col_sub.add_parser("delete", help="Delete a collection.")
     cd.add_argument("--collection-id", dest="collection_id", help="Collection id.")
+    cd.add_argument("--name", help="Exact collection name (must be unique).")
     cu = col_sub.add_parser("use", help="Switch the active collection.")
     cu.add_argument("--collection-id", dest="collection_id", help="Collection id.")
 
@@ -220,6 +219,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 # ------------------------------------------------------------- dispatcher
+
 
 def _dispatch(name: str, args: Any, client: Any, ui: Any, config: CLIConfig) -> int:
     """Lazy-import ``trinaxai_cli.commands.<name>`` and call its ``run``."""
@@ -253,6 +253,7 @@ def _dispatch(name: str, args: Any, client: Any, ui: Any, config: CLIConfig) -> 
 
 # ------------------------------------------------------------------ main
 
+
 def main(argv: Sequence[str] | None = None) -> int:
     """Entry point.  Returns the process exit code."""
     invocation_cwd = str(Path.cwd().resolve())
@@ -279,7 +280,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     # 2. Resolve effective api_url and verify_tls.
     api_url = args.api_url or config.api["base_url"]
-    verify_tls = (not args.insecure) and bool(config.api.get("verify_tls", True))
+    verify_tls = bool(config.api.get("verify_tls", True))
 
     # 3. Build UI console (honours --no-color, $NO_COLOR, config.ui.color).
     no_color = bool(args.no_color) or (str(config.ui.get("color", "auto")) == "never")

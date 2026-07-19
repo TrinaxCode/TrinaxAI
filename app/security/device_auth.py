@@ -24,9 +24,7 @@ from trinaxai_core import exclusive_process_lock
 
 SCHEMA_VERSION = 1
 DEVICE_TOKEN_HEADER = "X-TrinaxAI-Device-Token"
-ALL_DEVICE_SCOPES = frozenset(
-    {"chat", "read_private", "index", "system", "agent", "agent_yolo"}
-)
+ALL_DEVICE_SCOPES = frozenset({"chat", "read_private", "index", "system", "agent", "agent_yolo", "web"})
 DEFAULT_DEVICE_SCOPES = ("chat", "read_private")
 _CODE_ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ"
 _CODE_LENGTH = 8

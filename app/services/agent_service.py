@@ -158,14 +158,18 @@ def _authorize_http_yolo(req: AgentRequest, request: Request) -> None:
 def _resolve_model(requested: str | None, messages: list[dict] | None = None) -> str:
     """Resolve an explicit model or use TrinaxAI's shared multimodel router."""
     selected = (requested or "").strip()
-    if selected and selected.lower() != "auto":
-        return selected
-    if messages:
+    if (not selected or selected.lower() == "auto") and messages:
         try:
-            return config.route_model_for_messages(messages)
+            selected = config.route_model_for_messages(messages)
         except Exception:  # noqa: BLE001 - preserve the safe configured fallback
             LOG.debug("Agent model auto-routing failed; using the general model", exc_info=True)
-    return getattr(config, "MODEL_GENERAL", None) or getattr(config, "LLM_MODEL", "qwen3.5:4b")
+    if not selected:
+        selected = getattr(config, "MODEL_GENERAL", None) or getattr(config, "LLM_MODEL", "qwen3.5:4b")
+    if selected == getattr(config, "MODEL_CODE", None) or selected.lower().startswith("qwen2.5-coder:"):
+        fallback = getattr(config, "MODEL_GENERAL", None) or getattr(config, "MODEL_DEEP", "granite4:3b")
+        LOG.info("Agent router replaced incompatible model %s with %s", selected, fallback)
+        return fallback
+    return selected
 
 
 def _agent_num_ctx() -> int:
@@ -208,6 +212,7 @@ def _register_session(identity_key: tuple[str, str] = ("local", "local")) -> tup
         "started_at": time.monotonic(),
         "last_activity": time.monotonic(),
         "current_tool": None,
+        "inference_active": False,
         "steps": 0,
     }
     with _SESSIONS_LOCK:
@@ -371,13 +376,15 @@ def _deep_research(_workspace_root, query: str = "", **_kwargs) -> str:
     q = (query or "").strip()
     if not q:
         return "error: 'query' must not be empty"
-    result = _research_sync(ResearchRequest(
-        query=q,
-        search_query=q,
-        web_search=True,
-        include_local=False,
-        depth=3,
-    ))
+    result = _research_sync(
+        ResearchRequest(
+            query=q,
+            search_query=q,
+            web_search=True,
+            include_local=False,
+            depth=3,
+        )
+    )
     if result.get("error_code"):
         return "error: deep research is temporarily unavailable"
     sources = [
@@ -442,6 +449,17 @@ def _run_engine_worker(session: dict, req: AgentRequest, workspace: Path, model:
             return False
         return _wait_for_approval(session, tool, args)
 
+    @contextmanager
+    def inference_guard():
+        session["inference_active"] = True
+        _touch_session(session, current_tool="model")
+        try:
+            with _agent_inference_slot():
+                yield
+        finally:
+            session["inference_active"] = False
+            _touch_session(session, current_tool=None)
+
     engine = AgentEngine(
         model=model,
         verifier_model=getattr(config, "MODEL_DEEP", None) or getattr(config, "MODEL_CODE", None),
@@ -458,7 +476,7 @@ def _run_engine_worker(session: dict, req: AgentRequest, workspace: Path, model:
         on_tool_result=on_tool_result,
         on_token=on_token,
         on_confirm=None if req.yolo else on_confirm,
-        inference_guard=_agent_inference_slot,
+        inference_guard=inference_guard,
         should_cancel=session["cancelled"].is_set,
     )
     session["engine"] = engine
@@ -478,9 +496,7 @@ def _run_engine_worker(session: dict, req: AgentRequest, workspace: Path, model:
 def _agent_event_stream(session_id: str, session: dict, req: AgentRequest, workspace: Path, model: str):
     q: queue.Queue = session["queue"]
     q.put({"type": "start", "session_id": session_id, "workspace": str(workspace), "model": model})
-    worker = threading.Thread(
-        target=_run_engine_worker, args=(session, req, workspace, model), daemon=True
-    )
+    worker = threading.Thread(target=_run_engine_worker, args=(session, req, workspace, model), daemon=True)
     worker.start()
     try:
         while True:
@@ -491,7 +507,11 @@ def _agent_event_stream(session_id: str, session: dict, req: AgentRequest, works
                 elapsed = now - session["started_at"]
                 idle = now - session["last_activity"]
                 timeout = elapsed >= _AGENT_MAX_SECONDS
-                stalled = idle >= _AGENT_STALL_SECONDS and not session.get("approvals")
+                stalled = (
+                    idle >= _AGENT_STALL_SECONDS
+                    and not session.get("approvals")
+                    and not session.get("inference_active")
+                )
                 if timeout or stalled:
                     session["cancelled"].set()
                     engine = session.get("engine")
@@ -504,15 +524,17 @@ def _agent_event_stream(session_id: str, session: dict, req: AgentRequest, works
                     )
                     yield _sse({"type": "error", "error": reason, "recoverable": True})
                     break
-                yield _sse({
-                    "type": "status",
-                    "state": "running",
-                    "elapsed_seconds": int(elapsed),
-                    "idle_seconds": int(idle),
-                    "current_tool": session.get("current_tool"),
-                    "steps": int(session.get("steps", 0)),
-                    "last_activity": time.time() - idle,
-                })
+                yield _sse(
+                    {
+                        "type": "status",
+                        "state": "running",
+                        "elapsed_seconds": int(elapsed),
+                        "idle_seconds": int(idle),
+                        "current_tool": session.get("current_tool"),
+                        "steps": int(session.get("steps", 0)),
+                        "last_activity": time.time() - idle,
+                    }
+                )
                 continue
             if event is None:
                 break

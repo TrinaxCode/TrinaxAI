@@ -23,11 +23,7 @@ def _production_configuration_files() -> list[Path]:
 
 
 def test_all_production_trinaxai_variables_are_in_the_canonical_inventory() -> None:
-    documented = set(
-        VARIABLE_PATTERN.findall(
-            (ROOT / "docs" / "ENVIRONMENT_VARIABLES.md").read_text(encoding="utf-8")
-        )
-    )
+    documented = set(VARIABLE_PATTERN.findall((ROOT / "docs" / "ENVIRONMENT_VARIABLES.md").read_text(encoding="utf-8")))
     used: set[str] = set()
     for path in _production_configuration_files():
         used.update(VARIABLE_PATTERN.findall(path.read_text(encoding="utf-8")))

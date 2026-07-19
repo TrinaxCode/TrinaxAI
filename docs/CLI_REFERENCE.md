@@ -96,10 +96,11 @@ trinaxai pair revoke DEVICE_ID
 `pair` without an action is the same as `pair start`. It prints a single-use
 code and a PWA link. Codes last 60–900 seconds (`300` by default). The default
 device scopes are `chat,read_private`; available elevated scopes are `index`,
-`system`, and `agent`. `agent_yolo` is reserved for local policy and never makes
+`system`, `agent`, and `web`. `agent_yolo` is reserved for local policy and never makes
 remote HTTP tool calls auto-approve.
 
-The browser stores its returned bearer only in `sessionStorage`. A packaged CLI
+The browser stores its returned bearer in `localStorage` to retain its revocable
+device identity across restarts. A packaged CLI
 acting as a paired remote device reads `TRINAXAI_DEVICE_TOKEN` and sends
 `X-TrinaxAI-Device-Token`; point `--api-url` at the gateway RAG base, for example
 `https://host:3334/api/rag`. Do not put a token in command history or a committed
@@ -138,7 +139,7 @@ verify_tls = true
 
 [defaults]
 engine = "ollama"
-model = "qwen2.5-coder:3b"
+model = "qwen2.5-coder:1.5b"
 collections = ["default"]
 
 [ui]

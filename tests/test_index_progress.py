@@ -8,6 +8,7 @@ from app.services.system_service import _line_progress
 # carriage-return bar, so the supervisor can move the bar proportionally rather
 # than jumping to 65% and stalling there until the whole run finishes.
 
+
 def test_batch_marker_maps_proportionally_across_embedding_span():
     start, _ = _line_progress("🔨 Embeddings lote 1/10...", 40)
     mid, phase = _line_progress("🔨 Embeddings lote 5/10...", 40)
@@ -36,6 +37,7 @@ def test_generic_embedding_line_still_recognised():
 
 
 # ── index.py batch helpers ────────────────────────────────────────────────
+
 
 def test_total_batches_matches_iter_batches():
     for n in (0, 1, 7, 100, 101, 250):

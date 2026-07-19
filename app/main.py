@@ -50,12 +50,8 @@ async def _security_and_observability(request: Request, call_next):
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["Referrer-Policy"] = "no-referrer"
     response.headers["X-Frame-Options"] = "DENY"
-    response.headers["Content-Security-Policy"] = (
-        "default-src 'none'; frame-ancestors 'none'; base-uri 'none'"
-    )
-    response.headers["Permissions-Policy"] = (
-        "camera=(), geolocation=(), payment=(), usb=()"
-    )
+    response.headers["Content-Security-Policy"] = "default-src 'none'; frame-ancestors 'none'; base-uri 'none'"
+    response.headers["Permissions-Policy"] = "camera=(), geolocation=(), payment=(), usb=()"
     if request.url.scheme == "https":
         response.headers["Strict-Transport-Security"] = "max-age=31536000"
     if request.url.path.startswith(_PRIVATE_CACHE_PREFIXES):

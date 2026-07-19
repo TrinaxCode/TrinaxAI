@@ -33,8 +33,7 @@ except ImportError:
 _LOCAL_HOSTS: set[str] = {"127.0.0.1", "::1", "localhost", "::ffff:127.0.0.1"}
 
 _LAN_NETWORKS = tuple(
-    ipaddress.ip_network(network)
-    for network in ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "fc00::/7")
+    ipaddress.ip_network(network) for network in ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "fc00::/7")
 )
 
 _PROXY_HEADER = "X-TrinaxAI-Proxy"
@@ -155,9 +154,7 @@ def _proxy_payload(
     method: str,
     path: str,
 ) -> bytes:
-    return "\n".join(
-        (_PROXY_VERSION, client_ip, timestamp, nonce, method.upper(), path)
-    ).encode("utf-8")
+    return "\n".join((_PROXY_VERSION, client_ip, timestamp, nonce, method.upper(), path)).encode("utf-8")
 
 
 def _proxy_signature(
@@ -315,10 +312,14 @@ def authorize_scope(
         if device is not None:
             request.state.trinaxai_identity = {"kind": "device", **device}
             return
-        raise HTTPException(
-            status_code=403,
-            detail=f"Device credential does not grant the {required_scope} scope.",
-        )
+        # Web search is a low-risk scope available to any browser on the
+        # owner's LAN.  A device token that lacks the "web" scope should
+        # not block LAN access; fall through to the network checks below.
+        if required_scope != "web":
+            raise HTTPException(
+                status_code=403,
+                detail=f"Device credential does not grant the {required_scope} scope.",
+            )
     if allow_local and _is_local_client(client_ip):
         request.state.trinaxai_identity = {"kind": "local", "scopes": ["*"]}
         return
@@ -338,10 +339,7 @@ def authorize_scope(
         request.state.trinaxai_identity = {"kind": "legacy_lan", "scopes": ["system"]}
         return
     if ADMIN_TOKEN:
-        detail = (
-            f"Remote access requires X-Admin-Token or a paired device with the "
-            f"{required_scope} scope."
-        )
+        detail = f"Remote access requires X-Admin-Token or a paired device with the {required_scope} scope."
     else:
         detail = f"Remote access requires a paired device with the {required_scope} scope."
     raise HTTPException(status_code=403, detail=detail)

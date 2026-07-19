@@ -1,5 +1,7 @@
 # TrinaxAI Trademark Policy
 
+[Versión en español](docs/es/TRADEMARK.md)
+
 TrinaxAI is the name of this open-source project and product. The TrinaxAI name is a trademark of TrinaxCode (<https://github.com/TrinaxCode>).
 
 You may use the TrinaxAI name to:

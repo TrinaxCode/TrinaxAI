@@ -1,4 +1,5 @@
 """``trinaxai collections`` — manage collections."""
+
 from __future__ import annotations
 
 from typing import Any
@@ -27,7 +28,20 @@ def run(args: Any, client: Any, ui: Any, config: Any) -> int:
             ui.success(f"Created '{col.get('id')}' ({col.get('name')})")
             return 0
         if action == "delete":
-            cid = getattr(args, "collection_id", None) or ui.prompt("Collection id")
+            cid = getattr(args, "collection_id", None)
+            name = getattr(args, "name", None)
+            if cid and name:
+                ui.error("Provide either --collection-id or --name, not both.")
+                return 1
+            if name:
+                matches = [item for item in client.list_collections() if item.get("name") == name]
+                if len(matches) != 1:
+                    ui.error(
+                        f"Collection name '{name}' is {'ambiguous' if matches else 'not found'}; use --collection-id."
+                    )
+                    return 1
+                cid = matches[0].get("id")
+            cid = cid or ui.prompt("Collection id")
             if not cid:
                 ui.error("Collection id required.")
                 return 1

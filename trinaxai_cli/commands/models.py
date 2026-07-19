@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from typing import Any
 
-RECOMMENDED = ["qwen3.5:9b", "granite4:3b", "qwen2.5-coder:3b", "bge-m3"]
+RECOMMENDED = ["granite4:3b", "qwen3.5:2b", "qwen3.5:0.8b", "qwen2.5-coder:1.5b", "bge-m3"]
 ON_DEMAND = ["qwen3-vl:4b-instruct"]
 
 

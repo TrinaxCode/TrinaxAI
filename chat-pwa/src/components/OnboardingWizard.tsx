@@ -14,12 +14,12 @@ interface Props {
 }
 
 const DEFAULT_MODELS = {
-  chat: 'qwen3.5:9b',
-  deep: 'qwen3.5:9b',
+  chat: 'granite4:3b',
+  deep: 'qwen3.5:2b',
   vision: 'qwen3-vl:4b-instruct',
   embed: 'bge-m3',
-  code: 'qwen2.5-coder:3b',
-  fast: 'granite4:3b',
+  code: 'qwen2.5-coder:1.5b',
+  fast: 'qwen3.5:0.8b',
 };
 
 type Step = 1 | 2 | 3 | 4 | 5 | 6;

@@ -3,6 +3,7 @@
 Wraps the existing ``index.py`` subprocess with the right env vars, mirroring
 ``_run_index_job`` in rag_api.py but without the job-tracking machinery.
 """
+
 from __future__ import annotations
 
 import os

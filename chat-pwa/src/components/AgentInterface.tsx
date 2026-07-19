@@ -15,7 +15,6 @@ import {
   DEFAULT_MODEL_SETTINGS,
   modelSetting,
   resolveAgentModel,
-  routeOllamaModel,
   runAgent,
   type AgentEvent,
   type ChatMessage,
@@ -55,14 +54,13 @@ interface AttachedAgentDocument {
   truncated: boolean;
 }
 
-type AgentModelMode = 'auto' | 'chat' | 'code' | 'deep' | 'fast';
+type AgentModelMode = 'auto' | 'chat' | 'deep' | 'fast';
 
 const AGENT_DOC_MAX_FILES = 20;
 const AGENT_DOC_MAX_CHARS = 32_000;
 const AGENT_DOC_TOTAL_MAX_CHARS = 48_000;
 const AGENT_MODEL_KEYS: Record<Exclude<AgentModelMode, 'auto'>, keyof typeof DEFAULT_MODEL_SETTINGS> = {
   chat: 'tc-models-chat',
-  code: 'tc-models-code',
   deep: 'tc-models-deep',
   fast: 'tc-models-fast',
 };
@@ -131,7 +129,7 @@ export default function AgentInterface({ onBack, initialRequest, onRequestConsum
   const [modelMode, setModelMode] = useState<AgentModelMode>(() => {
     try {
       const saved = localStorage.getItem('tc-agent-model-mode');
-      return saved && ['auto', 'chat', 'code', 'deep', 'fast'].includes(saved)
+      return saved && ['auto', 'chat', 'deep', 'fast'].includes(saved)
         ? saved as AgentModelMode
         : 'auto';
     } catch { return 'auto'; }
@@ -463,11 +461,9 @@ export default function AgentInterface({ onBack, initialRequest, onRequestConsum
           ? { ...turn, contextContent: requestText }
           : turn
       )));
-      const routingText = `${text}\n${documents.map((document) => `${document.name}\n${document.content.slice(0, 2000)}`).join('\n')}\n${contextContent?.slice(0, 3000) ?? ''}`.trim();
-      const candidateModel = modelMode === 'auto'
-        ? routeOllamaModel(routingText || displayContent, history)
-        : modelSetting(AGENT_MODEL_KEYS[modelMode], DEFAULT_MODEL_SETTINGS[AGENT_MODEL_KEYS[modelMode]]);
-      const model = await resolveAgentModel(candidateModel);
+      const model = modelMode === 'auto'
+        ? 'auto'
+        : await resolveAgentModel(modelSetting(AGENT_MODEL_KEYS[modelMode], DEFAULT_MODEL_SETTINGS[AGENT_MODEL_KEYS[modelMode]]));
       const userMessage: ChatMessage = { role: 'user', content: requestText };
       await runAgent([...history, userMessage], handleEvent, {
         workspace,
@@ -851,7 +847,6 @@ export default function AgentInterface({ onBack, initialRequest, onRequestConsum
           >
             <option value="auto">{t('agentModelAuto')}</option>
             <option value="chat">{t('agentModelChat')}</option>
-            <option value="code">{t('agentModelCode')}</option>
             <option value="deep">{t('agentModelDeep')}</option>
             <option value="fast">{t('agentModelFast')}</option>
           </select>

@@ -8,6 +8,7 @@ remembered in the ``_RICH`` flag so subsequent instantiations stay cheap.
 Honour ``NO_COLOR`` (https://no-color.org/) and the ``--no-color`` flag by
 forcing the rich console to ``no_color=True`` when either is set.
 """
+
 from __future__ import annotations
 
 import os
@@ -46,6 +47,7 @@ class SlashCommandCompleter(Completer):
             if name.casefold().startswith(needle):
                 yield Completion(name, start_position=-len(before), display_meta=summary)
 
+
 # ----------------------------------------------------------------- rich import
 _RICH: bool = False
 _rich_console_cls: Any = None
@@ -76,6 +78,7 @@ try:  # pragma: no cover - exercised by tests via sys.modules patching
     from rich.prompt import Prompt as _rich_prompt_cls  # type: ignore
     from rich.syntax import Syntax as _rich_syntax_cls  # type: ignore
     from rich.table import Table as _rich_table_cls  # type: ignore
+
     _RICH = True
 except ImportError:
     _RICH = False
@@ -329,10 +332,7 @@ class Console:
 
                 self._rich_console.print("")
                 if self._color_enabled:
-                    question = (
-                        f"[bold {branding.USER_ACCENT}]● You[/]"
-                        f"[dim]{hint}[/dim]"
-                    )
+                    question = f"[bold {branding.USER_ACCENT}]● You[/][dim]{hint}[/dim]"
                 else:
                     question = f"● You{hint}"
                 prompt_obj = _rich_prompt_cls(question, console=self._rich_console)

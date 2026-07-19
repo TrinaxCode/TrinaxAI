@@ -12,6 +12,35 @@ from app.generation.spec import TaskSpec
 # ruff: noqa: F405
 from .shared_runtime import *  # noqa: F403
 
+EMPTY_COLLECTION_MSG = "The selected collection contains no indexed documents."
+NO_RELEVANT_RESULTS_MSG = "No relevant information was found in the selected collection."
+
+
+def _knowledge_collection_state(collections: list[str] | None) -> str:
+    """Validate forced-RAG collections before response headers are sent."""
+    requested = [str(value).strip() for value in (collections or []) if str(value).strip()]
+    if not requested:
+        requested = [config.DEFAULT_COLLECTION_ID]
+    with state.collections_lock:
+        existing = {item["id"] for item in _read_collections_unlocked()}
+    missing = [value for value in requested if value not in existing]
+    if missing:
+        safe = sanitize_collection_id(missing[0], fallback="unknown")
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "code": "collection_not_found",
+                "collection": safe,
+                "message": f"Collection '{safe}' was not found.",
+            },
+        )
+    docs = getattr(state.index_docstore, "docs", {}) if state.index_docstore is not None else {}
+    populated = {
+        (getattr(node, "metadata", {}) or {}).get("collection_id", config.DEFAULT_COLLECTION_ID)
+        for node in docs.values()
+    }
+    return "ready" if any(value in populated for value in requested) else "empty"
+
 
 def _cancel_ollama_model(model: str | None) -> None:
     """Best-effort cancellation for the single active local inference slot."""
@@ -74,11 +103,7 @@ def _with_persistent_memory(messages: list[dict]) -> list[dict]:
         from app.services.memory_service import memory_context_for_query
 
         current = next(
-            (
-                str(message.get("content") or "")
-                for message in reversed(messages)
-                if message.get("role") == "user"
-            ),
+            (str(message.get("content") or "") for message in reversed(messages) if message.get("role") == "user"),
             "",
         )
         summary = memory_context_for_query(current)
@@ -488,6 +513,10 @@ def run_rag(
     if spec.use_rag:
         nodes = _cached_retrieve(retrieval_q, current, collections, project)
         _hide_private_node_metadata(nodes)
+        if not nodes and retrieval_mode == "knowledge":
+            response = _TextResponse(text=NO_RELEVANT_RESULTS_MSG)
+            _safe_record_usage("rag", spec.model, project, collections, chat, nodes)
+            return response, nodes, spec.model, project
         synth_q_full = f"{lang}\n\n{synth_q}"
         synth = get_response_synthesizer(
             llm=llm,
@@ -609,7 +638,7 @@ def _sse_done() -> str:
 
 def _sse_error(exc: Exception) -> str:
     LOG.exception("Streaming RAG response failed")
-    return _sse({"trinaxai_error": str(exc)[:200]})
+    return _sse({"trinaxai_error": "The model response failed. Please retry."})
 
 
 def generate_stream(
@@ -737,6 +766,35 @@ async def chat(req: ChatRequest, request: Request):
     """
     enforce_rate_limit(request, bucket="chat")
     request_id = getattr(request.state, "request_id", f"legacy-{int(time.time())}")
+    collection_state = _knowledge_collection_state(req.collections) if req.mode == "knowledge" else "ready"
+
+    if collection_state == "empty":
+        payload = {
+            "mode": "knowledge",
+            "rag_used": True,
+            "result_count": 0,
+            "collections": list(req.collections or [config.DEFAULT_COLLECTION_ID]),
+        }
+        if req.stream:
+
+            async def empty_stream():
+                yield _sse({"trinaxai": payload})
+                yield _sse({"choices": [{"delta": {"content": EMPTY_COLLECTION_MSG}}]})
+                yield _sse({"trinaxai_sources": [], "trinaxai_retrieval": payload})
+                yield _sse_done()
+
+            return StreamingResponse(empty_stream(), media_type="text/event-stream")
+        return {
+            "id": f"chatcmpl-{request_id}",
+            "object": "chat.completion",
+            "created": int(time.time()),
+            "model": req.model or config.LLM_MODEL,
+            "choices": [
+                {"index": 0, "message": {"role": "assistant", "content": EMPTY_COLLECTION_MSG}, "finish_reason": "stop"}
+            ],
+            "trinaxai": {**payload, "sources": [], "request_id": request_id},
+            "usage": _usage_payload(req.messages, EMPTY_COLLECTION_MSG, []),
+        }
 
     if req.stream:
         return StreamingResponse(

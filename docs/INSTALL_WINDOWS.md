@@ -183,8 +183,9 @@ TRINAXAI_CORS_ORIGINS=https://localhost:3334,http://localhost:3334,https://192.1
 Recommended `16gb` profile:
 
 ```powershell
-ollama pull qwen2.5-coder:3b
-ollama pull qwen3.5:9b
+ollama pull qwen2.5-coder:1.5b
+ollama pull qwen3.5:2b
+ollama pull qwen3.5:0.8b
 ollama pull granite4:3b
 ollama pull bge-m3
 ```
@@ -369,7 +370,7 @@ To access from a phone/tablet, Windows Defender Firewall must allow Node/Python 
 | PowerShell permission error | Run with `-ExecutionPolicy Bypass`. |
 | PWA cannot open from phone | Run PowerShell as Administrator and re-run `install.ps1` so it can add Private-network firewall rules for TCP 3333/3334. Also verify same Wi-Fi. |
 | HTTPS API shows invalid certificate | Normal with a local certificate; accept the warning. |
-| Out of memory | Use the `8gb` profile. Its defaults include `qwen3.5:4b`, `qwen3.5:0.8b` (fast), `qwen2.5-coder:1.5b`, and `bge-m3`; reduce context or choose smaller models if necessary. |
+| Out of memory | Use the `8gb` profile. Its defaults include `qwen3.5:0.8b`, `qwen2.5-coder:1.5b`, and `bge-m3`; reduce context or choose smaller models if necessary. |
 
 ## Note on WSL
 

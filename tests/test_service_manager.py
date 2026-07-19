@@ -16,8 +16,15 @@ class _FakeBackend:
         self.started: list[str] = []
         self.stopped: list[str] = []
 
-    def start(self, name: str, *, command: list[str], cwd: str | None = None,
-              env: dict[str, str] | None = None, log_file: str | None = None) -> sm.ProcessState:
+    def start(
+        self,
+        name: str,
+        *,
+        command: list[str],
+        cwd: str | None = None,
+        env: dict[str, str] | None = None,
+        log_file: str | None = None,
+    ) -> sm.ProcessState:
         self.started.append(name)
         return sm.ProcessState(name=name, running=True, pid=1234, detail="started")
 
@@ -88,7 +95,9 @@ class ServiceManagerPersistenceTests(unittest.TestCase):
             with (
                 patch.object(sm, "_backend", fake_backend),
                 patch.object(sm.platform, "system", return_value="Linux"),
-                patch.object(sm.shutil, "which", side_effect=lambda name: "/usr/bin/systemctl" if name == "systemctl" else None),
+                patch.object(
+                    sm.shutil, "which", side_effect=lambda name: "/usr/bin/systemctl" if name == "systemctl" else None
+                ),
                 patch.object(sm.subprocess, "run", side_effect=fake_run),
             ):
                 stop_results = sm.stop_ai(str(base_dir))

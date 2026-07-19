@@ -1291,9 +1291,12 @@ function ChatInterface({
           : cancelled
             ? `_${t('requestCancelled')}_`
             : err instanceof Error ? err.message.slice(0, 400) : assistantErrorMessage(err);
+        const settingsLink = !cancelled && webSearchRequested
+          ? `\n\n[${lang === 'es' ? 'Abrir Configuración → Búsqueda web' : 'Open Settings → Web search'}](#/settings/web-search)`
+          : '';
         onMessagesChange([...routedMessages, {
           role: 'assistant',
-          content: cancelled ? message : `❌ ${message}`,
+          content: cancelled ? message : `❌ ${message}${settingsLink}`,
           turn,
         }]);
         if (continueCall && callModeRef.current) queueVoiceRestart(800);

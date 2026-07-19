@@ -50,6 +50,7 @@ def _stream_from_rag(
         "model": model,
         "messages": messages,
         "stream": True,
+        "mode": "knowledge",
         "collections": collections or [],
     }
     full = ""
@@ -175,11 +176,7 @@ def _stream_answer(
     effective_messages = list(messages)
     if engine != "rag":
         latest_query = next(
-            (
-                str(message.get("content") or "")
-                for message in reversed(messages)
-                if message.get("role") == "user"
-            ),
+            (str(message.get("content") or "") for message in reversed(messages) if message.get("role") == "user"),
             "",
         )
         try:
@@ -209,8 +206,10 @@ def _stream_answer(
         rag_messages = list(effective_messages)
         creator = prompts.creator_facts_message(messages)
         if creator and not any(
-            m.get("role") == "system" and "verified creator" in str(m.get("content") or "").lower()
-            or m.get("role") == "system" and "datos verificados del creador" in str(m.get("content") or "").lower()
+            m.get("role") == "system"
+            and "verified creator" in str(m.get("content") or "").lower()
+            or m.get("role") == "system"
+            and "datos verificados del creador" in str(m.get("content") or "").lower()
             for m in rag_messages
         ):
             rag_messages.insert(0, creator)
@@ -219,6 +218,7 @@ def _stream_answer(
 
 
 # --------------------------------------------------------------- web / research
+
 
 def _detect_lang(text: str) -> str:
     """Very small heuristic: Spanish accents/tokens → 'es', else 'en'."""
@@ -298,14 +298,14 @@ def _build_web_query(query: str, history: list[dict[str, str]]) -> tuple[str, st
     import re
 
     current = re.sub(r"\s+", " ", query).strip()
-    previous = [
-        re.sub(r"\s+", " ", str(m.get("content") or "")).strip()
-        for m in history
-        if m.get("role") == "user"
-    ]
+    previous = [re.sub(r"\s+", " ", str(m.get("content") or "")).strip() for m in history if m.get("role") == "user"]
     previous = [t for t in previous if t and t != current][-2:]
     context = "\n".join(f"User: {t}" for t in previous)[-1800:]
-    needs_date = bool(re.search(r"\b(actual|ahora|hoy|reciente|ultim\w*|temporada|current|latest|today|recent|season)\b", current, re.I))
+    needs_date = bool(
+        re.search(
+            r"\b(actual|ahora|hoy|reciente|ultim\w*|temporada|current|latest|today|recent|season)\b", current, re.I
+        )
+    )
     terms = re.sub(r"[¿?¡!.,:;|]+", " ", " ".join([*previous, current]))
     terms = re.sub(r"\s+", " ", terms).strip()
     date_hint = f" {time.strftime('%Y-%m-%d')}" if needs_date else ""
@@ -326,8 +326,10 @@ def _run_agent_turn(state: ChatState, client: Any, ui: Any, task: str, config: A
             config=config,
             callbacks=callbacks,
         )
-        ui.info(f"Agent workspace: {state.agent_engine.workspace_root} · model: {state.agent_engine.model}"
-                + ("  (yolo: auto-approve)" if state.yolo else ""))
+        ui.info(
+            f"Agent workspace: {state.agent_engine.workspace_root} · model: {state.agent_engine.model}"
+            + ("  (yolo: auto-approve)" if state.yolo else "")
+        )
     state.agent_messages.append({"role": "user", "content": task})
     ui.print("")
     answer = state.agent_engine.run(state.agent_messages)
@@ -396,8 +398,13 @@ def _dispatch_turn(
 
     if mode in {"web", "deep_research"}:
         answer = _run_web_or_research(
-            client, ui, user, messages,
-            mode=mode, web_search=route.web_search, depth=route.depth,
+            client,
+            ui,
+            user,
+            messages,
+            mode=mode,
+            web_search=route.web_search,
+            depth=route.depth,
         )
         if answer:
             messages.append({"role": "user", "content": user})
@@ -488,10 +495,7 @@ def run(args: Any, client: Any, ui: Any, config: Any) -> int:
                         if state.pending_input
                         else ui.chat_prompt(
                             state.forced_mode,
-                            tuple(
-                                (command.canonical_name, command.summary)
-                                for command in SLASH_COMMANDS
-                            ),
+                            tuple((command.canonical_name, command.summary) for command in SLASH_COMMANDS),
                         )
                     )
                     state.pending_input = None

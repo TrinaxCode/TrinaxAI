@@ -18,6 +18,7 @@ Handlers never raise for expected failures (missing file, bad path, command
 error). They return a short, human-readable error string instead so the model
 can recover on the next turn.
 """
+
 from __future__ import annotations
 
 import ast
@@ -84,9 +85,7 @@ def _resolve_in_workspace(workspace_root: Path, rel: str) -> Path:
     # ``resolve`` collapses ``..`` and follows symlinks so we compare real paths.
     resolved = candidate.resolve()
     if resolved != root and root not in resolved.parents:
-        raise SandboxError(
-            f"path '{rel}' is outside the workspace root ({root}); access denied"
-        )
+        raise SandboxError(f"path '{rel}' is outside the workspace root ({root}); access denied")
     return resolved
 
 
@@ -195,10 +194,7 @@ def _python_stdlib_facts(source: str) -> list[str]:
         call_text = ast.get_source_segment(source, node) or label
         call_text = " ".join(call_text.split())
         doc = _compact_doc(obj)
-        fact = (
-            f"- line {node.lineno}: {call_text} -> verified {label}{signature}; "
-            f"{doc or 'no local documentation'}"
-        )
+        fact = f"- line {node.lineno}: {call_text} -> verified {label}{signature}; {doc or 'no local documentation'}"
         facts.append(fact)
         if len(facts) >= 12:
             break
@@ -206,6 +202,7 @@ def _python_stdlib_facts(source: str) -> list[str]:
 
 
 # --------------------------------------------------------------------- handlers
+
 
 def _read_file(workspace_root: Path, path: str, offset: int = 0, limit: int = 0, **_: Any) -> str:
     target = _resolve_in_workspace(workspace_root, path)
@@ -318,6 +315,12 @@ def _list_dir(workspace_root: Path, path: str = ".", **_: Any) -> str:
 
 def _glob(workspace_root: Path, pattern: str, **_: Any) -> str:
     root = workspace_root.resolve()
+    normalized = (pattern or "").strip().replace("\\", "/")
+    while normalized.startswith("./"):
+        normalized = normalized[2:]
+    parts = normalized.split("/")
+    if not normalized or normalized.startswith("/") or ".." in parts or (parts and ":" in parts[0]):
+        raise SandboxError(f"glob pattern '{pattern}' is outside the workspace root ({root}); access denied")
     matches: list[str] = []
     skip = {".git", "node_modules", "__pycache__", ".venv"}
     for dirpath, dirnames, filenames in os.walk(root):
@@ -325,7 +328,7 @@ def _glob(workspace_root: Path, pattern: str, **_: Any) -> str:
         for name in filenames:
             full = Path(dirpath) / name
             rel = str(full.relative_to(root))
-            if fnmatch.fnmatch(rel, pattern) or fnmatch.fnmatch(name, pattern):
+            if fnmatch.fnmatch(rel, normalized) or fnmatch.fnmatch(name, normalized):
                 matches.append(rel)
         if len(matches) > 500:
             break
@@ -517,6 +520,7 @@ def _run_command(workspace_root: Path, command: str, **_: Any) -> str:
 
 
 # ------------------------------------------------------------------ tool table
+
 
 @dataclass(frozen=True)
 class Tool:

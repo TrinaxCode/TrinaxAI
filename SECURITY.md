@@ -1,5 +1,7 @@
 # Security Policy — TrinaxAI
 
+[Versión en español](docs/es/SECURITY.md)
+
 ## Supported Versions
 
 | Version | Supported          |
@@ -73,9 +75,10 @@ TrinaxAI's threat model assumes:
   Only explicitly public health/resource routes remain available without a
   credential.
 - **Stolen device token:** A device token is a bearer capability limited to its
-  recorded scopes. The PWA keeps it in `sessionStorage`, FastAPI stores only a
-  keyed hash, and host/admin operators can revoke it immediately. Pair only
-  devices you control and revoke a lost device with `trinaxai pair revoke`.
+  recorded scopes. The PWA keeps the clear token in `localStorage` as persistent
+  device identity, FastAPI stores only a keyed hash, and host/admin operators can
+  revoke it immediately. Pair only devices you control and revoke a lost device
+  with `trinaxai pair revoke`.
 - **Forged proxy identity:** Client-supplied TrinaxAI/forwarding headers are stripped
   by the gateway. FastAPI accepts only a fresh HMAC signature from a loopback peer;
   the installation secret is kept in `storage/.proxy_secret` with private mode.

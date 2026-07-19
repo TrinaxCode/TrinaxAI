@@ -4,6 +4,22 @@ All notable changes to TrinaxAI are documented here. This project follows [Keep 
 
 ## [Unreleased]
 
+## [1.2.0] — 2026-07-18
+
+### Added
+- System-protected, write-only web-search settings and connection tests for DuckDuckGo, Brave Search, and SearXNG.
+
+### Changed
+- Automatic model profiles now cover 1–8 GB, 9–31 GB, 32–63 GB, and 64+ GB RAM while preserving environment overrides and multilingual `bge-m3` embeddings.
+- Playwright uses an isolated TrinaxAI preview server on a dedicated configurable port.
+
+### Fixed
+- Generation, RAG, research, agent, memory, pairing, services, web search, and CLI error paths now fail predictably and preserve shared state under concurrent updates.
+- Installers no longer remove Ollama models that may belong to other projects.
+
+### Security
+- Agent validates Ollama endpoints before network access; release gates audit dependencies, high-severity static findings, and secrets.
+
 ## [1.1.0] — 2026-07-16
 
 ### Added
@@ -88,5 +104,6 @@ All notable changes to TrinaxAI are documented here. This project follows [Keep 
 ### Added
 - Initial public TrinaxAI release.
 
+[1.2.0]: https://github.com/TrinaxCode/TrinaxAI/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/TrinaxCode/TrinaxAI/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.0.0

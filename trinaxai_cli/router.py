@@ -14,6 +14,7 @@ text, but the REPL may pin a mode (``/agent``, ``/web`` …) which overrides the
 automatic choice. The same bilingual (ES/EN) regexes as the PWA are used so the
 behaviour is identical across surfaces.
 """
+
 from __future__ import annotations
 
 import re
@@ -55,9 +56,7 @@ def _normalize(value: str) -> str:
 # Bilingual intent patterns — kept in lockstep with modeRouter.ts. They run
 # against the accent-stripped, lowercased text so the Spanish variants omit
 # their accents on purpose.
-EXPLICIT_AGENT = re.compile(
-    r"\b(?:modo agente|agente trinax|usa(?:r)? el agente|agent mode|use the agent)\b", re.I
-)
+EXPLICIT_AGENT = re.compile(r"\b(?:modo agente|agente trinax|usa(?:r)? el agente|agent mode|use the agent)\b", re.I)
 EXPLICIT_WEB = re.compile(
     r"\b(?:modo busqueda|busqueda web|web search|search mode)\b"
     r"|\b(?:busca|buscar|consulta|investiga|verifica|search|look up|check)\b.{0,35}"
@@ -125,7 +124,11 @@ def decide_mode(prompt: str, context: RouteContext | None = None) -> RouteDecisi
         return RouteDecision("agent", "rule", "workspace_action", announce=True)
 
     if DEEP.search(current):
-        local = bool(LOCAL_GROUNDING.search(contextual)) and not EXPLICIT_WEB.search(current) and not CURRENT_INFO.search(current)
+        local = (
+            bool(LOCAL_GROUNDING.search(contextual))
+            and not EXPLICIT_WEB.search(current)
+            and not CURRENT_INFO.search(current)
+        )
         return RouteDecision(
             "deep_research",
             "rule",

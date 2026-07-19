@@ -27,3 +27,10 @@ def test_cancel_ollama_unloads_selected_model() -> None:
 
     request = urlopen.call_args.args[0]
     assert json.loads(request.data) == {"model": "code-model", "keep_alive": 0}
+
+
+def test_stream_errors_do_not_expose_exception_details() -> None:
+    payload = rag_service._sse_error(RuntimeError("secret path /private/token"))
+
+    assert "secret path" not in payload
+    assert "Please retry" in payload

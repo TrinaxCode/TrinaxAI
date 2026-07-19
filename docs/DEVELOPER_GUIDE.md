@@ -264,8 +264,11 @@ cp continue-config.yaml ~/.continue/config.yaml
 
 Before tagging a release, run:
 ```bash
-python scripts/public_readiness.py
-python test_system.py --verbose
-cd chat-pwa && npx tsc --noEmit && npm run build && cd ..
+make check
 git diff --check  # verify no trailing whitespace
 ```
+
+Use a semantic tag such as `v1.2.0` and keep it equal to the versions in
+`pyproject.toml`, `chat-pwa/package.json`, `chat-pwa/package-lock.json`, and
+`trinaxai_cli/app.py`. The tag workflow reruns the release gates and publishes
+the source archive, shell and PowerShell installers, checksums, and provenance.

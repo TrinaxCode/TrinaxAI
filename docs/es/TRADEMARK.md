@@ -1,5 +1,7 @@
 # Política de Marca de TrinaxAI
 
+[English](../../TRADEMARK.md)
+
 TrinaxAI es el nombre de este proyecto y producto de código abierto. El nombre TrinaxAI es una marca registrada de TrinaxCode (<https://github.com/TrinaxCode>).
 
 Puedes usar el nombre TrinaxAI para:

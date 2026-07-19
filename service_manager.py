@@ -77,6 +77,18 @@ SYSTEMD_SERVICE_ALIASES = {
     "rag_api": ["rag_api.service", "ai-rag.service"],
     "trinaxai-frontend": ["trinaxai-frontend.service"],
 }
+SERVICE_DISPLAY_NAMES = {
+    "ollama": "Ollama",
+    "rag_api": "TrinaxAI RAG API",
+    "trinaxai-frontend": "TrinaxAI PWA",
+}
+
+
+def service_display_name(name: str) -> str:
+    """Stable UI label; platform unit/process names remain unchanged."""
+    return SERVICE_DISPLAY_NAMES.get(name, name)
+
+
 PRIVILEGED_LIFECYCLE_WRAPPER = Path("/usr/local/libexec/trinaxai/trinaxai-lifecycle")
 
 
@@ -84,9 +96,7 @@ def _systemd_units(name: str) -> list[str]:
     return SYSTEMD_SERVICE_ALIASES.get(name, [f"{name}.service"])
 
 
-def _run_systemctl(
-    args: list[str], *, check: bool = False, timeout: int = 30
-) -> subprocess.CompletedProcess:
+def _run_systemctl(args: list[str], *, check: bool = False, timeout: int = 30) -> subprocess.CompletedProcess:
     result = subprocess.run(
         [_SYSTEMCTL, *args],
         check=False,
@@ -105,9 +115,7 @@ def _run_systemctl(
         if sudo_result.returncode == 0:
             result = sudo_result
     if check and result.returncode != 0:
-        raise subprocess.CalledProcessError(
-            result.returncode, result.args, output=result.stdout, stderr=result.stderr
-        )
+        raise subprocess.CalledProcessError(result.returncode, result.args, output=result.stdout, stderr=result.stderr)
     return result
 
 
@@ -125,9 +133,7 @@ class _SystemdBackend(_Backend):
             for svc in _systemd_units(name):
                 result = _run_systemctl(["start", svc], timeout=30)
                 if result.returncode == 0:
-                    return ProcessState(
-                        name=name, running=True, detail=f"started via systemd ({svc})"
-                    )
+                    return ProcessState(name=name, running=True, detail=f"started via systemd ({svc})")
         except (
             subprocess.CalledProcessError,
             subprocess.TimeoutExpired,
@@ -232,9 +238,7 @@ class _LaunchctlBackend(_Backend):
         label = f"com.trinaxai.{name}"
         plist = Path.home() / f"Library/LaunchAgents/{label}.plist"
         if plist.exists():
-            r = subprocess.run(
-                [_LAUNCHCTL, "list", label], timeout=5, capture_output=True, text=True
-            )
+            r = subprocess.run([_LAUNCHCTL, "list", label], timeout=5, capture_output=True, text=True)
             if r.returncode == 0:
                 return ProcessState(name=name, running=True, detail=f"loaded {label}")
         return _pgrep_status(name)
@@ -267,8 +271,7 @@ def _pgrep_status(name: str) -> ProcessState:
         if sys.platform == "win32":
             patterns = PROCESS_PATTERNS.get(name, [name])
             escaped = " -or ".join(
-                f"$_.CommandLine -like '*{pattern.replace(chr(39), chr(39) + chr(39))}*'"
-                for pattern in patterns
+                f"$_.CommandLine -like '*{pattern.replace(chr(39), chr(39) + chr(39))}*'" for pattern in patterns
             )
             script = (
                 "Get-CimInstance Win32_Process | "
@@ -299,9 +302,7 @@ def _pgrep_status(name: str) -> ProcessState:
             )
         else:
             for pattern in PROCESS_PATTERNS.get(name, [name]):
-                r = subprocess.run(
-                    ["pgrep", "-f", pattern], capture_output=True, text=True, timeout=5
-                )
+                r = subprocess.run(["pgrep", "-f", pattern], capture_output=True, text=True, timeout=5)
                 if r.returncode == 0 and r.stdout.strip():
                     pid = int(r.stdout.strip().split("\n")[0])
                     return ProcessState(
@@ -312,9 +313,7 @@ def _pgrep_status(name: str) -> ProcessState:
                     )
             return ProcessState(name=name, running=False, detail="not found")
     except (FileNotFoundError, subprocess.TimeoutExpired, ValueError):
-        return ProcessState(
-            name=name, running=False, detail="pgrep/tasklist unavailable"
-        )
+        return ProcessState(name=name, running=False, detail="pgrep/tasklist unavailable")
 
 
 def _stop_by_name(name: str) -> ProcessState:
@@ -322,8 +321,7 @@ def _stop_by_name(name: str) -> ProcessState:
     patterns = PROCESS_PATTERNS.get(name, [name])
     if sys.platform == "win32":
         escaped = " -or ".join(
-            f"$_.CommandLine -like '*{pattern.replace(chr(39), chr(39) + chr(39))}*'"
-            for pattern in patterns
+            f"$_.CommandLine -like '*{pattern.replace(chr(39), chr(39) + chr(39))}*'" for pattern in patterns
         )
         script = (
             "Get-CimInstance Win32_Process | "
@@ -343,27 +341,19 @@ def _stop_by_name(name: str) -> ProcessState:
             timeout=15,
             **_windows_no_window_kwargs(),
         )
-        return ProcessState(
-            name=name, running=False, detail="stopped matching processes"
-        )
+        return ProcessState(name=name, running=False, detail="stopped matching processes")
     else:
         try:
             for pattern in patterns:
-                subprocess.run(
-                    ["pkill", "-TERM", "-f", pattern], timeout=10, capture_output=True
-                )
+                subprocess.run(["pkill", "-TERM", "-f", pattern], timeout=10, capture_output=True)
             time.sleep(1)
             # Hard kill survivors
             for pattern in patterns:
-                subprocess.run(
-                    ["pkill", "-KILL", "-f", pattern], timeout=5, capture_output=True
-                )
+                subprocess.run(["pkill", "-KILL", "-f", pattern], timeout=5, capture_output=True)
         except (FileNotFoundError, subprocess.TimeoutExpired):
             if shutil.which("killall"):
                 subprocess.run(["killall", name], timeout=10, capture_output=True)
-        return ProcessState(
-            name=name, running=False, detail="stopped matching processes"
-        )
+        return ProcessState(name=name, running=False, detail="stopped matching processes")
 
 
 def _start_direct(
@@ -379,10 +369,10 @@ def _start_direct(
     log_fh = open(log_file, "a", encoding="utf-8") if log_file else subprocess.DEVNULL
     popen_kwargs: dict[str, object] = {}
     if sys.platform == "win32":
-        popen_kwargs["creationflags"] = getattr(
-            subprocess, "CREATE_NEW_PROCESS_GROUP", 0
-        ) | getattr(subprocess, "DETACHED_PROCESS", 0) | getattr(
-            subprocess, "CREATE_NO_WINDOW", 0
+        popen_kwargs["creationflags"] = (
+            getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+            | getattr(subprocess, "DETACHED_PROCESS", 0)
+            | getattr(subprocess, "CREATE_NO_WINDOW", 0)
         )
         startupinfo = subprocess.STARTUPINFO()
         startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
@@ -642,11 +632,7 @@ def _service_specs(base_dir: str) -> dict[str, dict]:
         node = _known_windows_executable("node") or "node.exe"
         frontend_cmd = [
             node,
-            os.path.abspath(
-                os.path.join(
-                    base_dir, "chat-pwa", "node_modules", "vite", "bin", "vite.js"
-                )
-            ),
+            os.path.abspath(os.path.join(base_dir, "chat-pwa", "node_modules", "vite", "bin", "vite.js")),
             mode,
             "--host",
             "0.0.0.0",  # nosec B104 - intentional browser-facing LAN gateway
@@ -729,11 +715,7 @@ def _try_privileged_wrapper(base_dir: str, action: str) -> list[ProcessState] | 
         detail = (result.stderr or result.stdout or "privileged wrapper failed").strip()
         return [ProcessState(action, False, detail=detail)]
     _write_ai_enabled(base_dir, action != "stop-ai")
-    return [
-        ProcessState(
-            action, action != "stop-ai", detail=(result.stdout or "ok").strip()
-        )
-    ]
+    return [ProcessState(action, action != "stop-ai", detail=(result.stdout or "ok").strip())]
 
 
 def _systemd_set_enabled(name: str, enabled: bool, *, stop_now: bool = False) -> str:
@@ -941,15 +923,9 @@ def enable_autostart(base_dir: str) -> ProcessState:
             text=True,
         )
         if reload_result.returncode != 0 or enable_result.returncode != 0:
-            detail = (
-                enable_result.stderr
-                or reload_result.stderr
-                or "systemctl --user failed"
-            ).strip()
+            detail = (enable_result.stderr or reload_result.stderr or "systemctl --user failed").strip()
             return ProcessState("autostart", False, detail=detail)
-        return ProcessState(
-            "autostart", True, detail=f"enabled user systemd: {service_file}"
-        )
+        return ProcessState("autostart", True, detail=f"enabled user systemd: {service_file}")
     if system == "Darwin":
         label = "com.trinaxcode.trinaxai"
         plist_dir = Path.home() / "Library" / "LaunchAgents"
@@ -972,9 +948,7 @@ def enable_autostart(base_dir: str) -> ProcessState:
         }
         with plist.open("wb") as handle:
             plistlib.dump(payload, handle, fmt=plistlib.FMT_XML, sort_keys=False)
-        subprocess.run(
-            ["launchctl", "unload", str(plist)], timeout=10, capture_output=True
-        )
+        subprocess.run(["launchctl", "unload", str(plist)], timeout=10, capture_output=True)
         load_result = subprocess.run(
             ["launchctl", "load", str(plist)],
             timeout=10,
@@ -1027,13 +1001,9 @@ def disable_autostart(base_dir: str) -> ProcessState:
         )
         return ProcessState("autostart", False, detail="disabled user systemd")
     if system == "Darwin":
-        plist = (
-            Path.home() / "Library" / "LaunchAgents" / "com.trinaxcode.trinaxai.plist"
-        )
+        plist = Path.home() / "Library" / "LaunchAgents" / "com.trinaxcode.trinaxai.plist"
         if plist.exists():
-            subprocess.run(
-                ["launchctl", "unload", str(plist)], timeout=10, capture_output=True
-            )
+            subprocess.run(["launchctl", "unload", str(plist)], timeout=10, capture_output=True)
             plist.unlink(missing_ok=True)
         return ProcessState("autostart", False, detail="disabled launch agent")
     if system == "Windows":
@@ -1077,9 +1047,7 @@ def watch(base_dir: str, interval: int = 15) -> None:
             if state.running:
                 continue
             restarted = _start_named(base_dir, name)
-            print(
-                f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] restarted {name}: {restarted.detail}"
-            )
+            print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] restarted {name}: {restarted.detail}")
             if name == "ollama":
                 time.sleep(2)
         time.sleep(max(5, interval))
@@ -1088,9 +1056,7 @@ def watch(base_dir: str, interval: int = 15) -> None:
 if __name__ == "__main__":
     import argparse
 
-    parser = argparse.ArgumentParser(
-        description="TrinaxAI cross-platform service manager"
-    )
+    parser = argparse.ArgumentParser(description="TrinaxAI cross-platform service manager")
     parser.add_argument(
         "action",
         choices=[
@@ -1132,20 +1098,24 @@ if __name__ == "__main__":
     elif args.action == "status":
         items = status_all()
         if args.json:
-            print(json.dumps([
-                {
-                    "name": item.name,
-                    "running": item.running,
-                    "pid": item.pid,
-                    "detail": item.detail,
-                }
-                for item in items
-            ], separators=(",", ":")))
+            print(
+                json.dumps(
+                    [
+                        {
+                            "name": item.name,
+                            "display_name": service_display_name(item.name),
+                            "running": item.running,
+                            "pid": item.pid,
+                            "detail": item.detail,
+                        }
+                        for item in items
+                    ],
+                    separators=(",", ":"),
+                )
+            )
         else:
             for item in items:
-                print(
-                    f"{item.name}: {'running' if item.running else 'stopped'} {item.detail}"
-                )
+                print(f"{service_display_name(item.name)}: {'running' if item.running else 'stopped'} {item.detail}")
     elif args.action == "watch":
         watch(args.base_dir, args.interval)
     elif args.action == "enable-autostart":

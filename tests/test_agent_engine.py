@@ -94,6 +94,16 @@ class SandboxTests(unittest.TestCase):
 
 
 class ToolHandlerTests(unittest.TestCase):
+    def test_glob_accepts_dot_slash_and_rejects_escape(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "main.py").write_text("pass\n")
+            glob = build_tool_map()["glob"].handler
+            self.assertEqual(glob(root, pattern="*.py"), "main.py")
+            self.assertEqual(glob(root, pattern="./*.py"), "main.py")
+            with self.assertRaises(SandboxError):
+                glob(root, pattern="../*.py")
+
     def test_write_then_read_roundtrip(self) -> None:
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -136,13 +146,7 @@ class ToolHandlerTests(unittest.TestCase):
         self.assertIn("[end read_file: complete]", result)
 
     def test_python_read_includes_verified_turtle_call_semantics(self) -> None:
-        source = (
-            "import turtle\n"
-            "pen = turtle.Turtle()\n"
-            "pen.speed(500)\n"
-            "pen.goto((1, 2))\n"
-            "pen.goto(0, 0)\n"
-        )
+        source = "import turtle\npen = turtle.Turtle()\npen.speed(500)\npen.goto((1, 2))\npen.goto(0, 0)\n"
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
             (root / "drawing.py").write_text(source)
@@ -183,9 +187,11 @@ class ToolHandlerTests(unittest.TestCase):
         self.assertIn("isolated", result)
 
     def test_run_command_fails_closed_without_sandbox(self) -> None:
-        with TemporaryDirectory() as tmp, patch(
-            "trinaxai_cli.agent.tools._bubblewrap_argv", return_value=None
-        ), patch.dict("os.environ", {}, clear=True):
+        with (
+            TemporaryDirectory() as tmp,
+            patch("trinaxai_cli.agent.tools._bubblewrap_argv", return_value=None),
+            patch.dict("os.environ", {}, clear=True),
+        ):
             result = _run_command(Path(tmp), "echo unsafe")
         self.assertIn("terminal execution is disabled", result)
         self.assertNotIn("[exit 0", result)
@@ -237,9 +243,7 @@ class TextFallbackParsingTests(unittest.TestCase):
 
     def test_ignores_prose_and_unknown_tools(self) -> None:
         self.assertEqual(_tool_calls_from_text("Here is the plan: do things.", self.tool_map), [])
-        self.assertEqual(
-            _tool_calls_from_text('{"name": "not_a_tool", "arguments": {}}', self.tool_map), []
-        )
+        self.assertEqual(_tool_calls_from_text('{"name": "not_a_tool", "arguments": {}}', self.tool_map), [])
 
 
 class EngineConfirmationTests(unittest.TestCase):
@@ -292,9 +296,7 @@ class EngineConfirmationTests(unittest.TestCase):
                 raise AssertionError("read_file must not ask for confirmation")
 
             engine = self._engine(root, confirm=confirm)
-            result = engine._execute_call(
-                {"function": {"name": "read_file", "arguments": {"path": "a.txt"}}}
-            )
+            result = engine._execute_call({"function": {"name": "read_file", "arguments": {"path": "a.txt"}}})
             self.assertIn("data", result)
 
 
@@ -364,9 +366,7 @@ class _ScriptedEngine(AgentEngine):
 class EngineLoopTests(unittest.TestCase):
     @staticmethod
     def _read_call(path: str) -> dict:
-        return {"content": "", "tool_calls": [
-            {"function": {"name": "read_file", "arguments": {"path": path}}}
-        ]}
+        return {"content": "", "tool_calls": [{"function": {"name": "read_file", "arguments": {"path": path}}}]}
 
     def test_degenerate_reply_triggers_nudge_then_recovers(self) -> None:
         with TemporaryDirectory() as tmp:
@@ -376,8 +376,11 @@ class EngineLoopTests(unittest.TestCase):
             engine = _ScriptedEngine(
                 root,
                 # read a file (uses tools) → junk "el" → nudge → real summary
-                replies=[self._read_call("index.html"), {"content": "el"},
-                         {"content": "Es tu primera web y se ve bien."}],
+                replies=[
+                    self._read_call("index.html"),
+                    {"content": "el"},
+                    {"content": "Es tu primera web y se ve bien."},
+                ],
                 on_token=tokens.append,
             )
             messages = [{"role": "user", "content": "revisa mi web"}]
@@ -394,8 +397,7 @@ class EngineLoopTests(unittest.TestCase):
             (root / "a.txt").write_text("data")
             engine = _ScriptedEngine(
                 root,
-                replies=[self._read_call("a.txt"), {"content": "el"},
-                         {"content": "el"}, {"content": "el"}],
+                replies=[self._read_call("a.txt"), {"content": "el"}, {"content": "el"}, {"content": "el"}],
                 max_steps=25,
             )
             answer = engine.run([{"role": "user", "content": "hola"}])
@@ -414,19 +416,67 @@ class EngineLoopTests(unittest.TestCase):
     def test_creation_refusal_is_rejected_and_the_model_must_use_tools(self) -> None:
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
-            engine = _ScriptedEngine(root, replies=[
-                {"content": "Lo siento, no puedo crear una página web."},
-                {"content": "", "tool_calls": [{"function": {"name": "write_file", "arguments": {
-                    "path": "index.html", "content": "<h1>Feliz cumpleaños</h1>",
-                }}}]},
-                {"content": "Creé y mejoré la página de cumpleaños."},
-            ])
+            engine = _ScriptedEngine(
+                root,
+                replies=[
+                    {"content": "Lo siento, no puedo crear una página web."},
+                    {
+                        "content": "",
+                        "tool_calls": [
+                            {
+                                "function": {
+                                    "name": "write_file",
+                                    "arguments": {
+                                        "path": "index.html",
+                                        "content": "<h1>Feliz cumpleaños</h1>",
+                                    },
+                                }
+                            }
+                        ],
+                    },
+                    {"content": "Creé y mejoré la página de cumpleaños."},
+                ],
+            )
 
             answer = engine.run([{"role": "user", "content": "Crea una página web de cumpleaños"}])
 
             self.assertTrue((root / "index.html").exists())
             self.assertIn("Creé", answer)
-            self.assertTrue(any("You do have file and shell tools" in str(m.get("content", "")) for m in engine.requests[1]))
+            self.assertTrue(
+                any("You do have file and shell tools" in str(m.get("content", "")) for m in engine.requests[1])
+            )
+
+    def test_standalone_file_creation_finishes_without_a_summary_inference(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            engine = _ScriptedEngine(
+                root,
+                replies=[
+                    {
+                        "content": "",
+                        "tool_calls": [
+                            {
+                                "function": {
+                                    "name": "write_file",
+                                    "arguments": {
+                                        "path": "clima.md",
+                                        "content": "# Calentamiento global",
+                                    },
+                                }
+                            }
+                        ],
+                    },
+                ],
+                on_confirm=None,
+            )
+
+            answer = engine.run(
+                [{"role": "user", "content": "Crea un archivo clima.md que explique el calentamiento global"}]
+            )
+
+            self.assertEqual(answer, "Archivo creado: `clima.md`.")
+            self.assertEqual(len(engine.requests), 1)
+            self.assertTrue((root / "clima.md").exists())
 
     def test_terse_answer_without_tools_is_accepted(self) -> None:
         with TemporaryDirectory() as tmp:
@@ -469,10 +519,14 @@ class EngineLoopTests(unittest.TestCase):
 
         class _WrongVerifier(_ScriptedEngine):
             def _post(self, url, payload):  # type: ignore[override]
-                return {"message": {"content": (
-                    "Error de sintaxis: xt recibe el objeto Turtle, goto no acepta una tupla "
-                    "y volver al origen borra el trazo."
-                )}}
+                return {
+                    "message": {
+                        "content": (
+                            "Error de sintaxis: xt recibe el objeto Turtle, goto no acepta una tupla "
+                            "y volver al origen borra el trazo."
+                        )
+                    }
+                }
 
         engine = _WrongVerifier(
             root,
@@ -495,16 +549,16 @@ class CodeReviewRoutingTests(unittest.TestCase):
         self.assertTrue(_is_code_review_request([{"role": "user", "content": "Revisa app.py"}]))
         self.assertTrue(_is_code_review_request([{"role": "user", "content": "Review app.py"}]))
         self.assertFalse(_is_code_review_request([{"role": "user", "content": "Crea app.py"}]))
-        self.assertFalse(_is_code_review_request([
-            {"role": "user", "content": "Analiza los problemas del clima"}
-        ]))
+        self.assertFalse(_is_code_review_request([{"role": "user", "content": "Analiza los problemas del clima"}]))
 
     def test_evidence_labels_tool_with_its_arguments(self) -> None:
         messages = [
             {"role": "user", "content": "Revisa corazon.py"},
-            {"role": "assistant", "content": "", "tool_calls": [
-                {"function": {"name": "read_file", "arguments": {"path": "corazon.py"}}}
-            ]},
+            {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [{"function": {"name": "read_file", "arguments": {"path": "corazon.py"}}}],
+            },
             {"role": "tool", "content": "[complete; syntax=valid]\n1\tprint('ok')"},
         ]
         evidence = _code_review_evidence(messages)
@@ -641,9 +695,13 @@ class ContextBudgetTests(unittest.TestCase):
             big = "x" * 20_000
             messages = [{"role": "user", "content": "THE TASK"}]
             for i in range(10):
-                messages.append({"role": "assistant", "content": "", "tool_calls": [
-                    {"function": {"name": "read_file", "arguments": {"path": f"f{i}"}}}
-                ]})
+                messages.append(
+                    {
+                        "role": "assistant",
+                        "content": "",
+                        "tool_calls": [{"function": {"name": "read_file", "arguments": {"path": f"f{i}"}}}],
+                    }
+                )
                 messages.append({"role": "tool", "content": big})
             fitted = engine._fit_to_budget(messages)
             total = sum(len(str(m.get("content") or "")) for m in fitted)

@@ -173,11 +173,25 @@ def _check_css(code: str, require_responsive: bool) -> list[str]:
 def _has_responsive_css(code: str) -> bool:
     low = code.lower()
     signals = (
-        "@media", "@container", "clamp(", "minmax(", "auto-fit", "auto-fill",
-        "display:flex", "display: flex", "display:grid", "display: grid",
-        "max-width", "inline-size", "vw", "dvw", "cqw",
+        "@media",
+        "@container",
+        "clamp(",
+        "minmax(",
+        "auto-fit",
+        "auto-fill",
+        "display:flex",
+        "display: flex",
+        "display:grid",
+        "display: grid",
+        "max-width",
+        "inline-size",
+        "vw",
+        "dvw",
+        "cqw",
     )
-    return any(signal in low for signal in signals) or bool(re.search(r"\b(?:width|flex-basis)\s*:\s*\d+(?:\.\d+)?%", low))
+    return any(signal in low for signal in signals) or bool(
+        re.search(r"\b(?:width|flex-basis)\s*:\s*\d+(?:\.\d+)?%", low)
+    )
 
 
 def validate_output(

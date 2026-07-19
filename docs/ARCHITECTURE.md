@@ -169,7 +169,7 @@ index.py starts
 |---|---|
 | **Network** | FastAPI and Ollama loopback by default; PWA gateway is the only LAN-facing service |
 | **Gateway identity** | Client peer/method/path signed with fresh HMAC; backend ignores ordinary forwarding headers |
-| **Device identity** | Single-use pairing; `chat,read_private` by default; scoped, revocable bearer token retained only for the browser session |
+| **Device identity** | Single-use pairing; scoped, revocable bearer retained in browser `localStorage` across restarts |
 | **Protected endpoints** | Direct loopback, matching device scope, or administrator super-credential; invalid supplied credentials fail closed |
 | **Ollama facade** | Explicit method/path allowlist, peer authorization, monotonic token bucket and shared inference lock |
 | **Agent** | Registered workspace roots; path/symlink enforcement; networkless Linux bubblewrap; fail closed without isolation |
@@ -370,7 +370,7 @@ These areas require extra care when modifying:
 3. A real direct-loopback caller has local operator privilege. A valid admin
    token has every scope. A paired token receives only its recorded scopes.
 4. Each route asks for its concrete scope: `chat`, `read_private`, `index`,
-   `system`, or `agent`. A supplied but invalid credential is never ignored.
+   `system`, `agent`, or `web`. A supplied but invalid credential is never ignored.
 5. The legacy private-LAN fallback applies only to system control when explicitly
    enabled and no admin token exists. All other unmatched requests return `403`.
 6. `agent_yolo` never enables remote HTTP auto-approval; remote dangerous tools
@@ -379,7 +379,8 @@ These areas require extra care when modifying:
 **Defaults:**
 - `TRINAXAI_ADMIN_TOKEN` — empty (not set). Localhost access works automatically.
 - Device pairing grants `chat,read_private` unless the host explicitly requests
-  more scopes. The clear token is returned once and held in PWA `sessionStorage`.
+  more scopes. The clear token is returned once and held in PWA `localStorage`
+  until self-revocation, host revocation, or remote wipe.
 - `TRINAXAI_ALLOW_LAN_SYSTEM` — `0`; the legacy system-control fallback remains
   disabled. Prefer pairing and keep the admin super-credential on the host.
 

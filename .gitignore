@@ -24,6 +24,15 @@ chat-pwa/test-results/
 chat-pwa/playwright-report/
 chat-pwa/blob-report/
 chat-pwa/visual-audit/
+qa-evidence-*/
+qa-test-workspace/
+playwright-report/
+test-results/
+AUDIT_CORRECTION_NOTES.md
+AUDIT_DEEPSEEK_V4_PRO.md
+CODEX_FIX_REPORT.md
+CODEX_SEARCH_MODE_FIX_REPORT.md
+REFACTOR_AND_CLEANUP_REPORT.md
 chat-pwa/.eslintcache
 npm-debug.log*
 yarn-debug.log*

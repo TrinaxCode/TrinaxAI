@@ -111,33 +111,27 @@ _QUALITY_MODE = TRINAXAI_PERFORMANCE_MODE == "quality"
 # The router selects the model based on the query. Low-resource profiles default
 # to smaller models so Windows laptops with 8 GB RAM do not pull the 16 GB set.
 #
-# The medium profile uses measured faster defaults (Granite 3B for chat and
-# Qwen 4B for deeper work). High/ultra profiles retain larger Qwen models.
+# Each tier leaves room for the embedding model and runtime overhead instead of
+# sizing the chat model as if it were the only resident process.
 _PROFILE_MODEL = (
     "qwen3.5:35b-a3b"
     if _ULTRA_PROFILE
     else "qwen3.5:27b"
     if _MAX_QUALITY_PROFILE
-    else "qwen3.5:4b"
+    else "qwen3.5:0.8b"
     if _LOW_RESOURCE_PROFILE
-    else "qwen3.5:9b"
+    else "qwen3.5:4b"
 )
 _DEFAULT_MODEL_GENERAL = "granite4:3b" if not _LOW_RESOURCE_PROFILE and not _MAX_QUALITY_PROFILE else _PROFILE_MODEL
 _DEFAULT_MODEL_CODE = (
-    "qwen2.5-coder:14b"
-    if _ULTRA_PROFILE
-    else "qwen2.5-coder:7b"
-    if _MAX_QUALITY_PROFILE
-    else "qwen2.5-coder:1.5b"
-    if _LOW_RESOURCE_PROFILE
-    else "qwen2.5-coder:3b"
+    "qwen3-coder:30b" if _ULTRA_PROFILE else "qwen2.5-coder:14b" if _MAX_QUALITY_PROFILE else "qwen2.5-coder:1.5b"
 )
-_DEFAULT_MODEL_FAST = "qwen3.5:0.8b" if _LOW_RESOURCE_PROFILE else "granite4:3b" if not _MAX_QUALITY_PROFILE else "qwen3.5:4b"
+_DEFAULT_MODEL_FAST = "qwen3.5:0.8b" if not _MAX_QUALITY_PROFILE else "qwen3.5:4b"
 MODEL_GENERAL = os.getenv("TRINAXAI_MODEL_GENERAL", _DEFAULT_MODEL_GENERAL)  # non-code chat
 MODEL_CODE = os.getenv("TRINAXAI_MODEL_CODE", _DEFAULT_MODEL_CODE)  # regular code
 MODEL_DEEP = os.getenv(
     "TRINAXAI_MODEL_DEEP",
-    "qwen3.5:4b" if not _LOW_RESOURCE_PROFILE and not _MAX_QUALITY_PROFILE else _PROFILE_MODEL,
+    "qwen3.5:2b" if not _LOW_RESOURCE_PROFILE and not _MAX_QUALITY_PROFILE else _PROFILE_MODEL,
 )  # complex reasoning/code
 MODEL_FAST = os.getenv("TRINAXAI_MODEL_FAST", _DEFAULT_MODEL_FAST)  # trivial / ultra-fast
 

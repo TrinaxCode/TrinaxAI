@@ -39,7 +39,7 @@ def test_extracts_xlsx_text() -> None:
 
 
 def test_extracts_rtf_text() -> None:
-    text = rag_api._extract_document_text("notes.rtf", br"{\rtf1\ansi TrinaxAI notes}")
+    text = rag_api._extract_document_text("notes.rtf", rb"{\rtf1\ansi TrinaxAI notes}")
     assert "TrinaxAI notes" in text
 
 

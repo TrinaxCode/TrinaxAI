@@ -15,6 +15,7 @@ import {
   isAnalyticalReasoning,
   ensureOllamaModel,
   MODEL_PRESETS,
+  reconcileManagedModels,
   nextActiveCollections,
   normalizeActiveCollections,
   ollamaSystemPrompt,
@@ -49,6 +50,12 @@ describe('api helpers', () => {
     expect(plan.searchQuery).not.toContain('official source');
   });
 
+  it('does not send search-command words as ranking terms', () => {
+    const plan = buildWebSearchQuery('Busca el sitio oficial de Python y menciona dos fuentes.', []);
+    expect(plan.searchQuery).toMatch(/^el sitio oficial de Python/);
+    expect(plan.searchQuery).not.toMatch(/^Busca/);
+  });
+
   it('surfaces the backend reason when Search Mode fails', async () => {
     vi.stubGlobal('fetch', vi.fn()
       .mockResolvedValueOnce(new Response(JSON.stringify({ ok: true, model: 'granite4:3b' }), { status: 200 }))
@@ -64,13 +71,16 @@ describe('api helpers', () => {
   });
 
   it('completes Search Mode after a successful dependency preflight', async () => {
-    vi.stubGlobal('fetch', vi.fn()
+    const fetchMock = vi.fn()
       .mockResolvedValueOnce(new Response(JSON.stringify({ ok: true, model: 'granite4:3b' }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({
         answer: 'Resultado verificado [1].', sources: [], sub_questions: ['consulta'], passes: 1, model: 'granite4:3b',
-      }), { status: 200 })));
+      }), { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
     try {
       await expect(runResearch('consulta', { webSearch: true })).resolves.toMatchObject({ answer: 'Resultado verificado [1].' });
+      expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toMatchObject({ web_search: true, include_local: false });
+      expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toMatchObject({ web_search: true, include_local: false });
     } finally {
       vi.unstubAllGlobals();
     }
@@ -181,7 +191,7 @@ describe('api helpers', () => {
   });
 
   it('routes code prompts to the code model', () => {
-    expect(routeOllamaModel('fix this python traceback')).toBe('qwen2.5-coder:3b');
+    expect(routeOllamaModel('fix this python traceback')).toBe('qwen2.5-coder:1.5b');
   });
 
   it('keeps vision presets sized for each hardware profile', () => {
@@ -191,22 +201,42 @@ describe('api helpers', () => {
     expect(MODEL_PRESETS.ultra['tc-models-vision']).toBe('qwen3-vl:30b-a3b-instruct');
   });
 
+  it('removes only previously managed profile models before pulling the new profile', async () => {
+    localStorage.setItem('tc-managed-ollama-models', JSON.stringify(['granite4:3b', 'bge-m3']));
+    const requests: Array<[string, RequestInit | undefined]> = [];
+    vi.stubGlobal('fetch', vi.fn((url: string, init?: RequestInit) => {
+      requests.push([url, init]);
+      return Promise.resolve(new Response('{}', { status: 200 }));
+    }));
+
+    await reconcileManagedModels(['qwen3.5:0.8b', 'bge-m3']);
+
+    expect(requests.some(([url, init]) => url.endsWith('/api/delete')
+      && init?.method === 'DELETE' && String(init.body).includes('granite4:3b'))).toBe(true);
+    expect(requests.some(([url, init]) => url.endsWith('/api/delete')
+      && String(init.body).includes('bge-m3'))).toBe(false);
+    expect(JSON.parse(localStorage.getItem('tc-managed-ollama-models') || '[]')).toEqual([
+      'bge-m3', 'qwen3.5:0.8b',
+    ]);
+    vi.unstubAllGlobals();
+  });
+
   it('keeps the warm coder for an ambiguous follow-up', () => {
     expect(routeOllamaModel('hazlo más corto', [
       { role: 'user', content: 'fix this python traceback' },
-      { role: 'assistant', content: '...', model: 'qwen2.5-coder:3b' },
+      { role: 'assistant', content: '...', model: 'qwen2.5-coder:1.5b' },
       { role: 'user', content: 'hazlo más corto' },
-    ])).toBe('qwen2.5-coder:3b');
+    ])).toBe('qwen2.5-coder:1.5b');
   });
 
   it('switches between everyday chat and code only on clear intent', () => {
     const codeChat = [
-      { role: 'assistant' as const, content: '...', model: 'qwen2.5-coder:3b' },
+      { role: 'assistant' as const, content: '...', model: 'qwen2.5-coder:1.5b' },
     ];
     expect(routeOllamaModel('cambiando de tema, dame una receta', codeChat)).toBe('granite4:3b');
     expect(routeOllamaModel('crea una función en Python', [
       { role: 'assistant', content: '...', model: 'qwen3.5:9b' },
-    ])).toBe('qwen2.5-coder:3b');
+    ])).toBe('qwen2.5-coder:1.5b');
   });
 
   it('does not send generic analysis to the large deep model', () => {

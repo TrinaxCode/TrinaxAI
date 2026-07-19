@@ -24,9 +24,7 @@ def test_macos_weekly_update_uses_calendar_and_handles_spaces(tmp_path: Path) ->
     ):
         detail = auto_update.enable(base_dir)
 
-    plist = home / "Library" / "LaunchAgents" / (
-        auto_update.MAC_LABEL + ".plist"
-    )
+    plist = home / "Library" / "LaunchAgents" / (auto_update.MAC_LABEL + ".plist")
     with plist.open("rb") as handle:
         payload = plistlib.load(handle)
     assert "weekly LaunchAgent" in detail

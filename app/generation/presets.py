@@ -39,28 +39,48 @@ def _env_float(name: str, default: float) -> float:
 # against num_ctx in build_task_spec.
 _REGIME_BASE: dict[Regime, dict] = {
     Regime.GROUNDED_QA: dict(
-        temperature=0.0, top_p=0.9, top_k=40, repeat_penalty=1.05,
-        num_predict=1024, use_rag=True,
+        temperature=0.0,
+        top_p=0.9,
+        top_k=40,
+        repeat_penalty=1.05,
+        num_predict=1024,
+        use_rag=True,
     ),
     Regime.CODE_GEN: dict(
-        temperature=0.15, top_p=0.9, top_k=40, repeat_penalty=1.05,
-        num_predict=3072, use_rag=False,
+        temperature=0.15,
+        top_p=0.9,
+        top_k=40,
+        repeat_penalty=1.05,
+        num_predict=3072,
+        use_rag=False,
     ),
     Regime.REASONING: dict(
         # Maths / science / proofs / algorithm analysis. Low-but-not-greedy
         # temperature for step-by-step rigor, a generous output budget (exams
         # and multi-part problem sets are long), and — via _select_model — the
         # instruct model the CLI uses, never the small coder.
-        temperature=0.2, top_p=0.95, top_k=40, repeat_penalty=1.05,
-        num_predict=4096, use_rag=False,
+        temperature=0.2,
+        top_p=0.95,
+        top_k=40,
+        repeat_penalty=1.05,
+        num_predict=4096,
+        use_rag=False,
     ),
     Regime.CREATIVE: dict(
-        temperature=0.5, top_p=0.95, top_k=60, repeat_penalty=1.1,
-        num_predict=5120, use_rag=False,
+        temperature=0.5,
+        top_p=0.95,
+        top_k=60,
+        repeat_penalty=1.1,
+        num_predict=5120,
+        use_rag=False,
     ),
     Regime.EXPLAIN: dict(
-        temperature=0.4, top_p=0.9, top_k=40, repeat_penalty=1.15,
-        num_predict=2048, use_rag=False,
+        temperature=0.4,
+        top_p=0.9,
+        top_k=40,
+        repeat_penalty=1.15,
+        num_predict=2048,
+        use_rag=False,
     ),
 }
 
@@ -116,8 +136,8 @@ def build_task_spec(
     """
     chat = [m for m in messages if m.get("role") in {"user", "assistant"}]
     user_turns = [m for m in chat if m.get("role") == "user"]
-    current = str(user_turns[-1].get("content", "")) if user_turns else (
-        str(chat[-1].get("content", "")) if chat else ""
+    current = (
+        str(user_turns[-1].get("content", "")) if user_turns else (str(chat[-1].get("content", "")) if chat else "")
     )
     history_text = " ".join(str(m.get("content", "")) for m in chat[:-1][-4:])
 
@@ -157,9 +177,7 @@ def build_task_spec(
     # downgraded to the tiny FAST model. Only treat as "short" when there is no
     # attachment behind it.
     short = len(instruction.strip()) < 25 and not has_attachment
-    model = (model_override or "").strip() or _select_model(
-        regime, mode, cls.is_code, short
-    )
+    model = (model_override or "").strip() or _select_model(regime, mode, cls.is_code, short)
 
     # num_ctx policy (Phase 8): generation regimes run WITHOUT RAG, so the whole
     # window is available for prompt+output and we can afford a bigger window

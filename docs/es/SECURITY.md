@@ -1,5 +1,7 @@
 # Política de Seguridad — TrinaxAI
 
+[English](../../SECURITY.md)
+
 ## Versiones con soporte
 
 | Versión  | Con soporte        |
@@ -73,9 +75,10 @@ El modelo de amenazas de TrinaxAI asume:
   `403`. Solo las rutas de salud/recursos declaradas públicas quedan disponibles
   sin credencial.
 - **Token de dispositivo robado:** Es una capability bearer limitada a sus
-  scopes. La PWA lo guarda en `sessionStorage`, FastAPI persiste solo un hash con
-  clave y el host/admin puede revocarlo. Empareja equipos controlados y revoca
-  uno perdido con `trinaxai pair revoke`.
+  scopes. La PWA guarda el token en claro en `localStorage` como identidad
+  persistente, FastAPI conserva solo un hash con clave y el host/admin puede
+  revocarlo. Empareja equipos controlados y revoca uno perdido con
+  `trinaxai pair revoke`.
 - **Identidad de proxy falsificada:** El gateway quita cabeceras de identidad
   aportadas por cliente. FastAPI solo acepta una firma HMAC fresca desde un peer
   loopback y el secreto de instalación permanece privado.

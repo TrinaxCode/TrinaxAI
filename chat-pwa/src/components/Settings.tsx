@@ -12,14 +12,15 @@ import FolderPicker from './FolderPicker';
 import DevicePairingCard from './DevicePairingCard';
 import StatsPanel from './StatsPanel';
 import RecentIndexes from './RecentIndexes';
-import { DEFAULT_MODEL_SETTINGS, MODEL_KEYS, MODEL_PRESETS, OLLAMA_KEEP_ALIVE_DEFAULT, cancelIndexJob, createCollection, deleteCollection, folderLabelFromFiles, getCollections, getIndexJob, indexableFilesFrom, modelSetting, renameCollection, resetSharedAppState, retryIndexJob, startFolderIndex, systemRequestHeaders, type Collection, type IndexJobStatus, type ModelPreset } from '../lib/api';
+import { DEFAULT_MODEL_SETTINGS, MODEL_KEYS, MODEL_PRESETS, OLLAMA_KEEP_ALIVE_DEFAULT, cancelIndexJob, createCollection, deleteCollection, folderLabelFromFiles, getCollections, getIndexJob, indexableFilesFrom, modelSetting, reconcileManagedModels, renameCollection, resetSharedAppState, retryIndexJob, startFolderIndex, systemRequestHeaders, type Collection, type IndexJobStatus, type ModelPreset } from '../lib/api';
 import { APP_CONFIG } from '../lib/config';
 import { syncSharedStateOnce } from '../lib/sharedState';
 import { NICKNAME_KEY, isValidProfileName } from '../lib/userProfile';
 import { systemFetch } from '../lib/authHeaders';
 import { audioManager } from '../services/audioManager';
+import WebSearchSettings from './WebSearchSettings';
 
-type SettingsSection = 'general' | 'indexing' | 'prompts' | 'memory' | 'stats';
+type SettingsSection = 'general' | 'web-search' | 'indexing' | 'prompts' | 'memory' | 'stats';
 
 interface Props {
   onBack: () => void;
@@ -81,7 +82,7 @@ export default function Settings({ onBack, onOpenDocs, initialSection = 'general
   useEffect(() => {
     const onJump = (e: Event) => {
       const detail = (e as CustomEvent).detail as { section?: string } | undefined;
-      if (detail?.section && ['general', 'indexing', 'prompts', 'memory', 'stats'].includes(detail.section)) {
+      if (detail?.section && ['general', 'web-search', 'indexing', 'prompts', 'memory', 'stats'].includes(detail.section)) {
         changeSection(detail.section as typeof section);
       }
     };
@@ -403,6 +404,7 @@ export default function Settings({ onBack, onOpenDocs, initialSection = 'general
     <div className={`shrink-0 flex gap-0.5 sm:gap-1 px-1 sm:px-2 pt-2 pb-1 border-b ${isDark ? 'border-white/[0.04]' : 'border-gray-100'} overflow-x-auto overscroll-x-contain`}>
       {([
         ['general', t('settingsGeneral')],
+        ['web-search', lang === 'es' ? 'Búsqueda web' : 'Web search'],
         ['indexing', t('settingsIndexing')],
         ['prompts', t('settingsPrompts')],
         ['memory', t('settingsMemory')],
@@ -630,14 +632,13 @@ export default function Settings({ onBack, onOpenDocs, initialSection = 'general
             ))}
             <div className="flex flex-col sm:flex-row gap-2">
               <button onClick={async () => {
-                const models = Array.from(new Set(MODEL_KEYS.filter(k => k !== 'tc-models-vision').map(k => getModel(k)).filter(Boolean)));
-                for (const m of models) {
-                  if (!m) continue;
-                  toast.toast(t('modelPulling').replace('{model}', m), 'info');
-                  try {
-                    await systemFetch(`${APP_CONFIG.ollamaBase}/api/pull`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({name: m, stream: false}) });
-                    toast.toast(t('modelReady').replace('{model}', m), 'success');
-                  } catch { toast.toast(t('modelPullFailed').replace('{model}', m), 'error'); }
+                const models = Array.from(new Set(MODEL_KEYS.map(k => getModel(k)).filter(Boolean)));
+                toast.toast(t('modelPulling').replace('{model}', models.join(', ')), 'info');
+                try {
+                  await reconcileManagedModels(models);
+                  toast.toast(t('modelReady').replace('{model}', models.join(', ')), 'success');
+                } catch {
+                  toast.toast(t('modelPullFailed').replace('{model}', models.join(', ')), 'error');
                 }
               }} className={`min-w-0 flex-1 px-3 py-2 rounded-lg text-xs font-medium break-words bg-[#006bbd] text-white hover:bg-[#0059a0] active:scale-95 transition-[background-color,transform]`}>
                 {t('modelSaveAndPull')}
@@ -755,6 +756,8 @@ export default function Settings({ onBack, onOpenDocs, initialSection = 'general
         </button>}
       </section>
       </>)}
+
+      {section === 'web-search' && <WebSearchSettings canManageSystem={canManageSystem} />}
 
       {section === 'indexing' && (
       <>

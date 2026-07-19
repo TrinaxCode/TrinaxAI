@@ -200,9 +200,9 @@ detect_ram_gb() {
 
 recommended_profile() {
   ram_gb="$(detect_ram_gb)"
-  if [ "${ram_gb:-0}" -ge 32 ]; then
+  if [ "${ram_gb:-0}" -ge 64 ]; then
     echo "ultra"
-  elif [ "${ram_gb:-0}" -ge 20 ]; then
+  elif [ "${ram_gb:-0}" -ge 32 ]; then
     echo "max"
   elif [ "${ram_gb:-0}" -le 8 ] && [ "${ram_gb:-0}" -gt 0 ]; then
     echo "8gb"
@@ -477,7 +477,7 @@ elif [ "$INTERACTIVE" = "1" ]; then
   if [[ "$reply" =~ ^[Aa] ]]; then
     echo "  1) medium  Balanced default (about 16GB RAM)"
     echo "  2) high    Stronger CPU / more RAM"
-    echo "  3) ultra   32GB+ RAM + powerful GPU, bigger context"
+    echo "  3) ultra   64GB+ RAM + powerful GPU, bigger context"
     echo "  4) low     Low memory (about 8GB RAM)"
     reply=$(ask "Choose profile [default: $AUTO_PROFILE]")
     case "$reply" in
@@ -495,10 +495,10 @@ else
 fi
 print_ok "Automatic setup selected: profile=$PROFILE"
 
-MODEL_GENERAL="qwen3.5:9b"
-MODEL_CODE="qwen2.5-coder:3b"
-MODEL_DEEP="qwen3.5:9b"
-MODEL_FAST="granite4:3b"
+MODEL_GENERAL="granite4:3b"
+MODEL_CODE="qwen2.5-coder:1.5b"
+MODEL_DEEP="qwen3.5:2b"
+MODEL_FAST="qwen3.5:0.8b"
 EMBED_PRESET="balanced"
 EMBED_MODEL="bge-m3"
 EMBED_DIMS="1024"
@@ -506,9 +506,9 @@ EMBED_BATCH="8"
 EMBED_KEEP_ALIVE="15m"
 VISION_MODEL="qwen3-vl:4b-instruct"
 if [ "$PROFILE" = "8gb" ]; then
-  MODEL_GENERAL="qwen3.5:4b"
+  MODEL_GENERAL="qwen3.5:0.8b"
   MODEL_CODE="qwen2.5-coder:1.5b"
-  MODEL_DEEP="qwen3.5:4b"
+  MODEL_DEEP="qwen3.5:0.8b"
   MODEL_FAST="qwen3.5:0.8b"
   EMBED_PRESET="balanced"
   EMBED_MODEL="bge-m3"
@@ -518,14 +518,14 @@ if [ "$PROFILE" = "8gb" ]; then
   VISION_MODEL="qwen3-vl:2b-instruct"
 elif [ "$PROFILE" = "max" ]; then
   MODEL_GENERAL="qwen3.5:27b"
-  MODEL_CODE="qwen2.5-coder:7b"
+  MODEL_CODE="qwen2.5-coder:14b"
   MODEL_DEEP="qwen3.5:27b"
   MODEL_FAST="qwen3.5:4b"
   VISION_MODEL="qwen3-vl:8b-instruct"
   EMBED_KEEP_ALIVE="30m"
 elif [ "$PROFILE" = "ultra" ]; then
   MODEL_GENERAL="qwen3.5:35b-a3b"
-  MODEL_CODE="qwen2.5-coder:14b"
+  MODEL_CODE="qwen3-coder:30b"
   MODEL_DEEP="qwen3.5:35b-a3b"
   MODEL_FAST="qwen3.5:4b"
   VISION_MODEL="qwen3-vl:30b-a3b-instruct"
@@ -772,7 +772,7 @@ if [ "$INSTALL_MODELS" = "1" ]; then
     print_info "Vision model $VISION_MODEL will download on first image analysis."
   else
     print_warn "Ollama is not available yet; skipping model downloads. TrinaxAI will still install."
-    print_info "After installing/starting Ollama, run: ollama pull qwen3.5:9b && ollama pull granite4:3b && ollama pull bge-m3"
+    print_info "After installing/starting Ollama, run: ollama pull granite4:3b && ollama pull qwen3.5:2b && ollama pull qwen2.5-coder:1.5b && ollama pull bge-m3"
   fi
 else
   print_info "Skipping model download. You can pull them later with: ollama pull <model>"

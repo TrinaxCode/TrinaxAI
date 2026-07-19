@@ -1,7 +1,10 @@
+import { useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import { MdClose } from 'react-icons/md';
 import type { ChatDocumentAttachment } from '../../lib/api';
 import { useI18n } from '../../i18n/I18nContext';
+import { useDialogAccessibility } from '../../hooks/useDialogAccessibility';
 
 export interface PreviewAttachment {
   attachment: ChatDocumentAttachment;
@@ -30,18 +33,24 @@ interface AttachmentPreviewProps {
 
 export default function AttachmentPreview({ preview, textPreview, isDark, onClose }: AttachmentPreviewProps) {
   const { t } = useI18n();
-  return (
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const { dialogRef, onKeyDown } = useDialogAccessibility(Boolean(preview), onClose, closeButtonRef);
+  if (typeof document === 'undefined') return null;
+  return createPortal(
     <AnimatePresence>
       {preview && (
         <motion.div
+          data-modal-root
           className="fixed inset-0 z-[80] flex items-center justify-center bg-black/75 p-4"
           initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
           onClick={onClose}
         >
           <motion.div
+            ref={dialogRef}
             initial={{ opacity: 0, scale: 0.94, y: 18 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.94, y: 18 }}
             className={`relative flex max-h-[calc(100dvh_-_2rem)] w-full max-w-5xl flex-col overflow-hidden rounded-2xl ${isDark ? 'bg-[#111]' : 'bg-white'}`}
             onClick={(event) => event.stopPropagation()}
+            onKeyDown={onKeyDown}
             role="dialog"
             aria-modal="true"
             aria-label={preview.attachment.name}
@@ -50,12 +59,12 @@ export default function AttachmentPreview({ preview, textPreview, isDark, onClos
               <span className="min-w-0 truncate">{preview.attachment.name}</span>
               <div className="flex items-center gap-2">
                 <a href={preview.url} download={preview.attachment.name} className="rounded-lg bg-[#006bbd] px-3 py-1.5 text-xs text-white">{t('download')}</a>
-                <button type="button" onClick={onClose} className="rounded-lg p-1" aria-label={t('close')}><MdClose size={20} /></button>
+                <button ref={closeButtonRef} type="button" onClick={onClose} className="rounded-lg p-1" aria-label={t('close')}><MdClose size={20} /></button>
               </div>
             </div>
             <div className="min-h-0 flex-1 overflow-auto p-3">
               {(preview.attachment.kind === 'image' || preview.attachment.mimeType?.startsWith('image/')) ? (
-                <img src={preview.url} alt={preview.attachment.name} className="mx-auto max-h-[calc(100dvh_-_9rem)] max-w-full object-contain" />
+                <img src={preview.url} alt={preview.attachment.name} width={1280} height={720} className="mx-auto h-auto w-auto max-h-[calc(100dvh_-_9rem)] max-w-full object-contain" />
               ) : isTextAttachment(preview.attachment) ? (
                 <iframe title={preview.attachment.name} srcDoc={textPreview === null ? '' : textPreviewDocument(textPreview)} className="h-[calc(100dvh_-_9rem)] w-full rounded-lg bg-white" />
               ) : preview.attachment.mimeType === 'application/pdf' || preview.attachment.name.toLowerCase().endsWith('.pdf') ? (
@@ -70,6 +79,7 @@ export default function AttachmentPreview({ preview, textPreview, isDark, onClos
           </motion.div>
         </motion.div>
       )}
-    </AnimatePresence>
+    </AnimatePresence>,
+    document.body,
   );
 }

@@ -1,4 +1,5 @@
 """``trinaxai research`` — multi-pass deep research."""
+
 from __future__ import annotations
 
 from typing import Any

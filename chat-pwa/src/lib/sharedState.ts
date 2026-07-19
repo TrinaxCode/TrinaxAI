@@ -508,7 +508,9 @@ export function startSharedStateSync(): () => void {
   if (syncStarted) return syncRuntimeCleanup ?? (() => undefined);
   syncStarted = true;
   installLocalStorageSyncHooks();
-  void syncSharedStateOnce();
+  // React Strict Mode mounts, cleans up, then mounts again in development.
+  // Reuse the first request instead of scheduling a duplicate after it ends.
+  if (!syncInFlight) void syncSharedStateOnce();
   const interval = window.setInterval(() => {
     if (!document.hidden) void syncSharedStateOnce();
   }, SYNC_INTERVAL_MS);

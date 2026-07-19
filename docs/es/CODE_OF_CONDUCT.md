@@ -1,5 +1,7 @@
 # Código de Conducta
 
+[English](../../CODE_OF_CONDUCT.md)
+
 TrinaxAI da la bienvenida a contribuidores que quieran mejorar la IA local-first.
 
 ## Comportamiento esperado

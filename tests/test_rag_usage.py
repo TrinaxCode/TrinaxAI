@@ -25,13 +25,15 @@ def test_usage_payload_is_nonzero_and_explicitly_estimated() -> None:
 
 
 def test_streaming_generation_reports_quality_as_heuristic() -> None:
-    messages = [{
-        "role": "user",
-        "content": (
-            "Crea una landing moderna con glassmorphism, animaciones, chat, FAQ "
-            "y diseño responsive premium con varias secciones"
-        ),
-    }]
+    messages = [
+        {
+            "role": "user",
+            "content": (
+                "Crea una landing moderna con glassmorphism, animaciones, chat, FAQ "
+                "y diseño responsive premium con varias secciones"
+            ),
+        }
+    ]
     spec = build_task_spec(messages)
 
     quality = _stream_quality_payload(spec, messages, "respuesta incompleta")

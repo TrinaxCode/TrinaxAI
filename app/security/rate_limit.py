@@ -23,9 +23,7 @@ from trinaxai_core import _positive_float, _positive_int
 
 LOG = logging.getLogger("trinaxai.rate_limit")
 
-_RATE_LIMIT_MAX = _positive_int(
-    os.getenv("TRINAXAI_RATE_LIMIT_PER_MINUTE"), 30, minimum=1, maximum=1_000_000
-)
+_RATE_LIMIT_MAX = _positive_int(os.getenv("TRINAXAI_RATE_LIMIT_PER_MINUTE"), 30, minimum=1, maximum=1_000_000)
 _RATE_LIMIT_WINDOW = _positive_float(
     os.getenv("TRINAXAI_RATE_LIMIT_WINDOW_SECONDS"), 60.0, minimum=1.0, maximum=86400.0
 )

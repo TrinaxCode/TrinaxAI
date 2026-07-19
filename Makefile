@@ -48,6 +48,7 @@ build:
 
 lint:
 	$(VENV_PYTHON) -m ruff check .
+	$(VENV_PYTHON) -m ruff format --check .
 	cd chat-pwa && npx tsc --noEmit
 
 test: test-python test-frontend
@@ -74,6 +75,7 @@ audit:
 	bash -n backup.sh
 	bash -n uninstall.sh
 	cd chat-pwa && npm audit --audit-level=high
+	$(VENV_PYTHON) -m pip_audit
 
 audit-optional:
 	@echo "Optional security checks; install each tool locally before running:"

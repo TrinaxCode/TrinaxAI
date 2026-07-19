@@ -1,6 +1,6 @@
 # TrinaxAI Chat PWA
 
-TrinaxAI 1.1.0 frontend built with React 19, TypeScript, and Vite 6 under AGPL-3.0-or-later. It provides direct Ollama chat, cited RAG, optional web search, deep research, a tool-using agent, image analysis, documents, local voice, memory, and installable PWA behavior.
+TrinaxAI 1.2.0 frontend built with React 19, TypeScript, and Vite 6 under AGPL-3.0-or-later. It provides direct Ollama chat, cited RAG, optional web search, deep research, a tool-using agent, image analysis, documents, local voice, memory, and installable PWA behavior.
 
 [Versión en español](README.es.md) · [Project documentation](../docs/README.md) · [API reference](../docs/API_REFERENCE.md)
 
@@ -17,7 +17,7 @@ The browser normally uses same-origin `/api/*` URLs. This avoids mixed-content a
 
 ## Prerequisites
 
-- Node.js 20 or newer and npm.
+- Node.js 18 or newer and npm; an active LTS release is recommended.
 - A running Ollama instance for chat/vision.
 - The Python backend for RAG, indexing, memory, shared state, and server voice.
 - Models configured in the onboarding wizard or environment.
@@ -118,15 +118,17 @@ claims a short, single-use code.
 3. Return to the host PWA to review or revoke the device. Install the PWA from
    the browser menu if desired.
 
-The default token grants `chat,read_private`. Elevated `index`, `system`, or
-`agent` scopes must be granted deliberately for a device that needs them; the
-host CLI remains available for explicit scope selection and administration.
+The host PWA requests `chat,read_private,index,system,agent` so the paired
+browser can use the complete interface. For a least-privilege device, generate
+the code with `trinaxai pair start --scopes ...`; the CLI default is
+`chat,read_private`.
 
-The PWA keeps the bearer in `sessionStorage`, attaches it as
+The PWA keeps the bearer in `localStorage`, attaches it as
 `X-TrinaxAI-Device-Token`, shows the active device/scopes, and can revoke itself.
-Closing the browser session removes the local clear token. The host can review
-or revoke any device with `trinaxai pair list` and `trinaxai pair revoke ID`.
-Pairing identifies a device, not a user account.
+This preserves the device identity across browser/PWA restarts; revocation or a
+remote wipe removes it locally. The host can review or revoke any device with
+`trinaxai pair list` and `trinaxai pair revoke ID`. Pairing identifies a device,
+not a user account.
 
 Persistent memory is query-scoped. Before a turn, the PWA asks
 `POST /v1/memory/context` for active relevant entries and wraps the result in an
@@ -156,8 +158,8 @@ The frontend deliberately uses several storage layers:
 - Display modes: `standalone`, with `window-controls-overlay` preferred when supported.
 - Shortcuts: New Chat and Settings.
 - Precaching: built JS/CSS/HTML plus icons, fonts, and images matching the configured patterns.
-- Runtime cache: `StaleWhileRevalidate` for built JS/CSS, `CacheFirst` for local
-  images, and `NetworkFirst` only for the public health response. Private API
+- Runtime cache: `CacheFirst` for built JS/CSS and local images, and
+  `NetworkFirst` only for the public health response. Private API
   data is not stored in Workbox runtime caches.
 - Navigation fallback: `/index.html`, excluding `/api/*`.
 - Updates: the app checks the service worker hourly and shows `PwaUpdater` when a refresh is needed.

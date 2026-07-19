@@ -57,7 +57,11 @@ def _enforce_claim_rate_limit(request: Request) -> None:
         active.append(now)
         _CLAIM_WINDOWS[key] = active
         if len(_CLAIM_WINDOWS) > 2000:
-            stale = [host for host, stamps in _CLAIM_WINDOWS.items() if not stamps or now - stamps[-1] >= _CLAIM_WINDOW_SECONDS]
+            stale = [
+                host
+                for host, stamps in _CLAIM_WINDOWS.items()
+                if not stamps or now - stamps[-1] >= _CLAIM_WINDOW_SECONDS
+            ]
             for host in stale:
                 _CLAIM_WINDOWS.pop(host, None)
 

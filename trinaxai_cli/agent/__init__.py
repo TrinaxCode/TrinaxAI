@@ -1,4 +1,5 @@
 """TrinaxAI agentic engine — file/shell tool-use over local Ollama models."""
+
 from __future__ import annotations
 
 from trinaxai_cli.agent.engine import AgentEngine, default_system_prompt

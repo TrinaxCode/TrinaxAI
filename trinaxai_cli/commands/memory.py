@@ -1,4 +1,5 @@
 """``trinaxai memory`` — persistent memory management."""
+
 from __future__ import annotations
 
 from typing import Any
@@ -40,7 +41,12 @@ def run(args: Any, client: Any, ui: Any, config: Any) -> int:
             ui.success(f"Added memory {mem.get('id', '')[:8]}")
             return 0
         if action == "forget":
-            mid = getattr(args, "memory_id", None) or ui.prompt("Memory id (or prefix)")
+            flagged = getattr(args, "memory_id", None)
+            positional = getattr(args, "memory_id_positional", None)
+            if flagged and positional and flagged != positional:
+                ui.error("Provide one memory id; the positional id and --memory-id disagree.")
+                return 1
+            mid = flagged or positional or ui.prompt("Memory id (or prefix)")
             if not mid:
                 ui.error("Memory id required.")
                 return 1

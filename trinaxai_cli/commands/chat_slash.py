@@ -298,9 +298,7 @@ def _watch(_arg: str, ctx: SlashContext) -> None:
     ctx.ui.info(f"Watcher: {'running' if running else 'stopped'} · watching: {watching}")
     job = status.get("job") if isinstance(status.get("job"), dict) else {}
     if job.get("status") and job.get("status") != "idle":
-        ctx.ui.info(
-            f"Indexer: {job['status']} · queued: {int(job.get('pending_events') or 0)}"
-        )
+        ctx.ui.info(f"Indexer: {job['status']} · queued: {int(job.get('pending_events') or 0)}")
     if job.get("last_error"):
         ctx.ui.error(f"Last watcher error: {job['last_error']}")
 
@@ -361,7 +359,7 @@ def _slash_help(ui: Any) -> None:
                 "",
                 "  Tools & session:",
                 "  /model             Select an installed model and Ollama/RAG mode",
-                "  /model NAME MODE   Set directly, e.g. /model qwen2.5-coder:3b rag",
+                "  /model NAME MODE   Set directly, e.g. /model qwen2.5-coder:1.5b rag",
                 "  /workspace (path)  Set the agent workspace (default: current dir)",
                 "  /yolo              Toggle agent auto-approve (dangerous)",
                 "  /index (path)      Index a folder, default: current directory",

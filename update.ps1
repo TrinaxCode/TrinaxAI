@@ -167,7 +167,7 @@ function Get-ConfiguredModels {
   Add-Model $List (Read-EnvValue "TRINAXAI_MODEL_FAST")
   Add-Model $List (Read-EnvValue "TRINAXAI_EMBED")
   if ($List.Count -eq 0) {
-    foreach ($Model in @("qwen2.5-coder:3b", "qwen3.5:9b", "granite4:3b", "bge-m3")) {
+    foreach ($Model in @("qwen2.5-coder:1.5b", "qwen3.5:2b", "qwen3.5:0.8b", "granite4:3b", "bge-m3")) {
       Add-Model $List $Model
     }
   }

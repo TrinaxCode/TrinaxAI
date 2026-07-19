@@ -271,16 +271,44 @@ def memory_summary_text() -> str:
 
 def _memory_terms(value: str) -> set[str]:
     stopwords = {
-        "para", "como", "sobre", "que", "qué", "cual", "cuál", "el", "la",
-        "los", "las", "un", "una", "es", "son", "de", "del", "en", "y", "o",
-        "this", "that", "with", "from", "what", "which", "the", "a", "an", "is",
-        "are", "of", "in", "and", "or", "for",
+        "para",
+        "como",
+        "sobre",
+        "que",
+        "qué",
+        "cual",
+        "cuál",
+        "el",
+        "la",
+        "los",
+        "las",
+        "un",
+        "una",
+        "es",
+        "son",
+        "de",
+        "del",
+        "en",
+        "y",
+        "o",
+        "this",
+        "that",
+        "with",
+        "from",
+        "what",
+        "which",
+        "the",
+        "a",
+        "an",
+        "is",
+        "are",
+        "of",
+        "in",
+        "and",
+        "or",
+        "for",
     }
-    return {
-        token
-        for token in re.findall(r"[a-záéíóúüñ0-9_./-]{2,}", value.lower())
-        if token not in stopwords
-    }
+    return {token for token in re.findall(r"[a-záéíóúüñ0-9_./-]{2,}", value.lower()) if token not in stopwords}
 
 
 def memory_context_for_query(query: str, *, max_entries: int = 8, max_chars: int = 8_000) -> str:

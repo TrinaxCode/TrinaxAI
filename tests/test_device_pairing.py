@@ -42,17 +42,19 @@ def _request(
         headers.append((DEVICE_TOKEN_HEADER.lower().encode(), token.encode()))
     if admin_token:
         headers.append((b"x-admin-token", admin_token.encode()))
-    return Request({
-        "type": "http",
-        "method": method,
-        "path": path,
-        "raw_path": path.encode(),
-        "query_string": b"",
-        "scheme": "http",
-        "server": ("localhost", 3333),
-        "client": (client, 50000),
-        "headers": headers,
-    })
+    return Request(
+        {
+            "type": "http",
+            "method": method,
+            "path": path,
+            "raw_path": path.encode(),
+            "query_string": b"",
+            "scheme": "http",
+            "server": ("localhost", 3333),
+            "client": (client, 50000),
+            "headers": headers,
+        }
+    )
 
 
 def test_registry_never_persists_clear_codes_or_tokens_and_claim_is_single_use(pairing_store: Path) -> None:
@@ -152,11 +154,14 @@ def test_remote_cannot_start_or_inventory_pairing(pairing_store: Path, monkeypat
     with TestClient(create_app(), client=("192.168.1.55", 50100)) as remote:
         assert remote.post("/v1/pairing/start", json={}).status_code == 403
         assert remote.get("/v1/pairing/devices").status_code == 403
-        assert remote.post(
-            "/v1/pairing/start",
-            json={},
-            headers={"X-Admin-Token": "admin"},
-        ).status_code == 200
+        assert (
+            remote.post(
+                "/v1/pairing/start",
+                json={},
+                headers={"X-Admin-Token": "admin"},
+            ).status_code
+            == 200
+        )
 
 
 def test_pairing_claim_has_a_dedicated_bruteforce_limit(pairing_store: Path, monkeypatch: pytest.MonkeyPatch) -> None:

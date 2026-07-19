@@ -1,5 +1,5 @@
 export type AppPage = 'chat' | 'settings' | 'docs' | 'browser' | 'agent';
-export type SettingsSection = 'general' | 'indexing' | 'prompts' | 'memory' | 'stats';
+export type SettingsSection = 'general' | 'web-search' | 'indexing' | 'prompts' | 'memory' | 'stats';
 
 export interface AppRoute {
   page: AppPage;
@@ -9,6 +9,7 @@ export interface AppRoute {
 
 const SETTINGS_SECTIONS = new Set<SettingsSection>([
   'general',
+  'web-search',
   'indexing',
   'prompts',
   'memory',

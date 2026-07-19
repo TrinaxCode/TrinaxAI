@@ -14,10 +14,18 @@ from app.services.engine_state import state
 
 def make_text_pdf(path: Path, pages: int) -> None:
     writer = PdfWriter()
-    font = DictionaryObject({NameObject("/Type"): NameObject("/Font"), NameObject("/Subtype"): NameObject("/Type1"), NameObject("/BaseFont"): NameObject("/Helvetica")})
+    font = DictionaryObject(
+        {
+            NameObject("/Type"): NameObject("/Font"),
+            NameObject("/Subtype"): NameObject("/Type1"),
+            NameObject("/BaseFont"): NameObject("/Helvetica"),
+        }
+    )
     for number in range(1, pages + 1):
         page = writer.add_blank_page(width=612, height=792)
-        page[NameObject("/Resources")] = DictionaryObject({NameObject("/Font"): DictionaryObject({NameObject("/F1"): font})})
+        page[NameObject("/Resources")] = DictionaryObject(
+            {NameObject("/Font"): DictionaryObject({NameObject("/F1"): font})}
+        )
         content = StreamObject()
         content.set_data(f"BT /F1 12 Tf 72 720 Td (TrinaxAI page {number} searchable text) Tj ET".encode())
         page[NameObject("/Contents")] = writer._add_object(content)
@@ -30,7 +38,11 @@ def test_text_pdf_160_pages_finishes_with_page_progress(tmp_path, capsys) -> Non
     make_text_pdf(pdf, 160)
 
     documents = index._load_pdf_documents(str(pdf))
-    events = [json.loads(line.removeprefix("TRINAXAI_PROGRESS ")) for line in capsys.readouterr().out.splitlines() if line.startswith("TRINAXAI_PROGRESS ")]
+    events = [
+        json.loads(line.removeprefix("TRINAXAI_PROGRESS "))
+        for line in capsys.readouterr().out.splitlines()
+        if line.startswith("TRINAXAI_PROGRESS ")
+    ]
 
     assert len(PdfReader(pdf).pages) == len(documents) == 160
     assert events[-1] == {"phase": "extracting", "pages_total": 160, "pages_processed": 160, "determinate": True}
@@ -53,7 +65,9 @@ def test_corrupt_and_empty_pdf_fail_at_extraction(tmp_path) -> None:
 
 
 def test_structured_job_progress_is_exact_and_stage_specific() -> None:
-    event = system_service._structured_progress('TRINAXAI_PROGRESS {"phase":"extracting","pages_total":160,"pages_processed":80,"determinate":true}\n')
+    event = system_service._structured_progress(
+        'TRINAXAI_PROGRESS {"phase":"extracting","pages_total":160,"pages_processed":80,"determinate":true}\n'
+    )
     assert event is not None
     changes = system_service._progress_changes(event)
     assert changes["phase"] == "extracting"
@@ -86,21 +100,37 @@ def test_job_state_persists_for_frontend_reconnection(tmp_path, monkeypatch) -> 
 async def test_cancel_stops_process_and_retry_requeues(tmp_path, monkeypatch) -> None:
     class Process:
         terminated = False
-        def poll(self): return None
-        def terminate(self): self.terminated = True
+
+        def poll(self):
+            return None
+
+        def terminate(self):
+            self.terminated = True
 
     class Thread:
         started = False
-        def __init__(self, **_kwargs): pass
-        def start(self): self.started = True
+
+        def __init__(self, **_kwargs):
+            pass
+
+        def start(self):
+            self.started = True
 
     target = tmp_path / "upload"
     target.mkdir()
     process = Process()
     job = {
-        "id": "job-1", "label": "manual", "path": str(target), "status": "indexing", "phase": "embedding",
-        "progress": 70, "created_at": 1.0, "updated_at": 1.0, "process": process,
-        "collection_id": "default", "collection_name": "General",
+        "id": "job-1",
+        "label": "manual",
+        "path": str(target),
+        "status": "indexing",
+        "phase": "embedding",
+        "progress": 70,
+        "created_at": 1.0,
+        "updated_at": 1.0,
+        "process": process,
+        "collection_id": "default",
+        "collection_name": "General",
     }
     monkeypatch.setattr(system_service, "_authorize_system", lambda _request: None)
     monkeypatch.setattr(system_service, "_persist_index_jobs_locked", lambda: None)

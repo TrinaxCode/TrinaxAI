@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0--or--later-blue.svg" alt="AGPL-3.0-or-later"></a>
-  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/version-1.1.0-006bbd.svg" alt="Version 1.1.0"></a>
+  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/version-1.2.0-006bbd.svg" alt="Version 1.2.0"></a>
   <a href="#-quick-start"><img src="https://img.shields.io/badge/powered_by-Ollama-black.svg" alt="Ollama"></a>
   <a href="#️-supported-platforms"><img src="https://img.shields.io/badge/platform-Linux|macOS|Windows-lightgrey.svg" alt="Platforms"></a>
   <a href="chat-pwa/README.md"><img src="https://img.shields.io/badge/PWA-ready-brightgreen.svg" alt="PWA"></a>
@@ -119,9 +119,11 @@ Any phone, tablet, or computer on the same private network can open
 The local HTTPS certificate must be trusted on each device. A LAN device can
 reach basic chat before pairing, but RAG, synchronized history, memory, files,
 indexing, the agent, and system controls require explicit device permissions.
-Pairing grants `chat,read_private` by default. Grant elevated `index`, `agent`,
-or `system` scopes only when needed; the host remains in control and can revoke
-access immediately. See the complete [PWA pairing guide](chat-pwa/README.md#pairing-a-browser).
+The host PWA generates a full-interface code with
+`chat,read_private,index,system,agent`; use `trinaxai pair start --scopes ...`
+for a least-privilege device (the CLI default is `chat,read_private`). The host
+can revoke access immediately. See the complete
+[PWA pairing guide](chat-pwa/README.md#pairing-a-browser).
 
 ---
 
@@ -157,6 +159,18 @@ operation that the current user or browser has not permitted.
 - 👀 **File watcher** — auto-reindex folders as they change.
 - 🧭 **Local memory** — "remember that…" facts persist locally and sync across your devices.
 - 🎤 **Voice mode** — local STT + TTS, including a hands-free voice-call view in the PWA.
+
+### Web search
+
+Web search defaults to `auto`: Brave is used when `TRINAXAI_BRAVE_SEARCH_API_KEY` is set, then a configured `TRINAXAI_SEARXNG_URL`, otherwise DuckDuckGo works without a key. Configure it without a terminal under **Settings → Web search**: enable/disable search, choose DuckDuckGo/Brave/SearXNG, save a Brave key in the host-only private settings file, set a public SearXNG URL, and test the connection. Environment variables take precedence and appear as externally managed; their values are never returned to the browser. Force a provider with `TRINAXAI_WEB_SEARCH_PROVIDER=duckduckgo|brave|searxng`, or disable it with `disabled`. Queries leave the machine only when Internet search is requested; DuckDuckGo may temporarily block automation, Brave requires a key, and SearXNG must expose JSON search. `TRINAXAI_WEB_SEARCH_TIMEOUT` and `TRINAXAI_WEB_SEARCH_MAX_RESULTS` control bounded requests. See [configuration](docs/CONFIGURATION.md).
+
+### Voice
+
+Install the optional local engines with `pip install -e ".[voice]"`. STT uses faster-whisper (models download on first use); TTS uses the platform speech engine through pyttsx3. Linux may require system speech/audio packages, macOS and Windows require microphone permission, and headless systems may report unavailable hardware. Check `GET /v1/voice/capabilities` before enabling controls. If unavailable, verify the extra is installed, microphone permissions, model download access, and the host audio service; API availability does not prove real hardware operation.
+
+### Agent folder browsing
+
+Folder browsing exposes local directory structure only on loopback or to a paired device with the required scope. It does not grant command execution: the user still selects a workspace and dangerous tools retain approval/sandbox checks. Grant the minimum `agent`/`system` scopes needed.
 - 📸 **Vision** — analyze images and screenshots with a local vision model.
 - 💻 **Developer CLI** — `ask`, `chat`, `index`, `agent`, `research`, `doctor`, and more.
 - 🔗 **Cross-device sync** — settings, history, and memory sync across paired devices via the local backend (no cloud).
@@ -166,7 +180,7 @@ operation that the current user or browser has not permitted.
 - 🔄 **State and usage sync** — versioned settings/history synchronization with conflict-safe revisions, explicit deletes, and local usage statistics.
 - 🛡️ **Local-first security** — loopback services, scoped device pairing, HMAC-signed gateway, sandboxed agent.
 
-**Stable version:** 1.1.0 · **License:** [AGPL-3.0-or-later](LICENSE)
+**Project version:** 1.2.0 · **License:** [AGPL-3.0-or-later](LICENSE)
 
 ---
 
@@ -278,14 +292,14 @@ The installer picks a **hardware profile** from your RAM. The supported installe
 
 | Role | Low (`8gb`) | Medium (`16gb`) | High (`max`) | Ultra |
 |---|---|---|---|---|
-| **Chat / reasoning** | `qwen3.5:4b` | `granite4:3b` | `qwen3.5:27b` | `qwen3.5:35b-a3b` (MoE) |
-| **Code** | `qwen2.5-coder:1.5b` | `qwen2.5-coder:3b` | `qwen2.5-coder:7b` | `qwen2.5-coder:14b` |
-| **Deep** | `qwen3.5:4b` | `qwen3.5:4b` | `qwen3.5:27b` | `qwen3.5:35b-a3b` (MoE) |
+| **Chat / reasoning** | `qwen3.5:0.8b` | `granite4:3b` | `qwen3.5:27b` | `qwen3.5:35b-a3b` (MoE) |
+| **Code** | `qwen2.5-coder:1.5b` | `qwen2.5-coder:1.5b` | `qwen2.5-coder:14b` | `qwen3-coder:30b` (MoE) |
+| **Deep** | `qwen3.5:0.8b` | `qwen3.5:2b` | `qwen3.5:27b` | `qwen3.5:35b-a3b` (MoE) |
 | **Vision** | `qwen3-vl:2b-instruct` | `qwen3-vl:4b-instruct` | `qwen3-vl:8b-instruct` | `qwen3-vl:30b-a3b-instruct` (MoE) |
-| **Fast** | `qwen3.5:0.8b` | `granite4:3b` | `qwen3.5:4b` | `qwen3.5:4b` |
+| **Fast** | `qwen3.5:0.8b` | `qwen3.5:0.8b` | `qwen3.5:4b` | `qwen3.5:4b` |
 | **Embeddings** | `bge-m3` (1024d) | `bge-m3` | `bge-m3` | `bge-m3` |
 
-The **generation pipeline** uses Qwen 3.5 for chat/reasoning, Qwen 2.5 Coder for code, and one specialized Qwen3-VL Instruct model for vision tasks. Vision models are downloaded on first image analysis, so installation and updates do not block on a large VL pull. Confirm names with `ollama list` and adjust `.env` if you change models. See [docs/CONFIGURATION.md](docs/CONFIGURATION.md) and [docs/ENVIRONMENT_VARIABLES.md](docs/ENVIRONMENT_VARIABLES.md).
+The **generation pipeline** routes each request across the profile's general, deep, code, and fast models; vision uses the matching Qwen3-VL Instruct model. Vision models are downloaded on first image analysis, so installation and updates do not block on a large VL pull. Confirm names with `ollama list` and adjust `.env` if you change models. See [docs/CONFIGURATION.md](docs/CONFIGURATION.md) and [docs/ENVIRONMENT_VARIABLES.md](docs/ENVIRONMENT_VARIABLES.md).
 
 ---
 

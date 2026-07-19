@@ -99,8 +99,8 @@ export default function Docs({ onBack }: Props) {
               <div className={`p-5 rounded-2xl border ${sectionBg}`}>
                 <p className={`text-sm leading-relaxed ${textSub}`}>
                   {isEs
-                    ? 'TrinaxAI 1.1.0 es un asistente open-source bajo AGPL-3.0-or-later. La inferencia, RAG y datos persistidos funcionan localmente con Ollama; solo la búsqueda web opcional, las descargas y los destinos remotos que configures usan Internet.'
-                    : 'TrinaxAI 1.1.0 is an open-source assistant under AGPL-3.0-or-later. Inference, RAG, and persisted data run locally with Ollama; only optional web search, downloads, and remote targets you configure use the Internet.'}
+                    ? 'TrinaxAI 1.2.0 es un asistente open-source bajo AGPL-3.0-or-later. La inferencia, RAG y datos persistidos funcionan localmente con Ollama; solo la búsqueda web opcional, las descargas y los destinos remotos que configures usan Internet.'
+                    : 'TrinaxAI 1.2.0 is an open-source assistant under AGPL-3.0-or-later. Inference, RAG, and persisted data run locally with Ollama; only optional web search, downloads, and remote targets you configure use the Internet.'}
                 </p>
               </div>
 
@@ -155,18 +155,18 @@ export default function Docs({ onBack }: Props) {
                 </p>
                 <p className={`text-sm leading-relaxed mt-3 ${textSub}`}>
                   {isEs
-                    ? 'Es un asistente de IA 100% local y de código abierto que se ejecuta completamente en tu máquina. Sin nube. Sin suscripciones. Sin límites. La visión es clara: ofrecer a desarrolladores, estudiantes y usuarios comunes la misma experiencia potente de IA que obtendrían de productos comerciales, pero con privacidad, libertad y control total.'
-                    : 'It is a 100% local, open-source AI assistant that runs entirely on your machine. No cloud. No subscriptions. No limits. The vision is clear: give developers, students, and everyday users the same powerful AI experience they would get from commercial products, but with privacy, freedom, and full control.'}
+                    ? 'Es un asistente local-first y de código abierto: la inferencia y los datos permanecen en el host por defecto. La búsqueda web, las descargas de modelos/dependencias y cualquier endpoint remoto configurado sí usan la red.'
+                    : 'It is a local-first, open-source assistant: inference and data remain on the host by default. Web search, model/dependency downloads, and any configured remote endpoint do use the network.'}
                 </p>
               </div>
 
               <h2 className={`text-lg font-semibold ${textMain}`}>{isEs ? 'Principios fundamentales' : 'Core Principles'}</h2>
               <div className={`p-5 rounded-2xl border ${sectionBg}`}>
                 <ul className={`text-sm space-y-2 ${textSub}`}>
-                  <li>🏠 <strong className={textMain}>{isEs ? 'Local-first' : 'Local-first'}</strong> — {isEs ? 'Todo se ejecuta en tu máquina a través de Ollama. Sin claves API.' : 'Everything runs on your machine via Ollama. No API keys required.'}</li>
+                  <li>🏠 <strong className={textMain}>{isEs ? 'Local-first' : 'Local-first'}</strong> — {isEs ? 'Ollama ejecuta la inferencia local; Brave solo requiere una clave si eliges ese proveedor web.' : 'Ollama runs inference locally; Brave requires a key only when you choose that web provider.'}</li>
                   <li>🔒 <strong className={textMain}>{isEs ? 'Privacidad' : 'Privacy-respecting'}</strong> — {isEs ? 'Tu código, tus chats, tus documentos se quedan contigo.' : 'Your code, your chats, your documents stay with you.'}</li>
                   <li>📖 <strong className={textMain}>{isEs ? 'Código abierto' : 'Open-source'}</strong> — AGPL-3.0-or-later. {isEs ? 'La comunidad puede auditar, bifurcar y mejorar.' : 'The community can audit, fork, and improve.'}</li>
-                  <li>🚀 <strong className={textMain}>{isEs ? 'Calidad de producción' : 'Production-grade'}</strong> — {isEs ? 'Funciones reales: RAG con búsqueda híbrida, modo voz, visión, PWA, CLI.' : 'Real features: RAG with hybrid search, voice mode, vision, PWA, CLI.'}</li>
+                  <li>🚀 <strong className={textMain}>{isEs ? 'Funciones integradas' : 'Integrated features'}</strong> — {isEs ? 'RAG con búsqueda híbrida, modo voz, visión, PWA y CLI.' : 'RAG with hybrid search, voice mode, vision, PWA, and CLI.'}</li>
                   <li>🌐 <strong className={textMain}>{isEs ? 'Bilingüe por diseño' : 'Bilingual by design'}</strong> — {isEs ? 'Español e inglés, detectados automáticamente. Creado por un desarrollador latinoamericano para una audiencia global.' : 'Spanish and English, auto-detected. Built by a Latin American developer for a global audience.'}</li>
                 </ul>
               </div>
@@ -412,10 +412,10 @@ VITE_TRINAXAI_VISION_MODEL=qwen3-vl:4b-instruct`}</pre>
                       </tr>
                     </thead>
                     <tbody>
-                      <tr><td className="py-1.5">General</td><td className="py-1.5">{isEs ? 'Chat, razonamiento, matemáticas' : 'Chat, reasoning, math'}</td><td className="font-mono text-[#4ea3e0]">qwen3.5:9b</td></tr>
-                      <tr><td className="py-1.5">Code</td><td className="py-1.5">{isEs ? 'Generación de código' : 'Code generation'}</td><td className="font-mono text-[#4ea3e0]">qwen2.5-coder:3b</td></tr>
-                      <tr><td className="py-1.5">Deep</td><td className="py-1.5">{isEs ? 'Tareas complejas / multi-archivo' : 'Complex / multi-file tasks'}</td><td className="font-mono text-[#4ea3e0]">qwen3.5:9b</td></tr>
-                      <tr><td className="py-1.5">Fast</td><td className="py-1.5">{isEs ? 'Preguntas muy cortas' : 'Very short prompts'}</td><td className="font-mono text-[#4ea3e0]">granite4:3b</td></tr>
+                      <tr><td className="py-1.5">General</td><td className="py-1.5">{isEs ? 'Chat, razonamiento, matemáticas' : 'Chat, reasoning, math'}</td><td className="font-mono text-[#4ea3e0]">granite4:3b</td></tr>
+                      <tr><td className="py-1.5">Code</td><td className="py-1.5">{isEs ? 'Generación de código' : 'Code generation'}</td><td className="font-mono text-[#4ea3e0]">qwen2.5-coder:1.5b</td></tr>
+                      <tr><td className="py-1.5">Deep</td><td className="py-1.5">{isEs ? 'Tareas complejas / multi-archivo' : 'Complex / multi-file tasks'}</td><td className="font-mono text-[#4ea3e0]">qwen3.5:2b</td></tr>
+                      <tr><td className="py-1.5">Fast</td><td className="py-1.5">{isEs ? 'Preguntas muy cortas' : 'Very short prompts'}</td><td className="font-mono text-[#4ea3e0]">qwen3.5:0.8b</td></tr>
                       <tr><td className="py-1.5">{isEs ? 'Visión' : 'Vision'}</td><td className="py-1.5">{isEs ? 'Análisis de imágenes' : 'Image analysis'}</td><td className="font-mono text-[#4ea3e0]">qwen3-vl:4b-instruct</td></tr>
                       <tr><td className="py-1.5">Embeddings</td><td className="py-1.5">{isEs ? 'Indexación / búsqueda' : 'Indexing / search'}</td><td className="font-mono text-[#4ea3e0]">bge-m3</td></tr>
                     </tbody>
@@ -498,8 +498,8 @@ trinaxai chat --engine rag`}</pre>
               <div className={`p-5 rounded-2xl border ${sectionBg} space-y-4`}>
                 <p className={`text-sm ${textSub}`}>
                   {isEs
-                    ? 'El Agente de TrinaxAI es un asistente programador con herramientas, 100% local y privado. Trabaja dentro de una carpeta (workspace) que tú eliges y ejecuta un bucle de razonamiento + uso de herramientas hasta terminar la tarea.'
-                    : "TrinaxAI's Agent is a private, local tool-using coding assistant. It works inside a workspace folder you choose and runs a reasoning + tool-use loop until the task is done."}
+                    ? 'El Agente de TrinaxAI es un asistente programador local-first con herramientas. Trabaja dentro de un workspace autorizado y ejecuta un bucle de razonamiento y herramientas; el destino del modelo depende de la configuración de Ollama.'
+                    : "TrinaxAI's Agent is a local-first tool-using coding assistant. It works inside an authorized workspace and runs a reasoning and tool-use loop; the model destination follows the configured Ollama endpoint."}
                 </p>
                 <h3 className={`font-semibold ${textMain}`}>{isEs ? 'Herramientas (en sandbox)' : 'Tools (sandboxed)'}</h3>
                 <ul className={`text-sm space-y-1.5 ${textSub}`}>
@@ -654,8 +654,8 @@ TRINAXAI_ADMIN_TOKEN=<strong-random-token>`}</pre>
                   { method: 'GET', path: '/health', descEs: 'Estado del sistema: modelos, índice, proyectos', descEn: 'System status: models, index, projects' },
                   { method: 'GET', path: '/resources', descEs: 'Telemetría local básica de RAM/VRAM', descEn: 'Basic local RAM/VRAM telemetry' },
                   { method: 'POST', path: '/v1/chat/completions', descEs: 'Chat RAG con streaming SSE (OpenAI-compatible)', descEn: 'RAG chat with SSE streaming (OpenAI-compatible)' },
-                  { method: 'POST', path: '/v1/agent', descEs: 'Agente con herramientas (SSE); /v1/agent/approve y /v1/agent/browse', descEn: 'Tool-using agent (SSE); plus /v1/agent/approve and /v1/agent/browse' },
-                  { method: 'POST', path: '/v1/research', descEs: 'Investigación profunda multipaso', descEn: 'Multi-pass deep research' },
+                  { method: 'POST', path: '/v1/agent', descEs: 'Agente SSE; approve, cancel y browse completan su ciclo', descEn: 'SSE agent; approve, cancel, and browse complete its lifecycle' },
+                  { method: 'POST', path: '/v1/research', descEs: 'Investigación multipaso; /preflight valida dependencias', descEn: 'Multi-pass research; /preflight validates dependencies' },
                   { method: 'GET', path: '/v1/memory', descEs: 'Memoria local (GET/POST/PATCH/DELETE, context, summary)', descEn: 'Local memory (GET/POST/PATCH/DELETE, context, summary)' },
                   { method: 'GET', path: '/v1/sources', descEs: 'Listar/borrar fuentes indexadas y ver sus chunks', descEn: 'List/delete indexed sources and view their chunks' },
                   { method: 'POST', path: '/v1/watch/start', descEs: 'Vigilante de archivos (start/stop/status)', descEn: 'File watcher (start/stop/status)' },
@@ -676,7 +676,7 @@ TRINAXAI_ADMIN_TOKEN=<strong-random-token>`}</pre>
                   </div>
                 ))}
                 <h3 className={`font-semibold ${textMain}`}>{t('docsSseStreamFormat')}</h3>
-                <pre className={`text-xs font-mono p-3 rounded-lg ${codeBg}`}>{`data: {"trinaxai":{"model":"qwen3.5:4b","project":"Insider"}}
+                <pre className={`text-xs font-mono p-3 rounded-lg ${codeBg}`}>{`data: {"trinaxai":{"model":"qwen3.5:2b","project":"Insider"}}
 data: {"choices":[{"delta":{"content":"Hello!"}}]}
 data: {"trinaxai_sources":[{"file":"app.py","snippet":"..."}]}
 data: [DONE]`}</pre>
@@ -727,8 +727,8 @@ data: [DONE]`}</pre>
                 </ol>
                 <p className={`text-sm ${textSub}`}>
                   {isEs
-                    ? 'La red sólo permite llegar al chat básico. RAG, historial, memoria, archivos, indexación, agente y acciones del sistema requieren emparejamiento y scopes explícitos. El host concede chat/read_private por defecto y debe autorizar index, agent o system sólo cuando hagan falta.'
-                    : 'Network access only reaches basic chat. RAG, history, memory, files, indexing, the agent, and system actions require pairing and explicit scopes. The host grants chat/read_private by default and should authorize index, agent, or system only when needed.'}
+                    ? 'La red sólo permite llegar al chat básico. RAG, historial, memoria, archivos, indexación, agente y sistema requieren pairing. La PWA host genera un código con chat/read_private/index/system/agent; usa la CLI con --scopes para conceder menos privilegios.'
+                    : 'Network access only reaches basic chat. RAG, history, memory, files, indexing, the agent, and system actions require pairing. The host PWA generates a chat/read_private/index/system/agent code; use the CLI with --scopes to grant less privilege.'}
                 </p>
                 <h3 className={`font-semibold ${textMain}`}>{isEs ? 'Certificado HTTPS local' : 'Local HTTPS certificate'}</h3>
                 <p className={`text-sm ${textSub}`}>

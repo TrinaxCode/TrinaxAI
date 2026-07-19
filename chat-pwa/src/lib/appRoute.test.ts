@@ -7,6 +7,7 @@ describe('app routes', () => {
     expect(parseAppRoute('#/knowledge')).toEqual({ page: 'browser' });
     expect(parseAppRoute('#/agent')).toEqual({ page: 'agent' });
     expect(parseAppRoute('#/settings/memory')).toEqual({ page: 'settings', settingsSection: 'memory' });
+    expect(parseAppRoute('#/settings/web-search')).toEqual({ page: 'settings', settingsSection: 'web-search' });
   });
 
   it('keeps old shortcuts compatible and normalizes generated URLs', () => {

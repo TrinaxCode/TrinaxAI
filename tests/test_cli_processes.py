@@ -23,9 +23,7 @@ def test_spawn_process_group_never_uses_shell(monkeypatch) -> None:
     process = processes.spawn_process_group(["python", "worker.py"])
 
     assert process.pid == 42
-    assert calls == [
-        (["python", "worker.py"], {"start_new_session": True, "shell": False})
-    ]
+    assert calls == [(["python", "worker.py"], {"start_new_session": True, "shell": False})]
 
 
 def test_spawn_process_group_rejects_shell() -> None:

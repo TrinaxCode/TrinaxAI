@@ -12,10 +12,7 @@ def test_ambiguous_followup_keeps_warm_coder() -> None:
 
 
 def test_explicit_everyday_topic_switches_back_to_general() -> None:
-    assert (
-        config.route_model("cambiando de tema, dame una receta saludable", config.MODEL_CODE)
-        == config.MODEL_GENERAL
-    )
+    assert config.route_model("cambiando de tema, dame una receta saludable", config.MODEL_CODE) == config.MODEL_GENERAL
 
 
 def test_generic_analysis_does_not_trigger_deep_coder() -> None:

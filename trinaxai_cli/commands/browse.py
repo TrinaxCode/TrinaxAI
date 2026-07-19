@@ -1,4 +1,5 @@
 """``trinaxai browse`` — list collections, files, and chunks."""
+
 from __future__ import annotations
 
 from typing import Any

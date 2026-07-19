@@ -9,6 +9,7 @@ Follows the XDG Base Directory specification:
 The schema is intentionally small.  Missing keys fall back to sane defaults so
 the CLI works on a fresh checkout.
 """
+
 from __future__ import annotations
 
 import logging
@@ -60,14 +61,13 @@ class CLIConfig:
     """
 
     api_base_url: str = DEFAULT_BASE_URL
-    # Secure by default for every URL. Installers trust the local TrinaxAI CA;
-    # ad-hoc self-signed deployments must opt out explicitly with --insecure.
+    # Secure for every URL. Installers trust the local TrinaxAI CA.
     api_verify_tls: bool = True
 
     # Match the PWA: a new general chat talks directly to Ollama. RAG is
     # opt-in so unrelated indexed documents cannot hijack a casual prompt.
     engine: str = "ollama"
-    model: str = "qwen2.5-coder:3b"
+    model: str = "qwen2.5-coder:1.5b"
     collections: list[str] = field(default_factory=lambda: ["default"])
     active_collection: str = "default"
 

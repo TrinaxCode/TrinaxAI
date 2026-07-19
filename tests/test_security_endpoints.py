@@ -125,6 +125,7 @@ class TestAdminToken:
     def test_accepts_correct_token(self, monkeypatch):
         """Request with the correct X-Admin-Token should pass without error."""
         import app.security.admin_auth as auth_mod
+
         monkeypatch.setattr(auth_mod, "ADMIN_TOKEN", "secret123")
 
         req = _make_request(
@@ -139,6 +140,7 @@ class TestAdminToken:
     def test_rejects_wrong_token(self, monkeypatch):
         """Wrong X-Admin-Token must be rejected immediately."""
         import app.security.admin_auth as auth_mod
+
         monkeypatch.setattr(auth_mod, "ADMIN_TOKEN", "secret123")
 
         req = _make_request(
@@ -153,6 +155,7 @@ class TestAdminToken:
     def test_no_token_required_when_not_set(self, monkeypatch):
         """When ADMIN_TOKEN is empty, localhost access should work."""
         import app.security.admin_auth as auth_mod
+
         monkeypatch.setattr(auth_mod, "ADMIN_TOKEN", "")
 
         req = _make_request(client_host="127.0.0.1")
@@ -164,6 +167,7 @@ class TestAdminToken:
     def test_localhost_still_works_with_token_set(self, monkeypatch):
         """Localhost should work even when a token is configured (no token header)."""
         import app.security.admin_auth as auth_mod
+
         monkeypatch.setattr(auth_mod, "ADMIN_TOKEN", "secret123")
 
         req = _make_request(client_host="127.0.0.1", headers={})
@@ -309,6 +313,7 @@ class TestLANSystemControl:
     def test_blocks_lan_when_disabled(self, monkeypatch):
         """LAN access must be rejected when TRINAXAI_ALLOW_LAN_SYSTEM=0."""
         import app.security.admin_auth as auth_mod
+
         monkeypatch.setattr(auth_mod, "ALLOW_LAN_SYSTEM", False)
         monkeypatch.setattr(auth_mod, "ADMIN_TOKEN", "")
 
@@ -320,6 +325,7 @@ class TestLANSystemControl:
     def test_allows_lan_when_enabled(self, monkeypatch):
         """LAN access must work when TRINAXAI_ALLOW_LAN_SYSTEM=1."""
         import app.security.admin_auth as auth_mod
+
         monkeypatch.setattr(auth_mod, "ALLOW_LAN_SYSTEM", True)
         monkeypatch.setattr(auth_mod, "ADMIN_TOKEN", "")
 
@@ -332,6 +338,7 @@ class TestLANSystemControl:
     def test_public_ip_rejected_without_token(self, monkeypatch):
         """Public IPs must be rejected when no admin token is set."""
         import app.security.admin_auth as auth_mod
+
         monkeypatch.setattr(auth_mod, "ALLOW_LAN_SYSTEM", False)
         monkeypatch.setattr(auth_mod, "ADMIN_TOKEN", "")
 
@@ -377,6 +384,7 @@ class TestSystemEndpointSafety:
     def test_reload_endpoint_requires_auth(self, monkeypatch):
         """/system/reload must reject unauthorized requests."""
         import rag_api
+
         monkeypatch.setattr(rag_api, "ADMIN_TOKEN", "test-token")
         monkeypatch.setattr(rag_api, "ALLOW_LAN_SYSTEM", False)
 
@@ -390,6 +398,7 @@ class TestSystemEndpointSafety:
     def test_reload_endpoint_accepts_correct_token(self, monkeypatch):
         """/system/reload must accept requests with the correct token."""
         import rag_api
+
         monkeypatch.setattr(rag_api, "ADMIN_TOKEN", "my-secret")
         monkeypatch.setattr(rag_api, "ALLOW_LAN_SYSTEM", False)
 
@@ -404,6 +413,7 @@ class TestSystemEndpointSafety:
     def test_shutdown_with_correct_token_allows(self, monkeypatch):
         """/system/shutdown with correct token should pass auth (even if service manager fails)."""
         import rag_api
+
         monkeypatch.setattr(rag_api, "ADMIN_TOKEN", "shutdown-secret")
         monkeypatch.setattr(rag_api, "ALLOW_LAN_SYSTEM", False)
 
@@ -421,6 +431,7 @@ class TestSystemEndpointSafety:
     def test_self_test_endpoint_requires_auth(self, monkeypatch):
         """/system/self-test must reject without auth."""
         import rag_api
+
         monkeypatch.setattr(rag_api, "ADMIN_TOKEN", "required")
         monkeypatch.setattr(rag_api, "ALLOW_LAN_SYSTEM", False)
 
@@ -434,6 +445,7 @@ class TestSystemEndpointSafety:
     def test_startup_endpoint_mocked(self, monkeypatch):
         """/system/startup with auth should not execute real startup."""
         import rag_api
+
         monkeypatch.setattr(rag_api, "ADMIN_TOKEN", "start-token")
         monkeypatch.setattr(rag_api, "ALLOW_LAN_SYSTEM", False)
 
@@ -450,6 +462,7 @@ class TestSystemEndpointSafety:
     def test_index_upload_requires_auth(self, monkeypatch):
         """/system/index-upload must reject without proper auth (or return 422 for missing form)."""
         import rag_api
+
         monkeypatch.setattr(rag_api, "ADMIN_TOKEN", "upload-token")
         monkeypatch.setattr(rag_api, "ALLOW_LAN_SYSTEM", False)
 

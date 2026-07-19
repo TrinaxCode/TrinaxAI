@@ -1,4 +1,5 @@
 """``trinaxai doctor`` — quick local health check."""
+
 from __future__ import annotations
 
 import json
@@ -88,10 +89,13 @@ def run(args: Any, client: Any, ui: Any, config: Any) -> int:
         )
         service_items = json.loads(status.stdout or "[]") if status.returncode == 0 else []
         services_ok = bool(service_items) and all(bool(item.get("running")) for item in service_items)
-        detail = ", ".join(
-            f"{item.get('name')}={'running' if item.get('running') else 'stopped'}"
-            for item in service_items
-        ) or (status.stderr or "no service status").strip()
+        detail = (
+            ", ".join(
+                f"{item.get('display_name') or item.get('name')}={'running' if item.get('running') else 'stopped'}"
+                for item in service_items
+            )
+            or (status.stderr or "no service status").strip()
+        )
         add("Services", services_ok, detail[:220], critical=True)
 
         by_name = {str(item.get("name")): item for item in service_items}
@@ -132,7 +136,11 @@ def run(args: Any, client: Any, ui: Any, config: Any) -> int:
         add("Collections", True, ", ".join(c.get("id", "") for c in collections[:5]) or "none")
         try:
             stats = client.stats()
-            add("Usage stats", True, f"messages={stats.get('messages_total', 0)} tokens={stats.get('tokens_estimated', 0)}")
+            add(
+                "Usage stats",
+                True,
+                f"messages={stats.get('messages_total', 0)} tokens={stats.get('tokens_estimated', 0)}",
+            )
         except Exception:
             pass
         try:
@@ -149,22 +157,16 @@ def run(args: Any, client: Any, ui: Any, config: Any) -> int:
         # Rich may hard-wrap long strings, which would corrupt JSON inside
         # quoted values. Machine output bypasses presentation formatting.
         sys.stdout.write(
-            json.dumps({"healthy": healthy, "checks": checks}, ensure_ascii=False, separators=(",", ":"))
-            + "\n"
+            json.dumps({"healthy": healthy, "checks": checks}, ensure_ascii=False, separators=(",", ":")) + "\n"
         )
     else:
-        rows = [
-            [check["check"], "OK" if check["ok"] else "FAIL", check["detail"]]
-            for check in checks
-        ]
+        rows = [[check["check"], "OK" if check["ok"] else "FAIL", check["detail"]] for check in checks]
         ui.table(["check", "status", "detail"], rows, title="TrinaxAI doctor")
     if bool(getattr(args, "strict", False)):
         return 0 if healthy else 1
     # Human diagnostics remain non-fatal for compatibility; scripts should use
     # --strict (and usually --json) for a deterministic health gate.
     core_ok = all(
-        check["ok"]
-        for check in checks
-        if check["check"] in {"Python package", "Install root", "Service manager"}
+        check["ok"] for check in checks if check["check"] in {"Python package", "Install root", "Service manager"}
     )
     return 0 if core_ok else 1

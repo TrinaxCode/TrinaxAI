@@ -128,9 +128,7 @@ def test_chat_attachment_is_available_to_another_client(tmp_path, monkeypatch) -
     assert uploaded.status_code == 200
     metadata = uploaded.json()
     assert metadata["storage_key"] == f"server:{metadata['id']}"
-    downloaded = TestClient(rag_api.app, client=("127.0.0.1", 50001)).get(
-        f"/attachments/{metadata['id']}"
-    )
+    downloaded = TestClient(rag_api.app, client=("127.0.0.1", 50001)).get(f"/attachments/{metadata['id']}")
     assert downloaded.status_code == 200
     assert downloaded.content == b"%PDF-shared"
     assert downloaded.headers["content-type"] == "application/pdf"
@@ -176,9 +174,7 @@ def test_legacy_unsafe_attachment_type_is_forced_to_download(tmp_path, monkeypat
     )
     monkeypatch.setattr(rag_api, "CHAT_ATTACHMENTS_DIR", str(attachments))
 
-    response = TestClient(rag_api.app, client=("127.0.0.1", 50000)).get(
-        f"/attachments/{attachment_id}"
-    )
+    response = TestClient(rag_api.app, client=("127.0.0.1", 50000)).get(f"/attachments/{attachment_id}")
 
     assert response.headers["content-type"] == "application/octet-stream"
     assert response.headers["content-disposition"].startswith("attachment")
@@ -216,3 +212,46 @@ def test_chat_rejects_oversized_messages() -> None:
     )
 
     assert response.status_code == 422
+
+
+def test_forced_rag_rejects_missing_collection_before_stream(tmp_path, monkeypatch) -> None:
+    collections_path = tmp_path / "collections.json"
+    collections_path.write_text(json.dumps({"collections": [{"id": "docs", "name": "Docs"}]}))
+    monkeypatch.setattr(rag_api.config, "COLLECTIONS_PATH", str(collections_path))
+    client = TestClient(rag_api.app, client=("127.0.0.1", 50000))
+
+    response = client.post(
+        "/v1/chat/completions",
+        json={
+            "messages": [{"role": "user", "content": "marker"}],
+            "mode": "knowledge",
+            "stream": True,
+            "collections": ["docs", "missing"],
+        },
+    )
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == {
+        "code": "collection_not_found",
+        "collection": "missing",
+        "message": "Collection 'missing' was not found.",
+    }
+
+
+def test_forced_rag_empty_collection_has_explicit_message(tmp_path, monkeypatch) -> None:
+    collections_path = tmp_path / "collections.json"
+    collections_path.write_text(json.dumps({"collections": [{"id": "empty", "name": "Empty"}]}))
+    monkeypatch.setattr(rag_api.config, "COLLECTIONS_PATH", str(collections_path))
+    monkeypatch.setattr(rag_api, "_index_docstore", None)
+
+    response = TestClient(rag_api.app, client=("127.0.0.1", 50000)).post(
+        "/v1/chat/completions",
+        json={"messages": [{"role": "user", "content": "marker"}], "mode": "knowledge", "collections": ["empty"]},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["trinaxai"]["rag_used"] is True
+    assert body["trinaxai"]["result_count"] == 0
+    assert body["trinaxai"]["sources"] == []
+    assert "no indexed documents" in body["choices"][0]["message"]["content"]

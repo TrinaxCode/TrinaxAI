@@ -143,36 +143,20 @@ done
 # Asegurar la flota de modelos (auto-router + embeddings + visión).
 echo -e "      ${BLUE}·${NC} Verificando modelos (descarga los que falten)..."
 if [ "$PROFILE" = "8gb" ]; then
-    MODELS=(bge-m3 qwen3.5:0.8b qwen3.5:4b qwen2.5-coder:1.5b qwen3-vl:2b-instruct)
+    MODELS=(bge-m3 qwen3.5:0.8b qwen2.5-coder:1.5b qwen3-vl:2b-instruct)
 elif [ "$PROFILE" = "ultra" ]; then
-    MODELS=(bge-m3 qwen3.5:4b qwen3.5:35b-a3b qwen2.5-coder:14b qwen3-vl:32b-instruct)
+    MODELS=(bge-m3 qwen3.5:4b qwen3.5:35b-a3b qwen3-coder:30b qwen3-vl:30b-a3b-instruct)
 elif [ "$PROFILE" = "max" ]; then
-    MODELS=(bge-m3 qwen3.5:4b qwen3.5:27b qwen2.5-coder:7b qwen3-vl:30b-a3b-instruct)
+    MODELS=(bge-m3 qwen3.5:4b qwen3.5:27b qwen2.5-coder:14b qwen3-vl:8b-instruct)
 else
     # 16gb (default)
-    MODELS=(bge-m3 granite4:3b qwen3.5:9b qwen2.5-coder:3b qwen3-vl:8b-instruct)
+    MODELS=(bge-m3 granite4:3b qwen3.5:0.8b qwen3.5:2b qwen2.5-coder:1.5b qwen3-vl:4b-instruct)
 fi
 for m in "${MODELS[@]}"; do
     if ! sudo -u "$USER_NAME" ollama list 2>/dev/null | grep -qF "$m"; then
         echo -e "        ↓ $m"; sudo -u "$USER_NAME" ollama pull "$m" >/dev/null 2>&1 || true
     fi
 done
-# Eliminar modelos obsoletos (reemplazados por versiones más recientes en 2026).
-# Si usas estos modelos en otros proyectos, presiona Ctrl+C en los próximos 5 segundos.
-_LEGACY_MODELS=(nomic-embed-text llava:7b moondream qwen3-vl:2b qwen3-vl:4b qwen3-vl:8b qwen3-vl:32b llama3.2:3b qwen2.5-coder:1.5b qwen2.5-coder:14b)
-_PRESENT=()
-for m in "${_LEGACY_MODELS[@]}"; do
-    sudo -u "$USER_NAME" ollama list 2>/dev/null | grep -qF "$m" && _PRESENT+=("$m") || true
-done
-if [ ${#_PRESENT[@]} -gt 0 ]; then
-    echo -e "      ${YELLOW}⚠${NC}  Los siguientes modelos serán eliminados (reemplazados): ${_PRESENT[*]}"
-    echo -e "      ${YELLOW}⚠${NC}  Si los usas en otros proyectos, presiona Ctrl+C ahora (5 seg)."
-    sleep 5
-    for m in "${_PRESENT[@]}"; do
-        echo -e "        🗑  Eliminando $m..."
-        sudo -u "$USER_NAME" ollama rm "$m" >/dev/null 2>&1 || true
-    done
-fi
 echo -e "      ${GREEN}✓${NC} modelos listos"
 
 systemctl enable ai-rag.service >/dev/null 2>&1 || true

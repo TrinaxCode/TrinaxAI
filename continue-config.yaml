@@ -20,7 +20,7 @@
 #     • Modelos descargados → ollama list (qwen3, qwen2.5-coder, bge-m3)
 
 name: TrinaxAI Local
-version: 1.1.0
+version: 1.2.0
 schema: v1
 
 # ────────────────────────────────────────────────────────────────
@@ -42,7 +42,7 @@ models:
       - chat
     requestOptions:
       # Certificado auto-firmado de TrinaxAI (localhost).
-      verifySsl: false
+      verifySsl: true
       timeout: 300000
     defaultCompletionOptions:
       temperature: 0.0
@@ -50,10 +50,10 @@ models:
 
   # ═══════════════════ OLLAMA DIRECTO ═════════════════════════
 
-  # ── Código diario (rápido, ~2 GB RAM) ──
-  - name: Qwen2.5-Coder 3B (Rápido)
+  # ── Código diario (perfil medium) ──
+  - name: Qwen2.5-Coder 1.5B (Rápido)
     provider: ollama
-    model: qwen2.5-coder:3b
+    model: qwen2.5-coder:1.5b
     apiBase: http://localhost:11434
     contextLength: 32768
     roles: [chat, edit, apply]
@@ -64,10 +64,10 @@ models:
     requestOptions:
       timeout: 120000
 
-  # ── Código potente (~4 GB RAM) ──
-  - name: Qwen2.5-Coder 7B (Potente)
+  # ── Código potente (perfil max) ──
+  - name: Qwen2.5-Coder 14B (Potente)
     provider: ollama
-    model: qwen2.5-coder:7b
+    model: qwen2.5-coder:14b
     apiBase: http://localhost:11434
     contextLength: 32768
     roles: [chat, edit, apply]
@@ -79,11 +79,11 @@ models:
       timeout: 180000
 
   # ── Código ultra (perfil ultra/workstation) ──
-  - name: Qwen2.5-Coder 14B (Ultra)
+  - name: Qwen3-Coder 30B (Ultra)
     provider: ollama
-    model: qwen2.5-coder:14b
+    model: qwen3-coder:30b
     apiBase: http://localhost:11434
-    contextLength: 32768
+    contextLength: 262144
     roles: [chat, edit, apply]
     defaultCompletionOptions:
       temperature: 0.0
@@ -95,9 +95,9 @@ models:
   # ── Chat general (~3 GB RAM) ──
   #  Para preguntas conceptuales, documentación, explicaciones.
   #  Tool-calling y sin "thinking" (listo para flujos agénticos).
-  - name: Qwen3.5 9B (General)
+  - name: Granite 4 3B (General)
     provider: ollama
-    model: qwen3.5:9b
+    model: granite4:3b
     apiBase: http://localhost:11434
     contextLength: 131072
     roles: [chat]
@@ -109,9 +109,9 @@ models:
 
   # ── Autocompletado (tab) ──
   #  Modelo pequeño y rápido para sugerencias inline. No se usa para chat.
-  - name: Qwen2.5-Coder 3B (Autocomplete)
+  - name: Qwen2.5-Coder 1.5B (Autocomplete)
     provider: ollama
-    model: qwen2.5-coder:3b
+    model: qwen2.5-coder:1.5b
     apiBase: http://localhost:11434
     contextLength: 4096
     roles: [autocomplete]
@@ -139,7 +139,7 @@ models:
 #  MODELO POR DEFECTO
 # ────────────────────────────────────────────────────────────────
 #  "TrinaxAI RAG" para respuestas con contexto indexado de TODOS
-#  tus proyectos. Cambia a "Qwen2.5-Coder 3B (Rápido)" si prefieres
+#  tus proyectos. Cambia a "Qwen2.5-Coder 1.5B (Rápido)" si prefieres
 #  respuestas directas sin RAG.
 defaultModel: TrinaxAI RAG (Todos mis proyectos)
 

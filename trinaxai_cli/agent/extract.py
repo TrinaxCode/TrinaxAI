@@ -10,6 +10,7 @@ Every function returns plain text or raises; the caller converts failures into a
 short error string. Extraction is best-effort and returns visible text only — no
 layout, styles or embedded media.
 """
+
 from __future__ import annotations
 
 from pathlib import Path

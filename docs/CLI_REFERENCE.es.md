@@ -98,10 +98,11 @@ trinaxai pair revoke ID_DISPOSITIVO
 `pair` sin acción equivale a `pair start`. Muestra un código de un solo uso y un
 enlace PWA. El código dura 60–900 segundos (`300` por defecto). Los scopes
 iniciales son `chat,read_private`; los elevados disponibles incluyen `index`,
-`system` y `agent`. `agent_yolo` queda reservado a política local y nunca vuelve
+`system`, `agent` y `web`. `agent_yolo` queda reservado a política local y nunca vuelve
 automática la aprobación de herramientas HTTP remotas.
 
-El navegador conserva el bearer solo en `sessionStorage`. Una CLI empaquetada
+El navegador conserva el bearer en `localStorage` para mantener su identidad
+revocable entre reinicios. Una CLI empaquetada
 que actúa como dispositivo remoto emparejado lee `TRINAXAI_DEVICE_TOKEN` y envía
 `X-TrinaxAI-Device-Token`; apunta `--api-url` a la base RAG del gateway, por
 ejemplo `https://host:3334/api/rag`. No pongas tokens en el historial ni en TOML
@@ -179,7 +180,7 @@ verify_tls = true
 
 [defaults]
 engine = "ollama"
-model = "qwen2.5-coder:3b"
+model = "qwen2.5-coder:1.5b"
 collections = ["default"]
 
 [ui]

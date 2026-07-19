@@ -490,7 +490,7 @@ $Repo = $LocalRepo
 Set-Location $Repo
 
 $RamGb = [math]::Round((Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory / 1GB)
-$AutoProfile = if ($RamGb -ge 32) { "ultra" } elseif ($RamGb -ge 20) { "max" } elseif ($RamGb -le 8) { "8gb" } else { "16gb" }
+$AutoProfile = if ($RamGb -ge 64) { "ultra" } elseif ($RamGb -ge 32) { "max" } elseif ($RamGb -le 8) { "8gb" } else { "16gb" }
 if (-not $Profile) { $Profile = if ($env:TRINAXAI_PROFILE) { $env:TRINAXAI_PROFILE } else { $AutoProfile } }
 $Profile = Normalize-Profile $Profile $AutoProfile
 
@@ -503,7 +503,7 @@ if (-not $NonInteractive) { $Mode = Read-Host "Setup mode: Normal recommended or
 if ((-not $NonInteractive) -and $Mode -match "^[Aa]") {
   Write-Host "  1) medium  Balanced default (about 16GB RAM)"
   Write-Host "  2) high    Stronger CPU / more RAM"
-  Write-Host "  3) ultra   32GB+ RAM + powerful GPU"
+  Write-Host "  3) ultra   64GB+ RAM + powerful GPU"
   Write-Host "  4) low     Low memory (about 8GB RAM)"
   $Choice = Read-Host "Choose profile [default: $Profile]"
   switch ($Choice) {
@@ -519,10 +519,10 @@ if ((-not $NonInteractive) -and $Mode -match "^[Aa]") {
   Write-Ok "Automatic setup selected: profile=$Profile"
 }
 
-$ModelGeneral = "qwen3.5:9b"
-$ModelCode = "qwen2.5-coder:3b"
-$ModelDeep = "qwen3.5:9b"
-$ModelFast = "granite4:3b"
+$ModelGeneral = "granite4:3b"
+$ModelCode = "qwen2.5-coder:1.5b"
+$ModelDeep = "qwen3.5:2b"
+$ModelFast = "qwen3.5:0.8b"
 $EmbedPreset = "balanced"
 $EmbedModel = "bge-m3"
 $EmbedDims = "1024"
@@ -530,9 +530,9 @@ $EmbedBatch = "8"
 $EmbedKeepAlive = "15m"
 $VisionModel = "qwen3-vl:4b-instruct"
 if ($Profile -eq "8gb") {
-  $ModelGeneral = "qwen3.5:4b"
+  $ModelGeneral = "qwen3.5:0.8b"
   $ModelCode = "qwen2.5-coder:1.5b"
-  $ModelDeep = "qwen3.5:4b"
+  $ModelDeep = "qwen3.5:0.8b"
   $ModelFast = "qwen3.5:0.8b"
   $EmbedPreset = "balanced"
   $EmbedModel = "bge-m3"
@@ -542,14 +542,14 @@ if ($Profile -eq "8gb") {
   $VisionModel = "qwen3-vl:2b-instruct"
 } elseif ($Profile -eq "max") {
   $ModelGeneral = "qwen3.5:27b"
-  $ModelCode = "qwen2.5-coder:7b"
+  $ModelCode = "qwen2.5-coder:14b"
   $ModelDeep = "qwen3.5:27b"
   $ModelFast = "qwen3.5:4b"
   $VisionModel = "qwen3-vl:8b-instruct"
   $EmbedKeepAlive = "30m"
 } elseif ($Profile -eq "ultra") {
   $ModelGeneral = "qwen3.5:35b-a3b"
-  $ModelCode = "qwen2.5-coder:14b"
+  $ModelCode = "qwen3-coder:30b"
   $ModelDeep = "qwen3.5:35b-a3b"
   $ModelFast = "qwen3.5:4b"
   $VisionModel = "qwen3-vl:30b-a3b-instruct"

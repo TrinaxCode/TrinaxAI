@@ -6,6 +6,7 @@ const OLLAMA_PROXY_ALLOWLIST = new Map<string, ReadonlySet<string>>([
   ['/api/ollama/api/chat', new Set(['POST'])],
   ['/api/ollama/api/generate', new Set(['POST'])],
   ['/api/ollama/api/pull', new Set(['POST'])],
+  ['/api/ollama/api/delete', new Set(['DELETE'])],
 ]);
 
 export function normalizeAddress(host: string): string {

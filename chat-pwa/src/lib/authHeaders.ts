@@ -1,7 +1,7 @@
 /**
  * Add the strongest available per-session credential without overriding
- * ordinary caller headers. Device tokens intentionally live in sessionStorage:
- * closing the browser removes the bearer credential from that browser session.
+ * ordinary caller headers. Device tokens persist in localStorage so a paired
+ * browser keeps its revocable device identity across browser/PWA restarts.
  */
 export const DEVICE_TOKEN_STORAGE_KEY = 'trinaxai-device-token';
 export const ADMIN_TOKEN_STORAGE_KEY = 'trinaxai-admin-token';
@@ -73,7 +73,7 @@ export function clearRevokedDeviceSession(): void {
   window.dispatchEvent(new CustomEvent(DEVICE_ACCESS_REVOKED_EVENT));
 }
 
-/** Fetch a protected same-origin system/proxy route with the session token. */
+/** Fetch a protected same-origin system/proxy route with the device token. */
 export function systemFetch(input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> {
   return fetch(input, { ...init, headers: systemRequestHeaders(init.headers) });
 }

@@ -76,6 +76,9 @@ jobs:
       - name: Ruff lint
         run: ruff check .
 
+      - name: Ruff format check
+        run: ruff format --check .
+
       - name: Pytest
         run: ${{ matrix.pytest-command }}
 

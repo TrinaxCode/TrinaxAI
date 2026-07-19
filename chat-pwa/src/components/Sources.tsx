@@ -55,6 +55,7 @@ export default function Sources({ sources, model, project, query, onOpenInBrowse
   const terms = useMemo(() => extractTerms(query || ''), [query]);
 
   const hasSources = sources && sources.length > 0;
+  const webProviders = [...new Set((sources || []).map((source) => source.provider).filter(Boolean))];
   if (!model && !hasSources) return null;
 
   const copyPath = async (path: string, idx: number) => {
@@ -72,6 +73,9 @@ export default function Sources({ sources, model, project, query, onOpenInBrowse
       )}
       {model && (
         <span className={isDark ? 'text-white/35' : 'text-gray-400'}>{model}</span>
+      )}
+      {webProviders.length > 0 && (
+        <span className={isDark ? 'text-white/35' : 'text-gray-400'}>Web: {webProviders.join(', ')}</span>
       )}
       {hasSources && (
         <button

@@ -127,6 +127,20 @@ def test_installers_support_client_first_install_locations() -> None:
     assert "TRINAXAI_HOME=" in windows
 
 
+def test_installers_share_conservative_profile_thresholds_and_preserve_models() -> None:
+    posix = (ROOT / "install.sh").read_text(encoding="utf-8")
+    windows = (ROOT / "install.ps1").read_text(encoding="utf-8")
+    setup = (ROOT / "setup_trinaxai.sh").read_text(encoding="utf-8")
+
+    assert '"${ram_gb:-0}" -ge 64' in posix
+    assert '"${ram_gb:-0}" -ge 32' in posix
+    assert "$RamGb -ge 64" in windows
+    assert "$RamGb -ge 32" in windows
+    assert "qwen3-vl:30b-a3b-instruct" in setup
+    assert "qwen3.5:27b qwen2.5-coder:14b qwen3-vl:8b-instruct" in setup
+    assert "ollama rm" not in setup
+
+
 def test_git_bash_installer_forwards_custom_install_directory_to_powershell() -> None:
     script = (ROOT / "install.sh").read_text(encoding="utf-8")
 
@@ -137,7 +151,7 @@ def test_uninstallers_remove_cli_registration_and_trusted_certificates() -> None
     posix = (ROOT / "uninstall.sh").read_text(encoding="utf-8")
     windows = (ROOT / "uninstall.ps1").read_text(encoding="utf-8")
 
-    assert '.local/bin/trinaxai' in posix
+    assert ".local/bin/trinaxai" in posix
     assert "trinaxai-local.crt" in posix
     assert "Remove-UserPath" in windows
     assert "Remove-TrinaxAICertificates" in windows
@@ -160,6 +174,16 @@ def test_installers_use_light_models_for_8gb_profile() -> None:
         assert "qwen2.5-coder:1.5b" in script
         assert "bge-m3" in script
         assert "qwen3-vl:2b-instruct" in script
+
+
+def test_release_model_matrix_is_synced_to_updates_env_and_continue() -> None:
+    env = (ROOT / ".env.example").read_text(encoding="utf-8")
+    updates = (ROOT / "update.sh").read_text(encoding="utf-8") + (ROOT / "update.ps1").read_text(encoding="utf-8")
+    continue_config = (ROOT / "continue-config.yaml").read_text(encoding="utf-8")
+
+    assert "qwen2.5-coder:1.5b" in env and "qwen2.5-coder:0.5b" not in env
+    assert all(model in updates for model in ("granite4:3b", "qwen3.5:2b", "qwen2.5-coder:1.5b", "bge-m3"))
+    assert all(model in continue_config for model in ("qwen2.5-coder:1.5b", "qwen2.5-coder:14b", "qwen3-coder:30b"))
 
 
 def test_windows_update_and_uninstall_scripts_exist() -> None:

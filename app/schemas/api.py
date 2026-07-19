@@ -119,6 +119,27 @@ class ResearchRequest(BaseModel):
     aggressive_quant: bool | None = None
 
 
+class WebSearchSettingsUpdate(BaseModel):
+    enabled: bool | None = None
+    preferred_provider: Literal["auto", "duckduckgo", "brave", "searxng"] | None = None
+    brave_api_key: str | None = Field(default=None, max_length=500)
+    searxng_url: str | None = Field(default=None, max_length=2048)
+
+    @model_validator(mode="before")
+    @classmethod
+    def reject_explicit_nulls(cls, value):
+        if isinstance(value, dict):
+            null_fields = [field for field in cls.model_fields if field in value and value[field] is None]
+            if null_fields:
+                raise ValueError(f"Explicit null is not allowed for: {', '.join(null_fields)}")
+        return value
+
+
+class WebSearchConnectionTest(BaseModel):
+    provider: Literal["auto", "duckduckgo", "brave", "searxng"] | None = None
+    query: str = Field(default="Python programming language", min_length=1, max_length=200)
+
+
 class WatchStartRequest(BaseModel):
     paths: list[str] | None = None
     collection: str | None = None
@@ -205,10 +226,10 @@ class MemoryUpdateRequest(BaseModel):
 
     @model_validator(mode="after")
     def validate_change(self):
-        if not any(
-            value is not None
-            for value in (self.text, self.tags, self.kind, self.expires_at)
-        ) and not self.clear_expiration:
+        if (
+            not any(value is not None for value in (self.text, self.tags, self.kind, self.expires_at))
+            and not self.clear_expiration
+        ):
             raise ValueError("At least one memory field must change.")
         return self
 

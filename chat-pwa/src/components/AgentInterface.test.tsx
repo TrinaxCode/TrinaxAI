@@ -100,12 +100,12 @@ describe('AgentInterface handoff', () => {
       { role: 'user', content: 'Corrige los archivos del proyecto' },
     ]);
     expect(apiMocks.runAgent.mock.calls[0][2]).toEqual(expect.objectContaining({
-      model: expect.any(String),
+      model: 'auto',
       knowledgeSearch: true,
       webSearch: false,
       deepResearch: false,
     }));
-    expect(apiMocks.resolveAgentModel).toHaveBeenCalledOnce();
+    expect(apiMocks.resolveAgentModel).not.toHaveBeenCalled();
     expect(screen.getByText('Corrige los archivos del proyecto')).toBeInTheDocument();
     expect(await screen.findByText(answer, {}, { timeout: 3000 })).toBeInTheDocument();
   });

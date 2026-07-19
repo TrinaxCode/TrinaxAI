@@ -1,6 +1,6 @@
 # PWA de Chat de TrinaxAI
 
-Frontend 1.1.0 de TrinaxAI construido con React 19, TypeScript y Vite 6, bajo licencia AGPL-3.0-or-later. Incluye chat directo con Ollama, RAG con citas, búsqueda web opcional, investigación profunda, agente con herramientas, visión, documentos, voz local, memoria y una PWA instalable.
+Frontend 1.2.0 de TrinaxAI construido con React 19, TypeScript y Vite 6, bajo licencia AGPL-3.0-or-later. Incluye chat directo con Ollama, RAG con citas, búsqueda web opcional, investigación profunda, agente con herramientas, visión, documentos, voz local, memoria y una PWA instalable.
 
 [English](README.md) · [Índice de documentación](../docs/README.es.md) · [Referencia de API](../docs/API_REFERENCE.es.md)
 
@@ -17,7 +17,7 @@ El navegador usa rutas `/api/*` del mismo origen. FastAPI atiende RAG, coleccion
 
 ## Desarrollo rápido
 
-Necesitas Node.js 20 o superior, npm, Ollama para inferencia y el backend Python para las funciones RAG.
+Necesitas Node.js 18 o superior y npm; se recomienda una versión LTS activa. Ollama aporta la inferencia y el backend Python las funciones RAG.
 
 ```bash
 cd chat-pwa
@@ -85,14 +85,16 @@ del sistema hasta consumir un código corto de un solo uso.
 3. Vuelve a la PWA host para revisar o revocar el equipo. Si quieres, instala la
    PWA desde el menú del navegador.
 
-El token inicial concede `chat,read_private`. Los scopes elevados `index`,
-`system` o `agent` deben concederse deliberadamente sólo al equipo que los
-necesite; la CLI del host sigue disponible para seleccionar scopes y administrar.
+La PWA host solicita `chat,read_private,index,system,agent` para que el navegador
+emparejado use la interfaz completa. Para un equipo con privilegio mínimo,
+genera el código con `trinaxai pair start --scopes ...`; el valor inicial de la
+CLI es `chat,read_private`.
 
-La PWA conserva el bearer en `sessionStorage`, lo envía como
+La PWA conserva el bearer en `localStorage`, lo envía como
 `X-TrinaxAI-Device-Token`, muestra dispositivo/scopes y permite autorrevocación.
-Cerrar la sesión elimina el token en claro local. El host puede revisar/revocar
-con `trinaxai pair list` y `trinaxai pair revoke ID`. Pairing identifica un
+Así mantiene la identidad entre reinicios del navegador/PWA; una revocación o
+borrado remoto elimina el token local. El host puede revisar/revocar con
+`trinaxai pair list` y `trinaxai pair revoke ID`. Pairing identifica un
 dispositivo, no una cuenta de usuario.
 
 La memoria persistente se recupera por consulta. Antes del turno, la PWA pide a
@@ -120,7 +122,7 @@ Al adjuntar un archivo, la PWA intenta guardarlo primero en FastAPI para que una
 
 `vite-plugin-pwa` genera manifest y service worker Workbox:
 
-- `StaleWhileRevalidate` para JS/CSS y `CacheFirst` para imágenes locales.
+- `CacheFirst` para JS/CSS e imágenes locales.
 - `NetworkFirst` solo para salud pública; datos privados de API no entran en el runtime cache.
 - Fallback de navegación a `/index.html`, excepto rutas `/api/*`.
 - Comprobación de actualizaciones cada hora y aviso mediante `PwaUpdater`.

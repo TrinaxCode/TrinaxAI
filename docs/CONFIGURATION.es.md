@@ -38,9 +38,9 @@ Elige el perfil por RAM disponible, no por RAM total. Si hay cierres por memoria
 |---|---|---|
 | `OLLAMA_BASE_URL` | `http://localhost:11434` | URL usada por el backend. |
 | `TRINAXAI_MODEL_GENERAL` | `granite4:3b` | Conversación general del perfil `16gb`; selección medida de baja latencia. |
-| `TRINAXAI_MODEL_CODE` | `qwen2.5-coder:3b` | Código y tareas técnicas. |
-| `TRINAXAI_MODEL_DEEP` | `qwen3.5:4b` | Consultas complejas del perfil `16gb`. |
-| `TRINAXAI_MODEL_FAST` | `granite4:3b` | Consultas breves del perfil `16gb`. |
+| `TRINAXAI_MODEL_CODE` | `qwen2.5-coder:1.5b` | Código y tareas técnicas. |
+| `TRINAXAI_MODEL_DEEP` | `qwen3.5:2b` | Consultas complejas del perfil `16gb`. |
+| `TRINAXAI_MODEL_FAST` | `qwen3.5:0.8b` | Consultas breves del perfil `16gb`. |
 | `TRINAXAI_AUTO_ROUTE` | `1` | Selección heurística entre los modelos anteriores. |
 | `TRINAXAI_LLM` / `TRINAXAI_LLM_HEAVY` | según perfil | Fallback cuando el auto-router está desactivado. |
 
@@ -51,7 +51,7 @@ necesarias sin hacer otra llamada al modelo. Respeta un modelo explícito si es
 compatible e instalado; si no, elige un modelo instalado apto para chat, código,
 razonamiento o herramientas. En el perfil normal `16gb`, `granite4:3b` es el
 predeterminado general por su equilibrio medido de latencia/calidad;
-`qwen3.5:4b` queda como modelo de razonamiento profundo.
+`qwen3.5:2b` queda como modelo de razonamiento profundo.
 
 ## Sonidos de la PWA
 
@@ -104,6 +104,8 @@ manifest se publican como generación con journal y rollback tras interrupción.
 | `TRINAXAI_WEB_SEARCH_MAX_RESULTS` | `6` | Fuentes web entregadas al modelo, entre 1 y 10. |
 
 En `auto`, TrinaxAI prefiere Brave si hay una clave, luego SearXNG si hay una URL y finalmente DuckDuckGo sin credenciales. La consulta sale de la máquina únicamente cuando el botón del mundo está activo o el usuario pide explícitamente buscar en Internet.
+
+Los mismos proveedores se administran en **PWA → Configuración → Búsqueda web**. Los valores se guardan únicamente en el backend, en `storage/web_search_settings.json` con permisos `0600`; la API solo devuelve estados de disponibilidad y nunca las claves. La precedencia es: variables de entorno, configuración administrada y valores predeterminados. Un campo de clave vacío conserva la existente; eliminar credencial y restablecer son acciones explícitas. Las URLs de SearXNG introducidas en la PWA deben ser HTTP(S) públicas, sin credenciales ni destinos privados.
 
 ## Límites de archivos y extracción
 
@@ -164,8 +166,9 @@ incluidas sus lecturas.
 Ejecuta `trinaxai pair start` en el host para emitir un código de un uso. Por
 defecto concede `chat,read_private`; eleva a `index`, `system` o `agent` solo si
 el dispositivo lo necesita. `trinaxai pair list` muestra el inventario y
-`trinaxai pair revoke ID` invalida un equipo. La PWA guarda el bearer únicamente
-en `sessionStorage`; pairing administra capabilities de dispositivo, no cuentas.
+`trinaxai pair revoke ID` invalida un equipo. La PWA guarda el bearer en
+`localStorage` como identidad persistente del dispositivo; pairing administra
+capabilities de dispositivo, no cuentas.
 
 ## PWA y proxy
 

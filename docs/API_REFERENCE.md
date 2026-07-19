@@ -21,7 +21,7 @@ curl -k -H "X-Admin-Token: $TOKEN" https://localhost:3333/v1/memory
 curl -k -H "X-TrinaxAI-Device-Token: $DEVICE_TOKEN" https://localhost:3333/v1/memory
 ```
 
-Device scopes are `chat`, `read_private`, `index`, `system`, `agent`, and
+Device scopes are `chat`, `read_private`, `index`, `system`, `agent`, `web`, and
 `agent_yolo`. Admin tokens grant every scope. An invalid supplied credential is
 never bypassed merely because its transport peer is loopback. Default pairing
 grants only `chat` and `read_private`; grant elevated scopes only when needed.
@@ -31,7 +31,7 @@ grants only `chat` and `read_private`; grant elevated scopes only when needed.
 | Method and path | Access | Purpose |
 |---|---|---|
 | `POST /v1/chat/completions`, `/v1/research` | `chat` + rate limited | JSON/SSE chat and research. |
-| `POST /v1/agent`, `/v1/agent/approve`, `GET /v1/agent/browse` | `agent` | Workspace agent stream, approval, and registered-root browsing. |
+| `POST /v1/agent`, `/v1/agent/approve`, `/v1/agent/cancel`, `GET /v1/agent/browse` | `agent` | Workspace agent stream, approval/cancellation, and registered-root browsing. |
 | `GET/POST /v1/voice/*` | `chat` + rate limited | Speech recognition and synthesis. |
 | `POST /documents/extract` | LAN/VPN or `chat` + rate limited | Stateless temporary document extraction. |
 | `GET /v1/sources/*`, `/v1/memory/*`, `GET /v1/stats` | `read_private` | Private indexed and user data. |
@@ -59,10 +59,11 @@ Claim attempts are limited to five per client per five minutes. The returned
 device token is also shown once; only keyed hashes are persisted. Codes expire
 after 60–900 seconds and are single-use.
 
-The PWA stores the bearer in `sessionStorage`, so closing the browser removes
-it from that session. The registry and hashing secret are separate atomic
-mode-0600 files. Pairing authenticates a device/capability; it is not a
-multi-user account or authorization delegation system.
+The PWA stores the bearer in `localStorage` so the paired identity survives
+browser/PWA restarts; revocation clears it when the client next checks in. The
+registry and hashing secret are separate atomic mode-0600 files. Pairing
+authenticates a device/capability; it is not a multi-user account or
+authorization delegation system.
 
 `GET /v1/pairing/me` and `DELETE /v1/pairing/me` use the device-token header.
 `GET /v1/pairing/devices` and `DELETE /v1/pairing/devices/{id}` are loopback/admin
@@ -107,6 +108,10 @@ response rather than an HTTP failure.
 
 ## Research
 
+### Web-search settings
+
+`GET|PUT|DELETE /v1/settings/web-search` reads, updates or resets host-local search settings. `POST /v1/settings/web-search/test` tests the selected provider from the backend, and `DELETE /v1/settings/web-search/credentials/brave` explicitly removes the managed Brave key. Every route requires local/admin or paired-device `system` authorization. Secret values are write-only and never serialized.
+
 ```json
 {
   "query": "Compare persistence mechanisms",
@@ -128,6 +133,10 @@ private/loopback/link-local destinations and unsafe redirects, resolve once and
 connect to the validated public IP to limit SSRF/DNS-rebinding exposure, and cap
 redirects, bytes, text and time. `full_page` still means bounded extracted text,
 not a complete archival copy.
+
+`POST /v1/research/preflight` accepts the same request shape and checks Ollama,
+the selected model, local collections, and web-provider readiness without
+running the full research task.
 
 ## Sources and collections
 
@@ -226,7 +235,8 @@ attachment reference, not a second persistent copy of the full extracted text.
 ## Agent
 
 `POST /v1/agent` streams tool-use events over SSE; dangerous calls pause at an
-`approval_request` until `POST /v1/agent/approve` accepts or denies it. Approvals
+`approval_request` until `POST /v1/agent/approve` accepts or denies it.
+`POST /v1/agent/cancel` stops a running session owned by the same identity. Approvals
 must include both the `session_id` from the stream's `start` event and
 the `approval_id`, and must use the same authenticated identity that opened the stream.
 Requested workspaces must be descendants of `TRINAXAI_AGENT_WORKSPACE_ROOTS` (configured

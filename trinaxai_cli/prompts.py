@@ -9,6 +9,7 @@ and its language detection so the terminal answers like the PWA.
 
 Keep these strings in sync with the PWA if the product identity changes.
 """
+
 from __future__ import annotations
 
 import re
@@ -16,22 +17,120 @@ import re
 # ── language detection (port of detectTurnLanguage) ──
 
 _EN_WORDS = {
-    "the", "a", "an", "this", "that", "these", "those", "is", "are", "am",
-    "be", "was", "were", "do", "does", "did", "how", "what", "why", "when",
-    "where", "which", "who", "can", "could", "would", "should", "please",
-    "thanks", "thank", "hello", "hi", "hey", "install", "file", "folder",
-    "tell", "explain", "write", "make", "create", "help", "fix", "you",
-    "your", "my", "we", "with", "from", "to", "of", "in", "on", "and", "or",
-    "but", "for", "yes",
+    "the",
+    "a",
+    "an",
+    "this",
+    "that",
+    "these",
+    "those",
+    "is",
+    "are",
+    "am",
+    "be",
+    "was",
+    "were",
+    "do",
+    "does",
+    "did",
+    "how",
+    "what",
+    "why",
+    "when",
+    "where",
+    "which",
+    "who",
+    "can",
+    "could",
+    "would",
+    "should",
+    "please",
+    "thanks",
+    "thank",
+    "hello",
+    "hi",
+    "hey",
+    "install",
+    "file",
+    "folder",
+    "tell",
+    "explain",
+    "write",
+    "make",
+    "create",
+    "help",
+    "fix",
+    "you",
+    "your",
+    "my",
+    "we",
+    "with",
+    "from",
+    "to",
+    "of",
+    "in",
+    "on",
+    "and",
+    "or",
+    "but",
+    "for",
+    "yes",
 }
 _ES_WORDS = {
-    "el", "la", "los", "las", "un", "una", "unos", "unas", "este", "esta",
-    "estos", "estas", "es", "son", "soy", "eres", "esta", "estan", "hay",
-    "que", "como", "por", "para", "con", "sin", "de", "del",
-    "en", "y", "o", "pero", "hola", "gracias", "instalar", "archivo",
-    "carpeta", "dime", "explica", "escribe", "haz", "crea", "ayuda", "arregla",
-    "tu", "yo", "mi", "me", "te", "cuando", "donde", "porque",
-    "tambien", "si", "quien",
+    "el",
+    "la",
+    "los",
+    "las",
+    "un",
+    "una",
+    "unos",
+    "unas",
+    "este",
+    "esta",
+    "estos",
+    "estas",
+    "es",
+    "son",
+    "soy",
+    "eres",
+    "esta",
+    "estan",
+    "hay",
+    "que",
+    "como",
+    "por",
+    "para",
+    "con",
+    "sin",
+    "de",
+    "del",
+    "en",
+    "y",
+    "o",
+    "pero",
+    "hola",
+    "gracias",
+    "instalar",
+    "archivo",
+    "carpeta",
+    "dime",
+    "explica",
+    "escribe",
+    "haz",
+    "crea",
+    "ayuda",
+    "arregla",
+    "tu",
+    "yo",
+    "mi",
+    "me",
+    "te",
+    "cuando",
+    "donde",
+    "porque",
+    "tambien",
+    "si",
+    "quien",
 }
 
 
@@ -52,7 +151,7 @@ _GENERAL_EN = (
     "Answer the current request first and follow the user's latest correction or constraint. "
     "Do not mention your identity, creator, local execution, privacy, links, or product mission unless the user asks about them. "
     "Always answer in the language of the current user message. Be direct, useful, honest, and natural. "
-    "Treat words such as \"only\", \"just\", \"nothing else\", and equivalent corrections as strict scope limits. "
+    'Treat words such as "only", "just", "nothing else", and equivalent corrections as strict scope limits. '
     "Do not add unrequested background, marketing, setup, next steps, or a follow-up question. "
     "Use only messages from this conversation; never assume facts from other chats or indexed documents. "
     "Exception for social conversation: if the user only greets you, greet them back warmly and briefly. Never scold or reject a greeting. "
@@ -72,7 +171,7 @@ _GENERAL_ES = (
     "Responde primero a la petición actual y respeta la corrección o restricción más reciente del usuario. "
     "No menciones tu identidad, creador, ejecución local, privacidad, enlaces ni misión del producto salvo que el usuario lo pregunte. "
     "Responde en el idioma del usuario. Sé directo, útil, honesto y natural. "
-    "Trata expresiones como \"solo\", \"nada más\" y correcciones equivalentes como límites estrictos de alcance. "
+    'Trata expresiones como "solo", "nada más" y correcciones equivalentes como límites estrictos de alcance. '
     "No añadas contexto, marketing, preparación, próximos pasos ni preguntas finales que no se pidieron. "
     "Usa únicamente mensajes de esta conversación; no supongas datos de otras conversaciones ni documentos indexados. "
     "Excepción para conversación social: si el usuario solo saluda, devuélvele el saludo con amabilidad y brevedad. Nunca regañes ni rechaces un saludo. "
@@ -91,10 +190,22 @@ _GENERAL_ES = (
 # ── verified creator facts (port of creatorSystemPrompt) ──
 
 _CREATOR_HINTS = (
-    "trinaxcode", "quién te creó", "quien te creo", "quién es tu creador",
-    "quien es tu creador", "tu creador", "tu origen", "quién lo creó",
-    "quien lo creo", "sus enlaces", "sus links", "sus redes",
-    "who created you", "who made you", "your creator", "who is your creator",
+    "trinaxcode",
+    "quién te creó",
+    "quien te creo",
+    "quién es tu creador",
+    "quien es tu creador",
+    "tu creador",
+    "tu origen",
+    "quién lo creó",
+    "quien lo creo",
+    "sus enlaces",
+    "sus links",
+    "sus redes",
+    "who created you",
+    "who made you",
+    "your creator",
+    "who is your creator",
     "creator links",
 )
 
@@ -154,9 +265,7 @@ def general_system_messages(messages: list[dict[str, str]], lang: str | None = N
     """
     last_user = next((str(m.get("content") or "") for m in reversed(messages) if m.get("role") == "user"), "")
     resolved = lang or detect_lang(last_user)
-    system: list[dict[str, str]] = [
-        {"role": "system", "content": _GENERAL_EN if resolved == "en" else _GENERAL_ES}
-    ]
+    system: list[dict[str, str]] = [{"role": "system", "content": _GENERAL_EN if resolved == "en" else _GENERAL_ES}]
     if _wants_creator_facts(messages):
         system.append({"role": "system", "content": _CREATOR_EN if resolved == "en" else _CREATOR_ES})
     return system
@@ -186,10 +295,18 @@ def canonical_identity_answer(messages: list[dict[str, str]]) -> str | None:
     normalized = re.sub(r"[^a-záéíóúüñ ]+", " ", latest.casefold())
     normalized = re.sub(r"\s+", " ", normalized).strip()
     lang = detect_lang(latest)
-    creator_question = any(hint in normalized for hint in (
-        "quien te creo", "quién te creó", "quien es tu creador", "quién es tu creador",
-        "who created you", "who made you", "your creator",
-    ))
+    creator_question = any(
+        hint in normalized
+        for hint in (
+            "quien te creo",
+            "quién te creó",
+            "quien es tu creador",
+            "quién es tu creador",
+            "who created you",
+            "who made you",
+            "your creator",
+        )
+    )
     if creator_question:
         if lang == "en":
             return (
@@ -206,16 +323,20 @@ def canonical_identity_answer(messages: list[dict[str, str]]) -> str | None:
             "generan tráfico, leads e ingresos. GitHub oficial: https://github.com/TrinaxCode"
         )
     identity_question = normalized in {
-        "quien eres", "quién eres", "que eres", "qué eres",
-        "who are you", "what are you",
+        "quien eres",
+        "quién eres",
+        "que eres",
+        "qué eres",
+        "who are you",
+        "what are you",
     }
     if identity_question:
         return (
             "I’m TrinaxAI, a general-purpose local-first AI assistant. I can help with chat, "
             "RAG, web research, vision, voice and software development. Official repository: "
             "https://github.com/TrinaxCode/TrinaxAI"
-            if lang == "en" else
-            "Soy TrinaxAI, un asistente de IA local-first de propósito general. Puedo ayudarte con "
+            if lang == "en"
+            else "Soy TrinaxAI, un asistente de IA local-first de propósito general. Puedo ayudarte con "
             "chat, RAG, investigación web, visión, voz y desarrollo de software. Repositorio oficial: "
             "https://github.com/TrinaxCode/TrinaxAI"
         )

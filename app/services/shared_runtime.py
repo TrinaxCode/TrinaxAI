@@ -479,11 +479,18 @@ def _record_usage(
 
 
 async def _trinaxai_http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
-    """Captura HTTPException 500 y devuelve mensaje multilingüe."""
+    """Captura HTTPException 500 y devuelve mensaje multilingüe con el detalle real."""
     if exc.status_code == 500:
+        original = str(exc.detail)[:500] if exc.detail else ""
+        LOG.error("HTTP 500: %s", original or "(no detail)")
         return JSONResponse(
             status_code=500,
-            content={"detail": _MULTILINGUAL_500},
+            content={
+                "detail": {
+                    "en": _MULTILINGUAL_500["en"] + (f" Reason: {original}" if original else ""),
+                    "es": _MULTILINGUAL_500["es"] + (f" Razón: {original}" if original else ""),
+                }
+            },
         )
     return JSONResponse(
         status_code=exc.status_code,
@@ -493,11 +500,17 @@ async def _trinaxai_http_exception_handler(request: Request, exc: HTTPException)
 
 
 async def _trinaxai_generic_exception_handler(request: Request, exc: Exception) -> JSONResponse:
-    """Captura cualquier excepción no manejada y devuelve 500 multilingüe."""
+    """Captura cualquier excepción no manejada y devuelve 500 multilingüe con la causa real."""
     LOG.error("Unhandled exception: %s", exc, exc_info=True)
+    reason = f"{type(exc).__name__}: {exc}"[:400]
     return JSONResponse(
         status_code=500,
-        content={"detail": _MULTILINGUAL_500},
+        content={
+            "detail": {
+                "en": _MULTILINGUAL_500["en"] + f" Reason: {reason}",
+                "es": _MULTILINGUAL_500["es"] + f" Razón: {reason}",
+            }
+        },
     )
 
 

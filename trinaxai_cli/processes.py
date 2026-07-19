@@ -110,9 +110,7 @@ def run_process_group(
         terminate_process_group(process)
         stdout, stderr = process.communicate()
         if isinstance(exc, subprocess.TimeoutExpired):
-            raise subprocess.TimeoutExpired(
-                list(command), timeout, output=stdout, stderr=stderr
-            ) from exc
+            raise subprocess.TimeoutExpired(list(command), timeout, output=stdout, stderr=stderr) from exc
         raise
 
     completed = subprocess.CompletedProcess(list(command), process.returncode, stdout, stderr)

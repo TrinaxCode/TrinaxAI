@@ -22,6 +22,32 @@ export class ApiError extends Error {
 
 function friendlyApiFailure(status: number, detail = ''): string {
   const en = typeof document !== 'undefined' && document.documentElement.lang.toLowerCase().startsWith('en');
+  try {
+    const parsed = JSON.parse(detail);
+    const code = typeof parsed?.detail?.code === 'string' ? parsed.detail.code : '';
+    const messages: Record<string, [string, string]> = {
+      provider_not_configured: ['El proveedor seleccionado no está configurado.', 'The selected provider is not configured.'],
+      invalid_credential: ['La credencial del proveedor no es válida.', 'The provider credential is invalid.'],
+      rate_limited: ['El proveedor limitó temporalmente las solicitudes.', 'The provider temporarily rate-limited requests.'],
+      provider_timeout: ['El proveedor agotó el tiempo de espera.', 'The provider timed out.'],
+      provider_unavailable: ['El proveedor no está disponible o la red falló.', 'The provider is unavailable or the network failed.'],
+      invalid_provider_response: ['El proveedor devolvió una respuesta inválida.', 'The provider returned an invalid response.'],
+      invalid_searxng_url: ['La URL de SearXNG no es válida o no es pública.', 'The SearXNG URL is invalid or not public.'],
+      externally_managed: ['Este valor está administrado por una variable de entorno.', 'This value is managed by an environment variable.'],
+    };
+    if (messages[code]) return messages[code][en ? 1 : 0];
+    if (typeof parsed?.detail?.message === 'string') return parsed.detail.message.slice(0, 500);
+    // Handle multilingual detail object { en: "...", es: "..." }
+    if (typeof parsed?.detail?.en === 'string' && typeof parsed?.detail?.es === 'string') {
+      return (en ? parsed.detail.en : parsed.detail.es).slice(0, 500);
+    }
+    if (typeof parsed?.detail === 'string' && parsed.detail.trim()) return parsed.detail.trim().slice(0, 500);
+    // Fallback: if detail is an object but not multilingual, show its string representation
+    if (typeof parsed?.detail === 'object' && parsed.detail !== null) {
+      const msg = typeof parsed.detail.message === 'string' ? parsed.detail.message : JSON.stringify(parsed.detail);
+      return msg.slice(0, 500);
+    }
+  } catch { /* plain-text response */ }
   if (status === 401 || status === 403) {
     return en
       ? 'This device does not have permission to use this feature. Grant access from your main device under Settings → Paired device.'
@@ -32,6 +58,13 @@ function friendlyApiFailure(status: number, detail = ''): string {
     try {
       const parsed = JSON.parse(detail);
       if (typeof parsed?.detail === 'string' && parsed.detail.trim()) return parsed.detail.trim().slice(0, 500);
+      if (typeof parsed?.detail?.en === 'string' && typeof parsed?.detail?.es === 'string') {
+        return (en ? parsed.detail.en : parsed.detail.es).slice(0, 500);
+      }
+      if (typeof parsed?.detail === 'object' && parsed.detail !== null) {
+        const msg = typeof parsed.detail.message === 'string' ? parsed.detail.message : JSON.stringify(parsed.detail);
+        return msg.slice(0, 500);
+      }
     } catch { /* plain-text response */ }
     if (detail.trim()) return detail.trim().slice(0, 500);
     return en ? 'TrinaxAI could not complete the action. Check that Ollama and RAG are running, then try again.' : 'TrinaxAI no pudo completar la acción. Verifica que Ollama y RAG estén encendidos e inténtalo de nuevo.';
@@ -47,6 +80,7 @@ export interface Source {
   url?: string | null;
   title?: string | null;
   kind?: 'local' | 'web' | string;
+  provider?: string | null;
   authority?: 'primary' | 'secondary' | string | null;
   project: string;
   collection_id?: string;
@@ -54,6 +88,20 @@ export interface Source {
   page?: string | number | null;
   snippet: string;
   score: number | null;
+}
+
+export interface WebSearchSettings {
+  enabled: boolean;
+  preferred_provider: 'auto' | 'duckduckgo' | 'brave' | 'searxng' | 'disabled';
+  active_provider: string;
+  source: 'default' | 'managed' | 'environment';
+  externally_managed: Record<string, boolean>;
+  providers: Record<string, {
+    available: boolean;
+    configured: boolean;
+    requires_api_key: boolean;
+    base_url?: string | null;
+  }>;
 }
 
 /** Metadatos que el backend emite durante el stream (modelo, proyecto, fuentes). */
@@ -130,8 +178,8 @@ export type ModelSettingKey = typeof MODEL_KEYS[number];
 export type ModelPreset = 'low' | 'balanced' | 'max' | 'ultra';
 export const MODEL_PRESETS: Record<ModelPreset, Record<ModelSettingKey, string>> = {
   low: {
-    'tc-models-chat': 'qwen3.5:4b',
-    'tc-models-deep': 'qwen3.5:4b',
+    'tc-models-chat': 'qwen3.5:0.8b',
+    'tc-models-deep': 'qwen3.5:0.8b',
     'tc-models-vision': 'qwen3-vl:2b-instruct',
     'tc-models-embed': 'bge-m3',
     'tc-models-code': 'qwen2.5-coder:1.5b',
@@ -139,18 +187,18 @@ export const MODEL_PRESETS: Record<ModelPreset, Record<ModelSettingKey, string>>
   },
   balanced: {
     'tc-models-chat': 'granite4:3b',
-    'tc-models-deep': 'qwen3.5:4b',
+    'tc-models-deep': 'qwen3.5:2b',
     'tc-models-vision': 'qwen3-vl:4b-instruct',
     'tc-models-embed': 'bge-m3',
-    'tc-models-code': 'qwen2.5-coder:3b',
-    'tc-models-fast': 'granite4:3b',
+    'tc-models-code': 'qwen2.5-coder:1.5b',
+    'tc-models-fast': 'qwen3.5:0.8b',
   },
   max: {
     'tc-models-chat': 'qwen3.5:27b',
     'tc-models-deep': 'qwen3.5:27b',
     'tc-models-vision': 'qwen3-vl:8b-instruct',
     'tc-models-embed': 'bge-m3',
-    'tc-models-code': 'qwen2.5-coder:7b',
+    'tc-models-code': 'qwen2.5-coder:14b',
     'tc-models-fast': 'qwen3.5:4b',
   },
   ultra: {
@@ -158,11 +206,44 @@ export const MODEL_PRESETS: Record<ModelPreset, Record<ModelSettingKey, string>>
     'tc-models-deep': 'qwen3.5:35b-a3b',
     'tc-models-vision': 'qwen3-vl:30b-a3b-instruct',
     'tc-models-embed': 'bge-m3',
-    'tc-models-code': 'qwen2.5-coder:14b',
+    'tc-models-code': 'qwen3-coder:30b',
     'tc-models-fast': 'qwen3.5:4b',
   },
 };
 export const DEFAULT_MODEL_SETTINGS = MODEL_PRESETS.balanced;
+const MANAGED_MODELS_KEY = 'tc-managed-ollama-models';
+
+/** Reconcile only models previously installed through TrinaxAI's explicit button. */
+export async function reconcileManagedModels(models: string[]): Promise<void> {
+  const desired = new Set(models.map((model) => model.trim()).filter(Boolean));
+  let managed = new Set<string>();
+  try {
+    const stored = JSON.parse(localStorage.getItem(MANAGED_MODELS_KEY) || '[]');
+    if (Array.isArray(stored)) managed = new Set(stored.filter((item): item is string => typeof item === 'string'));
+  } catch { /* corrupt local ownership metadata means delete nothing */ }
+
+  const persist = () => localStorage.setItem(MANAGED_MODELS_KEY, JSON.stringify([...managed].sort()));
+  for (const model of [...managed].filter((item) => !desired.has(item))) {
+    const response = await systemFetch(`${OLLAMA_BASE}/api/delete`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model }),
+    });
+    if (!response.ok && response.status !== 404) throw new ApiError(`Could not remove ${model}`, response.status);
+    managed.delete(model);
+    persist();
+  }
+  for (const model of desired) {
+    const response = await systemFetch(`${OLLAMA_BASE}/api/pull`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model, stream: false }),
+    });
+    if (!response.ok) throw new ApiError(`Could not pull ${model}`, response.status);
+    managed.add(model);
+    persist();
+  }
+}
 const TEXT_NUM_CTX = 8192;
 const ANALYTICAL_NUM_CTX = 12288;
 const TEXT_NUM_PREDICT = 2048;
@@ -799,6 +880,36 @@ async function apiJson<T>(url: string, init?: RequestInit): Promise<T> {
   }
 }
 
+export function getWebSearchSettings(signal?: AbortSignal): Promise<WebSearchSettings> {
+  return apiJson(`${RAG_BASE}/v1/settings/web-search`, { signal });
+}
+
+export function saveWebSearchSettings(update: {
+  enabled?: boolean;
+  preferred_provider?: 'auto' | 'duckduckgo' | 'brave' | 'searxng';
+  brave_api_key?: string;
+  searxng_url?: string;
+}): Promise<WebSearchSettings> {
+  return apiJson(`${RAG_BASE}/v1/settings/web-search`, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(update),
+  });
+}
+
+export function testWebSearchProvider(provider: 'auto' | 'duckduckgo' | 'brave' | 'searxng'):
+Promise<{ ok: boolean; provider: string; result_count: number }> {
+  return apiJson(`${RAG_BASE}/v1/settings/web-search/test`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ provider }),
+  });
+}
+
+export function deleteWebSearchCredential(provider: 'brave'): Promise<WebSearchSettings> {
+  return apiJson(`${RAG_BASE}/v1/settings/web-search/credentials/${provider}`, { method: 'DELETE' });
+}
+
+export function resetWebSearchSettings(): Promise<WebSearchSettings> {
+  return apiJson(`${RAG_BASE}/v1/settings/web-search`, { method: 'DELETE' });
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
@@ -1182,6 +1293,7 @@ export function buildWebSearchQuery(
   const context = previousUserTurns.map((text) => `User: ${text}`).join('\n').slice(-1800);
   const needsCurrentDate = /\b(actual(?:mente)?|ahora|hoy|reciente|últim\w*|temporada|current|latest|today|recent|season)\b/i.test(current);
   const searchTerms = [...previousUserTurns, current]
+    .map((text) => text.replace(/^\s*(?:busca(?:r)?|consulta|investiga|verifica|search(?:\s+for)?|look\s+up|check)\s+(?:(?:en\s+)?(?:internet|la\s+web|online)\s+)?/i, ''))
     .join(' ')
     .replace(/[¿?¡!.,:;|]+/g, ' ')
     .replace(/\s+/g, ' ')

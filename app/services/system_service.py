@@ -36,7 +36,12 @@ def _restore_index_jobs() -> None:
                 continue
             job = {**raw, "id": str(job_id), "process": None}
             if job.get("status") in {"saving", "indexing"}:
-                job.update(status="failed", phase="interrupted", error="The backend restarted while this job was running. Retry the job.", finished_at=now)
+                job.update(
+                    status="failed",
+                    phase="interrupted",
+                    error="The backend restarted while this job was running. Retry the job.",
+                    finished_at=now,
+                )
             state.index_jobs[str(job_id)] = job
 
 
@@ -341,7 +346,9 @@ def _run_index_job(
                 _update_index_job(job_id, progress=progress, phase=phase, progress_exact=False)
         code = process.wait(timeout=20)
         if timeout_error:
-            _update_index_job(job_id, status="failed", phase="timeout", error=timeout_error, progress=100, finished_at=time.time())
+            _update_index_job(
+                job_id, status="failed", phase="timeout", error=timeout_error, progress=100, finished_at=time.time()
+            )
             return
     except subprocess.TimeoutExpired:
         process.kill()
@@ -629,7 +636,8 @@ async def system_index_upload(
     with state.index_jobs_lock:
         duplicate = next(
             (
-                existing for existing in state.index_jobs.values()
+                existing
+                for existing in state.index_jobs.values()
                 if existing.get("id") != job["id"]
                 and existing.get("dedupe_key") == dedupe_key
                 and existing.get("status") in {"saving", "indexing", "completed"}
@@ -638,8 +646,23 @@ async def system_index_upload(
         )
     if duplicate:
         shutil.rmtree(target, ignore_errors=True)
-        _update_index_job(job["id"], status="cancelled", phase="duplicate", error=f"Duplicate of job {duplicate['id']}", progress=100, finished_at=time.time())
-        return {"ok": True, "job_id": duplicate["id"], "duplicate": True, **{key: duplicate.get(key) for key in ("path", "saved", "skipped", "bytes", "projects", "collection_id", "collection_name")}}
+        _update_index_job(
+            job["id"],
+            status="cancelled",
+            phase="duplicate",
+            error=f"Duplicate of job {duplicate['id']}",
+            progress=100,
+            finished_at=time.time(),
+        )
+        return {
+            "ok": True,
+            "job_id": duplicate["id"],
+            "duplicate": True,
+            **{
+                key: duplicate.get(key)
+                for key in ("path", "saved", "skipped", "bytes", "projects", "collection_id", "collection_name")
+            },
+        }
 
     if safe_watch_id:
         # A watched folder is a mirror, so files deleted on the user's machine

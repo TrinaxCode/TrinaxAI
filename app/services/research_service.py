@@ -23,15 +23,69 @@ def _research_language(text: str) -> str:
     """Detect Spanish/English from words, including unaccented Spanish queries."""
     words = set(re.findall(r"[a-záéíóúüñ]+", (text or "").lower()))
     spanish = words & {
-        "el", "la", "los", "las", "de", "del", "en", "es", "son", "que", "qué",
-        "quien", "quién", "cual", "cuál", "cuales", "cuáles", "como", "cómo",
-        "cuando", "cuándo", "donde", "dónde", "por", "para", "con", "sin", "y",
-        "hola", "dime", "explica", "busca", "buscar", "investiga", "actual", "hoy",
+        "el",
+        "la",
+        "los",
+        "las",
+        "de",
+        "del",
+        "en",
+        "es",
+        "son",
+        "que",
+        "qué",
+        "quien",
+        "quién",
+        "cual",
+        "cuál",
+        "cuales",
+        "cuáles",
+        "como",
+        "cómo",
+        "cuando",
+        "cuándo",
+        "donde",
+        "dónde",
+        "por",
+        "para",
+        "con",
+        "sin",
+        "y",
+        "hola",
+        "dime",
+        "explica",
+        "busca",
+        "buscar",
+        "investiga",
+        "actual",
+        "hoy",
     }
     english = words & {
-        "the", "a", "an", "of", "in", "is", "are", "what", "who", "which", "how",
-        "when", "where", "why", "for", "with", "without", "and", "hello", "tell",
-        "explain", "search", "research", "current", "today",
+        "the",
+        "a",
+        "an",
+        "of",
+        "in",
+        "is",
+        "are",
+        "what",
+        "who",
+        "which",
+        "how",
+        "when",
+        "where",
+        "why",
+        "for",
+        "with",
+        "without",
+        "and",
+        "hello",
+        "tell",
+        "explain",
+        "search",
+        "research",
+        "current",
+        "today",
     }
     if len(spanish) == len(english):
         return "Spanish" if re.search(r"[¿¡ñáéíóúü]", text or "", re.I) else "English"
@@ -154,13 +208,15 @@ def _research_synthesize(
             "text": snippet,
         }
         encoded = json.dumps(source_data, ensure_ascii=False).replace("<", "\\u003c").replace(">", "\\u003e")
-        lines.append(f"<UNTRUSTED_SOURCE id=\"{idx}\">\n{encoded}\n</UNTRUSTED_SOURCE>")
+        lines.append(f'<UNTRUSTED_SOURCE id="{idx}">\n{encoded}\n</UNTRUSTED_SOURCE>')
     source_context = "\n\n".join(lines)
     sub_q_block = "\n".join(f"- {q}" for q in sub_questions)
     today = time.strftime("%Y-%m-%d")
     conversation_context = ""
     if context.strip():
-        encoded_context = json.dumps(context.strip(), ensure_ascii=False).replace("<", "\\u003c").replace(">", "\\u003e")
+        encoded_context = (
+            json.dumps(context.strip(), ensure_ascii=False).replace("<", "\\u003c").replace(">", "\\u003e")
+        )
         conversation_context = (
             "Untrusted conversation context (background data only):\n"
             f"<UNTRUSTED_CONVERSATION>{encoded_context}</UNTRUSTED_CONVERSATION>\n\n"
@@ -254,7 +310,9 @@ def _research_sync(req: ResearchRequest):
     sub_questions = (
         _research_decompose(llm, search_query, depth)[:4]
         if use_web and depth > 1
-        else [search_query] if use_web else _research_decompose(llm, req.query, depth)
+        else [search_query]
+        if use_web
+        else _research_decompose(llm, req.query, depth)
     )
     passes = max(1, len(sub_questions))
     seen: dict[str, dict] = {}
@@ -395,6 +453,7 @@ def _research_sync(req: ResearchRequest):
             "search_url": c["metadata"].get("search_url"),
             "title": c["metadata"].get("title"),
             "kind": c["metadata"].get("source_type", "local"),
+            "provider": c["metadata"].get("provider"),
             "authority": c["metadata"].get("authority"),
             "content_scope": c["metadata"].get("content_scope"),
             "fetch_error": c["metadata"].get("fetch_error"),
@@ -439,7 +498,9 @@ async def research_preflight(req: ResearchRequest, request: Request):
         authorize_scope(request, "web")
     else:
         _authorize_system(request)
-    model = (req.model or "").strip() or (config.MODEL_FAST if use_web and int(req.depth or 2) == 1 else config.MODEL_GENERAL)
+    model = (req.model or "").strip() or (
+        config.MODEL_FAST if use_web and int(req.depth or 2) == 1 else config.MODEL_GENERAL
+    )
     try:
         with httpx.Client(trust_env=False, timeout=2.0, follow_redirects=False) as client:
             response = client.get(f"{config.OLLAMA_BASE_URL.rstrip('/')}/api/tags")
@@ -451,10 +512,23 @@ async def research_preflight(req: ResearchRequest, request: Request):
     if model not in aliases:
         return {"ok": False, "error_code": "model_unavailable", "error_detail": model, "installed_models": installed}
     if not use_web and state.fusion_retriever is None:
-        return {"ok": False, "error_code": "collection_empty", "error_detail": ", ".join(req.collections or []) or config.DEFAULT_COLLECTION_ID}
+        return {
+            "ok": False,
+            "error_code": "collection_empty",
+            "error_detail": ", ".join(req.collections or []) or config.DEFAULT_COLLECTION_ID,
+        }
     if use_web and configured_provider() == "disabled":
-        return {"ok": False, "error_code": "web_search_disabled", "error_detail": "TRINAXAI_WEB_SEARCH_PROVIDER=disabled"}
-    return {"ok": True, "model": model, "indexed": state.fusion_retriever is not None, "web_provider": configured_provider() if use_web else None}
+        return {
+            "ok": False,
+            "error_code": "web_search_disabled",
+            "error_detail": "TRINAXAI_WEB_SEARCH_PROVIDER=disabled",
+        }
+    return {
+        "ok": True,
+        "model": model,
+        "indexed": state.fusion_retriever is not None,
+        "web_provider": configured_provider() if use_web else None,
+    }
 
 
 __all__ = [name for name in globals() if not name.startswith("__")]

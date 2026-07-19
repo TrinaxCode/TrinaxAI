@@ -55,13 +55,14 @@ canonical list of every supported `TRINAXAI_*` and `VITE_TRINAXAI_*` setting.
   indexing/system and agent routes remain protected, including reads.
 - Generate a single-use code with `trinaxai pair start`, inspect devices with
   `trinaxai pair list`, and revoke them from the host. The PWA stores the bearer
-  only in `sessionStorage`; `storage/device_pairing.json` and
+  in `localStorage` as persistent device identity; `storage/device_pairing.json` and
   `storage/.device_secret` must remain mode `0600`. Pairing is device capability
   management, not a multi-user account system.
 - File tools remain under registered agent roots. Linux terminal calls require
   networkless bubblewrap; unsupported hosts fail closed unless the operator
   explicitly opts into full user-level host access.
 - Web search is opt-in. `TRINAXAI_WEB_SEARCH_PROVIDER=auto` prefers a configured Brave key (`TRINAXAI_BRAVE_SEARCH_API_KEY`), then a SearXNG URL (`TRINAXAI_SEARXNG_URL`), and otherwise uses DuckDuckGo without credentials. Tune `TRINAXAI_WEB_SEARCH_TIMEOUT` and `TRINAXAI_WEB_SEARCH_MAX_RESULTS` when needed.
+- The same providers can be managed under **PWA → Settings → Web search**. Managed values are stored only by the backend in `storage/web_search_settings.json` with mode `0600`; GET responses expose readiness booleans, never API keys. Precedence is environment variables, then managed settings, then defaults. Empty key fields preserve an existing key; deletion and reset are explicit actions. SearXNG URLs entered in the PWA must resolve to public HTTP(S) endpoints and cannot contain credentials.
 
 ## PWA sounds
 
@@ -78,7 +79,7 @@ capabilities; it does not make an extra model request. An explicit compatible
 model remains authoritative, while unavailable or tool-incompatible choices
 fall back to an installed capable model. For the normal `16gb` profile,
 `granite4:3b` is the general default because the checked-in benchmark shows the
-best latency/quality balance; `qwen3.5:4b` remains the deeper reasoning model.
+best latency/quality balance; `qwen3.5:2b` is the deeper reasoning default.
 
 ## Common values
 

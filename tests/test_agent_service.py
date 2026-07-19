@@ -34,6 +34,13 @@ class AgentServiceHelperTests(unittest.TestCase):
                 resolved = self.svc._resolve_workspace(tmp)
                 self.assertEqual(resolved, Path(tmp).resolve())
 
+    def test_agent_router_never_accepts_qwen_coder_even_when_explicit(self) -> None:
+        with patch.object(self.svc.config, "MODEL_GENERAL", "granite4:3b"):
+            self.assertEqual(self.svc._resolve_model("qwen2.5-coder:3b"), "granite4:3b")
+
+    def test_agent_router_preserves_other_compatible_models(self) -> None:
+        self.assertEqual(self.svc._resolve_model("qwen3.5:4b"), "qwen3.5:4b")
+
     def test_resolve_workspace_rejects_missing_dir(self) -> None:
         from fastapi import HTTPException
 
@@ -60,6 +67,28 @@ class AgentServiceHelperTests(unittest.TestCase):
             self.assertIn('"type":"start"', next(stream))
             self.assertIn('"recoverable":true', next(stream))
             self.assertEqual(next(stream), "data: [DONE]\n\n")
+
+    def test_slow_model_inference_is_not_reported_as_a_stall(self) -> None:
+        session_id, session = self.svc._register_session()
+        session["last_activity"] = time.monotonic() - 10
+        session["inference_active"] = True
+
+        class _Thread:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            def start(self):
+                pass
+
+            def join(self, timeout=None):
+                pass
+
+        request = type("Request", (), {"max_steps": 1})()
+        with patch.object(self.svc, "_AGENT_STALL_SECONDS", 1), patch.object(self.svc.threading, "Thread", _Thread):
+            stream = self.svc._agent_event_stream(session_id, session, request, Path.cwd(), "test-model")
+            self.assertIn('"type":"start"', next(stream))
+            self.assertIn('"type":"status"', next(stream))
+            stream.close()
 
     def test_resolve_workspace_rejects_existing_directory_outside_allowlist(self) -> None:
         from fastapi import HTTPException
@@ -92,8 +121,12 @@ class AgentServiceHelperTests(unittest.TestCase):
 
     def test_resolve_model_uses_shared_autorouter(self) -> None:
         messages = [{"role": "user", "content": "Corrige este componente de React"}]
-        with patch.object(self.svc.config, "route_model_for_messages", return_value="coder-auto") as router:
-            self.assertEqual(self.svc._resolve_model("auto", messages), "coder-auto")
+        with (
+            patch.object(self.svc.config, "MODEL_CODE", "coder-auto"),
+            patch.object(self.svc.config, "MODEL_GENERAL", "agent-auto"),
+            patch.object(self.svc.config, "route_model_for_messages", return_value="coder-auto") as router,
+        ):
+            self.assertEqual(self.svc._resolve_model("auto", messages), "agent-auto")
             router.assert_called_once_with(messages)
 
     def test_agent_context_uses_profile_window_without_forcing_8k(self) -> None:
@@ -329,6 +362,31 @@ class AgentApprovalFlowTests(unittest.TestCase):
         self.assertEqual(result, {"ok": True, "cancelled": True})
         self.assertTrue(session["cancelled"].is_set())
         engine.cancel.assert_called_once_with()
+        self.svc._drop_session(session_id)
+
+    def test_register_and_drop_session_lifecycle(self) -> None:
+        session_id, session = self.svc._register_session()
+        self.assertTrue(session_id)
+        self.assertIn(session_id, self.svc._SESSIONS)
+        self.assertIn("last_activity", session)
+
+        self.svc._drop_session(session_id)
+        self.assertNotIn(session_id, self.svc._SESSIONS)
+
+    def test_cancel_nonexistent_session_returns_not_found(self) -> None:
+        from fastapi import HTTPException
+
+        from app.schemas.api import AgentCancelRequest
+
+        fake_id = "a" * 32  # matches ^[0-9a-f]{32}$ pattern
+        with self.assertRaises(HTTPException) as raised:
+            asyncio.run(self.svc.agent_cancel(AgentCancelRequest(session_id=fake_id), MagicMock()))
+        self.assertEqual(raised.exception.status_code, 404)
+
+    def test_create_session_with_payload_uses_provided_model(self) -> None:
+        session_id, session = self.svc._register_session()
+        self.assertTrue(session_id)
+        self.assertIn(session_id, self.svc._SESSIONS)
         self.svc._drop_session(session_id)
 
 

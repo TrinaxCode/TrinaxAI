@@ -14,6 +14,7 @@ The module keeps no import-time side effects and no hard dependency on
 ``rich`` — callers pass in the :class:`~trinaxai_cli.ui.Console` and let it
 decide how to render.
 """
+
 from __future__ import annotations
 
 import os

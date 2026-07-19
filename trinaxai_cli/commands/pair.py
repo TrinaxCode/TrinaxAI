@@ -42,12 +42,15 @@ def run(args: Any, client: Any, ui: Any, _config: Any) -> int:
                 return 0
             ui.table(
                 ["id", "name", "scopes", "status"],
-                [[
-                    item.get("id", ""),
-                    item.get("name", ""),
-                    ",".join(item.get("scopes") or []),
-                    "revoked" if item.get("revoked_at") is not None else "active",
-                ] for item in devices],
+                [
+                    [
+                        item.get("id", ""),
+                        item.get("name", ""),
+                        ",".join(item.get("scopes") or []),
+                        "revoked" if item.get("revoked_at") is not None else "active",
+                    ]
+                    for item in devices
+                ],
                 title="Paired devices",
             )
             return 0
