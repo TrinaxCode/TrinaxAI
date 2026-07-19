@@ -1,4 +1,5 @@
 import json
+import os
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -32,7 +33,8 @@ def test_settings_persist_without_exposing_secret(monkeypatch, tmp_path):
         assert "test-secret-value" not in response.text
         assert "test-secret-value" not in client.get("/v1/settings/web-search").text
     assert json.loads(path.read_text())["brave_api_key"] == "test-secret-value"
-    assert path.stat().st_mode & 0o777 == 0o600
+    if os.name == "posix":
+        assert path.stat().st_mode & 0o777 == 0o600
 
 
 def test_empty_key_does_not_delete_and_delete_is_explicit(monkeypatch, tmp_path):
