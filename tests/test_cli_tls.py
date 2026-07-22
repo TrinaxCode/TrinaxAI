@@ -1,6 +1,7 @@
 import ssl
 from pathlib import Path
 
+import certifi
 import pytest
 
 from trinaxai_cli.client import TrinaxAPIClient
@@ -12,7 +13,7 @@ def test_cli_defaults_to_verified_https():
 
 
 def test_local_ca_file_is_used_without_disabling_verification(monkeypatch):
-    ca_file = Path(__file__).parents[1] / "chat-pwa" / "certs" / "localhost.pem"
+    ca_file = Path(certifi.where())
     monkeypatch.setenv("TRINAXAI_CA_FILE", str(ca_file))
     client = object.__new__(TrinaxAPIClient)
     client.base_url = "https://localhost:3333"
@@ -23,7 +24,7 @@ def test_local_ca_file_is_used_without_disabling_verification(monkeypatch):
 
 
 def test_remote_urls_never_trust_the_local_ca(monkeypatch):
-    ca_file = Path(__file__).parents[1] / "chat-pwa" / "certs" / "localhost.pem"
+    ca_file = Path(certifi.where())
     monkeypatch.setenv("TRINAXAI_CA_FILE", str(ca_file))
     client = object.__new__(TrinaxAPIClient)
     client.base_url = "https://example.test:3333"

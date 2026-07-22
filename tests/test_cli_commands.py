@@ -7,6 +7,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+import certifi
+
 from trinaxai_cli.client import TrinaxAPIClient, TrinaxAPIError
 from trinaxai_cli.commands import agent, ask, collections, index, memory
 from trinaxai_cli.config import CLIConfig
@@ -39,7 +41,7 @@ def test_cli_version() -> None:
 def test_cli_requires_verified_tls_and_accepts_a_ca_file(tmp_path: Path) -> None:
     config = tmp_path / "config.toml"
     config.write_text("[api]\nverify_tls = false\n", encoding="utf-8")
-    ca_file = str(Path("chat-pwa/certs/localhost.pem").resolve())
+    ca_file = certifi.where()
 
     rejected = run_cli("--config", str(config), "config")
     trusted = run_cli("--ca-file", ca_file, "config")
