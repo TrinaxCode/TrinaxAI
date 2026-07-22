@@ -12,6 +12,7 @@
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0--or--later-blue.svg" alt="AGPL-3.0-or-later"></a>
   <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/version-1.0.0-006bbd.svg" alt="Version 1.0.0"></a>
+  <a href="https://github.com/TrinaxCode/TrinaxAI/pkgs/container/trinaxai"><img src="https://img.shields.io/badge/package-GHCR-2496ED.svg" alt="GitHub Container Registry"></a>
   <a href="#-quick-start"><img src="https://img.shields.io/badge/powered_by-Ollama-black.svg" alt="Ollama"></a>
   <a href="#️-supported-platforms"><img src="https://img.shields.io/badge/platform-Linux|macOS|Windows-lightgrey.svg" alt="Platforms"></a>
   <a href="chat-pwa/README.md"><img src="https://img.shields.io/badge/PWA-ready-brightgreen.svg" alt="PWA"></a>
@@ -51,6 +52,18 @@ powershell -ExecutionPolicy Bypass -File .\install.ps1
 ```
 
 The Windows installer pulls dependencies automatically; Ollama is installed via `winget` (with the official silent installer as fallback).
+
+### Docker backend
+
+Every release publishes the RAG API image to GitHub Container Registry. The
+PWA gateway and Ollama still run on the host:
+
+```bash
+docker pull ghcr.io/trinaxcode/trinaxai:1.0.0
+```
+
+Use it with the included `compose.yaml` by setting `TRINAXAI_DOCKER_IMAGE`.
+The complete loopback-only setup is in the [Linux installation guide](docs/INSTALL_LINUX.md#optional-docker-backend).
 
 ### Open the app
 

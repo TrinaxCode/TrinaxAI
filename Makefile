@@ -43,7 +43,7 @@ dev:
 	cd chat-pwa && npm run dev
 
 build:
-	$(VENV_PYTHON) -m py_compile rag_api.py config.py index.py trinaxai_cli.py
+	$(VENV_PYTHON) -m py_compile rag_api.py config.py index.py trinaxai_cli/app.py
 	cd chat-pwa && npm run build
 
 lint:

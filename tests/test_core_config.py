@@ -3,6 +3,7 @@ from __future__ import annotations
 from trinaxai_core import (
     SAFE_DEFAULTS,
     VALID_PROFILES,
+    normalize_http_base_url,
     sanitize_collection_id,
     validate_runtime_config,
 )
@@ -45,6 +46,15 @@ def test_runtime_config_falls_back_on_invalid_values() -> None:
     assert cfg["num_ctx"] == 4096
     assert cfg["embed_workers"] == 16
     assert cfg["default_collection_id"] == "bad-id"
+
+
+def test_http_base_url_validation_rejects_unsafe_and_malformed_schemes() -> None:
+    assert normalize_http_base_url("https://ollama.example:11434/") == "https://ollama.example:11434"
+    assert normalize_http_base_url("file:///tmp/socket", "http://localhost:11434") == "http://localhost:11434"
+    assert normalize_http_base_url("http://localhost:bad", "fallback") == "fallback"
+    assert normalize_http_base_url("http://localhost:11434/api", "fallback") == "fallback"
+    assert normalize_http_base_url("http://user:secret@localhost:11434", "fallback") == "fallback"
+    assert normalize_http_base_url("http://bad host:11434", "fallback") == "fallback"
 
 
 def test_runtime_config_accepts_profile_aliases() -> None:

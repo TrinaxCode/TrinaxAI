@@ -55,23 +55,34 @@ async function createAudioRecorder(
   if (!mimeType) throw new Error('noAudioMimeType');
 
   const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-  const mediaRecorder = new MediaRecorder(stream, { mimeType });
+  let mediaRecorder: MediaRecorder;
+  let audioCtx: AudioContext | undefined;
+  let analyser: AnalyserNode;
+  try {
+    mediaRecorder = new MediaRecorder(stream, { mimeType });
+    audioCtx = new AudioContext();
+    const source = audioCtx.createMediaStreamSource(stream);
+    analyser = audioCtx.createAnalyser();
+    source.connect(analyser);
+  } catch (error) {
+    void audioCtx?.close().catch(() => undefined);
+    stream.getTracks().forEach((track) => track.stop());
+    throw error;
+  }
+  if (!audioCtx) throw new Error('audioContextInitializationFailed');
   const chunks: Blob[] = [];
 
   mediaRecorder.ondataavailable = (e) => {
     if (e.data.size) chunks.push(e.data);
   };
 
-  const audioCtx = new AudioContext();
-  const source = audioCtx.createMediaStreamSource(stream);
-  const analyser = audioCtx.createAnalyser();
-  source.connect(analyser);
   analyser.fftSize = 512;
   analyser.smoothingTimeConstant = 0.3;
 
   const data = new Uint8Array(analyser.fftSize);
   const audioTracks = stream.getTracks().filter((track) => track.kind === 'audio');
   let lastVoice = Date.now();
+  let heardVoice = false;
   let rafId = 0;
   let started = false;
   let cleaned = false;
@@ -90,6 +101,7 @@ async function createAudioRecorder(
 
   const onTrackEnded = () => {
     if (cleaned || cancelled) return;
+    cancelled = true;
     cleanup();
     callbacks.onError(new Error('microphoneDisconnected'));
   };
@@ -103,6 +115,7 @@ async function createAudioRecorder(
   };
 
   mediaRecorder.onerror = () => {
+    cancelled = true;
     cleanup();
     callbacks.onError(new Error('mediaRecorderError'));
   };
@@ -126,9 +139,12 @@ async function createAudioRecorder(
       sum += v * v;
     }
     const rms = Math.sqrt(sum / data.length);
-    if (rms > threshold) lastVoice = Date.now();
+    if (rms > threshold) {
+      heardVoice = true;
+      lastVoice = Date.now();
+    }
 
-    if (Date.now() - lastVoice > silenceMs) {
+    if (heardVoice && Date.now() - lastVoice > silenceMs) {
       stop();
       return;
     }

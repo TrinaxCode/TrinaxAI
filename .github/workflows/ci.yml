@@ -71,7 +71,7 @@ jobs:
           python -m pip install -e .
 
       - name: Python syntax check
-        run: python -m py_compile rag_api.py config.py index.py trinaxai_cli.py
+        run: python -m py_compile rag_api.py config.py index.py trinaxai_cli/app.py
 
       - name: Ruff lint
         run: ruff check .

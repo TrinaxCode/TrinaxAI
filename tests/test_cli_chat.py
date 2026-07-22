@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from contextlib import contextmanager
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Iterator
 
@@ -57,6 +58,7 @@ def test_cli_identity_answers_are_complete_and_deterministic() -> None:
     creator = prompts.canonical_identity_answer([{"role": "user", "content": "quien te creo"}])
     assert identity and "TrinaxAI" in identity and "github.com/TrinaxCode/TrinaxAI" in identity
     assert creator and "Full Stack Web Developer" in creator and "Tuxtla Gutiérrez" in creator
+    assert "wa.me" not in creator
 
 
 class FakeClient:
@@ -226,13 +228,48 @@ def test_default_engine_matches_pwa_general_chat() -> None:
     assert chat._resolve_engine(SimpleNamespace(engine="general"), config, ["docs"]) == "ollama"
 
 
+def test_default_collection_does_not_route_a_greeting_to_rag(monkeypatch) -> None:
+    routes = []
+    models = []
+
+    @contextmanager
+    def session(_name):
+        yield object()
+
+    monkeypatch.setattr(chat, "Session", session)
+
+    def dispatch(_user, route, _messages, _client, _ui, _config, state, _session):
+        routes.append(route)
+        models.append(state.model)
+
+    monkeypatch.setattr(chat, "_dispatch_turn", dispatch)
+
+    result = chat.run(
+        SimpleNamespace(
+            session="test",
+            collections=None,
+            engine=None,
+            workspace=None,
+            prompt="hola",
+            invocation_cwd=".",
+        ),
+        object(),
+        FakeUI(),
+        CLIConfig(),
+    )
+
+    assert result == 0
+    assert routes[0].mode == "chat"
+    assert models == ["qwen3.5:2b"]
+
+
 def test_ask_rag_uses_configured_default_collection(monkeypatch) -> None:
     config = CLIConfig(engine="rag", collections=["docs"], active_collection="docs")
     ui = FakeUI()
     captured: dict[str, Any] = {}
 
     def stream_answer(client, ui_arg, messages, engine, collections, model):
-        captured.update(engine=engine, collections=collections)
+        captured.update(engine=engine, collections=collections, model=model)
         return "ok"
 
     monkeypatch.setattr(ask, "_stream_answer", stream_answer)
@@ -244,7 +281,7 @@ def test_ask_rag_uses_configured_default_collection(monkeypatch) -> None:
     )
 
     assert result == 0
-    assert captured == {"engine": "rag", "collections": ["docs"]}
+    assert captured == {"engine": "rag", "collections": ["docs"], "model": "qwen3.5:2b"}
 
 
 def test_new_cli_chats_get_isolated_session_names() -> None:
@@ -334,3 +371,15 @@ def test_slash_registry_dispatches_inline_prompt_and_rejects_unknown() -> None:
     assert state.forced_mode == "web"
     assert state.pending_input == "latest local AI news"
     assert unknown is False and unknown_exit is None
+
+
+def test_cd_changes_session_workspace_and_resets_agent(tmp_path: Path) -> None:
+    (tmp_path / "subdir").mkdir()
+    state = chat.ChatState(workspace=str(tmp_path), agent_engine=object())
+    ui = FakeUI()
+
+    assert chat._handle_cd("cd subdir", state, ui) is True
+
+    assert state.workspace == str((tmp_path / "subdir").resolve())
+    assert state.agent_engine is None
+    assert ui.successes[-1].endswith(str((tmp_path / "subdir").resolve()))

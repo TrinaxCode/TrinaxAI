@@ -40,7 +40,7 @@ def run(args: Any, client: Any, ui: Any, config: Any) -> int:
     with Session(getattr(args, "session", None) or new_session_name()) as session:
         session.append("user", prompt)
         try:
-            answer = _stream_answer(client, ui, messages, engine, collections, None)
+            answer = _stream_answer(client, ui, messages, engine, collections, getattr(config, "model", None))
         except Exception as exc:
             ui.error(f"Cannot reach the local AI service: {exc}")
             ui.info("Start TrinaxAI with: trinaxai start")

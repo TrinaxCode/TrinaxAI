@@ -3,7 +3,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: trinaxai-api:local
+    image: "${TRINAXAI_DOCKER_IMAGE:-trinaxai-api:local}"
     init: true
     restart: unless-stopped
     user: "${TRINAXAI_DOCKER_UID:-1000}:${TRINAXAI_DOCKER_GID:-1000}"

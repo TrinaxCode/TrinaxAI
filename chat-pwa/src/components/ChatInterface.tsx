@@ -1917,24 +1917,26 @@ function ChatInterface({
 
   return (
     <div className="relative flex h-full min-h-0 min-w-0 max-w-full flex-col overflow-hidden transition-colors duration-300">
-      <ChatHeader
-        engine={engine}
-        temporary={temporary}
-        isDark={isDark}
-        messageCount={messages.length}
-        researchMode={researchMode}
-        webSearchMode={webSearchMode}
-        exportMenuOpen={exportMenuOpen}
-        onMenuToggle={onMenuToggle}
-        onEngineChange={onEngineChange}
-        onResearchModeChange={setResearchMode}
-        onWebSearchModeChange={setWebSearchMode}
-        onExportMenuChange={setExportMenuOpen}
-        onExportMarkdown={exportMarkdown}
-        onExportPdf={exportPdf}
-        onExportWord={exportWord}
-        onOpenAgent={onNavigate ? () => onNavigate('agent') : undefined}
-      />
+      {!callMode && (
+        <ChatHeader
+          engine={engine}
+          temporary={temporary}
+          isDark={isDark}
+          messageCount={messages.length}
+          researchMode={researchMode}
+          webSearchMode={webSearchMode}
+          exportMenuOpen={exportMenuOpen}
+          onMenuToggle={onMenuToggle}
+          onEngineChange={onEngineChange}
+          onResearchModeChange={setResearchMode}
+          onWebSearchModeChange={setWebSearchMode}
+          onExportMenuChange={setExportMenuOpen}
+          onExportMarkdown={exportMarkdown}
+          onExportPdf={exportPdf}
+          onExportWord={exportWord}
+          onOpenAgent={onNavigate ? () => onNavigate('agent') : undefined}
+        />
+      )}
 
       {callMode ? (
         <VoiceCallView

@@ -190,7 +190,7 @@ def _status(_arg: str, ctx: SlashContext) -> None:
 def _index(arg: str, ctx: SlashContext) -> None:
     from trinaxai_cli.commands import index as index_cmd
 
-    idx_args = SimpleNamespace(path=arg or ".", folder=None, collection="default", append=False)
+    idx_args = SimpleNamespace(path=arg or ctx.state.workspace, folder=None, collection="default", append=False)
     index_cmd.run(idx_args, None, ctx.ui, ctx.config)
 
 
@@ -361,6 +361,7 @@ def _slash_help(ui: Any) -> None:
                 "  /model             Select an installed model and Ollama/RAG mode",
                 "  /model NAME MODE   Set directly, e.g. /model qwen3.5:4b rag",
                 "  /workspace (path)  Set the agent workspace (default: current dir)",
+                "  cd PATH            Change the session directory",
                 "  /yolo              Toggle agent auto-approve (dangerous)",
                 "  /index (path)      Index a folder, default: current directory",
                 "  /memory            List persistent memories",

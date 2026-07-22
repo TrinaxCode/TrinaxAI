@@ -18,6 +18,31 @@ class _FakeDocstore:
     docs = {"node-1": _FakeNode()}
 
 
+def test_collection_crud_round_trip(tmp_path, monkeypatch) -> None:
+    collections_path = tmp_path / "collections.json"
+    monkeypatch.setattr(rag_api.config, "PERSIST_DIR", str(tmp_path))
+    monkeypatch.setattr(rag_api.config, "COLLECTIONS_PATH", str(collections_path))
+    monkeypatch.setattr(rag_api, "_delete_collection_nodes", lambda _collection_id: 3)
+    client = TestClient(rag_api.app, client=("127.0.0.1", 50000))
+
+    first = client.post("/collections", json={"name": "Project Docs"})
+    second = client.post("/collections", json={"name": "Project Docs"})
+    collection_id = first.json()["collection"]["id"]
+
+    assert first.status_code == 200
+    assert second.json()["collection"]["id"] == "project-docs-2"
+    assert (
+        client.patch(f"/collections/{collection_id}", json={"name": "Reference"}).json()["collection"]["name"]
+        == "Reference"
+    )
+    assert {item["id"] for item in client.get("/collections").json()["collections"]} == {
+        "default",
+        "project-docs",
+        "project-docs-2",
+    }
+    assert client.delete(f"/collections/{collection_id}").json()["deleted_nodes"] == 3
+
+
 def test_research_iter_nodes_reads_loaded_docstore(monkeypatch) -> None:
     monkeypatch.setattr(rag_api, "_fusion_retriever", object())
     monkeypatch.setattr(rag_api, "_index_docstore", _FakeDocstore())

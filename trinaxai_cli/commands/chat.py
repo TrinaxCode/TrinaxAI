@@ -8,8 +8,10 @@ to ``~/.local/share/trinaxai/sessions/<name>.jsonl``.
 from __future__ import annotations
 
 import json
+import shlex
 import time
 import uuid
+from pathlib import Path
 from typing import Any
 
 from trinaxai_cli.commands import _system
@@ -337,6 +339,34 @@ def _run_agent_turn(state: ChatState, client: Any, ui: Any, task: str, config: A
     return answer
 
 
+def _handle_cd(user: str, state: ChatState, ui: Any) -> bool:
+    """Change the session directory without sending the command to the model."""
+    stripped = user.strip()
+    if not stripped or stripped.split(maxsplit=1)[0] != "cd":
+        return False
+    try:
+        parts = shlex.split(stripped)
+    except ValueError as exc:
+        ui.error(f"cd: {exc}")
+        return True
+    if not parts or parts[0] != "cd":
+        return False
+    if len(parts) > 2:
+        ui.error("cd: too many arguments")
+        return True
+    target = Path.home() if len(parts) == 1 else Path(parts[1]).expanduser()
+    if not target.is_absolute():
+        target = Path(state.workspace).expanduser() / target
+    target = target.resolve()
+    if not target.is_dir():
+        ui.error(f"cd: not a directory: {target}")
+        return True
+    state.workspace = str(target)
+    state.agent_engine = None
+    ui.success(f"Current directory: {target}")
+    return True
+
+
 def _resolve_turn_mode(user: str, state: ChatState, config: Any, history: list[dict[str, str]] | None = None) -> Any:
     """Decide the mode for this turn: pinned mode wins, else auto-route."""
     from trinaxai_cli.router import RouteContext, RouteDecision, decide_mode
@@ -445,7 +475,7 @@ def _welcome(ui: Any, session_name: str, state: ChatState) -> None:
                 "  /research  deep multi-pass    /rag      answer from indexed docs",
                 "  /auto   back to auto-routing  /chat     plain chat",
                 "",
-                "Handy:  /model  /workspace PATH  /yolo  /index PATH  /memory  /status",
+                "Handy:  cd PATH  /model  /workspace PATH  /yolo  /index PATH  /memory  /status",
                 "        /help for everything · /exit or Ctrl-D to quit",
             ]
         ),
@@ -461,10 +491,11 @@ def run(args: Any, client: Any, ui: Any, config: Any) -> int:
     collections = getattr(args, "collections", None) or list(getattr(config, "collections", None) or [])
     if isinstance(collections, str):
         collections = [c.strip() for c in collections.split(",") if c.strip()]
-    engine = _resolve_engine(args, config, collections)
+    engine = _resolve_engine(args, config, collections if explicit_collections else [])
     state = ChatState(
         engine=engine,
         collections=list(collections),
+        model=getattr(config, "model", None),
         workspace=str(getattr(args, "invocation_cwd", None) or "."),
     )
     workspace = getattr(args, "workspace", None)
@@ -507,6 +538,8 @@ def run(args: Any, client: Any, ui: Any, config: Any) -> int:
                 if user.strip().lower() in {"exit", "quit", "/exit", "/quit"}:
                     ui.info("bye.")
                     return 0
+                if _handle_cd(user, state, ui):
+                    continue
                 if user.strip().startswith("/"):
                     handled, exit_code = _handle_slash(user, messages, client, ui, config, state)
                     if exit_code is not None:

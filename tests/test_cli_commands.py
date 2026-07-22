@@ -36,6 +36,23 @@ def test_cli_version() -> None:
     assert "TrinaxAI CLI" in result.stdout
 
 
+def test_cli_requires_verified_tls_and_accepts_a_ca_file(tmp_path: Path) -> None:
+    config = tmp_path / "config.toml"
+    config.write_text("[api]\nverify_tls = false\n", encoding="utf-8")
+    ca_file = str(Path("chat-pwa/certs/localhost.pem").resolve())
+
+    rejected = run_cli("--config", str(config), "config")
+    trusted = run_cli("--ca-file", ca_file, "config")
+    with patch.dict(os.environ, {"TRINAXAI_CA_FILE": ca_file}):
+        trusted_from_env = run_cli("--config", str(config), "config")
+
+    assert rejected.returncode == 2
+    assert "--ca-file or TRINAXAI_CA_FILE" in rejected.stderr
+    assert "Traceback" not in rejected.stderr
+    assert trusted.returncode == 0
+    assert trusted_from_env.returncode == 0
+
+
 def test_cli_doctor_without_backend_has_human_error() -> None:
     result = run_cli("--api-url", "http://127.0.0.1:9", "doctor")
     output = result.stdout + result.stderr

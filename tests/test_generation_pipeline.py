@@ -98,6 +98,7 @@ def test_identity_and_creator_profile_use_official_links():
     assert "https://github.com/TrinaxCode/TrinaxAI" in IDENTITY_SHORT
     assert "https://github.com/TrinaxCode" in CREATOR_BIO
     assert "https://www.tiktok.com/@trinaxcode" in CREATOR_BIO
+    assert "wa.me" not in CREATOR_BIO
     assert wants_creator_bio("¿Quién es tu creador?")
     assert wants_creator_bio("compárteme sus redes")
 

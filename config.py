@@ -14,7 +14,7 @@ import os
 import ssl
 from typing import TYPE_CHECKING, Any
 
-from trinaxai_core import VALID_PROFILES, _positive_float, _positive_int
+from trinaxai_core import VALID_PROFILES, _positive_float, _positive_int, normalize_http_base_url
 
 LOG = logging.getLogger("trinaxai.config")
 
@@ -62,7 +62,7 @@ PROJECTS_DIRS = [
 ]
 
 # ==================== MODELS ====================
-OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+OLLAMA_BASE_URL = normalize_http_base_url(os.getenv("OLLAMA_BASE_URL"), "http://localhost:11434")
 TRINAXAI_PROFILE = os.getenv("TRINAXAI_PROFILE", "16gb").strip().lower()
 TRINAXAI_PERFORMANCE_MODE = os.getenv("TRINAXAI_PERFORMANCE_MODE", "fast").strip().lower() or "fast"
 if TRINAXAI_PERFORMANCE_MODE not in {"fast", "balanced", "quality"}:

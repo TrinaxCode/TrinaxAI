@@ -33,6 +33,7 @@ from pathlib import Path
 from typing import Any, Callable, ContextManager
 
 from trinaxai_cli.agent.tools import DEFAULT_TOOLS, SandboxError, Tool, build_tool_map
+from trinaxai_core import normalize_http_base_url
 
 ConfirmFn = Callable[[Tool, dict[str, Any]], bool]
 NotifyFn = Callable[[Tool, dict[str, Any]], None]
@@ -112,6 +113,9 @@ class AgentEngine:
 
     def __post_init__(self) -> None:
         self.workspace_root = Path(self.workspace_root).expanduser().resolve()
+        self.ollama_url = normalize_http_base_url(self.ollama_url)
+        if not self.ollama_url:
+            raise ValueError("ollama_url must use http:// or https:// and include a host")
         self._tool_map = build_tool_map(self.tools)
         if self.system_prompt is None:
             self.system_prompt = default_system_prompt(self.workspace_root)
@@ -466,7 +470,8 @@ class AgentEngine:
                 headers={"Content-Type": "application/json"},
                 method="POST",
             )
-            with urllib.request.urlopen(req, timeout=600) as response:
+            # ollama_url is restricted to HTTP(S) with a host in __post_init__.
+            with urllib.request.urlopen(req, timeout=600) as response:  # nosec B310
                 with self._response_lock:
                     self._active_response = response
                 for raw in response:
@@ -546,7 +551,8 @@ class AgentEngine:
         for attempt in range(3):
             req = urllib.request.Request(url, data=body, headers={"Content-Type": "application/json"}, method="POST")
             try:
-                with urllib.request.urlopen(req, timeout=600) as response:
+                # ollama_url is restricted to HTTP(S) with a host in __post_init__.
+                with urllib.request.urlopen(req, timeout=600) as response:  # nosec B310
                     return json.loads(response.read().decode("utf-8"))
             except urllib.error.HTTPError as exc:
                 last_exc = exc

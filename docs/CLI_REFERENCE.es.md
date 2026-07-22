@@ -14,14 +14,14 @@ trinaxai COMMAND --help
 Sin subcomando, `trinaxai` abre el chat interactivo. Las opciones globales deben colocarse antes del subcomando:
 
 ```bash
-trinaxai --api-url https://localhost:3333 --insecure ask "Estado del índice"
+trinaxai --api-url https://localhost:3333 --ca-file /ruta/rootCA.pem ask "Estado del índice"
 ```
 
 | Opción global | Uso |
 |---|---|
 | `--api-url URL` | Sobrescribe la URL de la API RAG. |
+| `--ca-file PATH` | Confía en un bundle CA explícito sin desactivar la validación HTTPS. |
 | `--install-root PATH` | Indica la raíz de una instalación completa. |
-| `--insecure` | Desactiva la validación TLS; úsalo solo con certificados locales de confianza conocida. |
 | `--config PATH` | Carga un TOML concreto. |
 | `--no-color` | Desactiva color ANSI. |
 | `-v`, `--verbose` | Activa logs de depuración. |
@@ -61,6 +61,7 @@ registro actual incluye:
 | `/auto` | Restaura el enrutamiento automático por turno. |
 | `/model [NOMBRE MODO]` | Elige modelo instalado y modo Ollama/RAG. |
 | `/workspace [RUTA]` | Cambia el workspace del agente. |
+| `cd [RUTA]` | Cambia el directorio de la sesión; las rutas relativas parten del directorio actual. |
 | `/yolo` | Alterna la aprobación automática peligrosa. |
 | `/index [RUTA]` | Indexa una carpeta. |
 | `/memory` | Lista memorias persistentes. |

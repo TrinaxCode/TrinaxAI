@@ -12,6 +12,7 @@ from collections.abc import Mapping
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 SAFE_DEFAULTS = {
     "profile": "16gb",
@@ -52,6 +53,28 @@ VALID_PROFILES = frozenset(
         "bajo",
     }
 )
+
+
+def normalize_http_base_url(value: Any, fallback: str = "") -> str:
+    """Return a normalized HTTP(S) base URL or the supplied safe fallback."""
+    text = str(value or "").strip()
+    try:
+        parsed = urlsplit(text)
+        valid = (
+            parsed.scheme in {"http", "https"}
+            and bool(parsed.hostname)
+            and parsed.username is None
+            and parsed.password is None
+            and parsed.path in {"", "/"}
+            and not parsed.query
+            and not parsed.fragment
+            and not any(char.isspace() for char in parsed.netloc)
+        )
+        if valid:
+            parsed.port  # Validate malformed ports while parsing.
+    except ValueError:
+        valid = False
+    return text.rstrip("/") if valid else str(fallback).rstrip("/")
 
 
 def sanitize_collection_id(value: str | None, *, fallback: str = "collection") -> str:
@@ -180,9 +203,10 @@ def validate_runtime_config(env: Mapping[str, str]) -> dict[str, Any]:
     if profile not in VALID_PROFILES:
         profile = str(SAFE_DEFAULTS["profile"])
 
-    base_url = str(env.get("OLLAMA_BASE_URL", SAFE_DEFAULTS["ollama_base_url"])).strip()
-    if not base_url.startswith(("http://", "https://")):
-        base_url = str(SAFE_DEFAULTS["ollama_base_url"])
+    base_url = normalize_http_base_url(
+        env.get("OLLAMA_BASE_URL"),
+        str(SAFE_DEFAULTS["ollama_base_url"]),
+    )
 
     allow_lan = str(env.get("TRINAXAI_ALLOW_LAN_SYSTEM", "0")).strip().lower() in {
         "1",
@@ -193,7 +217,7 @@ def validate_runtime_config(env: Mapping[str, str]) -> dict[str, Any]:
 
     return {
         "profile": profile,
-        "ollama_base_url": base_url.rstrip("/"),
+        "ollama_base_url": base_url,
         "default_collection_id": sanitize_collection_id(
             str(env.get("TRINAXAI_DEFAULT_COLLECTION_ID", SAFE_DEFAULTS["default_collection_id"])),
             fallback=str(SAFE_DEFAULTS["default_collection_id"]),

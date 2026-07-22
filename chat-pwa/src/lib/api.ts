@@ -1569,8 +1569,8 @@ export function creatorSystemPrompt(messages: ChatMessage[], lang: 'en' | 'es'):
   return [{
     role: 'system',
     content: lang === 'en'
-      ? 'Verified creator facts: TrinaxAI was created by TrinaxCode, a Full Stack Web Developer based in Tuxtla Gutiérrez, Chiapas, Mexico, originally from Nicaragua. Expertise: React, TypeScript, Django, PostgreSQL and Firebase. Answer in one or two factual sentences; never say they are originally from Tuxtla. Give links only when requested: GitHub https://github.com/TrinaxCode, LinkedIn https://www.linkedin.com/in/trinaxcode/, X https://x.com/TrinaxCode, TikTok https://www.tiktok.com/@trinaxcode, Instagram https://www.instagram.com/trinaxcode/, Facebook https://www.facebook.com/TrinaxCode, ORCID https://orcid.org/0009-0009-2321-9834, email mailto:trinaxcode@gmail.com, WhatsApp https://wa.me/529618533231.'
-      : 'Datos verificados del creador: TrinaxAI fue creado por TrinaxCode, Full Stack Web Developer radicado en Tuxtla Gutiérrez, Chiapas, México, y originario de Nicaragua. Domina React, TypeScript, Django, PostgreSQL y Firebase. Responde en una o dos oraciones factuales; nunca digas que es originario de Tuxtla. Da enlaces solo si se piden: GitHub https://github.com/TrinaxCode, LinkedIn https://www.linkedin.com/in/trinaxcode/, X https://x.com/TrinaxCode, TikTok https://www.tiktok.com/@trinaxcode, Instagram https://www.instagram.com/trinaxcode/, Facebook https://www.facebook.com/TrinaxCode, ORCID https://orcid.org/0009-0009-2321-9834, correo mailto:trinaxcode@gmail.com, WhatsApp https://wa.me/529618533231.',
+      ? 'Verified creator facts: TrinaxAI was created by TrinaxCode, a Full Stack Web Developer based in Tuxtla Gutiérrez, Chiapas, Mexico, originally from Nicaragua. Expertise: React, TypeScript, Django, PostgreSQL and Firebase. Answer in one or two factual sentences; never say they are originally from Tuxtla. Give links only when requested: GitHub https://github.com/TrinaxCode, LinkedIn https://www.linkedin.com/in/trinaxcode/, X https://x.com/TrinaxCode, TikTok https://www.tiktok.com/@trinaxcode, Instagram https://www.instagram.com/trinaxcode/, Facebook https://www.facebook.com/TrinaxCode, ORCID https://orcid.org/0009-0009-2321-9834, email mailto:trinaxcode@gmail.com.'
+      : 'Datos verificados del creador: TrinaxAI fue creado por TrinaxCode, Full Stack Web Developer radicado en Tuxtla Gutiérrez, Chiapas, México, y originario de Nicaragua. Domina React, TypeScript, Django, PostgreSQL y Firebase. Responde en una o dos oraciones factuales; nunca digas que es originario de Tuxtla. Da enlaces solo si se piden: GitHub https://github.com/TrinaxCode, LinkedIn https://www.linkedin.com/in/trinaxcode/, X https://x.com/TrinaxCode, TikTok https://www.tiktok.com/@trinaxcode, Instagram https://www.instagram.com/trinaxcode/, Facebook https://www.facebook.com/TrinaxCode, ORCID https://orcid.org/0009-0009-2321-9834, correo mailto:trinaxcode@gmail.com.',
   }];
 }
 
@@ -1864,7 +1864,6 @@ export async function streamOllama(
             options: ollamaRuntimeOptions({
               num_ctx: analyticalTurn ? ANALYTICAL_NUM_CTX : TEXT_NUM_CTX,
               num_predict: analyticalTurn ? ANALYTICAL_NUM_PREDICT : TEXT_NUM_PREDICT,
-              num_thread: 8,
               temperature: analyticalTurn ? 0.15 : 0.4,
               repeat_penalty: analyticalTurn ? 1.08 : 1.1,
             }, { preserveContext: analyticalTurn }),
@@ -1965,7 +1964,6 @@ async function streamOllamaVision(
       options: ollamaRuntimeOptions({
         num_ctx: VISION_NUM_CTX,
         num_predict: VISION_NUM_PREDICT,
-        num_thread: 8,
       }, { preserveContext: true }),
     }),
     signal,
@@ -2065,7 +2063,6 @@ export async function describeImageForAgent(
       options: ollamaRuntimeOptions({
         num_ctx: VISION_NUM_CTX,
         num_predict: VISION_NUM_PREDICT,
-        num_thread: 8,
       }, { preserveContext: true }),
     }),
     signal,

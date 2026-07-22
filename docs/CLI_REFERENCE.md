@@ -13,14 +13,14 @@ trinaxai COMMAND --help
 Running `trinaxai` without a subcommand opens interactive chat. Global options must precede the subcommand:
 
 ```bash
-trinaxai --api-url https://localhost:3333 --insecure ask "Show index status"
+trinaxai --api-url https://localhost:3333 --ca-file /path/to/rootCA.pem ask "Show index status"
 ```
 
 | Global option | Purpose |
 |---|---|
 | `--api-url URL` | Override the RAG API URL. |
+| `--ca-file PATH` | Trust an explicit CA bundle while keeping HTTPS verification enabled. |
 | `--install-root PATH` | Point to a full TrinaxAI installation. |
-| `--insecure` | Disable TLS validation; use only for a known local certificate. |
 | `--config PATH` | Load a specific TOML file. |
 | `--no-color` | Disable ANSI colors. |
 | `-v`, `--verbose` | Enable debug logging. |
@@ -74,6 +74,7 @@ currently exposes:
 | `/auto` | Restore automatic routing for every turn. |
 | `/model [NAME MODE]` | Select an installed model and Ollama/RAG mode. |
 | `/workspace [PATH]` | Set the agent workspace. |
+| `cd [PATH]` | Change the session directory; relative paths start from the current directory. |
 | `/yolo` | Toggle dangerous agent auto-approval. |
 | `/index [PATH]` | Index a folder. |
 | `/memory` | List persistent memories. |

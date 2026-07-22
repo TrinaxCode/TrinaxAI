@@ -11,8 +11,7 @@ def test_cli_defaults_to_verified_https():
     assert DEFAULT_BASE_URL == "https://localhost:3333"
 
 
-def test_local_ca_file_is_used_without_disabling_verification(tmp_path, monkeypatch):
-    ca_file = tmp_path / "rootCA.pem"
+def test_local_ca_file_is_used_without_disabling_verification(monkeypatch):
     ca_file = Path(__file__).parents[1] / "chat-pwa" / "certs" / "localhost.pem"
     monkeypatch.setenv("TRINAXAI_CA_FILE", str(ca_file))
     client = object.__new__(TrinaxAPIClient)
@@ -23,8 +22,7 @@ def test_local_ca_file_is_used_without_disabling_verification(tmp_path, monkeypa
         client._resolve_local_ca(False)
 
 
-def test_remote_urls_never_trust_the_local_ca(tmp_path, monkeypatch):
-    ca_file = Path(tmp_path) / "rootCA.pem"
+def test_remote_urls_never_trust_the_local_ca(monkeypatch):
     ca_file = Path(__file__).parents[1] / "chat-pwa" / "certs" / "localhost.pem"
     monkeypatch.setenv("TRINAXAI_CA_FILE", str(ca_file))
     client = object.__new__(TrinaxAPIClient)

@@ -90,7 +90,7 @@ Antes de abrir un PR o hacer push a main, ejecuta:
 ```bash
 # Python
 python3 scripts/public_readiness.py
-python3 -m py_compile rag_api.py config.py index.py trinaxai_cli.py
+python3 -m py_compile rag_api.py config.py index.py trinaxai_cli/app.py
 ruff check .
 
 # Frontend

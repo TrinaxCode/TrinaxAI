@@ -27,9 +27,7 @@ child processes and normally should not be added to `.env`.
 | `TRINAXAI_HEALTH_URL` | derived from port/TLS | Health URL used by installers and diagnostics. |
 | `TRINAXAI_FRONTEND_URL` | `https://localhost:3334` | Public/local URL reported for the PWA. |
 | `TRINAXAI_FRONTEND_MODE` | `preview` | Vite script used by the service manager; `dev` selects HMR. |
-| `TRINAXAI_RAG_HOST` | `localhost` | Host used by the legacy standalone CLI client. |
-| `TRINAXAI_RAG_URL` | derived from host/port | Full RAG URL override for the legacy standalone CLI client. |
-| `TRINAXAI_TLS_VERIFY` | `0` for the legacy standalone client | Verify TLS certificates for supported legacy/backend requests. The packaged CLI TOML defaults `api.verify_tls` to `true`; `--insecure` is explicit. |
+| `TRINAXAI_TLS_VERIFY` | `0` | Verify TLS certificates for selected outgoing backend requests. The CLI always verifies TLS; use `--ca-file` or `TRINAXAI_CA_FILE` for a private CA. |
 | `TRINAXAI_CORS_ORIGINS` | safe local origins | Comma-separated exact browser origins. CORS is not authentication. |
 | `TRINAXAI_CORS_ORIGIN_REGEX` | private-LAN regex | Additional FastAPI origin regular expression. Review carefully before widening it. |
 | `TRINAXAI_ALLOW_LAN_SYSTEM` | `0` | Enables the legacy private-LAN fallback for system control only when no admin token exists. Prefer scoped device pairing. |
@@ -47,6 +45,20 @@ child processes and normally should not be added to `.env`.
 | `TRINAXAI_APP_STATE_MAX_BYTES` | `6291456` | Maximum persisted shared PWA state size. |
 | `TRINAXAI_CONFIG` | platform config path | Explicit TOML path for the packaged CLI. |
 | `TRINAXAI_NO_COLOR` | unset | Disables ANSI color in CLI output when set. |
+
+## Docker Compose
+
+These values are consumed by `compose.yaml`; they are deployment settings, not
+FastAPI application options.
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `TRINAXAI_DOCKER_IMAGE` | `trinaxai-api:local` | Backend image. Set `ghcr.io/trinaxcode/trinaxai:1.0.0` to use the pinned official package. |
+| `TRINAXAI_DOCKER_UID` / `TRINAXAI_DOCKER_GID` | `1000` | Host identity used inside the container so mounted files remain owned by the caller. |
+| `TRINAXAI_DOCKER_PORT` | `3333` | Host loopback port mapped to container port `3333`. |
+| `TRINAXAI_DOCKER_OLLAMA_URL` | `http://host.docker.internal:11434` | Ollama endpoint reachable from the container. |
+| `TRINAXAI_DOCKER_INDEX_DIR` | `./projects` | Host directory mounted read-only at `/data/projects`. |
+| `TRINAXAI_DOCKER_NETWORK_CIDR` | `172.31.0.0/24` | Private Compose subnet and trusted HMAC transport range. Change both through this one value if it conflicts. |
 
 ## Models, generation, and embeddings
 

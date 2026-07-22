@@ -39,6 +39,7 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument("--api-url", help="RAG API base URL (overrides config).")
+    parser.add_argument("--ca-file", help="CA certificate bundle for verified HTTPS.")
     parser.add_argument("--install-root", help="Full TrinaxAI installation directory (overrides auto-discovery).")
     parser.add_argument(
         "--config",
@@ -278,9 +279,17 @@ def main(argv: Sequence[str] | None = None) -> int:
         config_path = CLIConfig.find_config()
     config = CLIConfig.load(config_path) if config_path else CLIConfig.load()
 
-    # 2. Resolve effective api_url and verify_tls.
+    # 2. Resolve effective api_url and verified TLS trust.
     api_url = args.api_url or config.api["base_url"]
-    verify_tls = bool(config.api.get("verify_tls", True))
+    verify_tls: bool | str = bool(config.api.get("verify_tls", True))
+    ca_file_value = args.ca_file or os.getenv("TRINAXAI_CA_FILE", "").strip()
+    if ca_file_value:
+        ca_file = Path(ca_file_value).expanduser().resolve()
+        if not ca_file.is_file():
+            parser.error(f"CA file not found: {ca_file}")
+        verify_tls = str(ca_file)
+    elif verify_tls is False:
+        parser.error("api.verify_tls=false is not supported; use --ca-file or TRINAXAI_CA_FILE")
 
     # 3. Build UI console (honours --no-color, $NO_COLOR, config.ui.color).
     no_color = bool(args.no_color) or (str(config.ui.get("color", "auto")) == "never")

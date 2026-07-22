@@ -37,7 +37,6 @@ cp .env.example .env
 │   ├── services/          # Chat, fuentes, memoria, indexación, sistema, etc.
 │   └── security/          # Autorización y rate limiting
 ├── trinaxai_cli/          # Interfaz de terminal (modular, con subcomandos)
-├── trinaxai_cli.py        # CLI autónomo heredado (deprecado)
 ├── service_manager.py     # Supervisor de servicios multiplataforma
 ├── test_system.py         # Verificaciones de salud automatizadas
 │

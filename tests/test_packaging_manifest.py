@@ -16,3 +16,11 @@ def test_wheel_includes_backend_runtime_modules() -> None:
     }
     for module in required:
         assert f'"{module}"' in manifest
+
+
+def test_project_has_one_canonical_cli() -> None:
+    root = Path(__file__).resolve().parents[1]
+    manifest = (root / "pyproject.toml").read_text(encoding="utf-8")
+
+    assert 'trinaxai = "trinaxai_cli.app:main"' in manifest
+    assert not (root / "trinaxai_cli.py").exists()

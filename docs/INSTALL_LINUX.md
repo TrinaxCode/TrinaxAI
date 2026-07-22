@@ -361,9 +361,15 @@ Then start only the host PWA gateway and the Docker API:
 ```bash
 export TRINAXAI_DOCKER_UID="$(id -u)"
 export TRINAXAI_DOCKER_GID="$(id -g)"
-docker compose up --build -d
+export TRINAXAI_DOCKER_IMAGE=ghcr.io/trinaxcode/trinaxai:1.0.0
+docker compose pull
+docker compose up --no-build -d
 .venv/bin/python service_manager.py start-frontend --base-dir "$PWD"
 ```
+
+The registry also publishes `1.0`, `1`, and `latest` tags. Pin `1.0.0` for a
+reproducible deployment. To build the current checkout instead, omit
+`TRINAXAI_DOCKER_IMAGE` and run `docker compose up --build -d`.
 
 The API is published only on `127.0.0.1:3333`, so the native PWA can keep
 using its gateway on `3334`. Indexes, sources, and secrets remain in
@@ -378,14 +384,14 @@ to another free private subnet. To use another Ollama address:
 
 ```bash
 TRINAXAI_DOCKER_OLLAMA_URL=http://host.docker.internal:11434 \
-  docker compose up -d
+  docker compose up --no-build -d
 ```
 
 The container indexes `./projects` read-only. To use another host directory,
 set `TRINAXAI_DOCKER_INDEX_DIR` before starting:
 
 ```bash
-TRINAXAI_DOCKER_INDEX_DIR=/path/to/documents docker compose up -d
+TRINAXAI_DOCKER_INDEX_DIR=/path/to/documents docker compose up --no-build -d
 ```
 
 Check status and stop it with:

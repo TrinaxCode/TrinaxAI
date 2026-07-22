@@ -314,6 +314,10 @@ class AgentParserTests(unittest.TestCase):
         self.assertTrue(args.yolo)
         self.assertEqual(args.max_steps, 5)
 
+    def test_agent_rejects_non_http_ollama_urls(self) -> None:
+        with TemporaryDirectory() as tmp, self.assertRaisesRegex(ValueError, "http:// or https://"):
+            AgentEngine(model="test", workspace_root=Path(tmp), ollama_url="file:///tmp/socket")
+
 
 class MeaningfulAnswerTests(unittest.TestCase):
     def test_simple_root_listing_is_identified_for_early_stop(self) -> None:

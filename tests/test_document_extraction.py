@@ -2,7 +2,25 @@ from __future__ import annotations
 
 from io import BytesIO
 
+from starlette.testclient import TestClient
+
 import rag_api
+
+
+def test_extracts_plain_text_through_api() -> None:
+    response = TestClient(rag_api.app, client=("127.0.0.1", 50000)).post(
+        "/documents/extract",
+        files={"file": ("notes.txt", "Información local".encode(), "text/plain")},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "ok": True,
+        "name": "notes.txt",
+        "text": "Información local",
+        "chars": 17,
+        "truncated": False,
+    }
 
 
 def test_extracts_pptx_text() -> None:

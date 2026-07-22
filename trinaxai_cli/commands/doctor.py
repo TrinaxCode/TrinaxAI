@@ -13,6 +13,7 @@ from typing import Any
 
 from trinaxai_cli.commands import _system
 from trinaxai_cli.processes import run_process_group
+from trinaxai_core import normalize_http_base_url
 
 
 def _process_command(pid: int | None) -> str:
@@ -77,8 +78,12 @@ def _find_ollama() -> str | None:
 
 
 def _ollama_api_ok(base_url: str = "http://127.0.0.1:11434") -> bool:
+    base_url = normalize_http_base_url(base_url)
+    if not base_url:
+        return False
     try:
-        with urllib.request.urlopen(f"{base_url.rstrip('/')}/api/tags", timeout=3) as response:
+        # base_url is restricted to HTTP(S) with a host above.
+        with urllib.request.urlopen(f"{base_url}/api/tags", timeout=3) as response:  # nosec B310
             return 200 <= int(response.status) < 300
     except (OSError, urllib.error.URLError, ValueError):
         return False
@@ -95,7 +100,7 @@ def run(args: Any, client: Any, ui: Any, config: Any) -> int:
     add("Install root", root is not None, str(root) if root else "set TRINAXAI_HOME or reinstall", critical=True)
     add("Service manager", _system.service_manager().is_file(), str(_system.service_manager()), critical=True)
     ollama_path = _find_ollama()
-    ollama_api = _ollama_api_ok(str(getattr(config, "OLLAMA_BASE_URL", "http://127.0.0.1:11434")))
+    ollama_api = _ollama_api_ok(_system.env_value("OLLAMA_BASE_URL") or "http://127.0.0.1:11434")
     add(
         "Ollama command",
         bool(ollama_path or ollama_api),

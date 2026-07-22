@@ -196,6 +196,7 @@ describe('api helpers', () => {
     expect(prompts[0].content).toContain('https://www.linkedin.com/in/trinaxcode/');
     expect(prompts[0].content).toContain('https://www.tiktok.com/@trinaxcode');
     expect(prompts[0].content).toContain('https://www.instagram.com/trinaxcode/');
+    expect(prompts[0].content).not.toContain('wa.me');
     expect(prompts[0].content).not.toContain('github.com/TrinaxAI');
     expect(prompts[0].content).not.toContain('Stack Overflow');
   });

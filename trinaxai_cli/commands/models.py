@@ -1,14 +1,15 @@
 from __future__ import annotations
 
-import os
 from typing import Any
+
+from trinaxai_cli.commands import _system
 
 RECOMMENDED = ["qwen3.5:2b", "qwen3.5:4b", "qwen3-embedding:0.6b"]
 ON_DEMAND: list[str] = []
 
 
 def run(args: Any, client: Any, ui: Any, config: Any) -> int:
-    base = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434").rstrip("/")
+    base = _system.env_value("OLLAMA_BASE_URL") or "http://localhost:11434"
     rows: list[list[str]] = []
     installed: set[str] = set()
     try:
