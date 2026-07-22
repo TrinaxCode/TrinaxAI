@@ -20,33 +20,10 @@ import {
   normalizeAddress,
 } from './vite-security';
 import { acquireInferenceProcessLock } from './inference-lock';
+import { PWA_SECURITY_HEADERS } from './security-headers';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '..');
-const PWA_SECURITY_HEADERS = {
-  'Content-Security-Policy': [
-    "default-src 'self'",
-    "base-uri 'self'",
-    "form-action 'self'",
-    "frame-ancestors 'none'",
-    "object-src 'none'",
-    "script-src 'self'",
-    "style-src 'self' 'unsafe-inline'",
-    "font-src 'self' data:",
-    "img-src 'self' data: blob:",
-    "media-src 'self' data: blob:",
-    "connect-src 'self' ws: wss:",
-    "worker-src 'self' blob:",
-    "manifest-src 'self'",
-  ].join('; '),
-  'Strict-Transport-Security': 'max-age=31536000',
-  'X-Content-Type-Options': 'nosniff',
-  'Referrer-Policy': 'no-referrer',
-  'Permissions-Policy': 'camera=(self), microphone=(self), geolocation=(), payment=(), usb=()',
-  'X-Frame-Options': 'DENY',
-  'Cross-Origin-Opener-Policy': 'same-origin',
-  'Cross-Origin-Resource-Policy': 'same-origin',
-};
 const certKey = path.join(__dirname, 'certs', 'localhost-key.pem');
 const certFile = path.join(__dirname, 'certs', 'localhost.pem');
 const certPfx = path.join(__dirname, 'certs', 'trinaxai-local.pfx');
@@ -339,12 +316,19 @@ function proxyConfig() {
       ? new https.Agent({ ca: localCa })
       : undefined;
   };
+  const verifyTls = (target: string) => {
+    const url = new URL(target);
+    // The local API may use a private development CA that Node does not load.
+    // This exception is limited to an explicit loopback target; every remote
+    // HTTPS proxy target continues to require normal certificate validation.
+    return url.protocol !== 'https:' || !isLoopbackAddress(url.hostname);
+  };
   return {
     '/api/rag': {
       target: ragTarget,
       agent: trustedAgent(ragTarget),
       changeOrigin: true,
-      secure: true,
+      secure: verifyTls(ragTarget),
       xfwd: false,
       rewrite: (proxyPath: string) => proxyPath.replace(/^\/api\/rag/, ''),
       configure: (proxy: any) => {
@@ -355,7 +339,7 @@ function proxyConfig() {
       target: ollamaTarget,
       agent: trustedAgent(ollamaTarget),
       changeOrigin: true,
-      secure: true,
+      secure: verifyTls(ollamaTarget),
       xfwd: false,
       headers: { Origin: ollamaTarget },
       rewrite: (proxyPath: string) => proxyPath.replace(/^\/api\/ollama/, ''),

@@ -130,7 +130,7 @@ def build_task_spec(
 
     ``model_override`` (from the PWA model selector / API) wins for the *model*
     but the regime and decoding params are still tuned to the task — so a user
-    can force qwen2.5-coder:7b and still get the creative regime for a landing.
+    can force another installed model and still get the creative regime for a landing.
     ``has_index`` lets grounded-QA fall back to a free regime when no index
     exists. ``estimated_prompt_tokens`` feeds the num_predict reservation.
     """

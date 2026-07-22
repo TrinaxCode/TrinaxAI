@@ -232,6 +232,7 @@ export default function ChatComposer({
         )}
 
         <textarea
+          data-group-focus
           ref={inputRef}
           value={input}
           onChange={onInputChange}

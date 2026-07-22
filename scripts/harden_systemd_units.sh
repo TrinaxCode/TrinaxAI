@@ -48,8 +48,7 @@ EOF
 cat >"$frontend_tmp" <<EOF
 [Unit]
 Description=TrinaxAI Frontend PWA
-After=network.target ai-rag.service
-Wants=ai-rag.service
+After=network.target
 
 [Service]
 Type=simple

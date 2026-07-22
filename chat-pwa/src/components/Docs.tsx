@@ -99,8 +99,8 @@ export default function Docs({ onBack }: Props) {
               <div className={`p-5 rounded-2xl border ${sectionBg}`}>
                 <p className={`text-sm leading-relaxed ${textSub}`}>
                   {isEs
-                    ? 'TrinaxAI 1.2.0 es un asistente open-source bajo AGPL-3.0-or-later. La inferencia, RAG y datos persistidos funcionan localmente con Ollama; solo la búsqueda web opcional, las descargas y los destinos remotos que configures usan Internet.'
-                    : 'TrinaxAI 1.2.0 is an open-source assistant under AGPL-3.0-or-later. Inference, RAG, and persisted data run locally with Ollama; only optional web search, downloads, and remote targets you configure use the Internet.'}
+                    ? 'TrinaxAI 1.0.0 es un asistente open-source bajo AGPL-3.0-or-later. La inferencia, RAG y datos persistidos funcionan localmente con Ollama; solo la búsqueda web opcional, las descargas y los destinos remotos que configures usan Internet.'
+                    : 'TrinaxAI 1.0.0 is an open-source assistant under AGPL-3.0-or-later. Inference, RAG, and persisted data run locally with Ollama; only optional web search, downloads, and remote targets you configure use the Internet.'}
                 </p>
               </div>
 
@@ -116,12 +116,12 @@ export default function Docs({ onBack }: Props) {
 │  ┌─────┴───────────────────┴──────────┐   │
 │  │    RAG API (FastAPI) :3333         │   │
 │  │ generation pipeline · LlamaIndex  │   │
-│  │ bge-m3 · BM25 · rerank            │   │
+│  │ Qwen3 Embedding · BM25 · rerank   │   │
 │  └─────┬──────────────────────────────┘   │
 │        │                                   │
 │  ┌─────┴──────┐                            │
-│  │   Ollama   │  qwen3.5 · qwen2.5-coder  │
-│  │   :11434   │  bge-m3 · qwen3-vl        │
+│  │   Ollama   │  qwen3.5 · qwen3-coder    │
+│  │   :11434   │  qwen3-embedding          │
 │  └────────────┘                            │
 └──────────────────────────────────────────┘`}</pre>
               </div>
@@ -381,7 +381,7 @@ python service_manager.py start`}</pre>
 TRINAXAI_INDEX_DIR=~/Documents
 TRINAXAI_PROFILE=ultra  # 8gb, 16gb, max, ultra
 TRINAXAI_RAG_TARGET=http://localhost:3333
-VITE_TRINAXAI_VISION_MODEL=qwen3-vl:4b-instruct`}</pre>
+VITE_TRINAXAI_VISION_MODEL=qwen3.5:4b`}</pre>
                 <p className={`text-xs ${textMuted}`}>
                   {isEs
                     ? 'Ultra activa contexto 16K, más workers de embeddings y modelos profundos para máquinas con 32GB+ RAM y GPU potente. El reranker es opcional con requirements-rerank.txt.'
@@ -412,19 +412,19 @@ VITE_TRINAXAI_VISION_MODEL=qwen3-vl:4b-instruct`}</pre>
                       </tr>
                     </thead>
                     <tbody>
-                      <tr><td className="py-1.5">General</td><td className="py-1.5">{isEs ? 'Chat, razonamiento, matemáticas' : 'Chat, reasoning, math'}</td><td className="font-mono text-[#4ea3e0]">granite4:3b</td></tr>
-                      <tr><td className="py-1.5">Code</td><td className="py-1.5">{isEs ? 'Generación de código' : 'Code generation'}</td><td className="font-mono text-[#4ea3e0]">qwen2.5-coder:1.5b</td></tr>
-                      <tr><td className="py-1.5">Deep</td><td className="py-1.5">{isEs ? 'Tareas complejas / multi-archivo' : 'Complex / multi-file tasks'}</td><td className="font-mono text-[#4ea3e0]">qwen3.5:2b</td></tr>
-                      <tr><td className="py-1.5">Fast</td><td className="py-1.5">{isEs ? 'Preguntas muy cortas' : 'Very short prompts'}</td><td className="font-mono text-[#4ea3e0]">qwen3.5:0.8b</td></tr>
-                      <tr><td className="py-1.5">{isEs ? 'Visión' : 'Vision'}</td><td className="py-1.5">{isEs ? 'Análisis de imágenes' : 'Image analysis'}</td><td className="font-mono text-[#4ea3e0]">qwen3-vl:4b-instruct</td></tr>
-                      <tr><td className="py-1.5">Embeddings</td><td className="py-1.5">{isEs ? 'Indexación / búsqueda' : 'Indexing / search'}</td><td className="font-mono text-[#4ea3e0]">bge-m3</td></tr>
+                      <tr><td className="py-1.5">General</td><td className="py-1.5">{isEs ? 'Chat y preguntas cotidianas' : 'Chat and everyday questions'}</td><td className="font-mono text-[#4ea3e0]">qwen3.5:2b</td></tr>
+                      <tr><td className="py-1.5">Code</td><td className="py-1.5">{isEs ? 'Generación de código' : 'Code generation'}</td><td className="font-mono text-[#4ea3e0]">qwen3.5:4b</td></tr>
+                      <tr><td className="py-1.5">Deep</td><td className="py-1.5">{isEs ? 'Razonamiento y tareas complejas' : 'Reasoning and complex tasks'}</td><td className="font-mono text-[#4ea3e0]">qwen3.5:4b</td></tr>
+                      <tr><td className="py-1.5">Fast</td><td className="py-1.5">{isEs ? 'Preguntas muy cortas' : 'Very short prompts'}</td><td className="font-mono text-[#4ea3e0]">qwen3.5:2b</td></tr>
+                      <tr><td className="py-1.5">{isEs ? 'Visión' : 'Vision'}</td><td className="py-1.5">{isEs ? 'Análisis de imágenes' : 'Image analysis'}</td><td className="font-mono text-[#4ea3e0]">qwen3.5:4b</td></tr>
+                      <tr><td className="py-1.5">Embeddings</td><td className="py-1.5">{isEs ? 'Indexación / búsqueda' : 'Indexing / search'}</td><td className="font-mono text-[#4ea3e0]">qwen3-embedding:0.6b</td></tr>
                     </tbody>
                   </table>
                 </div>
                 <p className={`text-[11px] ${textMuted}`}>
                   {isEs
-                    ? 'Perfiles: 8GB usa vision 2B; 16GB usa 4B; Max usa 8B; Ultra usa 30B-A3B MoE. Todo es sobrescribible en .env y vision se descarga al primer analisis de imagen.'
-                    : 'Profiles: 8GB uses vision 2B; 16GB uses 4B; Max uses 8B; Ultra uses 30B-A3B MoE. Everything is overridable in .env and vision downloads on first image analysis.'}
+                    ? 'Perfiles: 8GB usa visión 2B; 16GB usa 4B; Max usa 9B; Ultra usa 35B. Todo es sobrescribible en .env y visión se descarga al primer análisis de imagen.'
+                    : 'Profiles: 8GB uses vision 2B; 16GB uses 4B; Max uses 9B; Ultra uses 35B. Everything is overridable in .env and vision downloads on first image analysis.'}
                 </p>
                 <h3 className={`font-semibold ${textMain}`}>{isEs ? 'Regímenes del pipeline' : 'Pipeline regimes'}</h3>
                 <ul className={`text-sm space-y-1.5 ${textSub}`}>
@@ -757,8 +757,8 @@ data: [DONE]`}</pre>
                 <h3 className={`font-semibold ${textMain}`}>{isEs ? 'Imágenes' : 'Images'}</h3>
                 <p className={`text-sm ${textSub}`}>
                   {isEs
-                    ? 'Las imágenes se reducen antes de enviarse al modelo de visión para evitar respuestas lentas y consumo excesivo de memoria. En 16GB se usa qwen3-vl:4b-instruct por defecto; si no está instalado, TrinaxAI lo descarga al primer análisis de imagen.'
-                    : 'Images are resized before being sent to the vision model to avoid slow responses and excessive memory use. On 16GB, qwen3-vl:4b-instruct is the default; if it is not installed, TrinaxAI downloads it on first image analysis.'}
+                    ? 'Las imágenes se reducen antes de enviarse al modelo para evitar respuestas lentas y consumo excesivo de memoria. En 16GB se usa qwen3.5:4b para texto, herramientas y visión.'
+                    : 'Images are resized before being sent to the model to avoid slow responses and excessive memory use. On 16GB, qwen3.5:4b handles text, tools, and vision.'}
                 </p>
                 <h3 className={`font-semibold ${textMain}`}>{t('docsContinue')}</h3>
                 <p className={`text-sm ${textSub}`}>
@@ -777,8 +777,8 @@ cp continue-config.yaml ~/.continue/config.yaml
 # TrinaxAI models will appear in Continue's model picker`}</pre>
                 <p className={`text-xs ${textMuted}`}>
                   {isEs
-                    ? 'La configuración incluye RAG Local compatible con OpenAI en http://localhost:3333/v1, modelos Ollama para chat/edit/apply/autocomplete y bge-m3 para embeddings.'
-                    : 'The config includes OpenAI-compatible Local RAG at http://localhost:3333/v1, Ollama models for chat/edit/apply/autocomplete, and bge-m3 embeddings.'}
+                    ? 'La configuración incluye RAG Local compatible con OpenAI en http://localhost:3333/v1, modelos Ollama para chat/edit/apply/autocomplete y Qwen3 Embedding para recuperación.'
+                    : 'The config includes OpenAI-compatible Local RAG at http://localhost:3333/v1, Ollama models for chat/edit/apply/autocomplete, and Qwen3 Embedding for retrieval.'}
                 </p>
               </div>
             </div>

@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import rag_api
+from app.services import rag_service
 
 
 def test_collection_retrieval_is_scoped_before_query(monkeypatch) -> None:
@@ -32,3 +34,8 @@ def test_prepare_query_bounds_large_history_and_system_prompt() -> None:
     assert len(retrieval) <= 16_001
     assert len(synthesis) < 25_000
     assert "[...truncated...]" in synthesis
+
+
+def test_knowledge_retrieval_rejects_near_zero_scores() -> None:
+    assert not rag_service._retrieval_is_relevant([SimpleNamespace(score=0.016)])
+    assert rag_service._retrieval_is_relevant([SimpleNamespace(score=0.2)])

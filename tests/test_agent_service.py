@@ -34,12 +34,34 @@ class AgentServiceHelperTests(unittest.TestCase):
                 resolved = self.svc._resolve_workspace(tmp)
                 self.assertEqual(resolved, Path(tmp).resolve())
 
+    def test_default_workspace_prefers_base_dir_over_documents_root(self) -> None:
+        with TemporaryDirectory() as base:
+            broad = Path.home() / "Documents"
+            with (
+                patch.object(self.svc.config, "BASE_DIR", base),
+                patch.dict(os.environ, {"TRINAXAI_AGENT_WORKSPACE_ROOTS": os.pathsep.join((str(broad), base))}),
+            ):
+                self.assertEqual(self.svc._resolve_workspace(None), Path(base).resolve())
+
+    def test_invalid_stored_workspace_falls_back_to_base_dir(self) -> None:
+        with TemporaryDirectory() as base:
+            with (
+                patch.object(self.svc.config, "BASE_DIR", base),
+                patch.dict(os.environ, {"TRINAXAI_AGENT_WORKSPACE_ROOTS": base}),
+                patch.object(self.svc, "_read_app_state", return_value={"tc-agent-workspace": "/no/longer-here"}),
+            ):
+                self.assertEqual(self.svc._resolve_workspace(None), Path(base).resolve())
+
     def test_agent_router_never_accepts_qwen_coder_even_when_explicit(self) -> None:
         with patch.object(self.svc.config, "MODEL_GENERAL", "granite4:3b"):
             self.assertEqual(self.svc._resolve_model("qwen2.5-coder:3b"), "granite4:3b")
 
     def test_agent_router_preserves_other_compatible_models(self) -> None:
         self.assertEqual(self.svc._resolve_model("qwen3.5:4b"), "qwen3.5:4b")
+
+    def test_agent_router_preserves_configured_code_role(self) -> None:
+        with patch.object(self.svc.config, "MODEL_CODE", "qwen3.5:4b"):
+            self.assertEqual(self.svc._resolve_model("qwen3.5:4b"), "qwen3.5:4b")
 
     def test_resolve_workspace_rejects_missing_dir(self) -> None:
         from fastapi import HTTPException
@@ -126,7 +148,7 @@ class AgentServiceHelperTests(unittest.TestCase):
             patch.object(self.svc.config, "MODEL_GENERAL", "agent-auto"),
             patch.object(self.svc.config, "route_model_for_messages", return_value="coder-auto") as router,
         ):
-            self.assertEqual(self.svc._resolve_model("auto", messages), "agent-auto")
+            self.assertEqual(self.svc._resolve_model("auto", messages), "coder-auto")
             router.assert_called_once_with(messages)
 
     def test_agent_context_uses_profile_window_without_forcing_8k(self) -> None:
@@ -142,10 +164,14 @@ class AgentServiceHelperTests(unittest.TestCase):
         self.assertTrue(out["content"].endswith("…(truncated)"))
         self.assertEqual(out["path"], "a.txt")
 
-    def test_agent_tools_include_knowledge_search(self) -> None:
-        names = [tool.name for tool in self.svc._agent_tools()]
+    def test_agent_tools_enable_knowledge_search_explicitly(self) -> None:
+        names = [tool.name for tool in self.svc._agent_tools(knowledge_search=True)]
         self.assertIn("search_knowledge", names)
         self.assertIn("read_file", names)
+
+    def test_agent_tools_disable_knowledge_search_by_default(self) -> None:
+        names = [tool.name for tool in self.svc._agent_tools()]
+        self.assertNotIn("search_knowledge", names)
 
     def test_agent_tools_can_toggle_rag_and_web_independently(self) -> None:
         local_names = [tool.name for tool in self.svc._agent_tools(knowledge_search=False)]

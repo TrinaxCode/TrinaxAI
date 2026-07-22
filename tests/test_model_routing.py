@@ -15,6 +15,10 @@ def test_explicit_everyday_topic_switches_back_to_general() -> None:
     assert config.route_model("cambiando de tema, dame una receta saludable", config.MODEL_CODE) == config.MODEL_GENERAL
 
 
+def test_identity_question_never_uses_the_fast_route() -> None:
+    assert config.route_model("quién te creó") == config.MODEL_GENERAL
+
+
 def test_generic_analysis_does_not_trigger_deep_coder() -> None:
     assert config.route_model("analiza la historia de México con detalle") == config.MODEL_GENERAL
 

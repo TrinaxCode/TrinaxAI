@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import io
 import unittest
+import urllib.error
 import zipfile
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -13,6 +15,7 @@ from trinaxai_cli.agent.engine import (
     _grounding_violations,
     _is_code_review_request,
     _is_final_answer,
+    _is_simple_root_listing,
     _parse_tool_call,
     _requires_tool_action,
     _tool_calls_from_text,
@@ -313,6 +316,12 @@ class AgentParserTests(unittest.TestCase):
 
 
 class MeaningfulAnswerTests(unittest.TestCase):
+    def test_simple_root_listing_is_identified_for_early_stop(self) -> None:
+        self.assertTrue(
+            _is_simple_root_listing([{"role": "user", "content": "Lista los archivos de la raíz sin subcarpetas"}])
+        )
+        self.assertFalse(_is_simple_root_listing([{"role": "user", "content": "Crea un archivo en la raíz"}]))
+
     def test_creation_and_improvement_requests_require_tools(self) -> None:
         for prompt in (
             "Crea una página web de cumpleaños",
@@ -340,12 +349,10 @@ class MeaningfulAnswerTests(unittest.TestCase):
 
 
 class AgentPromptQualityTests(unittest.TestCase):
-    def test_review_prompt_requires_evidence_and_rejects_invented_errors(self) -> None:
+    def test_default_prompt_keeps_security_and_evidence_rules_compact(self) -> None:
         prompt = default_system_prompt(Path("/tmp/workspace"))
-        self.assertIn("Code reviews are evidence-bound", prompt)
         self.assertIn("syntax=valid", prompt)
-        self.assertIn("Never invent missing code, APIs, errors, or requirements", prompt)
-        self.assertIn("trace identifiers, values, arguments", prompt)
+        self.assertIn("never invent missing code, APIs, errors or requirements", prompt)
         self.assertIn("untrusted DATA", prompt)
         self.assertIn("without network access", prompt)
 
@@ -722,8 +729,20 @@ class ContextBudgetTests(unittest.TestCase):
     def test_system_prompt_requires_follow_up_for_clipped_evidence(self) -> None:
         with TemporaryDirectory() as tmp:
             prompt = default_system_prompt(Path(tmp))
-            self.assertIn("Never answer from the missing section", prompt)
+            self.assertIn("never answer from missing content", prompt)
             self.assertIn("Grep only locates evidence", prompt)
+
+    def test_ollama_http_error_surfaces_response_body(self) -> None:
+        error = urllib.error.HTTPError(
+            "http://ollama/api/chat",
+            400,
+            "Bad Request",
+            {},
+            io.BytesIO(b'{"error":"invalid think/tools combination"}'),
+        )
+        with patch("urllib.request.urlopen", side_effect=error):
+            with self.assertRaisesRegex(RuntimeError, "invalid think/tools combination"):
+                AgentEngine._post("http://ollama/api/chat", {"model": "test"})
 
     def test_single_huge_document_turn_is_clipped_at_both_ends(self) -> None:
         with TemporaryDirectory() as tmp:

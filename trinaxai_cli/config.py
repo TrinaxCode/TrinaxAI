@@ -67,7 +67,7 @@ class CLIConfig:
     # Match the PWA: a new general chat talks directly to Ollama. RAG is
     # opt-in so unrelated indexed documents cannot hijack a casual prompt.
     engine: str = "ollama"
-    model: str = "qwen2.5-coder:1.5b"
+    model: str = "qwen3.5:2b"
     collections: list[str] = field(default_factory=lambda: ["default"])
     active_collection: str = "default"
 

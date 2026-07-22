@@ -5,7 +5,7 @@
 #    sudo ./setup_trinaxai.sh
 #
 #  Hace 3 cosas:
-#   1. Optimiza Ollama (KEEP_ALIVE, 2 modelos cargados, paralelismo)
+#   1. Optimiza Ollama (residencia y paralelismo según perfil)
 #      -> arregla la lentitud (antes recargaba 3GB en cada consulta).
 #   2. Instala un wrapper de lifecycle mínimo y propiedad de root.
 #   3. Habilita y reinicia los servicios.
@@ -39,14 +39,20 @@ PROFILE="${PROFILE:-16gb}"
 
 echo -e "${BLUE}[1/4]${NC} Optimizando Ollama (override systemd)..."
 mkdir -p /etc/systemd/system/ollama.service.d
-cat > /etc/systemd/system/ollama.service.d/override.conf <<'EOF'
+MAX_LOADED_MODELS=2
+NUM_PARALLEL=4
+if [ "$PROFILE" = "8gb" ]; then
+    MAX_LOADED_MODELS=1
+    NUM_PARALLEL=1
+fi
+cat > /etc/systemd/system/ollama.service.d/override.conf <<EOF
 [Service]
 # Mantener el modelo en RAM 30 min (respuestas rápidas, sin recargar 3GB).
 Environment="OLLAMA_KEEP_ALIVE=30m"
-# RAG usa 2 modelos a la vez (bge-m3 + qwen3): ambos cargados, sin thrashing.
-Environment="OLLAMA_MAX_LOADED_MODELS=2"
+# 8 GB carga uno; perfiles mayores admiten embedder + generador.
+Environment="OLLAMA_MAX_LOADED_MODELS=$MAX_LOADED_MODELS"
 # Paralelismo para indexado rápido (python index.py) y varias peticiones.
-Environment="OLLAMA_NUM_PARALLEL=4"
+Environment="OLLAMA_NUM_PARALLEL=$NUM_PARALLEL"
 # Ollama nunca se publica directamente en la LAN. La PWA usa el gateway
 # autenticado de TrinaxAI, que aplica límites y una allowlist de operaciones.
 Environment="OLLAMA_HOST=127.0.0.1:11434"
@@ -115,8 +121,7 @@ EOF
 cat > /etc/systemd/system/trinaxai-frontend.service <<EOF
 [Unit]
 Description=TrinaxAI Frontend PWA
-After=network.target ai-rag.service
-Wants=ai-rag.service
+After=network.target
 
 [Service]
 Type=simple
@@ -143,14 +148,14 @@ done
 # Asegurar la flota de modelos (auto-router + embeddings + visión).
 echo -e "      ${BLUE}·${NC} Verificando modelos (descarga los que falten)..."
 if [ "$PROFILE" = "8gb" ]; then
-    MODELS=(bge-m3 qwen3.5:0.8b qwen2.5-coder:1.5b qwen3-vl:2b-instruct)
+    MODELS=(qwen3-embedding:0.6b qwen3.5:2b)
 elif [ "$PROFILE" = "ultra" ]; then
-    MODELS=(bge-m3 qwen3.5:4b qwen3.5:35b-a3b qwen3-coder:30b qwen3-vl:30b-a3b-instruct)
+    MODELS=(qwen3-embedding:0.6b qwen3.5:4b qwen3.5:35b qwen3-coder:30b)
 elif [ "$PROFILE" = "max" ]; then
-    MODELS=(bge-m3 qwen3.5:4b qwen3.5:27b qwen2.5-coder:14b qwen3-vl:8b-instruct)
+    MODELS=(qwen3-embedding:0.6b qwen3.5:2b qwen3.5:9b)
 else
     # 16gb (default)
-    MODELS=(bge-m3 granite4:3b qwen3.5:0.8b qwen3.5:2b qwen2.5-coder:1.5b qwen3-vl:4b-instruct)
+    MODELS=(qwen3-embedding:0.6b qwen3.5:2b qwen3.5:4b)
 fi
 for m in "${MODELS[@]}"; do
     if ! sudo -u "$USER_NAME" ollama list 2>/dev/null | grep -qF "$m"; then

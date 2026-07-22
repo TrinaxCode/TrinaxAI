@@ -37,6 +37,25 @@ class _FakeBackend:
 
 
 class ServiceManagerPersistenceTests(unittest.TestCase):
+    def test_env_and_service_state_files_use_safe_defaults(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            base_dir = Path(tmp)
+            (base_dir / ".env").write_text(
+                '# comment\nTRINAXAI_FRONTEND_MODE="dev"\nSHARED=file\nINVALID\n',
+                encoding="utf-8",
+            )
+            with patch.dict(sm.os.environ, {"SHARED": "process"}, clear=True):
+                env = sm._service_env(str(base_dir))
+            self.assertEqual(env["SHARED"], "process")
+            self.assertEqual(sm._frontend_script(env), "dev")
+            self.assertEqual(sm._frontend_script({"TRINAXAI_FRONTEND_MODE": "unknown"}), "preview")
+
+            self.assertTrue(sm._read_ai_enabled(str(base_dir)))
+            sm._write_ai_enabled(str(base_dir), False)
+            self.assertFalse(sm._read_ai_enabled(str(base_dir)))
+            (base_dir / "storage" / "service_state.json").write_text("not-json", encoding="utf-8")
+            self.assertTrue(sm._read_ai_enabled(str(base_dir)))
+
     def test_health_probe_rejects_non_loopback_targets(self) -> None:
         with patch.object(sm.urllib.request, "urlopen") as urlopen:
             self.assertFalse(sm._wait_for_http("https://example.com/health", timeout_seconds=0))

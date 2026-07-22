@@ -2,15 +2,19 @@
 
 Todos los cambios notables en TrinaxAI se documentan aquí. Este proyecto sigue el formato [Keep a Changelog](https://keepachangelog.com/).
 
-## [Sin publicar]
+## [1.0.0] — 2026-07-21
 
-## [1.2.0] — 2026-07-18
+### Cambiado
+- Se eliminó la dependencia de desarrollo `httpx2` sin uso y el umbral de cobertura Python subió al 60%.
+
+### Seguridad
+- Las aserciones HMAC del proxy confiable ahora son de un solo uso durante su ventana de frescura, evitando replay; también se actualizaron dependencias transitivas vulnerables del build frontend.
 
 ### Añadido
 - Configuración de búsqueda web protegida por permiso de sistema, secretos write-only y pruebas de conexión para DuckDuckGo, Brave Search y SearXNG.
 
 ### Cambiado
-- Los perfiles automáticos ahora cubren 1–8 GB, 9–31 GB, 32–63 GB y 64+ GB de RAM, conservando overrides de entorno y embeddings multilingües `bge-m3`.
+- Los perfiles automáticos ahora cubren 1–8 GB, 9–31 GB, 32–63 GB y 64+ GB de RAM, conservando overrides de entorno y embeddings multilingües `qwen3-embedding:0.6b`.
 - Playwright usa un servidor aislado de TrinaxAI en un puerto dedicado y configurable.
 
 ### Corregido
@@ -18,7 +22,7 @@ Todos los cambios notables en TrinaxAI se documentan aquí. Este proyecto sigue 
 - Los instaladores ya no eliminan modelos de Ollama que puedan pertenecer a otros proyectos.
 
 ### Seguridad
-- Agent valida los endpoints de Ollama antes del acceso de red; las puertas de release auditan dependencias, hallazgos estáticos de alta severidad y secretos.
+- Agent valida los endpoints de Ollama antes del acceso de red; CI audita dependencias, hallazgos estáticos de alta severidad y secretos.
 
 ### Añadido
 - Preferencia global persistente para efectos de sonido y señales centralizadas de generación, herramientas, archivos, agente, voz, llamada, errores y confirmaciones.
@@ -97,11 +101,5 @@ Todos los cambios notables en TrinaxAI se documentan aquí. Este proyecto sigue 
 - Eliminada dependencia requests no utilizada de requirements.txt
 - Código muerto eliminado: importAndIndexFolder de api.ts, import ssl no utilizado de config.py
 
-## [1.0.0] — 2026-06-28
-
-### Añadido
-- Publicación pública inicial de TrinaxAI.
-
-[1.2.0]: https://github.com/TrinaxCode/TrinaxAI/compare/v1.1.0...v1.2.0
-[1.1.0]: https://github.com/TrinaxCode/TrinaxAI/compare/v1.0.0...v1.1.0
+[1.1.0]: https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.1.0
 [1.0.0]: https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.0.0

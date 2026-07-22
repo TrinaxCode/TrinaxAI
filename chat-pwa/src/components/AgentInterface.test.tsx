@@ -60,8 +60,12 @@ describe('AgentInterface handoff', () => {
       </ThemeProvider>,
     );
 
-    expect(container.querySelector('.agent-empty-avatar')).toBeInTheDocument();
-    expect(container.querySelector('.agent-empty-avatar')).not.toHaveClass('text-[#006bbd]');
+    const avatar = container.querySelector('.agent-empty-avatar');
+    expect(avatar).toBeInTheDocument();
+    expect(avatar).not.toHaveClass('text-[#006bbd]');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Find bugs' }));
+    expect(screen.getByRole('textbox', { name: /Ask the agent/ })).toHaveValue('Find potential bugs in my code.');
   });
 
   it('continues a transferred request exactly once in React StrictMode', async () => {
@@ -101,7 +105,7 @@ describe('AgentInterface handoff', () => {
     ]);
     expect(apiMocks.runAgent.mock.calls[0][2]).toEqual(expect.objectContaining({
       model: 'auto',
-      knowledgeSearch: true,
+      knowledgeSearch: false,
       webSearch: false,
       deepResearch: false,
     }));
@@ -150,5 +154,31 @@ describe('AgentInterface handoff', () => {
     const followUpMessages = apiMocks.runAgent.mock.calls[1][0];
     expect(followUpMessages.find((message: { role: string }) => message.role === 'user').content)
       .toContain('Contenido verificable del reporte');
+  });
+
+  it('shows live agent activity while a tool call is still running', async () => {
+    let release!: () => void;
+    apiMocks.runAgent.mockImplementation(async (_messages, onEvent) => {
+      onEvent({ type: 'start', session_id: 's1', workspace: '/test-workspace', model: 'qwen3.5:4b' });
+      onEvent({ type: 'status', state: 'running', elapsed_seconds: 3, idle_seconds: 3, current_tool: 'model', steps: 0, last_activity: Date.now() / 1000 });
+      onEvent({ type: 'tool_start', tool: 'list_dir', dangerous: false, args: {} });
+      await new Promise<void>((resolve) => { release = resolve; });
+      onEvent({ type: 'done', answer: 'Listo' });
+    });
+
+    const { container } = render(
+      <ThemeProvider>
+        <I18nProvider>
+          <AgentInterface onBack={vi.fn()} />
+        </I18nProvider>
+      </ThemeProvider>,
+    );
+    fireEvent.change(container.querySelector('textarea[name="agent-prompt"]') as HTMLTextAreaElement, { target: { value: 'Lista los archivos' } });
+    fireEvent.click(screen.getByRole('button', { name: /Enviar|Send/ }));
+
+    await waitFor(() => expect(apiMocks.runAgent).toHaveBeenCalledOnce());
+    expect(screen.getByText(/Usando list_dir|Using list_dir/)).toBeInTheDocument();
+    release();
+    await screen.findByText('Listo');
   });
 });

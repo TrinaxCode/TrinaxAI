@@ -359,7 +359,7 @@ def _slash_help(ui: Any) -> None:
                 "",
                 "  Tools & session:",
                 "  /model             Select an installed model and Ollama/RAG mode",
-                "  /model NAME MODE   Set directly, e.g. /model qwen2.5-coder:1.5b rag",
+                "  /model NAME MODE   Set directly, e.g. /model qwen3.5:4b rag",
                 "  /workspace (path)  Set the agent workspace (default: current dir)",
                 "  /yolo              Toggle agent auto-approve (dangerous)",
                 "  /index (path)      Index a folder, default: current directory",

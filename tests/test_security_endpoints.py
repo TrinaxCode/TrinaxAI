@@ -6,6 +6,7 @@ localhost checks. Uses mocks — never executes real system commands.
 
 from __future__ import annotations
 
+import secrets
 import time
 from unittest.mock import MagicMock, patch
 
@@ -197,9 +198,10 @@ class TestTrustedProxyIdentity:
         secret: bytes,
         path: str = "/app-state",
         method: str = "GET",
+        nonce: str | None = None,
     ):
         timestamp = str(int(time.time()))
-        nonce = "a" * 32
+        nonce = nonce or secrets.token_hex(16)
         signature = auth_mod._proxy_signature(
             secret,
             client_ip,
@@ -252,6 +254,22 @@ class TestTrustedProxyIdentity:
             _client_host(request)
         assert exc.value.status_code == 403
 
+    def test_replayed_proxy_identity_is_rejected(self, monkeypatch):
+        import app.security.admin_auth as auth_mod
+
+        secret = b"gateway-test-secret"
+        nonce = "a" * 32
+        monkeypatch.setattr(auth_mod, "_PROXY_SECRET", secret)
+        monkeypatch.setattr(auth_mod, "_PROXY_SEEN_NONCES", {})
+        first = self._signed_request(auth_mod, client_ip="192.168.1.77", secret=secret, nonce=nonce)
+        replay = self._signed_request(auth_mod, client_ip="192.168.1.77", secret=secret, nonce=nonce)
+
+        assert _client_host(first) == "192.168.1.77"
+        with pytest.raises(HTTPException) as exc:
+            _client_host(replay)
+        assert exc.value.status_code == 403
+        assert "replay" in str(exc.value.detail).lower()
+
     def test_proxy_assertion_from_non_loopback_peer_is_rejected(self, monkeypatch):
         import app.security.admin_auth as auth_mod
 
@@ -261,6 +279,24 @@ class TestTrustedProxyIdentity:
         request.client.host = "192.168.1.10"
         with pytest.raises(HTTPException) as exc:
             _client_host(request)
+        assert exc.value.status_code == 403
+
+    def test_signed_proxy_accepts_configured_runtime_peer(self, monkeypatch):
+        import app.security.admin_auth as auth_mod
+
+        secret = b"gateway-test-secret"
+        monkeypatch.setattr(auth_mod, "_PROXY_SECRET", secret)
+        monkeypatch.setenv("TRINAXAI_PROXY_TRUSTED_PEERS", "172.31.0.0/24")
+        request = self._signed_request(auth_mod, client_ip="192.168.1.77", secret=secret)
+        request.client.host = "172.31.0.2"
+        assert _client_host(request) == "192.168.1.77"
+
+    def test_configured_runtime_peer_without_signature_is_still_remote(self, monkeypatch):
+        import app.security.admin_auth as auth_mod
+
+        monkeypatch.setenv("TRINAXAI_PROXY_TRUSTED_PEERS", "172.31.0.0/24")
+        with pytest.raises(HTTPException) as exc:
+            auth_mod.authorize_scope(_make_request(client_host="172.31.0.2"), "chat")
         assert exc.value.status_code == 403
 
     def test_rate_limit_uses_verified_original_peer(self, monkeypatch):

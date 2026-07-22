@@ -27,12 +27,10 @@ test.beforeEach(async ({ page }) => {
   }));
 });
 
-async function setTheme(page: Page, theme: 'light' | 'dark') {
-  await page.addInitScript((value) => localStorage.setItem('tc-theme', value), theme);
-}
-
 test('agent mode remains readable in light and dark themes', async ({ page }, testInfo) => {
-  await setTheme(page, 'light');
+  await page.addInitScript(() => {
+    if (!localStorage.getItem('tc-theme')) localStorage.setItem('tc-theme', 'light');
+  });
   await page.goto('/#/agent');
   await expect(page.locator('.animate-intro-logo')).toHaveCount(0, { timeout: 10_000 });
   await expect(page.getByRole('heading', { name: /TrinaxAI Agent/i })).toBeVisible();
@@ -60,6 +58,7 @@ test('agent mode remains readable in light and dark themes', async ({ page }, te
   await page.evaluate(() => localStorage.setItem('tc-theme', 'dark'));
   await page.reload();
   await expect(page.locator('.animate-intro-logo')).toHaveCount(0, { timeout: 10_000 });
+  await expect(page.locator('html')).toHaveClass(/dark/);
   await expect(page.getByRole('heading', { name: /TrinaxAI Agent/i })).toBeVisible();
   if (captureLabel) {
     await page.screenshot({
@@ -70,7 +69,9 @@ test('agent mode remains readable in light and dark themes', async ({ page }, te
 });
 
 test('history sidebar fits the viewport and retains its controls', async ({ page }, testInfo) => {
-  await setTheme(page, 'light');
+  await page.addInitScript(() => {
+    if (!localStorage.getItem('tc-theme')) localStorage.setItem('tc-theme', 'light');
+  });
   await page.goto('/#/');
   await expect(page.locator('.animate-intro-logo')).toHaveCount(0, { timeout: 10_000 });
   await page.getByLabel(/Abrir historial/i).click();
@@ -90,7 +91,9 @@ test('history sidebar fits the viewport and retains its controls', async ({ page
 });
 
 test('agent controls fit a 200 percent zoom equivalent viewport', async ({ page }) => {
-  await setTheme(page, 'light');
+  await page.addInitScript(() => {
+    if (!localStorage.getItem('tc-theme')) localStorage.setItem('tc-theme', 'light');
+  });
   await page.setViewportSize({ width: 640, height: 360 });
   await page.goto('/#/agent');
   await expect(page.getByRole('heading', { name: /TrinaxAI Agent/i })).toBeVisible();

@@ -14,9 +14,10 @@ Los endpoints **protegidos** aceptan peer loopback directo, credencial de
 dispositivo con scope (`X-TrinaxAI-Device-Token`) o la supercredencial admin
 (`X-Admin-Token`). El fallback de LAN privada queda limitado al control de
 sistema legacy sin token admin y con control LAN activado. El gateway local elimina cabeceras de
-identidad del cliente y firma peer, método y ruta con HMAC fresca. FastAPI solo
-acepta esa firma desde loopback; nunca usa `Forwarded`/`X-Forwarded-For` como
-identidad.
+identidad del cliente y firma peer, método y ruta con HMAC fresca y de un uso.
+FastAPI solo acepta esa firma desde loopback o un peer privado de runtime
+configurado explícitamente que además demuestre la clave compartida; nunca usa
+`Forwarded`/`X-Forwarded-For` como identidad.
 
 Chat, STT y TTS usan token buckets monotónicos separados por IP verificada. La
 capacidad general es 30 y un bucket vacío se recarga en 60 segundos.

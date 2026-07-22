@@ -96,6 +96,93 @@ def test_job_state_persists_for_frontend_reconnection(tmp_path, monkeypatch) -> 
             state.index_jobs = previous
 
 
+def test_interrupted_jobs_are_restored_as_failed(tmp_path, monkeypatch) -> None:
+    jobs_path = tmp_path / "index_jobs.json"
+    jobs_path.write_text(
+        json.dumps(
+            {
+                "running": {"status": "indexing", "phase": "embedding"},
+                "complete": {"status": "completed", "phase": "done"},
+                "invalid": "not-a-job",
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(system_service.config, "INDEX_JOBS_PATH", str(jobs_path))
+    with state.index_jobs_lock:
+        previous = state.index_jobs
+        state.index_jobs = {}
+    try:
+        system_service._restore_index_jobs()
+        assert state.index_jobs["running"]["status"] == "failed"
+        assert state.index_jobs["running"]["phase"] == "interrupted"
+        assert state.index_jobs["running"]["process"] is None
+        assert state.index_jobs["complete"]["status"] == "completed"
+        assert "invalid" not in state.index_jobs
+    finally:
+        with state.index_jobs_lock:
+            state.index_jobs = previous
+
+
+def test_finished_index_jobs_are_pruned_after_one_hour(monkeypatch) -> None:
+    persisted = []
+    monkeypatch.setattr(system_service.time, "time", lambda: 10_000.0)
+    monkeypatch.setattr(system_service, "_persist_index_jobs_locked", lambda: persisted.append(True))
+    with state.index_jobs_lock:
+        previous = state.index_jobs
+        state.index_jobs = {
+            "stale": {"finished_at": 6_000.0},
+            "recent": {"finished_at": 9_000.0},
+            "running": {"finished_at": None},
+        }
+    try:
+        system_service._prune_old_jobs()
+        assert set(state.index_jobs) == {"recent", "running"}
+        assert persisted == [True]
+    finally:
+        with state.index_jobs_lock:
+            state.index_jobs = previous
+
+
+def test_index_job_helpers_bound_untrusted_names_output_and_progress(monkeypatch) -> None:
+    assert system_service._safe_rel_path("../../manuales/plan?.pdf") == "manuales/plan_.pdf"
+    assert system_service._safe_rel_path("/../") is None
+    assert system_service._safe_label(" ..informe: julio.. ") == "informe_ julio"
+    assert system_service._safe_label("???") == "import"
+    assert system_service._estimate_index_seconds(0, 0) == 45
+    assert system_service._estimate_index_seconds(10_000, 10_000_000_000) == 1800
+
+    job = {
+        "id": "bounded-job",
+        "status": "saving",
+        "progress": 10,
+        "created_at": 900.0,
+        "output": "",
+    }
+    monkeypatch.setattr(system_service, "_persist_index_jobs_locked", lambda: None)
+    monkeypatch.setattr(system_service.time, "time", lambda: 1000.0)
+    with state.index_jobs_lock:
+        previous = state.index_jobs
+        state.index_jobs = {job["id"]: job}
+    try:
+        system_service._append_index_output(job["id"], "x" * 9000)
+        public = system_service._job_public(job)
+        assert len(job["output"]) == 8000
+        assert len(job["recent_activity"]) == 300
+        assert public["progress"] == 10
+        assert public["eta_seconds"] == 900
+        assert public["elapsed_seconds"] == 100
+    finally:
+        with state.index_jobs_lock:
+            state.index_jobs = previous
+
+    assert system_service._line_progress("Troceando documento", 10) == (45, "chunking")
+    assert system_service._line_progress("Embeddings lote 2/4", 10) == (76, "embedding")
+    assert system_service._line_progress("Persistiendo índice", 10) == (88, "saving_index")
+    assert system_service._line_progress("Completado", 10) == (96, "finishing")
+    assert system_service._structured_progress("TRINAXAI_PROGRESS not-json") is None
+
+
 @pytest.mark.asyncio
 async def test_cancel_stops_process_and_retry_requeues(tmp_path, monkeypatch) -> None:
     class Process:

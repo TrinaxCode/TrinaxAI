@@ -69,13 +69,7 @@ export function rememberFromMessage(text: string): boolean {
 
 export function getUserSystemInstruction(lang: Lang = detectedLang()): string {
   const name = getPreferredUserName(lang);
-  const memory = getUserMemory();
-  const memoryText = memory.length
-    ? (lang === 'en'
-      ? `\nPersistent local memory about the user:\n${memory.map((item) => `- ${item}`).join('\n')}`
-      : `\nMemoria local persistente sobre el usuario:\n${memory.map((item) => `- ${item}`).join('\n')}`)
-    : '';
   return lang === 'en'
-    ? `The user prefers to be called "${name}". Use that name naturally when it is useful, but do not repeat greetings in follow-up messages.${memoryText}`
-    : `El usuario prefiere que le llames "${name}". Usa ese nombre de forma natural cuando aporte claridad, pero no repitas saludos en mensajes de seguimiento.${memoryText}`;
+    ? `Preferred user name: "${name}".`
+    : `Nombre preferido del usuario: "${name}".`;
 }

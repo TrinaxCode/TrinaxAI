@@ -1,0 +1,34 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: trinaxai-api:local
+    init: true
+    restart: unless-stopped
+    user: "${TRINAXAI_DOCKER_UID:-1000}:${TRINAXAI_DOCKER_GID:-1000}"
+    env_file:
+      - .env
+    environment:
+      HOME: /tmp
+      TRINAXAI_HOST: 0.0.0.0
+      TRINAXAI_PORT: 3333
+      OLLAMA_BASE_URL: "${TRINAXAI_DOCKER_OLLAMA_URL:-http://host.docker.internal:11434}"
+      TRINAXAI_INDEX_DIR: /data/projects
+      TRINAXAI_AGENT_WORKSPACE_ROOTS: /data/projects
+      TRINAXAI_PROXY_TRUSTED_PEERS: "${TRINAXAI_DOCKER_NETWORK_CIDR:-172.31.0.0/24}"
+      TRINAXAI_PROXY_SECRET_FILE: /app/storage/.proxy_secret
+      TRINAXAI_INFERENCE_LOCK_FILE: /app/storage/.inference.lock
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "127.0.0.1:${TRINAXAI_DOCKER_PORT:-3333}:3333"
+    volumes:
+      - ./storage:/app/storage
+      - ./local_sources:/app/local_sources
+      - ${TRINAXAI_DOCKER_INDEX_DIR:-./projects}:/data/projects:ro
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: "${TRINAXAI_DOCKER_NETWORK_CIDR:-172.31.0.0/24}"

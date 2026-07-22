@@ -2,15 +2,19 @@
 
 All notable changes to TrinaxAI are documented here. This project follows [Keep a Changelog](https://keepachangelog.com/) format.
 
-## [Unreleased]
+## [1.0.0] — 2026-07-21
 
-## [1.2.0] — 2026-07-18
+### Changed
+- Removed the unused `httpx2` development dependency and raised the Python coverage gate to 60%.
+
+### Security
+- Trusted-proxy HMAC assertions are now single-use within their freshness window, preventing replay; vulnerable frontend build transitive dependencies were refreshed.
 
 ### Added
 - System-protected, write-only web-search settings and connection tests for DuckDuckGo, Brave Search, and SearXNG.
 
 ### Changed
-- Automatic model profiles now cover 1–8 GB, 9–31 GB, 32–63 GB, and 64+ GB RAM while preserving environment overrides and multilingual `bge-m3` embeddings.
+- Automatic model profiles now cover 1–8 GB, 9–31 GB, 32–63 GB, and 64+ GB RAM while preserving environment overrides and multilingual `qwen3-embedding:0.6b` embeddings.
 - Playwright uses an isolated TrinaxAI preview server on a dedicated configurable port.
 
 ### Fixed
@@ -18,7 +22,7 @@ All notable changes to TrinaxAI are documented here. This project follows [Keep 
 - Installers no longer remove Ollama models that may belong to other projects.
 
 ### Security
-- Agent validates Ollama endpoints before network access; release gates audit dependencies, high-severity static findings, and secrets.
+- Agent validates Ollama endpoints before network access; CI audits dependencies, high-severity static findings, and secrets.
 
 ## [1.1.0] — 2026-07-16
 
@@ -99,11 +103,5 @@ All notable changes to TrinaxAI are documented here. This project follows [Keep 
 - Removed unused requests dependency from requirements.txt
 - Dead code removed: importAndIndexFolder from api.ts, unused import ssl from config.py
 
-## [1.0.0] — 2026-06-28
-
-### Added
-- Initial public TrinaxAI release.
-
-[1.2.0]: https://github.com/TrinaxCode/TrinaxAI/compare/v1.1.0...v1.2.0
-[1.1.0]: https://github.com/TrinaxCode/TrinaxAI/compare/v1.0.0...v1.1.0
+[1.1.0]: https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.1.0
 [1.0.0]: https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.0.0

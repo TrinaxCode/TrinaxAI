@@ -11,7 +11,7 @@ function sameOrigin(path: string): string {
 export const APP_CONFIG = {
   repoUrl: import.meta.env.VITE_TRINAXAI_REPO_URL || 'https://github.com/TrinaxCode/TrinaxAI',
   docsUrl: import.meta.env.VITE_TRINAXAI_DOCS_URL || 'https://github.com/TrinaxCode/TrinaxAI#readme',
-  defaultIndexDir: import.meta.env.VITE_TRINAXAI_INDEX_DIR || '~/Documents',
+  defaultIndexDir: import.meta.env.VITE_TRINAXAI_INDEX_DIR || '',
   ragBase: isDev
     ? sameOrigin(import.meta.env.VITE_TRINAXAI_DEV_RAG_BASE || '/api/rag')
     : trimTrailingSlash(import.meta.env.VITE_TRINAXAI_RAG_BASE || `${window.location.origin}/api/rag`),

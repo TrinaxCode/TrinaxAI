@@ -114,24 +114,22 @@ _QUALITY_MODE = TRINAXAI_PERFORMANCE_MODE == "quality"
 # Each tier leaves room for the embedding model and runtime overhead instead of
 # sizing the chat model as if it were the only resident process.
 _PROFILE_MODEL = (
-    "qwen3.5:35b-a3b"
+    "qwen3.5:35b"
     if _ULTRA_PROFILE
-    else "qwen3.5:27b"
+    else "qwen3.5:9b"
     if _MAX_QUALITY_PROFILE
-    else "qwen3.5:0.8b"
+    else "qwen3.5:2b"
     if _LOW_RESOURCE_PROFILE
     else "qwen3.5:4b"
 )
-_DEFAULT_MODEL_GENERAL = "granite4:3b" if not _LOW_RESOURCE_PROFILE and not _MAX_QUALITY_PROFILE else _PROFILE_MODEL
-_DEFAULT_MODEL_CODE = (
-    "qwen3-coder:30b" if _ULTRA_PROFILE else "qwen2.5-coder:14b" if _MAX_QUALITY_PROFILE else "qwen2.5-coder:1.5b"
-)
-_DEFAULT_MODEL_FAST = "qwen3.5:0.8b" if not _MAX_QUALITY_PROFILE else "qwen3.5:4b"
+_DEFAULT_MODEL_GENERAL = _PROFILE_MODEL
+_DEFAULT_MODEL_CODE = "qwen3-coder:30b" if _ULTRA_PROFILE else _PROFILE_MODEL
+_DEFAULT_MODEL_FAST = "qwen3.5:4b" if _ULTRA_PROFILE else "qwen3.5:2b"
 MODEL_GENERAL = os.getenv("TRINAXAI_MODEL_GENERAL", _DEFAULT_MODEL_GENERAL)  # non-code chat
 MODEL_CODE = os.getenv("TRINAXAI_MODEL_CODE", _DEFAULT_MODEL_CODE)  # regular code
 MODEL_DEEP = os.getenv(
     "TRINAXAI_MODEL_DEEP",
-    "qwen3.5:2b" if not _LOW_RESOURCE_PROFILE and not _MAX_QUALITY_PROFILE else _PROFILE_MODEL,
+    _PROFILE_MODEL,
 )  # complex reasoning/code
 MODEL_FAST = os.getenv("TRINAXAI_MODEL_FAST", _DEFAULT_MODEL_FAST)  # trivial / ultra-fast
 
@@ -143,17 +141,18 @@ AUTO_ROUTE = os.getenv("TRINAXAI_AUTO_ROUTE", "1") == "1"
 # Fleet list for the PWA selector (order = preference, no duplicates).
 MODEL_FLEET = list(dict.fromkeys([MODEL_CODE, MODEL_DEEP, MODEL_GENERAL, MODEL_FAST]))
 
-# Embeddings. bge-m3 = multilingual, 1024 dims, 8K context, better than nomic.
+# Embeddings. Qwen3 Embedding is multilingual, instruction-aware, and supports
+# 32K context while keeping the same 1024 dimensions at 0.6B.
 # Embedding preset (Phase 4.1): balanced | lite | fast.
-# - balanced: bge-m3 (default, best multilingual quality)
+# - balanced: Qwen3 Embedding 0.6B (multilingual, instruction-aware)
 # - lite:     nomic-embed-text (smaller, faster, English-leaning)
 # - fast:     all-minilm (very small, English-only, fastest)
 EMBED_PRESETS = {
     "balanced": {
-        "model": "bge-m3",
+        "model": "qwen3-embedding:0.6b",
         "dims": 1024,
         "ctx": 8192,
-        "label": "Balanced (bge-m3, multilingual)",
+        "label": "Balanced (Qwen3 Embedding 0.6B, multilingual)",
     },
     "lite": {
         "model": "nomic-embed-text",
@@ -168,9 +167,8 @@ EMBED_PRESETS = {
         "label": "Fast (all-minilm, smallest)",
     },
 }
-# bge-m3 (balanced) is the default on every profile: it is only ~1.2 GB yet
-# multilingual, whereas the lite/fast presets are English-leaning. Low-RAM users
-# can still opt into lite/fast via TRINAXAI_EMBED_PRESET.
+# The 0.6B preset stays practical on CPU-only laptops; larger embedding models
+# cost too much latency and resident memory beside the generation model.
 _EMBED_PRESET_DEFAULT = "balanced"
 _EMBED_PRESET = os.getenv("TRINAXAI_EMBED_PRESET", _EMBED_PRESET_DEFAULT).strip().lower()
 EMBED_PRESET = _EMBED_PRESET if _EMBED_PRESET in EMBED_PRESETS else "balanced"
@@ -237,7 +235,7 @@ KEEP_ALIVE = os.getenv("TRINAXAI_KEEP_ALIVE", _KEEP_ALIVE_DEFAULT)
 if _ULTRA_PROFILE or _MAX_QUALITY_PROFILE:
     _EMBED_KEEP_ALIVE_DEFAULT = "30m"
 elif _LOW_RESOURCE_PROFILE:
-    _EMBED_KEEP_ALIVE_DEFAULT = "10m"
+    _EMBED_KEEP_ALIVE_DEFAULT = "0s"
 else:
     _EMBED_KEEP_ALIVE_DEFAULT = "15m"
 EMBED_KEEP_ALIVE = (
@@ -378,7 +376,7 @@ def make_llm(
 
 
 def make_embed() -> OllamaEmbedding:
-    """Create the Ollama embedder using bge-m3's full 8K window."""
+    """Create the configured local Ollama embedder."""
     from llama_index.embeddings.ollama import OllamaEmbedding
 
     embed_kwargs = {
@@ -391,6 +389,11 @@ def make_embed() -> OllamaEmbedding:
     return OllamaEmbedding(
         model_name=EMBED_MODEL,
         base_url=OLLAMA_BASE_URL,
+        query_instruction=(
+            "Represent this query for retrieving relevant local documents:"
+            if EMBED_MODEL.startswith("qwen3-embedding")
+            else None
+        ),
         keep_alive=EMBED_KEEP_ALIVE,
         embed_batch_size=EMBED_BATCH_SIZE,
         num_workers=EMBED_WORKERS,  # concurrent requests to Ollama
@@ -772,6 +775,10 @@ _GENERAL_TOPIC_HINTS = (
     "capital de",
     "quién es",
     "quien es",
+    "quién te creó",
+    "quien te creo",
+    "qué eres",
+    "que eres",
     "qué es",
     "que es",
     "cuéntame",
@@ -817,6 +824,8 @@ def route_model(text: str, previous_model: str | None = None) -> str:
         candidate = MODEL_DEEP
     elif is_code:
         candidate = MODEL_CODE
+    elif any(h in t for h in _GENERAL_TOPIC_HINTS):
+        candidate = MODEL_GENERAL
     elif len(text.strip()) < 25:
         candidate = MODEL_FAST
     else:

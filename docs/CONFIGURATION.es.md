@@ -37,10 +37,10 @@ Elige el perfil por RAM disponible, no por RAM total. Si hay cierres por memoria
 | Variable | Valor de ejemplo | Propósito |
 |---|---|---|
 | `OLLAMA_BASE_URL` | `http://localhost:11434` | URL usada por el backend. |
-| `TRINAXAI_MODEL_GENERAL` | `granite4:3b` | Conversación general del perfil `16gb`; selección medida de baja latencia. |
-| `TRINAXAI_MODEL_CODE` | `qwen2.5-coder:1.5b` | Código y tareas técnicas. |
-| `TRINAXAI_MODEL_DEEP` | `qwen3.5:2b` | Consultas complejas del perfil `16gb`. |
-| `TRINAXAI_MODEL_FAST` | `qwen3.5:0.8b` | Consultas breves del perfil `16gb`. |
+| `TRINAXAI_MODEL_GENERAL` | `qwen3.5:4b` | Conversación general del perfil `16gb`; mejor calidad conversacional en CPU. |
+| `TRINAXAI_MODEL_CODE` | `qwen3.5:4b` | Código y tareas técnicas. |
+| `TRINAXAI_MODEL_DEEP` | `qwen3.5:4b` | Consultas complejas del perfil `16gb`. |
+| `TRINAXAI_MODEL_FAST` | `qwen3.5:2b` | Consultas breves del perfil `16gb`. |
 | `TRINAXAI_AUTO_ROUTE` | `1` | Selección heurística entre los modelos anteriores. |
 | `TRINAXAI_LLM` / `TRINAXAI_LLM_HEAVY` | según perfil | Fallback cuando el auto-router está desactivado. |
 
@@ -49,9 +49,9 @@ Los nombres deben coincidir con `ollama list`. Descarga manualmente un modelo co
 El autorouter es determinista y local: clasifica la intención y las capacidades
 necesarias sin hacer otra llamada al modelo. Respeta un modelo explícito si es
 compatible e instalado; si no, elige un modelo instalado apto para chat, código,
-razonamiento o herramientas. En el perfil normal `16gb`, `granite4:3b` es el
-predeterminado general por su equilibrio medido de latencia/calidad;
-`qwen3.5:2b` queda como modelo de razonamiento profundo.
+razonamiento o herramientas. En el perfil normal `16gb`, `qwen3.5:4b` es el
+predeterminado general, de código y de razonamiento profundo; `qwen3.5:2b` queda
+para saludos y consultas triviales.
 
 ## Sonidos de la PWA
 
@@ -65,7 +65,7 @@ respuestas habladas se controlan por separado.
 
 | Variable | Predeterminado | Propósito |
 |---|---:|---|
-| `TRINAXAI_EMBED_PRESET` | según perfil | `balanced` (`bge-m3`), `lite` (`nomic-embed-text`) o `fast` (`all-minilm`). |
+| `TRINAXAI_EMBED_PRESET` | según perfil | `balanced` (`qwen3-embedding:0.6b`), `lite` (`nomic-embed-text`) o `fast` (`all-minilm`). |
 | `TRINAXAI_EMBED` | según preset | Modelo de embeddings. |
 | `TRINAXAI_EMBED_DIMS` | según preset | Dimensiones; cambiarlo exige reconstruir el índice. |
 | `TRINAXAI_EMBED_WORKERS` | según perfil | Solicitudes de embedding concurrentes. |
@@ -154,6 +154,7 @@ conversación y permite reintentar; nunca inventa un resultado silencioso.
 | `TRINAXAI_DEVICE_SECRET_FILE` | `storage/.device_secret` | Clave modo `0600` para hashear códigos y tokens. |
 | `TRINAXAI_DEVICE_TOKEN` | vacío | Bearer de una CLI emparejada; se envía como `X-TrinaxAI-Device-Token`. |
 | `TRINAXAI_PROXY_SECRET_FILE` | `storage/.proxy_secret` | Clave HMAC privada gateway/backend, creada con modo `0600`. |
+| `TRINAXAI_PROXY_TRUSTED_PEERS` | vacío | IPs/CIDR separados por comas que pueden transportar aserciones HMAC firmadas. Déjalo vacío en modo nativo; Docker Compose configura su subred privada dedicada. |
 | `TRINAXAI_RATE_LIMIT_PER_MINUTE` | `30` | Capacidad del token bucket por IP verificada/bucket. |
 | `TRINAXAI_RATE_LIMIT_WINDOW_SECONDS` | `60` | Segundos para recargar un bucket vacío a capacidad. |
 | `TRINAXAI_TLS_VERIFY` | `0` | Validación TLS de conexiones salientes del backend. |
@@ -185,7 +186,7 @@ capabilities de dispositivo, no cuentas.
 | `VITE_TRINAXAI_OLLAMA_BASE` | Base Ollama de producción. |
 | `VITE_TRINAXAI_DEV_RAG_BASE` | Base RAG durante desarrollo. |
 | `VITE_TRINAXAI_DEV_OLLAMA_BASE` | Base Ollama durante desarrollo. |
-| `VITE_TRINAXAI_VISION_MODEL` | Modelo de visión; por defecto `qwen3-vl:4b-instruct` en 16GB y se descarga al primer análisis de imagen. |
+| `VITE_TRINAXAI_VISION_MODEL` | Modelo de visión; por defecto `qwen3.5:4b` en 16GB y se descarga al primer análisis de imagen. |
 
 `/api/rag` firma peer/método/ruta con la clave HMAC y `/api/ollama` publica una
 allowlist reducida: no es proxy genérico. Los procesos comparten lock para que

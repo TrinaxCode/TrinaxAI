@@ -139,7 +139,7 @@ verify_tls = true
 
 [defaults]
 engine = "ollama"
-model = "qwen2.5-coder:1.5b"
+model = "qwen3.5:2b"
 collections = ["default"]
 
 [ui]

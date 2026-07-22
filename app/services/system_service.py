@@ -865,7 +865,7 @@ def system_self_test(request: Request):
     except Exception:
         LOG.debug("Best-effort operation failed", exc_info=True)
 
-    # 2. Verificar embedding con bge-m3
+    # 2. Verificar el embedder configurado
     try:
         emb = Settings.embed_model
         test_vec = emb.get_text_embedding("TrinaxAI system test")
@@ -892,9 +892,8 @@ def system_self_test(request: Request):
         results["document_extractors"] = True
     except Exception:
         LOG.debug("Best-effort operation failed", exc_info=True)
-    results["voice_routes"] = all(
-        any(getattr(route, "path", "") == path for route in request.app.routes)
-        for path in ("/v1/voice/capabilities", "/v1/voice/stt", "/v1/voice/tts")
+    results["voice_routes"] = {"/v1/voice/capabilities", "/v1/voice/stt", "/v1/voice/tts"}.issubset(
+        request.app.openapi()["paths"]
     )
     try:
         from watchdog.observers import Observer as _Observer  # noqa: F401

@@ -177,11 +177,9 @@ TRINAXAI_CORS_ORIGINS=https://localhost:3334,http://localhost:3334,https://192.1
 Perfil `16gb` recomendado:
 
 ```powershell
-ollama pull qwen2.5-coder:1.5b
 ollama pull qwen3.5:2b
-ollama pull qwen3.5:0.8b
-ollama pull granite4:3b
-ollama pull bge-m3
+ollama pull qwen3.5:4b
+ollama pull qwen3-embedding:0.6b
 ```
 
 Para los demás perfiles, consulta la
@@ -364,7 +362,7 @@ Para abrir desde telefono/tablet, Windows Defender Firewall debe permitir Node/P
 | Error de permisos PowerShell | Ejecuta con `-ExecutionPolicy Bypass`. |
 | PWA no abre desde telefono | Ejecuta PowerShell como administrador y vuelve a correr `install.ps1` para agregar reglas de firewall en red privada para TCP 3333/3334. Verifica tambien que sea la misma WiFi. |
 | API HTTPS muestra certificado no valido | Es normal con certificado local; acepta la advertencia. |
-| Out of memory | Usa el perfil `8gb`. Sus valores incluyen `qwen3.5:0.8b`, `qwen2.5-coder:1.5b` y `bge-m3`; reduce contexto o elige modelos menores si es necesario. |
+| Out of memory | Usa el perfil `8gb`. Sus roles de texto usan `qwen3.5:2b` y `qwen3-embedding:0.6b`; reduce el contexto si es necesario. |
 
 ## Nota sobre WSL
 

@@ -80,8 +80,9 @@ El modelo de amenazas de TrinaxAI asume:
   revocarlo. Empareja equipos controlados y revoca uno perdido con
   `trinaxai pair revoke`.
 - **Identidad de proxy falsificada:** El gateway quita cabeceras de identidad
-  aportadas por cliente. FastAPI solo acepta una firma HMAC fresca desde un peer
-  loopback y el secreto de instalación permanece privado.
+  aportadas por cliente. FastAPI solo acepta una firma HMAC fresca y de un uso
+  desde loopback o un peer privado de runtime configurado explícitamente;
+  pertenecer a la red no basta sin el secreto de `storage/.proxy_secret`.
 - **Prompt injection en documentos/web:** El material recuperado se delimita como
   no confiable y no autoriza herramientas. Mantén la aprobación; yolo HTTP está
   apagado y sigue limitado a loopback real si se activa explícitamente.

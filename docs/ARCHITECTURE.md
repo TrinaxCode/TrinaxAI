@@ -36,7 +36,7 @@ The single source of truth for all subsystems. Defines:
 
 - **Model fleet** — `MODEL_GENERAL`, `MODEL_CODE`, `MODEL_DEEP`, and `MODEL_FAST`; their concrete names come from the active profile and can be overridden in `.env`.
 - **Hardware profiles** — auto-tuned by `TRINAXAI_PROFILE` (4gb/8gb/16gb/max/ultra)
-- **Embedding presets** — bge-m3 balanced, nomic lite, all-minilm fast
+- **Embedding presets** — Qwen3 Embedding 0.6B balanced, nomic lite, all-minilm fast
 - **Factory functions** — `make_llm()`, `make_embed()`, `make_reranker()`
 - **Auto-router** — `route_model()` heuristic classifier (no LLM call needed)
 - **File rules** — what to index, what to skip, chunk sizes per profile
@@ -53,7 +53,7 @@ Key subsystems:
 
 | Feature | Implementation |
 |---|---|
-| **Hybrid retrieval** | Vector (bge-m3) + BM25 (keyword) → reciprocal rank fusion |
+| **Hybrid retrieval** | Vector (Qwen3 Embedding) + BM25 (keyword) → reciprocal rank fusion |
 | **Reranking** | Optional cross-encoder (bge-reranker-v2-m3) reorders candidates when enabled |
 | **Collections** | Separate namespaces within the same vector store |
 | **Project detection** | Heuristic from file paths and user query |
@@ -156,7 +156,7 @@ index.py starts
   │
   ├─ build_nodes(docs) → CodeSplitter (AST) or SentenceSplitter
   │
-  ├─ Embed nodes (bge-m3, no LLM needed)
+  ├─ Embed nodes (Qwen3 Embedding, no LLM needed)
   │
   └─ stage index + manifest → journaled publish → generation marker
 ```
@@ -364,9 +364,11 @@ These areas require extra care when modifying:
 
 1. The gateway removes client-supplied forwarding/TrinaxAI identity headers,
    verifies the remote device/admin credential, and signs the verified peer,
-   method, path and freshness data for its loopback FastAPI request.
-2. FastAPI accepts that assertion only from loopback with the shared HMAC key;
-   stale, replayed, malformed or path-mismatched assertions fail closed.
+   method, path and freshness data for its FastAPI request.
+2. FastAPI accepts that assertion only from loopback or an explicitly configured
+   private runtime peer with the shared HMAC key; stale, replayed, malformed or
+   path-mismatched assertions fail closed. Network membership alone grants no
+   privilege.
 3. A real direct-loopback caller has local operator privilege. A valid admin
    token has every scope. A paired token receives only its recorded scopes.
 4. Each route asks for its concrete scope: `chat`, `read_private`, `index`,

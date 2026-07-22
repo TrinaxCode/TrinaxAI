@@ -39,6 +39,7 @@ child processes and normally should not be added to `.env`.
 | `TRINAXAI_DEVICE_TOKEN` | empty | Packaged CLI credential for a paired device, sent as `X-TrinaxAI-Device-Token`. Prefer process-secret storage over shell history or committed config. |
 | `TRINAXAI_PROXY_SECRET_FILE` | `storage/.proxy_secret` | Mode-0600 gateway/backend HMAC key shared only by the local processes. It is created automatically when possible. |
 | `TRINAXAI_PROXY_SECRET` | empty | Direct HMAC secret override. Prefer the secret file so the value is not copied into service definitions or shell history. |
+| `TRINAXAI_PROXY_TRUSTED_PEERS` | empty | Comma-separated IPs/CIDRs allowed as transport peers for signed gateway assertions. Keep empty for native loopback mode; Docker Compose supplies its dedicated private subnet. |
 | `TRINAXAI_RATE_LIMIT_PER_MINUTE` | `30` | Capacity of each monotonic token bucket, keyed by verified IP and endpoint bucket. |
 | `TRINAXAI_RATE_LIMIT_WINDOW_SECONDS` | `60` | Seconds over which an empty backend bucket refills to capacity. |
 | `TRINAXAI_OLLAMA_PROXY_RATE_LIMIT` | `30` | Requests per minute and verified peer through the gateway's allowlisted Ollama facade. |
@@ -128,6 +129,7 @@ Ollama also consumes `OLLAMA_BASE_URL` (backend endpoint), `OLLAMA_HOST`
 | `TRINAXAI_SIMILARITY_TOP_K` | profile-derived | Final retrieved chunks supplied to the model. |
 | `TRINAXAI_FUSION_CANDIDATES` | profile-derived | Candidate count per retriever before fusion. |
 | `TRINAXAI_RETRIEVAL_CACHE_SECONDS` | mode-derived | In-memory retrieval-cache lifetime. `0` disables it. |
+| `TRINAXAI_RAG_MIN_SCORE` | `0.05` | Minimum top retrieval score accepted by explicit Knowledge mode; lower-only results return the deterministic no-relevant-information response. |
 | `TRINAXAI_SOURCES_CACHE_SECONDS` | mode-derived | Knowledge-source listing cache lifetime. `0` disables it. |
 | `TRINAXAI_RETRIEVER_CACHE_MAX_COMBINATIONS` | `32` | LRU bound for distinct active-collection retriever combinations; prevents unbounded combination growth. |
 | `TRINAXAI_RERANK` | `0` | Enables optional cross-encoder reranking. |
@@ -205,10 +207,10 @@ changing them. Non-`VITE_*` proxy targets are read by the Vite server at runtime
 | `VITE_TRINAXAI_OLLAMA_BASE` | `/api/ollama` | Production browser Ollama base. |
 | `VITE_TRINAXAI_DEV_RAG_BASE` | `/api/rag` | Development browser RAG base. |
 | `VITE_TRINAXAI_DEV_OLLAMA_BASE` | `/api/ollama` | Development browser Ollama base. |
-| `VITE_TRINAXAI_INDEX_DIR` | `~/Documents` | Initial index-directory hint displayed by the PWA. |
+| `VITE_TRINAXAI_INDEX_DIR` | empty (server-selected project root) | Optional initial index-directory hint displayed by the PWA. |
 | `VITE_TRINAXAI_REPO_URL` | project repository | Repository link displayed by the PWA. |
 | `VITE_TRINAXAI_DOCS_URL` | repository README | Documentation link displayed by the PWA. |
-| `VITE_TRINAXAI_VISION_MODEL` | `qwen3-vl:4b-instruct` | Model used for OCR, screenshots, documents, and general image analysis; downloaded on first image analysis if missing. |
+| `VITE_TRINAXAI_VISION_MODEL` | `qwen3.5:4b` | Model used for OCR, screenshots, documents, and general image analysis; downloaded on first image analysis if missing. |
 | `VITE_TRINAXAI_KEEP_ALIVE` | `10m` | Direct-chat Ollama keep-alive sent by the browser. |
 
 ## Install, update, backup, and lifecycle controls

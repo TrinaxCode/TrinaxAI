@@ -9,8 +9,9 @@ credential (`X-TrinaxAI-Device-Token`), or the administrator super-credential
 (`X-Admin-Token`). The private-LAN fallback is limited to legacy system control
 when no admin token is configured and LAN control was explicitly enabled. The local PWA gateway strips
 client identity headers and signs the original peer, method and path with a
-fresh HMAC assertion. FastAPI accepts that assertion only from loopback;
-`Forwarded` and `X-Forwarded-For` are never identity.
+fresh, single-use HMAC assertion. FastAPI accepts that assertion only from
+loopback or an explicitly configured private runtime peer that also proves the
+shared key; `Forwarded` and `X-Forwarded-For` are never identity.
 
 Chat, STT, and TTS use separate monotonic token buckets per verified IP.
 General capacity is 30 and an empty bucket refills over 60 seconds.

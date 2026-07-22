@@ -181,11 +181,9 @@ TRINAXAI_CORS_ORIGINS=https://localhost:3334,http://localhost:3334,https://192.1
 Recommended `16gb` profile:
 
 ```bash
-ollama pull qwen2.5-coder:1.5b
 ollama pull qwen3.5:2b
-ollama pull qwen3.5:0.8b
-ollama pull granite4:3b
-ollama pull bge-m3
+ollama pull qwen3.5:4b
+ollama pull qwen3-embedding:0.6b
 ```
 
 For `8gb`, `max`, and `ultra`, use the exact current fleet in the
@@ -336,6 +334,72 @@ https://localhost:3334
 5. Create collections to separate projects or topics.
 6. Attach files temporarily if you don't want to index them.
 7. Use phrases like `remember that...` to save explicit local memory.
+
+## Optional Docker backend
+
+This first stage containerizes only the RAG API. The PWA, security gateway, and
+Ollama continue to run on the host.
+
+Requirements: Docker Compose and Ollama installed on the host.
+
+```bash
+cd ~/trinaxai
+cp .env.example .env
+mkdir -p projects storage local_sources
+```
+
+In `.env`, change the API target to HTTP because the container does not
+terminate TLS:
+
+```dotenv
+TRINAXAI_RAG_TARGET=http://127.0.0.1:3333
+VITE_TRINAXAI_RAG_TARGET=http://127.0.0.1:3333
+```
+
+Then start only the host PWA gateway and the Docker API:
+
+```bash
+export TRINAXAI_DOCKER_UID="$(id -u)"
+export TRINAXAI_DOCKER_GID="$(id -g)"
+docker compose up --build -d
+.venv/bin/python service_manager.py start-frontend --base-dir "$PWD"
+```
+
+The API is published only on `127.0.0.1:3333`, so the native PWA can keep
+using its gateway on `3334`. Indexes, sources, and secrets remain in
+`storage/` and `local_sources/` through persistent mounts.
+
+By default, the container looks for Ollama at
+`http://host.docker.internal:11434`. On Linux, Ollama must accept connections
+from Docker's network; configure its bind deliberately and restrict access
+with the firewall. Compose uses the private `172.31.0.0/24` subnet to transport
+the HMAC identity; if it is already in use, set `TRINAXAI_DOCKER_NETWORK_CIDR`
+to another free private subnet. To use another Ollama address:
+
+```bash
+TRINAXAI_DOCKER_OLLAMA_URL=http://host.docker.internal:11434 \
+  docker compose up -d
+```
+
+The container indexes `./projects` read-only. To use another host directory,
+set `TRINAXAI_DOCKER_INDEX_DIR` before starting:
+
+```bash
+TRINAXAI_DOCKER_INDEX_DIR=/path/to/documents docker compose up -d
+```
+
+Check status and stop it with:
+
+```bash
+curl http://127.0.0.1:3333/health
+docker compose ps
+docker compose down
+```
+
+This profile does not containerize the PWA or Ollama yet, and port `3333` must
+not be exposed outside the host. Do not use `startup_ai.sh` or `start-ai` while
+this Compose profile is active; they would try to start another API on the
+same port.
 
 ## Update
 

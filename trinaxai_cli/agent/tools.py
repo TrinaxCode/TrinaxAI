@@ -37,10 +37,17 @@ from trinaxai_cli.agent.extract import extract_document_text, is_document
 
 # Cap tool output so a huge file or noisy command cannot blow the model's
 # context window. Handlers truncate and append a clear marker when they hit it.
-MAX_OUTPUT_CHARS = 20_000
+MAX_OUTPUT_CHARS = 8_000
 MAX_FILE_BYTES = 2_000_000
 RUN_TIMEOUT_SECONDS = 120
 _UNSANDBOXED_COMMAND_ENV = "TRINAXAI_AGENT_ALLOW_UNSANDBOXED_COMMANDS"
+MAX_ROOT_ENTRIES = 200
+MAX_LIST_ENTRIES = 200
+MAX_GLOB_MATCHES = 200
+MAX_GREP_MATCHES = 100
+MAX_GREP_FILES = 2_000
+MAX_RECURSIVE_DEPTH = 8
+_SKIP_DIRS = {".git", "node_modules", "__pycache__", ".venv"}
 
 # Importing arbitrary modules merely to inspect them can itself have side
 # effects. Keep automatic API evidence to common, side-effect-free stdlib
@@ -100,6 +107,24 @@ def _truncate(text: str, limit: int = MAX_OUTPUT_CHARS) -> str:
     if len(text) <= limit:
         return text
     return text[:limit] + f"\n... [truncated, {len(text) - limit} more chars]"
+
+
+def _workspace_scope_error(workspace_root: Path) -> str | None:
+    """Reject an accidentally broad workspace before recursive inspection."""
+    try:
+        entries = [child for child in workspace_root.iterdir() if child.name not in _SKIP_DIRS]
+    except OSError as exc:
+        return f"error: cannot inspect workspace root: {exc}"
+    if len(entries) > MAX_ROOT_ENTRIES:
+        return (
+            f"error: workspace root is too broad ({len(entries)} top-level entries). "
+            "Pick a project folder instead of a general Documents/home directory."
+        )
+    return None
+
+
+def _depth(path: Path, root: Path) -> int:
+    return len(path.relative_to(root).parts)
 
 
 def _compact_doc(obj: Any, limit: int = 700) -> str:
@@ -304,11 +329,19 @@ def _list_dir(workspace_root: Path, path: str = ".", **_: Any) -> str:
     target = _resolve_in_workspace(workspace_root, path or ".")
     if not target.is_dir():
         return f"error: not a directory: {path}"
-    entries = []
-    for child in sorted(target.iterdir(), key=lambda p: (p.is_file(), p.name.lower())):
-        if child.name in {".git", "node_modules", "__pycache__", ".venv"}:
-            continue
-        entries.append(f"{child.name}/" if child.is_dir() else child.name)
+    if target == workspace_root:
+        scope_error = _workspace_scope_error(workspace_root)
+        if scope_error:
+            return scope_error
+    try:
+        children = [child for child in target.iterdir() if child.name not in _SKIP_DIRS]
+    except OSError as exc:
+        return f"error: cannot list directory: {exc}"
+    children.sort(key=lambda p: (p.is_file(), p.name.lower()))
+    truncated = len(children) > MAX_LIST_ENTRIES
+    entries = [f"{child.name}/" if child.is_dir() else child.name for child in children[:MAX_LIST_ENTRIES]]
+    if truncated:
+        entries.append(f"... [truncated: {len(children) - MAX_LIST_ENTRIES} more entries]")
     listing = "\n".join(entries) if entries else "(empty directory)"
     return _truncate(listing)
 
@@ -321,31 +354,63 @@ def _glob(workspace_root: Path, pattern: str, **_: Any) -> str:
     parts = normalized.split("/")
     if not normalized or normalized.startswith("/") or ".." in parts or (parts and ":" in parts[0]):
         raise SandboxError(f"glob pattern '{pattern}' is outside the workspace root ({root}); access denied")
+    scope_error = _workspace_scope_error(root)
+    if scope_error:
+        return scope_error
     matches: list[str] = []
-    skip = {".git", "node_modules", "__pycache__", ".venv"}
-    for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = [d for d in dirnames if d not in skip]
-        for name in filenames:
-            full = Path(dirpath) / name
-            rel = str(full.relative_to(root))
-            if fnmatch.fnmatch(rel, normalized) or fnmatch.fnmatch(name, normalized):
-                matches.append(rel)
-        if len(matches) > 500:
-            break
+    if "**" not in normalized:
+        try:
+            candidates = root.glob(normalized)
+            for full in candidates:
+                if full.is_file() and not any(part in _SKIP_DIRS for part in full.relative_to(root).parts):
+                    matches.append(str(full.relative_to(root)))
+                    if len(matches) > MAX_GLOB_MATCHES:
+                        break
+        except OSError as exc:
+            return f"error: glob failed: {exc}"
+    else:
+        for dirpath, dirnames, filenames in os.walk(root):
+            current = Path(dirpath)
+            dirnames[:] = [d for d in dirnames if d not in _SKIP_DIRS]
+            if _depth(current, root) >= MAX_RECURSIVE_DEPTH:
+                dirnames[:] = []
+            for name in filenames:
+                full = current / name
+                rel = str(full.relative_to(root))
+                if fnmatch.fnmatch(rel, normalized):
+                    matches.append(rel)
+                    if len(matches) > MAX_GLOB_MATCHES:
+                        break
+            if len(matches) > MAX_GLOB_MATCHES:
+                break
     if not matches:
         return f"no files match: {pattern}"
-    return _truncate("\n".join(sorted(matches)[:500]))
+    matches.sort()
+    truncated = len(matches) > MAX_GLOB_MATCHES
+    output = matches[:MAX_GLOB_MATCHES]
+    if truncated:
+        output.append(f"... [truncated: more than {MAX_GLOB_MATCHES} matches]")
+    return _truncate("\n".join(output))
 
 
 def _grep(workspace_root: Path, pattern: str, path: str = ".", **_: Any) -> str:
     base = _resolve_in_workspace(workspace_root, path or ".")
     skip = {".git", "node_modules", "__pycache__", ".venv"}
+    if base == workspace_root:
+        scope_error = _workspace_scope_error(workspace_root)
+        if scope_error:
+            return scope_error
     results: list[str] = []
     files: list[Path] = [base] if base.is_file() else []
     if base.is_dir():
         for dirpath, dirnames, filenames in os.walk(base):
             dirnames[:] = [d for d in dirnames if d not in skip]
             files.extend(Path(dirpath) / n for n in filenames)
+            if len(files) > MAX_GREP_FILES:
+                return (
+                    f"error: search scope is too broad (more than {MAX_GREP_FILES} files). "
+                    "Narrow the path before using grep."
+                )
     for file in files:
         try:
             if file.stat().st_size > MAX_FILE_BYTES:
@@ -353,15 +418,18 @@ def _grep(workspace_root: Path, pattern: str, path: str = ".", **_: Any) -> str:
             for lineno, line in enumerate(file.read_text(encoding="utf-8", errors="replace").splitlines(), start=1):
                 if pattern in line:
                     results.append(f"{_rel(workspace_root, file)}:{lineno}:{line.strip()[:200]}")
-                    if len(results) >= 200:
+                    if len(results) >= MAX_GREP_MATCHES:
                         break
         except OSError:
             continue
-        if len(results) >= 200:
+        if len(results) >= MAX_GREP_MATCHES:
             break
     if not results:
         return f"no matches for: {pattern}"
-    return _truncate("\n".join(results))
+    output = results
+    if len(results) >= MAX_GREP_MATCHES:
+        output.append(f"... [truncated: reached {MAX_GREP_MATCHES} matches]")
+    return _truncate("\n".join(output))
 
 
 def _is_enabled(name: str) -> bool:

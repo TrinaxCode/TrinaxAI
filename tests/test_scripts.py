@@ -136,8 +136,8 @@ def test_installers_share_conservative_profile_thresholds_and_preserve_models() 
     assert '"${ram_gb:-0}" -ge 32' in posix
     assert "$RamGb -ge 64" in windows
     assert "$RamGb -ge 32" in windows
-    assert "qwen3-vl:30b-a3b-instruct" in setup
-    assert "qwen3.5:27b qwen2.5-coder:14b qwen3-vl:8b-instruct" in setup
+    assert "qwen3.5:35b qwen3-coder:30b" in setup
+    assert "qwen3.5:2b qwen3.5:9b" in setup
     assert "ollama rm" not in setup
 
 
@@ -170,10 +170,17 @@ def test_windows_installer_configures_rag_transport_and_lan_firewall() -> None:
 def test_installers_use_light_models_for_8gb_profile() -> None:
     for script_name in ("install.ps1", "install.sh"):
         script = (ROOT / script_name).read_text(encoding="utf-8")
-        assert "qwen3.5:0.8b" in script
-        assert "qwen2.5-coder:1.5b" in script
-        assert "bge-m3" in script
-        assert "qwen3-vl:2b-instruct" in script
+        assert "qwen3.5:2b" in script
+        assert "qwen3-embedding:0.6b" in script
+
+
+def test_profile_model_fallback_lists_do_not_repeat_models() -> None:
+    setup = (ROOT / "setup_trinaxai.sh").read_text(encoding="utf-8")
+    update = (ROOT / "update.sh").read_text(encoding="utf-8")
+    update_ps1 = (ROOT / "update.ps1").read_text(encoding="utf-8")
+    assert "qwen3.5:2b qwen3.5:2b" not in setup
+    assert "qwen3.5:2b qwen3.5:2b" not in update
+    assert '"qwen3.5:2b", "qwen3.5:2b"' not in update_ps1
 
 
 def test_release_model_matrix_is_synced_to_updates_env_and_continue() -> None:
@@ -181,9 +188,9 @@ def test_release_model_matrix_is_synced_to_updates_env_and_continue() -> None:
     updates = (ROOT / "update.sh").read_text(encoding="utf-8") + (ROOT / "update.ps1").read_text(encoding="utf-8")
     continue_config = (ROOT / "continue-config.yaml").read_text(encoding="utf-8")
 
-    assert "qwen2.5-coder:1.5b" in env and "qwen2.5-coder:0.5b" not in env
-    assert all(model in updates for model in ("granite4:3b", "qwen3.5:2b", "qwen2.5-coder:1.5b", "bge-m3"))
-    assert all(model in continue_config for model in ("qwen2.5-coder:1.5b", "qwen2.5-coder:14b", "qwen3-coder:30b"))
+    assert "qwen3.5:4b" in env and "qwen2.5-coder:0.5b" not in env
+    assert "TRINAXAI_MODEL_CODE" in updates
+    assert "qwen3-coder:30b" in continue_config
 
 
 def test_windows_update_and_uninstall_scripts_exist() -> None:
@@ -239,22 +246,28 @@ def test_posix_update_rolls_back_a_clean_tree_after_partial_failure() -> None:
     assert "$script:RollbackActive = $true" in windows
 
 
-def test_tagged_releases_have_checksums_and_signed_provenance() -> None:
+def test_tagged_releases_publish_a_simple_verified_release() -> None:
     workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
 
-    assert "actions/attest@v4" in workflow
-    assert "sha256sum" in workflow
+    assert 'tags:\n      - "v*.*.*"' in workflow
+    assert "Verify package versions" in workflow
     assert "gh release create" in workflow
     assert "--verify-tag" in workflow
+    assert "--generate-notes" in workflow
+    assert "actions/attest@v4" not in workflow
 
 
 def test_system_setup_never_sudo_executes_user_writable_repo_scripts() -> None:
     script = (ROOT / "setup_trinaxai.sh").read_text(encoding="utf-8")
+    hardened = (ROOT / "scripts" / "harden_systemd_units.sh").read_text(encoding="utf-8")
     assert "NOPASSWD: $PROJ/startup_ai.sh" not in script
     assert "/usr/local/libexec/trinaxai" in script
     assert "chown root:root" in script
     assert 'Environment="OLLAMA_HOST=127.0.0.1:11434"' in script
     assert "--host 127.0.0.1" in script
+    for text in (script, hardened):
+        assert "After=network.target ai-rag.service" not in text
+        assert "Wants=ai-rag.service" not in text
 
 
 def test_installers_bind_privileged_backends_to_loopback() -> None:

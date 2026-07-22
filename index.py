@@ -4,7 +4,7 @@ TrinaxAI — Indexador de documentos.
 Características:
   • Chunking consciente del lenguaje: CodeSplitter (AST) para código,
     SentenceSplitter para prosa. No parte funciones por la mitad.
-  • Embeddings bge-m3 (multilingüe, 1024 dims).
+  • Qwen3 Embedding (multilingüe, 1024 dims).
   • Metadata de proyecto en cada chunk (para citas y filtro por proyecto).
   • INCREMENTAL: solo re-indexa archivos nuevos o modificados (fingerprint
     de contenido + versión de pipeline). Actualizar = segundos, no horas.

@@ -25,9 +25,11 @@
 
   html.dark {
     background: #000000;
+    color-scheme: dark;
   }
   html.light {
     background: #ffffff;
+    color-scheme: light;
   }
 
   body {
@@ -168,6 +170,19 @@
     border-radius: 4px;
   }
 
+  /* Tailwind's outline-none utility is used to remove native input chrome.
+     Restore a consistent keyboard focus indicator after utility styles. */
+  input:not([data-group-focus]):focus-visible,
+  textarea:not([data-group-focus]):focus-visible,
+  select:not([data-group-focus]):focus-visible {
+    outline: 2px solid rgba(0, 107, 189, 0.75) !important;
+    outline-offset: 2px;
+  }
+
+  [data-group-focus]:focus-visible {
+    outline: none;
+  }
+
   /* Keep every interactive transition on the same fluid curve. Individual
      duration utilities still control how fast each component moves. */
   button,
@@ -222,6 +237,12 @@
 }
 
 @layer utilities {
+  /* Keep supporting copy readable on phones without touching layout spacing. */
+  .text-\[10px\],
+  .text-\[11px\] {
+    font-size: 0.75rem;
+    line-height: 1rem;
+  }
   /* Dynamic viewport height fallback */
   .h-dvh {
     height: 100dvh;

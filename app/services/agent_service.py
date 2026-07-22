@@ -33,6 +33,7 @@ from app.security.admin_auth import authorize_scope
 from trinaxai_cli.agent import DEFAULT_TOOLS, AgentEngine, Tool  # noqa: E402
 from trinaxai_cli.agent.engine import AgentCancelled  # noqa: E402
 
+from .app_state_service import _read_app_state
 from .shared_runtime import *  # noqa: F403
 
 # Pending agent streams. Each entry owns a queue (engine → SSE) and a dict of
@@ -46,6 +47,27 @@ _APPROVAL_TIMEOUT_SECONDS = 300
 _AGENT_MAX_SECONDS = config._env_float("TRINAXAI_AGENT_TIMEOUT", 600.0, minimum=30.0, maximum=3600.0)
 _AGENT_STALL_SECONDS = config._env_float("TRINAXAI_AGENT_STALL_TIMEOUT", 120.0, minimum=15.0, maximum=600.0)
 _AGENT_WORKSPACE_KEY = "tc-agent-workspace"
+_AGENT_STATUS_INTERVAL_SECONDS = 3.0
+_AGENT_EVENT_RESULT_CHARS = 2500
+_INDEXED_QUERY_HINTS = (
+    "indexad",
+    "indexed",
+    "mis archivos",
+    "my files",
+    "my documents",
+    "mi código",
+    "mi codigo",
+    "my code",
+    "en el índice",
+    "en el indice",
+    "in the index",
+    "proyectos indexados",
+    "indexed projects",
+    "qué tienes indexado",
+    "que tienes indexado",
+    "what is indexed",
+    "what do you have indexed",
+)
 
 
 @contextmanager
@@ -101,11 +123,32 @@ def _workspace_is_allowed(path: Path, roots: tuple[Path, ...] | None = None) -> 
     return any(path == root or root in path.parents for root in allowed_roots)
 
 
+def _is_broad_workspace(path: Path) -> bool:
+    path = path.resolve()
+    home = Path.home().resolve()
+    documents = (home / "Documents").resolve()
+    return path in {home, documents}
+
+
+def _default_workspace(roots: tuple[Path, ...]) -> Path:
+    base = Path(config.BASE_DIR).expanduser().resolve()
+    if _workspace_is_allowed(base, roots) and not _is_broad_workspace(base):
+        return base
+    candidates = [root for root in roots if not _is_broad_workspace(root)]
+    if candidates:
+        return min(candidates, key=lambda root: (len(root.parts), str(root)))
+    raise HTTPException(
+        status_code=503,
+        detail="No narrow agent project root is configured; choose a project folder explicitly.",
+    )
+
+
 def _resolve_workspace(requested: str | None) -> Path:
-    """Resolve a requested workspace inside an operator-registered root."""
+    """Resolve a requested workspace without defaulting to a broad user folder."""
     roots = _configured_workspace_roots()
     if not roots:
         raise HTTPException(status_code=503, detail="No agent workspace root is configured.")
+    explicit = bool((requested or "").strip())
     candidate = (requested or "").strip()
     if not candidate:
         try:
@@ -113,21 +156,36 @@ def _resolve_workspace(requested: str | None) -> Path:
                 candidate = _read_app_state().get(_AGENT_WORKSPACE_KEY, "").strip()
         except Exception:
             candidate = ""
+        explicit = False
     if not candidate:
-        return roots[0]
+        return _default_workspace(roots)
     path = Path(candidate).expanduser()
     if not path.is_dir():
+        if not explicit:
+            return _default_workspace(roots)
         raise HTTPException(status_code=400, detail=f"Workspace is not a directory: {path}")
     try:
         resolved = path.resolve()
     except OSError as exc:
+        if not explicit:
+            return _default_workspace(roots)
         raise HTTPException(status_code=400, detail=f"Invalid workspace: {path}") from exc
     if not _workspace_is_allowed(resolved, roots):
+        if not explicit:
+            return _default_workspace(roots)
         raise HTTPException(
             status_code=403,
             detail="Workspace is outside TRINAXAI_AGENT_WORKSPACE_ROOTS.",
         )
+    if not explicit and _is_broad_workspace(resolved):
+        return _default_workspace(roots)
     return resolved
+
+
+def _agent_query_needs_knowledge(messages: list[dict]) -> bool:
+    text = " ".join(str(message.get("content") or "") for message in messages if message.get("role") == "user")
+    lowered = text.casefold()
+    return any(hint in lowered for hint in _INDEXED_QUERY_HINTS)
 
 
 def _http_yolo_enabled() -> bool:
@@ -165,8 +223,8 @@ def _resolve_model(requested: str | None, messages: list[dict] | None = None) ->
             LOG.debug("Agent model auto-routing failed; using the general model", exc_info=True)
     if not selected:
         selected = getattr(config, "MODEL_GENERAL", None) or getattr(config, "LLM_MODEL", "qwen3.5:4b")
-    if selected == getattr(config, "MODEL_CODE", None) or selected.lower().startswith("qwen2.5-coder:"):
-        fallback = getattr(config, "MODEL_GENERAL", None) or getattr(config, "MODEL_DEEP", "granite4:3b")
+    if selected.lower().startswith("qwen2.5-coder:"):
+        fallback = getattr(config, "MODEL_GENERAL", None) or getattr(config, "MODEL_DEEP", "qwen3.5:2b")
         LOG.info("Agent router replaced incompatible model %s with %s", selected, fallback)
         return fallback
     return selected
@@ -261,7 +319,7 @@ def _safe_args(args: dict) -> dict:
     out: dict = {}
     for key, value in args.items():
         text = str(value)
-        out[key] = text if len(text) <= 4000 else text[:4000] + "…(truncated)"
+        out[key] = text if len(text) <= 1200 else text[:1200] + "…(truncated)"
     return out
 
 
@@ -412,7 +470,7 @@ _DEEP_RESEARCH_TOOL = Tool(
 
 def _agent_tools(
     web_search: bool = False,
-    knowledge_search: bool = True,
+    knowledge_search: bool = False,
     deep_research: bool = False,
 ) -> tuple[Tool, ...]:
     """Default file/shell tools plus TrinaxAI's RAG knowledge search.
@@ -431,6 +489,7 @@ def _agent_tools(
 
 def _run_engine_worker(session: dict, req: AgentRequest, workspace: Path, model: str) -> None:
     q: queue.Queue = session["queue"]
+    messages = [dict(m) for m in req.messages]
 
     def on_tool_start(tool: Tool, args: dict) -> None:
         _touch_session(session, current_tool=tool.name, step=True)
@@ -438,7 +497,7 @@ def _run_engine_worker(session: dict, req: AgentRequest, workspace: Path, model:
 
     def on_tool_result(tool: Tool, result: str) -> None:
         _touch_session(session, current_tool=None)
-        q.put({"type": "tool_result", "tool": tool.name, "result": result[:4000]})
+        q.put({"type": "tool_result", "tool": tool.name, "result": result[:_AGENT_EVENT_RESULT_CHARS]})
 
     def on_token(text: str) -> None:
         _touch_session(session, current_tool=None)
@@ -469,7 +528,7 @@ def _run_engine_worker(session: dict, req: AgentRequest, workspace: Path, model:
         num_ctx=_agent_num_ctx(),
         tools=_agent_tools(
             web_search=bool(getattr(req, "web_search", False)),
-            knowledge_search=bool(getattr(req, "knowledge_search", True)),
+            knowledge_search=bool(getattr(req, "knowledge_search", False)) or _agent_query_needs_knowledge(messages),
             deep_research=bool(getattr(req, "deep_research", False)),
         ),
         on_tool_start=on_tool_start,
@@ -481,7 +540,6 @@ def _run_engine_worker(session: dict, req: AgentRequest, workspace: Path, model:
     )
     session["engine"] = engine
     try:
-        messages = [dict(m) for m in req.messages]
         answer = engine.run(messages)
         q.put({"type": "done", "answer": answer})
     except AgentCancelled:
@@ -498,6 +556,7 @@ def _agent_event_stream(session_id: str, session: dict, req: AgentRequest, works
     q.put({"type": "start", "session_id": session_id, "workspace": str(workspace), "model": model})
     worker = threading.Thread(target=_run_engine_worker, args=(session, req, workspace, model), daemon=True)
     worker.start()
+    last_status = 0.0
     try:
         while True:
             try:
@@ -524,17 +583,19 @@ def _agent_event_stream(session_id: str, session: dict, req: AgentRequest, works
                     )
                     yield _sse({"type": "error", "error": reason, "recoverable": True})
                     break
-                yield _sse(
-                    {
-                        "type": "status",
-                        "state": "running",
-                        "elapsed_seconds": int(elapsed),
-                        "idle_seconds": int(idle),
-                        "current_tool": session.get("current_tool"),
-                        "steps": int(session.get("steps", 0)),
-                        "last_activity": time.time() - idle,
-                    }
-                )
+                if now - last_status >= _AGENT_STATUS_INTERVAL_SECONDS:
+                    last_status = now
+                    yield _sse(
+                        {
+                            "type": "status",
+                            "state": "running",
+                            "elapsed_seconds": int(elapsed),
+                            "idle_seconds": int(idle),
+                            "current_tool": session.get("current_tool"),
+                            "steps": int(session.get("steps", 0)),
+                            "last_activity": time.time() - idle,
+                        }
+                    )
                 continue
             if event is None:
                 break
@@ -623,7 +684,7 @@ async def agent_browse(request: Request):
     except PermissionError:
         raise HTTPException(status_code=403, detail=f"Permission denied: {resolved}")
     parent = str(resolved.parent) if resolved != enclosing_root else None
-    return {"path": str(resolved), "parent": parent, "home": str(roots[0]), "directories": entries}
+    return {"path": str(resolved), "parent": parent, "home": str(_default_workspace(roots)), "directories": entries}
 
 
 __all__ = [name for name in globals() if not name.startswith("__")]

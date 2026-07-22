@@ -3,8 +3,8 @@ from __future__ import annotations
 import os
 from typing import Any
 
-RECOMMENDED = ["granite4:3b", "qwen3.5:2b", "qwen3.5:0.8b", "qwen2.5-coder:1.5b", "bge-m3"]
-ON_DEMAND = ["qwen3-vl:4b-instruct"]
+RECOMMENDED = ["qwen3.5:2b", "qwen3.5:4b", "qwen3-embedding:0.6b"]
+ON_DEMAND: list[str] = []
 
 
 def run(args: Any, client: Any, ui: Any, config: Any) -> int:

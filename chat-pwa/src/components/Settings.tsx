@@ -556,7 +556,7 @@ export default function Settings({ onBack, onOpenDocs, initialSection = 'general
               spellCheck={false}
               onChange={(event) => setAgentWorkspace(event.target.value)}
               onBlur={(event) => { try { localStorage.setItem('tc-agent-workspace', event.target.value.trim()); } catch { /* ignore */ } }}
-              placeholder="~/Documents"
+              placeholder="/path/to/project"
               aria-label={`${t('agentSettingsTitle')} — ${t('agentWorkspaceRootLabel')}`}
               name="agent-workspace"
               autoComplete="off"
@@ -614,6 +614,7 @@ export default function Settings({ onBack, onOpenDocs, initialSection = 'general
                     onChange={(e) => setLocalSetting(k, e.target.value)}
                     className={`min-w-0 flex-1 text-[11px] font-mono bg-transparent outline-none border-b border-transparent hover:border-[#006bbd]/30 focus:border-[#006bbd] px-1 py-0.5 transition-colors max-w-full ${isDark ? 'text-white/70' : 'text-gray-700'}`}
                   >
+                    <option value="qwen3-embedding:0.6b">qwen3-embedding:0.6b · 1024d</option>
                     <option value="bge-m3">bge-m3 · 1024d · {t('modelEmbeddingBge')}</option>
                     <option value="nomic-embed-text">nomic-embed-text · 768d · {t('modelEmbeddingNomic')}</option>
                     <option value="all-minilm">all-minilm · 384d · {t('modelEmbeddingMini')}</option>

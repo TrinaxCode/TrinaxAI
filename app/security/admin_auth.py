@@ -11,6 +11,7 @@ import ipaddress
 import os
 import re
 import secrets
+import threading
 import time
 from pathlib import Path
 
@@ -43,7 +44,10 @@ _PROXY_NONCE_HEADER = "X-TrinaxAI-Proxy-Nonce"
 _PROXY_SIGNATURE_HEADER = "X-TrinaxAI-Proxy-Signature"
 _PROXY_VERSION = "v1"
 _PROXY_MAX_SKEW_SECONDS = 30
+_PROXY_NONCE_CACHE_MAX = 65_536
 _PROXY_SECRET: bytes | None = None
+_PROXY_SEEN_NONCES: dict[str, int] = {}
+_PROXY_NONCE_LOCK = threading.Lock()
 
 SAFE_DEFAULT_ORIGINS = (
     "https://localhost:3334",
@@ -83,6 +87,24 @@ def _is_local_client(host: str) -> bool:
     except ValueError:
         return host in {"localhost"}
     return ip.is_loopback
+
+
+def _is_trusted_proxy_peer(host: str) -> bool:
+    """Allow loopback or explicitly configured runtime peers for HMAC proxies."""
+    if _is_local_client(host):
+        return True
+    configured = os.getenv("TRINAXAI_PROXY_TRUSTED_PEERS", "")
+    try:
+        peer = ipaddress.ip_address(host.removeprefix("::ffff:"))
+    except ValueError:
+        return False
+    for raw_network in configured.split(","):
+        try:
+            if peer in ipaddress.ip_network(raw_network.strip(), strict=False):
+                return True
+        except ValueError:
+            continue
+    return False
 
 
 def _immediate_client_host(request: Request) -> str:
@@ -173,12 +195,27 @@ def _proxy_signature(
     ).hexdigest()
 
 
+def _consume_proxy_nonce(nonce: str, stamp: int) -> None:
+    """Accept a signed nonce once within the assertion freshness window."""
+    now = int(time.time())
+    with _PROXY_NONCE_LOCK:
+        for used_nonce, expires_at in list(_PROXY_SEEN_NONCES.items()):
+            if expires_at < now:
+                _PROXY_SEEN_NONCES.pop(used_nonce, None)
+        if nonce in _PROXY_SEEN_NONCES:
+            raise HTTPException(status_code=403, detail="Replayed trusted-proxy identity.")
+        if len(_PROXY_SEEN_NONCES) >= _PROXY_NONCE_CACHE_MAX:
+            raise HTTPException(status_code=503, detail="Trusted-proxy replay cache is full.")
+        _PROXY_SEEN_NONCES[nonce] = stamp + _PROXY_MAX_SKEW_SECONDS
+
+
 def _verified_proxy_client(request: Request, immediate_host: str) -> str | None:
     """Return the signed original peer, or ``None`` for a direct request.
 
-    Only the local Vite gateway can assert an original address.  Ordinary
-    ``Forwarded``/``X-Forwarded-For`` headers remain untrusted, and any partial
-    or invalid TrinaxAI proxy assertion is rejected rather than ignored.
+    Only the local Vite gateway or an explicitly configured runtime peer can
+    assert an original address. Ordinary ``Forwarded``/``X-Forwarded-For``
+    headers remain untrusted, and any partial or invalid TrinaxAI proxy
+    assertion is rejected rather than ignored.
     """
     marker = request.headers.get(_PROXY_HEADER, "").strip()
     signed_headers = (
@@ -189,7 +226,7 @@ def _verified_proxy_client(request: Request, immediate_host: str) -> str | None:
     )
     if not marker and not any(request.headers.get(name) for name in signed_headers):
         return None
-    if marker != _PROXY_VERSION or not _is_local_client(immediate_host):
+    if marker != _PROXY_VERSION or not _is_trusted_proxy_peer(immediate_host):
         raise HTTPException(status_code=403, detail="Invalid trusted-proxy identity.")
 
     client_ip = request.headers.get(_PROXY_CLIENT_HEADER, "").strip().removeprefix("::ffff:")
@@ -219,6 +256,7 @@ def _verified_proxy_client(request: Request, immediate_host: str) -> str | None:
     )
     if not hmac.compare_digest(signature, expected):
         raise HTTPException(status_code=403, detail="Invalid trusted-proxy identity.")
+    _consume_proxy_nonce(nonce, stamp)
     return client_ip
 
 
@@ -229,9 +267,13 @@ def _client_host(request: Request) -> str:
     emitted by TrinaxAI's local gateway.  Client-supplied X-Forwarded-For is
     never consulted.
     """
+    cached = getattr(request.state, "trinaxai_verified_client", None)
+    if isinstance(cached, str):
+        return cached
     immediate = _immediate_client_host(request)
-    proxied = _verified_proxy_client(request, immediate)
-    return proxied or immediate
+    client = _verified_proxy_client(request, immediate) or immediate
+    request.state.trinaxai_verified_client = client
+    return client
 
 
 def _validate_browser_origin(request: Request) -> None:

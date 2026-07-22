@@ -51,21 +51,22 @@ def test_config_8gb_profile_uses_light_defaults(tmp_path: Path) -> None:
     )
     data = json.loads(result.stdout)
 
-    assert data["general"] == "qwen3.5:0.8b"
-    assert data["code"] == "qwen2.5-coder:1.5b"
-    assert data["deep"] == "qwen3.5:0.8b"
-    assert data["fast"] == "qwen3.5:0.8b"
+    assert data["general"] == "qwen3.5:2b"
+    assert data["code"] == "qwen3.5:2b"
+    assert data["deep"] == "qwen3.5:2b"
+    assert data["fast"] == "qwen3.5:2b"
     assert data["embed_preset"] == "balanced"
-    assert data["embed"] == "bge-m3"
+    assert data["embed"] == "qwen3-embedding:0.6b"
     assert data["batch"] == 1
 
 
 def test_all_profile_model_roles_match_the_release_matrix(tmp_path: Path) -> None:
     (tmp_path / "dotenv.py").write_text("def load_dotenv(*args, **kwargs):\n    return False\n", encoding="utf-8")
     expected = {
-        "16gb": ["granite4:3b", "qwen2.5-coder:1.5b", "qwen3.5:2b", "qwen3.5:0.8b"],
-        "max": ["qwen3.5:27b", "qwen2.5-coder:14b", "qwen3.5:27b", "qwen3.5:4b"],
-        "ultra": ["qwen3.5:35b-a3b", "qwen3-coder:30b", "qwen3.5:35b-a3b", "qwen3.5:4b"],
+        "8gb": ["qwen3.5:2b", "qwen3.5:2b", "qwen3.5:2b", "qwen3.5:2b"],
+        "16gb": ["qwen3.5:4b", "qwen3.5:4b", "qwen3.5:4b", "qwen3.5:2b"],
+        "max": ["qwen3.5:9b", "qwen3.5:9b", "qwen3.5:9b", "qwen3.5:2b"],
+        "ultra": ["qwen3.5:35b", "qwen3-coder:30b", "qwen3.5:35b", "qwen3.5:4b"],
     }
     for profile, models in expected.items():
         env = {**os.environ, "PYTHONPATH": os.pathsep.join([str(tmp_path), str(ROOT)]), "TRINAXAI_PROFILE": profile}

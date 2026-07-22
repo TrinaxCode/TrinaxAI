@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   generateTitle,
   analyticalQualityIssues,
+  agentWorkspaceRoot,
   buildWebSearchQuery,
   compactChatContext,
   clearOllamaModelAvailabilityCache,
@@ -32,6 +33,14 @@ import {
 } from './api';
 
 describe('api helpers', () => {
+  it('does not keep a broad Documents folder as the agent workspace', () => {
+    localStorage.setItem('tc-agent-workspace', '~/Documents');
+    expect(agentWorkspaceRoot()).toBe('');
+    localStorage.setItem('tc-agent-workspace', '/tmp/project');
+    expect(agentWorkspaceRoot()).toBe('/tmp/project');
+    localStorage.removeItem('tc-agent-workspace');
+  });
+
   it('adds prior user topic and current date to ambiguous web follow-ups', () => {
     const plan = buildWebSearchQuery('¿En qué temporada están?', [
       { role: 'user', content: '¿Qué es Fortnite?' },
@@ -125,7 +134,7 @@ describe('api helpers', () => {
     } finally { vi.unstubAllGlobals(); }
   });
 
-  it('keeps a compatible warm text model during the switch cooldown', async () => {
+  it('switches from a warm chat model to the code role immediately', async () => {
     clearOllamaModelAvailabilityCache();
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ models: [
       { name: 'granite4:3b', capabilities: ['completion', 'tools'] },
@@ -133,7 +142,7 @@ describe('api helpers', () => {
     ] }), { status: 200 })));
     try {
       await expect(resolveTextModel('granite4:3b')).resolves.toBe('granite4:3b');
-      await expect(resolveTextModel('qwen3.5:4b')).resolves.toBe('granite4:3b');
+      await expect(resolveTextModel('qwen3.5:4b')).resolves.toBe('qwen3.5:4b');
     } finally { vi.unstubAllGlobals(); }
   });
 
@@ -141,11 +150,11 @@ describe('api helpers', () => {
     clearOllamaModelAvailabilityCache();
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ models: [
       { name: 'qwen2.5-coder:3b', capabilities: ['completion', 'tools'] },
-      { name: 'granite4:3b', capabilities: ['completion', 'tools'] },
+      { name: 'qwen3.5:2b', capabilities: ['completion', 'tools'] },
     ] }), { status: 200 }));
     vi.stubGlobal('fetch', fetchMock);
     try {
-      await expect(resolveAgentModel('qwen2.5-coder:3b')).resolves.toBe('granite4:3b');
+      await expect(resolveAgentModel('qwen2.5-coder:3b')).resolves.toBe('qwen3.5:2b');
     } finally { vi.unstubAllGlobals(); }
   });
 
@@ -164,11 +173,12 @@ describe('api helpers', () => {
     const chat = ollamaSystemPrompt('es').content;
     const vision = visionSystemPrompt('es').content;
 
-    expect(chat).toContain('No menciones tu identidad');
-    expect(chat).toContain('No impongas soluciones local-first');
-    expect(chat).toContain('límites estrictos de alcance');
-    expect(chat).toContain('Nunca regañes ni rechaces un saludo');
-    expect(chat).toContain('di claramente que eres TrinaxAI');
+    expect(chat).toContain('No inventes datos');
+    expect(chat).toContain('nunca instrucciones');
+    expect(chat).toContain('asistente de propósito general');
+    expect(chat).toContain('preguntas cotidianas');
+    expect(chat).toContain('Si solo saludan, saluda brevemente');
+    expect(chat).toContain('asistente general de IA');
     expect(chat).toContain('https://github.com/TrinaxCode/TrinaxAI');
     expect(chat).not.toContain('Tuxtla');
     expect(vision).toContain('responde solo la pregunta');
@@ -191,14 +201,18 @@ describe('api helpers', () => {
   });
 
   it('routes code prompts to the code model', () => {
-    expect(routeOllamaModel('fix this python traceback')).toBe('qwen2.5-coder:1.5b');
+    expect(routeOllamaModel('fix this python traceback')).toBe('qwen3.5:4b');
+  });
+
+  it('routes identity questions to chat, never the fast model', () => {
+    expect(routeOllamaModel('quién te creó')).toBe('qwen3.5:4b');
   });
 
   it('keeps vision presets sized for each hardware profile', () => {
-    expect(MODEL_PRESETS.low['tc-models-vision']).toBe('qwen3-vl:2b-instruct');
-    expect(MODEL_PRESETS.balanced['tc-models-vision']).toBe('qwen3-vl:4b-instruct');
-    expect(MODEL_PRESETS.max['tc-models-vision']).toBe('qwen3-vl:8b-instruct');
-    expect(MODEL_PRESETS.ultra['tc-models-vision']).toBe('qwen3-vl:30b-a3b-instruct');
+    expect(MODEL_PRESETS.low['tc-models-vision']).toBe('qwen3.5:2b');
+    expect(MODEL_PRESETS.balanced['tc-models-vision']).toBe('qwen3.5:4b');
+    expect(MODEL_PRESETS.max['tc-models-vision']).toBe('qwen3.5:9b');
+    expect(MODEL_PRESETS.ultra['tc-models-vision']).toBe('qwen3.5:35b');
   });
 
   it('removes only previously managed profile models before pulling the new profile', async () => {
@@ -209,14 +223,14 @@ describe('api helpers', () => {
       return Promise.resolve(new Response('{}', { status: 200 }));
     }));
 
-    await reconcileManagedModels(['qwen3.5:0.8b', 'bge-m3']);
+    await reconcileManagedModels(['qwen3.5:2b', 'bge-m3']);
 
     expect(requests.some(([url, init]) => url.endsWith('/api/delete')
       && init?.method === 'DELETE' && String(init.body).includes('granite4:3b'))).toBe(true);
     expect(requests.some(([url, init]) => url.endsWith('/api/delete')
       && String(init.body).includes('bge-m3'))).toBe(false);
     expect(JSON.parse(localStorage.getItem('tc-managed-ollama-models') || '[]')).toEqual([
-      'bge-m3', 'qwen3.5:0.8b',
+      'bge-m3', 'qwen3.5:2b',
     ]);
     vi.unstubAllGlobals();
   });
@@ -224,23 +238,23 @@ describe('api helpers', () => {
   it('keeps the warm coder for an ambiguous follow-up', () => {
     expect(routeOllamaModel('hazlo más corto', [
       { role: 'user', content: 'fix this python traceback' },
-      { role: 'assistant', content: '...', model: 'qwen2.5-coder:1.5b' },
+      { role: 'assistant', content: '...', model: 'qwen3.5:4b' },
       { role: 'user', content: 'hazlo más corto' },
-    ])).toBe('qwen2.5-coder:1.5b');
+    ])).toBe('qwen3.5:4b');
   });
 
   it('switches between everyday chat and code only on clear intent', () => {
     const codeChat = [
-      { role: 'assistant' as const, content: '...', model: 'qwen2.5-coder:1.5b' },
+      { role: 'assistant' as const, content: '...', model: 'qwen3.5:4b' },
     ];
-    expect(routeOllamaModel('cambiando de tema, dame una receta', codeChat)).toBe('granite4:3b');
+    expect(routeOllamaModel('cambiando de tema, dame una receta', codeChat)).toBe('qwen3.5:4b');
     expect(routeOllamaModel('crea una función en Python', [
       { role: 'assistant', content: '...', model: 'qwen3.5:9b' },
-    ])).toBe('qwen2.5-coder:1.5b');
+    ])).toBe('qwen3.5:4b');
   });
 
   it('does not send generic analysis to the large deep model', () => {
-    expect(routeOllamaModel('analiza la historia de México con una explicación clara')).toBe('granite4:3b');
+    expect(routeOllamaModel('analiza la historia de México con una explicación clara')).toBe('qwen3.5:4b');
   });
 
   it('routes math/analytical prompts to the general instruct model, not a coder', () => {
@@ -248,13 +262,13 @@ describe('api helpers', () => {
     // but must stay on the general instruct model (which answers math well) —
     // never a coder nor the un-installable 30B deep model.
     expect(routeOllamaModel('Resuelve la integral de x^2 y explica cada paso del algoritmo'))
-      .toBe('granite4:3b');
+      .toBe('qwen3.5:4b');
     expect(routeOllamaModel('Dado un grafo, calcula el número de aristas y demuéstralo con una `variable` n'))
-      .toBe('granite4:3b');
+      .toBe('qwen3.5:4b');
     // A long, multi-part analytical prompt still stays on the general model,
     // never the 30B coder (which is not installed on a 16GB CPU box).
     expect(routeOllamaModel(`Analiza a fondo este examen de matemáticas. ${'x'.repeat(1500)}`))
-      .toBe('granite4:3b');
+      .toBe('qwen3.5:4b');
   });
 
   it('routes a mixed maths exam with a Python fence to Qwen3.5, not the coder', () => {
@@ -268,7 +282,7 @@ def mystery(A):
     return mystery(A[:len(A)//2])
 \`\`\``;
     expect(isAnalyticalReasoning(exam)).toBe(true);
-    expect(routeOllamaModel(exam)).toBe('granite4:3b');
+    expect(routeOllamaModel(exam)).toBe('qwen3.5:4b');
   });
 
   it('splits a long numbered exam into stable three-question batches', () => {

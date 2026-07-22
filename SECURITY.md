@@ -80,8 +80,9 @@ TrinaxAI's threat model assumes:
   revoke it immediately. Pair only devices you control and revoke a lost device
   with `trinaxai pair revoke`.
 - **Forged proxy identity:** Client-supplied TrinaxAI/forwarding headers are stripped
-  by the gateway. FastAPI accepts only a fresh HMAC signature from a loopback peer;
-  the installation secret is kept in `storage/.proxy_secret` with private mode.
+  by the gateway. FastAPI accepts a fresh, single-use HMAC signature only from
+  loopback or an explicitly configured private runtime peer; network membership
+  alone grants no privilege without the secret in `storage/.proxy_secret`.
 - **Prompt injection in indexed/web content:** Retrieved material is delimited and
   labelled untrusted. It cannot authorize a tool. Keep dangerous-action approval on;
   HTTP yolo is off and restricted to real loopback even when explicitly enabled.

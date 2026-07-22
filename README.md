@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0--or--later-blue.svg" alt="AGPL-3.0-or-later"></a>
-  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/version-1.2.0-006bbd.svg" alt="Version 1.2.0"></a>
+  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/version-1.0.0-006bbd.svg" alt="Version 1.0.0"></a>
   <a href="#-quick-start"><img src="https://img.shields.io/badge/powered_by-Ollama-black.svg" alt="Ollama"></a>
   <a href="#️-supported-platforms"><img src="https://img.shields.io/badge/platform-Linux|macOS|Windows-lightgrey.svg" alt="Platforms"></a>
   <a href="chat-pwa/README.md"><img src="https://img.shields.io/badge/PWA-ready-brightgreen.svg" alt="PWA"></a>
@@ -180,7 +180,7 @@ Folder browsing exposes local directory structure only on loopback or to a paire
 - 🔄 **State and usage sync** — versioned settings/history synchronization with conflict-safe revisions, explicit deletes, and local usage statistics.
 - 🛡️ **Local-first security** — loopback services, scoped device pairing, HMAC-signed gateway, sandboxed agent.
 
-**Project version:** 1.2.0 · **License:** [AGPL-3.0-or-later](LICENSE)
+**Project version:** 1.0.0 · **License:** [AGPL-3.0-or-later](LICENSE)
 
 ---
 
@@ -224,8 +224,8 @@ flowchart TB
 
 A normal chat turn is classified locally and sent to the best configured model. A RAG turn retrieves from the selected collections, optionally reranks the candidates, and asks Ollama to synthesize a **cited** answer. Research combines multiple local retrieval passes with optional web sources; the agent operates only inside approved workspace roots. The watcher keeps indexes current, while memory, attachments, history, settings, pairing, and usage remain host-backed and sync only to authorized devices. `service_manager.py` supervises services across Linux, macOS, and Windows (systemd / launchctl / subprocess).
 
-The default `16gb` general model is `granite4:3b`, selected for the measured
-latency/quality balance documented in [the model benchmark](docs/MODEL_BENCHMARK.md);
+The default `16gb` general model is `qwen3.5:4b`, selected for better Spanish
+conversation quality; `qwen3.5:2b` remains for greetings and trivial requests.
 the deterministic auto-router uses configured code/deep/fast models when the
 task requires them. Large uploads become durable background jobs with real
 stage/page/chunk/batch progress, bounded timeouts, cancellation, reconnectable
@@ -292,14 +292,14 @@ The installer picks a **hardware profile** from your RAM. The supported installe
 
 | Role | Low (`8gb`) | Medium (`16gb`) | High (`max`) | Ultra |
 |---|---|---|---|---|
-| **Chat / reasoning** | `qwen3.5:0.8b` | `granite4:3b` | `qwen3.5:27b` | `qwen3.5:35b-a3b` (MoE) |
-| **Code** | `qwen2.5-coder:1.5b` | `qwen2.5-coder:1.5b` | `qwen2.5-coder:14b` | `qwen3-coder:30b` (MoE) |
-| **Deep** | `qwen3.5:0.8b` | `qwen3.5:2b` | `qwen3.5:27b` | `qwen3.5:35b-a3b` (MoE) |
-| **Vision** | `qwen3-vl:2b-instruct` | `qwen3-vl:4b-instruct` | `qwen3-vl:8b-instruct` | `qwen3-vl:30b-a3b-instruct` (MoE) |
-| **Fast** | `qwen3.5:0.8b` | `qwen3.5:0.8b` | `qwen3.5:4b` | `qwen3.5:4b` |
-| **Embeddings** | `bge-m3` (1024d) | `bge-m3` | `bge-m3` | `bge-m3` |
+| **Chat / reasoning** | `qwen3.5:2b` | `qwen3.5:4b` | `qwen3.5:9b` | `qwen3.5:35b` (MoE) |
+| **Code** | `qwen3.5:2b` | `qwen3.5:4b` | `qwen3.5:9b` | `qwen3-coder:30b` (MoE) |
+| **Deep** | `qwen3.5:2b` | `qwen3.5:4b` | `qwen3.5:9b` | `qwen3.5:35b` (MoE) |
+| **Vision** | `qwen3.5:2b` | `qwen3.5:4b` | `qwen3.5:9b` | `qwen3.5:35b` (MoE) |
+| **Fast** | `qwen3.5:2b` | `qwen3.5:2b` | `qwen3.5:2b` | `qwen3.5:4b` |
+| **Embeddings** | `qwen3-embedding:0.6b` (1024d) | `qwen3-embedding:0.6b` | `qwen3-embedding:0.6b` | `qwen3-embedding:0.6b` |
 
-The **generation pipeline** routes each request across the profile's general, deep, code, and fast models; vision uses the matching Qwen3-VL Instruct model. Vision models are downloaded on first image analysis, so installation and updates do not block on a large VL pull. Confirm names with `ollama list` and adjust `.env` if you change models. See [docs/CONFIGURATION.md](docs/CONFIGURATION.md) and [docs/ENVIRONMENT_VARIABLES.md](docs/ENVIRONMENT_VARIABLES.md).
+The **generation pipeline** routes each request across the profile's general, deep, code, and fast roles. Qwen3.5 also handles vision, avoiding a second resident VL model. Vision models are downloaded on first image analysis, so installation and updates do not block on a large pull. Confirm names with `ollama list` and adjust `.env` if you change models. See [docs/CONFIGURATION.md](docs/CONFIGURATION.md) and [docs/ENVIRONMENT_VARIABLES.md](docs/ENVIRONMENT_VARIABLES.md).
 
 ---
 

@@ -77,9 +77,9 @@ With `TRINAXAI_AUTO_ROUTE=1`, a deterministic local classifier selects the
 configured general, code, deep, or fast model from task intent and required
 capabilities; it does not make an extra model request. An explicit compatible
 model remains authoritative, while unavailable or tool-incompatible choices
-fall back to an installed capable model. For the normal `16gb` profile,
-`granite4:3b` is the general default because the checked-in benchmark shows the
-best latency/quality balance; `qwen3.5:2b` is the deeper reasoning default.
+fall back to an installed capable model. For the normal `16gb` CPU profile,
+`qwen3.5:4b` is the general, code, and deep default; `qwen3.5:2b` is the fast
+route. The checked-in benchmark records the measured latency tradeoff.
 
 ## Common values
 

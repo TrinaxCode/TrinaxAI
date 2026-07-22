@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0--or--later-blue.svg" alt="AGPL-3.0-or-later"></a>
-  <a href="CHANGELOG.es.md"><img src="https://img.shields.io/badge/version-1.2.0-006bbd.svg" alt="Versión 1.2.0"></a>
+  <a href="CHANGELOG.es.md"><img src="https://img.shields.io/badge/version-1.0.0-006bbd.svg" alt="Versión 1.0.0"></a>
   <a href="#-inicio-rápido"><img src="https://img.shields.io/badge/powered_by-Ollama-black.svg" alt="Ollama"></a>
   <a href="#️-plataformas-compatibles"><img src="https://img.shields.io/badge/platform-Linux|macOS|Windows-lightgrey.svg" alt="Plataformas"></a>
   <a href="chat-pwa/README.es.md"><img src="https://img.shields.io/badge/PWA-lista-brightgreen.svg" alt="PWA"></a>
@@ -169,7 +169,7 @@ cámara o shell que el usuario o navegador no haya autorizado.
 - 🔄 **Sincronización de estado y uso** — sincronización versionada de ajustes/historial con revisiones seguras ante conflictos, borrados explícitos y estadísticas locales.
 - 🛡️ **Seguridad local-first** — servicios en loopback, emparejamiento por scopes, gateway firmado con HMAC, agente en sandbox.
 
-**Versión del proyecto:** 1.2.0 · **Licencia:** [AGPL-3.0-or-later](LICENSE)
+**Versión del proyecto:** 1.0.0 · **Licencia:** [AGPL-3.0-or-later](LICENSE)
 
 ---
 
@@ -213,8 +213,8 @@ flowchart TB
 
 Un turno normal se clasifica localmente y se envía al mejor modelo configurado. Un turno RAG busca en las colecciones seleccionadas, opcionalmente reordena los candidatos y pide a Ollama sintetizar una respuesta **citada**. La investigación combina varias pasadas de recuperación local con fuentes web opcionales; el agente opera solo dentro de las raíces de workspace aprobadas. El watcher mantiene los índices al día, mientras que memoria, adjuntos, historial, ajustes, pairing y uso permanecen en el host y solo se sincronizan con dispositivos autorizados. `service_manager.py` supervisa los servicios en Linux, macOS y Windows (systemd / launchctl / subproceso).
 
-El modelo general predeterminado del perfil `16gb` es `granite4:3b`, elegido por
-el equilibrio medido de latencia/calidad del [benchmark](docs/MODEL_BENCHMARK.md);
+El modelo general predeterminado del perfil `16gb` es `qwen3.5:4b`, elegido por
+mejor calidad conversacional en español; `qwen3.5:2b` queda para saludos y consultas triviales.
 el autorouter determinista usa los modelos de código, profundidad o rapidez
 cuando la tarea lo exige. Las subidas grandes se convierten en trabajos
 persistentes con progreso real de etapa/páginas/chunks/lotes, timeouts,
@@ -280,12 +280,12 @@ El instalador elige un **perfil de hardware** según tu RAM. Los perfiles soport
 
 | Rol | Low (`8gb`) | Medium (`16gb`) | High (`max`) | Ultra |
 |---|---|---|---|---|
-| **Chat / razonamiento** | `qwen3.5:0.8b` | `granite4:3b` | `qwen3.5:27b` | `qwen3.5:35b-a3b` (MoE) |
-| **Código** | `qwen2.5-coder:1.5b` | `qwen2.5-coder:1.5b` | `qwen2.5-coder:14b` | `qwen3-coder:30b` (MoE) |
-| **Profundo** | `qwen3.5:0.8b` | `qwen3.5:2b` | `qwen3.5:27b` | `qwen3.5:35b-a3b` (MoE) |
-| **Visión** | `qwen3-vl:2b-instruct` | `qwen3-vl:4b-instruct` | `qwen3-vl:8b-instruct` | `qwen3-vl:30b-a3b-instruct` (MoE) |
-| **Rápido** | `qwen3.5:0.8b` | `qwen3.5:0.8b` | `qwen3.5:4b` | `qwen3.5:4b` |
-| **Embeddings** | `bge-m3` (1024d) | `bge-m3` | `bge-m3` | `bge-m3` |
+| **Chat / razonamiento** | `qwen3.5:2b` | `qwen3.5:4b` | `qwen3.5:9b` | `qwen3.5:35b` (MoE) |
+| **Código** | `qwen3.5:2b` | `qwen3.5:4b` | `qwen3.5:9b` | `qwen3-coder:30b` (MoE) |
+| **Profundo** | `qwen3.5:2b` | `qwen3.5:4b` | `qwen3.5:9b` | `qwen3.5:35b` (MoE) |
+| **Visión** | `qwen3.5:2b` | `qwen3.5:4b` | `qwen3.5:9b` | `qwen3.5:35b` (MoE) |
+| **Rápido** | `qwen3.5:2b` | `qwen3.5:2b` | `qwen3.5:2b` | `qwen3.5:4b` |
+| **Embeddings** | `qwen3-embedding:0.6b` (1024d) | `qwen3-embedding:0.6b` | `qwen3-embedding:0.6b` | `qwen3-embedding:0.6b` |
 
 El **pipeline de generación** dirige cada solicitud entre los modelos general, profundo, de código y rápido del perfil; para visión usa el Qwen3-VL Instruct correspondiente. Los modelos de visión se descargan al analizar la primera imagen, así la instalación y los updates no se bloquean por un pull grande. Confirma los nombres con `ollama list` y ajusta `.env` si cambias de modelo. Mira [docs/CONFIGURATION.es.md](docs/CONFIGURATION.es.md) y [docs/ENVIRONMENT_VARIABLES.md](docs/ENVIRONMENT_VARIABLES.md).
 

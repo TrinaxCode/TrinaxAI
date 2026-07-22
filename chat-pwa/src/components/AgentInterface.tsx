@@ -120,7 +120,7 @@ export default function AgentInterface({ onBack, initialRequest, onRequestConsum
     try { return localStorage.getItem('tc-agent-web-search') === '1'; } catch { return false; }
   });
   const [knowledgeSearch, setKnowledgeSearch] = useState<boolean>(() => {
-    try { return localStorage.getItem('tc-agent-knowledge-search') !== '0'; } catch { return true; }
+    try { return localStorage.getItem('tc-agent-knowledge-search') === '1'; } catch { return false; }
   });
   const [deepResearch, setDeepResearch] = useState<boolean>(() => {
     try { return localStorage.getItem('tc-agent-deep-research') === '1'; } catch { return false; }
@@ -294,12 +294,13 @@ export default function AgentInterface({ onBack, initialRequest, onRequestConsum
     switch (event.type) {
       case 'start':
         agentRunSessionRef.current = event.session_id;
+        setWorkspace(event.workspace);
         setAgentActivity(lang === 'en' ? 'Starting agent' : 'Iniciando agente');
         patchAssistant((turn) => ({ ...turn, model: event.model }));
         break;
       case 'status':
         setAgentActivity(event.current_tool
-          ? `${lang === 'en' ? 'Using' : 'Usando'} ${event.current_tool} · ${event.elapsed_seconds}s`
+          ? `${lang === 'en' ? 'Using' : 'Usando'} ${event.current_tool === 'model' && lang !== 'en' ? 'modelo' : event.current_tool} · ${event.elapsed_seconds}s`
           : `${lang === 'en' ? 'Planning' : 'Planificando'} · ${event.elapsed_seconds}s`);
         break;
       case 'tool_start':
@@ -843,7 +844,7 @@ export default function AgentInterface({ onBack, initialRequest, onRequestConsum
             disabled={running}
             aria-label={t('agentModel')}
             title={t('agentModel')}
-            className={`ml-auto max-w-28 rounded-lg border px-2 py-1 text-[11px] outline-none disabled:opacity-40 ${isDark ? 'border-white/10 bg-black/40 text-white/70' : 'border-gray-200 bg-white/70 text-gray-600'}`}
+            className={`ml-auto hidden max-w-28 rounded-lg border px-2 py-1 text-xs outline-none disabled:opacity-40 sm:block ${isDark ? 'border-white/10 bg-black/40 text-white/70' : 'border-gray-200 bg-white/70 text-gray-600'}`}
           >
             <option value="auto">{t('agentModelAuto')}</option>
             <option value="chat">{t('agentModelChat')}</option>
@@ -887,6 +888,22 @@ export default function AgentInterface({ onBack, initialRequest, onRequestConsum
             <div className={`flex h-full flex-col items-center justify-center gap-5 px-6 text-center ${subtle}`}>
               <MdSmartToy size={76} className="agent-empty-avatar animate-agent-avatar animate-float" />
               <p className="max-w-sm text-sm leading-relaxed">{t('agentEmptyHint')}</p>
+              <div className="flex max-w-lg flex-wrap justify-center gap-2">
+                {[
+                  ['quickChipFindBugs', 'quickChipFindBugsPrompt'],
+                  ['quickChipCodeReview', 'quickChipCodeReviewPrompt'],
+                  ['quickChipExplainCode', 'quickChipExplainCodePrompt'],
+                ].map(([label, prompt]) => (
+                  <button
+                    key={label}
+                    type="button"
+                    onClick={() => { setInput(t(prompt as Parameters<typeof t>[0])); inputRef.current?.focus(); }}
+                    className={`rounded-full border px-3 py-2 text-xs font-medium transition-colors ${isDark ? 'border-white/10 bg-white/[0.04] text-white/70 hover:bg-white/[0.08] hover:text-white' : 'border-gray-200 bg-white/70 text-gray-600 hover:bg-gray-100 hover:text-gray-900'}`}
+                  >
+                    {t(label as Parameters<typeof t>[0])}
+                  </button>
+                ))}
+              </div>
             </div>
           ) : (
             <div className="mx-auto flex max-w-3xl flex-col gap-4">
@@ -966,7 +983,7 @@ export default function AgentInterface({ onBack, initialRequest, onRequestConsum
                             : <ChatMarkdown text={turn.content} isDark={isDark} />}
                         </div>
                       )}
-                      {running && idx === turns.length - 1 && !turn.content && (!turn.steps || turn.steps.every((s) => s.status === 'done' || s.status === 'denied')) && (
+                      {running && idx === turns.length - 1 && !turn.content && (
                         <div className={`flex items-center gap-2 text-xs ${subtle}`}>
                           <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[#006bbd]" />
                           {analyzingImage ? t('agentAnalyzingImage') : agentActivity || t('agentThinking')}
@@ -1056,6 +1073,20 @@ export default function AgentInterface({ onBack, initialRequest, onRequestConsum
                       initial={{ opacity: 0, y: 8, scale: 0.96 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 8, scale: 0.96 }}
                       className={`absolute bottom-full left-0 z-50 mb-2 w-64 rounded-xl border p-1 shadow-xl ${isDark ? 'border-white/[0.08] bg-[#151515]' : 'border-gray-200 bg-white'}`}
                     >
+                      <label className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm ${isDark ? 'text-white/75' : 'text-gray-700'}`}>
+                        <span className="flex-1">{t('agentModel')}</span>
+                        <select
+                          value={modelMode}
+                          onChange={(event) => setModelMode(event.target.value as AgentModelMode)}
+                          disabled={running}
+                          className={`max-w-32 rounded-lg border px-2 py-1 text-xs outline-none ${isDark ? 'border-white/10 bg-black text-white/80' : 'border-gray-200 bg-white text-gray-700'}`}
+                        >
+                          <option value="auto">{t('agentModelAuto')}</option>
+                          <option value="chat">{t('agentModelChat')}</option>
+                          <option value="deep">{t('agentModelDeep')}</option>
+                          <option value="fast">{t('agentModelFast')}</option>
+                        </select>
+                      </label>
                       {[
                         { label: t('agentRag'), active: knowledgeSearch, toggle: () => setKnowledgeSearch((value) => !value), Icon: MdStorage },
                         { label: t('agentWebSearch'), active: webSearch, toggle: () => setWebSearch((value) => !value), Icon: MdPublic },

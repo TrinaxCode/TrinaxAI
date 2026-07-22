@@ -35,7 +35,7 @@ La fuente única de verdad para todos los subsistemas. Define:
 
 - **Flota de modelos** — `MODEL_GENERAL`, `MODEL_CODE`, `MODEL_DEEP` y `MODEL_FAST`; los nombres concretos dependen del perfil activo y se pueden sobrescribir en `.env`.
 - **Perfiles de hardware** — ajustados automáticamente por `TRINAXAI_PROFILE` (4gb/8gb/16gb/max/ultra)
-- **Presets de embeddings** — bge-m3 equilibrado, nomic lite, all-minilm rápido
+- **Presets de embeddings** — Qwen3 Embedding 0.6B equilibrado, nomic lite, all-minilm rápido
 - **Funciones de fábrica** — `make_llm()`, `make_embed()`, `make_reranker()`
 - **Enrutador automático** — clasificador heurístico `route_model()` (sin llamada al LLM)
 - **Reglas de archivos** — qué indexar, qué omitir, tamaños de chunks por perfil
@@ -52,7 +52,7 @@ Subsistemas clave:
 
 | Característica | Implementación |
 |---|---|
-| **Hybrid retrieval** | Vectorial (bge-m3) + BM25 (palabras clave) → fusión por rango recíproco |
+| **Hybrid retrieval** | Vectorial (Qwen3 Embedding) + BM25 (palabras clave) → fusión por rango recíproco |
 | **Reranking** | Cross-encoder opcional (bge-reranker-v2-m3) cuando se activa |
 | **Colecciones** | Espacios de nombres separados dentro del mismo almacén vectorial |
 | **Detección de proyectos** | Heurística a partir de rutas de archivos y la consulta del usuario |
@@ -154,7 +154,7 @@ index.py arranca
   │
   ├─ build_nodes(docs) → CodeSplitter (AST) o SentenceSplitter
   │
-  ├─ Embed nodos (bge-m3, sin LLM necesario)
+  ├─ Embed nodos (Qwen3 Embedding, sin LLM necesario)
   │
   └─ staging índice+manifest → publish con journal → marker de generación
 ```
@@ -362,9 +362,11 @@ Estas áreas requieren cuidado extra al modificarlas:
 
 1. El gateway elimina cabeceras de forwarding/identidad aportadas por el
    cliente, verifica credencial admin/de dispositivo y firma peer, método, ruta
-   y frescura para la petición loopback a FastAPI.
-2. FastAPI acepta la aserción solo desde loopback y con la clave HMAC compartida;
-   firmas obsoletas, repetidas, malformadas o de otra ruta fallan cerrado.
+   y frescura para la petición a FastAPI.
+2. FastAPI acepta la aserción solo desde loopback o un peer privado de runtime
+   configurado explícitamente y con la clave HMAC compartida; firmas obsoletas,
+   repetidas, malformadas o de otra ruta fallan cerrado. Pertenecer a la red no
+   concede privilegios por sí solo.
 3. Loopback directo tiene privilegio del operador local. Admin obtiene todos los
    scopes. Un token emparejado obtiene solo los scopes registrados.
 4. Cada ruta exige `chat`, `read_private`, `index`, `system`, `agent` o `web`. Una

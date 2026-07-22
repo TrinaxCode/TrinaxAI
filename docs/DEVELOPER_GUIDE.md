@@ -268,7 +268,7 @@ make check
 git diff --check  # verify no trailing whitespace
 ```
 
-Use a semantic tag such as `v1.2.0` and keep it equal to the versions in
+Use a semantic tag such as `v1.0.0` and keep it equal to the versions in
 `pyproject.toml`, `chat-pwa/package.json`, `chat-pwa/package-lock.json`, and
 `trinaxai_cli/app.py`. The tag workflow reruns the release gates and publishes
 the source archive, shell and PowerShell installers, checksums, and provenance.

@@ -95,7 +95,7 @@ def check_ollama(ollama_base: str, *, verbose: bool = False) -> list[CheckResult
         CheckResult(
             f"Modelos disponibles: {len(models)}",
             len(models) > 0,
-            "Ejecuta: ollama pull qwen2.5-coder:1.5b",
+            "Ejecuta: ollama pull qwen3.5:2b",
             "Ollama",
             extra,
         ),

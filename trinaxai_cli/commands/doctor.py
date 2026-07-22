@@ -7,6 +7,8 @@ import os
 import shutil
 import subprocess
 import sys
+import urllib.error
+import urllib.request
 from typing import Any
 
 from trinaxai_cli.commands import _system
@@ -58,6 +60,30 @@ def _safe_backend_command(command: str) -> bool | None:
     return None
 
 
+def _find_ollama() -> str | None:
+    candidates = [
+        shutil.which("ollama"),
+        "/usr/local/bin/ollama",
+        "/usr/bin/ollama",
+        "/snap/bin/ollama",
+        "/opt/homebrew/bin/ollama",
+        os.path.expanduser("~/bin/ollama"),
+        os.path.expanduser("~/.ollama/bin/ollama"),
+    ]
+    for candidate in candidates:
+        if candidate and os.path.isfile(candidate) and os.access(candidate, os.X_OK):
+            return candidate
+    return None
+
+
+def _ollama_api_ok(base_url: str = "http://127.0.0.1:11434") -> bool:
+    try:
+        with urllib.request.urlopen(f"{base_url.rstrip('/')}/api/tags", timeout=3) as response:
+            return 200 <= int(response.status) < 300
+    except (OSError, urllib.error.URLError, ValueError):
+        return False
+
+
 def run(args: Any, client: Any, ui: Any, config: Any) -> int:
     checks: list[dict[str, Any]] = []
 
@@ -68,7 +94,14 @@ def run(args: Any, client: Any, ui: Any, config: Any) -> int:
     root = _system.project_root()
     add("Install root", root is not None, str(root) if root else "set TRINAXAI_HOME or reinstall", critical=True)
     add("Service manager", _system.service_manager().is_file(), str(_system.service_manager()), critical=True)
-    add("Ollama command", bool(shutil.which("ollama")), shutil.which("ollama") or "install Ollama", critical=True)
+    ollama_path = _find_ollama()
+    ollama_api = _ollama_api_ok(str(getattr(config, "OLLAMA_BASE_URL", "http://127.0.0.1:11434")))
+    add(
+        "Ollama command",
+        bool(ollama_path or ollama_api),
+        ollama_path or ("running API detected" if ollama_api else "install/start Ollama"),
+        critical=True,
+    )
 
     try:
         if root is None:

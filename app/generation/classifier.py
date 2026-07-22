@@ -263,6 +263,32 @@ _RAG_LOOKUP = (
     "resume el archivo",
     "en el pdf",
     "en el código del proyecto",
+    "en el codigo del proyecto",
+    "en mis archivos",
+    "en mis ficheros",
+    "en mi código",
+    "en mi codigo",
+    "en el índice",
+    "en el indice",
+    "documentos indexados",
+    "archivos indexados",
+    "proyectos indexados",
+    "qué proyectos hay indexados",
+    "que proyectos hay indexados",
+    "qué tienes indexado",
+    "que tienes indexado",
+    "qué hay indexado",
+    "que hay indexado",
+    "what is indexed",
+    "what's indexed",
+    "what do you have indexed",
+    "indexed projects",
+    "indexed files",
+    "from my files",
+    "from my code",
+    "in my files",
+    "in my code",
+    "in the index",
 )
 # Mathematics / science / formal-proof domain. Strong signal that the task is
 # analytical reasoning, NOT code generation — even when a code snippet or the
@@ -506,6 +532,14 @@ def _count_any(text: str, needles) -> int:
     return sum(1 for n in needles if n in text)
 
 
+def _looks_like_index_lookup(text: str) -> bool:
+    return bool(
+        re.search(r"\bindex(?:ad|ed)\w*\b", text, re.IGNORECASE)
+        or re.search(r"\b(?:my|mi)\s+(?:files?|documents?|docs?|code|código|codigo)\b", text, re.IGNORECASE)
+        or re.search(r"\b(?:in|en)\s+(?:the|el|la)?\s*index\b", text, re.IGNORECASE)
+    )
+
+
 def _count_requirements(text: str) -> int:
     """Estimate distinct requirements.
 
@@ -583,7 +617,7 @@ def classify(text: str, history_text: str = "") -> Classification:
         cats.add("documentation")
     if _count_any(t, _CREATIVE_STRONG):
         cats.add("creative")
-    if _count_any(t, _RAG_LOOKUP):
+    if _count_any(t, _RAG_LOOKUP) or _looks_like_index_lookup(t):
         cats.add("rag_lookup")
     if _count_any(t, _GENERAL_TOPIC):
         cats.add("general")
@@ -628,11 +662,14 @@ def classify(text: str, history_text: str = "") -> Classification:
         )
     ) or t.strip().endswith("?")
 
+    weak_backend_word = t.strip() in {"api", "server", "servidor"}
     is_code = (
         has_fence
         or bool(_count_any(t, _CODE_BROAD))
         or bool(cats & {"frontend", "backend", "python", "javascript", "algorithm", "debugging"})
     )
+    if weak_backend_word and not is_generation:
+        is_code = False
 
     num_req = _count_requirements(raw)
     num_deliv = _count_any(t, _DELIVERABLE_HINTS)

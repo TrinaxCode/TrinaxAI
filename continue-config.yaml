@@ -6,21 +6,21 @@
 #  🧠  TRES MOTORES en uno:
 #     1. RAG Local (TrinaxAI) → respuestas con contexto real de tus proyectos
 #     2. Ollama Directo      → chat rápido, editar, aplicar diffs
-#     3. @codebase (bge-m3)  → búsqueda semántica en el workspace actual
+#     3. @codebase (Qwen3 Embedding) → búsqueda semántica en el workspace
 #
 #  📋  Perfiles de hardware (setear TRINAXAI_PROFILE en .env):
-#     8gb  → Qwen 3.5 4B/0.8B + Coder 1.5B
-#     16gb → Qwen 3.5 9B/2B + Coder 3B (default)
-#     max  → Qwen 3.5 27B + Coder 7B
-#     ultra→ Qwen 3.5 35B-A3B + Coder 14B
+#     8gb  → Qwen 3.5 2B
+#     16gb → Qwen 3.5 4B/2B (default)
+#     max  → Qwen 3.5 9B/2B
+#     ultra→ Qwen 3.5 35B + Qwen3-Coder 30B
 #
 #  🔧  Requisitos previos:
 #     • TrinaxAI corriendo →  ./startup_ai.sh
 #     • Ollama corriendo   →  ollama serve
-#     • Modelos descargados → ollama list (qwen3, qwen2.5-coder, bge-m3)
+#     • Modelos descargados → ollama list (qwen3.5, qwen3-embedding)
 
 name: TrinaxAI Local
-version: 1.2.0
+version: 1.0.0
 schema: v1
 
 # ────────────────────────────────────────────────────────────────
@@ -51,9 +51,9 @@ models:
   # ═══════════════════ OLLAMA DIRECTO ═════════════════════════
 
   # ── Código diario (perfil medium) ──
-  - name: Qwen2.5-Coder 1.5B (Rápido)
+  - name: Qwen3.5 4B (Código)
     provider: ollama
-    model: qwen2.5-coder:1.5b
+    model: qwen3.5:4b
     apiBase: http://localhost:11434
     contextLength: 32768
     roles: [chat, edit, apply]
@@ -65,9 +65,9 @@ models:
       timeout: 120000
 
   # ── Código potente (perfil max) ──
-  - name: Qwen2.5-Coder 14B (Potente)
+  - name: Qwen3.5 9B (Max)
     provider: ollama
-    model: qwen2.5-coder:14b
+    model: qwen3.5:9b
     apiBase: http://localhost:11434
     contextLength: 32768
     roles: [chat, edit, apply]
@@ -95,9 +95,9 @@ models:
   # ── Chat general (~3 GB RAM) ──
   #  Para preguntas conceptuales, documentación, explicaciones.
   #  Tool-calling y sin "thinking" (listo para flujos agénticos).
-  - name: Granite 4 3B (General)
+  - name: Qwen3.5 2B (General)
     provider: ollama
-    model: granite4:3b
+    model: qwen3.5:2b
     apiBase: http://localhost:11434
     contextLength: 131072
     roles: [chat]
@@ -109,9 +109,9 @@ models:
 
   # ── Autocompletado (tab) ──
   #  Modelo pequeño y rápido para sugerencias inline. No se usa para chat.
-  - name: Qwen2.5-Coder 1.5B (Autocomplete)
+  - name: Qwen3.5 2B (Autocomplete)
     provider: ollama
-    model: qwen2.5-coder:1.5b
+    model: qwen3.5:2b
     apiBase: http://localhost:11434
     contextLength: 4096
     roles: [autocomplete]
@@ -123,9 +123,9 @@ models:
       timeout: 8000
 
   # ── Visión (analizar capturas, diagramas, UI) ──
-  - name: Qwen3-VL 4B Instruct (Visión)
+  - name: Qwen3.5 4B (Visión)
     provider: ollama
-    model: qwen3-vl:4b-instruct
+    model: qwen3.5:4b
     apiBase: http://localhost:11434
     contextLength: 8192
     roles: [chat]
@@ -139,7 +139,7 @@ models:
 #  MODELO POR DEFECTO
 # ────────────────────────────────────────────────────────────────
 #  "TrinaxAI RAG" para respuestas con contexto indexado de TODOS
-#  tus proyectos. Cambia a "Qwen2.5-Coder 1.5B (Rápido)" si prefieres
+#  tus proyectos. Cambia a "Qwen3.5 4B (Código)" si prefieres
 #  respuestas directas sin RAG.
 defaultModel: TrinaxAI RAG (Todos mis proyectos)
 
@@ -148,16 +148,15 @@ defaultModel: TrinaxAI RAG (Todos mis proyectos)
 # ────────────────────────────────────────────────────────────────
 #  Se dispara al pausar de escribir. Usa el modelo de autocomplete
 #  definido arriba (roles: [autocomplete]).
-tabAutocompleteModel: Qwen2.5-Coder 3B (Autocomplete)
+tabAutocompleteModel: Qwen3.5 2B (Autocomplete)
 
 # ────────────────────────────────────────────────────────────────
 #  EMBEDDINGS para @codebase
 # ────────────────────────────────────────────────────────────────
-#  bge-m3: multilingüe (español + inglés), 1024 dimensiones,
-#  ventana de 8192 tokens. Muy superior a nomic-embed-text.
+#  Qwen3 Embedding: multilingüe, 1024 dimensiones y ventana de 32K.
 embeddingsProvider:
   provider: ollama
-  model: bge-m3
+  model: qwen3-embedding:0.6b
   requestOptions:
     timeout: 60000
 
@@ -169,7 +168,7 @@ embeddingsProvider:
 #  (bge-reranker-v2-m3). Esta sección es SOLO para @codebase.
 rerank:
   provider: llm
-  model: Qwen2.5-Coder 3B (Rápido)
+  model: Qwen3.5 4B (Código)
 
 # ────────────────────────────────────────────────────────────────
 #  MENSAJE DE SISTEMA GLOBAL

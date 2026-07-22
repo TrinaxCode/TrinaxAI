@@ -21,7 +21,7 @@ except ImportError:
 
     class _FallbackConfig:
         OLLAMA_BASE_URL = "http://localhost:11434"
-        LLM_MODEL = "qwen2.5-coder:1.5b"
+        LLM_MODEL = "qwen3.5:2b"
         NUM_CTX = 4096
         NUM_THREAD = 8
 

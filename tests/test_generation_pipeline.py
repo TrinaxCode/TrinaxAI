@@ -45,6 +45,26 @@ def test_explicit_repo_lookup_is_grounded():
     assert "rag_lookup" in c.categories
 
 
+def test_common_index_lookup_phrasing_is_grounded():
+    cases = (
+        "qué proyectos hay indexados?",
+        "qué dice mi código sobre autenticación?",
+        "en mis archivos indexados",
+        "what is indexed?",
+        "what does my code say about authentication?",
+        "from my files, what is this?",
+    )
+    for query in cases:
+        spec = _spec(query, has_index=True)
+        assert spec.regime is Regime.GROUNDED_QA, query
+        assert spec.use_rag is True, query
+
+
+def test_bare_backend_words_do_not_force_code_generation():
+    assert classify("api").regime is Regime.EXPLAIN
+    assert classify("server").regime is Regime.EXPLAIN
+
+
 def test_knowledge_mode_forces_retrieval_without_magic_phrases():
     spec = _spec("¿Cuál es el animal guardián de Aurora?", retrieval_mode="knowledge")
     assert spec.regime is Regime.GROUNDED_QA
@@ -112,7 +132,8 @@ def test_attached_document_summary_is_explain_not_code():
 def test_attached_document_does_not_route_to_coder():
     spec = _spec(_with_attachment("resume este documento"))
     assert spec.regime is Regime.EXPLAIN
-    assert spec.model != config.MODEL_CODE
+    if config.MODEL_CODE != config.MODEL_GENERAL:
+        assert spec.model != config.MODEL_CODE
     # MODEL_FAST may intentionally alias MODEL_GENERAL on smaller installations.
     assert spec.model == config.MODEL_GENERAL
 
@@ -164,7 +185,8 @@ def test_reasoning_uses_instruct_model_not_coder():
     s = _spec(exam, has_index=True)
     assert s.regime is Regime.REASONING
     assert s.model in (config.MODEL_GENERAL, config.MODEL_DEEP)
-    assert s.model != config.MODEL_CODE
+    if config.MODEL_CODE not in (config.MODEL_GENERAL, config.MODEL_DEEP):
+        assert s.model != config.MODEL_CODE
     assert s.use_rag is False
     assert s.num_predict >= 3072  # long problem sets are not truncated
     assert 0.0 < s.temperature <= 0.35  # not greedy, not creative-hot

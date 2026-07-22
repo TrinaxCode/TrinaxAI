@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import math
+import re
 import time
 import urllib.request
 
@@ -14,6 +15,14 @@ from .shared_runtime import *  # noqa: F403
 
 EMPTY_COLLECTION_MSG = "The selected collection contains no indexed documents."
 NO_RELEVANT_RESULTS_MSG = "No relevant information was found in the selected collection."
+RAG_MIN_SCORE = config._env_float("TRINAXAI_RAG_MIN_SCORE", 0.05, minimum=0.0, maximum=1.0)
+_CATALOG_QUERY_PATTERNS = (
+    r"\b(?:qué|que)\s+(?:proyectos?|archivos?|ficheros?|documentos?|colecciones?)\b.*\bindexad",
+    r"\b(?:what|which)\s+(?:projects?|files?|documents?|collections?)\b.*\bindex",
+    r"\bwhat(?:'s| is)\s+indexed\b",
+    r"\b(?:list|show)\s+(?:my\s+)?(?:indexed\s+)?(?:projects?|files?|documents?|collections?)\b",
+    r"\b(?:qué|que)\s+tienes\s+indexad",
+)
 
 
 def _knowledge_collection_state(collections: list[str] | None) -> str:
@@ -74,15 +83,57 @@ def _hide_private_node_metadata(source_nodes) -> None:
 
 def detect_project(text: str) -> str | None:
     """Detecta si la consulta menciona un proyecto conocido (match conservador)."""
-    t = text.lower()
+    t = text.casefold()
     best, best_len = None, 0
     for proj in state.known_projects:
-        pl = proj.lower()
-        # nombre completo, o alguna palabra significativa (>=4 chars) del nombre
-        hit = pl in t or any(len(w) >= 4 and w in t for w in pl.replace("-", " ").split())
+        pl = str(proj).strip().casefold()
+        if len(pl) < 3:
+            continue
+        # Match complete names or substantial words only; substring matches
+        # tagged unrelated turns such as "Curso python" as a project.
+        hit = bool(re.search(rf"(?<!\w){re.escape(pl)}(?!\w)", t))
+        hit = hit or any(
+            len(word) >= 5 and re.search(rf"(?<!\w){re.escape(word)}(?!\w)", t)
+            for word in re.findall(r"[\wáéíóúüñ]+", pl)
+        )
         if hit and len(pl) > best_len:
             best, best_len = proj, len(pl)
     return best
+
+
+def _is_catalog_query(text: str) -> bool:
+    lowered = str(text or "").casefold()
+    return any(re.search(pattern, lowered) for pattern in _CATALOG_QUERY_PATTERNS)
+
+
+def _catalog_answer(collections: list[str] | None, *, spanish: bool) -> str:
+    """Answer index inventory questions from docstore metadata, not an LLM."""
+    docs = getattr(state.index_docstore, "docs", {}) if state.index_docstore is not None else {}
+    selected = {str(value).strip() for value in (collections or []) if str(value).strip()}
+    files: dict[str, set[str]] = {}
+    projects: set[str] = set()
+    for node in docs.values():
+        metadata = getattr(node, "metadata", {}) or {}
+        collection = str(metadata.get("collection_id") or config.DEFAULT_COLLECTION_ID)
+        if selected and collection not in selected:
+            continue
+        rel_path = str(metadata.get("rel_path") or metadata.get("file_path") or "").strip()
+        if rel_path:
+            files.setdefault(collection, set()).add(rel_path)
+        project = str(metadata.get("project") or "").strip()
+        if project:
+            projects.add(project)
+    if not files:
+        return EMPTY_COLLECTION_MSG
+    header = "Contenido indexado:" if spanish else "Indexed content:"
+    lines = [header]
+    if projects:
+        label = "Proyectos" if spanish else "Projects"
+        lines.append(f"{label}: {', '.join(sorted(projects))}")
+    for collection, paths in sorted(files.items()):
+        lines.append(f"- {collection}: {len(paths)} file(s)")
+        lines.extend(f"  - {path}" for path in sorted(paths)[:100])
+    return "\n".join(lines)
 
 
 def _chat_messages(messages: list[dict]) -> list[dict]:
@@ -502,21 +553,25 @@ def run_rag(
     except Exception:
         LOG.debug("Best-effort operation failed", exc_info=True)
 
-    llm = get_llm(
-        spec.model,
-        keep_alive=keep_alive,
-        aggressive_quant=aggressive_quant,
-        **spec.llm_kwargs(),
-    )
-
     # ── Grounded path (RAG): unchanged contract, tuned template ──
     if spec.use_rag:
+        if has_index and _is_catalog_query(current):
+            response = _TextResponse(text=_catalog_answer(collections, spanish="Spanish" in lang))
+            _safe_record_usage("rag", spec.model, project, collections, chat, [])
+            return response, [], spec.model, project
         nodes = _cached_retrieve(retrieval_q, current, collections, project)
         _hide_private_node_metadata(nodes)
-        if not nodes and retrieval_mode == "knowledge":
+        if retrieval_mode == "knowledge" and not _retrieval_is_relevant(nodes):
+            nodes = []
             response = _TextResponse(text=NO_RELEVANT_RESULTS_MSG)
             _safe_record_usage("rag", spec.model, project, collections, chat, nodes)
             return response, nodes, spec.model, project
+        llm = get_llm(
+            spec.model,
+            keep_alive=keep_alive,
+            aggressive_quant=aggressive_quant,
+            **spec.llm_kwargs(),
+        )
         synth_q_full = f"{lang}\n\n{synth_q}"
         synth = get_response_synthesizer(
             llm=llm,
@@ -529,6 +584,12 @@ def run_rag(
         return response, nodes, spec.model, project
 
     # ── Free-form generation path (no RAG grounding) ──
+    llm = get_llm(
+        spec.model,
+        keep_alive=keep_alive,
+        aggressive_quant=aggressive_quant,
+        **spec.llm_kwargs(),
+    )
     prompt = build_generation_prompt(
         spec.regime,
         synth_q,
@@ -579,6 +640,20 @@ def run_rag(
     response = _freeform_generate(llm, prompt, stream=stream)
     _safe_record_usage("gen", spec.model, project, collections, chat, [])
     return response, [], spec.model, project
+
+
+def _retrieval_is_relevant(nodes) -> bool:
+    if not nodes:
+        return False
+    scores = []
+    for node in nodes:
+        score = getattr(node, "score", None)
+        if score is not None:
+            try:
+                scores.append(float(score))
+            except (TypeError, ValueError):
+                continue
+    return not scores or max(scores) >= RAG_MIN_SCORE
 
 
 def _safe_record_usage(kind, model, project, collections, chat, nodes):
