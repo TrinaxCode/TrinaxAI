@@ -16,6 +16,11 @@ jobs:
       - name: Checkout tagged source
         uses: actions/checkout@v6
 
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
       - name: Verify package versions
         shell: bash
         run: |
@@ -30,12 +35,32 @@ jobs:
           test "$expected" = "$lock_version"
           test "$expected" = "$cli_version"
 
-      - name: Create simple release
+      - name: Build release assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          mkdir -p release
+          git archive --format=tar --prefix="TrinaxAI-${version}/" "${GITHUB_SHA}" \
+            | gzip -n > "release/TrinaxAI-${version}.tar.gz"
+          python -m pip wheel . --no-deps --wheel-dir release
+          cp install.sh "release/TrinaxAI-${version}-installer.sh"
+          cp install.ps1 "release/TrinaxAI-${version}-installer.ps1"
+          (cd release && sha256sum TrinaxAI-* trinaxai-*.whl > SHA256SUMS)
+
+      - name: Publish simple release with assets
         env:
           GH_TOKEN: ${{ github.token }}
-        run: >-
-          gh release create "${GITHUB_REF_NAME}"
-          --repo "${GITHUB_REPOSITORY}"
-          --verify-tag
-          --title "TrinaxAI ${GITHUB_REF_NAME#v}"
-          --generate-notes
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh release view "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            gh release upload "${GITHUB_REF_NAME}" release/* \
+              --repo "${GITHUB_REPOSITORY}" --clobber
+          else
+            gh release create "${GITHUB_REF_NAME}" release/* \
+              --repo "${GITHUB_REPOSITORY}" \
+              --verify-tag \
+              --title "TrinaxAI ${GITHUB_REF_NAME#v}" \
+              --generate-notes
+          fi

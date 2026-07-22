@@ -19,7 +19,7 @@ def test_glob_is_root_only_unless_recursive_pattern_is_explicit(tmp_path: Path) 
     nested.mkdir()
     (nested / "nested.py").write_text("x", encoding="utf-8")
     assert _glob(tmp_path, "*.py") == "root.py"
-    assert "src/nested.py" in _glob(tmp_path, "**/*.py")
+    assert "src/nested.py" in _glob(tmp_path, "**/*.py").replace("\\", "/")
 
 
 def test_grep_marks_bounded_results(tmp_path: Path) -> None:

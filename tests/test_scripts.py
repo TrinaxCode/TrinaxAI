@@ -251,6 +251,11 @@ def test_tagged_releases_publish_a_simple_verified_release() -> None:
 
     assert 'tags:\n      - "v*.*.*"' in workflow
     assert "Verify package versions" in workflow
+    assert "Build release assets" in workflow
+    assert "pip wheel . --no-deps" in workflow
+    assert "installer.sh" in workflow
+    assert "installer.ps1" in workflow
+    assert "SHA256SUMS" in workflow
     assert "gh release create" in workflow
     assert "--verify-tag" in workflow
     assert "--generate-notes" in workflow

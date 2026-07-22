@@ -145,7 +145,9 @@ def test_finished_index_jobs_are_pruned_after_one_hour(monkeypatch) -> None:
 
 
 def test_index_job_helpers_bound_untrusted_names_output_and_progress(monkeypatch) -> None:
-    assert system_service._safe_rel_path("../../manuales/plan?.pdf") == "manuales/plan_.pdf"
+    safe_path = system_service._safe_rel_path("../../manuales/plan?.pdf")
+    assert safe_path is not None
+    assert Path(safe_path).as_posix() == "manuales/plan_.pdf"
     assert system_service._safe_rel_path("/../") is None
     assert system_service._safe_label(" ..informe: julio.. ") == "informe_ julio"
     assert system_service._safe_label("???") == "import"
