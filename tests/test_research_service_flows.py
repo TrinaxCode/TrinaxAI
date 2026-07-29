@@ -68,7 +68,7 @@ def test_research_fallback_matches_the_query_language() -> None:
 
     assert english.startswith("I could not synthesize a complete answer")
     assert "snippet del buscador" in english
-    assert "example.com" in english
+    assert "Official source" in english
     assert spanish == "No se encontraron fuentes suficientes para responder con confianza."
 
 

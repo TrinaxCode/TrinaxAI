@@ -15,7 +15,7 @@ from trinaxai_cli.client import TrinaxAPIClient, TrinaxAPIError
 def _client() -> TrinaxAPIClient:
     client = object.__new__(TrinaxAPIClient)
     client.base_url = "https://localhost:3333"
-    client.verify_tls = True
+    client.verify_tls = ssl.create_default_context()
     client.timeout = 10.0
     client._request_headers = {}
     client._ollama_clients = {}

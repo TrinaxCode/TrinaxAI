@@ -63,12 +63,19 @@ class TrinaxAPIClient:
         self._request_headers = request_headers
         self._client = httpx.Client(
             base_url=self.base_url,
-            verify=self.verify_tls,
+            verify=self._tls_context(),
             timeout=timeout,
             headers=request_headers,
         )
         self._ollama_clients: dict[str, Any] = {}
         self._prefer_local_https_if_needed()
+
+    def _tls_context(self) -> ssl.SSLContext:
+        """Return the validated TLS context used by every RAG request."""
+        context = self.verify_tls
+        if not isinstance(context, ssl.SSLContext):
+            raise RuntimeError("TLS certificate verification is not configured")
+        return context
 
     def _resolve_local_ca(self, verify_tls: str | None) -> ssl.SSLContext:
         """Use an explicit/local CA for loopback HTTPS without disabling TLS."""
@@ -161,7 +168,7 @@ class TrinaxAPIClient:
             self.verify_tls = verify_tls
         self._client = httpx.Client(
             base_url=self.base_url,
-            verify=self.verify_tls,
+            verify=self._tls_context(),
             timeout=self.timeout,
             headers=self._request_headers,
         )
@@ -181,7 +188,7 @@ class TrinaxAPIClient:
             # Never silently downgrade certificate verification merely because
             # the candidate is localhost. The installer trusts TrinaxAI's local
             # CA; custom certificates must provide a trusted CA file.
-            with httpx.Client(base_url=candidate, verify=self.verify_tls, timeout=probe_timeout) as probe:
+            with httpx.Client(base_url=candidate, verify=self._tls_context(), timeout=probe_timeout) as probe:
                 r = probe.get("/health")
                 if r.status_code < 500:
                     self._switch_base_url(candidate)

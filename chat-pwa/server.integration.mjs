@@ -13,7 +13,16 @@ function ensureFrontendFixture() {
   const distDir = path.join(appDir, 'dist');
   fs.mkdirSync(distDir, { recursive: true });
   const indexPath = path.join(distDir, 'index.html');
-  if (!fs.existsSync(indexPath)) fs.writeFileSync(indexPath, '<!doctype html><title>test</title>\n');
+  try {
+    const descriptor = fs.openSync(indexPath, 'wx');
+    try {
+      fs.writeFileSync(descriptor, '<!doctype html><title>test</title>\n');
+    } finally {
+      fs.closeSync(descriptor);
+    }
+  } catch (error) {
+    if (error?.code !== 'EEXIST') throw error;
+  }
 }
 
 function listen(server) {
