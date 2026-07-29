@@ -4,7 +4,17 @@ import fs from 'node:fs';
 import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
+
+const appDir = fileURLToPath(new URL('.', import.meta.url));
+
+function ensureFrontendFixture() {
+  const distDir = path.join(appDir, 'dist');
+  fs.mkdirSync(distDir, { recursive: true });
+  const indexPath = path.join(distDir, 'index.html');
+  if (!fs.existsSync(indexPath)) fs.writeFileSync(indexPath, '<!doctype html><title>test</title>\n');
+}
 
 function listen(server) {
   return new Promise((resolve, reject) => {
@@ -29,6 +39,7 @@ async function waitFor(predicate, timeoutMs = 3000) {
 }
 
 test('production gateway preserves credentials, replaces proxy identity, and rejects missing assets', async () => {
+  ensureFrontendFixture();
   let received;
   const backend = http.createServer((req, res) => {
     received = { path: req.url, headers: req.headers };
@@ -81,6 +92,7 @@ test('production gateway preserves credentials, replaces proxy identity, and rej
 });
 
 test('production gateway releases abandoned inference streams and keeps tags responsive', async () => {
+  ensureFrontendFixture();
   let chatRequests = 0;
   let firstChatClosed = false;
   const backend = http.createServer((req, res) => {
