@@ -51,7 +51,7 @@ class TrinaxAPIClient:
         if httpx is None:
             raise RuntimeError("httpx is required for the TrinaxAI CLI (install via requirements.txt).")
         self.base_url = (base_url or "https://localhost:3333").rstrip("/")
-        self.verify_tls = self._resolve_local_ca(verify_tls)
+        self.verify_tls: bool | str = self._resolve_local_ca(verify_tls)
         self.timeout = timeout
         request_headers: dict[str, str] = {}
         admin_token = os.getenv("TRINAXAI_ADMIN_TOKEN", "").strip()
@@ -63,31 +63,24 @@ class TrinaxAPIClient:
         self._request_headers = request_headers
         self._client = httpx.Client(
             base_url=self.base_url,
-            verify=self._tls_context(),
+            verify=self.verify_tls,
             timeout=timeout,
             headers=request_headers,
         )
         self._ollama_clients: dict[str, Any] = {}
         self._prefer_local_https_if_needed()
 
-    def _tls_context(self) -> ssl.SSLContext:
-        """Return the validated TLS context used by every RAG request."""
-        context = self.verify_tls
-        if not isinstance(context, ssl.SSLContext):
-            raise RuntimeError("TLS certificate verification is not configured")
-        return context
-
-    def _resolve_local_ca(self, verify_tls: str | None) -> ssl.SSLContext:
-        """Use an explicit/local CA for loopback HTTPS without disabling TLS."""
+    def _resolve_local_ca(self, verify_tls: bool | str) -> bool | str:
+        """Return ``True`` or a validated CA path; never disable TLS checks."""
         if verify_tls is False:
             raise ValueError("TLS certificate verification cannot be disabled")
         context = ssl.create_default_context()
         if isinstance(verify_tls, str):
             context.load_verify_locations(cafile=verify_tls)
-            return context
+            return verify_tls
         parsed = urlparse(self.base_url)
         if parsed.hostname not in {"localhost", "127.0.0.1", "::1"}:
-            return context
+            return True
 
         configured = os.getenv("TRINAXAI_CA_FILE", "").strip()
         candidates: list[Path] = [Path(configured).expanduser()] if configured else []
@@ -103,7 +96,7 @@ class TrinaxAPIClient:
         for candidate in candidates:
             if candidate.is_file():
                 context.load_verify_locations(cafile=str(candidate))
-                return context
+                return str(candidate)
 
         root = os.getenv("TRINAXAI_HOME", "").strip()
         install_root = Path(root).expanduser() if root else Path(__file__).resolve().parents[1]
@@ -113,10 +106,10 @@ class TrinaxAPIClient:
                 certificate = ssl._ssl._test_decode_cert(str(leaf))  # type: ignore[attr-defined]
                 if certificate.get("issuer") == certificate.get("subject"):
                     context.load_verify_locations(cafile=str(leaf))
-                    return context
+                    return str(leaf)
             except (OSError, ValueError, ssl.SSLError):
                 pass
-        return context
+        return True
 
     def close(self) -> None:
         try:
@@ -139,7 +132,7 @@ class TrinaxAPIClient:
         normalized = base_url.rstrip("/")
         ollama_client = self._ollama_clients.get(normalized)
         if ollama_client is None:
-            ollama_client = httpx.Client(base_url=normalized, timeout=self.timeout)
+            ollama_client = httpx.Client(base_url=normalized, verify=self.verify_tls, timeout=self.timeout)
             self._ollama_clients[normalized] = ollama_client
         return ollama_client
 
@@ -161,14 +154,14 @@ class TrinaxAPIClient:
             return None
         return urlunparse(parsed._replace(scheme="https"))
 
-    def _switch_base_url(self, base_url: str, *, verify_tls: ssl.SSLContext | None = None) -> None:
+    def _switch_base_url(self, base_url: str, *, verify_tls: bool | str | None = None) -> None:
         self.close()
         self.base_url = base_url.rstrip("/")
         if verify_tls is not None:
-            self.verify_tls = verify_tls
+            self.verify_tls = self._resolve_local_ca(verify_tls)
         self._client = httpx.Client(
             base_url=self.base_url,
-            verify=self._tls_context(),
+            verify=self.verify_tls,
             timeout=self.timeout,
             headers=self._request_headers,
         )
@@ -188,7 +181,7 @@ class TrinaxAPIClient:
             # Never silently downgrade certificate verification merely because
             # the candidate is localhost. The installer trusts TrinaxAI's local
             # CA; custom certificates must provide a trusted CA file.
-            with httpx.Client(base_url=candidate, verify=self._tls_context(), timeout=probe_timeout) as probe:
+            with httpx.Client(base_url=candidate, verify=self.verify_tls, timeout=probe_timeout) as probe:
                 r = probe.get("/health")
                 if r.status_code < 500:
                     self._switch_base_url(candidate)
