@@ -104,7 +104,8 @@ def test_auto_update_linux_cron_and_windows_scheduler(monkeypatch, tmp_path: Pat
 
     assert auto_update.enable(tmp_path) == "weekly cron update enabled"
     wrapper = tmp_path / "storage" / "maintenance" / "weekly-update.sh"
-    assert wrapper.stat().st_mode & 0o077 == 0
+    if os.name != "nt":
+        assert wrapper.stat().st_mode & 0o077 == 0
     assert any(call[0] == ["crontab", "-"] for call in calls)
 
     calls.clear()

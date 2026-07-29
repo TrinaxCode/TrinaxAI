@@ -7,6 +7,7 @@ import json
 import os
 import re
 import shutil
+import sys
 import time
 from contextlib import contextmanager
 from pathlib import Path
@@ -86,18 +87,29 @@ def _process_is_alive(pid: int) -> bool:
     if pid <= 0:
         return False
     if os.name == "nt":
-        import ctypes
+        if sys.platform == "win32":
+            try:
+                os.kill(pid, 0)
+            except PermissionError:
+                return True
+            except OSError:
+                pass
+        try:
+            import ctypes
 
-        process_query_limited_information = 0x1000
-        handle = ctypes.windll.kernel32.OpenProcess(  # type: ignore[attr-defined]
-            process_query_limited_information,
-            False,
-            pid,
-        )
-        if not handle:
+            process_query_limited_information = 0x1000
+            handle = ctypes.windll.kernel32.OpenProcess(  # type: ignore[attr-defined]
+                process_query_limited_information,
+                False,
+                pid,
+            )
+            if handle:
+                ctypes.windll.kernel32.CloseHandle(handle)  # type: ignore[attr-defined]
+                return True
             return False
-        ctypes.windll.kernel32.CloseHandle(handle)  # type: ignore[attr-defined]
-        return True
+        except (AttributeError, OSError):
+            pass
+    # ``os.kill(pid, 0)`` is portable and lets the OS report process state.
     try:
         os.kill(pid, 0)
     except ProcessLookupError:
@@ -107,6 +119,7 @@ def _process_is_alive(pid: int) -> bool:
     except OSError:
         return False
     return True
+    return False
 
 
 @contextmanager

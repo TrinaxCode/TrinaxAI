@@ -33,6 +33,11 @@ DEFAULT_BASE_URL = "https://localhost:3333"
 
 def _default_config_path() -> Path:
     """Return the platform-native user config path."""
+    # An explicit XDG location is useful on every platform for portable
+    # installs and is the documented override for non-Windows environments.
+    xdg_base = os.environ.get("XDG_CONFIG_HOME")
+    if xdg_base:
+        return Path(xdg_base).expanduser() / "trinaxai" / "config.toml"
     if sys.platform == "win32":
         base = os.environ.get("APPDATA") or os.path.join("~", "AppData", "Roaming")
         return Path(base).expanduser() / "TrinaxAI" / "config.toml"

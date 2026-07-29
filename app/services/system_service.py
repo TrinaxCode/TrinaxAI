@@ -101,7 +101,8 @@ def _safe_rel_path(filename: str) -> str | None:
             parts.append(part[:120])
     if not parts:
         return None
-    return os.path.join(*parts)
+    # Metadata and API responses use POSIX separators on every platform.
+    return "/".join(parts)
 
 
 def _safe_label(label: str) -> str:

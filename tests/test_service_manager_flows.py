@@ -167,7 +167,7 @@ def test_privileged_wrapper_and_systemd_enable_failures(monkeypatch, tmp_path: P
     wrapper.chmod(0o700)
     monkeypatch.setattr(sm, "PRIVILEGED_LIFECYCLE_WRAPPER", wrapper)
     monkeypatch.setattr(sm.platform, "system", lambda: "Linux")
-    monkeypatch.setattr(sm.os, "geteuid", lambda: 1000)
+    monkeypatch.setattr(sm.os, "geteuid", lambda: 1000, raising=False)
     monkeypatch.setattr(sm.os, "access", lambda *_args: True)
     monkeypatch.setattr(sm.shutil, "which", lambda _name: "/usr/bin/tool")
     monkeypatch.setattr(sm, "_write_ai_enabled", lambda *_args: None)
@@ -309,7 +309,7 @@ def test_process_helpers_cover_fallbacks_and_zombie_reaping(monkeypatch) -> None
 
     waited = iter([(9, 0), (0, 0)])
     monkeypatch.setattr(sm.os, "waitpid", lambda *_args: next(waited))
-    monkeypatch.setattr(sm.os, "WNOHANG", 1)
+    monkeypatch.setattr(sm.os, "WNOHANG", 1, raising=False)
     sm._reap_zombie_children()
 
     monkeypatch.setattr(sm.os, "waitpid", lambda *_args: (_ for _ in ()).throw(ChildProcessError()))
@@ -360,7 +360,7 @@ def test_service_state_wrapper_and_platform_autostart_edges(monkeypatch, tmp_pat
     assert sm._read_ai_enabled(str(tmp_path)) is False
 
     monkeypatch.setattr(sm.platform, "system", lambda: "Linux")
-    monkeypatch.setattr(sm.os, "geteuid", lambda: 1000)
+    monkeypatch.setattr(sm.os, "geteuid", lambda: 1000, raising=False)
     monkeypatch.setattr(sm.shutil, "which", lambda _name: "/usr/bin/tool")
     monkeypatch.setattr(sm, "PRIVILEGED_LIFECYCLE_WRAPPER", tmp_path / "missing")
     assert sm._try_privileged_wrapper(str(tmp_path), "start-ai") is None

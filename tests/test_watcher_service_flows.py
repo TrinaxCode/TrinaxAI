@@ -147,8 +147,13 @@ def test_terminate_process_tree_escalates_posix_and_ignores_exited(monkeypatch) 
     process = Process()
     signals = []
     monkeypatch.setattr(watcher_service.os, "name", "posix")
-    monkeypatch.setattr(watcher_service.os, "getpgid", lambda pid: pid)
-    monkeypatch.setattr(watcher_service.os, "killpg", lambda pid, sig: signals.append((pid, sig)))
+    monkeypatch.setattr(watcher_service.os, "getpgid", lambda pid: pid, raising=False)
+    monkeypatch.setattr(
+        watcher_service.os,
+        "killpg",
+        lambda pid, sig: signals.append((pid, sig)),
+        raising=False,
+    )
     watcher_service._terminate_process_tree(process, grace_seconds=0.01)
     assert [sig for _pid, sig in signals] == [watcher_service.signal.SIGTERM, watcher_service.signal.SIGKILL]
 

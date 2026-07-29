@@ -52,8 +52,6 @@
     "vitest": "^3.0.0"
   },
   "overrides": {
-    "@trickfilm400/rollup-plugin-off-main-thread": {
-      "ejs": "^6.0.1"
-    }
+    "ejs": "^6.0.1"
   }
 }

@@ -74,6 +74,25 @@ def test_process_is_alive_windows_probe(monkeypatch) -> None:
     assert trinaxai_core._process_is_alive(123) is False
 
 
+def test_process_is_alive_windows_falls_back_when_probe_unavailable(monkeypatch) -> None:
+    monkeypatch.setattr(trinaxai_core.os, "name", "nt")
+    monkeypatch.setattr(trinaxai_core.sys, "platform", "win32")
+    monkeypatch.setattr(
+        trinaxai_core.os,
+        "kill",
+        lambda *_args: (_ for _ in ()).throw(PermissionError()),
+    )
+    assert trinaxai_core._process_is_alive(123) is True
+
+    monkeypatch.setattr(
+        trinaxai_core.os,
+        "kill",
+        lambda *_args: (_ for _ in ()).throw(OSError()),
+    )
+    monkeypatch.setitem(sys.modules, "ctypes", type("UnavailableCtypes", (), {}))
+    assert trinaxai_core._process_is_alive(123) is False
+
+
 def test_process_lock_reclaims_stale_and_respects_live_owner(tmp_path, monkeypatch) -> None:
     stale = tmp_path / "stale.lock"
     stale.mkdir()

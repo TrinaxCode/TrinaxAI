@@ -512,10 +512,15 @@ async def test_health_handles_transport_failure_and_sysconf_fallback(monkeypatch
     monkeypatch.setattr(state, "health_ollama_checked_at", 0.0)
     assert health_service._ollama_available_cached() is False
     monkeypatch.setitem(__import__("sys").modules, "psutil", None)
-    monkeypatch.setattr(health_service.os, "sysconf", lambda key: 4 if key == "SC_PHYS_PAGES" else 1024)
+    monkeypatch.setattr(health_service.os, "sysconf", lambda key: 4 if key == "SC_PHYS_PAGES" else 1024, raising=False)
     result = await health_service.resources()
     assert result["ram"]["total"] == 4096
-    monkeypatch.setattr(health_service.os, "sysconf", lambda _key: (_ for _ in ()).throw(OSError("missing")))
+    monkeypatch.setattr(
+        health_service.os,
+        "sysconf",
+        lambda _key: (_ for _ in ()).throw(OSError("missing")),
+        raising=False,
+    )
     assert (await health_service.resources())["ram"] is None
 
 
@@ -927,6 +932,7 @@ def test_lifecycle_and_index_commands_report_recoverable_failures(monkeypatch, t
     assert _lifecycle.run_script("update", [], ui) == 1
     root = tmp_path
     (root / "update.sh").write_text("#!/bin/sh\n", encoding="utf-8")
+    monkeypatch.setattr(_lifecycle.sys, "platform", "linux")
     monkeypatch.setattr(_lifecycle, "find_install_root", lambda: root)
     monkeypatch.setattr(_lifecycle, "command_for", lambda *_args: ["update"])
     monkeypatch.setattr(_lifecycle, "run_process_group", lambda *_args, **_kwargs: SimpleNamespace(returncode=0))

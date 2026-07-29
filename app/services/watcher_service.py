@@ -89,7 +89,7 @@ def _terminate_process_tree(process, *, grace_seconds: float = 2.0) -> None:
     if process.poll() is not None:
         return
     try:
-        if os.name == "posix":
+        if os.name == "posix" and hasattr(os, "killpg") and hasattr(signal, "SIGTERM"):
             os.killpg(os.getpgid(process.pid), signal.SIGTERM)
         elif os.name == "nt":
             taskkill = os.path.join(
@@ -114,7 +114,7 @@ def _terminate_process_tree(process, *, grace_seconds: float = 2.0) -> None:
     except subprocess.TimeoutExpired:
         pass
     try:
-        if os.name == "posix":
+        if os.name == "posix" and hasattr(os, "killpg") and hasattr(signal, "SIGKILL"):
             os.killpg(os.getpgid(process.pid), signal.SIGKILL)
         elif os.name == "nt":
             taskkill = os.path.join(os.environ.get("SystemRoot", r"C:\Windows"), "System32", "taskkill.exe")
