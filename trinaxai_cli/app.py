@@ -282,14 +282,14 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     # 2. Resolve effective api_url and verified TLS trust.
     api_url = args.api_url or config.api["base_url"]
-    verify_tls: bool | str = bool(config.api.get("verify_tls", True))
+    verify_tls: str | None = None
     ca_file_value = args.ca_file or os.getenv("TRINAXAI_CA_FILE", "").strip()
     if ca_file_value:
         ca_file = Path(ca_file_value).expanduser().resolve()
         if not ca_file.is_file():
             parser.error(f"CA file not found: {ca_file}")
         verify_tls = str(ca_file)
-    elif verify_tls is False:
+    elif not bool(config.api.get("verify_tls", True)):
         parser.error("api.verify_tls=false is not supported; use --ca-file or TRINAXAI_CA_FILE")
 
     # 3. Build UI console (honours --no-color, $NO_COLOR, config.ui.color).

@@ -14,7 +14,6 @@ import {
   deviceTokenHasScope,
   isAllowedOllamaProxyRequest,
   isAuthorizedScopedProxyPeer,
-  isAuthorizedSystemProxyPeer,
   isLoopbackAddress,
   isPrivateLanAddress,
   normalizeAddress,
@@ -35,14 +34,27 @@ const localCaCandidates = [
       ? path.join(os.homedir(), 'Library', 'Application Support', 'mkcert', 'rootCA.pem')
       : path.join(os.homedir(), '.local', 'share', 'mkcert', 'rootCA.pem'),
 ].filter(Boolean);
+function readBounded(file, maxBytes, encoding) {
+  const descriptor = fs.openSync(file, 'r');
+  try {
+    const stat = fs.fstatSync(descriptor);
+    if (!stat.isFile() || stat.size > maxBytes) throw new Error('invalid credential file');
+    return fs.readFileSync(descriptor, encoding);
+  } finally {
+    fs.closeSync(descriptor);
+  }
+}
+
 const localCa = localCaCandidates.reduce((loaded, candidate) => {
   if (loaded) return loaded;
   try {
-    return fs.statSync(candidate).isFile() ? fs.readFileSync(candidate) : undefined;
+    return readBounded(candidate, 16 * 1024 * 1024);
   } catch {
     return undefined;
   }
-}, undefined) || (fs.existsSync(localCaPath) ? fs.readFileSync(localCaPath) : undefined);
+}, undefined) || (() => {
+  try { return readBounded(localCaPath, 16 * 1024 * 1024); } catch { return undefined; }
+})();
 const host = process.env.TRINAXAI_PWA_HOST || '0.0.0.0';
 const port = Number(process.env.TRINAXAI_PWA_PORT || process.env.PORT || 3334);
 const proxyIdentityHeaders = [
@@ -57,17 +69,6 @@ let proxySecretCache;
 
 function env(name, fallback) {
   return process.env[name] || fallback;
-}
-
-function readBounded(file, maxBytes, encoding) {
-  const descriptor = fs.openSync(file, 'r');
-  try {
-    const stat = fs.fstatSync(descriptor);
-    if (!stat.isFile() || stat.size > maxBytes) throw new Error('invalid credential file');
-    return fs.readFileSync(descriptor, encoding);
-  } finally {
-    fs.closeSync(descriptor);
-  }
 }
 
 function configuredPath(name, fallback) {
@@ -270,13 +271,13 @@ async function proxyRequest(req, res, url, prefix) {
       },
     );
   } catch (error) {
-    console.error(`TrinaxAI proxy setup failure (${target.origin}): ${error.message}`);
+    console.error('TrinaxAI proxy setup failure.');
     releaseOnce();
     sendJson(res, 502, { ok: false, error: 'The local AI service is unavailable.' });
     return;
   }
   upstream.on('error', (error) => {
-    console.error(`TrinaxAI proxy failure (${target.origin}): ${error.message}`);
+    console.error('TrinaxAI proxy failure.');
     releaseOnce();
     if (!res.headersSent) sendJson(res, 502, { ok: false, error: 'The local AI service is unavailable.' });
     else res.destroy();
@@ -320,9 +321,6 @@ function systemAuthorized(req) {
       return false;
     }
   })();
-  const allowLan = ['1', 'true', 'yes', 'on'].includes(
-    (process.env.TRINAXAI_ALLOW_LAN_SYSTEM || '').toLowerCase(),
-  );
   return trustedOrigin && (
     isAuthorizedScopedProxyPeer(
       peer,
@@ -331,12 +329,6 @@ function systemAuthorized(req) {
       device,
       pairedDeviceGrants(device, 'system'),
     )
-    || (!admin && !device && isAuthorizedSystemProxyPeer(
-      peer,
-      '',
-      process.env.TRINAXAI_ADMIN_TOKEN || '',
-      allowLan,
-    ))
   );
 }
 

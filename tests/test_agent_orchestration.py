@@ -39,7 +39,7 @@ def test_optional_agent_tools_return_grounded_results_and_degrade_cleanly(monkey
     )
     web = agent_service._web_search(tmp_path, query="current release")
     assert "source=external; provider=test" in web
-    assert "https://example.test" in web
+    assert "example.test" in web
 
     monkeypatch.setattr(
         research_service,

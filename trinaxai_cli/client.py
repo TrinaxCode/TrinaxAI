@@ -47,7 +47,7 @@ class TrinaxAPIError(RuntimeError):
 class TrinaxAPIClient:
     """Thin synchronous wrapper over the RAG API."""
 
-    def __init__(self, base_url: str, verify_tls: bool | str = True, timeout: float = 30.0) -> None:
+    def __init__(self, base_url: str, verify_tls: str | None = None, timeout: float = 30.0) -> None:
         if httpx is None:
             raise RuntimeError("httpx is required for the TrinaxAI CLI (install via requirements.txt).")
         self.base_url = (base_url or "https://localhost:3333").rstrip("/")
@@ -70,7 +70,7 @@ class TrinaxAPIClient:
         self._ollama_clients: dict[str, Any] = {}
         self._prefer_local_https_if_needed()
 
-    def _resolve_local_ca(self, verify_tls: bool | str) -> ssl.SSLContext:
+    def _resolve_local_ca(self, verify_tls: str | None) -> ssl.SSLContext:
         """Use an explicit/local CA for loopback HTTPS without disabling TLS."""
         if verify_tls is False:
             raise ValueError("TLS certificate verification cannot be disabled")
