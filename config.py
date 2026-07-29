@@ -879,17 +879,6 @@ def make_reranker():
         return None
 
 
-def project_of(file_path: str) -> str:
-    """First segment of the relative path = project/folder name."""
-    try:
-        rel = os.path.relpath(file_path, PROJECTS_DIRS[0])
-    except ValueError:
-        return "(unknown)"
-    rel = rel.replace("\\", "/")
-    parts = rel.split("/")
-    return parts[0] if len(parts) > 1 else "(root)"
-
-
 # ── TLS / SSL ──
 TLS_VERIFY = os.getenv("TRINAXAI_TLS_VERIFY", "0") == "1"
 

@@ -7,6 +7,7 @@ import fs from 'node:fs';
 import http from 'node:http';
 import https from 'node:https';
 import net from 'node:net';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -18,6 +19,7 @@ import {
   isLoopbackAddress,
   isPrivateLanAddress,
   normalizeAddress,
+  requiredOllamaProxyScope,
 } from './vite-security';
 import { acquireInferenceProcessLock } from './inference-lock';
 import { PWA_SECURITY_HEADERS } from './security-headers';
@@ -28,7 +30,23 @@ const certKey = path.join(__dirname, 'certs', 'localhost-key.pem');
 const certFile = path.join(__dirname, 'certs', 'localhost.pem');
 const certPfx = path.join(__dirname, 'certs', 'trinaxai-local.pfx');
 const pfxPassphrase = process.env.TRINAXAI_CERT_PASSPHRASE || 'trinaxai-local';
-const localCa = fs.existsSync(certFile) ? fs.readFileSync(certFile) : undefined;
+const localCaCandidates = [
+  process.env.TRINAXAI_LOCAL_CA_FILE,
+  path.join(__dirname, 'certs', 'rootCA.pem'),
+  process.platform === 'win32'
+    ? path.join(process.env.LOCALAPPDATA || '', 'mkcert', 'rootCA.pem')
+    : process.platform === 'darwin'
+      ? path.join(os.homedir(), 'Library', 'Application Support', 'mkcert', 'rootCA.pem')
+      : path.join(os.homedir(), '.local', 'share', 'mkcert', 'rootCA.pem'),
+].filter(Boolean);
+const localCa = localCaCandidates.reduce<Buffer | undefined>((loaded, candidate) => {
+  if (loaded) return loaded;
+  try {
+    return fs.statSync(candidate).isFile() ? fs.readFileSync(candidate) : undefined;
+  } catch {
+    return undefined;
+  }
+}, undefined) || (fs.existsSync(certFile) ? fs.readFileSync(certFile) : undefined);
 const httpsConfig = process.env.CI === 'true'
   ? undefined
   : fs.existsSync(certPfx)
@@ -215,7 +233,7 @@ function installProxyBoundary(server: any): void {
     const suppliedToken = String(req.headers['x-admin-token'] || '');
     const deviceToken = String(req.headers['x-trinaxai-device-token'] || '');
     const adminToken = process.env.TRINAXAI_ADMIN_TOKEN || '';
-    const requiredScope = pathname === '/api/ollama/api/pull' ? 'system' : 'chat';
+    const requiredScope = requiredOllamaProxyScope(pathname);
     const authorized = (requiredScope === 'chat' && isPrivateLanAddress(peer)) || isAuthorizedScopedProxyPeer(
       peer,
       suppliedToken,

@@ -46,7 +46,7 @@ export function getPreferredUserName(lang: Lang = detectedLang()): string {
   return lang === 'en' ? 'User' : 'Usuario';
 }
 
-export function getUserMemory(): string[] {
+function getUserMemory(): string[] {
   try {
     const parsed = JSON.parse(localStorage.getItem(MEMORY_KEY) || '[]');
     return Array.isArray(parsed)

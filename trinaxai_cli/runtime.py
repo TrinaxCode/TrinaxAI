@@ -57,13 +57,3 @@ def install_candidates() -> list[Path]:
 def find_install_root() -> Path | None:
     """Locate the full app installation, or return ``None`` for CLI-only installs."""
     return next((path for path in install_candidates() if _looks_like_install(path)), None)
-
-
-def require_install_root() -> Path:
-    root = find_install_root()
-    if root is None:
-        checked = ", ".join(str(path) for path in install_candidates())
-        raise FileNotFoundError(
-            f"No full TrinaxAI installation was found. Set TRINAXAI_HOME to its directory. Checked: {checked}"
-        )
-    return root

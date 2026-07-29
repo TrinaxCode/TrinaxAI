@@ -8,8 +8,27 @@ import httpx
 
 # ruff: noqa: F405
 from app.security.admin_auth import authorize_scope
+from trinaxai_cli.agent.tools import external_failure_message, format_tool_failure
+from trinaxai_errors import ErrorCategory, classify_error
 
-from .shared_runtime import *  # noqa: F403
+from .shared_runtime import (
+    LOG,
+    NO_INDEX_MSG,
+    Request,
+    ResearchRequest,
+    _authorize_system,
+    _research_serialize_node,
+    _retriever_for_collections,
+    _run_model_task,
+    config,
+    get_llm,
+    json,
+    re,
+    run_in_threadpool,
+    sanitize_collection_id,
+    state,
+    time,
+)
 from .web_search_service import (
     WebSearchError,
     configured_provider,
@@ -101,15 +120,17 @@ def _research_retrieve(query: str, collections: list[str] | None, top_k: int | N
         return []
     active_collections = tuple(
         sorted(
-            sanitize_collection_id(c, fallback=config.DEFAULT_COLLECTION_ID)
-            for c in (collections or [])
-            if isinstance(c, str) and c.strip()
+            {
+                sanitize_collection_id(c, fallback=config.DEFAULT_COLLECTION_ID)
+                for c in (collections or [])
+                if isinstance(c, str) and c.strip()
+            }
         )
     )
     retriever = _retriever_for_collections(active_collections)
     nodes = retriever.retrieve(query) if retriever is not None else []
     if collections:
-        allowed = {c for c in collections if isinstance(c, str) and c.strip()}
+        allowed = set(active_collections)
         if allowed:
             nodes = [n for n in nodes if n.metadata.get("collection_id", config.DEFAULT_COLLECTION_ID) in allowed]
     if top_k is not None:
@@ -146,15 +167,26 @@ def _research_decompose(llm, query: str, depth: int) -> list[str]:
     return cleaned or [query]
 
 
-def _research_fallback(chunks: list, *, web_search: bool) -> str:
+def _research_fallback(chunks: list, *, web_search: bool, language: str = "Spanish") -> str:
     """Always return visible, grounded content if local synthesis is empty."""
     if not chunks:
-        return "No se encontraron fuentes suficientes para responder con confianza."
-    heading = (
-        "No pude sintetizar una respuesta completa, pero encontré estas fuentes web:"
-        if web_search
-        else "No pude sintetizar una respuesta completa. Estos son los fragmentos más relevantes:"
-    )
+        return (
+            "No se encontraron fuentes suficientes para responder con confianza."
+            if language == "Spanish"
+            else "Not enough sources were found to answer confidently."
+        )
+    if language == "Spanish":
+        heading = (
+            "No pude sintetizar una respuesta completa, pero encontré estas fuentes web:"
+            if web_search
+            else "No pude sintetizar una respuesta completa. Estos son los fragmentos más relevantes:"
+        )
+    else:
+        heading = (
+            "I could not synthesize a complete answer, but I found these web sources:"
+            if web_search
+            else "I could not synthesize a complete answer. These are the most relevant excerpts:"
+        )
     rows = []
     for idx, chunk in enumerate(chunks[:5], start=1):
         meta = chunk.get("metadata", {}) or {}
@@ -165,6 +197,35 @@ def _research_fallback(chunks: list, *, web_search: bool) -> str:
         snippet = str(chunk.get("text") or "").strip()[:240]
         rows.append(f"[{idx}] {label}{scope_label}{f' — {url}' if url else ''}\n{snippet}")
     return heading + "\n\n" + "\n\n".join(rows)
+
+
+def _research_local_fallback(llm, query: str, failure_detail: str) -> str:
+    """Answer from the local model when no live external source was retrieved."""
+    language = _research_language(query)
+    language_name = "Spanish" if language == "Spanish" else "English"
+    prompt = (
+        "Live web research was unavailable. Answer the user's question using only your general model knowledge. "
+        "Do not claim that you searched the web, do not invent citations or URLs, and clearly state that current "
+        f"facts are not live-verified. Write every sentence in {language_name}.\n\nQuestion: {query}\n\nAnswer:"
+    )
+    try:
+        response = llm.complete(prompt)
+        answer = (response.text if hasattr(response, "text") else str(response)).strip()
+    except Exception as exc:  # noqa: BLE001 - the explanation remains useful if local synthesis also fails
+        LOG.warning("Local fallback synthesis failed: %s", type(exc).__name__)
+        answer = (
+            "No pude generar una respuesta local sin fuentes web."
+            if language == "Spanish"
+            else "I could not generate a local answer without live web sources."
+        )
+    answer = re.sub(r"\[\d+\]", "", answer).strip()
+    label = (
+        "Conocimiento general del modelo (no verificado en Internet):"
+        if language == "Spanish"
+        else "General model knowledge (not live-web verified):"
+    )
+    degraded = format_tool_failure("web_search", failure_detail, external=True)
+    return f"{degraded}\n\n{label}\n{answer}"
 
 
 def _research_synthesize(
@@ -256,7 +317,7 @@ def _research_synthesize(
         resp = llm.complete(prompt)
         answer = (resp.text if hasattr(resp, "text") else str(resp)).strip()
         if not answer or answer.lower() == "no answer produced.":
-            return _research_fallback(chunks, web_search=web_search)
+            return _research_fallback(chunks, web_search=web_search, language=language)
         if web_search:
             max_source = len(chunks)
             answer = re.sub(
@@ -271,7 +332,7 @@ def _research_synthesize(
         return answer
     except Exception as exc:
         LOG.warning("Research synthesis failed: %s", exc)
-        return _research_fallback(chunks, web_search=web_search)
+        return _research_fallback(chunks, web_search=web_search, language=language)
 
 
 def _research_sync(req: ResearchRequest):
@@ -321,7 +382,13 @@ def _research_sync(req: ResearchRequest):
             try:
                 nodes = _research_retrieve(sub, req.collections, top_k=config.SIMILARITY_TOP_K)
             except Exception as exc:
-                LOG.exception("Research embedding/retrieval failed")
+                info = classify_error(exc, status_code=503, category=ErrorCategory.AI_MODEL_UNAVAILABLE)
+                LOG.error(
+                    "research retrieval failure category=%s code=%s exception_type=%s",
+                    info.category.value,
+                    info.code,
+                    type(exc).__name__,
+                )
                 return {
                     "answer": "",
                     "sources": [],
@@ -329,7 +396,9 @@ def _research_sync(req: ResearchRequest):
                     "model": model_name,
                     "degraded": True,
                     "error_code": "embedding_error",
-                    "error_detail": str(exc)[:500],
+                    "error_category": info.category.value,
+                    "error_contract": info.to_client_dict(),
+                    "error_detail": info.definition.message,
                 }
             for node in nodes:
                 serialized = _research_serialize_node(node)
@@ -338,8 +407,8 @@ def _research_sync(req: ResearchRequest):
                     seen[key] = serialized
 
     web_provider = None
+    web_errors: list[str] = []
     if use_web:
-        web_errors: list[str] = []
         web_candidates: dict[str, dict[str, str]] = {}
         # DuckDuckGo rate-limits bursts aggressively. One broad lookup is much
         # faster and more reliable; synthesis still covers every planned facet.
@@ -409,12 +478,12 @@ def _research_sync(req: ResearchRequest):
             }
         if not any(item["metadata"].get("source_type") == "web" for item in seen.values()):
             if not seen:
-                detail = "; ".join(web_errors) or "The web search returned no results."
                 # Provider outages are an expected degraded state, not a bad
                 # gateway failure. Return a typed result so every client can
                 # show its localized, friendly retry guidance.
+                detail = "; ".join(web_errors) or "The web search returned no results."
                 return {
-                    "answer": "Web search is temporarily unavailable. Please try again shortly.",
+                    "answer": _research_local_fallback(llm, req.query, detail),
                     "sub_questions": sub_questions,
                     "sources": [],
                     "passes": 0,
@@ -424,7 +493,12 @@ def _research_sync(req: ResearchRequest):
                     "search_query": search_query,
                     "degraded": True,
                     "error_code": "web_search_unavailable",
-                    "error_detail": detail[:500],
+                    "error_category": ErrorCategory.EXTERNAL_SERVICE_UNAVAILABLE.value,
+                    "error_contract": classify_error(
+                        None,
+                        category=ErrorCategory.EXTERNAL_SERVICE_UNAVAILABLE,
+                    ).to_client_dict(),
+                    "error_detail": "Web search is temporarily unavailable. Please try again shortly.",
                 }
             LOG.warning("Continuing research with local sources after web search failure: %s", "; ".join(web_errors))
     chunks = list(seen.values())
@@ -446,6 +520,12 @@ def _research_sync(req: ResearchRequest):
         web_search=use_web,
         depth=depth,
     )
+    failure_message = external_failure_message("; ".join(web_errors)) if web_errors else ""
+    if failure_message:
+        answer = (
+            f"{failure_message} Some web research passes failed; the cited sources below come only from "
+            f"successful external searches.\n\n{answer}"
+        )
     sources = [
         {
             "file": c["metadata"].get("rel_path", "?"),
@@ -478,6 +558,7 @@ def _research_sync(req: ResearchRequest):
         "web_search": use_web,
         "web_provider": web_provider,
         "search_query": search_query if use_web else None,
+        **({"degraded": True, "failure_message": failure_message} if failure_message else {}),
     }
 
 
@@ -507,20 +588,41 @@ async def research_preflight(req: ResearchRequest, request: Request):
             response.raise_for_status()
             installed = [str(item.get("name") or "") for item in response.json().get("models", [])]
     except (httpx.HTTPError, ValueError, TypeError) as exc:
-        return {"ok": False, "error_code": "ollama_unavailable", "error_detail": str(exc)[:300]}
+        info = classify_error(exc, status_code=503, category=ErrorCategory.AI_MODEL_UNAVAILABLE)
+        return {
+            "ok": False,
+            "error_code": "ollama_unavailable",
+            "error_category": info.category.value,
+            "error_contract": info.to_client_dict(),
+            "error_detail": info.definition.message,
+        }
     aliases = {alias for name in installed for alias in (name, name.removesuffix(":latest"))}
     if model not in aliases:
-        return {"ok": False, "error_code": "model_unavailable", "error_detail": model, "installed_models": installed}
+        info = classify_error(None, category=ErrorCategory.AI_MODEL_UNAVAILABLE)
+        return {
+            "ok": False,
+            "error_code": "model_unavailable",
+            "error_category": info.category.value,
+            "error_contract": info.to_client_dict(),
+            "error_detail": model,
+            "installed_models": installed,
+        }
     if not use_web and state.fusion_retriever is None:
+        info = classify_error(None, category=ErrorCategory.FILE_NOT_FOUND)
         return {
             "ok": False,
             "error_code": "collection_empty",
+            "error_category": info.category.value,
+            "error_contract": info.to_client_dict(),
             "error_detail": ", ".join(req.collections or []) or config.DEFAULT_COLLECTION_ID,
         }
     if use_web and configured_provider() == "disabled":
+        info = classify_error(None, category=ErrorCategory.EXTERNAL_SERVICE_UNAVAILABLE)
         return {
             "ok": False,
             "error_code": "web_search_disabled",
+            "error_category": info.category.value,
+            "error_contract": info.to_client_dict(),
             "error_detail": "TRINAXAI_WEB_SEARCH_PROVIDER=disabled",
         }
     return {

@@ -43,6 +43,8 @@ def _process_command(pid: int | None) -> str:
 
 def _frontend_mode_from_command(command: str) -> str | None:
     normalized = " ".join(command.lower().split())
+    if "node server.mjs" in normalized or "chat-pwa/server.mjs" in normalized:
+        return "serve"
     if "vite preview" in normalized or "npm run preview" in normalized:
         return "preview"
     if ("vite" in normalized and "--host" in normalized) or "npm run dev" in normalized:
@@ -140,7 +142,7 @@ def run(args: Any, client: Any, ui: Any, config: Any) -> int:
         frontend = by_name.get("trinaxai-frontend", {})
         frontend_command = _process_command(frontend.get("pid"))
         actual_mode = _frontend_mode_from_command(frontend_command)
-        expected_mode = (_system.load_dotenv_values().get("TRINAXAI_FRONTEND_MODE") or "preview").lower()
+        expected_mode = (_system.load_dotenv_values().get("TRINAXAI_FRONTEND_MODE") or "serve").lower()
         if frontend.get("running"):
             mode_ok = actual_mode is None or actual_mode == expected_mode
             add(

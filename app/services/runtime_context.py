@@ -159,13 +159,12 @@ _SAFE_INLINE_ATTACHMENT_TYPES = {
 
 _MULTILINGUAL_500 = {
     "en": (
-        "⚠️  Make sure TrinaxAI is turned on. Please verify that Ollama is "
-        "active and the index is built (run `python index.py`)."
+        "TrinaxAI could not complete this action. Your other features remain "
+        "available; please try again, then check the service status if it continues."
     ),
     "es": (
-        "⚠️  Asegúrate de que TrinaxAI esté encendido. Verifica que Ollama "
-        "esté funcionando y el índice esté construido "
-        "(ejecuta `python index.py`)."
+        "TrinaxAI no pudo completar esta acción. Las demás funciones siguen "
+        "disponibles; inténtalo de nuevo y revisa el estado del servicio si continúa."
     ),
 }
 

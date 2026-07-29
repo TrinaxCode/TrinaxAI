@@ -6,17 +6,23 @@ modules call this client and never touch HTTP directly.
 
 from __future__ import annotations
 
+import logging
 import os
 import ssl
 import sys
+import time
 from pathlib import Path
 from typing import Any, Iterable
 from urllib.parse import urlencode, urlparse, urlunparse
+
+from trinaxai_errors import classify_error
 
 try:
     import httpx  # type: ignore
 except Exception:  # pragma: no cover - httpx is in requirements
     httpx = None  # type: ignore
+
+LOG = logging.getLogger("trinaxai_cli.client")
 
 
 class TrinaxAPIError(RuntimeError):
@@ -28,10 +34,14 @@ class TrinaxAPIError(RuntimeError):
     """
 
     def __init__(self, status: int, message: str, payload: Any | None = None) -> None:
-        prefix = f"HTTP {status}: " if status else ""
-        super().__init__(f"{prefix}{message}" if message else (prefix or "request failed"))
+        self.technical_message = message
+        info = classify_error(RuntimeError(message), status_code=status, hint=message)
+        super().__init__(f"{info.definition.message} {info.definition.recovery}")
         self.status = status
         self.payload = payload
+        self.category = info.category.value
+        self.error_code = info.code
+        self.retryable = info.retryable
 
 
 class TrinaxAPIClient:
@@ -188,19 +198,24 @@ class TrinaxAPIClient:
         timeout: float | None = None,
     ) -> Any:
         """Issue a request, translating transport failures into TrinaxAPIError."""
-        try:
-            effective_timeout = timeout or self.timeout
-            r = self._client.request(method, url, json=json, timeout=effective_timeout)
-        except httpx.TimeoutException as exc:
-            raise TrinaxAPIError(
-                0, f"the RAG API at {self.base_url} timed out after {(timeout or self.timeout):g}s"
-            ) from exc
-        except httpx.TransportError as exc:
-            raise TrinaxAPIError(
-                0,
-                f"cannot reach the RAG API at {self.base_url} ({exc.__class__.__name__}); is TrinaxAI running?",
-            ) from exc
-        return self._handle(r)
+        effective_timeout = timeout or self.timeout
+        retryable_method = method.upper() in {"GET", "HEAD", "OPTIONS"}
+        for attempt in range(2 if retryable_method else 1):
+            try:
+                r = self._client.request(method, url, json=json, timeout=effective_timeout)
+                return self._handle(r)
+            except httpx.TimeoutException:
+                error = TrinaxAPIError(0, "request timed out")
+            except httpx.TransportError:
+                error = TrinaxAPIError(0, "local service unavailable")
+            except TrinaxAPIError as caught:
+                error = caught
+                if not (retryable_method and error.retryable and attempt == 0):
+                    raise
+            if retryable_method and error.retryable and attempt == 0:
+                time.sleep(0.25)
+                continue
+            raise error
 
     def _get(self, path: str, params: Iterable[tuple[str, str]] | None = None) -> Any:
         url = path + ("?" + urlencode(list(params)) if params else "")

@@ -105,9 +105,9 @@ describe('AgentInterface handoff', () => {
     ]);
     expect(apiMocks.runAgent.mock.calls[0][2]).toEqual(expect.objectContaining({
       model: 'auto',
-      knowledgeSearch: false,
-      webSearch: false,
-      deepResearch: false,
+      knowledgeSearch: true,
+      webSearch: true,
+      deepResearch: true,
     }));
     expect(apiMocks.resolveAgentModel).not.toHaveBeenCalled();
     expect(screen.getByText('Corrige los archivos del proyecto')).toBeInTheDocument();

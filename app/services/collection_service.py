@@ -3,7 +3,28 @@
 from __future__ import annotations
 
 # ruff: noqa: F405
-from .shared_runtime import *  # noqa: F403
+from .shared_runtime import (
+    CollectionCreateRequest,
+    CollectionUpdateRequest,
+    HTTPException,
+    Request,
+    StorageContext,
+    _authorize_system,
+    _collection_slug,
+    _index_process_lock,
+    _read_collections_unlocked,
+    _write_collections_unlocked,
+    atomic_write_json,
+    build_engine,
+    config,
+    json,
+    load_index_from_storage,
+    os,
+    run_in_threadpool,
+    shutil,
+    state,
+    time,
+)
 
 
 def _delete_collection_nodes_unlocked(collection_id: str) -> int:
@@ -30,10 +51,7 @@ def _delete_collection_nodes_unlocked(collection_id: str) -> int:
             prefix = f"{collection_id}:"
             trimmed = {k: v for k, v in manifest.items() if not str(k).startswith(prefix)}
             if len(trimmed) != len(manifest):
-                tmp = f"{config.MANIFEST_PATH}.tmp"
-                with open(tmp, "w", encoding="utf-8") as f:
-                    json.dump(trimmed, f)
-                os.replace(tmp, config.MANIFEST_PATH)
+                atomic_write_json(config.MANIFEST_PATH, trimmed)
     except (OSError, ValueError):
         pass
     shutil.rmtree(

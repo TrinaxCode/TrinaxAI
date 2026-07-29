@@ -88,15 +88,6 @@ def _stream_from_rag(
     return full or "(no answer)"
 
 
-def _general_system_prompt() -> str:
-    return (
-        "You are TrinaxAI, a fast local AI assistant. Answer the current request directly "
-        "and in the same language as the user's latest message. Keep simple greetings brief. "
-        "Use only messages from this conversation; never assume facts from other chats or indexed documents. "
-        "Do not invent personal details, credentials, projects, or links that the user did not mention here."
-    )
-
-
 def _stream_from_ollama(client: Any, ui: Any, messages: list[dict[str, str]], model: str | None = None) -> str:
     """Stream a context-isolated general chat directly from Ollama.
 
@@ -288,7 +279,7 @@ def _run_web_or_research(
                 context=context,
             )
     except Exception as exc:  # noqa: BLE001
-        ui.error(f"{mode}: {exc}")
+        ui.failure(mode, exc)
         if web_search:
             ui.info("Configure a web provider with TRINAXAI_WEB_SEARCH_PROVIDER (brave/searxng).")
         return ""
@@ -420,7 +411,7 @@ def _dispatch_turn(
             ui.warn("\ninterrupted.")
             return
         except Exception as exc:  # noqa: BLE001
-            ui.error(f"agent: {exc}")
+            ui.failure("Agent", exc)
             ui.info("Is TrinaxAI running? Start it with: trinaxai start")
             return
         session.append("assistant", answer, {"mode": mode})
@@ -449,7 +440,7 @@ def _dispatch_turn(
     try:
         answer = _stream_answer(client, ui, messages, engine, collections, state.model)
     except Exception as exc:  # noqa: BLE001
-        ui.error(f"Cannot reach the local AI service: {exc}")
+        ui.failure("Local AI request", exc)
         ui.info("Start TrinaxAI with: trinaxai start")
         messages.pop()  # drop the user turn we couldn't answer
         return
@@ -513,7 +504,7 @@ def run(args: Any, client: Any, ui: Any, config: Any) -> int:
             try:
                 _dispatch_turn(prompt, route, messages, client, ui, config, state, session)
             except Exception as exc:  # noqa: BLE001
-                ui.error(f"chat: {exc}")
+                ui.failure("Chat", exc)
                 return 1
             return 0
 

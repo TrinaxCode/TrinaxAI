@@ -38,6 +38,12 @@ export function isAllowedOllamaProxyRequest(method: string, pathname: string): b
   return OLLAMA_PROXY_ALLOWLIST.get(pathname)?.has(method.toUpperCase()) ?? false;
 }
 
+export function requiredOllamaProxyScope(pathname: string): 'chat' | 'system' {
+  return pathname === '/api/ollama/api/pull' || pathname === '/api/ollama/api/delete'
+    ? 'system'
+    : 'chat';
+}
+
 export function constantTimeTokenEqual(left: string, right: string): boolean {
   const a = Buffer.from(left, 'utf8');
   const b = Buffer.from(right, 'utf8');

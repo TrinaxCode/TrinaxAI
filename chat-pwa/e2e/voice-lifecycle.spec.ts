@@ -15,7 +15,14 @@ test('STT on/off/on, Call Mode exit releases every microphone track', async ({ p
       return stream;
     };
   });
+  await page.route('**/api/rag/app-state', (route) => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    headers: { ETag: '"trinaxai-e2e-app-state"' },
+    body: JSON.stringify({ schema_version: 2, revision: 0, values: { 'tc-onboarding-complete': 'true', 'tc-lang': 'en' } }),
+  }));
   await page.goto('/#/chat');
+  await expect(page.locator('.animate-intro-logo')).toHaveCount(0, { timeout: 10_000 });
 
   const start = page.getByRole('button', { name: 'Start dictation' });
   await expect(start).toBeVisible({ timeout: 10_000 });

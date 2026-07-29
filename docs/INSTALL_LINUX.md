@@ -26,7 +26,7 @@ When done, you should have:
 | RAM | 8 GB | 16 GB or more |
 | Free disk | 5 GB | 10-25 GB |
 | Python | 3.10 | 3.12 |
-| Node.js | 18 | 20 LTS |
+| Node.js | 22 | 24 LTS |
 | Git | Yes | Yes |
 | Ollama | Yes | Latest version |
 

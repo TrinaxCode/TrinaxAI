@@ -4,6 +4,7 @@ import { useRegisterSW } from 'virtual:pwa-register/react';
 import { ThemeProvider } from './theme/ThemeContext';
 import { I18nProvider } from './i18n/I18nContext';
 import { ToastProvider } from './components/Toast';
+import ErrorBoundary from './components/ErrorBoundary';
 import App from './App';
 import PwaUpdater from './components/PwaUpdater';
 import './index.css';
@@ -45,14 +46,16 @@ function Root() {
 
   return (
     <StrictMode>
-      <ThemeProvider>
-        <I18nProvider>
-          <ToastProvider>
-            <App />
-            <PwaUpdater needsUpdate={needRefresh} onRefresh={handleRefresh} />
-          </ToastProvider>
-        </I18nProvider>
-      </ThemeProvider>
+      <ErrorBoundary>
+        <ThemeProvider>
+          <I18nProvider>
+            <ToastProvider>
+              <App />
+              <PwaUpdater needsUpdate={needRefresh} onRefresh={handleRefresh} />
+            </ToastProvider>
+          </I18nProvider>
+        </ThemeProvider>
+      </ErrorBoundary>
     </StrictMode>
   );
 }

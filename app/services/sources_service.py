@@ -3,7 +3,25 @@
 from __future__ import annotations
 
 # ruff: noqa: F405
-from .shared_runtime import *  # noqa: F403
+from .shared_runtime import (
+    LOG,
+    HTTPException,
+    Request,
+    StorageContext,
+    _authorize_system,
+    _cache_get,
+    _cache_set,
+    _delete_indexed_rel_paths,
+    _index_process_lock,
+    _research_serialize_node,
+    atomic_write_json,
+    build_engine,
+    config,
+    json,
+    load_index_from_storage,
+    run_in_threadpool,
+    state,
+)
 
 
 def _research_iter_nodes(collection: str | None = None):
@@ -224,10 +242,7 @@ def _trim_manifest_prefix(prefix: str) -> None:
         if isinstance(manifest, dict):
             trimmed = {k: v for k, v in manifest.items() if not str(k).startswith(prefix)}
             if len(trimmed) != len(manifest):
-                tmp = f"{config.MANIFEST_PATH}.tmp"
-                with open(tmp, "w", encoding="utf-8") as f:
-                    json.dump(trimmed, f)
-                os.replace(tmp, config.MANIFEST_PATH)
+                atomic_write_json(config.MANIFEST_PATH, trimmed)
     except (OSError, ValueError):
         pass
 

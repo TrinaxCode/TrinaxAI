@@ -209,12 +209,12 @@ desarrollo, el service worker **no** se registra para evitar cachés. Para proba
 
 ```bash
 npm run build
-npm run preview   # Sirve la build de producción con service worker
+npm run serve     # Sirve la build y el gateway de API same-origin de producción
 ```
 
 ### Depuración del Frontend
 - **React DevTools**: Instala la extensión del navegador para inspeccionar componentes.
-- **Pestaña Network**: Todas las llamadas API pasan por el proxy de Vite — revisa la pestaña Network para `/api/rag/*` y `/api/ollama/*`.
+- **Pestaña Network**: Todas las llamadas API pasan por el gateway same-origin — revisa `/api/rag/*` y `/api/ollama/*`.
 - **IndexedDB**: Los archivos adjuntos se almacenan en `trinaxai-chat-files` — inspecciona vía DevTools > Application > IndexedDB.
 - **localStorage**: El historial de chat, configuración y estado compartido están en localStorage — revisa Application > Local Storage.
 - **Service Worker**: Usa Application > Service Workers para desregistrar o actualizar.

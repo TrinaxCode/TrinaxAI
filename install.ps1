@@ -623,7 +623,7 @@ $EnvLines = @(
   "TRINAXAI_PORT=3333",
   "TRINAXAI_HEALTH_URL=https://localhost:3333",
   "TRINAXAI_FRONTEND_URL=https://localhost:3334",
-  "TRINAXAI_FRONTEND_MODE=preview",
+  "TRINAXAI_FRONTEND_MODE=serve",
   "TRINAXAI_CERT_PASSPHRASE=trinaxai-local",
   "TRINAXAI_RAG_HTTPS=1",
   "TRINAXAI_RAG_TARGET=https://127.0.0.1:3333",
@@ -692,6 +692,11 @@ if ($null -eq $PythonCommand) {
 }
 Require-Command "git" "Git.Git" "Git" "https://git-scm.com/download/win"
 Require-Command "node" "OpenJS.NodeJS.LTS" "Node.js" "https://nodejs.org"
+$NodeMajor = [int](& node -p "process.versions.node.split('.')[0]")
+if ($NodeMajor -lt 22) {
+  Write-Warn "Node.js 22 or newer is required. Install an active Node.js LTS release and re-run this script."
+  exit 1
+}
 Require-Ollama
 
 Ensure-TrinaxAICertificate -Repo $Repo -LanIp $LanIp

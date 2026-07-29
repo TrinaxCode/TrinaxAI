@@ -48,7 +48,7 @@ class ServiceManagerPersistenceTests(unittest.TestCase):
                 env = sm._service_env(str(base_dir))
             self.assertEqual(env["SHARED"], "process")
             self.assertEqual(sm._frontend_script(env), "dev")
-            self.assertEqual(sm._frontend_script({"TRINAXAI_FRONTEND_MODE": "unknown"}), "preview")
+            self.assertEqual(sm._frontend_script({"TRINAXAI_FRONTEND_MODE": "unknown"}), "serve")
 
             self.assertTrue(sm._read_ai_enabled(str(base_dir)))
             sm._write_ai_enabled(str(base_dir), False)

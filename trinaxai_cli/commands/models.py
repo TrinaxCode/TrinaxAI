@@ -19,7 +19,7 @@ def run(args: Any, client: Any, ui: Any, config: Any) -> int:
                 installed.add(name)
                 rows.append([name, "installed", str(model.get("size", ""))])
     except Exception as exc:
-        ui.warn(f"Ollama is not reachable at {base}: {exc}")
+        ui.failure("Model listing", exc)
         ui.info("Start TrinaxAI with: trinaxai start")
 
     for name in RECOMMENDED:

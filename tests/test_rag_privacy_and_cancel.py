@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import threading
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -27,6 +28,31 @@ def test_cancel_ollama_unloads_selected_model() -> None:
 
     request = urlopen.call_args.args[0]
     assert json.loads(request.data) == {"model": "code-model", "keep_alive": 0}
+
+
+def test_freeform_generation_closes_provider_stream_when_cancelled() -> None:
+    cancelled = threading.Event()
+
+    class Chunks:
+        closed = False
+
+        def __iter__(self):
+            return self
+
+        def __next__(self):
+            cancelled.set()
+            return SimpleNamespace(delta="ignored")
+
+        def close(self):
+            self.closed = True
+
+    chunks = Chunks()
+    llm = SimpleNamespace(stream_complete=lambda _prompt: chunks)
+
+    response = rag_service._freeform_generate(llm, "prompt", stream=False, cancel_event=cancelled)
+
+    assert str(response) == ""
+    assert chunks.closed is True
 
 
 def test_stream_errors_do_not_expose_exception_details() -> None:

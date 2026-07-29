@@ -1,6 +1,6 @@
 import type { BuiltinCommand, QuickChipDef } from './types';
 
-export const BUILTIN_COMMANDS: BuiltinCommand[] = [
+const BUILTIN_COMMANDS: BuiltinCommand[] = [
   { name: 'index', text: '', builtin: true, kind: 'navigate_indexing', hint: 'Ajustes → Indexar carpeta' },
   { name: 'browse', text: '', builtin: true, kind: 'navigate_browser', hint: 'Knowledge Browser' },
   { name: 'memory', text: '', builtin: true, kind: 'navigate_memory', hint: 'Notas persistentes' },

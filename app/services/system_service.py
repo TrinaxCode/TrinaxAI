@@ -9,16 +9,47 @@ import re
 import httpx
 
 # ruff: noqa: F405
-from .shared_runtime import *  # noqa: F403
+from .shared_runtime import (
+    _SAFE_SEGMENT,
+    LOG,
+    Any,
+    File,
+    Form,
+    HTTPException,
+    IndexImportDeleteRequest,
+    QueryBundle,
+    Request,
+    Settings,
+    UploadFile,
+    _authorize_system,
+    _collection_slug,
+    _delete_indexed_rel_paths,
+    _empty_usage_summary,
+    _read_collections_unlocked,
+    _read_usage_summary_unlocked,
+    _write_collections_unlocked,
+    _write_usage_summary_unlocked,
+    atomic_write_json,
+    build_engine,
+    config,
+    json,
+    os,
+    run_in_threadpool,
+    sanitize_collection_id,
+    shutil,
+    source_id_for_root,
+    state,
+    subprocess,
+    sys,
+    threading,
+    time,
+    uuid,
+)
 
 
 def _persist_index_jobs_locked() -> None:
-    os.makedirs(config.PERSIST_DIR, exist_ok=True)
     payload = {job_id: {k: v for k, v in job.items() if k != "process"} for job_id, job in state.index_jobs.items()}
-    tmp = f"{config.INDEX_JOBS_PATH}.tmp"
-    with open(tmp, "w", encoding="utf-8") as stream:
-        json.dump(payload, stream, ensure_ascii=False, indent=2)
-    os.replace(tmp, config.INDEX_JOBS_PATH)
+    atomic_write_json(config.INDEX_JOBS_PATH, payload)
 
 
 def _restore_index_jobs() -> None:

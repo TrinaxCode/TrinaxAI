@@ -97,10 +97,19 @@ async def voice_stt(
         raise HTTPException(status_code=400, detail="Empty audio file")
     try:
         text = await run_in_threadpool(_run_voice_task, transcribe_bytes, data, file.filename, lang)
-    except RuntimeError as e:
-        raise HTTPException(status_code=501, detail=str(e)) from e
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=501,
+            detail=(
+                "Speech recognition is unavailable. Text chat still works; install the voice dependencies "
+                "or choose a device supported by your Whisper model, then try again."
+            ),
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail="The audio could not be processed. Text chat still works; record a new supported audio file.",
+        ) from exc
     return {"text": text}
 
 
@@ -113,6 +122,12 @@ async def voice_tts(request: Request, req: TTSRequest) -> Response:
     enforce_rate_limit(request, bucket="voice_tts")
     try:
         audio_bytes, content_type = await run_in_threadpool(_run_voice_task, synthesize, req.text, req.lang)
-    except RuntimeError as e:
-        raise HTTPException(status_code=501, detail=str(e)) from e
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=501,
+            detail=(
+                "Speech playback is unavailable. The written response still works; install a supported local "
+                "voice backend or select an installed voice model, then try again."
+            ),
+        ) from exc
     return Response(audio_bytes, media_type=content_type)

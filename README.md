@@ -163,7 +163,7 @@ operation that the current user or browser has not permitted.
 
 - 🧠 **Dual engines** — direct Ollama chat (fast, creative) and RAG (grounded, cited answers over your files).
 - 🎯 **Intelligent generation pipeline** — a deterministic, no-LLM classifier reads each turn and picks the right model, decoding params, and prompt style (code, reasoning/math, creative, grounded-QA, or explain). Fast and predictable, no extra model call.
-- 🤖 **Tool-using agent** — `trinaxai agent` and the in-app Agent view use sandboxed `read/write/edit/list/glob/grep/run_command` tools, remain confined to a workspace, and request approval for dangerous actions.
+- 🤖 **Model-driven tool orchestration** — the in-app Agent answers directly or autonomously combines web search, deep research, memory, indexed-document search, collections, and sandboxed workspace tools. Tool switches restrict availability; they never force execution. Dangerous actions still require approval.
 - 📇 **Custom RAG** — indexes your projects; AST-aware chunking for 15+ languages, hybrid vector + BM25 retrieval, optional cross-encoder reranker, citations back to `rel_path`.
 - 🔎 **Deep research** — multi-pass RAG decomposition (`trinaxai research` or the in-app trigger).
 - 🌍 **Optional web search** — enable Internet mode for current results through DuckDuckGo, Brave Search, or SearXNG; sources are displayed and public-page reads are bounded.

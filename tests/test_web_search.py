@@ -170,7 +170,8 @@ def test_local_retrieval_error_is_not_reported_as_an_empty_collection(monkeypatc
     result = research._research_sync(ResearchRequest(query="query", include_local=True))
 
     assert result["error_code"] == "embedding_error"
-    assert "dimension mismatch" in result["error_detail"]
+    assert result["error_detail"] == "The selected AI model is unavailable."
+    assert "dimension mismatch" not in result["error_detail"]
 
 
 def test_auto_provider_falls_back_when_preferred_provider_fails(monkeypatch) -> None:
@@ -210,7 +211,10 @@ def test_search_timeout_returns_typed_degraded_result(monkeypatch) -> None:
     result = research._research_sync(ResearchRequest(query="latest release", web_search=True, depth=1))
 
     assert result["error_code"] == "web_search_unavailable"
-    assert "timed out" in result["error_detail"]
+    assert result["error_detail"] == "Web search is temporarily unavailable. Please try again shortly."
+    assert result["degraded"] is True
+    assert "General model knowledge" in result["answer"]
+    assert result["sources"] == []
 
 
 def test_duckduckgo_challenge_is_an_explicit_error(monkeypatch) -> None:

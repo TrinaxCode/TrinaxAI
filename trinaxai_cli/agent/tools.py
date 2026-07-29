@@ -26,9 +26,12 @@ import fnmatch
 import importlib
 import inspect
 import os
+import re
 import shutil
 import signal
 import subprocess
+import tempfile
+import urllib.error
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
@@ -48,6 +51,7 @@ MAX_GREP_MATCHES = 100
 MAX_GREP_FILES = 2_000
 MAX_RECURSIVE_DEPTH = 8
 _SKIP_DIRS = {".git", "node_modules", "__pycache__", ".venv"}
+_DEGRADED_TOOL_MARKER = "[tool_status=degraded;"
 
 # Importing arbitrary modules merely to inspect them can itself have side
 # effects. Keep automatic API evidence to common, side-effect-free stdlib
@@ -107,6 +111,87 @@ def _truncate(text: str, limit: int = MAX_OUTPUT_CHARS) -> str:
     if len(text) <= limit:
         return text
     return text[:limit] + f"\n... [truncated, {len(text) - limit} more chars]"
+
+
+def _external_failure_reason(detail: object) -> tuple[str, str]:
+    """Classify common provider failures without exposing raw diagnostics."""
+    text = str(detail).casefold()
+    response = getattr(detail, "response", None)
+    status = getattr(response, "status_code", None)
+    if status is None:
+        match = re.search(r"\b(?:http|status)[\s:/-]*(\d{3})\b|\b(?:401|403|429|5\d{2})\b", text)
+        status = int(match.group(1) or match.group(0)) if match else None
+    if status == 429 or re.search(r"rate[- ]limit", text) or "too many requests" in text:
+        reason, message = "rate_limit", "The external provider is rate-limiting requests right now."
+    elif status in {401, 403} or any(term in text for term in ("unauthorized", "forbidden", "api key", "credential")):
+        reason, message = "authentication_failure", "The external provider rejected authentication."
+    elif "timeout" in type(detail).__name__.casefold() or any(term in text for term in ("timeout", "timed out")):
+        reason, message = "timeout", "The external provider didn't respond in time."
+    elif any(
+        term in text
+        for term in ("dns", "name or service not known", "nodename nor servname", "name resolution", "getaddrinfo")
+    ):
+        reason, message = "dns_failure", "I couldn't resolve the external provider's address (DNS failure)."
+    elif any(
+        term in text
+        for term in ("network is unreachable", "no route to host", "no internet", "internet is unavailable")
+    ):
+        reason, message = "no_internet", "I couldn't access the internet right now."
+    elif status is not None and status >= 500:
+        reason, message = "api_unavailable", "The external API is temporarily unavailable."
+    elif any(term in text for term in ("connection refused", "connect error", "provider offline", "offline")):
+        reason, message = "provider_offline", "The external provider appears to be offline or unreachable."
+    elif isinstance(detail, (urllib.error.URLError, ConnectionError)):
+        reason, message = "provider_offline", "The external provider appears to be offline or unreachable."
+    else:
+        reason, message = "api_unavailable", "The external API is temporarily unavailable."
+    return reason, message
+
+
+def external_failure_message(detail: object) -> str:
+    """Return the safe, human-readable reason for an external failure."""
+    return _external_failure_reason(detail)[1]
+
+
+def format_tool_failure(tool_name: str, detail: object, *, external: bool = False) -> str:
+    """Return a user/model-readable degraded result instead of a bare error."""
+    safe_name = re.sub(r"[^a-zA-Z0-9_.-]", "_", tool_name or "unknown")
+    if external:
+        reason, message = _external_failure_reason(detail)
+        return (
+            f"{_DEGRADED_TOOL_MARKER} tool={safe_name}; source=external; reason={reason}]\n"
+            f"What happened: {message}\n"
+            f"Why: The external tool was unavailable because of {reason.replace('_', ' ')}.\n"
+            "Still works: local workspace files, indexed documents, and general model knowledge remain available.\n"
+            "Next: continue with local/model knowledge, label it clearly, and do not invent or cite external results."
+        )
+    reason = str(detail).strip()
+    if reason.lower().startswith("error:"):
+        reason = reason[6:].strip()
+    reason = re.sub(r"(?i)(api[_-]?key|token|password|secret)=\S+", r"\1=[redacted]", reason)
+    reason = _truncate(reason or "The tool returned no usable result.", 600)
+    return (
+        f"{_DEGRADED_TOOL_MARKER} tool={safe_name}]\n"
+        f"What happened: {safe_name} could not complete this request.\n"
+        f"Why: {reason}\n"
+        "Still works: local workspace tools remain available — read_file, list_dir, glob, and grep. "
+        "Other tools may still work when their own dependency is available.\n"
+        "Next: continue with the available local tools and clearly mark conclusions that depend on this unavailable capability."
+    )
+
+
+def is_degraded_tool_result(result: object) -> bool:
+    return str(result or "").startswith(_DEGRADED_TOOL_MARKER)
+
+
+def normalize_tool_result(tool_name: str, result: object, *, external: bool = False) -> str:
+    """Convert legacy ``error:`` results and failed commands to the shared format."""
+    text = str(result or "")
+    if is_degraded_tool_result(text):
+        return text
+    if text.startswith("error:") or re.match(r"^\[exit [1-9][0-9]*;", text):
+        return format_tool_failure(tool_name, text, external=external)
+    return text
 
 
 def _workspace_scope_error(workspace_root: Path) -> str | None:
@@ -296,7 +381,7 @@ def _write_file(workspace_root: Path, path: str, content: str = "", **_: Any) ->
     try:
         target.parent.mkdir(parents=True, exist_ok=True)
         existed = target.exists()
-        target.write_text(content, encoding="utf-8")
+        _atomic_write_text(target, content)
     except OSError as exc:
         return f"error: cannot write {path}: {exc}"
     verb = "overwrote" if existed else "created"
@@ -319,10 +404,26 @@ def _edit_file(workspace_root: Path, path: str, old: str = "", new: str = "", **
     if count > 1:
         return f"error: 'old' matches {count} times in {path}; add more context to make it unique"
     try:
-        target.write_text(text.replace(old, new, 1), encoding="utf-8")
+        _atomic_write_text(target, text.replace(old, new, 1))
     except OSError as exc:
         return f"error: cannot write {path}: {exc}"
     return f"edited {_rel(workspace_root, target)} (1 replacement)"
+
+
+def _atomic_write_text(target: Path, content: str) -> None:
+    """Replace a file only after its complete content is durable on disk."""
+    descriptor, temporary_name = tempfile.mkstemp(dir=target.parent, prefix=f".{target.name}.", suffix=".tmp")
+    temporary = Path(temporary_name)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            handle.write(content)
+            handle.flush()
+            os.fsync(handle.fileno())
+        if target.exists():
+            os.chmod(temporary, target.stat().st_mode)
+        os.replace(temporary, target)
+    finally:
+        temporary.unlink(missing_ok=True)
 
 
 def _list_dir(workspace_root: Path, path: str = ".", **_: Any) -> str:
@@ -488,11 +589,11 @@ def _bubblewrap_argv(workspace_root: Path, command: str) -> list[str] | None:
             "--dev",
             "/dev",
             "--tmpfs",
-            "/tmp",
+            "/tmp",  # nosec B108 - private tmpfs inside the bubblewrap namespace
             "--dir",
             "/home",
             "--dir",
-            "/tmp/trinaxai-home",
+            "/tmp/trinaxai-home",  # nosec B108 - private directory inside that tmpfs
             "--bind",
             str(root),
             str(root),
@@ -500,10 +601,10 @@ def _bubblewrap_argv(workspace_root: Path, command: str) -> list[str] | None:
             str(root),
             "--setenv",
             "HOME",
-            "/tmp/trinaxai-home",
+            "/tmp/trinaxai-home",  # nosec B108 - sandbox-only HOME
             "--setenv",
             "TMPDIR",
-            "/tmp",
+            "/tmp",  # nosec B108 - sandbox-only TMPDIR
             "--setenv",
             "PATH",
             path_value,
@@ -597,6 +698,7 @@ class Tool:
     parameters: dict[str, Any]
     handler: Callable[..., str]
     dangerous: bool
+    external: bool = False
 
     def schema(self) -> dict[str, Any]:
         """Return the Ollama/OpenAI-style function schema for this tool."""

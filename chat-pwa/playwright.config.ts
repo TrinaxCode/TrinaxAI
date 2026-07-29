@@ -25,7 +25,7 @@ export default defineConfig({
     { name: 'chromium-mobile', use: { ...devices['Pixel 7'] } },
   ],
   webServer: {
-    command: `npm run build && CI=true npx vite preview --host 127.0.0.1 --port ${process.env.TRINAXAI_E2E_PORT || '4174'}`,
+    command: `npm run build && CI=true TRINAXAI_PWA_HOST=127.0.0.1 TRINAXAI_PWA_PORT=${process.env.TRINAXAI_E2E_PORT || '4174'} TRINAXAI_RAG_TARGET=https://127.0.0.1:3333 VITE_TRINAXAI_RAG_TARGET=https://127.0.0.1:3333 npm run serve`,
     url: `http://127.0.0.1:${process.env.TRINAXAI_E2E_PORT || '4174'}`,
     reuseExistingServer: false,
     timeout: 120_000,

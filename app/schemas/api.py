@@ -153,9 +153,9 @@ class AgentRequest(BaseModel):
     model: str | None = None
     max_steps: int = Field(default=25, ge=1, le=100)
     yolo: bool = False
-    web_search: bool = False
-    knowledge_search: bool = False
-    deep_research: bool = False
+    web_search: bool = True
+    knowledge_search: bool = True
+    deep_research: bool = True
 
     @field_validator("messages")
     @classmethod

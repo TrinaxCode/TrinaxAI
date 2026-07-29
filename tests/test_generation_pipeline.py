@@ -358,3 +358,19 @@ def test_js_balance_detects_wrong_nesting_not_only_counts():
     result = validate_output(code, regime="code_gen")
     assert not result.ok
     assert any("unexpected" in error.lower() for error in result.errors)
+
+
+def test_validator_catches_python_placeholders_and_js_missing_pairs():
+    python = validate_output("```py\ndef f():\n    ...\n```", regime="code_gen")
+    assert any("placeholder" in error.lower() for error in python.errors)
+    javascript = validate_output("```ts\nconst value = { missing: true;\n```", regime="code_gen")
+    assert any("unbalanced" in error.lower() for error in javascript.errors)
+
+
+def test_validator_checks_html_closing_tags_css_balance_and_summary():
+    html = validate_output("```html\n<html><body>missing\n```", regime="creative")
+    assert any("not closed" in error for error in html.errors)
+    css = validate_output("```css\n.card { color: red;\n```", regime="creative")
+    assert any("unbalanced" in error.lower() for error in css.errors)
+    result = validate_output("```python\nprint('ok')\n```", regime="code_gen", deliverables=("faq",))
+    assert result.summary().startswith("missing:")

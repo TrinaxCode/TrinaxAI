@@ -19,6 +19,9 @@ class _UI:
     def error(self, message: str) -> None:
         self.messages.append(message)
 
+    def failure(self, action: str, _exc: BaseException) -> None:
+        self.error(f"{action} could not be completed.")
+
     def warn(self, message: str) -> None:
         self.messages.append(message)
 

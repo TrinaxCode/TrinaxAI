@@ -11,6 +11,7 @@ forcing the rich console to ``no_color=True`` when either is set.
 
 from __future__ import annotations
 
+import logging
 import os
 import sys
 from contextlib import contextmanager
@@ -140,6 +141,18 @@ class Console:
 
     def error(self, msg: Any) -> None:
         self._styled(msg, "error")
+
+    def failure(self, action: str, exc: BaseException) -> None:
+        """Log technical context at DEBUG and show only a safe explanation."""
+        logging.getLogger("trinaxai_cli").debug(
+            "%s failed",
+            action,
+            exc_info=(type(exc), exc, exc.__traceback__),
+        )
+        if type(exc).__name__ == "TrinaxAPIError":
+            self.error(f"{action}: {exc}")
+            return
+        self.error(f"{action} could not be completed. Try again; other commands remain available.")
 
     def success(self, msg: Any) -> None:
         self._styled(msg, "success")

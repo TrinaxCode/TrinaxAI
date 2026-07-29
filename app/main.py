@@ -9,9 +9,16 @@ import time
 import uuid
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from app.errors import (
+    generic_exception_handler,
+    http_exception_handler,
+    validation_exception_handler,
+)
 from app.routes import ROUTERS
 from app.security.admin_auth import SAFE_DEFAULT_ORIGINS
 from app.services import shared_runtime as runtime
@@ -103,8 +110,9 @@ def create_app() -> FastAPI:
     )
     for router in ROUTERS:
         application.include_router(router)
-    application.add_exception_handler(HTTPException, runtime._trinaxai_http_exception_handler)
-    application.add_exception_handler(Exception, runtime._trinaxai_generic_exception_handler)
+    application.add_exception_handler(StarletteHTTPException, http_exception_handler)
+    application.add_exception_handler(RequestValidationError, validation_exception_handler)
+    application.add_exception_handler(Exception, generic_exception_handler)
     return application
 
 

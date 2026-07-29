@@ -71,5 +71,5 @@ def run(args: Any, client: Any, ui: Any, config: Any) -> int:
         ui.error(f"Unknown action: {action}")
         return 1
     except Exception as exc:
-        ui.error(f"collections {action}: {exc}")
+        ui.failure(f"Collections {action}", exc)
         return 1

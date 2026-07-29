@@ -16,6 +16,7 @@ import urllib.request
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 try:
     from dotenv import load_dotenv
@@ -44,10 +45,13 @@ class CheckResult:
 
 
 def _fetch(url: str, timeout: int = 8) -> tuple[int, str]:
+    parsed = urlsplit(url)
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        return -1, ""
     ctx = create_ssl_context(verify=False)
     req = urllib.request.Request(url)
     try:
-        with urllib.request.urlopen(req, timeout=timeout, context=ctx) as resp:
+        with urllib.request.urlopen(req, timeout=timeout, context=ctx) as resp:  # nosec B310 - scheme validated above
             return resp.status, resp.read().decode("utf-8", errors="replace")
     except urllib.error.HTTPError as exc:
         return exc.code, exc.read().decode("utf-8", errors="replace")

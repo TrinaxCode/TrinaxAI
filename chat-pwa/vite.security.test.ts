@@ -9,6 +9,7 @@ import {
   isAuthorizedSystemProxyPeer,
   isLoopbackAddress,
   isPrivateLanAddress,
+  requiredOllamaProxyScope,
 } from './vite-security';
 
 describe('Vite security boundary', () => {
@@ -24,6 +25,14 @@ describe('Vite security boundary', () => {
     expect(isAllowedOllamaProxyRequest('GET', '/api/ollama/api/ps')).toBe(false);
     expect(isAllowedOllamaProxyRequest('POST', '/api/ollama/api/tags')).toBe(false);
     expect(isAllowedOllamaProxyRequest('POST', '/api/ollama/api/chat/../delete')).toBe(false);
+  });
+
+  it('requires system scope for every model administration operation', () => {
+    expect(requiredOllamaProxyScope('/api/ollama/api/tags')).toBe('chat');
+    expect(requiredOllamaProxyScope('/api/ollama/api/chat')).toBe('chat');
+    expect(requiredOllamaProxyScope('/api/ollama/api/generate')).toBe('chat');
+    expect(requiredOllamaProxyScope('/api/ollama/api/pull')).toBe('system');
+    expect(requiredOllamaProxyScope('/api/ollama/api/delete')).toBe('system');
   });
 
   it('keeps localhost usable but requires the configured token remotely', () => {

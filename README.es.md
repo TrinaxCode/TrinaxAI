@@ -139,6 +139,10 @@ para un equipo con privilegio mínimo (la CLI usa `chat,read_private` por
 defecto). El host puede revocar el acceso de inmediato. Consulta la
 [guía completa de la PWA](chat-pwa/README.es.md#emparejar-un-navegador).
 
+Si cambias de red y cambia la IP local del host, vuelve a ejecutar el instalador
+para que detecte la nueva IP y renueve el certificado HTTPS antes de abrir la PWA
+desde otro dispositivo.
+
 ---
 
 ## ¿Qué es TrinaxAI?
@@ -164,7 +168,7 @@ cámara o shell que el usuario o navegador no haya autorizado.
 
 - 🧠 **Motores duales** — chat directo con Ollama (rápido, creativo) y RAG (respuestas fundamentadas y citadas sobre tus archivos).
 - 🎯 **Pipeline de generación inteligente** — un clasificador determinista (sin LLM) lee cada turno y elige el modelo, los parámetros de decodificación y el estilo de prompt adecuados (código, razonamiento/matemáticas, creativo, RAG citado o explicación). Rápido y predecible, sin llamada extra al modelo.
-- 🤖 **Agente con herramientas** — `trinaxai agent` y la vista de Agente usan herramientas en sandbox (`read/write/edit/list/glob/grep/run_command`), se limitan a un workspace y piden confirmación para acciones peligrosas.
+- 🤖 **Orquestación de herramientas dirigida por el modelo** — el Agente de la app responde directamente o combina de forma autónoma búsqueda web, investigación profunda, memoria, búsqueda documental, colecciones y herramientas del workspace en sandbox. Los interruptores solo restringen disponibilidad; nunca fuerzan ejecución. Las acciones peligrosas siguen pidiendo aprobación.
 - 📇 **RAG propio** — indexa tus proyectos; chunking con AST para 15+ lenguajes, recuperación híbrida vector + BM25, reranker opcional, citas a `rel_path`.
 - 🔎 **Investigación profunda** — descomposición RAG multipaso (`trinaxai research` o el disparador en la app).
 - 🌍 **Búsqueda web opcional** — activa el modo Internet para resultados actuales mediante DuckDuckGo, Brave Search o SearXNG; muestra fuentes y limita la lectura de páginas públicas.

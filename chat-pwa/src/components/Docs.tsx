@@ -50,7 +50,7 @@ export default function Docs({ onBack }: Props) {
   const label = (s: DocSection) => isEs ? s.labelEs : s.labelEn;
 
   return (
-    <motion.div className={`h-full min-w-0 max-w-full overflow-hidden flex flex-col ${isDark ? 'bg-black' : 'bg-white'}`} initial={{opacity:0}} animate={{opacity:1}}>
+    <motion.div className={`h-full min-w-0 max-w-full overflow-hidden flex flex-col ${isDark ? 'bg-black/70' : 'bg-white/70'}`} initial={{opacity:0}} animate={{opacity:1}}>
       {/* Header */}
       <div className={`shrink-0 flex items-center gap-3 px-4 pt-[env(safe-area-inset-top,0px)] pb-3 border-b ${isDark ? 'border-white/[0.06]' : 'border-gray-200'}`}>
         <button onClick={onBack} aria-label={t('docsBack')} className={`p-2 -ml-2 ${isDark ? 'text-white/60 hover:text-white' : 'text-gray-500 hover:text-gray-800'} active:scale-90 transition-transform`}>
@@ -77,7 +77,12 @@ export default function Docs({ onBack }: Props) {
         </div>
 
         {/* Content */}
-        <div className="docs-content flex-1 w-full max-w-full md:max-w-3xl min-w-0 overflow-y-auto overflow-x-hidden px-3 sm:px-4 py-5 sm:py-6 pb-[calc(env(safe-area-inset-bottom,0px)+24px)] space-y-8 break-words [overflow-wrap:anywhere]">
+        <div
+          className="docs-content flex-1 w-full max-w-full md:max-w-3xl min-w-0 overflow-y-auto overflow-x-hidden px-3 sm:px-4 py-5 sm:py-6 pb-[calc(env(safe-area-inset-bottom,0px)+24px)] space-y-8 break-words [overflow-wrap:anywhere]"
+          role="region"
+          tabIndex={0}
+          aria-label={isEs ? 'Contenido de documentación' : 'Documentation content'}
+        >
           {/* Mobile section picker — dropdown */}
           <div className="md:hidden mb-4">
             <select

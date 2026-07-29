@@ -74,7 +74,7 @@ def _installed_models(client: Any, ui: Any) -> list[str]:
     try:
         return _chat_capable_models(client.list_ollama_models(base_url))
     except Exception as exc:  # noqa: BLE001 - user-facing CLI boundary
-        ui.error(f"Cannot list Ollama models: {exc}")
+        ui.failure("List Ollama models", exc)
         ui.info("Start TrinaxAI with: trinaxai start")
         return []
 
@@ -131,7 +131,7 @@ def _select_collection(client: Any, ui: Any, requested: str = "") -> str | None:
     try:
         collections = client.list_collections()
     except Exception as exc:  # noqa: BLE001 - user-facing CLI boundary
-        ui.error(f"Cannot list PWA collections: {exc}")
+        ui.failure("List PWA collections", exc)
         ui.info("Make sure the TrinaxAI RAG service is running.")
         return None
     if not collections:
@@ -265,7 +265,7 @@ def _memory(_arg: str, ctx: SlashContext) -> None:
     try:
         memories = ctx.client.list_memories()
     except Exception as exc:  # noqa: BLE001 - user-facing CLI boundary
-        ctx.ui.error(f"memory: {exc}")
+        ctx.ui.failure("Memory", exc)
         return
     if not memories:
         ctx.ui.info("No memories stored yet.")
@@ -278,7 +278,7 @@ def _collections(_arg: str, ctx: SlashContext) -> None:
     try:
         collections = ctx.client.list_collections()
     except Exception as exc:  # noqa: BLE001 - user-facing CLI boundary
-        ctx.ui.error(f"collections: {exc}")
+        ctx.ui.failure("Collections", exc)
         return
     if not collections:
         ctx.ui.info("No collections yet. Index a folder with /index PATH.")
@@ -291,7 +291,7 @@ def _watch(_arg: str, ctx: SlashContext) -> None:
     try:
         status = ctx.client.watch_status()
     except Exception as exc:  # noqa: BLE001 - user-facing CLI boundary
-        ctx.ui.error(f"watch: {exc}")
+        ctx.ui.failure("Watch status", exc)
         return
     running = status.get("running")
     watching = ", ".join(status.get("watching") or []) or "nothing"

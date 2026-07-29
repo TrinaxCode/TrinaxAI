@@ -7,7 +7,16 @@ import httpx
 from app.security import admin_auth
 
 # ruff: noqa: F405
-from .shared_runtime import *  # noqa: F403
+from .shared_runtime import (
+    Any,
+    JSONResponse,
+    _read_collections_unlocked,
+    config,
+    os,
+    run_in_threadpool,
+    state,
+    time,
+)
 
 
 def _ollama_available_cached() -> bool:
@@ -37,7 +46,7 @@ async def health():
         "projects": state.known_projects,
         "collections": collections,
         "models": config.MODEL_FLEET,
-        "ollama": _ollama_available_cached(),
+        "ollama": await run_in_threadpool(_ollama_available_cached),
         "profile": config.TRINAXAI_PROFILE,
         "num_ctx": config.NUM_CTX,
         "embed_workers": config.EMBED_WORKERS,
@@ -59,6 +68,15 @@ async def health():
             "profiles": ["8gb", "16gb", "max", "ultra"],
         },
     }
+
+
+async def ready():
+    """Readiness probe: the API is ready when its local model provider responds."""
+    status = await health()
+    status["ok"] = bool(status["ollama"])
+    if not status["ok"]:
+        return JSONResponse(status_code=503, content=status)
+    return status
 
 
 async def resources():

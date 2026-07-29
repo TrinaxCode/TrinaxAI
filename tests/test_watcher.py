@@ -9,6 +9,19 @@ import rag_api
 from app.services import watcher_service
 
 
+def wait_for_idle(handler, timeout: float = 10.0) -> bool:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        with handler._queue_condition:
+            queued = bool(handler._queued)
+        with handler._active_process_lock:
+            active = handler._active_process is not None
+        if not queued and not active and not handler._busy_event.is_set():
+            return True
+        time.sleep(0.01)
+    return False
+
+
 def test_watcher_reindexes_the_changed_collection(tmp_path, monkeypatch) -> None:
     local_sources = tmp_path / "local_sources"
     collection_root = local_sources / "collections" / "docs"
@@ -39,7 +52,7 @@ def test_watcher_reindexes_the_changed_collection(tmp_path, monkeypatch) -> None
     handler._pending.add(str(changed))
 
     handler._fire()
-    assert handler.wait_for_idle()
+    assert wait_for_idle(handler)
     handler.shutdown()
 
     assert len(calls) == 1
@@ -92,7 +105,7 @@ def test_watcher_coalesces_events_while_one_job_is_running(tmp_path, monkeypatch
     handler._fire()
     release_first.set()
 
-    assert handler.wait_for_idle(timeout=3)
+    assert wait_for_idle(handler, timeout=3)
     handler.shutdown()
     assert calls == 2
     assert max_active == 1

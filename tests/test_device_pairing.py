@@ -13,11 +13,19 @@ from app.main import create_app
 from app.security import admin_auth
 from app.security.device_auth import (
     DEVICE_TOKEN_HEADER,
+    DeviceRegistryError,
+    _empty_registry,
+    _ensure_private_secret,
+    _read_registry,
+    _write_registry,
     authenticate_device_token,
     claim_pairing_code,
     create_pairing_code,
     list_devices,
+    normalize_pairing_code,
     revoke_device,
+    sanitize_device_name,
+    validate_scopes,
 )
 
 
@@ -183,3 +191,62 @@ def test_pairing_claim_has_a_dedicated_bruteforce_limit(pairing_store: Path, mon
     assert first.status_code == 403
     assert second.status_code == 429
     assert second.headers["retry-after"] == "300"
+
+
+def test_device_registry_and_scope_validation_fail_closed(tmp_path: Path) -> None:
+    secret = tmp_path / "secret"
+    generated = _ensure_private_secret(secret)
+    assert len(generated) == 32
+    assert _ensure_private_secret(secret) == generated
+    secret.write_text("not-hex", encoding="ascii")
+    with pytest.raises(DeviceRegistryError):
+        _ensure_private_secret(secret)
+    secret.write_text("00" * 16, encoding="ascii")
+    with pytest.raises(DeviceRegistryError):
+        _ensure_private_secret(secret)
+
+    registry = tmp_path / "registry.json"
+    assert _read_registry(registry) == _empty_registry()
+    registry.write_text("[]", encoding="utf-8")
+    with pytest.raises(DeviceRegistryError):
+        _read_registry(registry)
+    registry.write_text("{broken", encoding="utf-8")
+    with pytest.raises(DeviceRegistryError):
+        _read_registry(registry)
+    _write_registry(registry, _empty_registry())
+    assert _read_registry(registry)["schema_version"] == 1
+
+    assert normalize_pairing_code(" ab-cd 12 ") == "ABCD12"
+    assert validate_scopes(None) == ("chat", "read_private")
+    assert validate_scopes(["chat", "chat", "agent"]) == ("chat", "agent")
+    with pytest.raises(ValueError):
+        validate_scopes([])
+    with pytest.raises(ValueError):
+        validate_scopes(["agent_yolo"])
+    with pytest.raises(ValueError):
+        validate_scopes(["unknown"])
+    assert sanitize_device_name("  Home   tablet ") == "Home tablet"
+    with pytest.raises(ValueError):
+        sanitize_device_name("")
+    with pytest.raises(ValueError):
+        sanitize_device_name("x" * 81)
+    with pytest.raises(ValueError):
+        sanitize_device_name("bad\x00name")
+
+
+def test_pairing_limits_token_refresh_and_listing(pairing_store: Path) -> None:
+    with pytest.raises(ValueError):
+        create_pairing_code(["chat"], ttl_seconds=0, device_ttl_days=0, now=1)
+    created = create_pairing_code(["chat"], ttl_seconds=1, now=1)
+    claimed = claim_pairing_code(created["code"], "Device", now=2)
+    token = claimed["token"]
+    device_id = claimed["device"]["id"]
+    assert authenticate_device_token("invalid", "chat", now=3) is None
+    with pytest.raises(ValueError):
+        authenticate_device_token(token, "invalid", now=3)
+    assert authenticate_device_token(token, "read_private", now=3) is None
+    # A later request updates last_seen_at and remains valid.
+    assert authenticate_device_token(token, "chat", now=400) is not None
+    assert list_devices(include_revoked=False)[0]["id"] == device_id
+    assert revoke_device("bad") is None
+    assert revoke_device("f" * 24) is None

@@ -8,16 +8,16 @@ TrinaxAI 1.0.0 frontend built with React 19, TypeScript, and Vite 6 under AGPL-3
 
 ```text
 Browser / installed PWA :3334
-  ├── /api/rag/*    ── Vite proxy ──> FastAPI :3333
-  ├── /api/ollama/* ── Vite proxy ──> Ollama  :11434
-  └── /api/system/* ── local Vite middleware ──> service_manager.py
+  ├── /api/rag/*    ── production gateway ──> FastAPI :3333
+  ├── /api/ollama/* ── production gateway ──> Ollama  :11434
+  └── /api/system/* ── production gateway ──> service_manager.py
 ```
 
 The browser normally uses same-origin `/api/*` URLs. This avoids mixed-content and most CORS issues and keeps Ollama off the LAN. FastAPI handles RAG, collections, memory, indexing, document extraction, voice fallback, and shared app state. Direct chat and vision stream from Ollama through the proxy.
 
 ## Prerequisites
 
-- Node.js 18 or newer and npm; an active LTS release is recommended.
+- Node.js 22 or newer and npm; an active LTS release is recommended.
 - A running Ollama instance for chat/vision.
 - The Python backend for RAG, indexing, memory, shared state, and server voice.
 - Models configured in the onboarding wizard or environment.
@@ -30,7 +30,7 @@ npm install
 npm run dev
 ```
 
-Open `https://localhost:3334` when local certificates exist; Vite falls back to HTTP when none are available. A browser warning is expected for a self-signed certificate.
+Open `https://localhost:3334` when local certificates exist; the gateway falls back to HTTP when none are available. A browser warning is expected for a self-signed certificate.
 
 ## Scripts
 
@@ -38,7 +38,8 @@ Open `https://localhost:3334` when local certificates exist; Vite falls back to 
 |---|---|
 | `npm run dev` | Vite development server on `0.0.0.0:3334` with HMR. |
 | `npm run build` | TypeScript check followed by a production build in `dist/`. |
-| `npm run preview` | Serve `dist/` on port 3334 using the production proxy/middleware. |
+| `npm run serve` | Serve `dist/` on port 3334 using the production Node gateway. |
+| `npm run preview` | Compatibility alias for `npm run serve`. |
 | `npm test` | Run the Vitest suite once. |
 | `npx tsc --noEmit` | Type-check without building. |
 
@@ -174,20 +175,20 @@ Frontend URL resolution lives in `src/lib/config.ts`. See the full [configuratio
 |---|---|
 | `VITE_TRINAXAI_RAG_BASE` / `VITE_TRINAXAI_OLLAMA_BASE` | Browser production bases. |
 | `VITE_TRINAXAI_DEV_RAG_BASE` / `VITE_TRINAXAI_DEV_OLLAMA_BASE` | Browser development bases. |
-| `TRINAXAI_RAG_TARGET` / `TRINAXAI_OLLAMA_TARGET` | Server-side Vite proxy targets. |
+| `TRINAXAI_RAG_TARGET` / `TRINAXAI_OLLAMA_TARGET` | Server-side production gateway targets. |
 | `VITE_TRINAXAI_VISION_MODEL` | Fast vision model. |
 | `VITE_TRINAXAI_KEEP_ALIVE` | Direct-chat keep-alive default (optional; defaults to `10m` in the client). |
 
-Vite loads `chat-pwa/certs/trinaxai-local.pfx` first, or `chat-pwa/certs/localhost-key.pem` plus `chat-pwa/certs/localhost.pem`. Certificate files are local secrets/artifacts and must not be committed.
+The gateway loads `chat-pwa/certs/trinaxai-local.pfx` first, or `chat-pwa/certs/localhost-key.pem` plus `chat-pwa/certs/localhost.pem`. Certificate files are local secrets/artifacts and must not be committed. If the host changes LAN networks and receives a new IP, rerun the installer so it renews the certificate with the current LAN address before using the PWA from another device.
 
 ## System-control boundary
 
 The custom gateway validates paired-device/admin capability, strips
 client-supplied proxy-identity headers and attaches a fresh HMAC-signed original
 peer to `/api/rag`. FastAPI only accepts that identity from loopback.
-`/api/ollama` requires `chat`, has a fixed method/path allowlist, its own bounded
-rate window, and a cross-process inference lock;
-it cannot administer model pull/create/delete. Private FastAPI reads as well as
+`/api/ollama` has a fixed method/path allowlist, its own bounded rate window,
+and a cross-process inference lock. Chat/generation require `chat`; model pull
+and deletion require the stronger `system` capability. Private FastAPI reads as well as
 mutations require authorization. `/api/system/*` applies the same remote
 credential/capability boundary before invoking fixed lifecycle actions.
 
@@ -221,4 +222,4 @@ When changing UI text, add matching Spanish and English keys in `src/i18n/transl
   the exact scope. Grant `system` only to a device that should control services;
   do not distribute the admin token as a convenience workaround.
 - **Microphone fails:** verify browser permission and secure context, then inspect `/api/rag/v1/voice/capabilities`.
-- **HTTPS becomes HTTP:** generate/install local certificates; Vite only enables HTTPS when certificate files exist.
+- **HTTPS becomes HTTP:** generate/install local certificates; the gateway only enables HTTPS when certificate files exist.

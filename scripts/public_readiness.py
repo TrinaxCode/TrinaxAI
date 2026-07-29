@@ -60,6 +60,7 @@ ALLOW_HARDCODE_IN = {
     # Deliberate fake credentials used to exercise hashing/scanner behavior.
     "tests/test_device_pairing.py",
     "tests/test_public_readiness.py",
+    "tests/test_release_tools_flows.py",
 }
 HARDCODE_PATTERNS = [
     re.compile(r"/home/trinaxcode"),

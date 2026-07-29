@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from app.errors import generic_exception_handler, http_exception_handler
 from app.security.admin_auth import (
     _is_lan_client,
     _is_local_client,
@@ -9,10 +10,98 @@ from app.security.admin_auth import (
 from app.security.admin_auth import (
     authorize_system as _authorize_system,
 )
-from trinaxai_index_storage import recover_interrupted_transaction
+from trinaxai_index_storage import atomic_write_json, recover_interrupted_transaction
 
-# ruff: noqa: F401,F405
-from .runtime_context import *  # noqa: F403
+# The split service modules import their shared runtime dependencies explicitly.
+# Keep this compatibility surface in one place while avoiding wildcard imports.
+# ruff: noqa: F401
+from .runtime_context import (
+    _RETRIEVER_CACHE_MAX_COMBINATIONS,
+    _SAFE_INLINE_ATTACHMENT_TYPES,
+    _SAFE_SEGMENT,
+    APP_STATE_MAX_BYTES,
+    APP_STATE_PATH,
+    CHAT_ATTACHMENT_MAX_BYTES,
+    CHAT_ATTACHMENTS_DIR,
+    CHAT_ATTACHMENTS_MAX_BYTES,
+    CHAT_ATTACHMENTS_MAX_FILES,
+    DOC_EXTRACT_MAX_BYTES,
+    DOC_EXTRACT_MAX_CHARS,
+    LOG,
+    NO_INDEX_MSG,
+    USAGE_PATH,
+    USAGE_SUMMARY_PATH,
+    USER_MEMORY_PATH,
+    AgentApprovalRequest,
+    AgentCancelRequest,
+    AgentRequest,
+    Any,
+    AppStateRequest,
+    BM25Retriever,
+    BytesIO,
+    ChatRequest,
+    CollectionCreateRequest,
+    CollectionUpdateRequest,
+    File,
+    FileResponse,
+    FilterCondition,
+    Form,
+    HTTPException,
+    IndexImportDeleteRequest,
+    JSONResponse,
+    MemoryContextRequest,
+    MemoryCreateRequest,
+    MemoryRefreshRequest,
+    MemoryUpdateRequest,
+    MetadataFilter,
+    MetadataFilters,
+    QueryBundle,
+    QueryFusionRetriever,
+    Regime,
+    Request,
+    ResearchRequest,
+    Response,
+    ResponseMode,
+    Settings,
+    StorageContext,
+    StreamingResponse,
+    UploadFile,
+    UsageRecordRequest,
+    WatchStartRequest,
+    _cache_get,
+    _cache_set,
+    _clear_index_runtime_caches,
+    _client_host,
+    _document_slots,
+    _lru_get,
+    _lru_set,
+    _model_slots,
+    _WDFileSystemEventHandler,
+    build_generation_prompt,
+    build_task_spec,
+    config,
+    enforce_rate_limit,
+    exclusive_process_lock,
+    get_response_synthesizer,
+    grounded_template,
+    json,
+    load_index_from_storage,
+    os,
+    re,
+    run_in_threadpool,
+    sanitize_collection_id,
+    shutil,
+    source_id_for_root,
+    state,
+    subprocess,
+    sys,
+    tempfile,
+    threading,
+    time,
+    uuid,
+    validate_output,
+    wants_creator_bio,
+)
 
 
 def _index_process_lock():
@@ -89,18 +178,7 @@ def _read_collections_unlocked() -> list[dict]:
 
 
 def _write_collections_unlocked(collections: list[dict]) -> None:
-    os.makedirs(config.PERSIST_DIR, exist_ok=True)
-    tmp = f"{config.COLLECTIONS_PATH}.tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump({"collections": collections}, f, ensure_ascii=False, indent=2)
-    os.replace(tmp, config.COLLECTIONS_PATH)
-
-
-def _get_collection_unlocked(collection_id: str) -> dict | None:
-    for item in _read_collections_unlocked():
-        if item["id"] == collection_id:
-            return item
-    return None
+    atomic_write_json(config.COLLECTIONS_PATH, {"collections": collections})
 
 
 def get_llm(
@@ -221,11 +299,21 @@ def build_engine(*, acquire_process_lock: bool = True) -> bool:
 
 def initialize_runtime() -> None:
     """Initialize heavyweight model/index resources during application startup."""
-    Settings.embed_model = config.make_embed()
-    state.reranker = config.make_reranker()
+    try:
+        Settings.embed_model = config.make_embed()
+    except Exception:
+        LOG.exception("Embedding model initialization failed; API will start in degraded mode")
+    try:
+        state.reranker = config.make_reranker()
+    except Exception:
+        state.reranker = None
+        LOG.exception("Reranker initialization failed; continuing without reranking")
     if state.reranker is not None:
         LOG.info("Reranker enabled: %s", config.RERANK_MODEL)
-    build_engine()
+    try:
+        build_engine()
+    except Exception:
+        LOG.exception("Index initialization failed; continuing without document retrieval")
 
 
 def _retriever_for_collections(active_collections: tuple[str, ...]):
@@ -345,10 +433,7 @@ def _trim_manifest_keys(keys: set[str], *, source_id: str | None = None) -> None
                     trimmed.pop(key, None)
                     changed = True
             if changed:
-                tmp = f"{config.MANIFEST_PATH}.tmp"
-                with open(tmp, "w", encoding="utf-8") as f:
-                    json.dump(trimmed, f)
-                os.replace(tmp, config.MANIFEST_PATH)
+                atomic_write_json(config.MANIFEST_PATH, trimmed)
     except (OSError, ValueError):
         pass
 
@@ -443,11 +528,7 @@ def _read_usage_summary_unlocked() -> dict | None:
 
 
 def _write_usage_summary_unlocked(summary: dict) -> None:
-    os.makedirs(config.PERSIST_DIR, exist_ok=True)
-    tmp = f"{USAGE_SUMMARY_PATH}.tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(summary, f, ensure_ascii=False)
-    os.replace(tmp, USAGE_SUMMARY_PATH)
+    atomic_write_json(USAGE_SUMMARY_PATH, summary)
 
 
 def _record_usage(
@@ -479,39 +560,13 @@ def _record_usage(
 
 
 async def _trinaxai_http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
-    """Captura HTTPException 500 y devuelve mensaje multilingüe con el detalle real."""
-    if exc.status_code == 500:
-        original = str(exc.detail)[:500] if exc.detail else ""
-        LOG.error("HTTP 500: %s", original or "(no detail)")
-        return JSONResponse(
-            status_code=500,
-            content={
-                "detail": {
-                    "en": _MULTILINGUAL_500["en"] + (f" Reason: {original}" if original else ""),
-                    "es": _MULTILINGUAL_500["es"] + (f" Razón: {original}" if original else ""),
-                }
-            },
-        )
-    return JSONResponse(
-        status_code=exc.status_code,
-        content={"detail": exc.detail},
-        headers=getattr(exc, "headers", None),
-    )
+    """Compatibility alias for the centralized HTTP error handler."""
+    return await http_exception_handler(request, exc)
 
 
 async def _trinaxai_generic_exception_handler(request: Request, exc: Exception) -> JSONResponse:
-    """Captura cualquier excepción no manejada y devuelve 500 multilingüe con la causa real."""
-    LOG.error("Unhandled exception: %s", exc, exc_info=True)
-    reason = f"{type(exc).__name__}: {exc}"[:400]
-    return JSONResponse(
-        status_code=500,
-        content={
-            "detail": {
-                "en": _MULTILINGUAL_500["en"] + f" Reason: {reason}",
-                "es": _MULTILINGUAL_500["es"] + f" Razón: {reason}",
-            }
-        },
-    )
+    """Compatibility alias for the centralized generic exception handler."""
+    return await generic_exception_handler(request, exc)
 
 
 __all__ = [name for name in globals() if not name.startswith("__")]

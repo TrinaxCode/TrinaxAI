@@ -228,7 +228,7 @@ def _dispatch(name: str, args: Any, client: Any, ui: Any, config: CLIConfig) -> 
     try:
         module = importlib.import_module(module_name)
     except ImportError as exc:
-        ui.error(f"command '{name}' not yet implemented (import: {exc})")
+        ui.failure(f"Command '{name}'", exc)
         return 1
     run_fn = getattr(module, "run", None)
     if run_fn is None:
@@ -242,9 +242,10 @@ def _dispatch(name: str, args: Any, client: Any, ui: Any, config: CLIConfig) -> 
     except SystemExit as exc:
         # Subcommands are allowed to SystemExit directly.
         return int(exc.code) if exc.code is not None else 0
-    except Exception as exc:  # noqa: BLE001 - top-level safety net
-        LOG.exception("command %s raised an exception", name)
-        ui.error(f"command '{name}' failed: {exc}")
+    except Exception:  # noqa: BLE001 - top-level safety net
+        if LOG.isEnabledFor(logging.DEBUG):
+            LOG.exception("command %s raised an exception", name)
+        ui.error(f"TrinaxAI could not complete '{name}'. Other commands remain available; try again or use --verbose.")
         return 1
     try:
         return int(result)

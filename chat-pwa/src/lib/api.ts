@@ -8,68 +8,187 @@ export { systemRequestHeaders } from './authHeaders';
 export const RAG_BASE = APP_CONFIG.ragBase;
 const OLLAMA_BASE = APP_CONFIG.ollamaBase;
 
-/** Custom error with status code for better diagnostics */
+export type ErrorCategory =
+  | 'internet_unavailable'
+  | 'external_service_unavailable'
+  | 'ai_model_unavailable'
+  | 'model_loading_failed'
+  | 'tool_timeout'
+  | 'permission_denied'
+  | 'authentication_failed'
+  | 'resource_exhausted'
+  | 'memory_limit_reached'
+  | 'gpu_unavailable'
+  | 'file_not_found'
+  | 'document_unreadable'
+  | 'invalid_input'
+  | 'unsupported_format'
+  | 'network_timeout'
+  | 'internal_server_error'
+  | 'unknown_error';
+
+type ErrorDefinition = {
+  code: string;
+  en: string;
+  es: string;
+  recoveryEn: string;
+  recoveryEs: string;
+  retryable: boolean;
+};
+
+const ERROR_DEFINITIONS: Record<ErrorCategory, ErrorDefinition> = {
+  internet_unavailable: { code: 'ERR_INTERNET_UNAVAILABLE', en: 'The internet connection is unavailable.', es: 'La conexión a Internet no está disponible.', recoveryEn: 'Check the network connection and try again.', recoveryEs: 'Verifica la conexión de red e inténtalo de nuevo.', retryable: true },
+  external_service_unavailable: { code: 'ERR_EXTERNAL_SERVICE_UNAVAILABLE', en: 'An external service is unavailable.', es: 'Un servicio externo no está disponible.', recoveryEn: 'Check the service status and try again shortly.', recoveryEs: 'Verifica el estado del servicio e inténtalo de nuevo en unos momentos.', retryable: true },
+  ai_model_unavailable: { code: 'ERR_AI_MODEL_UNAVAILABLE', en: 'The selected AI model is unavailable.', es: 'El modelo de IA seleccionado no está disponible.', recoveryEn: 'Check that the model is installed and the AI service is running.', recoveryEs: 'Verifica que el modelo esté instalado y que el servicio de IA esté encendido.', retryable: false },
+  model_loading_failed: { code: 'ERR_MODEL_LOADING_FAILED', en: 'The AI model could not be loaded.', es: 'No se pudo cargar el modelo de IA.', recoveryEn: 'Free system memory or select a smaller model, then try again.', recoveryEs: 'Libera memoria o selecciona un modelo más pequeño e inténtalo de nuevo.', retryable: true },
+  tool_timeout: { code: 'ERR_TOOL_TIMEOUT', en: 'The operation took too long to finish.', es: 'La operación tardó demasiado en terminar.', recoveryEn: 'Try again with a smaller request or a narrower scope.', recoveryEs: 'Inténtalo de nuevo con una solicitud más pequeña o específica.', retryable: true },
+  permission_denied: { code: 'ERR_PERMISSION_DENIED', en: 'You do not have permission to perform this action.', es: 'No tienes permiso para realizar esta acción.', recoveryEn: 'Request access or use an authorized device.', recoveryEs: 'Solicita acceso o usa un dispositivo autorizado.', retryable: false },
+  authentication_failed: { code: 'ERR_AUTHENTICATION_FAILED', en: 'Authentication failed.', es: 'La autenticación falló.', recoveryEn: 'Sign in again or provide valid credentials.', recoveryEs: 'Inicia sesión de nuevo o proporciona credenciales válidas.', retryable: false },
+  resource_exhausted: { code: 'ERR_RESOURCE_EXHAUSTED', en: 'The service has reached a temporary resource limit.', es: 'El servicio alcanzó un límite temporal de recursos.', recoveryEn: 'Wait a moment and try again.', recoveryEs: 'Espera un momento e inténtalo de nuevo.', retryable: true },
+  memory_limit_reached: { code: 'ERR_MEMORY_LIMIT_REACHED', en: 'The operation needs more memory than is currently available.', es: 'La operación necesita más memoria de la disponible.', recoveryEn: 'Use a smaller file or model, or free system memory.', recoveryEs: 'Usa un archivo o modelo más pequeño, o libera memoria del sistema.', retryable: false },
+  gpu_unavailable: { code: 'ERR_GPU_UNAVAILABLE', en: 'The requested GPU is unavailable.', es: 'La GPU solicitada no está disponible.', recoveryEn: 'Switch to CPU mode or make the GPU available, then try again.', recoveryEs: 'Cambia al modo CPU o habilita la GPU e inténtalo de nuevo.', retryable: false },
+  file_not_found: { code: 'ERR_FILE_NOT_FOUND', en: 'The requested file was not found.', es: 'No se encontró el archivo solicitado.', recoveryEn: 'Check the file location and try again.', recoveryEs: 'Verifica la ubicación del archivo e inténtalo de nuevo.', retryable: false },
+  document_unreadable: { code: 'ERR_DOCUMENT_UNREADABLE', en: 'The document could not be read.', es: 'No se pudo leer el documento.', recoveryEn: 'Check that the document is not damaged and try another copy.', recoveryEs: 'Verifica que el documento no esté dañado e inténtalo con otra copia.', retryable: false },
+  invalid_input: { code: 'ERR_INVALID_INPUT', en: 'The request contains invalid input.', es: 'La solicitud contiene datos inválidos.', recoveryEn: 'Check the fields and try again.', recoveryEs: 'Verifica los campos e inténtalo de nuevo.', retryable: false },
+  unsupported_format: { code: 'ERR_UNSUPPORTED_FORMAT', en: 'This file or format is not supported.', es: 'Este archivo o formato no es compatible.', recoveryEn: 'Use a supported format and try again.', recoveryEs: 'Usa un formato compatible e inténtalo de nuevo.', retryable: false },
+  network_timeout: { code: 'ERR_NETWORK_TIMEOUT', en: 'The network request timed out.', es: 'La solicitud de red agotó el tiempo de espera.', recoveryEn: 'Check the connection and try again.', recoveryEs: 'Verifica la conexión e inténtalo de nuevo.', retryable: true },
+  internal_server_error: { code: 'ERR_INTERNAL_SERVER_ERROR', en: 'TrinaxAI could not complete the request.', es: 'TrinaxAI no pudo completar la solicitud.', recoveryEn: 'Try again. If the problem continues, check the server logs.', recoveryEs: 'Inténtalo de nuevo. Si continúa, revisa los registros del servidor.', retryable: true },
+  unknown_error: { code: 'ERR_UNKNOWN_ERROR', en: 'Something unexpected happened.', es: 'Ocurrió un error inesperado.', recoveryEn: 'Try again. If the problem continues, contact an administrator.', recoveryEs: 'Inténtalo de nuevo. Si continúa, contacta a un administrador.', retryable: false },
+};
+
+const LEGACY_ERROR_CATEGORIES: Record<string, ErrorCategory> = {
+  connection_error: 'internet_unavailable',
+  rag_unavailable: 'external_service_unavailable',
+  ollama_unavailable: 'ai_model_unavailable',
+  model_unavailable: 'ai_model_unavailable',
+  model_loading_failed: 'model_loading_failed',
+  document_unreadable: 'document_unreadable',
+  invalid_response: 'internal_server_error',
+  model_incompatible: 'ai_model_unavailable',
+  embedding_error: 'ai_model_unavailable',
+  collection_empty: 'file_not_found',
+  web_search_disabled: 'external_service_unavailable',
+  provider_timeout: 'network_timeout',
+  provider_unavailable: 'external_service_unavailable',
+  web_search_unavailable: 'external_service_unavailable',
+  invalid_credential: 'authentication_failed',
+  rate_limited: 'resource_exhausted',
+  timeout: 'network_timeout',
+  rag_version_mismatch: 'external_service_unavailable',
+  unsupported_format: 'unsupported_format',
+};
+
+function categoryFor(status: number, code = ''): ErrorCategory {
+  if (code.startsWith('ERR_')) {
+    const match = (Object.keys(ERROR_DEFINITIONS) as ErrorCategory[]).find((category) => ERROR_DEFINITIONS[category].code === code);
+    if (match) return match;
+  }
+  if (LEGACY_ERROR_CATEGORIES[code]) return LEGACY_ERROR_CATEGORIES[code];
+  if (status === 0) return 'internet_unavailable';
+  if (status === 401) return 'authentication_failed';
+  if (status === 403) return 'permission_denied';
+  if (status === 408 || status === 504) return 'network_timeout';
+  if (status === 413) return 'memory_limit_reached';
+  if (status === 415 || status === 501) return 'unsupported_format';
+  if (status === 429 || status === 507) return 'resource_exhausted';
+  if (status === 400 || status === 422) return 'invalid_input';
+  if (status === 502 || status === 503 || status === 424) return 'external_service_unavailable';
+  if (status >= 500) return 'internal_server_error';
+  return 'unknown_error';
+}
+
+const LEGACY_MESSAGES: Record<string, [string, string]> = {
+  provider_not_configured: ['El proveedor seleccionado no está configurado.', 'The selected provider is not configured.'],
+  invalid_credential: ['La credencial del proveedor no es válida.', 'The provider credential is invalid.'],
+  rate_limited: ['El proveedor limitó temporalmente las solicitudes.', 'The provider temporarily rate-limited requests.'],
+  provider_timeout: ['El proveedor agotó el tiempo de espera.', 'The provider timed out.'],
+  provider_unavailable: ['El proveedor no está disponible o la red falló.', 'The provider is unavailable or the network failed.'],
+  invalid_provider_response: ['El proveedor devolvió una respuesta inválida.', 'The provider returned an invalid response.'],
+  invalid_searxng_url: ['La URL de SearXNG no es válida o no es pública.', 'The SearXNG URL is invalid or not public.'],
+  externally_managed: ['Este valor está administrado por una variable de entorno.', 'This value is managed by an environment variable.'],
+  model_unavailable: ['El modelo necesario no está instalado. Instálalo desde Configuración.', 'The required model is not installed. Install it from Settings.'],
+  model_incompatible: ['Ningún modelo instalado es compatible con esta función.', 'No installed model is compatible with this feature.'],
+  web_search_unavailable: ['El proveedor de búsqueda no está disponible. Inténtalo de nuevo pronto.', 'The search provider is unavailable. Please try again shortly.'],
+  rag_version_mismatch: ['Reinicia TrinaxAI para cargar el servicio actualizado.', 'Restart TrinaxAI to load the updated service.'],
+};
+
+function languageIsEnglish(): boolean {
+  return typeof document !== 'undefined' && document.documentElement.lang.toLowerCase().startsWith('en');
+}
+
+function publicMessage(category: ErrorCategory, code: string, fallbackCode = ''): string {
+  const legacy = LEGACY_MESSAGES[code] || LEGACY_MESSAGES[fallbackCode];
+  if (legacy) return legacy[languageIsEnglish() ? 1 : 0];
+  const definition = ERROR_DEFINITIONS[category];
+  return languageIsEnglish() ? definition.en : definition.es;
+}
+
+function parseErrorPayload(payload: unknown): { category?: ErrorCategory; code?: string; legacyCode?: string; recovery?: string; retryable?: boolean; requestId?: string } {
+  if (!payload || typeof payload !== 'object') return {};
+  const root = payload as Record<string, unknown>;
+  const error = root.error && typeof root.error === 'object' ? root.error as Record<string, unknown> : undefined;
+  const detail = root.detail && typeof root.detail === 'object' ? root.detail as Record<string, unknown> : undefined;
+  const category = (error?.category || detail?.category) as ErrorCategory | undefined;
+  const canonicalCode = typeof error?.code === 'string' ? error.code : typeof detail?.error_code === 'string' ? detail.error_code : undefined;
+  const legacyCode = typeof detail?.legacy_code === 'string' ? detail.legacy_code : typeof detail?.code === 'string' && !detail.code.startsWith('ERR_') ? detail.code : undefined;
+  return {
+    category: category && category in ERROR_DEFINITIONS ? category : undefined,
+    code: canonicalCode,
+    legacyCode,
+    recovery: typeof error?.recovery === 'string' ? error.recovery : typeof detail?.recovery === 'string' ? detail.recovery : undefined,
+    retryable: typeof error?.retryable === 'boolean' ? error.retryable : typeof detail?.retryable === 'boolean' ? detail.retryable : undefined,
+    requestId: typeof root.request_id === 'string' ? root.request_id : undefined,
+  };
+}
+
+/** Normalized error object used by every browser-facing API path. */
 export class ApiError extends Error {
   status: number;
   code?: string;
-  constructor(message: string, status: number, code?: string) {
-    super(message);
+  category: ErrorCategory;
+  errorCode: string;
+  recovery: string;
+  retryable: boolean;
+  requestId?: string;
+  technicalMessage: string;
+  constructor(message: string, status: number, code?: string, metadata: { category?: ErrorCategory; recovery?: string; retryable?: boolean; requestId?: string; legacyCode?: string } = {}) {
+    const category = metadata.category || categoryFor(status, code);
+    const definition = ERROR_DEFINITIONS[category];
+    const publicText = publicMessage(category, code || '', metadata.legacyCode || '');
+    super(publicText);
     this.name = 'ApiError';
     this.status = status;
-    this.code = code;
+    this.code = metadata.legacyCode || code;
+    this.category = category;
+    this.errorCode = definition.code;
+    this.recovery = metadata.recovery || (languageIsEnglish() ? definition.recoveryEn : definition.recoveryEs);
+    this.retryable = metadata.retryable ?? definition.retryable;
+    this.requestId = metadata.requestId;
+    this.technicalMessage = message;
+    if (message !== publicText) console.error('[TrinaxAI API] request failed', { status, category, code: definition.code });
   }
 }
 
-function friendlyApiFailure(status: number, detail = ''): string {
-  const en = typeof document !== 'undefined' && document.documentElement.lang.toLowerCase().startsWith('en');
-  try {
-    const parsed = JSON.parse(detail);
-    const code = typeof parsed?.detail?.code === 'string' ? parsed.detail.code : '';
-    const messages: Record<string, [string, string]> = {
-      provider_not_configured: ['El proveedor seleccionado no está configurado.', 'The selected provider is not configured.'],
-      invalid_credential: ['La credencial del proveedor no es válida.', 'The provider credential is invalid.'],
-      rate_limited: ['El proveedor limitó temporalmente las solicitudes.', 'The provider temporarily rate-limited requests.'],
-      provider_timeout: ['El proveedor agotó el tiempo de espera.', 'The provider timed out.'],
-      provider_unavailable: ['El proveedor no está disponible o la red falló.', 'The provider is unavailable or the network failed.'],
-      invalid_provider_response: ['El proveedor devolvió una respuesta inválida.', 'The provider returned an invalid response.'],
-      invalid_searxng_url: ['La URL de SearXNG no es válida o no es pública.', 'The SearXNG URL is invalid or not public.'],
-      externally_managed: ['Este valor está administrado por una variable de entorno.', 'This value is managed by an environment variable.'],
-    };
-    if (messages[code]) return messages[code][en ? 1 : 0];
-    if (typeof parsed?.detail?.message === 'string') return parsed.detail.message.slice(0, 500);
-    // Handle multilingual detail object { en: "...", es: "..." }
-    if (typeof parsed?.detail?.en === 'string' && typeof parsed?.detail?.es === 'string') {
-      return (en ? parsed.detail.en : parsed.detail.es).slice(0, 500);
-    }
-    if (typeof parsed?.detail === 'string' && parsed.detail.trim()) return parsed.detail.trim().slice(0, 500);
-    // Fallback: if detail is an object but not multilingual, show its string representation
-    if (typeof parsed?.detail === 'object' && parsed.detail !== null) {
-      const msg = typeof parsed.detail.message === 'string' ? parsed.detail.message : JSON.stringify(parsed.detail);
-      return msg.slice(0, 500);
-    }
-  } catch { /* plain-text response */ }
-  if (status === 401 || status === 403) {
-    return en
-      ? 'This device does not have permission to use this feature. Grant access from your main device under Settings → Paired device.'
-      : 'Este dispositivo no tiene permiso para usar esta función. Brinda acceso desde tu dispositivo principal en Configuración → Dispositivo vinculado.';
-  }
-  if (status === 429) return en ? 'Too many requests. Wait a moment and try again.' : 'Hay demasiadas solicitudes. Espera un momento e inténtalo de nuevo.';
-  if (status >= 500) {
-    try {
-      const parsed = JSON.parse(detail);
-      if (typeof parsed?.detail === 'string' && parsed.detail.trim()) return parsed.detail.trim().slice(0, 500);
-      if (typeof parsed?.detail?.en === 'string' && typeof parsed?.detail?.es === 'string') {
-        return (en ? parsed.detail.en : parsed.detail.es).slice(0, 500);
-      }
-      if (typeof parsed?.detail === 'object' && parsed.detail !== null) {
-        const msg = typeof parsed.detail.message === 'string' ? parsed.detail.message : JSON.stringify(parsed.detail);
-        return msg.slice(0, 500);
-      }
-    } catch { /* plain-text response */ }
-    if (detail.trim()) return detail.trim().slice(0, 500);
-    return en ? 'TrinaxAI could not complete the action. Check that Ollama and RAG are running, then try again.' : 'TrinaxAI no pudo completar la acción. Verifica que Ollama y RAG estén encendidos e inténtalo de nuevo.';
-  }
-  return detail || (en ? `The action could not be completed (code ${status}).` : `No se pudo completar la acción (código ${status}).`);
+export function apiErrorFromPayload(status: number, payload: unknown, fallbackCode = ''): ApiError {
+  const parsed = typeof payload === 'string' ? (() => {
+    try { return JSON.parse(payload) as unknown; } catch { return null; }
+  })() : payload;
+  const info = parseErrorPayload(parsed);
+  const legacyCode = info.legacyCode || fallbackCode || undefined;
+  return new ApiError('', status, legacyCode || info.code, {
+    category: info.category || categoryFor(status, legacyCode || info.code),
+    recovery: info.recovery,
+    retryable: info.retryable,
+    requestId: info.requestId,
+    legacyCode,
+  });
+}
+
+export function userFacingError(error: unknown, fallbackCategory: ErrorCategory = 'unknown_error'): string {
+  if (error instanceof ApiError) return error.message;
+  if (error instanceof DOMException && error.name === 'AbortError') return error.message;
+  const info = ERROR_DEFINITIONS[fallbackCategory];
+  return languageIsEnglish() ? info.en : info.es;
 }
 
 export type ChatEngine = 'ollama' | 'rag';
@@ -163,7 +282,7 @@ export interface ChatMessage {
 }
 
 /** Specialized model for OCR, screenshots and image analysis. */
-export const VISION_MODEL = import.meta.env.VITE_TRINAXAI_VISION_MODEL || 'qwen3.5:4b';
+const VISION_MODEL = import.meta.env.VITE_TRINAXAI_VISION_MODEL || 'qwen3.5:4b';
 const OLLAMA_KEEP_ALIVE_KEY = 'tc-keep-alive';
 export const OLLAMA_KEEP_ALIVE_DEFAULT = import.meta.env.VITE_TRINAXAI_KEEP_ALIVE || '10m';
 export const MODEL_KEYS = [
@@ -352,7 +471,7 @@ export function modelSetting(key: string, fallback: string): string {
   }
 }
 
-export function ollamaKeepAliveSetting(): string | number {
+function ollamaKeepAliveSetting(): string | number {
   try {
     const raw = localStorage.getItem(OLLAMA_KEEP_ALIVE_KEY)?.trim();
     if (!raw) return OLLAMA_KEEP_ALIVE_DEFAULT;
@@ -368,7 +487,7 @@ export function ollamaKeepAliveSetting(): string | number {
   }
 }
 
-export function aggressiveQuantizationEnabled(): boolean {
+function aggressiveQuantizationEnabled(): boolean {
   try {
     return localStorage.getItem('tc-aggressive-quant') === '1';
   } catch {
@@ -849,7 +968,7 @@ export function folderLabelFromFiles(files: FileList | File[]): string {
   return rel.split('/')[0] || 'import';
 }
 
-export function isIndexableFile(file: File): boolean {
+function isIndexableFile(file: File): boolean {
   const rel = ((file as File & { webkitRelativePath?: string }).webkitRelativePath || file.name || '').toLowerCase();
   const filename = rel.split('/').pop() || rel;
   if (INDEXABLE_FILENAMES.has(filename)) return true;
@@ -863,24 +982,37 @@ export function indexableFilesFrom(files: FileList | File[]): File[] {
 }
 
 async function apiJson<T>(url: string, init?: RequestInit): Promise<T> {
-  let response: Response;
-  try {
-    response = await fetch(url, { ...init, headers: systemRequestHeaders(init?.headers) });
-  } catch (err) {
-    // A caller-initiated abort is not a connectivity problem — re-throw it so
-    // callers can ignore it instead of surfacing a false "TrinaxAI is off" error.
-    if (err instanceof DOMException && err.name === 'AbortError') throw err;
-    throw new ApiError('Asegúrate de que TrinaxAI esté encendido. / Make sure TrinaxAI is turned on.', 0);
+  const method = (init?.method || 'GET').toUpperCase();
+  const safeToRetry = method === 'GET' || method === 'HEAD' || method === 'OPTIONS';
+  for (let attempt = 0; attempt < (safeToRetry ? 2 : 1); attempt += 1) {
+    let response: Response;
+    try {
+      response = await fetch(url, { ...init, headers: systemRequestHeaders(init?.headers) });
+    } catch (err) {
+      if (err instanceof DOMException && err.name === 'AbortError') throw err;
+      const failure = new ApiError('', 0);
+      if (safeToRetry && attempt === 0 && failure.retryable) {
+        await new Promise((resolve) => window.setTimeout(resolve, 250));
+        continue;
+      }
+      throw failure;
+    }
+    if (!response.ok) {
+      const detail = await response.text().catch(() => '');
+      const failure = apiErrorFromPayload(response.status, detail.slice(0, 500));
+      if (safeToRetry && attempt === 0 && failure.retryable) {
+        await new Promise((resolve) => window.setTimeout(resolve, 250));
+        continue;
+      }
+      throw failure;
+    }
+    try {
+      return await response.json() as T;
+    } catch {
+      throw apiErrorFromPayload(response.status, null, 'invalid_response');
+    }
   }
-  if (!response.ok) {
-    const detail = await response.text().catch(() => '');
-    throw new ApiError(friendlyApiFailure(response.status, detail.slice(0, 500)), response.status);
-  }
-  try {
-    return await response.json() as T;
-  } catch {
-    throw new ApiError('Invalid JSON response from local API.', response.status);
-  }
+  throw new ApiError('', 0);
 }
 
 export function getWebSearchSettings(signal?: AbortSignal): Promise<WebSearchSettings> {
@@ -919,7 +1051,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function validateIndexJobStatus(value: unknown): IndexJobStatus {
   if (!isRecord(value) || typeof value.id !== 'string' || typeof value.status !== 'string') {
-    throw new ApiError('Invalid index job response from local API.', 0);
+    throw new ApiError('', 502, 'invalid_response');
   }
   return {
     id: value.id,
@@ -1003,6 +1135,8 @@ export interface ResearchResult {
   degraded?: boolean;
   error_code?: 'web_search_unavailable' | string;
   error_detail?: string;
+  failure_reason?: string;
+  failure_message?: string;
 }
 
 export interface DeleteIndexedImportResult {
@@ -1272,7 +1406,9 @@ export async function runResearch(
     body: JSON.stringify(payload),
     signal,
   });
-    if (result.error_code) throw new ApiError(result.error_detail || result.answer, 503, result.error_code);
+    if (result.error_code && result.error_code !== 'web_search_unavailable') {
+      throw new ApiError(result.error_detail || result.answer, 503, result.error_code);
+    }
     return result;
   } catch (error) {
     if (opts.signal?.aborted) throw new DOMException('Research request cancelled.', 'AbortError');
@@ -1415,8 +1551,7 @@ export function startFolderIndex(
       finish();
       const result = xhr.response || {};
       if (xhr.status < 200 || xhr.status >= 300) {
-        const detail = typeof result === 'object' ? JSON.stringify(result).slice(0, 500) : String(xhr.responseText || '').slice(0, 500);
-        reject(new ApiError(`Folder import failed: ${xhr.status} ${xhr.statusText}${detail ? `\n${detail}` : ''}`, xhr.status));
+        reject(apiErrorFromPayload(xhr.status, result));
         return;
       }
       try {
@@ -1434,7 +1569,7 @@ export function startFolderIndex(
       options.onUploadProgress?.(30);
       resolve(result as FolderImportResult);
     };
-    xhr.onerror = () => { finish(); reject(new ApiError('Folder import failed: network error', 0)); };
+    xhr.onerror = () => { finish(); reject(new ApiError('', 0)); };
     xhr.ontimeout = () => { finish(); reject(new ApiError('Folder import upload timed out.', 0)); };
     xhr.onabort = () => { finish(); reject(new DOMException('Upload cancelled', 'AbortError')); };
     if (options.signal?.aborted) {
@@ -1450,7 +1585,7 @@ export async function getIndexJob(jobId: string, signal?: AbortSignal): Promise<
   const response = await fetch(`${RAG_BASE}/system/index-jobs/${encodeURIComponent(jobId)}`, { signal, headers: systemRequestHeaders() });
   if (!response.ok) {
     const detail = await response.text().catch(() => '');
-    throw new ApiError(`Index job status failed: ${response.status} ${response.statusText}${detail ? `\n${detail.slice(0, 500)}` : ''}`, response.status);
+    throw apiErrorFromPayload(response.status, detail);
   }
   const data = await response.json().catch(() => null);
   return validateIndexJobStatus(data);
@@ -1501,16 +1636,13 @@ export function extractDocumentText(
     xhr.onload = () => {
       const result = xhr.response || {};
       if (xhr.status < 200 || xhr.status >= 300) {
-        const detail = typeof result === 'object'
-          ? JSON.stringify(result).slice(0, 500)
-          : String(xhr.responseText || '').slice(0, 500);
-        reject(new ApiError(`Document extraction failed: ${xhr.status} ${xhr.statusText}${detail ? `\n${detail}` : ''}`, xhr.status));
+        reject(apiErrorFromPayload(xhr.status, result, 'document_unreadable'));
         return;
       }
       options.onUploadProgress?.(100);
       resolve(result as ExtractedDocument);
     };
-    xhr.onerror = () => reject(new ApiError('Document extraction failed: network error', 0));
+    xhr.onerror = () => reject(new ApiError('', 0));
     xhr.ontimeout = () => reject(new ApiError('Document extraction timed out after 2 minutes.', 408));
     xhr.onabort = () => reject(new DOMException('Document extraction cancelled', 'AbortError'));
     options.signal?.addEventListener('abort', () => xhr.abort(), { once: true });
@@ -1762,7 +1894,7 @@ export function parseOllamaJsonLine(line: string): { token?: string; error?: str
 
 function appendOllamaJsonLine(line: string, onToken: (token: string) => void): string {
   const event = parseOllamaJsonLine(line);
-  if (event.error) throw new Error(`Ollama: ${event.error}`);
+  if (event.error) throw new ApiError('', 503, 'model_loading_failed');
   // Gemma 3n may occasionally leak SentencePiece's whitespace marker (▁)
   // through Ollama. It is tokenizer metadata, never intended user-visible text.
   const token = event.token?.replace(/▁+/g, ' ');
@@ -1808,8 +1940,12 @@ export function parseRagSseLine(line: string): {
         },
       };
     }
+    if (parsed.trinaxai_error && typeof parsed.trinaxai_error === 'object') {
+      const failure = apiErrorFromPayload(503, { error: parsed.trinaxai_error });
+      return { error: failure.message };
+    }
     if (typeof parsed.trinaxai_error === 'string' && parsed.trinaxai_error.trim()) {
-      return { error: parsed.trinaxai_error.trim() };
+      return { error: apiErrorFromPayload(503, parsed.trinaxai_error).message };
     }
     const token = parsed.choices?.[0]?.delta?.content;
     return typeof token === 'string' && token ? { token } : {};
@@ -1974,10 +2110,7 @@ async function streamOllamaVision(
     const hint = /unexpected EOF|llama runner|model/i.test(detail)
       ? '\nEl modelo de visión local falló al cargar/procesar la imagen. Prueba con una captura más pequeña o una pregunta más concreta; el modelo se descargará de RAM automáticamente.'
       : '';
-    throw new ApiError(
-      `Ollama visión: ${response.status} ${response.statusText}${detail ? `\n${detail.slice(0, 240)}` : ''}${hint}`,
-      response.status,
-    );
+    throw apiErrorFromPayload(response.status, detail, hint ? 'model_loading_failed' : '');
   }
 
   let fullContent = '';
@@ -1987,7 +2120,7 @@ async function streamOllamaVision(
   try {
     await readStreamLines(response, signal, (line) => {
       const event = parseOllamaJsonLine(line);
-      if (event.error) throw new Error(`Ollama: ${event.error}`);
+      if (event.error) throw new ApiError('', 503, 'model_loading_failed');
       if (event.thinking) sawThinking = true;
       if (event.doneReason) doneReason = event.doneReason;
       if (event.token) {
@@ -2069,13 +2202,13 @@ export async function describeImageForAgent(
   });
   if (!response.ok) {
     const detail = await response.text().catch(() => '');
-    throw new ApiError(`Ollama visión: ${response.status} ${response.statusText}${detail ? `\n${detail.slice(0, 240)}` : ''}`, response.status);
+    throw apiErrorFromPayload(response.status, detail, 'model_loading_failed');
   }
   let out = '';
   try {
     await readStreamLines(response, signal, (line) => {
       const event = parseOllamaJsonLine(line);
-      if (event.error) throw new Error(`Ollama: ${event.error}`);
+      if (event.error) throw new ApiError('', 503, 'model_loading_failed');
       if (event.token) out += event.token;
     });
   } finally {
@@ -2130,16 +2263,14 @@ export async function streamRag(
   });
 
   if (!response.ok) {
-    throw new ApiError(
-      `RAG: ${response.status} ${response.statusText}`,
-      response.status,
-    );
+    const detail = await response.text().catch(() => '');
+    throw apiErrorFromPayload(response.status, detail);
   }
 
   let fullContent = '';
   await readStreamLines(response, signal, (line) => {
     const event = parseRagSseLine(line);
-    if (event.error) throw new Error(`RAG: ${event.error}`);
+    if (event.error) throw apiErrorFromPayload(503, event.error);
     if (event.meta) onMeta?.(event.meta);
     if (event.token) {
       fullContent += event.token;
@@ -2218,7 +2349,7 @@ export async function runAgent(
   });
   if (!response.ok) {
     const detail = await response.text().catch(() => '');
-    throw new ApiError(`Agent: ${response.status} ${response.statusText}${detail ? `\n${detail.slice(0, 300)}` : ''}`, response.status);
+    throw apiErrorFromPayload(response.status, detail);
   }
   let terminal = false;
   await readStreamLines(response, opts.signal, (line) => {
@@ -2228,11 +2359,11 @@ export async function runAgent(
     if (event.type === 'done') terminal = true;
     if (event.type === 'error') {
       terminal = true;
-      throw new Error(`Agent: ${event.error}`);
+      throw apiErrorFromPayload(503, event);
     }
     onEvent(event);
   });
-  if (!terminal && !opts.signal?.aborted) throw new Error('Agent stream closed before a final result. You can retry safely.');
+  if (!terminal && !opts.signal?.aborted) throw new ApiError('', 503, 'tool_timeout');
 }
 
 /** Approve or reject a pending dangerous agent action by its approval id. */

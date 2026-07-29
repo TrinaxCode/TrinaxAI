@@ -3,22 +3,28 @@
 from __future__ import annotations
 
 # ruff: noqa: F405
-from .shared_runtime import *  # noqa: F403
-
-
-def _atomic_write_json(path: str, payload: object) -> None:
-    """Write JSON atomically via a unique temp file + os.replace."""
-    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-    tmp = f"{path}.{os.getpid()}.{uuid.uuid4().hex}.tmp"
-    try:
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(payload, f, ensure_ascii=False, indent=2)
-        os.replace(tmp, path)
-    finally:
-        try:
-            os.unlink(tmp)
-        except OSError:
-            pass
+from .shared_runtime import (
+    LOG,
+    USER_MEMORY_PATH,
+    HTTPException,
+    MemoryContextRequest,
+    MemoryCreateRequest,
+    MemoryRefreshRequest,
+    MemoryUpdateRequest,
+    Request,
+    _authorize_system,
+    _run_model_task,
+    atomic_write_json,
+    config,
+    get_llm,
+    json,
+    os,
+    re,
+    run_in_threadpool,
+    state,
+    time,
+    uuid,
+)
 
 
 def _memory_load() -> dict:
@@ -57,7 +63,17 @@ def _memory_save(data: dict) -> None:
     encoded = json.dumps(data, ensure_ascii=False).encode("utf-8")
     if len(encoded) > config.MEMORY_MAX_FILE_BYTES:
         raise HTTPException(status_code=413, detail="Persistent memory storage is full.")
-    _atomic_write_json(USER_MEMORY_PATH, data)
+    atomic_write_json(USER_MEMORY_PATH, data)
+
+
+def _memory_is_active(memory: dict, now: float) -> bool:
+    expires_at = memory.get("expires_at")
+    if not expires_at:
+        return True
+    try:
+        return float(expires_at) > now
+    except (TypeError, ValueError):
+        return False
 
 
 async def memory_list(request: Request):
@@ -103,7 +119,10 @@ def _memory_update_sync(memory_id: str, req: MemoryUpdateRequest) -> dict:
             if memory.get("id") != memory_id:
                 continue
             if req.text is not None:
-                memory["text"] = req.text.strip()
+                text = req.text.strip()
+                if not text:
+                    raise HTTPException(status_code=400, detail="Memory text is required.")
+                memory["text"] = text
             if req.tags is not None:
                 memory["tags"] = [tag.strip() for tag in req.tags if tag.strip()]
             if req.kind is not None:
@@ -170,15 +189,11 @@ def _memory_refresh_sync(req: MemoryRefreshRequest):
     with state.memory_lock:
         data = _memory_load()
     now = time.time()
-    mems = [
-        memory
-        for memory in data.get("memories", [])
-        if not memory.get("expires_at") or float(memory["expires_at"]) > now
-    ]
+    mems = [memory for memory in data.get("memories", []) if _memory_is_active(memory, now)]
     summary_path = os.path.join(config.PERSIST_DIR, "user_memory_summary.json")
     if not mems:
         summary = {"summary": "", "count": 0, "updated_at": time.time()}
-        _atomic_write_json(summary_path, summary)
+        atomic_write_json(summary_path, summary)
         return {"status": "refreshed", "summary": "", "count": 0}
     selected: list[str] = []
     used_chars = 0
@@ -212,7 +227,7 @@ def _memory_refresh_sync(req: MemoryRefreshRequest):
         # useful deterministic summary and allow the next refresh to improve it.
         text = " | ".join(m.get("text", "") for m in mems[-10:] if m.get("text", ""))
     summary = {"summary": text, "count": len(mems), "updated_at": time.time()}
-    _atomic_write_json(summary_path, summary)
+    atomic_write_json(summary_path, summary)
     return {"status": "refreshed", "summary": text, "count": len(mems)}
 
 
@@ -253,20 +268,6 @@ async def memory_context(req: MemoryContextRequest, request: Request):
     except ValueError:
         memories = []
     return {"memories": memories, "count": len(memories)}
-
-
-def memory_summary_text() -> str:
-    """Return the persisted human-facing overview for compatibility/diagnostics."""
-    summary_path = os.path.join(config.PERSIST_DIR, "user_memory_summary.json")
-    if not os.path.isfile(summary_path):
-        return ""
-    try:
-        with open(summary_path, encoding="utf-8") as stream:
-            data = json.load(stream)
-        return str(data.get("summary") or "").strip() if isinstance(data, dict) else ""
-    except (OSError, ValueError, TypeError) as exc:
-        LOG.warning("Persistent memory summary could not be loaded: %s", exc)
-        return ""
 
 
 def _memory_terms(value: str) -> set[str]:
@@ -321,8 +322,7 @@ def memory_context_for_query(query: str, *, max_entries: int = 8, max_chars: int
     query_terms = _memory_terms(query)
     ranked: list[tuple[float, dict]] = []
     for memory in data.get("memories", []):
-        expires_at = memory.get("expires_at")
-        if expires_at and float(expires_at) <= now:
+        if not _memory_is_active(memory, now):
             continue
         text = str(memory.get("text") or "").strip()
         if not text:

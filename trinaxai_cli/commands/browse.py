@@ -60,5 +60,5 @@ def run(args: Any, client: Any, ui: Any, config: Any) -> int:
         ui.error(f"Unknown subcommand: {sub}")
         return 1
     except Exception as exc:
-        ui.error(f"browse {sub}: {exc}")
+        ui.failure(f"Browse {sub}", exc)
         return 1

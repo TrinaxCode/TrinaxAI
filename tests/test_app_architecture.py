@@ -45,6 +45,7 @@ EXPECTED_OPERATIONS = {
     ("POST", "/v1/usage"),
     ("GET", "/v1/stats"),
     ("GET", "/health"),
+    ("GET", "/ready"),
     ("GET", "/resources"),
     ("GET", "/app-state"),
     ("PUT", "/app-state"),

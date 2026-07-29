@@ -204,7 +204,7 @@ export default function KnowledgeBrowser({ onBack, initialCollection, initialFil
     }
   }, [activeCollectionId, refreshSources, t, toast]);
 
-  const bg = isDark ? 'bg-black text-white' : 'bg-white text-gray-900';
+  const bg = isDark ? 'bg-black/70 text-white' : 'bg-white/70 text-gray-900';
   const border = isDark ? 'border-white/[0.06]' : 'border-gray-200';
   const panelBg = isDark ? 'bg-white/[0.02]' : 'bg-gray-50';
   const hover = isDark ? 'hover:bg-white/[0.04]' : 'hover:bg-gray-100';

@@ -33,9 +33,8 @@ def test_real_memory_persistence_and_summary(tmp_path, monkeypatch) -> None:
     refreshed = memory_service._memory_refresh_sync(MemoryRefreshRequest())
     assert refreshed["count"] == 1
     assert refreshed["summary"].strip()
-    assert memory_service.memory_summary_text() == refreshed["summary"]
 
     assert memory_service._memory_delete_sync(created["id"]) == {"deleted": True}
     cleared = memory_service._memory_refresh_sync(MemoryRefreshRequest())
     assert cleared["count"] == 0
-    assert memory_service.memory_summary_text() == ""
+    assert cleared["summary"] == ""

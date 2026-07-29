@@ -21,7 +21,7 @@ export interface AudioRecorder {
 let activeRecorder: AudioRecorder | null = null;
 let pendingRecorder: Promise<AudioRecorder> | null = null;
 
-export function stopAudioRecorder(): void {
+function stopAudioRecorder(): void {
   activeRecorder?.cancel();
   activeRecorder = null;
 }

@@ -26,7 +26,7 @@ function formatAttachmentSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-export function getLastUserText(messages: ChatMessage[], beforeMessage?: ChatMessage): string {
+function getLastUserText(messages: ChatMessage[], beforeMessage?: ChatMessage): string {
   const end = beforeMessage ? messages.indexOf(beforeMessage) + 1 : messages.length;
   for (let index = end - 1; index >= 0; index -= 1) {
     if (messages[index].role === 'user') return messages[index].displayContent ?? messages[index].content;

@@ -77,9 +77,9 @@ async def pairing_start(req: PairingStartRequest, request: Request):
             device_ttl_days=req.device_ttl_days,
         )
     except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        raise HTTPException(status_code=422, detail="Pairing settings are invalid.") from exc
     except DeviceRegistryError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
+        raise HTTPException(status_code=503, detail="Pairing storage is unavailable. Try again shortly.") from exc
     return {"ok": True, **result, "available_scopes": sorted(ALL_DEVICE_SCOPES)}
 
 
@@ -93,9 +93,9 @@ async def pairing_claim(req: PairingClaimRequest, request: Request):
     try:
         result = claim_pairing_code(req.code, req.device_name)
     except (PermissionError, ValueError) as exc:
-        raise HTTPException(status_code=403, detail=str(exc)) from exc
+        raise HTTPException(status_code=403, detail="The pairing code is invalid or expired.") from exc
     except DeviceRegistryError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
+        raise HTTPException(status_code=503, detail="Pairing storage is unavailable. Try again shortly.") from exc
     return {"ok": True, **result}
 
 
@@ -105,7 +105,7 @@ async def pairing_devices(request: Request):
     try:
         return {"ok": True, "devices": list_devices()}
     except DeviceRegistryError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
+        raise HTTPException(status_code=503, detail="Pairing storage is unavailable. Try again shortly.") from exc
 
 
 @router.delete("/devices/{device_id}")
@@ -114,7 +114,7 @@ async def pairing_revoke(device_id: str, request: Request):
     try:
         device = revoke_device(device_id)
     except DeviceRegistryError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
+        raise HTTPException(status_code=503, detail="Pairing storage is unavailable. Try again shortly.") from exc
     if device is None:
         raise HTTPException(status_code=404, detail="Unknown device.")
     return {"ok": True, "device": device}

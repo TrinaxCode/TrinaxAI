@@ -6,4 +6,5 @@ from app.services import health_service as runtime
 
 router = APIRouter(tags=["health"])
 router.add_api_route("/health", runtime.health, methods=["GET"])
+router.add_api_route("/ready", runtime.ready, methods=["GET"])
 router.add_api_route("/resources", runtime.resources, methods=["GET"])

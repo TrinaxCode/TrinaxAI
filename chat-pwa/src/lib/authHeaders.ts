@@ -4,12 +4,17 @@
  * browser keeps its revocable device identity across browser/PWA restarts.
  */
 export const DEVICE_TOKEN_STORAGE_KEY = 'trinaxai-device-token';
-export const ADMIN_TOKEN_STORAGE_KEY = 'trinaxai-admin-token';
-export const DEVICE_SCOPES_STORAGE_KEY = 'trinaxai-device-scopes';
+const ADMIN_TOKEN_STORAGE_KEY = 'trinaxai-admin-token';
+const DEVICE_SCOPES_STORAGE_KEY = 'trinaxai-device-scopes';
 export const DEVICE_ACCESS_REVOKED_EVENT = 'trinaxai-device-access-revoked';
 
 export function isLocalHostBrowser(): boolean {
   try { return ['localhost', '127.0.0.1', '::1', '[::1]'].includes(window.location.hostname); }
+  catch { return false; }
+}
+
+function isLocalAdminOrigin(): boolean {
+  try { return isLocalHostBrowser() && ['3334', '3335'].includes(window.location.port); }
   catch { return false; }
 }
 
@@ -32,7 +37,7 @@ export function systemRequestHeaders(headers?: HeadersInit): Headers {
   const result = new Headers(headers);
   try {
     const adminToken = sessionStorage.getItem(ADMIN_TOKEN_STORAGE_KEY)?.trim();
-    const deviceToken = (
+    const deviceToken = isLocalAdminOrigin() ? '' : (
       localStorage.getItem(DEVICE_TOKEN_STORAGE_KEY)
       || sessionStorage.getItem(DEVICE_TOKEN_STORAGE_KEY)
     )?.trim();

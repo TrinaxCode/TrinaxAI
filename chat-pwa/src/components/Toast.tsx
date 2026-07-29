@@ -49,11 +49,6 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const dismiss = useCallback((id: number) => {
-    clearTimer(id);
-    setToasts((prev) => prev.filter((t) => t.id !== id));
-  }, [clearTimer]);
-
   const requestDismiss = useCallback((id: number) => {
     // Mark as exiting so the exit animation plays, then remove after it ends
     clearTimer(id);
@@ -95,6 +90,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       <div
         className="fixed top-0 left-1/2 z-[100] flex w-[calc(100%_-_2rem)] max-w-[260px] -translate-x-1/2 flex-col items-center gap-1 pointer-events-none"
         style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 12px)' }}
+        role="region"
         aria-label={t('notifications')}
       >
         <AnimatePresence>

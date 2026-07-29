@@ -175,7 +175,7 @@ capabilities de dispositivo, no cuentas.
 
 | Variable | Uso |
 |---|---|
-| `TRINAXAI_FRONTEND_MODE` | `preview` sirve `dist/`; `dev` usa HMR. |
+| `TRINAXAI_FRONTEND_MODE` | `serve` usa el gateway Node de producción; `dev` usa Vite con HMR. |
 | `TRINAXAI_FRONTEND_URL` | URL reportada/abierta por las herramientas. |
 | `TRINAXAI_RAG_TARGET` | Destino del proxy `/api/rag`. |
 | `TRINAXAI_OLLAMA_TARGET` | Destino del proxy `/api/ollama`. |

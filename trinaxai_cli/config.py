@@ -12,6 +12,7 @@ the CLI works on a fresh checkout.
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import sys
@@ -242,23 +243,24 @@ def _apply_section(cfg: CLIConfig, parsed: dict[str, Any]) -> None:
 
 
 def _render_toml(cfg: CLIConfig) -> str:
+    quote = lambda value: json.dumps(value, ensure_ascii=False)
     lines = [
         "[api]",
-        f'base_url = "{cfg.api_base_url}"',
+        f"base_url = {quote(cfg.api_base_url)}",
         f"verify_tls = {str(cfg.api_verify_tls).lower()}",
         "",
         "[defaults]",
-        f'engine = "{cfg.engine}"',
-        f'model = "{cfg.model}"',
-        "collections = [" + ", ".join(f'"{c}"' for c in cfg.collections) + "]",
-        f'active_collection = "{cfg.active_collection}"',
+        f"engine = {quote(cfg.engine)}",
+        f"model = {quote(cfg.model)}",
+        "collections = [" + ", ".join(quote(collection) for collection in cfg.collections) + "]",
+        f"active_collection = {quote(cfg.active_collection)}",
         "",
         "[ui]",
-        f'color = "{cfg.ui_color}"',
+        f"color = {quote(cfg.ui_color)}",
         "",
         "[session]",
         f"enabled = {str(cfg.session_enabled).lower()}",
-        f'dir = "{cfg.session_dir}"',
+        f"dir = {quote(cfg.session_dir)}",
         "",
     ]
     return "\n".join(lines)

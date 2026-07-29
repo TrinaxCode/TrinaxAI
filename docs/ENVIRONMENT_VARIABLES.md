@@ -15,7 +15,7 @@ child processes and normally should not be added to `.env`.
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `TRINAXAI_HOME` | auto-detected | Installation root used by the CLI, Vite, and lifecycle scripts. |
+| `TRINAXAI_HOME` | auto-detected | Installation root used by the CLI, frontend gateway, and lifecycle scripts. |
 | `TRINAXAI_PYTHON` | current Python | Python executable used by service and maintenance scripts. |
 | `TRINAXAI_PROFILE` | `16gb` | Hardware preset. Canonical accepted values and aliases live in `trinaxai_core.VALID_PROFILES`. |
 | `TRINAXAI_PERFORMANCE_MODE` | `fast` | Runtime tuning: `fast`, `balanced`, or `quality`. |
@@ -26,7 +26,7 @@ child processes and normally should not be added to `.env`.
 | `TRINAXAI_CA_FILE` | auto-detected | Explicit CA bundle for verified CLI HTTPS; local mkcert/self-signed roots are discovered automatically. |
 | `TRINAXAI_HEALTH_URL` | derived from port/TLS | Health URL used by installers and diagnostics. |
 | `TRINAXAI_FRONTEND_URL` | `https://localhost:3334` | Public/local URL reported for the PWA. |
-| `TRINAXAI_FRONTEND_MODE` | `preview` | Vite script used by the service manager; `dev` selects HMR. |
+| `TRINAXAI_FRONTEND_MODE` | `serve` | Production Node gateway used by the service manager; `dev` selects Vite HMR. |
 | `TRINAXAI_TLS_VERIFY` | `0` | Verify TLS certificates for selected outgoing backend requests. The CLI always verifies TLS; use `--ca-file` or `TRINAXAI_CA_FILE` for a private CA. |
 | `TRINAXAI_CORS_ORIGINS` | safe local origins | Comma-separated exact browser origins. CORS is not authentication. |
 | `TRINAXAI_CORS_ORIGIN_REGEX` | private-LAN regex | Additional FastAPI origin regular expression. Review carefully before widening it. |
@@ -41,7 +41,8 @@ child processes and normally should not be added to `.env`.
 | `TRINAXAI_RATE_LIMIT_PER_MINUTE` | `30` | Capacity of each monotonic token bucket, keyed by verified IP and endpoint bucket. |
 | `TRINAXAI_RATE_LIMIT_WINDOW_SECONDS` | `60` | Seconds over which an empty backend bucket refills to capacity. |
 | `TRINAXAI_OLLAMA_PROXY_RATE_LIMIT` | `30` | Requests per minute and verified peer through the gateway's allowlisted Ollama facade. |
-| `TRINAXAI_CERT_PASSPHRASE` | `trinaxai-local` | Passphrase used by Vite for the local PFX certificate. |
+| `TRINAXAI_CERT_PASSPHRASE` | `trinaxai-local` | Passphrase used by the frontend gateway for the local PFX certificate. |
+| `TRINAXAI_LOCAL_CA_FILE` | auto-detected | Optional CA bundle used by the PWA gateway for verified HTTPS calls to the loopback RAG API. |
 | `TRINAXAI_APP_STATE_MAX_BYTES` | `6291456` | Maximum persisted shared PWA state size. |
 | `TRINAXAI_CONFIG` | platform config path | Explicit TOML path for the packaged CLI. |
 | `TRINAXAI_NO_COLOR` | unset | Disables ANSI color in CLI output when set. |
@@ -205,10 +206,10 @@ see the workspace as the only writable host tree. On hosts without supported
 isolation, terminal execution is disabled unless the operator explicitly opts
 into full user-level host access with the variable above.
 
-## PWA and Vite
+## PWA gateway and Vite build
 
 `VITE_*` variables are embedded at frontend build time; rebuild the PWA after
-changing them. Non-`VITE_*` proxy targets are read by the Vite server at runtime.
+changing them. Non-`VITE_*` proxy targets are read by the production gateway at runtime.
 
 | Variable | Default | Purpose |
 |---|---|---|

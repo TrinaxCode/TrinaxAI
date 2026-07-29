@@ -7,6 +7,7 @@ from trinaxai_cli.commands.doctor import (
 
 
 def test_frontend_mode_detects_dev_preview_and_unknown_commands():
+    assert _frontend_mode_from_command("node server.mjs") == "serve"
     assert _frontend_mode_from_command("node ./vite preview --host 0.0.0.0") == "preview"
     assert _frontend_mode_from_command("npm run preview") == "preview"
     assert _frontend_mode_from_command("node ./vite --host 0.0.0.0 --port 3334") == "dev"
