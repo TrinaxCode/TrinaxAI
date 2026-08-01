@@ -45,7 +45,7 @@
     "autoprefixer": "^10.4.20",
     "axe-core": "^4.12.1",
     "esbuild": "^0.25.12",
-    "jsdom": "^29.1.1",
+    "jsdom": "^30.0.1",
     "postcss": "^8.4.49",
     "tailwindcss": "^3.4.17",
     "typescript": "^5.7.0",
