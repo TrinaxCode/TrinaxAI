@@ -3,12 +3,18 @@
 All notable changes to TrinaxAI are documented here. This project follows the
 [Keep a Changelog](https://keepachangelog.com/) format.
 
+## [1.0.2] — 2026-08-01
+
+### Fixed
+
+- Initialized the Buildx container driver so the GHCR image can be published
+  with SBOM and provenance attestations.
+
 ## [1.0.1] — 2026-07-31
 
 ### Added
 
-- Published release assets and a versioned GHCR backend image through one
-  verified release workflow.
+- Published release assets through one verified release workflow.
 - Added production gateway coverage and cross-platform CLI, installer, service,
   cancellation, timeout and failure-path tests.
 
@@ -69,5 +75,6 @@ All notable changes to TrinaxAI are documented here. This project follows the
 - CI checks Python and frontend dependencies, static high-severity findings,
   committed secrets, package builds, browser flows and public-release readiness.
 
+[1.0.2]: https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.0.2
 [1.0.1]: https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.0.1
 [1.0.0]: https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.0.0

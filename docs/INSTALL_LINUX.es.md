@@ -355,13 +355,13 @@ Después inicia solo el gateway PWA del host y la API en Docker:
 ```bash
 export TRINAXAI_DOCKER_UID="$(id -u)"
 export TRINAXAI_DOCKER_GID="$(id -g)"
-export TRINAXAI_DOCKER_IMAGE=ghcr.io/trinaxcode/trinaxai:1.0.1
+export TRINAXAI_DOCKER_IMAGE=ghcr.io/trinaxcode/trinaxai:1.0.2
 docker compose pull
 docker compose up --no-build -d
 .venv/bin/python service_manager.py start-frontend --base-dir "$PWD"
 ```
 
-El registro también publica las etiquetas `1.0`, `1` y `latest`. Fija `1.0.1`
+El registro también publica las etiquetas `1.0`, `1` y `latest`. Fija `1.0.2`
 para un despliegue reproducible. Para construir el checkout actual, omite
 `TRINAXAI_DOCKER_IMAGE` y ejecuta `docker compose up --build -d`.
 

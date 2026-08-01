@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0--or--later-blue.svg" alt="AGPL-3.0-or-later"></a>
-  <a href="CHANGELOG.es.md"><img src="https://img.shields.io/badge/version-1.0.1-006bbd.svg" alt="Versión 1.0.1"></a>
+  <a href="CHANGELOG.es.md"><img src="https://img.shields.io/badge/version-1.0.2-006bbd.svg" alt="Versión 1.0.2"></a>
   <a href="https://github.com/TrinaxCode/TrinaxAI/pkgs/container/trinaxai"><img src="https://img.shields.io/badge/package-GHCR-2496ED.svg" alt="GitHub Container Registry"></a>
   <a href="#-inicio-rápido"><img src="https://img.shields.io/badge/powered_by-Ollama-black.svg" alt="Ollama"></a>
   <a href="#️-plataformas-compatibles"><img src="https://img.shields.io/badge/platform-Linux|macOS|Windows-lightgrey.svg" alt="Plataformas"></a>
@@ -59,7 +59,7 @@ Cada release publica la imagen de la API RAG en GitHub Container Registry. El
 gateway de la PWA y Ollama siguen ejecutándose en el host:
 
 ```bash
-docker pull ghcr.io/trinaxcode/trinaxai:1.0.1
+docker pull ghcr.io/trinaxcode/trinaxai:1.0.2
 ```
 
 Úsala con el `compose.yaml` incluido mediante `TRINAXAI_DOCKER_IMAGE`. La
@@ -186,7 +186,7 @@ cámara o shell que el usuario o navegador no haya autorizado.
 - 🔄 **Sincronización de estado y uso** — sincronización versionada de ajustes/historial con revisiones seguras ante conflictos, borrados explícitos y estadísticas locales.
 - 🛡️ **Seguridad local-first** — servicios en loopback, emparejamiento por scopes, gateway firmado con HMAC, agente en sandbox.
 
-**Versión del proyecto:** 1.0.1 · **Licencia:** [AGPL-3.0-or-later](LICENSE)
+**Versión del proyecto:** 1.0.2 · **Licencia:** [AGPL-3.0-or-later](LICENSE)
 
 ---
 

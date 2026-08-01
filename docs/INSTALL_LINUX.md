@@ -361,13 +361,13 @@ Then start only the host PWA gateway and the Docker API:
 ```bash
 export TRINAXAI_DOCKER_UID="$(id -u)"
 export TRINAXAI_DOCKER_GID="$(id -g)"
-export TRINAXAI_DOCKER_IMAGE=ghcr.io/trinaxcode/trinaxai:1.0.1
+export TRINAXAI_DOCKER_IMAGE=ghcr.io/trinaxcode/trinaxai:1.0.2
 docker compose pull
 docker compose up --no-build -d
 .venv/bin/python service_manager.py start-frontend --base-dir "$PWD"
 ```
 
-The registry also publishes `1.0`, `1`, and `latest` tags. Pin `1.0.1` for a
+The registry also publishes `1.0`, `1`, and `latest` tags. Pin `1.0.2` for a
 reproducible deployment. To build the current checkout instead, omit
 `TRINAXAI_DOCKER_IMAGE` and run `docker compose up --build -d`.
 

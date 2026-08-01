@@ -104,8 +104,8 @@ export default function Docs({ onBack }: Props) {
               <div className={`p-5 rounded-2xl border ${sectionBg}`}>
                 <p className={`text-sm leading-relaxed ${textSub}`}>
                   {isEs
-                    ? 'TrinaxAI 1.0.1 es un asistente open-source bajo AGPL-3.0-or-later. La inferencia, RAG y datos persistidos funcionan localmente con Ollama; solo la búsqueda web opcional, las descargas y los destinos remotos que configures usan Internet.'
-                    : 'TrinaxAI 1.0.1 is an open-source assistant under AGPL-3.0-or-later. Inference, RAG, and persisted data run locally with Ollama; only optional web search, downloads, and remote targets you configure use the Internet.'}
+                    ? 'TrinaxAI 1.0.2 es un asistente open-source bajo AGPL-3.0-or-later. La inferencia, RAG y datos persistidos funcionan localmente con Ollama; solo la búsqueda web opcional, las descargas y los destinos remotos que configures usan Internet.'
+                    : 'TrinaxAI 1.0.2 is an open-source assistant under AGPL-3.0-or-later. Inference, RAG, and persisted data run locally with Ollama; only optional web search, downloads, and remote targets you configure use the Internet.'}
                 </p>
               </div>
 

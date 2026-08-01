@@ -22,7 +22,7 @@ from trinaxai_cli.config import CLIConfig
 from trinaxai_cli.ui import get_console
 
 LOG = logging.getLogger("trinaxai_cli")
-VERSION = "1.0.1"
+VERSION = "1.0.2"
 
 
 # ----------------------------------------------------------------- argparse

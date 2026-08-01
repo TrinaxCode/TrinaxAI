@@ -3,12 +3,18 @@
 Todos los cambios importantes de TrinaxAI se documentan aquí. El proyecto sigue
 el formato de [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.0.2] — 2026-08-01
+
+### Corregido
+
+- Inicialización del driver de contenedor de Buildx para publicar la imagen en
+  GHCR con atestaciones de SBOM y procedencia.
+
 ## [1.0.1] — 2026-07-31
 
 ### Añadido
 
-- Publicación de assets y una imagen versionada del backend en GHCR mediante un
-  único workflow de release verificado.
+- Publicación de assets mediante un único workflow de release verificado.
 - Cobertura del gateway de producción y pruebas multiplataforma de CLI,
   instaladores, servicios, cancelación, timeouts y rutas de error.
 
@@ -69,5 +75,6 @@ el formato de [Keep a Changelog](https://keepachangelog.com/).
 - CI revisa dependencias Python/frontend, hallazgos estáticos de severidad alta,
   secretos, paquetes, flujos del navegador y preparación para release pública.
 
+[1.0.2]: https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.0.2
 [1.0.1]: https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.0.1
 [1.0.0]: https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.0.0

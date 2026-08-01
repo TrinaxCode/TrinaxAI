@@ -259,6 +259,7 @@ def test_tagged_releases_publish_a_simple_verified_release() -> None:
     assert "gh release create" in workflow
     assert "--verify-tag" in workflow
     assert "--generate-notes" in workflow
+    assert "docker/setup-buildx-action@v4" in workflow
     assert "actions/attest@v4" not in workflow
 
 

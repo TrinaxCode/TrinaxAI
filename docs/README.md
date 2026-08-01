@@ -1,6 +1,6 @@
 # TrinaxAI Documentation
 
-This directory is the entry point for the technical and operational documentation of **TrinaxAI 1.0.1**, released under **AGPL-3.0-or-later**. It documents the current branch. For critical settings and endpoints, also verify `.env.example` and FastAPI's generated OpenAPI specification.
+This directory is the entry point for the technical and operational documentation of **TrinaxAI 1.0.2**, released under **AGPL-3.0-or-later**. It documents the current branch. For critical settings and endpoints, also verify `.env.example` and FastAPI's generated OpenAPI specification.
 
 ## 1.0 capabilities
 
