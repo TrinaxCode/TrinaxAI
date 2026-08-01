@@ -6,17 +6,23 @@ modules call this client and never touch HTTP directly.
 
 from __future__ import annotations
 
+import logging
 import os
 import ssl
 import sys
+import time
 from pathlib import Path
 from typing import Any, Iterable
 from urllib.parse import urlencode, urlparse, urlunparse
+
+from trinaxai_errors import classify_error
 
 try:
     import httpx  # type: ignore
 except Exception:  # pragma: no cover - httpx is in requirements
     httpx = None  # type: ignore
+
+LOG = logging.getLogger("trinaxai_cli.client")
 
 
 class TrinaxAPIError(RuntimeError):
@@ -28,20 +34,24 @@ class TrinaxAPIError(RuntimeError):
     """
 
     def __init__(self, status: int, message: str, payload: Any | None = None) -> None:
-        prefix = f"HTTP {status}: " if status else ""
-        super().__init__(f"{prefix}{message}" if message else (prefix or "request failed"))
+        self.technical_message = message
+        info = classify_error(RuntimeError(message), status_code=status, hint=message)
+        super().__init__(f"{info.definition.message} {info.definition.recovery}")
         self.status = status
         self.payload = payload
+        self.category = info.category.value
+        self.error_code = info.code
+        self.retryable = info.retryable
 
 
 class TrinaxAPIClient:
     """Thin synchronous wrapper over the RAG API."""
 
-    def __init__(self, base_url: str, verify_tls: bool | str = True, timeout: float = 30.0) -> None:
+    def __init__(self, base_url: str, verify_tls: str | None = None, timeout: float = 30.0) -> None:
         if httpx is None:
             raise RuntimeError("httpx is required for the TrinaxAI CLI (install via requirements.txt).")
         self.base_url = (base_url or "https://localhost:3333").rstrip("/")
-        self.verify_tls = self._resolve_local_ca(verify_tls)
+        self.verify_tls: bool | str = self._resolve_local_ca(verify_tls)
         self.timeout = timeout
         request_headers: dict[str, str] = {}
         admin_token = os.getenv("TRINAXAI_ADMIN_TOKEN", "").strip()
@@ -60,17 +70,17 @@ class TrinaxAPIClient:
         self._ollama_clients: dict[str, Any] = {}
         self._prefer_local_https_if_needed()
 
-    def _resolve_local_ca(self, verify_tls: bool | str) -> ssl.SSLContext:
-        """Use an explicit/local CA for loopback HTTPS without disabling TLS."""
+    def _resolve_local_ca(self, verify_tls: bool | str) -> bool | str:
+        """Return ``True`` or a validated CA path; never disable TLS checks."""
         if verify_tls is False:
             raise ValueError("TLS certificate verification cannot be disabled")
         context = ssl.create_default_context()
         if isinstance(verify_tls, str):
             context.load_verify_locations(cafile=verify_tls)
-            return context
+            return verify_tls
         parsed = urlparse(self.base_url)
         if parsed.hostname not in {"localhost", "127.0.0.1", "::1"}:
-            return context
+            return True
 
         configured = os.getenv("TRINAXAI_CA_FILE", "").strip()
         candidates: list[Path] = [Path(configured).expanduser()] if configured else []
@@ -86,7 +96,7 @@ class TrinaxAPIClient:
         for candidate in candidates:
             if candidate.is_file():
                 context.load_verify_locations(cafile=str(candidate))
-                return context
+                return str(candidate)
 
         root = os.getenv("TRINAXAI_HOME", "").strip()
         install_root = Path(root).expanduser() if root else Path(__file__).resolve().parents[1]
@@ -96,10 +106,10 @@ class TrinaxAPIClient:
                 certificate = ssl._ssl._test_decode_cert(str(leaf))  # type: ignore[attr-defined]
                 if certificate.get("issuer") == certificate.get("subject"):
                     context.load_verify_locations(cafile=str(leaf))
-                    return context
+                    return str(leaf)
             except (OSError, ValueError, ssl.SSLError):
                 pass
-        return context
+        return True
 
     def close(self) -> None:
         try:
@@ -122,7 +132,7 @@ class TrinaxAPIClient:
         normalized = base_url.rstrip("/")
         ollama_client = self._ollama_clients.get(normalized)
         if ollama_client is None:
-            ollama_client = httpx.Client(base_url=normalized, timeout=self.timeout)
+            ollama_client = httpx.Client(base_url=normalized, verify=self.verify_tls, timeout=self.timeout)
             self._ollama_clients[normalized] = ollama_client
         return ollama_client
 
@@ -144,11 +154,11 @@ class TrinaxAPIClient:
             return None
         return urlunparse(parsed._replace(scheme="https"))
 
-    def _switch_base_url(self, base_url: str, *, verify_tls: ssl.SSLContext | None = None) -> None:
+    def _switch_base_url(self, base_url: str, *, verify_tls: bool | str | None = None) -> None:
         self.close()
         self.base_url = base_url.rstrip("/")
         if verify_tls is not None:
-            self.verify_tls = verify_tls
+            self.verify_tls = self._resolve_local_ca(verify_tls)
         self._client = httpx.Client(
             base_url=self.base_url,
             verify=self.verify_tls,
@@ -188,19 +198,24 @@ class TrinaxAPIClient:
         timeout: float | None = None,
     ) -> Any:
         """Issue a request, translating transport failures into TrinaxAPIError."""
-        try:
-            effective_timeout = timeout or self.timeout
-            r = self._client.request(method, url, json=json, timeout=effective_timeout)
-        except httpx.TimeoutException as exc:
-            raise TrinaxAPIError(
-                0, f"the RAG API at {self.base_url} timed out after {(timeout or self.timeout):g}s"
-            ) from exc
-        except httpx.TransportError as exc:
-            raise TrinaxAPIError(
-                0,
-                f"cannot reach the RAG API at {self.base_url} ({exc.__class__.__name__}); is TrinaxAI running?",
-            ) from exc
-        return self._handle(r)
+        effective_timeout = timeout or self.timeout
+        retryable_method = method.upper() in {"GET", "HEAD", "OPTIONS"}
+        for attempt in range(2 if retryable_method else 1):
+            try:
+                r = self._client.request(method, url, json=json, timeout=effective_timeout)
+                return self._handle(r)
+            except httpx.TimeoutException:
+                error = TrinaxAPIError(0, "request timed out")
+            except httpx.TransportError:
+                error = TrinaxAPIError(0, "local service unavailable")
+            except TrinaxAPIError as caught:
+                error = caught
+                if not (retryable_method and error.retryable and attempt == 0):
+                    raise
+            if retryable_method and error.retryable and attempt == 0:
+                time.sleep(0.25)
+                continue
+            raise error
 
     def _get(self, path: str, params: Iterable[tuple[str, str]] | None = None) -> Any:
         url = path + ("?" + urlencode(list(params)) if params else "")

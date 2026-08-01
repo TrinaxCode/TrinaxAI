@@ -5,6 +5,12 @@ test('configures web search without exposing provider secrets', async ({ page })
     localStorage.setItem('tc-onboarding-complete', 'true');
     localStorage.setItem('tc-lang', 'en');
   });
+  await page.route('**/api/rag/app-state', (route) => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    headers: { ETag: '"trinaxai-e2e-app-state"' },
+    body: JSON.stringify({ schema_version: 2, revision: 0, values: { 'tc-onboarding-complete': 'true', 'tc-lang': 'en' } }),
+  }));
   const publicSettings = {
     enabled: true, preferred_provider: 'duckduckgo', active_provider: 'duckduckgo', source: 'managed',
     externally_managed: { preferred_provider: false, brave_api_key: false, searxng_url: false },
@@ -19,6 +25,7 @@ test('configures web search without exposing provider secrets', async ({ page })
     json: { ok: true, provider: 'duckduckgo', result_count: 1 },
   }));
   await page.goto('/#/settings/web-search');
+  await expect(page.locator('.animate-intro-logo')).toHaveCount(0, { timeout: 10_000 });
   await expect(page.getByLabel('Preferred search engine')).toHaveValue('duckduckgo');
   await expect(page.locator('input[type="password"]')).toHaveCount(0);
   await page.getByRole('button', { name: 'Test connection' }).click();

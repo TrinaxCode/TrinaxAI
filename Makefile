@@ -6,6 +6,7 @@ VENV_PYTHON := $(shell if test -f .venv/bin/python; then echo .venv/bin/python; 
                  elif test -f .venv/Scripts/python.exe; then echo .venv/Scripts/python.exe; \
                  else echo $(PYTHON); fi)
 REQUIREMENTS_FILE := $(if $(wildcard requirements.lock),requirements.lock,requirements.txt)
+AUDIT_REQUIREMENTS := $(if $(wildcard requirements.lock),--require-hashes -r requirements.lock,-r requirements.txt)
 
 help:
 	@echo "TrinaxAI — available targets:"
@@ -44,7 +45,7 @@ dev:
 
 build:
 	$(VENV_PYTHON) -m py_compile rag_api.py config.py index.py trinaxai_cli/app.py
-	cd chat-pwa && npm run build
+	cd chat-pwa && npm run build && npm run check:bundle
 
 lint:
 	$(VENV_PYTHON) -m ruff check .
@@ -54,7 +55,10 @@ lint:
 test: test-python test-frontend
 
 test-python:
-	$(VENV_PYTHON) -m pytest -q
+	$(VENV_PYTHON) -m pytest -q \
+		--cov=app --cov=trinaxai_cli --cov=trinaxai_core \
+		--cov=service_manager --cov=index \
+		--cov-report=term --cov-fail-under=90
 
 test-frontend:
 	cd chat-pwa && npm test
@@ -75,7 +79,7 @@ audit:
 	bash -n backup.sh
 	bash -n uninstall.sh
 	cd chat-pwa && npm audit --audit-level=high
-	$(VENV_PYTHON) -m pip_audit
+	$(VENV_PYTHON) -m pip_audit $(AUDIT_REQUIREMENTS)
 
 audit-optional:
 	@echo "Optional security checks; install each tool locally before running:"

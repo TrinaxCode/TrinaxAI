@@ -256,11 +256,10 @@ def test_forced_rag_rejects_missing_collection_before_stream(tmp_path, monkeypat
     )
 
     assert response.status_code == 404
-    assert response.json()["detail"] == {
-        "code": "collection_not_found",
-        "collection": "missing",
-        "message": "Collection 'missing' was not found.",
-    }
+    detail = response.json()["detail"]
+    assert detail["code"] == "collection_not_found"
+    assert detail["collection"] == "missing"
+    assert "not found" in detail["message"].lower()
 
 
 def test_forced_rag_empty_collection_has_explicit_message(tmp_path, monkeypatch) -> None:

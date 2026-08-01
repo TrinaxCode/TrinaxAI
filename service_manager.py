@@ -455,6 +455,7 @@ PROCESS_PATTERNS = {
     "ollama": ["ollama serve", "ollama"],
     "rag_api": ["uvicorn app.main:app", "uvicorn rag_api:app", "rag_api.py", "rag_api"],
     "trinaxai-frontend": [
+        "node server.mjs",
         "vite --host",
         "vite preview",
         "vite.js preview",
@@ -529,8 +530,8 @@ def _service_env(base_dir: str) -> dict[str, str]:
 
 
 def _frontend_script(env: dict[str, str]) -> str:
-    mode = env.get("TRINAXAI_FRONTEND_MODE", "preview").strip().lower()
-    return "dev" if mode == "dev" else "preview"
+    mode = env.get("TRINAXAI_FRONTEND_MODE", "serve").strip().lower()
+    return "dev" if mode == "dev" else "serve"
 
 
 def _rag_https_files(base_dir: str) -> tuple[str, str] | None:
@@ -628,7 +629,7 @@ def _service_specs(base_dir: str) -> dict[str, dict]:
     npm = shutil.which("npm") or "npm"
     mode = _frontend_script(service_env)
 
-    if sys.platform == "win32":
+    if sys.platform == "win32" and mode == "dev":
         node = _known_windows_executable("node") or "node.exe"
         frontend_cmd = [
             node,
@@ -639,6 +640,9 @@ def _service_specs(base_dir: str) -> dict[str, dict]:
             "--port",
             "3334",
         ]
+    elif sys.platform == "win32":
+        node = _known_windows_executable("node") or "node.exe"
+        frontend_cmd = [node, os.path.abspath(os.path.join(base_dir, "chat-pwa", "server.mjs"))]
     else:
         frontend_cmd = [npm, "run", mode]
 
@@ -1053,7 +1057,7 @@ def watch(base_dir: str, interval: int = 15) -> None:
         time.sleep(max(5, interval))
 
 
-if __name__ == "__main__":
+def main(argv: list[str] | None = None) -> int:
     import argparse
 
     parser = argparse.ArgumentParser(description="TrinaxAI cross-platform service manager")
@@ -1075,7 +1079,7 @@ if __name__ == "__main__":
     parser.add_argument("--base-dir", default=str(Path(__file__).resolve().parent))
     parser.add_argument("--interval", type=int, default=15)
     parser.add_argument("--json", action="store_true", help="Emit machine-readable status output")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     if args.action == "start":
         for item in start_all(args.base_dir):
@@ -1121,7 +1125,12 @@ if __name__ == "__main__":
     elif args.action == "enable-autostart":
         item = enable_autostart(args.base_dir)
         print(f"{item.name}: {item.detail}")
-        sys.exit(0 if item.running else 1)
+        return 0 if item.running else 1
     elif args.action == "disable-autostart":
         item = disable_autostart(args.base_dir)
         print(f"{item.name}: {item.detail}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

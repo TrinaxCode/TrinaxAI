@@ -5,13 +5,47 @@ from __future__ import annotations
 import asyncio
 import math
 import re
+import threading
 import time
 import urllib.request
 
 from app.generation.spec import TaskSpec
+from trinaxai_errors import classify_error
 
 # ruff: noqa: F405
-from .shared_runtime import *  # noqa: F403
+from .shared_runtime import (
+    LOG,
+    NO_INDEX_MSG,
+    ChatRequest,
+    HTTPException,
+    QueryBundle,
+    Regime,
+    Request,
+    ResponseMode,
+    StreamingResponse,
+    _cache_get,
+    _cache_set,
+    _inference_process_lock,
+    _model_slots,
+    _read_collections_unlocked,
+    _record_usage,
+    _retriever_for_collections,
+    _run_model_task,
+    build_generation_prompt,
+    build_task_spec,
+    config,
+    enforce_rate_limit,
+    get_llm,
+    get_response_synthesizer,
+    grounded_template,
+    json,
+    os,
+    run_in_threadpool,
+    sanitize_collection_id,
+    state,
+    validate_output,
+    wants_creator_bio,
+)
 
 EMPTY_COLLECTION_MSG = "The selected collection contains no indexed documents."
 NO_RELEVANT_RESULTS_MSG = "No relevant information was found in the selected collection."
@@ -456,7 +490,12 @@ class _TextResponse:
         return self._text or ""
 
 
-def _freeform_generate(llm, prompt: str, stream: bool):
+def _freeform_generate(
+    llm,
+    prompt: str,
+    stream: bool,
+    cancel_event: threading.Event | None = None,
+):
     """Generate without RAG grounding. Returns a ``_TextResponse``.
 
     Always drives Ollama via ``stream_complete`` under the hood — even when the
@@ -468,9 +507,17 @@ def _freeform_generate(llm, prompt: str, stream: bool):
     """
 
     def _token_stream():
-        for chunk in llm.stream_complete(prompt):
-            delta = getattr(chunk, "delta", None)
-            yield delta if delta is not None else str(chunk)
+        chunks = llm.stream_complete(prompt)
+        try:
+            for chunk in chunks:
+                if cancel_event is not None and cancel_event.is_set():
+                    break
+                delta = getattr(chunk, "delta", None)
+                yield delta if delta is not None else str(chunk)
+        finally:
+            close = getattr(chunks, "close", None)
+            if close is not None:
+                close()
 
     if stream:
         return _TextResponse(gen=_token_stream())
@@ -519,6 +566,7 @@ def run_rag(
     keep_alive: str | int | None = None,
     aggressive_quant: bool | None = None,
     retrieval_mode: str = "auto",
+    cancel_event: threading.Event | None = None,
 ):
     """Clasifica la tarea, elige régimen/parametros y sintetiza.
 
@@ -577,7 +625,7 @@ def run_rag(
             llm=llm,
             text_qa_template=grounded_template(creator_requested),
             response_mode=ResponseMode.COMPACT,
-            streaming=stream,
+            streaming=stream or cancel_event is not None,
         )
         response = synth.synthesize(synth_q_full, nodes=nodes)
         _safe_record_usage("rag", spec.model, project, collections, chat, nodes)
@@ -603,7 +651,7 @@ def run_rag(
     # streaming users still get the fully tuned single-pass generation; API/CLI
     # callers (stream=False) get the extra validation+correction safety net.
     if spec.validate and spec.max_fix_passes > 0 and not stream:
-        first = _freeform_generate(llm, prompt, stream=False)
+        first = _freeform_generate(llm, prompt, stream=False, cancel_event=cancel_event)
         text = str(first)
         deliverables = _wanted_deliverables(current)
         require_responsive = "responsive" in current.lower() or spec.regime is Regime.CREATIVE
@@ -626,7 +674,12 @@ def run_rag(
                 aggressive_quant=aggressive_quant,
                 **spec.llm_kwargs(),
             )
-            fixed = _freeform_generate(fix_llm, _fix_prompt(spec.regime, current, text, result.summary()), stream=False)
+            fixed = _freeform_generate(
+                fix_llm,
+                _fix_prompt(spec.regime, current, text, result.summary()),
+                stream=False,
+                cancel_event=cancel_event,
+            )
             text = str(fixed)
             result = validate_output(
                 text,
@@ -637,7 +690,7 @@ def run_rag(
         _safe_record_usage("gen", spec.model, project, collections, chat, [])
         return _TextResponse(text=text), [], spec.model, project
 
-    response = _freeform_generate(llm, prompt, stream=stream)
+    response = _freeform_generate(llm, prompt, stream=stream, cancel_event=cancel_event)
     _safe_record_usage("gen", spec.model, project, collections, chat, [])
     return response, [], spec.model, project
 
@@ -690,8 +743,8 @@ def sources_payload(source_nodes) -> list[dict]:
     return out
 
 
-def _run_rag_nonstream(req: ChatRequest):
-    return _run_model_task(
+def _run_rag_nonstream(req: ChatRequest, cancel_event: threading.Event | None = None):
+    response, nodes, model, project = _run_model_task(
         run_rag,
         req.messages,
         stream=False,
@@ -700,7 +753,22 @@ def _run_rag_nonstream(req: ChatRequest):
         keep_alive=req.keep_alive,
         aggressive_quant=req.aggressive_quant,
         retrieval_mode=req.mode,
+        cancel_event=cancel_event,
     )
+    if cancel_event is not None and not isinstance(response, _TextResponse):
+        tokens = []
+        generator = response.response_gen
+        try:
+            for token in generator:
+                if cancel_event.is_set():
+                    break
+                tokens.append(token)
+        finally:
+            close = getattr(generator, "close", None)
+            if close is not None:
+                close()
+        response = _TextResponse(text="".join(tokens))
+    return response, nodes, model, project
 
 
 def _sse(obj: dict) -> str:
@@ -712,8 +780,16 @@ def _sse_done() -> str:
 
 
 def _sse_error(exc: Exception) -> str:
-    LOG.exception("Streaming RAG response failed")
-    return _sse({"trinaxai_error": "The model response failed. Please retry."})
+    info = classify_error(exc, status_code=503)
+    LOG.error(
+        "streaming RAG failure category=%s code=%s exception_type=%s",
+        info.category.value,
+        info.code,
+        type(exc).__name__,
+    )
+    error = info.to_client_dict()
+    error["recovery"] = f"{error['recovery']} Please retry."
+    return _sse({"trinaxai_error": error})
 
 
 def generate_stream(
@@ -899,9 +975,11 @@ async def chat(req: ChatRequest, request: Request):
     if _preview_spec.use_rag and state.fusion_retriever is None:
         content, sources, model, project = NO_INDEX_MSG, [], config.LLM_MODEL, None
     else:
-        task = asyncio.create_task(run_in_threadpool(_run_rag_nonstream, req))
+        cancel_event = threading.Event()
+        task = asyncio.create_task(run_in_threadpool(_run_rag_nonstream, req, cancel_event))
         while not task.done():
             if await request.is_disconnected():
+                cancel_event.set()
                 _cancel_ollama_model(_preview_spec.model)
                 try:
                     await asyncio.wait_for(asyncio.shield(task), timeout=5)

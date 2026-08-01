@@ -40,6 +40,7 @@ class AgentServiceHelperTests(unittest.TestCase):
             with (
                 patch.object(self.svc.config, "BASE_DIR", base),
                 patch.dict(os.environ, {"TRINAXAI_AGENT_WORKSPACE_ROOTS": os.pathsep.join((str(broad), base))}),
+                patch.object(self.svc, "_read_app_state", return_value={}),
             ):
                 self.assertEqual(self.svc._resolve_workspace(None), Path(base).resolve())
 
@@ -164,24 +165,70 @@ class AgentServiceHelperTests(unittest.TestCase):
         self.assertTrue(out["content"].endswith("…(truncated)"))
         self.assertEqual(out["path"], "a.txt")
 
-    def test_agent_tools_enable_knowledge_search_explicitly(self) -> None:
-        names = [tool.name for tool in self.svc._agent_tools(knowledge_search=True)]
-        self.assertIn("search_knowledge", names)
-        self.assertIn("read_file", names)
-
-    def test_agent_tools_disable_knowledge_search_by_default(self) -> None:
+    def test_agent_tools_expose_all_capabilities_for_model_choice(self) -> None:
         names = [tool.name for tool in self.svc._agent_tools()]
-        self.assertNotIn("search_knowledge", names)
+        self.assertTrue(
+            {
+                "read_file",
+                "web_search",
+                "deep_research",
+                "search_memory",
+                "search_knowledge",
+                "list_collections",
+            }.issubset(names)
+        )
 
-    def test_agent_tools_can_toggle_rag_and_web_independently(self) -> None:
-        local_names = [tool.name for tool in self.svc._agent_tools(knowledge_search=False)]
-        web_names = [tool.name for tool in self.svc._agent_tools(web_search=True, knowledge_search=False)]
-        self.assertNotIn("search_knowledge", local_names)
-        self.assertNotIn("web_search", local_names)
-        self.assertNotIn("search_knowledge", web_names)
-        self.assertIn("web_search", web_names)
-        deep_names = [tool.name for tool in self.svc._agent_tools(deep_research=True)]
-        self.assertIn("deep_research", deep_names)
+    def test_knowledge_search_never_exposes_absolute_host_paths(self) -> None:
+        node = MagicMock()
+        node.metadata = {"file_path": "/home/private/customer/contract.md"}
+        node.get_content.return_value = "Contract evidence"
+        retriever = MagicMock()
+        retriever.retrieve.return_value = [node]
+        with patch.object(self.svc.state, "fusion_retriever", retriever):
+            result = self.svc._search_knowledge(Path.cwd(), query="contract")
+        self.assertIn("contract.md", result)
+        self.assertNotIn("/home/private", result)
+
+    def test_agent_request_makes_optional_information_tools_available_by_default(self) -> None:
+        from app.schemas import AgentRequest
+
+        request = AgentRequest(messages=[{"role": "user", "content": "hello"}])
+        self.assertTrue(request.web_search)
+        self.assertTrue(request.knowledge_search)
+        self.assertTrue(request.deep_research)
+
+    def test_tool_flags_only_restrict_availability(self) -> None:
+        defaults = [tool.name for tool in self.svc._agent_tools()]
+        disabled = [
+            tool.name for tool in self.svc._agent_tools(web_search=False, knowledge_search=False, deep_research=False)
+        ]
+        enabled = [
+            tool.name for tool in self.svc._agent_tools(web_search=True, knowledge_search=True, deep_research=True)
+        ]
+        self.assertEqual(defaults, enabled)
+        self.assertNotIn("web_search", disabled)
+        self.assertNotIn("deep_research", disabled)
+        self.assertNotIn("search_knowledge", disabled)
+        self.assertIn("search_memory", disabled)
+
+    def test_worker_reports_explainable_recoverable_failure(self) -> None:
+        from app.schemas import AgentRequest
+
+        session_id, session = self.svc._register_session()
+        engine = MagicMock()
+        engine.run.side_effect = RuntimeError("Ollama HTTP 500")
+        request = AgentRequest(messages=[{"role": "user", "content": "inspect the project"}])
+        with TemporaryDirectory() as workspace, patch.object(self.svc, "AgentEngine", return_value=engine):
+            self.svc._run_engine_worker(session, request, Path(workspace), "test-model")
+
+        event = session["queue"].get_nowait()
+        self.assertEqual(event["type"], "error")
+        self.assertTrue(event["recoverable"])
+        self.assertIn("What happened:", event["error"])
+        self.assertIn("Why:", event["error"])
+        self.assertIn("Still works:", event["error"])
+        self.assertIsNone(session["queue"].get_nowait())
+        self.svc._drop_session(session_id)
 
 
 class AgentBrowseTests(unittest.TestCase):

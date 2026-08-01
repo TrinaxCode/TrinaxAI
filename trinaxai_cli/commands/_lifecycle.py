@@ -43,5 +43,5 @@ def run_script(script_stem: str, arguments: list[str], ui: Any) -> int:
         ui.warn(f"Interrupted; stopped {script.name} and its child processes.")
         return 130
     except (OSError, subprocess.SubprocessError) as exc:
-        ui.error(f"Could not run {script.name}: {exc}")
+        ui.failure(f"Run {script.name}", exc)
         return 1

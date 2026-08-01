@@ -42,7 +42,7 @@ def run(args: Any, client: Any, ui: Any, config: Any) -> int:
         try:
             answer = _stream_answer(client, ui, messages, engine, collections, getattr(config, "model", None))
         except Exception as exc:
-            ui.error(f"Cannot reach the local AI service: {exc}")
+            ui.failure("Local AI request", exc)
             ui.info("Start TrinaxAI with: trinaxai start")
             return 1
         session.append("assistant", answer)

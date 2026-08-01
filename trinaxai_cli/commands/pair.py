@@ -61,7 +61,7 @@ def run(args: Any, client: Any, ui: Any, _config: Any) -> int:
         ui.error(f"Unknown pair action: {action}")
         return 2
     except Exception as exc:  # noqa: BLE001 - CLI boundary renders API errors
-        ui.error(f"pair {action}: {exc}")
+        ui.failure(f"Pair {action}", exc)
         return 1
 
 

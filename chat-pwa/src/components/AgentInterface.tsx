@@ -19,7 +19,7 @@ import {
   type AgentEvent,
   type ChatMessage,
 } from '../lib/api';
-import { detectBackendVoice, transcribeAudio } from '../services/voice';
+import { detectBackendVoice, detectSpeechRecognition, transcribeAudio } from '../services/voice';
 import { startAudioRecorder, type AudioRecorder } from '../utils/audioRecorder';
 import { useAgentHistory } from '../hooks/useAgentHistory';
 import { useWaitingSound } from '../hooks/useWaitingSound';
@@ -117,13 +117,13 @@ export default function AgentInterface({ onBack, initialRequest, onRequestConsum
   const [pickerOpen, setPickerOpen] = useState(false);
   const [search, setSearch] = useState('');
   const [webSearch, setWebSearch] = useState<boolean>(() => {
-    try { return localStorage.getItem('tc-agent-web-search') === '1'; } catch { return false; }
+    try { return localStorage.getItem('tc-agent-web-search') !== '0'; } catch { return true; }
   });
   const [knowledgeSearch, setKnowledgeSearch] = useState<boolean>(() => {
-    try { return localStorage.getItem('tc-agent-knowledge-search') === '1'; } catch { return false; }
+    try { return localStorage.getItem('tc-agent-knowledge-search') !== '0'; } catch { return true; }
   });
   const [deepResearch, setDeepResearch] = useState<boolean>(() => {
-    try { return localStorage.getItem('tc-agent-deep-research') === '1'; } catch { return false; }
+    try { return localStorage.getItem('tc-agent-deep-research') !== '0'; } catch { return true; }
   });
   const [mobileToolsOpen, setMobileToolsOpen] = useState(false);
   const [modelMode, setModelMode] = useState<AgentModelMode>(() => {
@@ -167,8 +167,7 @@ export default function AgentInterface({ onBack, initialRequest, onRequestConsum
   const history = useAgentHistory();
   const sessionIdRef = useRef<string | null>(null);
 
-  const voiceSupported = typeof window !== 'undefined' &&
-    !!((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition);
+  const voiceSupported = detectSpeechRecognition();
   const dictationAvailable = voiceSupported || detectBackendVoice();
   const placeholder = isMobile ? t('agentPlaceholderShort') : t('agentPlaceholder');
 
@@ -786,7 +785,7 @@ export default function AgentInterface({ onBack, initialRequest, onRequestConsum
               {filteredSessions.length === 0 ? (
                 <p className={`px-2 py-6 text-center text-xs ${subtle}`}>{t('agentNoHistory')}</p>
               ) : (
-                filteredSessions.map((session, i) => (
+                filteredSessions.map((session) => (
                   <div
                     key={session.id}
                     className={`group flex items-center gap-1 rounded-lg px-2 py-2 text-sm ${session.id === history.activeId ? (isDark ? 'bg-white/10' : 'bg-gray-100') : isDark ? 'hover:bg-white/[0.05]' : 'hover:bg-gray-50'}`}
@@ -1020,8 +1019,8 @@ export default function AgentInterface({ onBack, initialRequest, onRequestConsum
         </div>
 
         {/* Composer */}
-        <div className={`shrink-0 border-t px-3 py-2.5 backdrop-blur-xl ${isDark ? 'border-white/[0.06] bg-black/40' : 'border-gray-200 bg-white/50'}`} style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 0.625rem)' }}>
-          <div className="mx-auto flex w-full max-w-5xl flex-col gap-2 px-2 sm:px-4">
+        <div className={`shrink-0 border-t px-2 pt-2 sm:px-4 ${isDark ? 'border-white/[0.06]' : 'border-gray-200'}`} style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 0.75rem)' }}>
+          <div className="mx-auto flex w-full max-w-5xl flex-col gap-2">
             {attachedImage && (
               <div className="relative inline-block w-max">
                 <img src={attachedImage} alt={t('agentAttachImage')} className="h-20 w-auto rounded-lg border border-white/10 object-cover" width={160} height={80} />
@@ -1049,7 +1048,7 @@ export default function AgentInterface({ onBack, initialRequest, onRequestConsum
             <input ref={imageInputRef} type="file" accept={IMAGE_FILE_ACCEPT} className="hidden" onChange={onPickImage} />
             <input ref={docInputRef} type="file" accept={DOCUMENT_FILE_ACCEPT} multiple className="hidden" onChange={onPickDocs} />
 
-            <div className="flex items-end gap-1.5 sm:gap-2">
+            <div className={`relative flex min-h-[52px] items-end gap-2 rounded-2xl border px-2 py-1 transition-[background-color,border-color,box-shadow] duration-300 focus-within:animate-border-glow sm:px-3 ${isDark ? 'border-white/[0.08] bg-white/[0.04] focus-within:border-[#006bbd]/40 focus-within:shadow-[0_0_20px_rgba(0,107,189,0.15)]' : 'border-gray-200 bg-gray-100 focus-within:border-[#006bbd]/40 focus-within:shadow-[0_0_20px_rgba(0,107,189,0.1)]'}`}>
               <motion.div
                 layout
                 transition={{ layout: { duration: 0.24, ease: [0.16, 1, 0.3, 1] } }}
@@ -1061,7 +1060,7 @@ export default function AgentInterface({ onBack, initialRequest, onRequestConsum
                   type="button"
                   onClick={() => setMobileToolsOpen((open) => !open)}
                   disabled={running}
-                  className={`flex h-[42px] w-[42px] items-center justify-center rounded-2xl transition-colors ${mobileToolsOpen || knowledgeSearch || webSearch || deepResearch ? 'bg-[#006bbd]/20 text-[#4ea3e0]' : isDark ? 'bg-white/[0.06] text-white/55' : 'bg-gray-100 text-gray-500'}`}
+                  className={`flex h-[42px] w-[42px] items-center justify-center rounded-xl transition-colors ${mobileToolsOpen || knowledgeSearch || webSearch || deepResearch ? 'bg-[#006bbd]/20 text-[#4ea3e0]' : isDark ? 'bg-white/[0.06] text-white/55' : 'bg-gray-100 text-gray-500'}`}
                   aria-label={t('agentTools')}
                   aria-expanded={mobileToolsOpen}
                 >
@@ -1105,7 +1104,7 @@ export default function AgentInterface({ onBack, initialRequest, onRequestConsum
               <button
                 onClick={() => setKnowledgeSearch((value) => !value)}
                 disabled={running}
-                className={`flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-2xl transition-colors disabled:opacity-40 ${knowledgeSearch ? 'bg-[#006bbd] text-white' : isDark ? 'bg-white/[0.06] text-white/55 hover:bg-white/[0.1] hover:text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200 hover:text-gray-700'}`}
+                className={`flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-xl transition-colors disabled:opacity-40 ${knowledgeSearch ? 'bg-[#006bbd] text-white' : isDark ? 'bg-white/[0.06] text-white/55 hover:bg-white/[0.1] hover:text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200 hover:text-gray-700'}`}
                 aria-label={knowledgeSearch ? t('agentRagOn') : t('agentRagOff')}
                 title={t('agentRag')}
                 aria-pressed={knowledgeSearch}
@@ -1116,7 +1115,7 @@ export default function AgentInterface({ onBack, initialRequest, onRequestConsum
               <button
                 onClick={() => setWebSearch((v) => !v)}
                 disabled={running}
-                className={`flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-2xl transition-colors disabled:opacity-40 ${webSearch ? 'bg-[#006bbd] text-white' : isDark ? 'bg-white/[0.06] text-white/55 hover:bg-white/[0.1] hover:text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200 hover:text-gray-700'}`}
+                className={`flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-xl transition-colors disabled:opacity-40 ${webSearch ? 'bg-[#006bbd] text-white' : isDark ? 'bg-white/[0.06] text-white/55 hover:bg-white/[0.1] hover:text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200 hover:text-gray-700'}`}
                 aria-label={webSearch ? t('agentWebSearchOn') : t('agentWebSearchOff')}
                 title={t('agentWebSearch')}
                 aria-pressed={webSearch}
@@ -1126,7 +1125,7 @@ export default function AgentInterface({ onBack, initialRequest, onRequestConsum
               <button
                 onClick={() => { setDeepResearch((value) => !value); setWebSearch(true); }}
                 disabled={running}
-                className={`flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-2xl transition-colors disabled:opacity-40 ${deepResearch ? 'bg-[#006bbd] text-white' : isDark ? 'bg-white/[0.06] text-white/55 hover:bg-white/[0.1] hover:text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200 hover:text-gray-700'}`}
+                className={`flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-xl transition-colors disabled:opacity-40 ${deepResearch ? 'bg-[#006bbd] text-white' : isDark ? 'bg-white/[0.06] text-white/55 hover:bg-white/[0.1] hover:text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200 hover:text-gray-700'}`}
                 aria-label={t('agentDeepResearch')}
                 title={t('agentDeepResearch')}
                 aria-pressed={deepResearch}
@@ -1139,7 +1138,7 @@ export default function AgentInterface({ onBack, initialRequest, onRequestConsum
                   type="button"
                   onClick={() => setAttachmentMenuOpen((open) => !open)}
                   disabled={running}
-                  className={`flex h-[42px] w-[42px] items-center justify-center rounded-2xl transition-colors disabled:opacity-40 ${isDark ? 'bg-white/[0.06] text-white/55 hover:bg-white/[0.1] hover:text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200 hover:text-gray-700'}`}
+                  className={`flex h-[42px] w-[42px] items-center justify-center rounded-xl transition-colors disabled:opacity-40 ${isDark ? 'bg-white/[0.06] text-white/55 hover:bg-white/[0.1] hover:text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200 hover:text-gray-700'}`}
                   aria-label={`${t('agentAttachImage')} / ${t('attachDocument')}`}
                   aria-expanded={attachmentMenuOpen}
                 >
@@ -1161,6 +1160,7 @@ export default function AgentInterface({ onBack, initialRequest, onRequestConsum
               </motion.div>
 
               <textarea
+                data-group-focus
                 aria-label={placeholder}
                 name="agent-prompt"
                 autoComplete="off"
@@ -1171,7 +1171,7 @@ export default function AgentInterface({ onBack, initialRequest, onRequestConsum
                 placeholder={placeholder}
                 rows={1}
                 disabled={running}
-                className={`max-h-[50dvh] min-h-[42px] min-w-[8rem] flex-1 resize-none overflow-y-auto rounded-2xl border px-3 py-2.5 text-base outline-none transition-colors sm:min-h-[52px] sm:px-4 sm:text-sm ${isDark ? 'border-white/10 bg-white/[0.04] text-white placeholder:text-white/30 focus:border-[#006bbd]/50' : 'border-gray-200 bg-white/70 text-gray-900 placeholder:text-gray-400 focus:border-[#006bbd]/50'}`}
+                className={`max-h-[50dvh] min-h-[42px] min-w-[8rem] flex-1 resize-none overflow-y-auto bg-transparent px-3 py-2 text-sm leading-6 outline-none ${isDark ? 'text-white placeholder:text-white/30' : 'text-gray-800 placeholder:text-gray-400'}`}
                 style={{ maxHeight: '50dvh' }}
               />
 
@@ -1183,7 +1183,7 @@ export default function AgentInterface({ onBack, initialRequest, onRequestConsum
                     initial={{ opacity: 0, scale: 0.72, width: 0 }} animate={{ opacity: 1, scale: 1, width: 42 }} exit={{ opacity: 0, scale: 0.72, width: 0 }}
                     transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
                     onClick={toggleDictation}
-                    className={`flex h-[42px] shrink-0 self-end items-center justify-center overflow-hidden rounded-2xl transition-colors ${listening ? 'animate-pulse bg-red-500/30 text-red-400' : isDark ? 'bg-white/[0.06] text-white/55 hover:bg-white/[0.1] hover:text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200 hover:text-gray-700'}`}
+                    className={`flex h-[42px] shrink-0 self-end items-center justify-center overflow-hidden rounded-xl transition-colors ${listening ? 'animate-pulse bg-red-500/30 text-red-400' : isDark ? 'bg-white/[0.06] text-white/55 hover:bg-white/[0.1] hover:text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200 hover:text-gray-700'}`}
                     aria-label={listening ? t('agentExitVoiceMode') : t('agentVoiceMode')}
                     title={listening ? t('agentExitVoiceMode') : t('agentVoiceMode')}
                   >
@@ -1195,7 +1195,7 @@ export default function AgentInterface({ onBack, initialRequest, onRequestConsum
               {running ? (
                 <button
                   onClick={stop}
-                  className="flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-2xl bg-red-500/90 text-white transition-colors hover:bg-red-500"
+                  className="flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-xl bg-red-500/90 text-white transition-colors hover:bg-red-500"
                   aria-label={t('agentStop')}
                 >
                   <MdStop size={20} />
@@ -1204,7 +1204,7 @@ export default function AgentInterface({ onBack, initialRequest, onRequestConsum
                 <button
                   onClick={() => void send()}
                   disabled={!input.trim() && !attachedImage && attachedDocs.length === 0}
-                  className="flex h-[42px] w-[42px] shrink-0 self-end items-center justify-center rounded-2xl border border-black/10 bg-white text-black shadow-sm transition-colors hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40"
+                  className="flex h-[42px] w-[42px] shrink-0 self-end items-center justify-center rounded-xl bg-[#006bbd] text-white transition-colors hover:bg-[#0059a0] disabled:cursor-not-allowed disabled:opacity-40"
                   aria-label={t('agentSend')}
                   title={t('agentSend')}
                 >

@@ -40,7 +40,7 @@ def run_service_action(action: str, ui: Any, *, timeout: int = 120) -> int:
         ui.error(f"Timed out while running service action: {action}")
         return 1
     except OSError as exc:
-        ui.error(f"Could not run service manager: {exc}")
+        ui.failure("Service manager", exc)
         return 1
 
     output = (proc.stdout or "").strip()

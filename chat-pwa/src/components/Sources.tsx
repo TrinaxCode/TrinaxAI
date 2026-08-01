@@ -31,6 +31,16 @@ function extractTerms(query: string): string[] {
     .slice(0, 8);
 }
 
+function safeExternalUrl(value: string | null | undefined): string | null {
+  if (!value) return null;
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:' ? value : null;
+  } catch {
+    return null;
+  }
+}
+
 function highlight(text: string, terms: string[]): React.ReactNode {
   if (terms.length === 0) return text;
   const pattern = new RegExp(`(${terms.map(escapeRegExp).join('|')})`, 'gi');
@@ -91,21 +101,23 @@ export default function Sources({ sources, model, project, query, onOpenInBrowse
 
       {open && hasSources && (
         <div id={sourcesId} className="w-full flex flex-col gap-1.5 mt-1">
-          {sources!.map((s, i) => (
-            <div
-              key={`${s.file}-${i}`}
-              className={`rounded-lg border px-2.5 py-1.5 ${isDark ? 'bg-black/40 border-white/[0.06]' : 'bg-gray-50 border-gray-200'}`}
-            >
+          {sources!.map((s, i) => {
+            const externalUrl = safeExternalUrl(s.url);
+            return (
+              <div
+                key={`${s.file}-${i}`}
+                className={`rounded-lg border px-2.5 py-1.5 ${isDark ? 'bg-black/40 border-white/[0.06]' : 'bg-gray-50 border-gray-200'}`}
+              >
               <div className="flex items-center justify-between gap-2">
-                {s.url ? (
+                {externalUrl ? (
                   <a
-                    href={s.url}
+                    href={externalUrl}
                     target="_blank"
                     rel="noopener noreferrer"
                     className={`min-w-0 truncate text-[11px] hover:underline ${isDark ? 'text-[#4ea3e0]' : 'text-[#006bbd]'}`}
-                    title={s.url}
+                    title={externalUrl}
                   >
-                    {s.title || s.url}
+                    {s.title || externalUrl}
                   </a>
                 ) : (
                   <button
@@ -124,20 +136,20 @@ export default function Sources({ sources, model, project, query, onOpenInBrowse
                   )}
                   <button
                     type="button"
-                    onClick={() => copyPath(s.url || s.file, i)}
+                    onClick={() => copyPath(externalUrl || s.file, i)}
                     className={`p-0.5 rounded ${isDark ? 'text-white/25 hover:text-white/70' : 'text-gray-300 hover:text-gray-600'}`}
                     aria-label={t('copy')}
                     title={t('copy')}
                   >
                     {copiedIdx === i ? <MdCheck size={11} /> : <MdContentCopy size={11} />}
                   </button>
-                  {s.url ? (
+                  {externalUrl ? (
                     <a
-                      href={s.url}
+                      href={externalUrl}
                       target="_blank"
                       rel="noopener noreferrer"
                       className={`p-0.5 rounded ${isDark ? 'text-white/25 hover:text-white/70' : 'text-gray-300 hover:text-gray-600'}`}
-                      aria-label={`${t('openInBrowser')}: ${s.title || s.url}`}
+                      aria-label={`${t('openInBrowser')}: ${s.title || externalUrl}`}
                       title={t('openInBrowser')}
                     >
                       <MdOpenInNew size={11} />
@@ -164,8 +176,9 @@ export default function Sources({ sources, model, project, query, onOpenInBrowse
               <pre className={`mt-1 text-[10px] whitespace-pre-wrap break-words max-h-24 overflow-y-auto font-mono ${isDark ? 'text-white/55' : 'text-gray-600'}`}>
                 {highlight(s.snippet, terms)}
               </pre>
-            </div>
-          ))}
+              </div>
+            );
+          })}
         </div>
       )}
     </div>

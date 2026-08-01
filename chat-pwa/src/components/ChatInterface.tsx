@@ -7,7 +7,7 @@ import type { ChatMessage, ChatEngine, Collection, ChatDocumentAttachment } from
 import { buildWebSearchQuery, extractDocumentText, getCollections, getIndexJob, getRelevantMemoryContext, indexableFilesFrom, nextActiveCollections, normalizeActiveCollections, prepareImageForVision, runResearch, startFolderIndex } from '../lib/api';
 import { getPreferredUserName, rememberFromMessage } from '../lib/userProfile';
 import { useStreamChat } from '../hooks/useStreamChat';
-import { detectBackendVoice, detectSpeechSynthesis, speakBackend, stopBackendSpeech, transcribeAudio } from '../services/voice';
+import { detectBackendVoice, detectSpeechRecognition, detectSpeechSynthesis, speakBackend, stopBackendSpeech, transcribeAudio } from '../services/voice';
 import { startAudioRecorder, type AudioRecorder } from '../utils/audioRecorder';
 import { audioManager } from '../services/audioManager';
 import { onSharedStateUpdated } from '../lib/sharedState';
@@ -540,8 +540,7 @@ function ChatInterface({
   const backendRecorderRef = useRef<AudioRecorder | null>(null);
   const backendRecorderRunRef = useRef(0);
   const backendTranscriptionAbortRef = useRef<AbortController | null>(null);
-  const voiceSupported = typeof window !== 'undefined' &&
-    !!((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition);
+  const voiceSupported = detectSpeechRecognition();
   const secureVoiceContext = typeof window !== 'undefined' &&
     (window.isSecureContext || ['localhost', '127.0.0.1', '::1'].includes(window.location.hostname));
 
@@ -1059,7 +1058,6 @@ function ChatInterface({
         context: webPlan?.context,
         signal: controller.signal,
       });
-      if (res.error_code === 'web_search_unavailable') throw new Error(t('webSearchUnavailable'));
       const answer = typeof res.answer === 'string' ? res.answer.trim() : '';
       if (!answer) throw new Error(t('emptyResearchResponse'));
       stopActivity();
@@ -1257,7 +1255,6 @@ function ChatInterface({
           includeLocal: false,
           signal: controller.signal,
         });
-        if (result.error_code === 'web_search_unavailable') throw new Error(t('webSearchUnavailable'));
         const answer = typeof result.answer === 'string' ? result.answer.trim() : '';
         if (!answer) throw new Error(t('emptyResearchResponse'));
         if (webSearchRequested) {
@@ -1266,7 +1263,7 @@ function ChatInterface({
             && result.web_provider
             && result.sources?.some((source) => source.kind === 'web' && source.url),
           );
-          if (!hasWebSource) throw new Error(t('webSearchNotGrounded'));
+          if (!hasWebSource && !result.degraded) throw new Error(t('webSearchNotGrounded'));
         }
         stopActivity();
         const revealed = await revealText(answer);

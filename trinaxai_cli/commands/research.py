@@ -27,5 +27,5 @@ def run(args: Any, client: Any, ui: Any, config: Any) -> int:
                 ui.info(f"  • {s.get('file')}{' p. ' + str(s.get('page')) if s.get('page') else ''}")
         return 0
     except Exception as exc:
-        ui.error(f"research: {exc}")
+        ui.failure("Research", exc)
         return 1

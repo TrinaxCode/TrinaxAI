@@ -50,7 +50,7 @@ export default function Docs({ onBack }: Props) {
   const label = (s: DocSection) => isEs ? s.labelEs : s.labelEn;
 
   return (
-    <motion.div className={`h-full min-w-0 max-w-full overflow-hidden flex flex-col ${isDark ? 'bg-black' : 'bg-white'}`} initial={{opacity:0}} animate={{opacity:1}}>
+    <motion.div className={`h-full min-w-0 max-w-full overflow-hidden flex flex-col ${isDark ? 'bg-black/70' : 'bg-white/70'}`} initial={{opacity:0}} animate={{opacity:1}}>
       {/* Header */}
       <div className={`shrink-0 flex items-center gap-3 px-4 pt-[env(safe-area-inset-top,0px)] pb-3 border-b ${isDark ? 'border-white/[0.06]' : 'border-gray-200'}`}>
         <button onClick={onBack} aria-label={t('docsBack')} className={`p-2 -ml-2 ${isDark ? 'text-white/60 hover:text-white' : 'text-gray-500 hover:text-gray-800'} active:scale-90 transition-transform`}>
@@ -77,7 +77,12 @@ export default function Docs({ onBack }: Props) {
         </div>
 
         {/* Content */}
-        <div className="docs-content flex-1 w-full max-w-full md:max-w-3xl min-w-0 overflow-y-auto overflow-x-hidden px-3 sm:px-4 py-5 sm:py-6 pb-[calc(env(safe-area-inset-bottom,0px)+24px)] space-y-8 break-words [overflow-wrap:anywhere]">
+        <div
+          className="docs-content flex-1 w-full max-w-full md:max-w-3xl min-w-0 overflow-y-auto overflow-x-hidden px-3 sm:px-4 py-5 sm:py-6 pb-[calc(env(safe-area-inset-bottom,0px)+24px)] space-y-8 break-words [overflow-wrap:anywhere]"
+          role="region"
+          tabIndex={0}
+          aria-label={isEs ? 'Contenido de documentación' : 'Documentation content'}
+        >
           {/* Mobile section picker — dropdown */}
           <div className="md:hidden mb-4">
             <select
@@ -99,8 +104,8 @@ export default function Docs({ onBack }: Props) {
               <div className={`p-5 rounded-2xl border ${sectionBg}`}>
                 <p className={`text-sm leading-relaxed ${textSub}`}>
                   {isEs
-                    ? 'TrinaxAI 1.0.0 es un asistente open-source bajo AGPL-3.0-or-later. La inferencia, RAG y datos persistidos funcionan localmente con Ollama; solo la búsqueda web opcional, las descargas y los destinos remotos que configures usan Internet.'
-                    : 'TrinaxAI 1.0.0 is an open-source assistant under AGPL-3.0-or-later. Inference, RAG, and persisted data run locally with Ollama; only optional web search, downloads, and remote targets you configure use the Internet.'}
+                    ? 'TrinaxAI 1.0.1 es un asistente open-source bajo AGPL-3.0-or-later. La inferencia, RAG y datos persistidos funcionan localmente con Ollama; solo la búsqueda web opcional, las descargas y los destinos remotos que configures usan Internet.'
+                    : 'TrinaxAI 1.0.1 is an open-source assistant under AGPL-3.0-or-later. Inference, RAG, and persisted data run locally with Ollama; only optional web search, downloads, and remote targets you configure use the Internet.'}
                 </p>
               </div>
 
@@ -412,7 +417,7 @@ VITE_TRINAXAI_VISION_MODEL=qwen3.5:4b`}</pre>
                       </tr>
                     </thead>
                     <tbody>
-                      <tr><td className="py-1.5">General</td><td className="py-1.5">{isEs ? 'Chat y preguntas cotidianas' : 'Chat and everyday questions'}</td><td className="font-mono text-[#4ea3e0]">qwen3.5:2b</td></tr>
+                      <tr><td className="py-1.5">General</td><td className="py-1.5">{isEs ? 'Chat y preguntas cotidianas' : 'Chat and everyday questions'}</td><td className="font-mono text-[#4ea3e0]">qwen3.5:4b</td></tr>
                       <tr><td className="py-1.5">Code</td><td className="py-1.5">{isEs ? 'Generación de código' : 'Code generation'}</td><td className="font-mono text-[#4ea3e0]">qwen3.5:4b</td></tr>
                       <tr><td className="py-1.5">Deep</td><td className="py-1.5">{isEs ? 'Razonamiento y tareas complejas' : 'Reasoning and complex tasks'}</td><td className="font-mono text-[#4ea3e0]">qwen3.5:4b</td></tr>
                       <tr><td className="py-1.5">Fast</td><td className="py-1.5">{isEs ? 'Preguntas muy cortas' : 'Very short prompts'}</td><td className="font-mono text-[#4ea3e0]">qwen3.5:2b</td></tr>

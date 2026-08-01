@@ -67,7 +67,7 @@ describe('SSE stream parser', () => {
 
   it('surfaces backend stream errors', () => {
     expect(parseRagSseLine('data: {"trinaxai_error":"model failed"}')).toEqual({
-      error: 'model failed',
+      error: 'Un servicio externo no está disponible.',
     });
   });
 });

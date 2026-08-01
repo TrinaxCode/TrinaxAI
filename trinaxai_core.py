@@ -7,21 +7,12 @@ import json
 import os
 import re
 import shutil
+import sys
 import time
-from collections.abc import Mapping
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
-
-SAFE_DEFAULTS = {
-    "profile": "16gb",
-    "ollama_base_url": "http://localhost:11434",
-    "default_collection_id": "default",
-    "num_ctx": 4096,
-    "embed_workers": 2,
-    "allow_lan_system": False,
-}
 
 VALID_PROFILES = frozenset(
     {
@@ -96,18 +87,29 @@ def _process_is_alive(pid: int) -> bool:
     if pid <= 0:
         return False
     if os.name == "nt":
-        import ctypes
+        if sys.platform == "win32":
+            try:
+                os.kill(pid, 0)
+            except PermissionError:
+                return True
+            except OSError:
+                pass
+        try:
+            import ctypes
 
-        process_query_limited_information = 0x1000
-        handle = ctypes.windll.kernel32.OpenProcess(  # type: ignore[attr-defined]
-            process_query_limited_information,
-            False,
-            pid,
-        )
-        if not handle:
+            process_query_limited_information = 0x1000
+            handle = ctypes.windll.kernel32.OpenProcess(  # type: ignore[attr-defined]
+                process_query_limited_information,
+                False,
+                pid,
+            )
+            if handle:
+                ctypes.windll.kernel32.CloseHandle(handle)  # type: ignore[attr-defined]
+                return True
             return False
-        ctypes.windll.kernel32.CloseHandle(handle)  # type: ignore[attr-defined]
-        return True
+        except (AttributeError, OSError):
+            pass
+    # ``os.kill(pid, 0)`` is portable and lets the OS report process state.
     try:
         os.kill(pid, 0)
     except ProcessLookupError:
@@ -117,6 +119,7 @@ def _process_is_alive(pid: int) -> bool:
     except OSError:
         return False
     return True
+    return False
 
 
 @contextmanager
@@ -196,38 +199,3 @@ def _positive_float(value: Any, fallback: float, *, minimum: float = 0.0, maximu
     if maximum is not None:
         parsed = min(maximum, parsed)
     return parsed
-
-
-def validate_runtime_config(env: Mapping[str, str]) -> dict[str, Any]:
-    profile = str(env.get("TRINAXAI_PROFILE", SAFE_DEFAULTS["profile"])).strip().lower()
-    if profile not in VALID_PROFILES:
-        profile = str(SAFE_DEFAULTS["profile"])
-
-    base_url = normalize_http_base_url(
-        env.get("OLLAMA_BASE_URL"),
-        str(SAFE_DEFAULTS["ollama_base_url"]),
-    )
-
-    allow_lan = str(env.get("TRINAXAI_ALLOW_LAN_SYSTEM", "0")).strip().lower() in {
-        "1",
-        "true",
-        "yes",
-        "on",
-    }
-
-    return {
-        "profile": profile,
-        "ollama_base_url": base_url,
-        "default_collection_id": sanitize_collection_id(
-            str(env.get("TRINAXAI_DEFAULT_COLLECTION_ID", SAFE_DEFAULTS["default_collection_id"])),
-            fallback=str(SAFE_DEFAULTS["default_collection_id"]),
-        ),
-        "num_ctx": _positive_int(env.get("TRINAXAI_NUM_CTX"), int(SAFE_DEFAULTS["num_ctx"]), minimum=512),
-        "embed_workers": _positive_int(
-            env.get("TRINAXAI_EMBED_WORKERS"),
-            int(SAFE_DEFAULTS["embed_workers"]),
-            minimum=1,
-            maximum=16,
-        ),
-        "allow_lan_system": allow_lan,
-    }

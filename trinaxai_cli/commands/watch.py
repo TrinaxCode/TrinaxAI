@@ -45,5 +45,5 @@ def run(args: Any, client: Any, ui: Any, config: Any) -> int:
         ui.error(f"Unknown action: {action}")
         return 1
     except Exception as exc:
-        ui.error(f"watch {action}: {exc}")
+        ui.failure(f"Watch {action}", exc)
         return 1

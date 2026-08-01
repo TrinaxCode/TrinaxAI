@@ -44,7 +44,7 @@ def run(args: Any, client: Any, ui: Any, config: Any) -> int:
             shutil.copy2(src, target)
             copied += 1
         except Exception as exc:
-            ui.warn(f"Skip {rel}: {exc}")
+            ui.failure(f"Import {rel}", exc)
             skipped += 1
 
     # Ensure the collection exists server-side.

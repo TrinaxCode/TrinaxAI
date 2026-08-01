@@ -119,4 +119,4 @@ trinaxai doctor --strict --json
 curl -k https://localhost:3333/health
 ```
 
-If a setting appears ignored, determine whether it is runtime or Vite build-time configuration, restart the managed services, and verify that the expected installation root supplied the `.env` file.
+If a setting appears ignored, determine whether it is gateway runtime or Vite build-time configuration, restart the managed services, and verify that the expected installation root supplied the `.env` file.

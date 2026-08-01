@@ -22,7 +22,7 @@ from trinaxai_cli.config import CLIConfig
 from trinaxai_cli.ui import get_console
 
 LOG = logging.getLogger("trinaxai_cli")
-VERSION = "1.0.0"
+VERSION = "1.0.1"
 
 
 # ----------------------------------------------------------------- argparse
@@ -228,7 +228,7 @@ def _dispatch(name: str, args: Any, client: Any, ui: Any, config: CLIConfig) -> 
     try:
         module = importlib.import_module(module_name)
     except ImportError as exc:
-        ui.error(f"command '{name}' not yet implemented (import: {exc})")
+        ui.failure(f"Command '{name}'", exc)
         return 1
     run_fn = getattr(module, "run", None)
     if run_fn is None:
@@ -242,9 +242,10 @@ def _dispatch(name: str, args: Any, client: Any, ui: Any, config: CLIConfig) -> 
     except SystemExit as exc:
         # Subcommands are allowed to SystemExit directly.
         return int(exc.code) if exc.code is not None else 0
-    except Exception as exc:  # noqa: BLE001 - top-level safety net
-        LOG.exception("command %s raised an exception", name)
-        ui.error(f"command '{name}' failed: {exc}")
+    except Exception:  # noqa: BLE001 - top-level safety net
+        if LOG.isEnabledFor(logging.DEBUG):
+            LOG.exception("command %s raised an exception", name)
+        ui.error(f"TrinaxAI could not complete '{name}'. Other commands remain available; try again or use --verbose.")
         return 1
     try:
         return int(result)
@@ -281,14 +282,14 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     # 2. Resolve effective api_url and verified TLS trust.
     api_url = args.api_url or config.api["base_url"]
-    verify_tls: bool | str = bool(config.api.get("verify_tls", True))
+    verify_tls: str | None = None
     ca_file_value = args.ca_file or os.getenv("TRINAXAI_CA_FILE", "").strip()
     if ca_file_value:
         ca_file = Path(ca_file_value).expanduser().resolve()
         if not ca_file.is_file():
             parser.error(f"CA file not found: {ca_file}")
         verify_tls = str(ca_file)
-    elif verify_tls is False:
+    elif not bool(config.api.get("verify_tls", True)):
         parser.error("api.verify_tls=false is not supported; use --ca-file or TRINAXAI_CA_FILE")
 
     # 3. Build UI console (honours --no-color, $NO_COLOR, config.ui.color).

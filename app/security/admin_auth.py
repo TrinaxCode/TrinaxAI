@@ -387,20 +387,6 @@ def authorize_scope(
     raise HTTPException(status_code=403, detail=detail)
 
 
-def authorize_local_or_admin(request: Request) -> None:
-    """Authorize sensitive pairing administration without accepting devices."""
-    client_ip = _client_host(request)
-    _validate_browser_origin(request)
-    supplied = request.headers.get("X-Admin-Token", "")
-    if supplied:
-        if _valid_admin_token(request):
-            return
-        raise HTTPException(status_code=403, detail="Invalid admin token.")
-    if _is_local_client(client_ip):
-        return
-    raise HTTPException(status_code=403, detail="Pairing administration is local or admin only.")
-
-
 def require_scope(scope: str):
     """FastAPI dependency factory for routes that lacked legacy auth calls."""
 

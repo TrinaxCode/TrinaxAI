@@ -209,12 +209,12 @@ service worker is **not** registered to avoid caching issues. To test PWA featur
 
 ```bash
 npm run build
-npm run preview   # Serves production build with service worker
+npm run serve     # Serves the production build and same-origin API gateway
 ```
 
 ### Debugging the Frontend
 - **React DevTools**: Install the browser extension for component inspection.
-- **Network tab**: All API calls go through the Vite proxy — check the Network tab for `/api/rag/*` and `/api/ollama/*`.
+- **Network tab**: All API calls go through the same-origin gateway — check `/api/rag/*` and `/api/ollama/*`.
 - **IndexedDB**: File attachments are stored in `trinaxai-chat-files` — inspect via DevTools > Application > IndexedDB.
 - **localStorage**: Chat history, settings, and shared state are in localStorage — check Application > Local Storage.
 - **Service Worker**: Use Application > Service Workers to unregister or update.

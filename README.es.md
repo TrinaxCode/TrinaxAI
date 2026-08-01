@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0--or--later-blue.svg" alt="AGPL-3.0-or-later"></a>
-  <a href="CHANGELOG.es.md"><img src="https://img.shields.io/badge/version-1.0.0-006bbd.svg" alt="Versión 1.0.0"></a>
+  <a href="CHANGELOG.es.md"><img src="https://img.shields.io/badge/version-1.0.1-006bbd.svg" alt="Versión 1.0.1"></a>
   <a href="https://github.com/TrinaxCode/TrinaxAI/pkgs/container/trinaxai"><img src="https://img.shields.io/badge/package-GHCR-2496ED.svg" alt="GitHub Container Registry"></a>
   <a href="#-inicio-rápido"><img src="https://img.shields.io/badge/powered_by-Ollama-black.svg" alt="Ollama"></a>
   <a href="#️-plataformas-compatibles"><img src="https://img.shields.io/badge/platform-Linux|macOS|Windows-lightgrey.svg" alt="Plataformas"></a>
@@ -59,7 +59,7 @@ Cada release publica la imagen de la API RAG en GitHub Container Registry. El
 gateway de la PWA y Ollama siguen ejecutándose en el host:
 
 ```bash
-docker pull ghcr.io/trinaxcode/trinaxai:1.0.0
+docker pull ghcr.io/trinaxcode/trinaxai:1.0.1
 ```
 
 Úsala con el `compose.yaml` incluido mediante `TRINAXAI_DOCKER_IMAGE`. La
@@ -139,6 +139,10 @@ para un equipo con privilegio mínimo (la CLI usa `chat,read_private` por
 defecto). El host puede revocar el acceso de inmediato. Consulta la
 [guía completa de la PWA](chat-pwa/README.es.md#emparejar-un-navegador).
 
+Si cambias de red y cambia la IP local del host, vuelve a ejecutar el instalador
+para que detecte la nueva IP y renueve el certificado HTTPS antes de abrir la PWA
+desde otro dispositivo.
+
 ---
 
 ## ¿Qué es TrinaxAI?
@@ -164,7 +168,7 @@ cámara o shell que el usuario o navegador no haya autorizado.
 
 - 🧠 **Motores duales** — chat directo con Ollama (rápido, creativo) y RAG (respuestas fundamentadas y citadas sobre tus archivos).
 - 🎯 **Pipeline de generación inteligente** — un clasificador determinista (sin LLM) lee cada turno y elige el modelo, los parámetros de decodificación y el estilo de prompt adecuados (código, razonamiento/matemáticas, creativo, RAG citado o explicación). Rápido y predecible, sin llamada extra al modelo.
-- 🤖 **Agente con herramientas** — `trinaxai agent` y la vista de Agente usan herramientas en sandbox (`read/write/edit/list/glob/grep/run_command`), se limitan a un workspace y piden confirmación para acciones peligrosas.
+- 🤖 **Orquestación de herramientas dirigida por el modelo** — el Agente de la app responde directamente o combina de forma autónoma búsqueda web, investigación profunda, memoria, búsqueda documental, colecciones y herramientas del workspace en sandbox. Los interruptores solo restringen disponibilidad; nunca fuerzan ejecución. Las acciones peligrosas siguen pidiendo aprobación.
 - 📇 **RAG propio** — indexa tus proyectos; chunking con AST para 15+ lenguajes, recuperación híbrida vector + BM25, reranker opcional, citas a `rel_path`.
 - 🔎 **Investigación profunda** — descomposición RAG multipaso (`trinaxai research` o el disparador en la app).
 - 🌍 **Búsqueda web opcional** — activa el modo Internet para resultados actuales mediante DuckDuckGo, Brave Search o SearXNG; muestra fuentes y limita la lectura de páginas públicas.
@@ -182,7 +186,7 @@ cámara o shell que el usuario o navegador no haya autorizado.
 - 🔄 **Sincronización de estado y uso** — sincronización versionada de ajustes/historial con revisiones seguras ante conflictos, borrados explícitos y estadísticas locales.
 - 🛡️ **Seguridad local-first** — servicios en loopback, emparejamiento por scopes, gateway firmado con HMAC, agente en sandbox.
 
-**Versión del proyecto:** 1.0.0 · **Licencia:** [AGPL-3.0-or-later](LICENSE)
+**Versión del proyecto:** 1.0.1 · **Licencia:** [AGPL-3.0-or-later](LICENSE)
 
 ---
 
@@ -298,9 +302,9 @@ El instalador elige un **perfil de hardware** según tu RAM. Los perfiles soport
 | **Profundo** | `qwen3.5:2b` | `qwen3.5:4b` | `qwen3.5:9b` | `qwen3.5:35b` (MoE) |
 | **Visión** | `qwen3.5:2b` | `qwen3.5:4b` | `qwen3.5:9b` | `qwen3.5:35b` (MoE) |
 | **Rápido** | `qwen3.5:2b` | `qwen3.5:2b` | `qwen3.5:2b` | `qwen3.5:4b` |
-| **Embeddings** | `qwen3-embedding:0.6b` (1024d) | `qwen3-embedding:0.6b` | `qwen3-embedding:0.6b` | `qwen3-embedding:0.6b` |
+| **Embeddings** | `qwen3-embedding:0.6b` (1024d) | `qwen3-embedding:0.6b` (1024d) | `qwen3-embedding:4b` (2560d) | `qwen3-embedding:8b` (4096d) |
 
-El **pipeline de generación** dirige cada solicitud entre los modelos general, profundo, de código y rápido del perfil; para visión usa el Qwen3-VL Instruct correspondiente. Los modelos de visión se descargan al analizar la primera imagen, así la instalación y los updates no se bloquean por un pull grande. Confirma los nombres con `ollama list` y ajusta `.env` si cambias de modelo. Mira [docs/CONFIGURATION.es.md](docs/CONFIGURATION.es.md) y [docs/ENVIRONMENT_VARIABLES.md](docs/ENVIRONMENT_VARIABLES.md).
+El **pipeline de generación** dirige cada solicitud entre los modelos general, profundo, de código y rápido del perfil. Qwen3.5 también procesa visión, evitando mantener otro modelo VL en memoria. Los modelos de visión se descargan al analizar la primera imagen, así la instalación y los updates no se bloquean por un pull grande. Confirma los nombres con `ollama list` y ajusta `.env` si cambias de modelo. Mira [docs/CONFIGURATION.es.md](docs/CONFIGURATION.es.md) y [docs/ENVIRONMENT_VARIABLES.md](docs/ENVIRONMENT_VARIABLES.md).
 
 ---
 

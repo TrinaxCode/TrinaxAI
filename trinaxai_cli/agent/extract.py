@@ -13,7 +13,10 @@ layout, styles or embedded media.
 
 from __future__ import annotations
 
+import zipfile
+from html.parser import HTMLParser
 from pathlib import Path
+from xml.etree import ElementTree
 
 # Extensions handled here rather than as raw UTF-8 text. Kept in sync with the
 # document types TrinaxAI's indexer supports.
@@ -31,6 +34,17 @@ DOCUMENT_EXTENSIONS = {
     ".rtf",
     ".epub",
 }
+_EPUB_TEXT_LIMIT = 20 * 1024 * 1024
+
+
+class _HTMLText(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__()
+        self.parts: list[str] = []
+
+    def handle_data(self, data: str) -> None:
+        if data.strip():
+            self.parts.append(data.strip())
 
 
 def is_document(path: Path) -> bool:
@@ -100,17 +114,27 @@ def _extract_rtf(path: Path) -> str:
 
 
 def _extract_epub(path: Path) -> str:
-    import ebooklib
-    from bs4 import BeautifulSoup
-    from ebooklib import epub
-
-    book = epub.read_epub(str(path))
     chunks = []
-    for item in book.get_items_of_type(ebooklib.ITEM_DOCUMENT):
-        soup = BeautifulSoup(item.get_content(), "html.parser")
-        text = soup.get_text("\n").strip()
-        if text:
-            chunks.append(text)
+    extracted_bytes = 0
+    with zipfile.ZipFile(path) as archive:
+        for info in archive.infolist():
+            if Path(info.filename).suffix.lower() not in {".html", ".htm", ".xhtml", ".xml", ".ncx"}:
+                continue
+            if info.file_size > _EPUB_TEXT_LIMIT:
+                continue
+            extracted_bytes += info.file_size
+            if extracted_bytes > _EPUB_TEXT_LIMIT:
+                raise ValueError("EPUB expanded text exceeds the safe extraction limit")
+            source = archive.read(info)
+            try:
+                root = ElementTree.fromstring(source)
+                text = "\n".join(value.strip() for value in root.itertext() if value.strip())
+            except ElementTree.ParseError:
+                parser = _HTMLText()
+                parser.feed(source.decode("utf-8", errors="replace"))
+                text = "\n".join(parser.parts)
+            if text:
+                chunks.append(f"[{info.filename}]\n{text}")
     return "\n\n".join(chunks)
 
 

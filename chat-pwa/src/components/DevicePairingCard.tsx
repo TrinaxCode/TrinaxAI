@@ -11,6 +11,7 @@ import {
   revokeCurrentPairedDevice,
   type PairedDevice,
 } from '../lib/devicePairing';
+import { isLocalHostBrowser } from '../lib/authHeaders';
 import ConfirmModal from './ConfirmModal';
 
 function pairingCodeFromLocation(): string {
@@ -70,9 +71,11 @@ export default function DevicePairingCard({ isDark }: { isDark: boolean }) {
 
   useEffect(() => {
     let active = true;
-    void getCurrentPairedDevice()
-      .then((value) => { if (active) setDevice(value); })
-      .catch(() => { if (active) setDevice(null); });
+    if (!isLocalHostBrowser()) {
+      void getCurrentPairedDevice()
+        .then((value) => { if (active) setDevice(value); })
+        .catch(() => { if (active) setDevice(null); });
+    }
     void loadManagedDevices();
     return () => { active = false; };
   }, []);

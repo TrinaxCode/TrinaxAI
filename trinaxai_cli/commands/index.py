@@ -16,6 +16,14 @@ from trinaxai_cli.processes import spawn_process_group, wait_process_group
 from trinaxai_cli.runtime import find_install_root
 
 
+def _report_failure(ui: Any, action: str, exc: BaseException) -> None:
+    reporter = getattr(ui, "failure", None)
+    if callable(reporter):
+        reporter(action, exc)
+    else:
+        ui.error(f"{action} could not be completed. Try again; other commands remain available.")
+
+
 def run(args: Any, client: Any, ui: Any, config: Any) -> int:
     folder = getattr(args, "path", None) or getattr(args, "folder", None)
     if not folder:
@@ -67,7 +75,7 @@ def run(args: Any, client: Any, ui: Any, config: Any) -> int:
                 # The files were indexed successfully. A stopped API can load
                 # them on its next start, so do not misreport the index job as
                 # failed merely because the hot reload was unavailable.
-                ui.warn(f"Indexing completed, but the live API could not reload it: {exc}")
+                _report_failure(ui, "Live index reload", exc)
                 return 0
             ui.success("Indexing completed and the live RAG index was reloaded.")
             return 0
@@ -80,5 +88,5 @@ def run(args: Any, client: Any, ui: Any, config: Any) -> int:
         ui.error("Indexing timed out; the indexer process group was stopped.")
         return 124
     except Exception as exc:
-        ui.error(f"index: {exc}")
+        _report_failure(ui, "Indexing", exc)
         return 1

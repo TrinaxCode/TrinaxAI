@@ -143,8 +143,10 @@ MODEL_FLEET = list(dict.fromkeys([MODEL_CODE, MODEL_DEEP, MODEL_GENERAL, MODEL_F
 
 # Embeddings. Qwen3 Embedding is multilingual, instruction-aware, and supports
 # 32K context while keeping the same 1024 dimensions at 0.6B.
-# Embedding preset (Phase 4.1): balanced | lite | fast.
+# Embedding preset: balanced | quality | max | lite | fast.
 # - balanced: Qwen3 Embedding 0.6B (multilingual, instruction-aware)
+# - quality:  Qwen3 Embedding 4B (higher retrieval quality for 32 GB systems)
+# - max:      Qwen3 Embedding 8B (best retrieval quality for 64 GB systems)
 # - lite:     nomic-embed-text (smaller, faster, English-leaning)
 # - fast:     all-minilm (very small, English-only, fastest)
 EMBED_PRESETS = {
@@ -153,6 +155,18 @@ EMBED_PRESETS = {
         "dims": 1024,
         "ctx": 8192,
         "label": "Balanced (Qwen3 Embedding 0.6B, multilingual)",
+    },
+    "quality": {
+        "model": "qwen3-embedding:4b",
+        "dims": 2560,
+        "ctx": 32768,
+        "label": "Quality (Qwen3 Embedding 4B, multilingual)",
+    },
+    "max": {
+        "model": "qwen3-embedding:8b",
+        "dims": 4096,
+        "ctx": 32768,
+        "label": "Max (Qwen3 Embedding 8B, multilingual)",
     },
     "lite": {
         "model": "nomic-embed-text",
@@ -167,9 +181,9 @@ EMBED_PRESETS = {
         "label": "Fast (all-minilm, smallest)",
     },
 }
-# The 0.6B preset stays practical on CPU-only laptops; larger embedding models
-# cost too much latency and resident memory beside the generation model.
-_EMBED_PRESET_DEFAULT = "balanced"
+# Keep laptops on 0.6B; profiles with enough memory use the stronger official
+# Qwen3 embedding sizes without requiring manual post-install configuration.
+_EMBED_PRESET_DEFAULT = "max" if _ULTRA_PROFILE else "quality" if _MAX_QUALITY_PROFILE else "balanced"
 _EMBED_PRESET = os.getenv("TRINAXAI_EMBED_PRESET", _EMBED_PRESET_DEFAULT).strip().lower()
 EMBED_PRESET = _EMBED_PRESET if _EMBED_PRESET in EMBED_PRESETS else "balanced"
 EMBED_MODEL = os.getenv("TRINAXAI_EMBED", EMBED_PRESETS[EMBED_PRESET]["model"])
@@ -877,17 +891,6 @@ def make_reranker():
     except (ImportError, ModuleNotFoundError, OSError) as e:  # torch/sentence-transformers not installed, etc.
         LOG.warning("Reranker disabled: %s", str(e)[:80])
         return None
-
-
-def project_of(file_path: str) -> str:
-    """First segment of the relative path = project/folder name."""
-    try:
-        rel = os.path.relpath(file_path, PROJECTS_DIRS[0])
-    except ValueError:
-        return "(unknown)"
-    rel = rel.replace("\\", "/")
-    parts = rel.split("/")
-    return parts[0] if len(parts) > 1 else "(root)"
 
 
 # ── TLS / SSL ──

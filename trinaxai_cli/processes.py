@@ -53,11 +53,13 @@ def terminate_process_group(process: subprocess.Popen, *, grace_seconds: float =
             )
         except (OSError, ValueError, subprocess.TimeoutExpired):
             process.kill()
-    else:
+    elif hasattr(os, "killpg") and hasattr(signal, "SIGTERM"):
         try:
             os.killpg(os.getpgid(process.pid), signal.SIGTERM)
         except (OSError, ProcessLookupError):
             process.terminate()
+    else:
+        process.terminate()
 
     try:
         process.wait(timeout=grace_seconds)
@@ -67,11 +69,13 @@ def terminate_process_group(process: subprocess.Popen, *, grace_seconds: float =
 
     if sys.platform == "win32":
         process.kill()
-    else:
+    elif hasattr(os, "killpg") and hasattr(signal, "SIGKILL"):
         try:
             os.killpg(os.getpgid(process.pid), signal.SIGKILL)
         except (OSError, ProcessLookupError):
             process.kill()
+    else:
+        process.kill()
     try:
         process.wait(timeout=grace_seconds)
     except subprocess.TimeoutExpired:

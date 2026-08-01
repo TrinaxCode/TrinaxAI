@@ -225,7 +225,7 @@ def run(args: Any, client: Any, ui: Any, config: Any) -> int:
     try:
         engine = _build_engine(args, ui, yolo, config)
     except Exception as exc:  # noqa: BLE001 - surface setup errors cleanly
-        ui.error(f"agent: {exc}")
+        ui.failure("Agent setup", exc)
         return 1
 
     session_name = getattr(args, "session", None) or _new_session_name()
@@ -237,7 +237,7 @@ def run(args: Any, client: Any, ui: Any, config: Any) -> int:
             try:
                 _run_task(engine, ui, messages, prompt, session)
             except Exception as exc:  # noqa: BLE001
-                ui.error(f"agent: {exc}")
+                ui.failure("Agent task", exc)
                 return 1
             return 0
 
@@ -283,7 +283,7 @@ def run(args: Any, client: Any, ui: Any, config: Any) -> int:
                 ui.warn("\ninterrupted.")
                 continue
             except Exception as exc:  # noqa: BLE001
-                ui.error(f"agent: {exc}")
+                ui.failure("Agent task", exc)
                 ui.info("Is TrinaxAI running? Start it with: trinaxai start")
                 continue
     return 0

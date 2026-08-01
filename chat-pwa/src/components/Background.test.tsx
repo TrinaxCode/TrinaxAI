@@ -26,7 +26,6 @@ describe('Background animation lifecycle', () => {
       pendingFrames.delete(id);
     });
     context = {
-      arc: vi.fn(),
       beginPath: vi.fn(),
       clearRect: vi.fn(),
       closePath: vi.fn(),
@@ -65,19 +64,5 @@ describe('Background animation lifecycle', () => {
     const { unmount } = render(<Background isDark active={false} />);
     expect(pendingFrames.size).toBe(0);
     unmount();
-  });
-
-  it('uses neutral black stars in light mode', () => {
-    const fillStyles: string[] = [];
-    Object.defineProperty(context, 'fillStyle', {
-      configurable: true,
-      get: () => fillStyles.at(-1) ?? '',
-      set: (value: string) => { fillStyles.push(value); },
-    });
-
-    render(<Background isDark={false} variant="stars" active={false} />);
-
-    expect(fillStyles.some((value) => value.startsWith('rgba(0, 0, 0,'))).toBe(true);
-    expect(fillStyles.some((value) => value.startsWith('rgba(0, 107, 189,'))).toBe(false);
   });
 });

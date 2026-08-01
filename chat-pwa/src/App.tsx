@@ -390,10 +390,7 @@ export default function App() {
       </a>
       {/* Keep the single shared canvas running behind the opaque intro so its
           first visible frame is already in motion when the splash fades out. */}
-      <Background
-        isDark={isDark}
-        variant={page === 'agent' ? 'stars' : 'waves'}
-      />
+      <Background isDark={isDark} />
 
       {/* Intro Splash */}
       <AnimatePresence>

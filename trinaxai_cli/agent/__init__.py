@@ -9,6 +9,9 @@ from trinaxai_cli.agent.tools import (
     SandboxError,
     Tool,
     build_tool_map,
+    format_tool_failure,
+    is_degraded_tool_result,
+    normalize_tool_result,
 )
 
 __all__ = [
@@ -19,4 +22,7 @@ __all__ = [
     "SandboxError",
     "Tool",
     "build_tool_map",
+    "format_tool_failure",
+    "is_degraded_tool_result",
+    "normalize_tool_result",
 ]

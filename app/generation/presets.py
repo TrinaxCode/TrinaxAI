@@ -12,8 +12,6 @@ prompt can never silently truncate the answer without us knowing.
 
 from __future__ import annotations
 
-import os
-
 import config
 from app.generation.classifier import classify, strip_attachment_context
 from app.generation.scoring import complexity_score
@@ -21,17 +19,11 @@ from app.generation.spec import Regime, TaskSpec
 
 
 def _env_int(name: str, default: int) -> int:
-    try:
-        return int(os.getenv(name, "").strip() or default)
-    except (TypeError, ValueError):
-        return default
+    return config._env_int(name, default, minimum=0)
 
 
 def _env_float(name: str, default: float) -> float:
-    try:
-        return float(os.getenv(name, "").strip() or default)
-    except (TypeError, ValueError):
-        return default
+    return config._env_float(name, default)
 
 
 # ── Base per-regime decoding table (Phase 8) ──────────────────────────────

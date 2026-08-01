@@ -44,7 +44,6 @@ if sys.platform == "win32" and hasattr(sys.stdout, "buffer"):
 
 import config
 from trinaxai_core import (
-    _positive_int,
     exclusive_process_lock,
     sanitize_collection_id,
     source_id_for_root,
@@ -100,15 +99,6 @@ def _html_to_text(value: str) -> str:
     return parser.text()
 
 
-def _env_int(name: str, default: int, *, minimum: int = 1, maximum: int | None = None) -> int:
-    """Read an int env var, clamped to [minimum, maximum]; falls back on bad input.
-
-    Thin wrapper over ``trinaxai_core._positive_int`` so parsing/clamping stays
-    consistent across config/index/core.
-    """
-    return _positive_int(os.getenv(name, default), default, minimum=minimum, maximum=maximum)
-
-
 # ==================== SETTINGS ====================
 # NO se define Settings.llm: indexar solo necesita embeddings.
 COLLECTION_ID = sanitize_collection_id(
@@ -119,9 +109,9 @@ COLLECTION_NAME = (
     os.getenv("TRINAXAI_COLLECTION_NAME", config.DEFAULT_COLLECTION_NAME).strip() or config.DEFAULT_COLLECTION_NAME
 )
 
-INDEX_BATCH_SIZE = _env_int("TRINAXAI_INDEX_BATCH_SIZE", 100, minimum=1, maximum=1000)
-INDEX_NODE_BATCH_SIZE = _env_int("TRINAXAI_INDEX_NODE_BATCH_SIZE", 32, minimum=1, maximum=256)
-INDEX_LOAD_WORKERS = _env_int(
+INDEX_BATCH_SIZE = config._env_int("TRINAXAI_INDEX_BATCH_SIZE", 100, minimum=1, maximum=1000)
+INDEX_NODE_BATCH_SIZE = config._env_int("TRINAXAI_INDEX_NODE_BATCH_SIZE", 32, minimum=1, maximum=256)
+INDEX_LOAD_WORKERS = config._env_int(
     "TRINAXAI_INDEX_LOAD_WORKERS",
     min(8, os.cpu_count() or 4),
     minimum=1,
@@ -777,13 +767,6 @@ def build_nodes(documents: list[Document]) -> list:
     return nodes
 
 
-def iter_node_batches(paths: list[str], context: SourceContext | None = None):
-    for batch_number, batch in enumerate(iter_batches(paths), start=1):
-        prepared = prepare_batch(batch, batch_number=batch_number, context=context)
-        if prepared.nodes:
-            yield prepared.nodes
-
-
 def prepare_batch(
     paths: list[str],
     *,
@@ -1164,30 +1147,6 @@ def _merge_final_state(
     return merged_state
 
 
-def persist_final_state(
-    old_state: dict,
-    new_state: dict,
-    *,
-    incremental: bool,
-    context: SourceContext | None = None,
-) -> int:
-    """Persist the manifest without clobbering entries from other collections.
-
-    The manifest is global with ``{COLLECTION_ID}:{rel}`` keys, but ``new_state``
-    only holds the active collection's files. Writing it verbatim would wipe every
-    other collection's entries and force a full re-embed of them next time. So we
-    keep foreign-collection keys untouched and only refresh the active prefix.
-    """
-    merged_state = _merge_final_state(
-        old_state,
-        new_state,
-        incremental=incremental,
-        context=context,
-    )
-    write_manifest(merged_state)
-    return len(merged_state)
-
-
 def run_incremental(
     old_state: dict,
     new_state: dict,
@@ -1384,7 +1343,7 @@ def run_index(root: str | None = None) -> int:
     if not os.path.isdir(root):
         print(f"❌ Directorio no encontrado: {root}")
         return 1
-    lock_timeout = _env_int("TRINAXAI_INDEX_LOCK_TIMEOUT", 3600, minimum=1, maximum=86400)
+    lock_timeout = config._env_int("TRINAXAI_INDEX_LOCK_TIMEOUT", 3600, minimum=1, maximum=86400)
     lock_path = os.path.join(config.PERSIST_DIR, ".indexing.lock")
     print("🔒 Esperando turno exclusivo del índice...", flush=True)
     try:

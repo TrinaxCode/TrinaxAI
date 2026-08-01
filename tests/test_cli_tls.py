@@ -1,4 +1,3 @@
-import ssl
 from pathlib import Path
 
 import certifi
@@ -18,7 +17,8 @@ def test_local_ca_file_is_used_without_disabling_verification(monkeypatch):
     client = object.__new__(TrinaxAPIClient)
     client.base_url = "https://localhost:3333"
 
-    assert isinstance(client._resolve_local_ca(True), ssl.SSLContext)
+    assert client._resolve_local_ca(True) == str(ca_file)
+    assert client._resolve_local_ca(str(ca_file)) == str(ca_file)
     with pytest.raises(ValueError, match="cannot be disabled"):
         client._resolve_local_ca(False)
 
@@ -29,4 +29,4 @@ def test_remote_urls_never_trust_the_local_ca(monkeypatch):
     client = object.__new__(TrinaxAPIClient)
     client.base_url = "https://example.test:3333"
 
-    assert isinstance(client._resolve_local_ca(True), ssl.SSLContext)
+    assert client._resolve_local_ca(True) is True

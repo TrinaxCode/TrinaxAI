@@ -18,8 +18,12 @@ from app.security.admin_auth import (
     _client_host,
     _is_lan_client,
     _is_local_client,
+    _is_trusted_proxy_peer,
+    _load_proxy_secret,
+    _validate_browser_origin,
     authorize_lan_or_scope,
     authorize_system,
+    required_scopes_for_request,
 )
 
 # ── Test helpers ──
@@ -71,6 +75,54 @@ class TestLocalhostIPv6:
 
     def test_ipv6_private(self):
         assert _is_lan_client("fd00::1") is True
+
+
+def test_admin_helper_scope_mapping_origin_and_proxy_secret(tmp_path, monkeypatch):
+    assert _is_trusted_proxy_peer("127.0.0.1") is True
+    monkeypatch.setenv("TRINAXAI_PROXY_TRUSTED_PEERS", "10.0.0.0/8,invalid")
+    assert _is_trusted_proxy_peer("10.2.3.4") is True
+    assert _is_trusted_proxy_peer("8.8.8.8") is False
+
+    monkeypatch.setenv("TRINAXAI_PROXY_SECRET_FILE", str(tmp_path / "proxy-secret"))
+    import app.security.admin_auth as auth_mod
+
+    monkeypatch.setattr(auth_mod, "_PROXY_SECRET", None)
+    generated = _load_proxy_secret()
+    assert len(generated) == 64
+    monkeypatch.setattr(auth_mod, "_PROXY_SECRET", None)
+    assert _load_proxy_secret() == generated
+    monkeypatch.setenv("TRINAXAI_PROXY_SECRET", "configured")
+    monkeypatch.setattr(auth_mod, "_PROXY_SECRET", None)
+    assert _load_proxy_secret() == b"configured"
+
+    from starlette.requests import Request
+
+    def request(path: str, method: str = "GET", headers=None):
+        return Request(
+            {
+                "type": "http",
+                "method": method,
+                "path": path,
+                "raw_path": path.encode(),
+                "query_string": b"",
+                "headers": [(key.encode(), value.encode()) for key, value in (headers or {}).items()],
+                "client": ("127.0.0.1", 1234),
+                "server": ("localhost", 3333),
+            }
+        )
+
+    assert required_scopes_for_request(request("/v1/agent/run", "POST")) == ("agent",)
+    assert required_scopes_for_request(request("/v1/watch/status")) == ("index",)
+    assert required_scopes_for_request(request("/collections")) == ("read_private",)
+    assert required_scopes_for_request(request("/collections", "POST")) == ("index",)
+    assert required_scopes_for_request(request("/v1/sources/docs/file", "DELETE")) == ("index",)
+    assert required_scopes_for_request(request("/unknown")) == ("system",)
+
+    monkeypatch.delenv("TRINAXAI_CORS_ORIGINS", raising=False)
+    _validate_browser_origin(request("/health", headers={"origin": "https://localhost:3334"}))
+    bad = request("/health", headers={"origin": "https://evil.example"})
+    with pytest.raises(HTTPException):
+        _validate_browser_origin(bad)
 
 
 class TestClientHost:
@@ -449,12 +501,13 @@ class TestSystemEndpointSafety:
     def test_shutdown_with_correct_token_allows(self, monkeypatch):
         """/system/shutdown with correct token should pass auth (even if service manager fails)."""
         import rag_api
+        from app.services import system_service
 
         monkeypatch.setattr(rag_api, "ADMIN_TOKEN", "shutdown-secret")
         monkeypatch.setattr(rag_api, "ALLOW_LAN_SYSTEM", False)
 
         # Mock _spawn_service_manager to prevent real process spawn
-        with patch.object(rag_api, "_spawn_service_manager"):
+        with patch.object(system_service, "_spawn_service_manager"):
             client = TestClient(rag_api.app, raise_server_exceptions=False)
             response = client.post(
                 "/system/shutdown",

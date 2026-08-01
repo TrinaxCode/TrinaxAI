@@ -3,7 +3,29 @@
 from __future__ import annotations
 
 # ruff: noqa: F405
-from .shared_runtime import *  # noqa: F403
+from .shared_runtime import (
+    APP_STATE_MAX_BYTES,
+    APP_STATE_PATH,
+    LOG,
+    Any,
+    AppStateRequest,
+    HTTPException,
+    JSONResponse,
+    Request,
+    Response,
+    _authorize_system,
+    _clear_index_runtime_caches,
+    _default_collection,
+    _write_collections_unlocked,
+    config,
+    json,
+    os,
+    re,
+    shutil,
+    state,
+    time,
+    uuid,
+)
 
 
 def _clear_directory_contents(path: str, *, preserve_names: frozenset[str] = frozenset()) -> list[str]:
@@ -208,17 +230,6 @@ def _write_app_state_document(document: dict[str, Any]) -> None:
             os.remove(tmp)
         except FileNotFoundError:
             pass
-
-
-def _write_app_state(values: dict[str, str]) -> None:
-    """Replace all values as one new server revision (internal operations)."""
-    current, _legacy = _read_app_state_document()
-    _write_app_state_document(
-        {
-            "revision": int(current["revision"]) + 1,
-            "values": values,
-        }
-    )
 
 
 def _app_state_etag(revision: int) -> str:

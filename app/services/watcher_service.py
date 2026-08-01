@@ -6,7 +6,29 @@ import signal
 from dataclasses import dataclass
 
 # ruff: noqa: F405
-from .shared_runtime import *  # noqa: F403
+from .shared_runtime import (
+    LOG,
+    Any,
+    HTTPException,
+    Request,
+    WatchStartRequest,
+    _authorize_system,
+    _read_collections_unlocked,
+    _WDFileSystemEventHandler,
+    build_engine,
+    config,
+    exclusive_process_lock,
+    os,
+    run_in_threadpool,
+    sanitize_collection_id,
+    shutil,
+    state,
+    subprocess,
+    sys,
+    tempfile,
+    threading,
+    time,
+)
 
 _watch_lifecycle_lock = threading.Lock()
 
@@ -67,7 +89,7 @@ def _terminate_process_tree(process, *, grace_seconds: float = 2.0) -> None:
     if process.poll() is not None:
         return
     try:
-        if os.name == "posix":
+        if os.name == "posix" and hasattr(os, "killpg") and hasattr(signal, "SIGTERM"):
             os.killpg(os.getpgid(process.pid), signal.SIGTERM)
         elif os.name == "nt":
             taskkill = os.path.join(
@@ -92,7 +114,7 @@ def _terminate_process_tree(process, *, grace_seconds: float = 2.0) -> None:
     except subprocess.TimeoutExpired:
         pass
     try:
-        if os.name == "posix":
+        if os.name == "posix" and hasattr(os, "killpg") and hasattr(signal, "SIGKILL"):
             os.killpg(os.getpgid(process.pid), signal.SIGKILL)
         elif os.name == "nt":
             taskkill = os.path.join(os.environ.get("SystemRoot", r"C:\Windows"), "System32", "taskkill.exe")
@@ -453,19 +475,6 @@ class _watch_Handler(_WDFileSystemEventHandler):
                 cancelled=cancelled,
             )
 
-    def wait_for_idle(self, timeout: float = 10.0) -> bool:
-        """Wait until no process or queued event remains (primarily for tests)."""
-        deadline = time.monotonic() + timeout
-        while time.monotonic() < deadline:
-            with self._queue_condition:
-                queued = bool(self._queued)
-            with self._active_process_lock:
-                active = self._active_process is not None
-            if not queued and not active and not self._busy_event.is_set():
-                return True
-            time.sleep(0.01)
-        return False
-
     def shutdown(self, timeout: float = 5.0) -> bool:
         """Cancel debounce, queued work and the active subprocess, then join."""
         self._stop_event.set()
@@ -568,7 +577,9 @@ def _seed_watch_mirror(source_root: str, target_root: str) -> None:
             for name in dirnames
             if not name.startswith(".")
             and not os.path.islink(os.path.join(dirpath, name))
+            and os.path.abspath(os.path.join(dirpath, name)) != local_sources
             and not os.path.abspath(os.path.join(dirpath, name)).startswith(local_sources + os.sep)
+            and os.path.abspath(os.path.join(dirpath, name)) != persist_root
             and not os.path.abspath(os.path.join(dirpath, name)).startswith(persist_root + os.sep)
         ]
         relative_dir = os.path.relpath(dirpath, source_root)

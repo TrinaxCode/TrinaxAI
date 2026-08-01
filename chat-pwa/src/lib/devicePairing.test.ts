@@ -1,7 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { DEVICE_TOKEN_STORAGE_KEY } from './authHeaders';
-import { claimDevice, getCurrentPairedDevice, revokeCurrentPairedDevice } from './devicePairing';
+import {
+  claimDevice,
+  getCurrentPairedDevice,
+  revokeCurrentPairedDevice,
+  startDeviceRevocationMonitor,
+} from './devicePairing';
 
 const device = {
   id: '0123456789abcdef01234567',
@@ -65,5 +70,15 @@ describe('device pairing client', () => {
     expect(sessionStorage.getItem(DEVICE_TOKEN_STORAGE_KEY)).toBeNull();
     expect(localStorage.getItem(DEVICE_TOKEN_STORAGE_KEY)).toBeNull();
     expect(revoked).toHaveBeenCalledOnce();
+  });
+
+  it('does not poll paired-device status from the privileged localhost host', () => {
+    localStorage.setItem(DEVICE_TOKEN_STORAGE_KEY, 'stale');
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+
+    const cleanup = startDeviceRevocationMonitor();
+    expect(fetchMock).not.toHaveBeenCalled();
+    cleanup();
   });
 });

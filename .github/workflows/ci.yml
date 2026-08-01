@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_call:
 
 # If GitHub Actions is temporarily blocked by billing, run the same commands
 # locally with: make check
@@ -43,7 +44,7 @@ jobs:
               pytest -q
               --cov=app --cov=trinaxai_cli --cov=trinaxai_core
               --cov=service_manager --cov=index
-              --cov-report=xml:coverage.xml --cov-fail-under=60
+              --cov-report=xml:coverage.xml --cov-fail-under=90
           - os: macos-latest
             pytest-command: pytest -q
           - os: windows-latest

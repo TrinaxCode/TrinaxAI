@@ -8,7 +8,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import MagicMock, patch
 
-from trinaxai_cli.agent import AgentEngine, SandboxError, build_tool_map, default_system_prompt
+from trinaxai_cli.agent import AgentEngine, SandboxError, Tool, build_tool_map, default_system_prompt
 from trinaxai_cli.agent.engine import (
     AgentCancelled,
     _code_review_evidence,
@@ -17,11 +17,10 @@ from trinaxai_cli.agent.engine import (
     _is_final_answer,
     _is_simple_root_listing,
     _parse_tool_call,
-    _requires_tool_action,
     _tool_calls_from_text,
 )
 from trinaxai_cli.agent.extract import DOCUMENT_EXTENSIONS, is_document
-from trinaxai_cli.agent.tools import _resolve_in_workspace, _run_command
+from trinaxai_cli.agent.tools import _resolve_in_workspace, _run_command, format_tool_failure
 from trinaxai_cli.app import _build_parser
 
 _MINIMAL_DOCX_DOCUMENT = (
@@ -326,14 +325,6 @@ class MeaningfulAnswerTests(unittest.TestCase):
         )
         self.assertFalse(_is_simple_root_listing([{"role": "user", "content": "Crea un archivo en la raíz"}]))
 
-    def test_creation_and_improvement_requests_require_tools(self) -> None:
-        for prompt in (
-            "Crea una página web de cumpleaños",
-            "Mejora mucho más la web para que sea increíble",
-            "Improve the website project",
-        ):
-            self.assertTrue(_requires_tool_action([{"role": "user", "content": prompt}]), prompt)
-
     def test_junk_after_tool_use_is_rejected(self) -> None:
         # After tools ran, a stray one-word fragment signals a blown context.
         for junk in ["", "  ", "\n", "el", "a", "x"]:
@@ -359,6 +350,8 @@ class AgentPromptQualityTests(unittest.TestCase):
         self.assertIn("never invent missing code, APIs, errors or requirements", prompt)
         self.assertIn("untrusted DATA", prompt)
         self.assertIn("without network access", prompt)
+        self.assertIn("Answer directly when no tool is needed", prompt)
+        self.assertIn("order multiple calls by dependency", prompt)
 
 
 class _ScriptedEngine(AgentEngine):
@@ -416,6 +409,108 @@ class EngineLoopTests(unittest.TestCase):
             self.assertEqual(len(engine.requests), 3)
             self.assertTrue(answer)
 
+
+class EngineReliabilityTests(unittest.TestCase):
+    @staticmethod
+    def _read_call(path: str) -> dict:
+        return {"content": "", "tool_calls": [{"function": {"name": "read_file", "arguments": {"path": path}}}]}
+
+    def _engine(self, root: Path, **kwargs: object) -> AgentEngine:
+        return AgentEngine(model="test", workspace_root=root, **kwargs)
+
+    def test_context_budget_clips_and_keeps_task_anchor(self) -> None:
+        with TemporaryDirectory() as tmp:
+            engine = self._engine(Path(tmp), num_ctx=2048)
+            messages = [
+                {"role": "user", "content": "original task"},
+                {"role": "tool", "content": "x" * 20_000},
+                {"role": "assistant", "content": "latest"},
+            ]
+            clipped = engine._fit_to_budget(messages)
+            self.assertEqual(clipped[0]["content"], "original task")
+            self.assertTrue(any("clipped" in str(item.get("content")) for item in clipped))
+
+    def test_unknown_and_bad_tool_calls_are_safe(self) -> None:
+        with TemporaryDirectory() as tmp:
+            engine = self._engine(Path(tmp))
+            unknown = engine._execute_call({"function": {"name": "missing", "arguments": {}}})
+            self.assertIn("could not complete", unknown)
+            bad = engine._execute_call({"function": {"name": "read_file", "arguments": {"limit": "bad"}}})
+            self.assertIn("could not complete", bad)
+
+    def test_stream_parser_emits_content_and_collects_tools(self) -> None:
+        with TemporaryDirectory() as tmp:
+            tokens: list[str] = []
+            engine = self._engine(Path(tmp), on_token=tokens.append)
+
+            class Response:
+                def __enter__(self):
+                    return self
+
+                def __exit__(self, *_args):
+                    return False
+
+                def __iter__(self):
+                    return iter(
+                        [
+                            b"not-json\n",
+                            b'{"message":{"content":"hello "}}\n',
+                            b'{"message":{"content":"world"}}\n',
+                            b'{"message":{"tool_calls":[{"function":{"name":"read_file","arguments":{"path":"a"}}}]}}\n',
+                        ]
+                    )
+
+            with patch("urllib.request.urlopen", return_value=Response()):
+                result = engine._chat_stream("http://localhost/api/chat", {"stream": True})
+            self.assertEqual(result["content"], "hello world")
+            self.assertEqual(len(result["tool_calls"]), 1)
+            self.assertEqual("".join(tokens), "hello world")
+
+    def test_stream_error_and_transport_fallback_are_safe(self) -> None:
+        with TemporaryDirectory() as tmp:
+            engine = self._engine(Path(tmp), on_token=lambda _text: None)
+
+            class Response:
+                def __enter__(self):
+                    return self
+
+                def __exit__(self, *_args):
+                    return False
+
+                def __iter__(self):
+                    return iter([b'{"error":"model loading"}\n'])
+
+            with patch("urllib.request.urlopen", return_value=Response()):
+                with self.assertRaisesRegex(RuntimeError, "model loading"):
+                    engine._chat_stream("http://localhost/api/chat", {"stream": True})
+
+            with patch("urllib.request.urlopen", side_effect=__import__("urllib.error").error.URLError("offline")):
+                with patch.object(engine, "_post", return_value={"message": {"content": "fallback"}}):
+                    result = engine._chat_stream("http://localhost/api/chat", {"stream": True})
+            self.assertEqual(result["content"], "fallback")
+
+    def test_post_retries_server_failure_and_reports_client_failure(self) -> None:
+        import urllib.error
+
+        responses = [urllib.error.HTTPError("url", 503, "busy", {}, None)]
+        responses.extend([urllib.error.HTTPError("url", 503, "busy", {}, None)])
+
+        class Response:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def read(self):
+                return b'{"ok":true}'
+
+        with patch("urllib.request.urlopen", side_effect=[*responses, Response()]), patch("time.sleep"):
+            self.assertEqual(AgentEngine._post("http://localhost/api", {}), {"ok": True})
+        with patch("urllib.request.urlopen", side_effect=urllib.error.URLError("offline")), patch("time.sleep"):
+            with self.assertRaisesRegex(RuntimeError, "cannot reach Ollama"):
+                AgentEngine._post("http://localhost/api", {})
+
     def test_final_plain_answer_ends_immediately(self) -> None:
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -424,38 +519,136 @@ class EngineLoopTests(unittest.TestCase):
             self.assertEqual(answer, "Listo, todo bien.")
             self.assertEqual(len(engine.requests), 1)
 
-    def test_creation_refusal_is_rejected_and_the_model_must_use_tools(self) -> None:
+    def test_tool_failure_explains_degradation_and_continues_locally(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "local.txt").write_text("local evidence")
+            failing = Tool(
+                name="remote_lookup",
+                description="A test-only remote lookup.",
+                parameters={"type": "object", "properties": {}},
+                handler=lambda _root, **_args: "error: provider unavailable",
+                dangerous=False,
+            )
+            engine = _ScriptedEngine(
+                root,
+                replies=[
+                    {"content": "", "tool_calls": [{"function": {"name": "remote_lookup", "arguments": {}}}]},
+                    self._read_call("local.txt"),
+                    {"content": "Usé la evidencia local disponible."},
+                ],
+                tools=(failing, build_tool_map()["read_file"]),
+            )
+
+            answer = engine.run([{"role": "user", "content": "Investiga y usa lo que esté disponible."}])
+
+            self.assertIn("What happened:", answer)
+            self.assertIn("Why:", answer)
+            self.assertIn("Still works:", answer)
+            self.assertIn("local evidence", str(engine.requests[2]))
+
+    def test_failure_formatter_never_returns_a_bare_exception(self) -> None:
+        result = format_tool_failure("web_search", "HTTP 500: token=secret-value")
+        self.assertIn("What happened:", result)
+        self.assertIn("Why:", result)
+        self.assertIn("Still works:", result)
+        self.assertNotIn("secret-value", result)
+
+    def test_unknown_tool_degrades_without_breaking_history(self) -> None:
+        with TemporaryDirectory() as tmp:
+            engine = _ScriptedEngine(
+                Path(tmp),
+                replies=[
+                    {"content": "", "tool_calls": [{"function": {"name": "missing_tool", "arguments": {}}}]},
+                    {"content": "Continúo con las capacidades disponibles."},
+                ],
+            )
+
+            answer = engine.run([{"role": "user", "content": "Usa las herramientas disponibles."}])
+
+            self.assertIn("What happened:", answer)
+            self.assertIn("Still works:", answer)
+
+    def test_external_failure_formatter_classifies_provider_reasons(self) -> None:
+        cases = {
+            "network is unreachable": "no_internet",
+            "Temporary failure in name resolution": "dns_failure",
+            "request timed out": "timeout",
+            "HTTP 429 Too Many Requests": "rate_limit",
+            "HTTP 401 Unauthorized": "authentication_failure",
+            "HTTP 503 Service Unavailable": "api_unavailable",
+            "connection refused": "provider_offline",
+        }
+        for detail, reason in cases.items():
+            with self.subTest(detail=detail):
+                result = format_tool_failure("web_search", detail, external=True)
+                self.assertIn(f"reason={reason}", result)
+                self.assertIn("continue with local/model knowledge", result)
+                self.assertIn("do not invent or cite external results", result)
+
+    def test_external_tool_results_are_marked_as_external_data(self) -> None:
+        with TemporaryDirectory() as tmp:
+            remote = Tool(
+                name="remote_lookup",
+                description="test external tool",
+                parameters={"type": "object", "properties": {}},
+                handler=lambda _root, **_args: "[tool_status=success; source=external] live result",
+                dangerous=False,
+                external=True,
+            )
+            engine = _ScriptedEngine(
+                Path(tmp),
+                replies=[
+                    {"content": "", "tool_calls": [{"function": {"name": "remote_lookup", "arguments": {}}}]},
+                    {"content": "Done."},
+                ],
+                tools=(remote,),
+            )
+            engine.run([{"role": "user", "content": "Use the external lookup."}])
+            # The scripted engine receives the tool turn on its next request.
+            self.assertIn('source="external"', engine.requests[1][-1]["content"])
+
+    def test_model_can_answer_directly_without_a_forced_tool_retry(self) -> None:
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
             engine = _ScriptedEngine(
                 root,
                 replies=[
-                    {"content": "Lo siento, no puedo crear una página web."},
-                    {
-                        "content": "",
-                        "tool_calls": [
-                            {
-                                "function": {
-                                    "name": "write_file",
-                                    "arguments": {
-                                        "path": "index.html",
-                                        "content": "<h1>Feliz cumpleaños</h1>",
-                                    },
-                                }
-                            }
-                        ],
-                    },
-                    {"content": "Creé y mejoré la página de cumpleaños."},
+                    {"content": "Primero define alcance, contenido, diseño y criterios de aceptación."},
                 ],
             )
 
-            answer = engine.run([{"role": "user", "content": "Crea una página web de cumpleaños"}])
+            answer = engine.run([{"role": "user", "content": "Create a project plan for a birthday website."}])
 
-            self.assertTrue((root / "index.html").exists())
-            self.assertIn("Creé", answer)
-            self.assertTrue(
-                any("You do have file and shell tools" in str(m.get("content", "")) for m in engine.requests[1])
+            self.assertIn("alcance", answer)
+            self.assertEqual(len(engine.requests), 1)
+
+    def test_multiple_model_selected_tools_are_merged_before_the_answer(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "a.txt").write_text("alpha")
+            (root / "b.txt").write_text("beta")
+            engine = _ScriptedEngine(
+                root,
+                replies=[
+                    {
+                        "content": "",
+                        "tool_calls": [
+                            {"function": {"name": "read_file", "arguments": {"path": "a.txt"}}},
+                            {"function": {"name": "read_file", "arguments": {"path": "b.txt"}}},
+                        ],
+                    },
+                    {"content": "Combined: alpha and beta."},
+                ],
             )
+
+            answer = engine.run([{"role": "user", "content": "Compare both files."}])
+
+            self.assertEqual(answer, "Combined: alpha and beta.")
+            tool_results = [message["content"] for message in engine.requests[1] if message.get("role") == "tool"]
+            self.assertEqual(len(tool_results), 2)
+            self.assertIn("alpha", tool_results[0])
+            self.assertIn("beta", tool_results[1])
 
     def test_standalone_file_creation_finishes_without_a_summary_inference(self) -> None:
         with TemporaryDirectory() as tmp:

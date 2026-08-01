@@ -358,12 +358,6 @@ export default function Settings({ onBack, onOpenDocs, initialSection = 'general
   const getModel = (key: keyof typeof DEFAULT_MODEL_SETTINGS) => modelSetting(key, DEFAULT_MODEL_SETTINGS[key]);
   const getKeepAlive = () => localStorage.getItem('tc-keep-alive') || OLLAMA_KEEP_ALIVE_DEFAULT;
   const progress = Math.max(uploadProgress, indexJob?.progress ?? 0);
-  const formatEta = (seconds: number | null | undefined) => {
-    if (!seconds) return t('indexEtaCalculating');
-    const min = Math.floor(seconds / 60);
-    const sec = seconds % 60;
-    return min > 0 ? `${min}m ${sec}s` : `${sec}s`;
-  };
   const phaseLabel = (phase: string | undefined) => t(({
     saving: 'indexPhaseSaving',
     queued: 'indexPhaseQueued',
@@ -396,7 +390,7 @@ export default function Settings({ onBack, onOpenDocs, initialSection = 'general
   const borderFocus = 'focus:border-[#006bbd]/40';
   const sectionBg = isDark ? 'bg-white/[0.03] border-white/[0.06]' : 'bg-gray-50 border-gray-200';
 
-  return (<motion.div className={`h-full flex flex-col min-w-0 max-w-full overflow-x-hidden ${isDark ? 'bg-black' : 'bg-white'}`} initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}}>
+  return (<motion.div className={`h-full flex flex-col min-w-0 max-w-full overflow-x-hidden ${isDark ? 'bg-black/70' : 'bg-white/70'}`} initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}}>
     <div className={`shrink-0 flex items-center gap-3 px-4 pt-[env(safe-area-inset-top,0px)] pb-3 border-b ${isDark ? 'border-white/[0.06]' : 'border-gray-200'}`}>
       <button onClick={onBack} aria-label={t('back')} className={`p-2 -ml-2 ${isDark ? 'text-white/60 hover:text-white' : 'text-gray-500 hover:text-gray-800'}`}><MdArrowBack size={20}/></button>
       <span className={`text-sm font-medium ${textLabel}`}>{t('settingsTitle')}</span>
@@ -615,6 +609,8 @@ export default function Settings({ onBack, onOpenDocs, initialSection = 'general
                     className={`min-w-0 flex-1 text-[11px] font-mono bg-transparent outline-none border-b border-transparent hover:border-[#006bbd]/30 focus:border-[#006bbd] px-1 py-0.5 transition-colors max-w-full ${isDark ? 'text-white/70' : 'text-gray-700'}`}
                   >
                     <option value="qwen3-embedding:0.6b">qwen3-embedding:0.6b · 1024d</option>
+                    <option value="qwen3-embedding:4b">qwen3-embedding:4b · 2560d</option>
+                    <option value="qwen3-embedding:8b">qwen3-embedding:8b · 4096d</option>
                     <option value="bge-m3">bge-m3 · 1024d · {t('modelEmbeddingBge')}</option>
                     <option value="nomic-embed-text">nomic-embed-text · 768d · {t('modelEmbeddingNomic')}</option>
                     <option value="all-minilm">all-minilm · 384d · {t('modelEmbeddingMini')}</option>

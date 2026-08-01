@@ -1,8 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import {
+  ApiError,
   generateTitle,
   analyticalQualityIssues,
+  apiErrorFromPayload,
+  ApiError,
   agentWorkspaceRoot,
   buildWebSearchQuery,
   compactChatContext,
@@ -33,6 +36,36 @@ import {
 } from './api';
 
 describe('api helpers', () => {
+  it('normalizes every backend error without exposing server detail', () => {
+    const error = apiErrorFromPayload(503, {
+      error: {
+        category: 'model_loading_failed',
+        code: 'ERR_MODEL_LOADING_FAILED',
+        message: 'hidden server detail',
+        recovery: 'Use a smaller model.',
+        retryable: true,
+      },
+      request_id: 'request-123',
+    });
+
+    expect(error).toBeInstanceOf(ApiError);
+    expect(error.category).toBe('model_loading_failed');
+    expect(error.errorCode).toBe('ERR_MODEL_LOADING_FAILED');
+    expect(error.retryable).toBe(true);
+    expect(error.message).not.toContain('hidden server detail');
+  });
+
+  it('keeps technical API details out of user-facing error messages', () => {
+    const log = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const error = new ApiError('RuntimeError: password=secret at /home/service.py:42', 500);
+
+    expect(error.message).toContain('TrinaxAI no pudo completar la solicitud');
+    expect(error.message).not.toMatch(/RuntimeError|password|\/home\//);
+    expect(error.technicalMessage).toContain('RuntimeError');
+    expect(log).toHaveBeenCalled();
+    log.mockRestore();
+  });
+
   it('does not keep a broad Documents folder as the agent workspace', () => {
     localStorage.setItem('tc-agent-workspace', '~/Documents');
     expect(agentWorkspaceRoot()).toBe('');
@@ -65,15 +98,16 @@ describe('api helpers', () => {
     expect(plan.searchQuery).not.toMatch(/^Busca/);
   });
 
-  it('surfaces the backend reason when Search Mode fails', async () => {
+  it('returns a labeled local fallback when live Search Mode fails', async () => {
     vi.stubGlobal('fetch', vi.fn()
       .mockResolvedValueOnce(new Response(JSON.stringify({ ok: true, model: 'granite4:3b' }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({
-        answer: '', sources: [], sub_questions: [], passes: 0, model: 'granite4:3b',
+        answer: 'The external provider did not respond. General model knowledge (not live-web verified): fallback.',
+        sources: [], sub_questions: [], passes: 0, model: 'granite4:3b', degraded: true,
         error_code: 'web_search_unavailable', error_detail: 'El proveedor de búsqueda rechazó la solicitud.',
       }), { status: 200 })));
     try {
-      await expect(runResearch('consulta')).rejects.toThrow('El proveedor de búsqueda rechazó la solicitud.');
+      await expect(runResearch('consulta')).resolves.toMatchObject({ degraded: true, sources: [] });
     } finally {
       vi.unstubAllGlobals();
     }
@@ -214,6 +248,13 @@ describe('api helpers', () => {
     expect(MODEL_PRESETS.balanced['tc-models-vision']).toBe('qwen3.5:4b');
     expect(MODEL_PRESETS.max['tc-models-vision']).toBe('qwen3.5:9b');
     expect(MODEL_PRESETS.ultra['tc-models-vision']).toBe('qwen3.5:35b');
+  });
+
+  it('scales embedding quality only on memory-rich profiles', () => {
+    expect(MODEL_PRESETS.low['tc-models-embed']).toBe('qwen3-embedding:0.6b');
+    expect(MODEL_PRESETS.balanced['tc-models-embed']).toBe('qwen3-embedding:0.6b');
+    expect(MODEL_PRESETS.max['tc-models-embed']).toBe('qwen3-embedding:4b');
+    expect(MODEL_PRESETS.ultra['tc-models-embed']).toBe('qwen3-embedding:8b');
   });
 
   it('removes only previously managed profile models before pulling the new profile', async () => {
@@ -474,12 +515,12 @@ def mystery(A):
     }
   });
 
-  it('closes RAG streaming with the server error instead of a partial success', async () => {
+  it('closes RAG streaming with a safe error instead of a partial success', async () => {
     const frames = ['data: {"choices":[{"delta":{"content":"partial"}}]}', 'data: {"trinaxai_error":"embedding failed"}', ''].join('\n');
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(frames, { status: 200 })));
     try {
       await expect(streamRag([{ role: 'user', content: 'consulta' }], () => undefined))
-        .rejects.toThrow('embedding failed');
+        .rejects.toThrow('Un servicio externo no está disponible.');
     } finally { vi.unstubAllGlobals(); }
   });
 });

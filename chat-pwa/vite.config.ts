@@ -7,17 +7,18 @@ import fs from 'node:fs';
 import http from 'node:http';
 import https from 'node:https';
 import net from 'node:net';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
   isAllowedOllamaProxyRequest,
   isAuthorizedScopedProxyPeer,
-  isAuthorizedSystemProxyPeer,
   deviceTokenHasScope,
   isLoopbackAddress,
   isPrivateLanAddress,
   normalizeAddress,
+  requiredOllamaProxyScope,
 } from './vite-security';
 import { acquireInferenceProcessLock } from './inference-lock';
 import { PWA_SECURITY_HEADERS } from './security-headers';
@@ -28,7 +29,33 @@ const certKey = path.join(__dirname, 'certs', 'localhost-key.pem');
 const certFile = path.join(__dirname, 'certs', 'localhost.pem');
 const certPfx = path.join(__dirname, 'certs', 'trinaxai-local.pfx');
 const pfxPassphrase = process.env.TRINAXAI_CERT_PASSPHRASE || 'trinaxai-local';
-const localCa = fs.existsSync(certFile) ? fs.readFileSync(certFile) : undefined;
+const localCaCandidates = [
+  process.env.TRINAXAI_LOCAL_CA_FILE,
+  path.join(__dirname, 'certs', 'rootCA.pem'),
+  process.platform === 'win32'
+    ? path.join(process.env.LOCALAPPDATA || '', 'mkcert', 'rootCA.pem')
+    : process.platform === 'darwin'
+      ? path.join(os.homedir(), 'Library', 'Application Support', 'mkcert', 'rootCA.pem')
+      : path.join(os.homedir(), '.local', 'share', 'mkcert', 'rootCA.pem'),
+].filter(Boolean);
+function readLocalCertificate(file: string): Buffer | undefined {
+  let descriptor: number | undefined;
+  try {
+    descriptor = fs.openSync(file, 'r');
+    const stat = fs.fstatSync(descriptor);
+    if (!stat.isFile() || stat.size > 16 * 1024 * 1024) return undefined;
+    return fs.readFileSync(descriptor);
+  } catch {
+    return undefined;
+  } finally {
+    if (descriptor !== undefined) fs.closeSync(descriptor);
+  }
+}
+
+const localCa = localCaCandidates.reduce<Buffer | undefined>((loaded, candidate) => {
+  if (loaded) return loaded;
+  return readLocalCertificate(candidate);
+}, undefined) || readLocalCertificate(certFile);
 const httpsConfig = process.env.CI === 'true'
   ? undefined
   : fs.existsSync(certPfx)
@@ -215,7 +242,7 @@ function installProxyBoundary(server: any): void {
     const suppliedToken = String(req.headers['x-admin-token'] || '');
     const deviceToken = String(req.headers['x-trinaxai-device-token'] || '');
     const adminToken = process.env.TRINAXAI_ADMIN_TOKEN || '';
-    const requiredScope = pathname === '/api/ollama/api/pull' ? 'system' : 'chat';
+    const requiredScope = requiredOllamaProxyScope(pathname);
     const authorized = (requiredScope === 'chat' && isPrivateLanAddress(peer)) || isAuthorizedScopedProxyPeer(
       peer,
       suppliedToken,
@@ -349,7 +376,6 @@ function proxyConfig() {
 
 function installSystemControl(server: any): void {
   const ragTarget = env('TRINAXAI_RAG_TARGET', env('VITE_TRINAXAI_RAG_TARGET', 'http://127.0.0.1:3333'));
-  const allowLanSystem = ['1', 'true', 'yes', 'on'].includes((process.env.TRINAXAI_ALLOW_LAN_SYSTEM || '').toLowerCase());
   server.middlewares.use('/api/system', async (req: any, res: any) => {
     if (req.method !== 'POST') { res.statusCode = 405; res.end(); return; }
     const token = req.headers['x-admin-token'] as string | undefined;
@@ -372,17 +398,11 @@ function installSystemControl(server: any): void {
       deviceToken,
       pairedDeviceGrants(deviceToken, 'system'),
     );
-    const legacyLanAuthorized = !token && !deviceToken && isAuthorizedSystemProxyPeer(
-      peer,
-      '',
-      adminToken || '',
-      allowLanSystem,
-    );
-    const authorized = trustedBrowserOrigin && (scopedAuthorized || legacyLanAuthorized);
+    const authorized = trustedBrowserOrigin && scopedAuthorized;
     if (!authorized) {
       res.statusCode = 403;
       res.setHeader('Content-Type', 'application/json');
-      res.end(JSON.stringify({ ok: false, error: 'Operación no autorizada. Activa LAN system control o usa X-Admin-Token.' }));
+      res.end(JSON.stringify({ ok: false, error: 'Operación no autorizada. Usa un dispositivo vinculado o X-Admin-Token.' }));
       return;
     }
     const url = new URL(req.url || '/', 'http://localhost');

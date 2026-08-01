@@ -3,7 +3,24 @@
 from __future__ import annotations
 
 # ruff: noqa: F405
-from .shared_runtime import *  # noqa: F403
+from .shared_runtime import (
+    DOC_EXTRACT_MAX_BYTES,
+    DOC_EXTRACT_MAX_CHARS,
+    LOG,
+    BytesIO,
+    File,
+    HTTPException,
+    Request,
+    UploadFile,
+    _document_slots,
+    config,
+    enforce_rate_limit,
+    os,
+    run_in_threadpool,
+    shutil,
+    subprocess,
+    tempfile,
+)
 
 
 def _decode_text_bytes(data: bytes) -> str:
@@ -254,27 +271,26 @@ async def document_extract(request: Request, file: UploadFile = File(...)):
     name = file.filename or "document"
     data = bytearray()
     total_bytes = 0
-    while True:
-        chunk = await file.read(1024 * 1024)
-        if not chunk:
-            break
-        total_bytes += len(chunk)
-        if total_bytes > DOC_EXTRACT_MAX_BYTES:
-            await file.close()
-            raise HTTPException(
-                status_code=413,
-                detail=(f"Document is too large for temporary extraction. Limit: {DOC_EXTRACT_MAX_BYTES} bytes."),
-            )
-        data.extend(chunk)
-    await file.close()
+    await run_in_threadpool(_document_slots.acquire)
+    try:
+        while True:
+            chunk = await file.read(1024 * 1024)
+            if not chunk:
+                break
+            total_bytes += len(chunk)
+            if total_bytes > DOC_EXTRACT_MAX_BYTES:
+                raise HTTPException(
+                    status_code=413,
+                    detail=(f"Document is too large for temporary extraction. Limit: {DOC_EXTRACT_MAX_BYTES} bytes."),
+                )
+            data.extend(chunk)
+        if data:
+            text = await run_in_threadpool(_extract_document_text, name, data)
+    finally:
+        _document_slots.release()
+        await file.close()
     if not data:
         raise HTTPException(status_code=400, detail="Empty file.")
-
-    def extract_with_slot():
-        with _document_slots:
-            return _extract_document_text(name, data)
-
-    text = await run_in_threadpool(extract_with_slot)
     if not text.strip():
         raise HTTPException(status_code=422, detail="No readable text found in this document.")
     truncated = len(text) > DOC_EXTRACT_MAX_CHARS

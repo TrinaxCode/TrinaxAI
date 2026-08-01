@@ -27,7 +27,7 @@ Al terminar deberias tener:
 | RAM | 8 GB | 16 GB o mas |
 | Disco libre | 5 GB | 10-25 GB |
 | Python | 3.10 | 3.12 |
-| Node.js | 18 | 20 LTS |
+| Node.js | 22 | 24 LTS |
 | Homebrew | Recomendado | Si |
 | Ollama | Si | Ultima version |
 

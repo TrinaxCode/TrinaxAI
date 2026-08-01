@@ -38,12 +38,25 @@ grants only `chat` and `read_private`; grant elevated scopes only when needed.
 | `GET /v1/sources/*`, `/v1/memory/*`, `GET /v1/stats` | `read_private` | Private indexed and user data. |
 | `DELETE /v1/sources/*`, `/v1/watch/*`, collection mutations | `index` | Index content and watcher administration. |
 | `POST /v1/usage` | `chat` | Local usage accounting. |
-| `GET /health`, `GET /resources` | Public | Service health and RAM data. |
+| `GET /health`, `GET /ready`, `GET /resources` | Public | Liveness, model-provider readiness, and RAM data. |
 | `GET/PUT/DELETE /app-state` | `read_private` | Versioned shared PWA state and factory reset. |
 | `POST /attachments`, `GET/DELETE /attachments/{attachment_id}` | `read_private` + rate limited | Store, retrieve, or delete host-backed chat attachments. |
 | `GET /collections` / mutations | `read_private` / `index` | Collection metadata and administration. |
 | `/system/index*` / other `/system/*` | `index` / `system` | Indexing versus lifecycle/reload/self-test. |
 | `/v1/pairing/*` | Mixed | One-time device pairing and revocation. |
+
+## Error contract
+
+Every API error returns a safe `error` object (and the same fields in `detail`):
+`category`, internal `code`, user-facing `message`, `recovery`, and `retryable`.
+Categories are `internet_unavailable`, `external_service_unavailable`,
+`ai_model_unavailable`, `model_loading_failed`, `tool_timeout`,
+`permission_denied`, `authentication_failed`, `resource_exhausted`,
+`memory_limit_reached`, `gpu_unavailable`, `file_not_found`,
+`document_unreadable`, `invalid_input`, `unsupported_format`,
+`network_timeout`, `internal_server_error`, and `unknown_error`. Raw exception
+details stay in server-side developer logs; `request_id` is returned for support.
+Safe idempotent browser/CLI reads retry once when `retryable` is true.
 
 ## Device pairing
 
@@ -138,6 +151,10 @@ not a complete archival copy.
 `POST /v1/research/preflight` accepts the same request shape and checks Ollama,
 the selected model, local collections, and web-provider readiness without
 running the full research task.
+
+If a web provider is unavailable, the research response is degraded rather than
+an empty error: it explains the classified reason, returns no fabricated web
+sources, and labels any fallback answer as general local-model knowledge.
 
 ## Sources and collections
 
@@ -237,6 +254,11 @@ attachment reference, not a second persistent copy of the full extracted text.
 
 `POST /v1/agent` streams tool-use events over SSE; dangerous calls pause at an
 `approval_request` until `POST /v1/agent/approve` accepts or denies it.
+The model decides whether to answer directly or call one or more tools, orders
+dependent calls, and synthesizes their results. Web search, deep research,
+memory, indexed-document search, and collection discovery are available by
+default. The `web_search`, `deep_research`, and `knowledge_search` request
+booleans can restrict availability; setting one never forces its execution.
 `POST /v1/agent/cancel` stops a running session owned by the same identity. Approvals
 must include both the `session_id` from the stream's `start` event and
 the `approval_id`, and must use the same authenticated identity that opened the stream.
@@ -270,6 +292,7 @@ TTS returns audio bytes with the detected content type. STT/TTS return `501` if 
 | `POST /system/reload` | Reload the persisted index in memory. |
 | `POST /system/self-test` | Check Ollama, embeddings, and RAG/index state. |
 | `GET /health` | Models, profile, collections, index state, and feature flags. |
+| `GET /ready` | Same status payload; returns `503` until Ollama responds. |
 | `GET /resources` | RAM values in bytes; VRAM is currently `null`. |
 
 FastAPI errors use `{"detail":"message"}`. Common statuses are `400`, `403`, `404`, `409`, `413`, `422`, `429`, `500`, `501`, and `503`. See [configuration](CONFIGURATION.md) for limits and network settings.

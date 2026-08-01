@@ -1,6 +1,6 @@
 # PWA de Chat de TrinaxAI
 
-Frontend 1.0.0 de TrinaxAI construido con React 19, TypeScript y Vite 6, bajo licencia AGPL-3.0-or-later. Incluye chat directo con Ollama, RAG con citas, búsqueda web opcional, investigación profunda, agente con herramientas, visión, documentos, voz local, memoria y una PWA instalable.
+Frontend 1.0.1 de TrinaxAI construido con React 19, TypeScript y Vite 6, bajo licencia AGPL-3.0-or-later. Incluye chat directo con Ollama, RAG con citas, búsqueda web opcional, investigación profunda, agente con herramientas, visión, documentos, voz local, memoria y una PWA instalable.
 
 [English](README.md) · [Índice de documentación](../docs/README.es.md) · [Referencia de API](../docs/API_REFERENCE.es.md)
 
@@ -8,16 +8,16 @@ Frontend 1.0.0 de TrinaxAI construido con React 19, TypeScript y Vite 6, bajo li
 
 ```text
 Navegador / PWA instalada :3334
-  ├── /api/rag/*    ── proxy de Vite ──> FastAPI :3333
-  ├── /api/ollama/* ── proxy de Vite ──> Ollama  :11434
-  └── /api/system/* ── middleware local ──> service_manager.py
+  ├── /api/rag/*    ── gateway de producción ──> FastAPI :3333
+  ├── /api/ollama/* ── gateway de producción ──> Ollama  :11434
+  └── /api/system/* ── gateway de producción ──> service_manager.py
 ```
 
 El navegador usa rutas `/api/*` del mismo origen. FastAPI atiende RAG, colecciones, memoria, indexación, extracción, voz de respaldo y estado compartido; el chat directo y la visión llegan a Ollama mediante el proxy.
 
 ## Desarrollo rápido
 
-Necesitas Node.js 18 o superior y npm; se recomienda una versión LTS activa. Ollama aporta la inferencia y el backend Python las funciones RAG.
+Necesitas Node.js 22 o superior y npm; se recomienda una versión LTS activa. Ollama aporta la inferencia y el backend Python las funciones RAG.
 
 ```bash
 cd chat-pwa
@@ -29,7 +29,8 @@ npm run dev
 |---|---|
 | `npm run dev` | Servidor Vite con HMR en `0.0.0.0:3334`. |
 | `npm run build` | Verificación TypeScript y build en `dist/`. |
-| `npm run preview` | Sirve `dist/` con proxies y middleware de sistema. |
+| `npm run serve` | Sirve `dist/` con el gateway Node de producción. |
+| `npm run preview` | Alias de compatibilidad de `npm run serve`. |
 | `npm test` | Ejecuta Vitest una vez. |
 | `npx tsc --noEmit` | Verifica tipos sin construir. |
 
@@ -131,14 +132,15 @@ Al adjuntar un archivo, la PWA intenta guardarlo primero en FastAPI para que una
 
 ## Configuración, HTTPS y seguridad
 
-Consulta la [referencia completa de configuración](../docs/CONFIGURATION.es.md). Las variables `VITE_TRINAXAI_*` se fijan al construir; los destinos `TRINAXAI_RAG_TARGET` y `TRINAXAI_OLLAMA_TARGET` se leen al ejecutar Vite.
+Consulta la [referencia completa de configuración](../docs/CONFIGURATION.es.md). Las variables `VITE_TRINAXAI_*` se fijan al construir; los destinos `TRINAXAI_RAG_TARGET` y `TRINAXAI_OLLAMA_TARGET` se leen al ejecutar el gateway.
 
-Vite usa `chat-pwa/certs/trinaxai-local.pfx` o el par `chat-pwa/certs/localhost-key.pem`/`chat-pwa/certs/localhost.pem`. Sin esos archivos sirve HTTP. Nunca confirmes certificados o claves.
+El gateway usa `chat-pwa/certs/trinaxai-local.pfx` o el par `chat-pwa/certs/localhost-key.pem`/`chat-pwa/certs/localhost.pem`. Sin esos archivos sirve HTTP. Nunca confirmes certificados o claves.
 
 El gateway valida capability admin/de dispositivo, elimina identidad de proxy
 aportada por cliente y firma el peer original para `/api/rag`; FastAPI solo
-acepta esa identidad desde loopback. `/api/ollama` exige `chat`, tiene allowlist fija, rate limit acotado y
-lock de inferencia cross-process: no permite pull/create/delete de modelos.
+acepta esa identidad desde loopback. `/api/ollama` tiene allowlist fija, rate limit acotado y
+lock de inferencia cross-process. Chat/generación exige `chat`; pull y borrado
+de modelos exigen la capability más fuerte `system`.
 Lecturas privadas y mutaciones de FastAPI exigen autorización. `/api/system/*`
 aplica la misma frontera de credencial/capability antes de acciones fijas.
 No publiques el gateway en Internet; usa VPN/TLS autenticado y conserva FastAPI
@@ -168,4 +170,4 @@ Al añadir texto de interfaz, incorpora claves equivalentes en español e inglé
   el scope exacto. Otorga `system` solo si debe controlar servicios; no repartas
   el token admin como atajo.
 - **Micrófono:** revisa permiso, contexto seguro y `/api/rag/v1/voice/capabilities`.
-- **Vite sirve HTTP:** instala/genera los certificados locales esperados.
+- **El gateway sirve HTTP:** instala/genera los certificados locales esperados.

@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0--or--later-blue.svg" alt="AGPL-3.0-or-later"></a>
-  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/version-1.0.0-006bbd.svg" alt="Version 1.0.0"></a>
+  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/version-1.0.1-006bbd.svg" alt="Version 1.0.1"></a>
   <a href="https://github.com/TrinaxCode/TrinaxAI/pkgs/container/trinaxai"><img src="https://img.shields.io/badge/package-GHCR-2496ED.svg" alt="GitHub Container Registry"></a>
   <a href="#-quick-start"><img src="https://img.shields.io/badge/powered_by-Ollama-black.svg" alt="Ollama"></a>
   <a href="#️-supported-platforms"><img src="https://img.shields.io/badge/platform-Linux|macOS|Windows-lightgrey.svg" alt="Platforms"></a>
@@ -59,7 +59,7 @@ Every release publishes the RAG API image to GitHub Container Registry. The
 PWA gateway and Ollama still run on the host:
 
 ```bash
-docker pull ghcr.io/trinaxcode/trinaxai:1.0.0
+docker pull ghcr.io/trinaxcode/trinaxai:1.0.1
 ```
 
 Use it with the included `compose.yaml` by setting `TRINAXAI_DOCKER_IMAGE`.
@@ -163,7 +163,7 @@ operation that the current user or browser has not permitted.
 
 - 🧠 **Dual engines** — direct Ollama chat (fast, creative) and RAG (grounded, cited answers over your files).
 - 🎯 **Intelligent generation pipeline** — a deterministic, no-LLM classifier reads each turn and picks the right model, decoding params, and prompt style (code, reasoning/math, creative, grounded-QA, or explain). Fast and predictable, no extra model call.
-- 🤖 **Tool-using agent** — `trinaxai agent` and the in-app Agent view use sandboxed `read/write/edit/list/glob/grep/run_command` tools, remain confined to a workspace, and request approval for dangerous actions.
+- 🤖 **Model-driven tool orchestration** — the in-app Agent answers directly or autonomously combines web search, deep research, memory, indexed-document search, collections, and sandboxed workspace tools. Tool switches restrict availability; they never force execution. Dangerous actions still require approval.
 - 📇 **Custom RAG** — indexes your projects; AST-aware chunking for 15+ languages, hybrid vector + BM25 retrieval, optional cross-encoder reranker, citations back to `rel_path`.
 - 🔎 **Deep research** — multi-pass RAG decomposition (`trinaxai research` or the in-app trigger).
 - 🌍 **Optional web search** — enable Internet mode for current results through DuckDuckGo, Brave Search, or SearXNG; sources are displayed and public-page reads are bounded.
@@ -193,7 +193,7 @@ Folder browsing exposes local directory structure only on loopback or to a paire
 - 🔄 **State and usage sync** — versioned settings/history synchronization with conflict-safe revisions, explicit deletes, and local usage statistics.
 - 🛡️ **Local-first security** — loopback services, scoped device pairing, HMAC-signed gateway, sandboxed agent.
 
-**Project version:** 1.0.0 · **License:** [AGPL-3.0-or-later](LICENSE)
+**Project version:** 1.0.1 · **License:** [AGPL-3.0-or-later](LICENSE)
 
 ---
 
@@ -310,7 +310,7 @@ The installer picks a **hardware profile** from your RAM. The supported installe
 | **Deep** | `qwen3.5:2b` | `qwen3.5:4b` | `qwen3.5:9b` | `qwen3.5:35b` (MoE) |
 | **Vision** | `qwen3.5:2b` | `qwen3.5:4b` | `qwen3.5:9b` | `qwen3.5:35b` (MoE) |
 | **Fast** | `qwen3.5:2b` | `qwen3.5:2b` | `qwen3.5:2b` | `qwen3.5:4b` |
-| **Embeddings** | `qwen3-embedding:0.6b` (1024d) | `qwen3-embedding:0.6b` | `qwen3-embedding:0.6b` | `qwen3-embedding:0.6b` |
+| **Embeddings** | `qwen3-embedding:0.6b` (1024d) | `qwen3-embedding:0.6b` (1024d) | `qwen3-embedding:4b` (2560d) | `qwen3-embedding:8b` (4096d) |
 
 The **generation pipeline** routes each request across the profile's general, deep, code, and fast roles. Qwen3.5 also handles vision, avoiding a second resident VL model. Vision models are downloaded on first image analysis, so installation and updates do not block on a large pull. Confirm names with `ollama list` and adjust `.env` if you change models. See [docs/CONFIGURATION.md](docs/CONFIGURATION.md) and [docs/ENVIRONMENT_VARIABLES.md](docs/ENVIRONMENT_VARIABLES.md).
 

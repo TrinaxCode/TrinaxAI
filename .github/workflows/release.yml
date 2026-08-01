@@ -10,8 +10,16 @@ permissions:
   packages: write
 
 jobs:
+  verify:
+    name: Verify release candidate
+    uses: ./.github/workflows/ci.yml
+    permissions:
+      contents: read
+      pull-requests: read
+
   publish:
     name: Publish GitHub release
+    needs: verify
     runs-on: ubuntu-latest
     steps:
       - name: Checkout tagged source

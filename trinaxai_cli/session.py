@@ -108,14 +108,6 @@ class Session:
         return records
 
     @staticmethod
-    def list_names(dir: Path | str | None = None) -> list[str]:
-        """Return sorted session names (without the ``.jsonl`` extension)."""
-        d = _resolve_dir(dir)
-        if not d.is_dir():
-            return []
-        return sorted(p.stem for p in d.glob("*.jsonl"))
-
-    @staticmethod
     def delete(name: str, dir: Path | str | None = None) -> bool:
         """Delete the named session file.  Returns ``True`` if removed."""
         path = _file_for(name, _resolve_dir(dir))

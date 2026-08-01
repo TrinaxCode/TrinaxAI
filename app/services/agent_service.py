@@ -30,11 +30,32 @@ from pathlib import Path
 
 from app.schemas import AgentCancelRequest
 from app.security.admin_auth import authorize_scope
-from trinaxai_cli.agent import DEFAULT_TOOLS, AgentEngine, Tool  # noqa: E402
+from trinaxai_cli.agent import DEFAULT_TOOLS, AgentEngine, Tool, format_tool_failure  # noqa: E402
 from trinaxai_cli.agent.engine import AgentCancelled  # noqa: E402
+from trinaxai_errors import ErrorCategory, classify_error
 
 from .app_state_service import _read_app_state
-from .shared_runtime import *  # noqa: F403
+from .shared_runtime import (
+    LOG,
+    AgentApprovalRequest,
+    AgentRequest,
+    HTTPException,
+    Request,
+    ResearchRequest,
+    StreamingResponse,
+    _authorize_system,
+    _client_host,
+    _inference_process_lock,
+    _is_local_client,
+    _model_slots,
+    _read_collections_unlocked,
+    config,
+    enforce_rate_limit,
+    json,
+    os,
+    state,
+    time,
+)
 
 # Pending agent streams. Each entry owns a queue (engine → SSE) and a dict of
 # in-flight approval events (approval_id → {"event", "approved"}).
@@ -49,25 +70,6 @@ _AGENT_STALL_SECONDS = config._env_float("TRINAXAI_AGENT_STALL_TIMEOUT", 120.0, 
 _AGENT_WORKSPACE_KEY = "tc-agent-workspace"
 _AGENT_STATUS_INTERVAL_SECONDS = 3.0
 _AGENT_EVENT_RESULT_CHARS = 2500
-_INDEXED_QUERY_HINTS = (
-    "indexad",
-    "indexed",
-    "mis archivos",
-    "my files",
-    "my documents",
-    "mi código",
-    "mi codigo",
-    "my code",
-    "en el índice",
-    "en el indice",
-    "in the index",
-    "proyectos indexados",
-    "indexed projects",
-    "qué tienes indexado",
-    "que tienes indexado",
-    "what is indexed",
-    "what do you have indexed",
-)
 
 
 @contextmanager
@@ -180,12 +182,6 @@ def _resolve_workspace(requested: str | None) -> Path:
     if not explicit and _is_broad_workspace(resolved):
         return _default_workspace(roots)
     return resolved
-
-
-def _agent_query_needs_knowledge(messages: list[dict]) -> bool:
-    text = " ".join(str(message.get("content") or "") for message in messages if message.get("role") == "user")
-    lowered = text.casefold()
-    return any(hint in lowered for hint in _INDEXED_QUERY_HINTS)
 
 
 def _http_yolo_enabled() -> bool:
@@ -338,20 +334,22 @@ def _search_knowledge(_workspace_root, query: str = "", **_kwargs) -> str:
     nothing is indexed / found.
     """
     if state.fusion_retriever is None:
-        return "No indexed knowledge base is available. Ask the user to index documents first."
+        return format_tool_failure(
+            "search_knowledge", "No indexed knowledge base is available; documents must be indexed first."
+        )
     q = (query or "").strip()
     if not q:
-        return "error: 'query' must not be empty"
+        return format_tool_failure("search_knowledge", "The query must not be empty.")
     try:
         nodes = state.fusion_retriever.retrieve(q)[: config.SIMILARITY_TOP_K]
     except Exception as exc:  # noqa: BLE001 - retrieval failure is reported to the model
-        return f"error: knowledge search failed: {exc}"
+        return format_tool_failure("search_knowledge", exc)
     if not nodes:
         return f"No indexed passages match: {q}"
     lines = []
     for index, node in enumerate(nodes, start=1):
         meta = getattr(node, "metadata", {}) or {}
-        rel = meta.get("rel_path") or meta.get("file_path") or "unknown"
+        rel = meta.get("rel_path") or os.path.basename(str(meta.get("file_path") or "")) or "unknown"
         text = node.get_content() if hasattr(node, "get_content") else str(node)
         snippet = text.strip().replace("\n", " ")
         if len(snippet) > 600:
@@ -378,6 +376,51 @@ _SEARCH_KNOWLEDGE_TOOL = Tool(
 )
 
 
+def _search_memory(_workspace_root, query: str = "", **_kwargs) -> str:
+    """Return relevant user-managed memories for the model to evaluate."""
+    from .memory_service import memory_context_for_query
+
+    q = (query or "").strip()
+    if not q:
+        return format_tool_failure("search_memory", "The query must not be empty.")
+    return memory_context_for_query(q) or f"No relevant memories match: {q}"
+
+
+_SEARCH_MEMORY_TOOL = Tool(
+    name="search_memory",
+    description=(
+        "Search the user's saved TrinaxAI memories for relevant preferences, facts, "
+        "decisions, or notes. Use only when prior user-specific context may affect the answer."
+    ),
+    parameters={
+        "type": "object",
+        "properties": {"query": {"type": "string", "description": "The context to look up in memory."}},
+        "required": ["query"],
+    },
+    handler=_search_memory,
+    dangerous=False,
+)
+
+
+def _list_collections(_workspace_root, **_kwargs) -> str:
+    """List available indexed knowledge collections."""
+    with state.collections_lock:
+        collections = _read_collections_unlocked()
+    return json.dumps(collections, ensure_ascii=False)
+
+
+_LIST_COLLECTIONS_TOOL = Tool(
+    name="list_collections",
+    description=(
+        "List the user's indexed TrinaxAI knowledge collections and their identifiers. "
+        "Use when collection scope is needed before document search."
+    ),
+    parameters={"type": "object", "properties": {}},
+    handler=_list_collections,
+    dangerous=False,
+)
+
+
 def _web_search(_workspace_root, query: str = "", **_kwargs) -> str:
     """Search the public web (via TrinaxAI's configured provider) and return results.
 
@@ -389,16 +432,20 @@ def _web_search(_workspace_root, query: str = "", **_kwargs) -> str:
 
     q = (query or "").strip()
     if not q:
-        return "error: 'query' must not be empty"
+        return format_tool_failure("web_search", "The query must not be empty.", external=True)
     try:
         results, provider = search_web(q)
     except WebSearchError as exc:
-        return f"error: web search unavailable: {exc}"
+        return format_tool_failure("web_search", exc, external=True)
     except Exception as exc:  # noqa: BLE001 - report failures to the model
-        return f"error: web search failed: {exc}"
+        return format_tool_failure("web_search", exc, external=True)
     if not results:
-        return f"No web results found for: {q}"
-    lines = [f"Web results (via {provider}) for: {q}"]
+        return (
+            "[tool_status=success; source=external; content=none]\n"
+            f"The external web search returned no results for: {q}\n"
+            "No external evidence was retrieved. Continue with local/model knowledge and say so explicitly."
+        )
+    lines = [f"[tool_status=success; source=external; provider={provider}]", f"Web results for: {q}"]
     for index, item in enumerate(results, start=1):
         title = (item.get("title") or "").strip() or "(untitled)"
         url = (item.get("url") or "").strip()
@@ -424,6 +471,7 @@ _WEB_SEARCH_TOOL = Tool(
     },
     handler=_web_search,
     dangerous=False,
+    external=True,
 )
 
 
@@ -433,7 +481,7 @@ def _deep_research(_workspace_root, query: str = "", **_kwargs) -> str:
 
     q = (query or "").strip()
     if not q:
-        return "error: 'query' must not be empty"
+        return format_tool_failure("deep_research", "The query must not be empty.", external=True)
     result = _research_sync(
         ResearchRequest(
             query=q,
@@ -443,13 +491,19 @@ def _deep_research(_workspace_root, query: str = "", **_kwargs) -> str:
             depth=3,
         )
     )
-    if result.get("error_code"):
-        return "error: deep research is temporarily unavailable"
+    if result.get("error_code") and not result.get("answer"):
+        return format_tool_failure(
+            "deep_research",
+            result.get("error_detail") or result.get("error_code") or "Research is temporarily unavailable.",
+            external=True,
+        )
     sources = [
         f"[{index}] {source.get('title') or source.get('file')}\n{source.get('url') or ''}"
         for index, source in enumerate(result.get("sources") or [], start=1)
     ]
-    return f"{result.get('answer') or ''}\n\nSOURCES\n" + "\n".join(sources)
+    if not sources:
+        return f"[tool_status=degraded; source=external; content=none]\n{result.get('answer') or ''}"
+    return f"[tool_status=success; source=external]\n{result.get('answer') or ''}\n\nSOURCES\n" + "\n".join(sources)
 
 
 _DEEP_RESEARCH_TOOL = Tool(
@@ -465,25 +519,27 @@ _DEEP_RESEARCH_TOOL = Tool(
     },
     handler=_deep_research,
     dangerous=False,
+    external=True,
 )
 
 
 def _agent_tools(
-    web_search: bool = False,
-    knowledge_search: bool = False,
-    deep_research: bool = False,
+    web_search: bool = True,
+    knowledge_search: bool = True,
+    deep_research: bool = True,
 ) -> tuple[Tool, ...]:
-    """Default file/shell tools plus TrinaxAI's RAG knowledge search.
-
-    When ``web_search`` is enabled the agent also gets a live web-search tool.
-    """
-    tools = (*DEFAULT_TOOLS,)
-    if knowledge_search:
-        tools = (*tools, _SEARCH_KNOWLEDGE_TOOL)
+    """Expose available capabilities; booleans restrict availability, never force use."""
+    tools = (
+        *DEFAULT_TOOLS,
+        _SEARCH_MEMORY_TOOL,
+        _LIST_COLLECTIONS_TOOL,
+    )
     if web_search:
         tools = (*tools, _WEB_SEARCH_TOOL)
     if deep_research:
         tools = (*tools, _DEEP_RESEARCH_TOOL)
+    if knowledge_search:
+        tools = (*tools, _SEARCH_KNOWLEDGE_TOOL)
     return tools
 
 
@@ -527,9 +583,9 @@ def _run_engine_worker(session: dict, req: AgentRequest, workspace: Path, model:
         max_steps=int(req.max_steps or 25),
         num_ctx=_agent_num_ctx(),
         tools=_agent_tools(
-            web_search=bool(getattr(req, "web_search", False)),
-            knowledge_search=bool(getattr(req, "knowledge_search", False)) or _agent_query_needs_knowledge(messages),
-            deep_research=bool(getattr(req, "deep_research", False)),
+            web_search=req.web_search,
+            knowledge_search=req.knowledge_search,
+            deep_research=req.deep_research,
         ),
         on_tool_start=on_tool_start,
         on_tool_result=on_tool_result,
@@ -545,8 +601,21 @@ def _run_engine_worker(session: dict, req: AgentRequest, workspace: Path, model:
     except AgentCancelled:
         LOG.info("Agent worker cancelled after client disconnect")
     except Exception as exc:  # noqa: BLE001 - report failures to the client
-        LOG.exception("Agent worker failed")
-        q.put({"type": "error", "error": str(exc)[:300]})
+        info = classify_error(exc, status_code=500)
+        LOG.error(
+            "agent worker failure category=%s code=%s exception_type=%s",
+            info.category.value,
+            info.code,
+            type(exc).__name__,
+        )
+        q.put(
+            {
+                "type": "error",
+                "error": format_tool_failure("agent", f"{info.definition.message} {info.definition.recovery}"),
+                **info.to_client_dict(),
+                "recoverable": info.retryable,
+            }
+        )
     finally:
         q.put(None)  # sentinel: no more events
 
@@ -581,7 +650,17 @@ def _agent_event_stream(session_id: str, session: dict, req: AgentRequest, works
                         if timeout
                         else f"Agent stalled: no tokens or tool activity for {int(idle)} seconds."
                     )
-                    yield _sse({"type": "error", "error": reason, "recoverable": True})
+                    info = classify_error(reason, category=ErrorCategory.TOOL_TIMEOUT)
+                    yield _sse(
+                        {
+                            "type": "error",
+                            "error": format_tool_failure(
+                                "agent", f"{info.definition.message} {info.definition.recovery}"
+                            ),
+                            **info.to_client_dict(),
+                            "recoverable": True,
+                        }
+                    )
                     break
                 if now - last_status >= _AGENT_STATUS_INTERVAL_SECONDS:
                     last_status = now

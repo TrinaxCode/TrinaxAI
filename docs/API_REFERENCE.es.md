@@ -47,12 +47,26 @@ no se ignora aunque el peer sea loopback. El pairing por defecto solo concede
 | `/v1/memory/*` | `read_private` | Memoria privada. |
 | `POST/GET /v1/watch/*` | `index` | Administra watcher. |
 | `POST /v1/usage`, `GET /v1/stats` | `chat` / `read_private` | Métricas locales. |
-| `GET /health`, `GET /resources` | Pública | Salud y RAM local. |
+| `GET /health`, `GET /ready`, `GET /resources` | Pública | Vida del servicio, disponibilidad de Ollama y RAM local. |
 | `GET/PUT/DELETE /app-state` | `read_private` | Estado PWA versionado y reset. |
 | `POST /attachments`, `GET/DELETE /attachments/{attachment_id}` | `read_private` + rate limit | Adjuntos. |
 | `GET /collections` / mutaciones | `read_private` / `index` | Colecciones. |
 | `/system/index*` / resto `/system/*` | `index` / `system` | Índice versus lifecycle/autoprueba. |
 | `/v1/pairing/*` | Mixto | Pairing de dispositivos y revocación. |
+
+## Contrato de errores
+
+Cada error de API devuelve un objeto `error` seguro (y los mismos campos en
+`detail`): `category`, `code` interno, `message` para el usuario, `recovery` y
+`retryable`. Las categorías son `internet_unavailable`,
+`external_service_unavailable`, `ai_model_unavailable`, `model_loading_failed`,
+`tool_timeout`, `permission_denied`, `authentication_failed`,
+`resource_exhausted`, `memory_limit_reached`, `gpu_unavailable`,
+`file_not_found`, `document_unreadable`, `invalid_input`, `unsupported_format`,
+`network_timeout`, `internal_server_error` y `unknown_error`. Los detalles de
+excepciones quedan solo en los registros de desarrollador del servidor; se
+devuelve `request_id` para soporte. Las lecturas idempotentes seguras se
+reintentan una vez cuando `retryable` es `true`.
 
 ## Pairing de dispositivos
 
@@ -151,6 +165,11 @@ sigue siendo extracción acotada, no copia integral del sitio.
 `POST /v1/research/preflight` acepta el mismo request y comprueba Ollama, el
 modelo elegido, las colecciones locales y el proveedor web sin ejecutar la
 investigación completa.
+
+Si un proveedor web no está disponible, la investigación devuelve un estado
+degradado en vez de un error vacío: explica el motivo clasificado, no inventa
+fuentes web y etiqueta cualquier respuesta alternativa como conocimiento general
+del modelo local.
 
 ## Fuentes y colecciones
 
@@ -255,8 +274,14 @@ archivo, 4 GiB total y 1,000 archivos.
 ## Agente
 
 `POST /v1/agent` transmite eventos SSE y una herramienta peligrosa pausa en
-`approval_request` hasta `/v1/agent/approve`. `POST /v1/agent/cancel` detiene una
-sesión activa de la misma identidad. La aprobación debe incluir el
+`approval_request` hasta `/v1/agent/approve`.
+El modelo decide si responde directamente o llama una o varias herramientas,
+ordena las llamadas dependientes y sintetiza sus resultados. Búsqueda web,
+investigación profunda, memoria, búsqueda documental y descubrimiento de
+colecciones están disponibles por defecto. Los booleanos `web_search`,
+`deep_research` y `knowledge_search` solo restringen disponibilidad; nunca
+fuerzan la ejecución. `POST /v1/agent/cancel` detiene una sesión activa de la
+misma identidad. La aprobación debe incluir el
 `session_id` del evento `start` y el `approval_id`,
 y usar la misma identidad autenticada que abrió el stream. El workspace debe descender de
 `TRINAXAI_AGENT_WORKSPACE_ROOTS`; se rechazan raíces del sistema. Yolo HTTP está
@@ -289,6 +314,7 @@ TTS devuelve bytes de audio con su `Content-Type`. STT/TTS responden `501` cuand
 | `POST /system/reload` | Recarga el índice en memoria. |
 | `POST /system/self-test` | Comprueba Ollama, embeddings e índice/RAG. |
 | `GET /health` | Modelos, perfil, índice, colecciones y capacidades. |
+| `GET /ready` | El mismo estado; responde `503` hasta que Ollama esté disponible. |
 | `GET /resources` | RAM en bytes; VRAM actualmente `null`. |
 
 ## Errores

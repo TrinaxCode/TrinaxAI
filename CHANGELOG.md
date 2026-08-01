@@ -3,6 +3,26 @@
 All notable changes to TrinaxAI are documented here. This project follows the
 [Keep a Changelog](https://keepachangelog.com/) format.
 
+## [1.0.1] — 2026-07-31
+
+### Added
+
+- Published release assets and a versioned GHCR backend image through one
+  verified release workflow.
+- Added production gateway coverage and cross-platform CLI, installer, service,
+  cancellation, timeout and failure-path tests.
+
+### Changed
+
+- Hardware profiles now scale official Qwen3 embeddings from 0.6B/1024d on
+  8/16 GB systems to 4B/2560d on `max` and 8B/4096d on `ultra`.
+- Docker Compose can start with safe defaults when no `.env` file exists.
+
+### Fixed
+
+- Hardened inference timeouts, TLS verification, proxy identity, API errors,
+  cleanup paths and Windows/macOS/Linux release checks.
+
 ## [1.0.0] — 2026-07-21
 
 ### Added
@@ -17,8 +37,6 @@ All notable changes to TrinaxAI are documented here. This project follows the
   dangerous actions and a network-isolated Linux shell sandbox.
 - Cross-platform installers and service supervision for Linux, macOS and
   Windows, plus bilingual product and technical documentation.
-- Official RAG API container published to GitHub Container Registry with the
-  versioned `1.0.0` tag and rolling `1.0`, `1` and `latest` tags.
 
 ### Changed
 
@@ -51,4 +69,5 @@ All notable changes to TrinaxAI are documented here. This project follows the
 - CI checks Python and frontend dependencies, static high-severity findings,
   committed secrets, package builds, browser flows and public-release readiness.
 
+[1.0.1]: https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.0.1
 [1.0.0]: https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.0.0

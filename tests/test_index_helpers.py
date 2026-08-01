@@ -36,9 +36,9 @@ def test_diff_manifest_detects_new_changed_and_deleted() -> None:
 
 def test_env_int_clamps_values() -> None:
     with patch.dict(index.os.environ, {"TRINAXAI_INDEX_BATCH_SIZE": "9999"}):
-        assert index._env_int("TRINAXAI_INDEX_BATCH_SIZE", 100, minimum=1, maximum=1000) == 1000
+        assert config._env_int("TRINAXAI_INDEX_BATCH_SIZE", 100, minimum=1, maximum=1000) == 1000
     with patch.dict(index.os.environ, {"TRINAXAI_INDEX_BATCH_SIZE": "bad"}):
-        assert index._env_int("TRINAXAI_INDEX_BATCH_SIZE", 100, minimum=1, maximum=1000) == 100
+        assert config._env_int("TRINAXAI_INDEX_BATCH_SIZE", 100, minimum=1, maximum=1000) == 100
 
 
 def test_iter_batches_keeps_stable_order() -> None:

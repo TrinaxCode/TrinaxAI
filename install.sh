@@ -246,8 +246,12 @@ ensure_https_certificate() {
   cert_file="$SCRIPT_DIR/chat-pwa/certs/localhost.pem"
   cert_crt="$SCRIPT_DIR/chat-pwa/certs/trinaxai-local.crt"
   if [ -f "$cert_key" ] && [ -f "$cert_file" ]; then
-    print_ok "HTTPS certificate found"
-    return 0
+    if [ -z "${LAN_IP:-}" ] || ! command -v openssl >/dev/null 2>&1 || \
+      openssl x509 -in "$cert_file" -noout -ext subjectAltName 2>/dev/null | grep -Fq "IP Address:$LAN_IP"; then
+      print_ok "HTTPS certificate found"
+      return 0
+    fi
+    print_info "LAN IP changed to $LAN_IP; renewing the HTTPS certificate..."
   fi
   if ! command -v openssl >/dev/null 2>&1; then
     print_warn "OpenSSL was not found. HTTPS certificate generation skipped."
@@ -259,14 +263,27 @@ ensure_https_certificate() {
   if [ -n "${LAN_IP:-}" ]; then
     san_entries="$san_entries,IP:$LAN_IP"
   fi
-  openssl req -x509 -newkey rsa:2048 -sha256 -days 1825 -nodes \
-    -keyout "$cert_key" \
-    -out "$cert_file" \
-    -subj "/CN=TrinaxAI Local HTTPS" \
-    -addext "subjectAltName=$san_entries" >/dev/null 2>&1 || {
-      print_warn "Could not generate HTTPS certificate."
-      return 0
-    }
+  mkcert_ok=0
+  if command -v mkcert >/dev/null 2>&1; then
+    mkcert_names=(localhost 127.0.0.1 ::1)
+    if [ -n "${LAN_IP:-}" ]; then
+      mkcert_names+=("$LAN_IP")
+    fi
+    mkcert -cert-file "$cert_file" -key-file "$cert_key" \
+      "${mkcert_names[@]}" >/dev/null 2>&1 && mkcert_ok=1 || {
+        print_warn "mkcert could not generate HTTPS certificate; trying OpenSSL."
+      }
+  fi
+  if [ "$mkcert_ok" -ne 1 ]; then
+    openssl req -x509 -newkey rsa:2048 -sha256 -days 1825 -nodes \
+      -keyout "$cert_key" \
+      -out "$cert_file" \
+      -subj "/CN=TrinaxAI Local HTTPS" \
+      -addext "subjectAltName=$san_entries" >/dev/null 2>&1 || {
+        print_warn "Could not generate HTTPS certificate."
+        return 0
+      }
+  fi
   cp "$cert_file" "$cert_crt"
   chmod 600 "$cert_key" 2>/dev/null || true
   print_ok "HTTPS certificate generated"
@@ -304,7 +321,7 @@ install_linux_deps() {
     fi
     if ! command -v npm >/dev/null 2>&1; then
       print_warn "npm was not installed. Node.js may be missing or installed from NodeSource."
-      print_info "Install Node.js 18+ with npm from https://nodejs.org or use your package manager."
+      print_info "Install Node.js 22+ with npm from https://nodejs.org or use your package manager."
     fi
   elif command -v dnf >/dev/null 2>&1; then
     as_root dnf install -y python3 python3-pip nodejs npm curl git unzip openssl
@@ -315,7 +332,7 @@ install_linux_deps() {
   elif command -v apk >/dev/null 2>&1; then
     as_root apk add python3 py3-pip py3-virtualenv nodejs npm curl git unzip openssl
   else
-    print_warn "Unknown Linux package manager. Install Python 3.10+, pip, venv, Node.js 18+, npm, curl, git, unzip manually."
+    print_warn "Unknown Linux package manager. Install Python 3.10+, pip, venv, Node.js 22+, npm, curl, git, unzip manually."
   fi
 }
 
@@ -447,8 +464,8 @@ if [ -z "$PYTHON_BIN" ]; then
   print_err "Python 3.10 or newer was not found."
   exit 1
 fi
-if ! command -v node >/dev/null 2>&1 || ! node -e 'process.exit(Number(process.versions.node.split(".")[0]) >= 18 ? 0 : 1)' 2>/dev/null; then
-  print_err "Node.js 18 or newer is required. Install an active Node.js LTS release and run the installer again."
+if ! command -v node >/dev/null 2>&1 || ! node -e 'process.exit(Number(process.versions.node.split(".")[0]) >= 22 ? 0 : 1)' 2>/dev/null; then
+  print_err "Node.js 22 or newer is required. Install an active Node.js LTS release and run the installer again."
   exit 1
 fi
 if ! command -v npm >/dev/null 2>&1; then
@@ -522,6 +539,9 @@ elif [ "$PROFILE" = "max" ]; then
   MODEL_DEEP="qwen3.5:9b"
   MODEL_FAST="qwen3.5:2b"
   VISION_MODEL="qwen3.5:9b"
+  EMBED_PRESET="quality"
+  EMBED_MODEL="qwen3-embedding:4b"
+  EMBED_DIMS="2560"
   EMBED_KEEP_ALIVE="30m"
 elif [ "$PROFILE" = "ultra" ]; then
   MODEL_GENERAL="qwen3.5:35b"
@@ -529,6 +549,9 @@ elif [ "$PROFILE" = "ultra" ]; then
   MODEL_DEEP="qwen3.5:35b"
   MODEL_FAST="qwen3.5:4b"
   VISION_MODEL="qwen3.5:35b"
+  EMBED_PRESET="max"
+  EMBED_MODEL="qwen3-embedding:8b"
+  EMBED_DIMS="4096"
   EMBED_BATCH="16"
   EMBED_KEEP_ALIVE="30m"
 fi
@@ -594,7 +617,7 @@ TRINAXAI_PORT=3333
 OLLAMA_BASE_URL=http://localhost:11434
 OLLAMA_HOST=127.0.0.1:11434
 TRINAXAI_FRONTEND_URL=https://localhost:3334
-TRINAXAI_FRONTEND_MODE=preview
+TRINAXAI_FRONTEND_MODE=serve
 TRINAXAI_RAG_HTTPS=1
 TRINAXAI_RAG_TARGET=https://127.0.0.1:3333
 VITE_TRINAXAI_RAG_TARGET=https://127.0.0.1:3333
@@ -627,6 +650,7 @@ TRINAXAI_ADMIN_TOKEN=$ADMIN_TOKEN
 # Indexing
 TRINAXAI_INDEX_DIR=~/Documents
 EOF
+chmod 600 .env 2>/dev/null || true
 if [ "$PROFILE" = "ultra" ]; then
   cat >> .env <<'EOF'
 TRINAXAI_NUM_CTX=16384
@@ -721,7 +745,7 @@ if [ -d "chat-pwa" ]; then
     print_ok "PWA dependencies installed"
   else
     print_warn "Node.js not found. Install from https://nodejs.org"
-    print_info "The PWA needs Node.js 18+ to build and serve"
+    print_info "The PWA needs Node.js 22+ to build and serve"
   fi
   cd ..
 else

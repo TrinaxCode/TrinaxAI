@@ -45,4 +45,18 @@ describe('Sources accessibility', () => {
 
     await expectNoA11yViolations(document.body);
   });
+
+  it('does not turn untrusted javascript URLs into executable links', async () => {
+    const user = userEvent.setup();
+    render(<Sources sources={[{
+      file: 'docs/guide.md',
+      project: 'TrinaxAI',
+      url: 'javascript:alert(1)',
+      snippet: 'Untrusted source',
+      score: null,
+    }]} />);
+    await user.click(screen.getByRole('button', { name: /1 source/i }));
+    expect(screen.queryByRole('link')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'copy: docs/guide.md' })).toBeInTheDocument();
+  });
 });

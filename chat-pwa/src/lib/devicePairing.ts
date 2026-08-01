@@ -2,6 +2,7 @@ import { APP_CONFIG } from './config';
 import {
   DEVICE_TOKEN_STORAGE_KEY,
   clearRevokedDeviceSession,
+  isLocalHostBrowser,
   setDeviceSessionToken,
   setDeviceSessionScopes,
   systemRequestHeaders,
@@ -39,7 +40,11 @@ export function startDeviceRevocationMonitor(): () => void {
   if (revocationMonitorStarted) return revocationMonitorCleanup ?? (() => undefined);
   revocationMonitorStarted = true;
   const check = () => {
-    if (!document.hidden && currentToken()) void getCurrentPairedDevice().catch(() => undefined);
+    // The localhost origin is the privileged host UI, not a paired device.
+    // Never send a stale device credential to its own pairing endpoint.
+    if (!isLocalHostBrowser() && !document.hidden && currentToken()) {
+      void getCurrentPairedDevice().catch(() => undefined);
+    }
   };
   check();
   const interval = window.setInterval(check, 2000);
