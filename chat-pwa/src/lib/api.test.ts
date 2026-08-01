@@ -250,6 +250,13 @@ describe('api helpers', () => {
     expect(MODEL_PRESETS.ultra['tc-models-vision']).toBe('qwen3.5:35b');
   });
 
+  it('scales embedding quality only on memory-rich profiles', () => {
+    expect(MODEL_PRESETS.low['tc-models-embed']).toBe('qwen3-embedding:0.6b');
+    expect(MODEL_PRESETS.balanced['tc-models-embed']).toBe('qwen3-embedding:0.6b');
+    expect(MODEL_PRESETS.max['tc-models-embed']).toBe('qwen3-embedding:4b');
+    expect(MODEL_PRESETS.ultra['tc-models-embed']).toBe('qwen3-embedding:8b');
+  });
+
   it('removes only previously managed profile models before pulling the new profile', async () => {
     localStorage.setItem('tc-managed-ollama-models', JSON.stringify(['granite4:3b', 'bge-m3']));
     const requests: Array<[string, RequestInit | undefined]> = [];

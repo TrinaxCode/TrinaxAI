@@ -63,20 +63,28 @@ def test_config_8gb_profile_uses_light_defaults(tmp_path: Path) -> None:
 def test_all_profile_model_roles_match_the_release_matrix(tmp_path: Path) -> None:
     (tmp_path / "dotenv.py").write_text("def load_dotenv(*args, **kwargs):\n    return False\n", encoding="utf-8")
     expected = {
-        "8gb": ["qwen3.5:2b", "qwen3.5:2b", "qwen3.5:2b", "qwen3.5:2b"],
-        "16gb": ["qwen3.5:4b", "qwen3.5:4b", "qwen3.5:4b", "qwen3.5:2b"],
-        "max": ["qwen3.5:9b", "qwen3.5:9b", "qwen3.5:9b", "qwen3.5:2b"],
-        "ultra": ["qwen3.5:35b", "qwen3-coder:30b", "qwen3.5:35b", "qwen3.5:4b"],
+        "8gb": ["qwen3.5:2b", "qwen3.5:2b", "qwen3.5:2b", "qwen3.5:2b", "qwen3-embedding:0.6b", 1024],
+        "16gb": ["qwen3.5:4b", "qwen3.5:4b", "qwen3.5:4b", "qwen3.5:2b", "qwen3-embedding:0.6b", 1024],
+        "max": ["qwen3.5:9b", "qwen3.5:9b", "qwen3.5:9b", "qwen3.5:2b", "qwen3-embedding:4b", 2560],
+        "ultra": ["qwen3.5:35b", "qwen3-coder:30b", "qwen3.5:35b", "qwen3.5:4b", "qwen3-embedding:8b", 4096],
     }
     for profile, models in expected.items():
         env = {**os.environ, "PYTHONPATH": os.pathsep.join([str(tmp_path), str(ROOT)]), "TRINAXAI_PROFILE": profile}
-        for name in ("TRINAXAI_MODEL_GENERAL", "TRINAXAI_MODEL_CODE", "TRINAXAI_MODEL_DEEP", "TRINAXAI_MODEL_FAST"):
+        for name in (
+            "TRINAXAI_MODEL_GENERAL",
+            "TRINAXAI_MODEL_CODE",
+            "TRINAXAI_MODEL_DEEP",
+            "TRINAXAI_MODEL_FAST",
+            "TRINAXAI_EMBED_PRESET",
+            "TRINAXAI_EMBED",
+            "TRINAXAI_EMBED_DIMS",
+        ):
             env.pop(name, None)
         result = subprocess.run(
             [
                 sys.executable,
                 "-c",
-                "import json, config; print(json.dumps([config.MODEL_GENERAL, config.MODEL_CODE, config.MODEL_DEEP, config.MODEL_FAST]))",
+                "import json, config; print(json.dumps([config.MODEL_GENERAL, config.MODEL_CODE, config.MODEL_DEEP, config.MODEL_FAST, config.EMBED_MODEL, config.EMBED_DIMS]))",
             ],
             cwd=ROOT,
             env=env,

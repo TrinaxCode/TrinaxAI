@@ -36,7 +36,7 @@ The single source of truth for all subsystems. Defines:
 
 - **Model fleet** — `MODEL_GENERAL`, `MODEL_CODE`, `MODEL_DEEP`, and `MODEL_FAST`; their concrete names come from the active profile and can be overridden in `.env`.
 - **Hardware profiles** — auto-tuned by `TRINAXAI_PROFILE` (4gb/8gb/16gb/max/ultra)
-- **Embedding presets** — Qwen3 Embedding 0.6B balanced, nomic lite, all-minilm fast
+- **Embedding presets** — profile-sized Qwen3 Embedding 0.6B/4B/8B, nomic lite, all-minilm fast
 - **Factory functions** — `make_llm()`, `make_embed()`, `make_reranker()`
 - **Auto-router** — `route_model()` heuristic classifier (no LLM call needed)
 - **File rules** — what to index, what to skip, chunk sizes per profile

@@ -104,8 +104,8 @@ export default function Docs({ onBack }: Props) {
               <div className={`p-5 rounded-2xl border ${sectionBg}`}>
                 <p className={`text-sm leading-relaxed ${textSub}`}>
                   {isEs
-                    ? 'TrinaxAI 1.0.0 es un asistente open-source bajo AGPL-3.0-or-later. La inferencia, RAG y datos persistidos funcionan localmente con Ollama; solo la búsqueda web opcional, las descargas y los destinos remotos que configures usan Internet.'
-                    : 'TrinaxAI 1.0.0 is an open-source assistant under AGPL-3.0-or-later. Inference, RAG, and persisted data run locally with Ollama; only optional web search, downloads, and remote targets you configure use the Internet.'}
+                    ? 'TrinaxAI 1.0.1 es un asistente open-source bajo AGPL-3.0-or-later. La inferencia, RAG y datos persistidos funcionan localmente con Ollama; solo la búsqueda web opcional, las descargas y los destinos remotos que configures usan Internet.'
+                    : 'TrinaxAI 1.0.1 is an open-source assistant under AGPL-3.0-or-later. Inference, RAG, and persisted data run locally with Ollama; only optional web search, downloads, and remote targets you configure use the Internet.'}
                 </p>
               </div>
 
@@ -417,7 +417,7 @@ VITE_TRINAXAI_VISION_MODEL=qwen3.5:4b`}</pre>
                       </tr>
                     </thead>
                     <tbody>
-                      <tr><td className="py-1.5">General</td><td className="py-1.5">{isEs ? 'Chat y preguntas cotidianas' : 'Chat and everyday questions'}</td><td className="font-mono text-[#4ea3e0]">qwen3.5:2b</td></tr>
+                      <tr><td className="py-1.5">General</td><td className="py-1.5">{isEs ? 'Chat y preguntas cotidianas' : 'Chat and everyday questions'}</td><td className="font-mono text-[#4ea3e0]">qwen3.5:4b</td></tr>
                       <tr><td className="py-1.5">Code</td><td className="py-1.5">{isEs ? 'Generación de código' : 'Code generation'}</td><td className="font-mono text-[#4ea3e0]">qwen3.5:4b</td></tr>
                       <tr><td className="py-1.5">Deep</td><td className="py-1.5">{isEs ? 'Razonamiento y tareas complejas' : 'Reasoning and complex tasks'}</td><td className="font-mono text-[#4ea3e0]">qwen3.5:4b</td></tr>
                       <tr><td className="py-1.5">Fast</td><td className="py-1.5">{isEs ? 'Preguntas muy cortas' : 'Very short prompts'}</td><td className="font-mono text-[#4ea3e0]">qwen3.5:2b</td></tr>

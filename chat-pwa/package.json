@@ -1,7 +1,7 @@
 {
   "name": "trinaxai-chat",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.0.1",
   "license": "AGPL-3.0-or-later",
   "type": "module",
   "engines": {
@@ -16,6 +16,8 @@
     "preview:vite": "vite preview --host 0.0.0.0 --port 3334",
     "serve": "node server.mjs",
     "test": "vitest run && npm run test:server",
+    "typecheck": "tsc --noEmit",
+    "lint": "tsc --noEmit",
     "test:server": "npm run build:server && node --test server.integration.mjs",
     "test:e2e": "playwright test",
     "test:watch": "vitest"

@@ -546,6 +546,9 @@ if ($Profile -eq "8gb") {
   $ModelDeep = "qwen3.5:9b"
   $ModelFast = "qwen3.5:2b"
   $VisionModel = "qwen3.5:9b"
+  $EmbedPreset = "quality"
+  $EmbedModel = "qwen3-embedding:4b"
+  $EmbedDims = "2560"
   $EmbedKeepAlive = "30m"
 } elseif ($Profile -eq "ultra") {
   $ModelGeneral = "qwen3.5:35b"
@@ -553,6 +556,9 @@ if ($Profile -eq "8gb") {
   $ModelDeep = "qwen3.5:35b"
   $ModelFast = "qwen3.5:4b"
   $VisionModel = "qwen3.5:35b"
+  $EmbedPreset = "max"
+  $EmbedModel = "qwen3-embedding:8b"
+  $EmbedDims = "4096"
   $EmbedBatch = "16"
   $EmbedKeepAlive = "30m"
 }

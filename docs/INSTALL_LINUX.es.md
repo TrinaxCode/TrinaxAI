@@ -355,13 +355,13 @@ Después inicia solo el gateway PWA del host y la API en Docker:
 ```bash
 export TRINAXAI_DOCKER_UID="$(id -u)"
 export TRINAXAI_DOCKER_GID="$(id -g)"
-export TRINAXAI_DOCKER_IMAGE=ghcr.io/trinaxcode/trinaxai:1.0.0
+export TRINAXAI_DOCKER_IMAGE=ghcr.io/trinaxcode/trinaxai:1.0.1
 docker compose pull
 docker compose up --no-build -d
 .venv/bin/python service_manager.py start-frontend --base-dir "$PWD"
 ```
 
-El registro también publica las etiquetas `1.0`, `1` y `latest`. Fija `1.0.0`
+El registro también publica las etiquetas `1.0`, `1` y `latest`. Fija `1.0.1`
 para un despliegue reproducible. Para construir el checkout actual, omite
 `TRINAXAI_DOCKER_IMAGE` y ejecuta `docker compose up --build -d`.
 
@@ -400,6 +400,9 @@ docker compose down
 Este perfil no containeriza todavía la PWA ni Ollama, y no debe exponerse el
 puerto `3333` fuera del host. No uses `startup_ai.sh` ni `start-ai` mientras
 este Compose esté activo: intentarían iniciar otra API en el mismo puerto.
+
+El archivo `.env` es opcional para Compose. Si no existe, se usan los valores
+seguros de `compose.yaml`; añádelo solo cuando necesites sobrescribir la configuración.
 
 ## Actualizar
 

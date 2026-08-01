@@ -65,7 +65,7 @@ respuestas habladas se controlan por separado.
 
 | Variable | Predeterminado | Propósito |
 |---|---:|---|
-| `TRINAXAI_EMBED_PRESET` | según perfil | `balanced` (`qwen3-embedding:0.6b`), `lite` (`nomic-embed-text`) o `fast` (`all-minilm`). |
+| `TRINAXAI_EMBED_PRESET` | según perfil | `balanced` (0.6B), `quality` (4B), `max` (8B), `lite` (`nomic-embed-text`) o `fast` (`all-minilm`). |
 | `TRINAXAI_EMBED` | según preset | Modelo de embeddings. |
 | `TRINAXAI_EMBED_DIMS` | según preset | Dimensiones; cambiarlo exige reconstruir el índice. |
 | `TRINAXAI_EMBED_WORKERS` | según perfil | Solicitudes de embedding concurrentes. |

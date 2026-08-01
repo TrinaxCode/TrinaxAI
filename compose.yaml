@@ -8,7 +8,8 @@ services:
     restart: unless-stopped
     user: "${TRINAXAI_DOCKER_UID:-1000}:${TRINAXAI_DOCKER_GID:-1000}"
     env_file:
-      - .env
+      - path: .env
+        required: false
     environment:
       HOME: /tmp
       TRINAXAI_HOST: 0.0.0.0

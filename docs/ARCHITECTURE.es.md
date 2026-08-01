@@ -35,7 +35,7 @@ La fuente única de verdad para todos los subsistemas. Define:
 
 - **Flota de modelos** — `MODEL_GENERAL`, `MODEL_CODE`, `MODEL_DEEP` y `MODEL_FAST`; los nombres concretos dependen del perfil activo y se pueden sobrescribir en `.env`.
 - **Perfiles de hardware** — ajustados automáticamente por `TRINAXAI_PROFILE` (4gb/8gb/16gb/max/ultra)
-- **Presets de embeddings** — Qwen3 Embedding 0.6B equilibrado, nomic lite, all-minilm rápido
+- **Presets de embeddings** — Qwen3 Embedding 0.6B/4B/8B según perfil, nomic lite, all-minilm rápido
 - **Funciones de fábrica** — `make_llm()`, `make_embed()`, `make_reranker()`
 - **Enrutador automático** — clasificador heurístico `route_model()` (sin llamada al LLM)
 - **Reglas de archivos** — qué indexar, qué omitir, tamaños de chunks por perfil
