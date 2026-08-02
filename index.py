@@ -61,6 +61,8 @@ _EPUB_TEXT_LIMIT = 20 * 1024 * 1024
 MANIFEST_SCHEMA_VERSION = 2
 FINGERPRINT_ALGORITHM = "blake2b-256"
 _HASH_BLOCK_BYTES = 1024 * 1024
+_SENSITIVE_NAMES = {".env", ".netrc", ".npmrc", ".pypirc", "credentials.json", "secrets.json", "id_rsa", "id_ed25519"}
+_SENSITIVE_EXTENSIONS = {".key", ".pem", ".p12", ".pfx"}
 
 
 class _HTMLTextExtractor(HTMLParser):
@@ -256,7 +258,6 @@ def collect_files(root: str) -> list[str]:
         "contributing",
         "gemfile",
         "procfile",
-        ".env",
     }
     files: list[str] = []
     skipped_big = 0
@@ -271,6 +272,13 @@ def collect_files(root: str) -> list[str]:
             and not d.endswith((".egg-info", ".dist-info"))
         ]
         for fn in filenames:
+            lower_name = fn.lower()
+            if (
+                lower_name in _SENSITIVE_NAMES
+                or lower_name.startswith(".env.")
+                or os.path.splitext(lower_name)[1] in _SENSITIVE_EXTENSIONS
+            ):
+                continue
             if fn.startswith(".") and fn.lower() not in allowed_names:
                 continue
             full = os.path.join(dirpath, fn)

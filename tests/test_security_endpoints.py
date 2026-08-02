@@ -116,6 +116,8 @@ def test_admin_helper_scope_mapping_origin_and_proxy_secret(tmp_path, monkeypatc
     assert required_scopes_for_request(request("/collections")) == ("read_private",)
     assert required_scopes_for_request(request("/collections", "POST")) == ("index",)
     assert required_scopes_for_request(request("/v1/sources/docs/file", "DELETE")) == ("index",)
+    assert required_scopes_for_request(request("/app-state", "GET")) == ("read_private",)
+    assert required_scopes_for_request(request("/app-state", "DELETE")) == ("system",)
     assert required_scopes_for_request(request("/unknown")) == ("system",)
 
     monkeypatch.delenv("TRINAXAI_CORS_ORIGINS", raising=False)

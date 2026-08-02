@@ -316,6 +316,8 @@ def required_scopes_for_request(request: Request) -> tuple[str, ...]:
         return ("read_private",) if method == "GET" else ("index",)
     if path.startswith("/v1/sources"):
         return ("index",) if method == "DELETE" else ("read_private",)
+    if path == "/app-state" and method == "DELETE":
+        return ("system",)
     if path.startswith(("/app-state", "/attachments", "/v1/memory", "/v1/stats")):
         return ("read_private",)
     if path.startswith("/v1/usage"):

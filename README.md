@@ -5,8 +5,8 @@
 </p>
 
 <p align="center">
-  <strong>Open-source, local-first AI assistant with RAG, a tool-using coding agent, vision, voice, a CLI, and an installable PWA.</strong><br>
-  Inference and your data stay on your machine by default. No cloud account, no subscription.
+  <strong>Local-first AI assistant with a real RAG engine, a sandboxed coding agent, and capability-scoped device pairing.</strong><br>
+  Cited answers over your own code and documents. Inference and your data stay on your machine by default — no cloud account, no subscription.
 </p>
 
 <p align="center">
@@ -44,6 +44,12 @@ curl -fsSL https://raw.githubusercontent.com/TrinaxCode/TrinaxAI/main/install.sh
 ```
 
 ### Windows (PowerShell)
+
+```powershell
+irm https://raw.githubusercontent.com/TrinaxCode/TrinaxAI/main/install.ps1 | iex
+```
+
+Downloads TrinaxAI to `%LOCALAPPDATA%\TrinaxAI` and runs the guided installer. Or clone first if you prefer to review the script:
 
 ```powershell
 git clone https://github.com/TrinaxCode/TrinaxAI.git
@@ -142,11 +148,16 @@ can revoke access immediately. See the complete
 
 ## What is TrinaxAI?
 
-TrinaxAI is a **local-first AI assistant** that runs entirely on your own hardware. It bundles:
+TrinaxAI is a **local-first AI assistant** that runs entirely on your own hardware.
 
-- an **installable conversational PWA** for desktop, phone, and tablet,
-- a **developer CLI** (`trinaxai`) with a private, local tool-using coding agent,
+**What makes it different:** Most local AI tools are just Ollama wrappers. TrinaxAI bundles a production-grade RAG engine (AST-aware chunking, hybrid vector + BM25 retrieval, optional reranker, cited answers), a sandboxed tool-using coding agent, and capability-scoped device pairing — all in one box with a CLI, an installable PWA, and cross-device sync. No cloud account, no subscription.
+
+It includes:
+
 - a **RAG engine** that indexes your projects and answers with cited code/document context,
+- a **tool-using coding agent** with sandboxed workspace access and explicit approvals,
+- a **developer CLI** (`trinaxai`) and an **installable PWA** for desktop, phone, and tablet,
+- **device pairing** with revocable capability scopes (chat, read private data, index, agent, system control),
 - **voice** (speech-to-text + text-to-speech) and **vision** (image analysis) using local models.
 
 Inference and persisted data stay on the configured host by default. Only explicit actions use the network: installation, model downloads, opt-in web search, or a deliberately remote Ollama/search endpoint.
@@ -252,11 +263,13 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full design and data fl
 
 ## 🖥️ Supported platforms
 
-| OS | Installer | Service manager | Status |
+| OS | Installer | Service manager | Testing |
 |---|---|---|---|
-| **Linux** (Ubuntu, Debian, Fedora, Arch) | `install.sh` | user systemd | Ready to install and use |
-| **macOS** (Intel + Apple Silicon) | `install.sh` | launchctl | Ready to install and use |
-| **Windows** (10/11, PowerShell) | `install.ps1` | subprocess supervisor | Ready to install and use |
+| **Linux** (Ubuntu, Debian, Fedora, Arch) | `install.sh` | user systemd | CI: syntax + pytest + E2E |
+| **macOS** (Intel + Apple Silicon) | `install.sh` | launchctl | CI: syntax + pytest |
+| **Windows** (10/11, PowerShell) | `install.ps1` | subprocess supervisor | CI: syntax + pytest |
+
+The installers pass syntax validation and the backend/CLI/PWA test suites run on all three platforms in CI. Full end-to-end installation testing (model downloads, service startup, first-run wizard) is manual. Report issues with your OS/shell/hardware profile.
 
 Runs on CPU — no GPU required. Performance scales with RAM and model size.
 
@@ -286,7 +299,7 @@ trinaxai export           # export a conversation to Markdown
 ```
 
 Other top-level commands are `browse`, `collections`, `memory`, `watch`,
-`pair`, `obsidian`, `models`, `config`, `restart`, `update`, `uninstall`,
+`pair`, `network`, `obsidian`, `models`, `config`, `restart`, `update`, `uninstall`,
 `version`, and `help`. The default CLI engine is Ollama; use `--engine rag` when
 indexed context is required.
 
@@ -303,7 +316,7 @@ and `/status`. Full syntax, subcommands, and TOML config:
 
 The installer picks a **hardware profile** from your RAM. The supported installer profiles are `8gb`, `16gb`, `max`, and `ultra`; everything is overridable in `.env`.
 
-| Role | Low (`8gb`) | Medium (`16gb`) | High (`max`) | Ultra |
+| Role | Low (`8gb`) | Medium (`16gb`) | High (`max`) † | Ultra † |
 |---|---|---|---|---|
 | **Chat / reasoning** | `qwen3.5:2b` | `qwen3.5:4b` | `qwen3.5:9b` | `qwen3.5:35b` (MoE) |
 | **Code** | `qwen3.5:2b` | `qwen3.5:4b` | `qwen3.5:9b` | `qwen3-coder:30b` (MoE) |
@@ -311,6 +324,8 @@ The installer picks a **hardware profile** from your RAM. The supported installe
 | **Vision** | `qwen3.5:2b` | `qwen3.5:4b` | `qwen3.5:9b` | `qwen3.5:35b` (MoE) |
 | **Fast** | `qwen3.5:2b` | `qwen3.5:2b` | `qwen3.5:2b` | `qwen3.5:4b` |
 | **Embeddings** | `qwen3-embedding:0.6b` (1024d) | `qwen3-embedding:0.6b` (1024d) | `qwen3-embedding:4b` (2560d) | `qwen3-embedding:8b` (4096d) |
+
+† `max` and `ultra` profiles use models (9B, 30B MoE, 35B MoE) that require 24GB+ RAM and have not been tested on the primary development hardware (16GB, CPU-only). They are defined for community use but ship without performance guarantees. Report your experience with these profiles.
 
 The **generation pipeline** routes each request across the profile's general, deep, code, and fast roles. Qwen3.5 also handles vision, avoiding a second resident VL model. Vision models are downloaded on first image analysis, so installation and updates do not block on a large pull. Confirm names with `ollama list` and adjust `.env` if you change models. See [docs/CONFIGURATION.md](docs/CONFIGURATION.md) and [docs/ENVIRONMENT_VARIABLES.md](docs/ENVIRONMENT_VARIABLES.md).
 
@@ -333,6 +348,8 @@ TrinaxAI is **local-first by design.**
 
 For LAN/remote access: use a firewall to block ports 3333/11434, a VPN (Tailscale/WireGuard) rather than exposing ports, and `trinaxai pair start` with minimal scopes. Full threat model and reporting: [SECURITY.md](SECURITY.md).
 
+After changing Wi-Fi, router, or location, do not reinstall. Run `trinaxai network refresh` on the host; it renews local HTTPS, removes the stale LAN origin, prints the current IP address plus a `https://HOSTNAME.local:3334` alternative, and restarts the certificate consumers. The new address detects the existing installation; pair it once to restore chats and preferences. If an older offline address opens, use **Remove this old PWA** to erase that origin's data, cache, and service worker on the device.
+
 ---
 
 ## 🧪 Development
@@ -347,7 +364,7 @@ pip install -r requirements.txt
 python rag_api.py                     # serves app.main:app on :3333
 
 # PWA
-cd chat-pwa && npm install && npm run dev   # :3334
+(cd chat-pwa && npm install && npm run dev) # :3334
 
 # CLI (editable)
 pip install -e . && trinaxai doctor

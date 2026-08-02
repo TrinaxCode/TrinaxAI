@@ -589,8 +589,8 @@ trinaxai research --query "compare the current versions" --depth 2`}</pre>
                 <h3 className={`font-semibold ${textMain}`}>{isEs ? 'Archivos adjuntos' : 'Attached files'}</h3>
                 <p className={`text-sm ${textSub}`}>
                   {isEs
-                    ? 'Adjuntar un archivo en el chat no lo guarda ni lo indexa automáticamente. TrinaxAI lee el contenido como contexto temporal para analizarlo en esa conversación. Si el modo RAG está activo, verás una opción separada para indexarlo y elegir la colección.'
-                    : 'Attaching a file in chat does not save or index it automatically. TrinaxAI reads it as temporary context for that conversation. If RAG mode is active, you will see a separate option to index it and choose the collection.'}
+                    ? 'Adjuntar un archivo no lo indexa automáticamente. TrinaxAI lo conserva en el host para sincronizar la conversación y usa su contenido como contexto; el modo RAG ofrece una opción separada para indexarlo.'
+                    : 'Attaching a file does not index it automatically. TrinaxAI keeps it on the host to synchronize the conversation and uses its content as context; RAG mode provides a separate option to index it.'}
                 </p>
                 <h3 className={`font-semibold ${textMain}`}>{isEs ? 'Colecciones' : 'Collections'}</h3>
                 <p className={`text-sm ${textSub}`}>

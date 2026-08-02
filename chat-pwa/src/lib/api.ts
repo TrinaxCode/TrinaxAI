@@ -1706,6 +1706,28 @@ export function creatorSystemPrompt(messages: ChatMessage[], lang: 'en' | 'es'):
   }];
 }
 
+/** Fixed product facts do not need a model and small local models can distort them. */
+export function canonicalIdentityAnswer(messages: ChatMessage[]): string | null {
+  const latest = [...messages].reverse().find((message) => message.role === 'user')?.content ?? '';
+  const normalized = latest.toLocaleLowerCase().replace(/[^a-záéíóúüñ ]+/gi, ' ').replace(/\s+/g, ' ').trim();
+  const lang = detectTurnLanguage(latest);
+  const creatorQuestion = [
+    'quien te creo', 'quién te creó', 'quien es tu creador', 'quién es tu creador',
+    'who created you', 'who made you', 'who is your creator',
+  ].some((question) => normalized.includes(question));
+  if (creatorQuestion) {
+    return lang === 'en'
+      ? 'TrinaxAI was created by TrinaxCode, a Full Stack Web Developer based in Tuxtla Gutiérrez, Chiapas, and originally from Nicaragua. Their main expertise includes React, TypeScript, Django, PostgreSQL and Firebase. Official GitHub: https://github.com/TrinaxCode'
+      : 'TrinaxAI fue creado por TrinaxCode, un Full Stack Web Developer radicado en Tuxtla Gutiérrez, Chiapas, y originario de Nicaragua. Su experiencia principal incluye React, TypeScript, Django, PostgreSQL y Firebase. GitHub oficial: https://github.com/TrinaxCode';
+  }
+  if (!new Set(['quien eres', 'quién eres', 'que eres', 'qué eres', 'who are you', 'what are you']).has(normalized)) {
+    return null;
+  }
+  return lang === 'en'
+    ? 'I’m TrinaxAI, a general-purpose local-first AI assistant. I can help with everyday questions, writing, learning, planning, translation, math, analysis, documents, images and programming. Official repository: https://github.com/TrinaxCode/TrinaxAI'
+    : 'Soy TrinaxAI, un asistente de IA local-first de propósito general. Puedo ayudarte con preguntas cotidianas, escritura, aprendizaje, planificación, traducción, matemáticas, análisis, documentos, imágenes y programación. Repositorio oficial: https://github.com/TrinaxCode/TrinaxAI';
+}
+
 function voiceSystemPrompt(lang: 'en' | 'es'): ChatMessage {
   return {
     role: 'system',
@@ -1967,6 +1989,12 @@ export async function streamOllama(
   // Solo el turno actual con imagen debe activar visión. Si no, no cargamos 7B.
   if (lastMessage?.image) {
     return streamOllamaVision(messages, onToken, signal, onMeta, options);
+  }
+
+  const identityAnswer = canonicalIdentityAnswer(messages);
+  if (identityAnswer) {
+    onToken(identityAnswer);
+    return identityAnswer;
   }
 
   const routed = routeOllamaModel(last, messages);

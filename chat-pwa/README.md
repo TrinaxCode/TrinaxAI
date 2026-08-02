@@ -41,9 +41,8 @@ Open `https://localhost:3334` when local certificates exist; the gateway falls b
 | `npm run serve` | Serve `dist/` on port 3334 using the production Node gateway. |
 | `npm run preview` | Compatibility alias for `npm run serve`. |
 | `npm test` | Run the Vitest suite once. |
+| `npm run lint` | Type-check without building. |
 | `npx tsc --noEmit` | Type-check without building. |
-
-There is currently no `npm run lint` script; repository checks use `npx tsc --noEmit`.
 
 ## Source map
 
@@ -179,7 +178,7 @@ Frontend URL resolution lives in `src/lib/config.ts`. See the full [configuratio
 | `VITE_TRINAXAI_VISION_MODEL` | Fast vision model. |
 | `VITE_TRINAXAI_KEEP_ALIVE` | Direct-chat keep-alive default (optional; defaults to `10m` in the client). |
 
-The gateway loads `chat-pwa/certs/trinaxai-local.pfx` first, or `chat-pwa/certs/localhost-key.pem` plus `chat-pwa/certs/localhost.pem`. Certificate files are local secrets/artifacts and must not be committed. If the host changes LAN networks and receives a new IP, rerun the installer so it renews the certificate with the current LAN address before using the PWA from another device.
+The gateway loads `chat-pwa/certs/trinaxai-local.pfx` first, or `chat-pwa/certs/localhost-key.pem` plus `chat-pwa/certs/localhost.pem`. Certificate files are local secrets/artifacts and must not be committed. If the host changes LAN networks or receives a new IP, run `trinaxai network refresh` before using the PWA from another device.
 
 ## System-control boundary
 

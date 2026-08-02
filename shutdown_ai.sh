@@ -15,5 +15,5 @@ else
 fi
 
 echo "TrinaxAI: stopping AI services..."
-TRINAXAI_PRIVILEGED_WRAPPER=1 "$PY" "$SCRIPT_DIR/service_manager.py" stop-ai --base-dir "$SCRIPT_DIR"
+"$PY" "$SCRIPT_DIR/service_manager.py" stop-ai --base-dir "$SCRIPT_DIR"
 echo "TrinaxAI: AI services stopped. The PWA remains available."

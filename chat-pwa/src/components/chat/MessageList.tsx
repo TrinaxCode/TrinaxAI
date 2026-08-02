@@ -122,6 +122,7 @@ export default function MessageList({
             {editingIndex === index ? (
               <div className="chat-bubble-wrap min-w-0 flex-1">
                 <textarea
+                  aria-label={t('clickToEdit')}
                   ref={editInputRef}
                   value={editingText}
                   onChange={(event) => {

@@ -46,6 +46,7 @@ trinaxai pair revoke DEVICE_ID
 trinaxai obsidian --vault PATH [--collection ID]
 trinaxai export [--session NAME] [--format md] [--output PATH]
 trinaxai status|start|stop|restart|models|config|doctor [--strict] [--json]|version
+trinaxai network [refresh [-y] [--no-restart]]
 trinaxai update
 trinaxai uninstall
 ```
@@ -106,6 +107,14 @@ acting as a paired remote device reads `TRINAXAI_DEVICE_TOKEN` and sends
 `X-TrinaxAI-Device-Token`; point `--api-url` at the gateway RAG base, for example
 `https://host:3334/api/rag`. Do not put a token in command history or a committed
 TOML file. Pairing represents a revocable device capability, not a user account.
+
+## Changing local networks
+
+`trinaxai network` prints the current IP PWA link and a `.local` alternative.
+After changing Wi-Fi, router, or LAN address, run `trinaxai network refresh` on
+the host to renew HTTPS, CORS, and the active service configuration. This does
+not erase data or grant every device access; existing pairing scopes remain in
+force.
 
 ## Agent isolation
 

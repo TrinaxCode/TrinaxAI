@@ -6,6 +6,7 @@ import Intro from './components/Intro';
 import Background from './components/Background';
 import ErrorBoundary from './components/ErrorBoundary';
 import ChatSidebar from './components/ChatSidebar';
+import NetworkNotice from './components/NetworkNotice';
 import { useChatHistory } from './hooks/useChatHistory';
 import { onSharedStateUpdated, startSharedStateSync, syncSharedStateOnce } from './lib/sharedState';
 import type { ChatEngine, ChatMessage, ChatSession } from './lib/api';
@@ -50,6 +51,7 @@ export default function App() {
   const [routeChatId, setRouteChatId] = useState<string | undefined>(initialRoute.chatId);
   const [pendingAgentRequest, setPendingAgentRequest] = useState<AgentHandoff | null>(null);
   const [sharedReady, setSharedReady] = useState(false);
+  const [existingInstallation, setExistingInstallation] = useState(false);
   const { isDark } = useTheme();
   const { t } = useI18n();
   const resizeTimerRef = useRef<number>(0);
@@ -150,6 +152,10 @@ export default function App() {
   }, [applyRoute]);
 
   useEffect(() => {
+    void fetch('/api/network', { cache: 'no-store' })
+      .then((response) => response.ok ? response.json() : null)
+      .then((status) => setExistingInstallation(status?.existingInstallation === true))
+      .catch(() => undefined);
     // Local state is immediately usable. Remote/LAN state syncs in the
     // background so an unavailable RAG service never delays PWA startup.
     setSharedReady(true);
@@ -397,6 +403,10 @@ export default function App() {
         {showIntro && <Intro onFinish={handleIntroFinish} />}
       </AnimatePresence>
 
+      {!showIntro && preMount && sharedReady && !showOnboarding && !showDeviceSetup && (
+        <NetworkNotice canManageSystem={deviceSessionHasScope('system')} />
+      )}
+
       {/* Onboarding Wizard (first time only) */}
       {showOnboarding && (
         <Suspense fallback={null}>
@@ -408,7 +418,10 @@ export default function App() {
       )}
       {showDeviceSetup && !showOnboarding && (
         <Suspense fallback={null}>
-          <DeviceSetupChoice onNewDevice={() => { setShowDeviceSetup(false); setShowOnboarding(true); }} />
+          <DeviceSetupChoice
+            preferExisting={existingInstallation}
+            onNewDevice={() => { setShowDeviceSetup(false); setShowOnboarding(true); }}
+          />
         </Suspense>
       )}
       {blockedFeature && (

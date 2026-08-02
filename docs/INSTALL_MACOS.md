@@ -145,23 +145,13 @@ OLLAMA_HOST=127.0.0.1
 VITE_TRINAXAI_RAG_TARGET=http://localhost:3333
 ```
 
-To use a phone on the same Wi-Fi, find your IP:
+After changing Wi-Fi, renew the local address and HTTPS certificate:
 
 ```bash
-ipconfig getifaddr en0
+trinaxai network refresh
 ```
 
-If `en0` returns nothing:
-
-```bash
-ipconfig getifaddr en1
-```
-
-Add that IP to `TRINAXAI_CORS_ORIGINS`, for example:
-
-```bash
-TRINAXAI_CORS_ORIGINS=https://localhost:3334,http://localhost:3334,https://192.168.1.25:3334,http://192.168.1.25:3334
-```
+Use the IP URL it prints from phones on the same network; the `.local` URL is an alternative when mDNS works on the router.
 
 ## Download models
 

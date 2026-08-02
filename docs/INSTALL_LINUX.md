@@ -164,17 +164,13 @@ OLLAMA_HOST=127.0.0.1
 VITE_TRINAXAI_RAG_TARGET=http://localhost:3333
 ```
 
-If you want to access TrinaxAI from a phone on the same network, add your local IP to `TRINAXAI_CORS_ORIGINS`:
+If you change networks or want to connect a phone on the same Wi-Fi, let TrinaxAI renew its local address and HTTPS certificate:
 
 ```bash
-hostname -I
+trinaxai network refresh
 ```
 
-Example:
-
-```bash
-TRINAXAI_CORS_ORIGINS=https://localhost:3334,http://localhost:3334,https://192.168.1.25:3334,http://192.168.1.25:3334
-```
+Open the IP URL it prints. The `.local` URL is an alternative when mDNS works on the router. A cached PWA at an old IP is an offline shell, not a second running installation.
 
 ## Download models
 

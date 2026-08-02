@@ -44,6 +44,10 @@ export function requiredOllamaProxyScope(pathname: string): 'chat' | 'system' {
     : 'chat';
 }
 
+export function needsInferenceLock(pathname: string): boolean {
+  return pathname !== '/api/ollama/api/tags';
+}
+
 export function constantTimeTokenEqual(left: string, right: string): boolean {
   const a = Buffer.from(left, 'utf8');
   const b = Buffer.from(right, 'utf8');

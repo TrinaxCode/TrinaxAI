@@ -94,6 +94,20 @@ test('production gateway preserves credentials, replaces proxy identity, and rej
 
     const missing = await fetch(`http://127.0.0.1:${gatewayPort}/assets/missing.js`);
     assert.equal(missing.status, 404);
+
+    const network = await fetch(`http://127.0.0.1:${gatewayPort}/api/network`);
+    assert.equal(network.status, 200);
+    const networkBody = await network.json();
+    assert.equal(networkBody.online, true);
+    assert.equal(typeof networkBody.existingInstallation, 'boolean');
+    assert.equal(networkBody.refreshCommand, 'trinaxai network refresh');
+    assert.match(networkBody.recommendedUrl, /^https:\/\/(?:\d{1,3}\.){3}\d{1,3}:/);
+
+    const forbiddenRefresh = await fetch(`http://127.0.0.1:${gatewayPort}/api/system/network-refresh`, {
+      method: 'POST',
+      headers: { Origin: 'https://example.com' },
+    });
+    assert.equal(forbiddenRefresh.status, 403);
   } finally {
     gateway.kill();
     await new Promise((resolve) => backend.close(resolve));

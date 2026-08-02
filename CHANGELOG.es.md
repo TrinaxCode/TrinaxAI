@@ -3,6 +3,17 @@
 Todos los cambios importantes de TrinaxAI se documentan aquí. El proyecto sigue
 el formato de [Keep a Changelog](https://keepachangelog.com/).
 
+## [Sin publicar]
+
+### Añadido
+
+- Se agregó `trinaxai network refresh` y un aviso accesible en la PWA para
+  recuperar orígenes cacheados tras cambiar de Wi-Fi, router o dirección LAN.
+- La copia offline permite borrar explícitamente su caché, datos locales y
+  service worker para retirar una instalación guardada en una dirección anterior.
+- Una dirección nueva detecta el estado existente del servidor y abre la
+  recuperación por vinculación en vez de repetir la configuración inicial.
+
 ## [1.0.2] — 2026-08-01
 
 ### Corregido

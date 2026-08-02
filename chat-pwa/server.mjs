@@ -1,5 +1,5 @@
 import { execFile, spawn } from 'node:child_process';
-import { createHmac, randomBytes } from 'node:crypto';
+import { createHmac, randomBytes, X509Certificate } from 'node:crypto';
 import fs from 'node:fs';
 import http from 'node:http';
 import https from 'node:https';
@@ -17,6 +17,7 @@ import {
   isLoopbackAddress,
   isPrivateLanAddress,
   normalizeAddress,
+  needsInferenceLock,
   requiredOllamaProxyScope,
 } from './server-dist/vite-security.js';
 
@@ -220,8 +221,7 @@ async function proxyRequest(req, res, url, prefix) {
   // Model generation/pull/delete must be serialized, but a read-only health
   // probe must never wait behind an active stream. Otherwise the UI can report
   // Ollama as offline while Ollama is healthy and serving the current request.
-  const needsInferenceLock = ollama && browserPath !== '/api/ollama/api/tags';
-  if (needsInferenceLock) {
+  if (ollama && needsInferenceLock(browserPath)) {
     try {
       release = await acquireInferenceProcessLock(
         configuredPath('TRINAXAI_INFERENCE_LOCK_FILE', path.join(repoRoot, 'storage', '.inference.lock')),
@@ -332,6 +332,66 @@ function systemAuthorized(req) {
   );
 }
 
+function lanAddresses() {
+  const addresses = [];
+  for (const [name, entries] of Object.entries(os.networkInterfaces())) {
+    if (/^(docker|br-|veth|virbr)/i.test(name)) continue;
+    for (const entry of entries || []) {
+      const address = normalizeAddress(entry.address || '');
+      const linkLocal = /^(fe8|fe9|fea|feb)/i.test(address);
+      if (!entry.internal && !linkLocal && isPrivateLanAddress(address) && !addresses.includes(address)) addresses.push(address);
+    }
+  }
+  return addresses.sort((left, right) => Number(left.includes(':')) - Number(right.includes(':')) || left.localeCompare(right));
+}
+
+function hasExistingInstallation() {
+  try {
+    const raw = JSON.parse(readBounded(path.join(repoRoot, 'storage', 'app_state.json'), 6 * 1024 * 1024, 'utf8'));
+    const values = raw?.schema_version === 2 ? raw.values : raw;
+    return values?.['tc-onboarding-complete'] === 'true';
+  } catch {
+    return false;
+  }
+}
+
+function networkStatus() {
+  const hostname = os.hostname().split('.', 1)[0] || 'trinaxai';
+  const stableHost = `${hostname}.local`;
+  const addresses = lanAddresses();
+  const renderUrl = (address) => `https://${address.includes(':') ? `[${address}]` : address}:${port}`;
+  const urls = [...addresses.map(renderUrl), renderUrl(stableHost)];
+  const configuredOrigins = String(process.env.TRINAXAI_CORS_ORIGINS || '');
+  const configurationCurrent = urls.every((url) => configuredOrigins.includes(url));
+  let certificateCurrent = null;
+  try {
+    const certificate = new X509Certificate(readBounded(localCaPath, 1024 * 1024));
+    const subjectAltName = certificate.subjectAltName || '';
+    certificateCurrent = subjectAltName.includes(`DNS:${stableHost}`)
+      && addresses.every((address) => subjectAltName.includes(`IP Address:${address}`));
+  } catch { /* PFX-only Windows installs are checked by the refresh command. */ }
+  return {
+    online: true,
+    existingInstallation: hasExistingInstallation(),
+    hostname,
+    addresses,
+    urls,
+    recommendedUrl: urls[0],
+    configurationCurrent,
+    certificateCurrent,
+    needsRefresh: !configurationCurrent || certificateCurrent === false,
+    refreshCommand: 'trinaxai network refresh',
+  };
+}
+
+function networkInfo(req, res) {
+  if (req.method !== 'GET') {
+    sendJson(res, 405, { ok: false, error: 'Method not allowed.' });
+    return;
+  }
+  sendJson(res, 200, networkStatus());
+}
+
 function systemControl(req, res, pathname) {
   if (req.method !== 'POST') {
     sendJson(res, 405, { ok: false, error: 'Method not allowed.' });
@@ -342,6 +402,29 @@ function systemControl(req, res, pathname) {
     return;
   }
   const action = pathname.slice('/api/system/'.length);
+  if (action === 'network-refresh') {
+    const args = [
+      '-m', 'trinaxai_cli', '--install-root', repoRoot,
+      'network', 'refresh', '--yes', '--no-restart',
+    ];
+    execFile(localPython(), args, { cwd: repoRoot, windowsHide: true }, (error) => {
+      if (error) {
+        console.error(`TrinaxAI network refresh failed: ${error.message}`);
+        sendJson(res, 500, { ok: false, error: 'The local network configuration could not be refreshed.' });
+        return;
+      }
+      sendJson(res, 200, { ok: true, ...networkStatus(), restartRequired: true });
+      setTimeout(() => {
+        const child = spawn(
+          localPython(),
+          [path.join(repoRoot, 'service_manager.py'), 'reload-network', '--base-dir', repoRoot],
+          { cwd: repoRoot, detached: true, stdio: 'ignore', windowsHide: true },
+        );
+        child.unref();
+      }, 400);
+    });
+    return;
+  }
   const managerAction = action === 'startup' ? 'start-ai' : action === 'shutdown' ? 'stop-ai' : 'stop-all';
   if (!['startup', 'shutdown', 'stop-all'].includes(action)) {
     sendJson(res, 404, { ok: false, error: 'Unknown system action.' });
@@ -431,6 +514,8 @@ function requestHandler(req, res) {
     void proxyRequest(req, res, url, '/api/ollama');
   } else if (url.pathname.startsWith('/api/system/')) {
     systemControl(req, res, url.pathname);
+  } else if (url.pathname === '/api/network') {
+    networkInfo(req, res);
   } else if (url.pathname.startsWith('/api/')) {
     sendJson(res, 404, { ok: false, error: 'API route not found.' });
   } else if (req.method === 'GET' || req.method === 'HEAD') {

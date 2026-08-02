@@ -156,9 +156,30 @@ def test_public_lifecycle_orders_services_and_honors_privileged_wrapper(monkeypa
     monkeypatch.setattr(sm, "_try_privileged_wrapper", lambda *_args: elevated)
     assert sm.start_ai(str(tmp_path)) is elevated
 
+    failed_wrapper = [sm.ProcessState("reload-network", False)]
+    monkeypatch.setattr(sm, "_try_privileged_wrapper", lambda *_args: failed_wrapper)
+    monkeypatch.setattr(sm.platform, "system", lambda: "Linux")
+    monkeypatch.setattr(sm.shutil, "which", lambda _name: "/usr/bin/systemctl")
+    monkeypatch.setattr(sm, "_run_systemctl", lambda *_args, **_kwargs: _completed(0))
+    assert sm.reload_network(str(tmp_path))[0].running is True
+    monkeypatch.setattr(sm, "_run_systemctl", lambda *_args, **_kwargs: _completed(1, stderr="denied"))
+    assert sm.reload_network(str(tmp_path))[0].detail == "denied"
+
     backend = SimpleNamespace(stop=lambda name: sm.ProcessState(name, False))
     monkeypatch.setattr(sm, "_backend", backend)
     assert [item.name for item in sm.stop_all()] == sm.FULL_SHUTDOWN_ORDER
+
+
+def test_start_actions_return_failure_when_a_service_does_not_start(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(sm, "start_all", lambda _base: [sm.ProcessState("rag_api", False, detail="failed")])
+    monkeypatch.setattr(sm, "start_ai", lambda _base: [sm.ProcessState("ollama", False, detail="failed")])
+    monkeypatch.setattr(
+        sm, "start_frontend", lambda _base: [sm.ProcessState("trinaxai-frontend", False, detail="failed")]
+    )
+
+    assert sm.main(["start", "--base-dir", str(tmp_path)]) == 1
+    assert sm.main(["start-ai", "--base-dir", str(tmp_path)]) == 1
+    assert sm.main(["start-frontend", "--base-dir", str(tmp_path)]) == 1
 
 
 def test_privileged_wrapper_and_systemd_enable_failures(monkeypatch, tmp_path: Path) -> None:

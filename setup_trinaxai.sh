@@ -75,8 +75,11 @@ case "${1:-}" in
   stop-ai)
     systemctl disable --now ai-rag.service ollama.service >/dev/null
     ;;
+  reload-network)
+    systemctl restart ai-rag.service trinaxai-frontend.service
+    ;;
   *)
-    echo "usage: trinaxai-lifecycle {start-ai|stop-ai}" >&2
+    echo "usage: trinaxai-lifecycle {start-ai|stop-ai|reload-network}" >&2
     exit 2
     ;;
 esac
@@ -86,7 +89,7 @@ chmod 0755 "$LIFECYCLE_WRAPPER"
 cat > /etc/sudoers.d/trinaxai <<EOF
 # Wrapper fijo, propiedad de root, con argumentos exactos. El repositorio y
 # sus scripts nunca se ejecutan como root.
-$USER_NAME ALL=(root) NOPASSWD: $LIFECYCLE_WRAPPER start-ai, $LIFECYCLE_WRAPPER stop-ai
+$USER_NAME ALL=(root) NOPASSWD: $LIFECYCLE_WRAPPER start-ai, $LIFECYCLE_WRAPPER stop-ai, $LIFECYCLE_WRAPPER reload-network
 EOF
 chmod 0440 /etc/sudoers.d/trinaxai
 # Validar sintaxis sudoers; si falla, eliminar para no romper sudo.
@@ -150,9 +153,9 @@ echo -e "      ${BLUE}·${NC} Verificando modelos (descarga los que falten)..."
 if [ "$PROFILE" = "8gb" ]; then
     MODELS=(qwen3-embedding:0.6b qwen3.5:2b)
 elif [ "$PROFILE" = "ultra" ]; then
-    MODELS=(qwen3-embedding:0.6b qwen3.5:4b qwen3.5:35b qwen3-coder:30b)
+    MODELS=(qwen3-embedding:8b qwen3.5:4b qwen3.5:35b qwen3-coder:30b)
 elif [ "$PROFILE" = "max" ]; then
-    MODELS=(qwen3-embedding:0.6b qwen3.5:2b qwen3.5:9b)
+    MODELS=(qwen3-embedding:4b qwen3.5:2b qwen3.5:9b)
 else
     # 16gb (default)
     MODELS=(qwen3-embedding:0.6b qwen3.5:2b qwen3.5:4b)

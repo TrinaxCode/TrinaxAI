@@ -5,8 +5,8 @@
 </p>
 
 <p align="center">
-  <strong>Asistente de IA open-source y local con RAG, un agente programador con herramientas, visión, voz, una CLI y una PWA instalable.</strong><br>
-  La inferencia y tus datos se quedan en tu equipo por defecto. Sin cuenta en la nube, sin suscripción.
+  <strong>Asistente de IA local-first con un motor RAG de verdad, un agente programador en sandbox y emparejamiento de dispositivos por scopes de capacidad.</strong><br>
+  Respuestas citadas sobre tu propio código y documentos. La inferencia y tus datos se quedan en tu equipo por defecto — sin cuenta en la nube, sin suscripción.
 </p>
 
 <p align="center">
@@ -44,6 +44,12 @@ curl -fsSL https://raw.githubusercontent.com/TrinaxCode/TrinaxAI/main/install.sh
 ```
 
 ### Windows (PowerShell)
+
+```powershell
+irm https://raw.githubusercontent.com/TrinaxCode/TrinaxAI/main/install.ps1 | iex
+```
+
+Descarga TrinaxAI en `%LOCALAPPDATA%\TrinaxAI` y ejecuta el instalador guiado. O clona primero si prefieres revisar el script:
 
 ```powershell
 git clone https://github.com/TrinaxCode/TrinaxAI.git
@@ -139,19 +145,24 @@ para un equipo con privilegio mínimo (la CLI usa `chat,read_private` por
 defecto). El host puede revocar el acceso de inmediato. Consulta la
 [guía completa de la PWA](chat-pwa/README.es.md#emparejar-un-navegador).
 
-Si cambias de red y cambia la IP local del host, vuelve a ejecutar el instalador
-para que detecte la nueva IP y renueve el certificado HTTPS antes de abrir la PWA
-desde otro dispositivo.
+Si cambia la red o la IP local del host, ejecuta `trinaxai network refresh` para
+renovar HTTPS y mostrar las direcciones actuales antes de abrir la PWA desde
+otro dispositivo.
 
 ---
 
 ## ¿Qué es TrinaxAI?
 
-TrinaxAI es un **asistente de IA local-first** que corre por completo en tu propio hardware. Incluye:
+TrinaxAI es un **asistente de IA local-first** que corre por completo en tu propio hardware.
 
-- una **PWA conversacional instalable** en escritorio, teléfono y tablet,
-- una **CLI para desarrolladores** (`trinaxai`) con un agente programador local y privado,
+**Qué lo diferencia:** La mayoría de herramientas de IA local son wrappers de Ollama. TrinaxAI integra un motor RAG de grado producción (chunking con AST, recuperación híbrida vector + BM25, reranker opcional, respuestas citadas), un agente programador con herramientas en sandbox, y emparejamiento de dispositivos por scopes de capacidad revocables — todo en una sola caja con CLI, PWA instalable y sincronización entre dispositivos. Sin cuenta en la nube, sin suscripción.
+
+Incluye:
+
 - un **motor RAG** que indexa tus proyectos y responde con contexto citado de tu código/documentos,
+- un **agente programador con herramientas** con acceso al workspace en sandbox y aprobaciones explícitas,
+- una **CLI para desarrolladores** (`trinaxai`) y una **PWA instalable** en escritorio, teléfono y tablet,
+- **emparejamiento de dispositivos** con scopes de capacidad revocables (chat, leer datos privados, indexar, agente, control del sistema),
 - **voz** (voz-a-texto + texto-a-voz) y **visión** (análisis de imágenes) con modelos locales.
 
 La inferencia y los datos persistidos se quedan en el host configurado por defecto. Solo acciones explícitas usan la red: instalación, descarga de modelos, búsqueda web opcional o un endpoint de Ollama/búsqueda remoto puesto a propósito.
@@ -245,11 +256,13 @@ Mira [docs/ARCHITECTURE.es.md](docs/ARCHITECTURE.es.md) para el diseño completo
 
 ## 🖥️ Plataformas compatibles
 
-| SO | Instalador | Gestor de servicios | Estado |
+| SO | Instalador | Gestor de servicios | Pruebas |
 |---|---|---|---|
-| **Linux** (Ubuntu, Debian, Fedora, Arch) | `install.sh` | systemd de usuario | Lista para instalar y usar |
-| **macOS** (Intel + Apple Silicon) | `install.sh` | launchctl | Lista para instalar y usar |
-| **Windows** (10/11, PowerShell) | `install.ps1` | supervisor por subproceso | Lista para instalar y usar |
+| **Linux** (Ubuntu, Debian, Fedora, Arch) | `install.sh` | systemd de usuario | CI: sintaxis + pytest + E2E |
+| **macOS** (Intel + Apple Silicon) | `install.sh` | launchctl | CI: sintaxis + pytest |
+| **Windows** (10/11, PowerShell) | `install.ps1` | supervisor por subproceso | CI: sintaxis + pytest |
+
+Los instaladores pasan validación de sintaxis y las suites de test del backend/CLI/PWA corren en las tres plataformas en CI. Las pruebas completas end-to-end de instalación (descarga de modelos, arranque de servicios, wizard de primera ejecución) son manuales. Reporta problemas con tu SO/shell/perfil de hardware.
 
 Funciona en CPU — no requiere GPU. El rendimiento escala con la RAM y el tamaño del modelo.
 
@@ -279,7 +292,7 @@ trinaxai export           # exporta una conversación a Markdown
 ```
 
 También existen los comandos superiores `browse`, `collections`, `memory`,
-`watch`, `pair`, `obsidian`, `models`, `config`, `restart`, `update`, `uninstall`,
+`watch`, `pair`, `network`, `obsidian`, `models`, `config`, `restart`, `update`, `uninstall`,
 `version` y `help`. El motor predeterminado es Ollama; usa `--engine rag` cuando
 necesites contexto indexado.
 
@@ -295,7 +308,7 @@ Sintaxis completa, subcomandos y TOML: [docs/CLI_REFERENCE.es.md](docs/CLI_REFER
 
 El instalador elige un **perfil de hardware** según tu RAM. Los perfiles soportados son `8gb`, `16gb`, `max` y `ultra`; todo se puede sobrescribir en `.env`.
 
-| Rol | Low (`8gb`) | Medium (`16gb`) | High (`max`) | Ultra |
+| Rol | Low (`8gb`) | Medium (`16gb`) | High (`max`) † | Ultra † |
 |---|---|---|---|---|
 | **Chat / razonamiento** | `qwen3.5:2b` | `qwen3.5:4b` | `qwen3.5:9b` | `qwen3.5:35b` (MoE) |
 | **Código** | `qwen3.5:2b` | `qwen3.5:4b` | `qwen3.5:9b` | `qwen3-coder:30b` (MoE) |
@@ -303,6 +316,8 @@ El instalador elige un **perfil de hardware** según tu RAM. Los perfiles soport
 | **Visión** | `qwen3.5:2b` | `qwen3.5:4b` | `qwen3.5:9b` | `qwen3.5:35b` (MoE) |
 | **Rápido** | `qwen3.5:2b` | `qwen3.5:2b` | `qwen3.5:2b` | `qwen3.5:4b` |
 | **Embeddings** | `qwen3-embedding:0.6b` (1024d) | `qwen3-embedding:0.6b` (1024d) | `qwen3-embedding:4b` (2560d) | `qwen3-embedding:8b` (4096d) |
+
+† Los perfiles `max` y `ultra` usan modelos (9B, 30B MoE, 35B MoE) que requieren 24GB+ de RAM y no se han probado en el hardware de desarrollo principal (16GB solo CPU). Están definidos para uso de la comunidad pero se entregan sin garantías de rendimiento. Reporta tu experiencia con estos perfiles.
 
 El **pipeline de generación** dirige cada solicitud entre los modelos general, profundo, de código y rápido del perfil. Qwen3.5 también procesa visión, evitando mantener otro modelo VL en memoria. Los modelos de visión se descargan al analizar la primera imagen, así la instalación y los updates no se bloquean por un pull grande. Confirma los nombres con `ollama list` y ajusta `.env` si cambias de modelo. Mira [docs/CONFIGURATION.es.md](docs/CONFIGURATION.es.md) y [docs/ENVIRONMENT_VARIABLES.md](docs/ENVIRONMENT_VARIABLES.md).
 
@@ -325,6 +340,8 @@ TrinaxAI es **local-first por diseño.**
 
 Para acceso LAN/remoto: usa un firewall para bloquear los puertos 3333/11434, una VPN (Tailscale/WireGuard) en vez de exponer puertos, y `trinaxai pair start` con los mínimos scopes. Modelo de amenazas completo y reporte: [política de seguridad](docs/es/SECURITY.md).
 
+Al cambiar de Wi-Fi, router o país no reinstales. Ejecuta `trinaxai network refresh` en el host: renueva HTTPS local, elimina el origen LAN anterior, muestra el enlace de la IP actual y una alternativa `https://NOMBRE-DEL-EQUIPO.local:3334`, y reinicia los servicios que usan el certificado. La dirección nueva detecta la instalación existente; vincúlala una vez para recuperar chats y preferencias. Si abres una dirección anterior sin conexión, usa **Eliminar esta PWA antigua** para borrar los datos, la caché y el service worker de ese origen en el dispositivo.
+
 ---
 
 ## 🧪 Desarrollo
@@ -339,7 +356,7 @@ pip install -r requirements.txt
 python rag_api.py                     # sirve app.main:app en :3333
 
 # PWA
-cd chat-pwa && npm install && npm run dev   # :3334
+(cd chat-pwa && npm install && npm run dev) # :3334
 
 # CLI (editable)
 pip install -e . && trinaxai doctor

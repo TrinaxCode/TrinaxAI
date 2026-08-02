@@ -138,6 +138,8 @@ def test_installers_share_conservative_profile_thresholds_and_preserve_models() 
     assert "$RamGb -ge 32" in windows
     assert "qwen3.5:35b qwen3-coder:30b" in setup
     assert "qwen3.5:2b qwen3.5:9b" in setup
+    assert "qwen3-embedding:8b qwen3.5:4b" in setup
+    assert "qwen3-embedding:4b qwen3.5:2b" in setup
     assert "ollama rm" not in setup
 
 
@@ -155,6 +157,7 @@ def test_uninstallers_remove_cli_registration_and_trusted_certificates() -> None
     assert "trinaxai-local.crt" in posix
     assert "Remove-UserPath" in windows
     assert "Remove-TrinaxAICertificates" in windows
+    assert "if ($RemoveOllamaApp) { Remove-OllamaModelsAndState }" in windows
 
 
 def test_windows_installer_configures_rag_transport_and_lan_firewall() -> None:

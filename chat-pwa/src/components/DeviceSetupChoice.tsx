@@ -7,13 +7,14 @@ import DevicePairingCard from './DevicePairingCard';
 
 interface Props {
   onNewDevice: () => void;
+  preferExisting?: boolean;
 }
 
 /** First-run choice keeps private state protected until the device is paired. */
-export default function DeviceSetupChoice({ onNewDevice }: Props) {
+export default function DeviceSetupChoice({ onNewDevice, preferExisting = false }: Props) {
   const { t } = useI18n();
   const { isDark } = useTheme();
-  const [mode, setMode] = useState<'choose' | 'existing'>('choose');
+  const [mode, setMode] = useState<'choose' | 'existing'>(preferExisting ? 'existing' : 'choose');
   const card = isDark ? 'bg-gray-900/90 border-white/[0.09] text-white' : 'bg-white border-gray-200 text-gray-900';
   const muted = isDark ? 'text-white/60' : 'text-gray-600';
 
@@ -38,7 +39,7 @@ export default function DeviceSetupChoice({ onNewDevice }: Props) {
         ) : (
           <>
             <button type="button" onClick={() => setMode('choose')} className={`mb-3 text-xs ${muted}`}>← {t('back')}</button>
-            <h1 className="text-center text-xl font-semibold">{t('deviceSetupExisting')}</h1>
+            <h1 className="text-center text-xl font-semibold">{preferExisting ? t('deviceSetupRestoreTitle') : t('deviceSetupExisting')}</h1>
             <p className={`mt-2 text-center text-sm ${muted}`}>{t('deviceSetupPairingTutorial')}</p>
             <div className="mt-4"><DevicePairingCard isDark={isDark} /></div>
           </>

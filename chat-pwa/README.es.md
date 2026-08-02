@@ -32,9 +32,8 @@ npm run dev
 | `npm run serve` | Sirve `dist/` con el gateway Node de producción. |
 | `npm run preview` | Alias de compatibilidad de `npm run serve`. |
 | `npm test` | Ejecuta Vitest una vez. |
+| `npm run lint` | Verifica tipos sin construir. |
 | `npx tsc --noEmit` | Verifica tipos sin construir. |
-
-No existe un script `npm run lint`; las comprobaciones usan TypeScript directamente.
 
 ## Organización del código
 

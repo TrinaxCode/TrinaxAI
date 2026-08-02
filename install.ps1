@@ -337,7 +337,7 @@ function Ensure-TrinaxAICertificate($Repo, $LanIp) {
   $OpenSsl = Get-OpenSslCommand
   if ($OpenSsl) {
     try {
-      $SanParts = @("DNS:localhost", "DNS:$env:COMPUTERNAME", "IP:127.0.0.1")
+      $SanParts = @("DNS:localhost", "DNS:$env:COMPUTERNAME", "DNS:$env:COMPUTERNAME.local", "IP:127.0.0.1")
       if ($LanIp) { $SanParts += "IP:$LanIp" }
       $San = "subjectAltName=$($SanParts -join ',')"
       & $OpenSsl req -x509 -newkey rsa:2048 -sha256 -days 1825 -nodes `
@@ -364,7 +364,7 @@ function Ensure-TrinaxAICertificate($Repo, $LanIp) {
   try {
     Get-ChildItem Cert:\CurrentUser\My | Where-Object { $_.FriendlyName -eq "TrinaxAI Local HTTPS" } | Remove-Item -ErrorAction SilentlyContinue
     Get-ChildItem Cert:\CurrentUser\Root | Where-Object { $_.FriendlyName -eq "TrinaxAI Local HTTPS" } | Remove-Item -ErrorAction SilentlyContinue
-    $San = "2.5.29.17={text}DNS=localhost&DNS=$env:COMPUTERNAME&IPAddress=127.0.0.1&IPAddress=::1"
+    $San = "2.5.29.17={text}DNS=localhost&DNS=$env:COMPUTERNAME&DNS=$env:COMPUTERNAME.local&IPAddress=127.0.0.1&IPAddress=::1"
     if ($LanIp) { $San = "$San&IPAddress=$LanIp" }
     $Cert = New-SelfSignedCertificate `
       -Subject "CN=TrinaxAI Local HTTPS" `
@@ -618,6 +618,7 @@ if ($EnableLanSystem -eq 1 -and [string]::IsNullOrWhiteSpace($AdminToken)) {
 }
 
 $Cors = "https://localhost:3334,http://localhost:3334,https://127.0.0.1:3334,http://127.0.0.1:3334,https://localhost:3335,http://localhost:3335,https://127.0.0.1:3335,http://127.0.0.1:3335"
+$Cors += ",https://$($env:COMPUTERNAME).local:3334,http://$($env:COMPUTERNAME).local:3334,https://$($env:COMPUTERNAME).local:3335,http://$($env:COMPUTERNAME).local:3335"
 if ($LanIp) { $Cors += ",https://$($LanIp):3334,http://$($LanIp):3334,https://$($LanIp):3335,http://$($LanIp):3335" }
 
 $EnvLines = @(

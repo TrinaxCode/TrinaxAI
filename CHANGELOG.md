@@ -3,6 +3,17 @@
 All notable changes to TrinaxAI are documented here. This project follows the
 [Keep a Changelog](https://keepachangelog.com/) format.
 
+## [Unreleased]
+
+### Added
+
+- Added `trinaxai network refresh` and an accessible PWA recovery notice for
+  stale cached origins after Wi-Fi, router, or LAN address changes.
+- The offline copy can explicitly erase its cache, local data, and service
+  worker to remove an installation saved at an old address.
+- A new address detects existing server state and opens pairing recovery
+  instead of repeating first-time setup.
+
 ## [1.0.2] — 2026-08-01
 
 ### Fixed

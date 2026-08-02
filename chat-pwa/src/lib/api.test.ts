@@ -8,6 +8,7 @@ import {
   ApiError,
   agentWorkspaceRoot,
   buildWebSearchQuery,
+  canonicalIdentityAnswer,
   compactChatContext,
   clearOllamaModelAvailabilityCache,
   creatorSystemPrompt,
@@ -445,6 +446,24 @@ def mystery(A):
     expect(total).toBeLessThanOrEqual(500);
     expect(compacted.at(-1)?.content).toContain('current question');
     expect(compacted.at(-1)?.content).toContain('x'.repeat(100));
+  });
+
+  it('answers fixed identity facts without loading or prompting a local model', async () => {
+    const creator = canonicalIdentityAnswer([{ role: 'user', content: '¿quien te creo?' }]);
+    const identity = canonicalIdentityAnswer([{ role: 'user', content: 'quién eres' }]);
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      const tokens: string[] = [];
+      await expect(streamOllama([{ role: 'user', content: 'quien te creo' }], (token) => tokens.push(token)))
+        .resolves.toBe(creator);
+      expect(identity).toContain('Soy TrinaxAI');
+      expect(creator).toContain('TrinaxAI fue creado por TrinaxCode');
+      expect(tokens).toEqual([creator]);
+      expect(fetchMock).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it('authenticates Ollama discovery and streamed chat requests', async () => {

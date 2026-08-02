@@ -9,6 +9,7 @@ import {
   isAuthorizedSystemProxyPeer,
   isLoopbackAddress,
   isPrivateLanAddress,
+  needsInferenceLock,
   requiredOllamaProxyScope,
 } from './vite-security';
 
@@ -33,6 +34,11 @@ describe('Vite security boundary', () => {
     expect(requiredOllamaProxyScope('/api/ollama/api/generate')).toBe('chat');
     expect(requiredOllamaProxyScope('/api/ollama/api/pull')).toBe('system');
     expect(requiredOllamaProxyScope('/api/ollama/api/delete')).toBe('system');
+  });
+
+  it('keeps read-only model discovery responsive during inference', () => {
+    expect(needsInferenceLock('/api/ollama/api/tags')).toBe(false);
+    expect(needsInferenceLock('/api/ollama/api/chat')).toBe(true);
   });
 
   it('keeps localhost usable but requires the configured token remotely', () => {

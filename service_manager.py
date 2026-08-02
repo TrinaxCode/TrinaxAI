@@ -699,7 +699,7 @@ def _try_privileged_wrapper(base_dir: str, action: str) -> list[ProcessState] | 
     ):
         return None
 
-    if action not in {"stop-ai", "start-ai"}:
+    if action not in {"stop-ai", "start-ai", "reload-network"}:
         return None
     wrapper = PRIVILEGED_LIFECYCLE_WRAPPER
     if not wrapper.is_file() or not os.access(wrapper, os.X_OK):
@@ -718,7 +718,8 @@ def _try_privileged_wrapper(base_dir: str, action: str) -> list[ProcessState] | 
     if result.returncode != 0:
         detail = (result.stderr or result.stdout or "privileged wrapper failed").strip()
         return [ProcessState(action, False, detail=detail)]
-    _write_ai_enabled(base_dir, action != "stop-ai")
+    if action != "reload-network":
+        _write_ai_enabled(base_dir, action != "stop-ai")
     return [ProcessState(action, action != "stop-ai", detail=(result.stdout or "ok").strip())]
 
 
@@ -829,6 +830,22 @@ def start_all(base_dir: str, lan_ip: str = "localhost") -> list[ProcessState]:
 def start_frontend(base_dir: str) -> list[ProcessState]:
     os.makedirs(os.path.join(base_dir, "logs"), exist_ok=True)
     return [_start_named(base_dir, FRONTEND_SERVICE)]
+
+
+def reload_network(base_dir: str) -> list[ProcessState]:
+    """Restart certificate consumers after a LAN address change."""
+    elevated = _try_privileged_wrapper(base_dir, "reload-network")
+    if elevated is not None and elevated[-1].running:
+        return elevated
+    if platform.system() == "Linux" and shutil.which("systemctl"):
+        result = _run_systemctl(["restart", "ai-rag.service", "trinaxai-frontend.service"], timeout=90)
+        if result.returncode == 0:
+            return [ProcessState("reload-network", True, detail="RAG and PWA restarted")]
+        detail = (result.stderr or result.stdout or "systemctl restart failed").strip()
+        return [ProcessState("reload-network", False, detail=detail)]
+    stopped = stop_all()
+    time.sleep(1)
+    return [*stopped, *start_all(base_dir)]
 
 
 def stop_ai(base_dir: str) -> list[ProcessState]:
@@ -1067,6 +1084,7 @@ def main(argv: list[str] | None = None) -> int:
             "start",
             "start-ai",
             "start-frontend",
+            "reload-network",
             "stop",
             "stop-ai",
             "stop-all",
@@ -1082,14 +1100,25 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     if args.action == "start":
-        for item in start_all(args.base_dir):
+        items = start_all(args.base_dir)
+        for item in items:
             print(f"{item.name}: {item.detail}")
+        return 0 if all(item.running for item in items) else 1
     elif args.action == "start-ai":
-        for item in start_ai(args.base_dir):
+        items = start_ai(args.base_dir)
+        for item in items:
             print(f"{item.name}: {item.detail}")
+        return 0 if all(item.running for item in items) else 1
     elif args.action == "start-frontend":
-        for item in start_frontend(args.base_dir):
+        items = start_frontend(args.base_dir)
+        for item in items:
             print(f"{item.name}: {item.detail}")
+        return 0 if all(item.running for item in items) else 1
+    elif args.action == "reload-network":
+        items = reload_network(args.base_dir)
+        for item in items:
+            print(f"{item.name}: {item.detail}")
+        return 0 if all(item.running for item in items[-len(STARTUP_ORDER) :]) else 1
     elif args.action == "stop":
         for item in stop_ai(args.base_dir):
             print(f"{item.name}: {item.detail}")

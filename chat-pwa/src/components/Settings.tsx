@@ -920,11 +920,11 @@ export default function Settings({ onBack, onOpenDocs, initialSection = 'general
               <span className={`text-[10px] font-mono ${isDark ? 'text-white/30' : 'text-gray-400'}`}>/{p.name}</span>
               {p.name!=='system'&&<button onClick={()=>setPromptDeleteName(p.name)} className={`p-1 ${isDark ? 'text-white/20' : 'text-gray-300'} hover:text-red-400`} aria-label={t('deletePrompt')} title={t('deletePrompt')}><MdDelete size={14}/></button>}
             </div>
-            <textarea value={p.text} onChange={e=>upd(p.name,'text',e.target.value)} rows={3} className={`w-full bg-transparent text-sm ${textValue} ${textPlaceholder} resize-none outline-none border rounded-lg px-3 py-2 ${isDark ? 'border-white/[0.06]' : 'border-gray-200'} ${borderFocus}`}/>
+            <textarea aria-label={`${t('promptText')} — ${p.name}`} value={p.text} onChange={e=>upd(p.name,'text',e.target.value)} rows={3} className={`w-full bg-transparent text-sm ${textValue} ${textPlaceholder} resize-none outline-none border rounded-lg px-3 py-2 ${isDark ? 'border-white/[0.06]' : 'border-gray-200'} ${borderFocus}`}/>
           </div>))}
           <div className={`border border-dashed rounded-xl p-4 space-y-3 ${isDark ? 'border-white/[0.08]' : 'border-gray-300'}`}>
-            <input value={nn} onChange={e=>setNn(e.target.value)} placeholder={t('promptName')} maxLength={30} className={`w-full bg-transparent text-sm ${textValue} ${textPlaceholder} outline-none`}/>
-            <textarea value={nt} onChange={e=>setNt(e.target.value)} placeholder={t('promptText')} rows={2} className={`w-full bg-transparent text-sm ${textValue} ${textPlaceholder} resize-none outline-none border rounded-lg px-3 py-2 ${isDark ? 'border-white/[0.06]' : 'border-gray-200'} ${borderFocus}`}/>
+            <input aria-label={t('promptName')} value={nn} onChange={e=>setNn(e.target.value)} placeholder={t('promptName')} maxLength={30} className={`w-full bg-transparent text-sm ${textValue} ${textPlaceholder} outline-none`}/>
+            <textarea aria-label={t('promptText')} value={nt} onChange={e=>setNt(e.target.value)} placeholder={t('promptText')} rows={2} className={`w-full bg-transparent text-sm ${textValue} ${textPlaceholder} resize-none outline-none border rounded-lg px-3 py-2 ${isDark ? 'border-white/[0.06]' : 'border-gray-200'} ${borderFocus}`}/>
             <button onClick={add} className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-[#006bbd]/15 text-[#006bbd] hover:bg-[#006bbd]/25"><MdAdd size={14}/> {t('addPrompt')}</button>
           </div>
         </section>

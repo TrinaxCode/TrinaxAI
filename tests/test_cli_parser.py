@@ -29,8 +29,11 @@ class CLIParserTests(unittest.TestCase):
     def test_service_commands_parse_yes_flag(self) -> None:
         stop = _build_parser().parse_args(["stop", "--yes"])
         restart = _build_parser().parse_args(["restart", "-y"])
+        network = _build_parser().parse_args(["network", "refresh", "--yes"])
         self.assertTrue(stop.yes)
         self.assertTrue(restart.yes)
+        self.assertEqual(network.network_command, "refresh")
+        self.assertTrue(network.yes)
 
     def test_version_command_parses(self) -> None:
         args = _build_parser().parse_args(["version"])

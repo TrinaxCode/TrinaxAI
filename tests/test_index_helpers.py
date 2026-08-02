@@ -56,14 +56,17 @@ def test_office_documents_use_the_document_size_limit() -> None:
     assert config.max_file_bytes("records.csv") == config.MAX_FILE_BYTES
 
 
-def test_collect_files_keeps_supported_special_names_and_env(tmp_path) -> None:
-    expected = {"README", "LICENSE", "Makefile", "Gemfile", "Procfile", ".env", "Dockerfile"}
+def test_collect_files_keeps_supported_special_names_and_skips_secrets(tmp_path) -> None:
+    expected = {"README", "LICENSE", "Makefile", "Gemfile", "Procfile", "Dockerfile"}
     for name in expected:
         (tmp_path / name).write_text("content", encoding="utf-8")
+    for name in (".env", ".env.production", "credentials.json", "server.pem", "id_rsa"):
+        (tmp_path / name).write_text("secret", encoding="utf-8")
 
     names = {Path(path).name for path in index.collect_files(str(tmp_path))}
 
     assert expected <= names
+    assert not names & {".env", ".env.production", "credentials.json", "server.pem", "id_rsa"}
 
 
 def test_collect_files_accepts_unknown_text_but_rejects_binary(tmp_path) -> None:

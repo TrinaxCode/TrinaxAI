@@ -74,9 +74,7 @@ source .venv/bin/activate
 pip install -r requirements.txt
 
 # Frontend
-cd chat-pwa
-npm install
-npm run dev
+(cd chat-pwa && npm install && npm run dev)
 
 # CLI (instalación editable)
 pip install -e .

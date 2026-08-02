@@ -310,7 +310,7 @@ if ($RemoveOllamaModels) {
   } else {
     Write-Warn "Ollama not found; model removal skipped."
   }
-  Remove-OllamaModelsAndState
+  if ($RemoveOllamaApp) { Remove-OllamaModelsAndState }
 }
 
 if ($RemoveOllamaApp) {

@@ -18,6 +18,7 @@ import {
   isLoopbackAddress,
   isPrivateLanAddress,
   normalizeAddress,
+  needsInferenceLock,
   requiredOllamaProxyScope,
 } from './vite-security';
 import { acquireInferenceProcessLock } from './inference-lock';
@@ -260,6 +261,10 @@ function installProxyBoundary(server: any): void {
     if (!ollamaRateAllowed(peer)) {
       res.setHeader('Retry-After', String(Math.max(1, Math.ceil(60 / ollamaProxyRateLimit()))));
       sendProxyError(res, 429, 'Too many Ollama requests.');
+      return;
+    }
+    if (!needsInferenceLock(pathname)) {
+      next();
       return;
     }
     const lockDir = process.env.TRINAXAI_INFERENCE_LOCK_FILE

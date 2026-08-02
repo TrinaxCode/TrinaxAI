@@ -14,8 +14,8 @@ export interface SendOptions {
 }
 
 const MAX_BUFFER_CHARS = 8192;
-export const FIRST_TOKEN_TIMEOUT_MS = 30_000;
-export const VISION_FIRST_TOKEN_TIMEOUT_MS = 120_000;
+export const FIRST_TOKEN_TIMEOUT_MS = 15 * 60_000;
+export const VISION_FIRST_TOKEN_TIMEOUT_MS = 20 * 60_000;
 
 export function firstTokenTimeoutMs(messages: ChatMessage[]): number {
   return messages[messages.length - 1]?.image

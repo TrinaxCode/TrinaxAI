@@ -18,7 +18,9 @@ describe('streamFlushSize', () => {
 });
 
 describe('firstTokenTimeoutMs', () => {
-  it('allows the vision model enough time to load and process an image', () => {
+  it('allows queued local models enough time to load and process a request', () => {
+    expect(FIRST_TOKEN_TIMEOUT_MS).toBe(900_000);
+    expect(VISION_FIRST_TOKEN_TIMEOUT_MS).toBe(1_200_000);
     expect(firstTokenTimeoutMs([{ role: 'user', content: 'Hola' }])).toBe(FIRST_TOKEN_TIMEOUT_MS);
     expect(firstTokenTimeoutMs([{ role: 'user', content: '¿Qué ves?', image: 'data:image/jpeg;base64,test' }]))
       .toBe(VISION_FIRST_TOKEN_TIMEOUT_MS);

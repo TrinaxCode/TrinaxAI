@@ -70,3 +70,23 @@ test('sound preference applies immediately and survives reload', async ({ page }
   await page.getByRole('switch', { name: 'Sound effects' }).click();
   await expect(page.getByRole('switch', { name: 'Sound effects' })).toHaveAttribute('aria-checked', 'true');
 });
+
+test('fixed identity questions answer locally without contacting Ollama', async ({ page }) => {
+  let chatRequests = 0;
+  await page.route('**/api/ollama/api/chat', (route) => {
+    chatRequests += 1;
+    return route.abort();
+  });
+  await page.goto('/');
+  await expect(page.locator('.animate-intro-logo')).toHaveCount(0, { timeout: 10_000 });
+
+  const composer = page.getByRole('textbox', { name: /Type a message/ });
+  await composer.fill('who are you');
+  await page.getByRole('button', { name: 'Send' }).click();
+  await expect(page.getByText(/I’m TrinaxAI, a general-purpose local-first AI assistant/)).toBeVisible();
+
+  await composer.fill('who created you');
+  await page.getByRole('button', { name: 'Send' }).click();
+  await expect(page.getByText(/TrinaxAI was created by TrinaxCode/)).toBeVisible();
+  expect(chatRequests).toBe(0);
+});

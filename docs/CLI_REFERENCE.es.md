@@ -109,6 +109,14 @@ que actúa como dispositivo remoto emparejado lee `TRINAXAI_DEVICE_TOKEN` y env�
 ejemplo `https://host:3334/api/rag`. No pongas tokens en el historial ni en TOML
 versionado. Pairing representa una capability revocable, no una cuenta.
 
+## Cambiar de red local
+
+`trinaxai network` muestra el enlace PWA de la IP actual y una alternativa
+`.local`. Tras cambiar de Wi-Fi, router o dirección LAN, ejecuta `trinaxai network
+refresh` en el host para renovar HTTPS, CORS y la configuración activa. No borra
+datos ni autoriza a todos los dispositivos; los scopes de pairing siguen
+vigentes.
+
 ## Aislamiento del agente
 
 Las herramientas de archivo de `trinaxai agent` permanecen en `--workspace`

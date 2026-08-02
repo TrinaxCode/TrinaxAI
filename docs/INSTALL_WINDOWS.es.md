@@ -158,19 +158,13 @@ TRINAXAI_RAG_TARGET=https://127.0.0.1:3333
 VITE_TRINAXAI_RAG_TARGET=https://127.0.0.1:3333
 ```
 
-Para usar telefono/tablet, busca tu IP LAN:
+Tras cambiar de Wi-Fi, renueva la dirección local y el certificado HTTPS:
 
 ```powershell
-Get-NetIPAddress -AddressFamily IPv4 |
-  Where-Object { $_.IPAddress -match "^(192\.168|10\.|172\.(1[6-9]|2[0-9]|3[0-1]))" } |
-  Select-Object -First 1 IPAddress
+trinaxai network refresh
 ```
 
-Agrega esa IP a `TRINAXAI_CORS_ORIGINS`, por ejemplo:
-
-```text
-TRINAXAI_CORS_ORIGINS=https://localhost:3334,http://localhost:3334,https://192.168.1.25:3334,http://192.168.1.25:3334
-```
+Usa desde el teléfono la URL por IP que muestra; la URL `.local` es una alternativa cuando mDNS funciona en el router.
 
 ## Descargar modelos
 

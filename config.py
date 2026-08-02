@@ -515,7 +515,6 @@ REQUIRED_EXTS = [
     ".cfg",
     ".conf",
     ".properties",
-    ".env",
     ".csv",
     ".tsv",
     ".ics",

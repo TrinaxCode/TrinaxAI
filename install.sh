@@ -245,9 +245,12 @@ ensure_https_certificate() {
   cert_key="$SCRIPT_DIR/chat-pwa/certs/localhost-key.pem"
   cert_file="$SCRIPT_DIR/chat-pwa/certs/localhost.pem"
   cert_crt="$SCRIPT_DIR/chat-pwa/certs/trinaxai-local.crt"
+  local_dns="$(hostname 2>/dev/null || echo trinaxai).local"
   if [ -f "$cert_key" ] && [ -f "$cert_file" ]; then
-    if [ -z "${LAN_IP:-}" ] || ! command -v openssl >/dev/null 2>&1 || \
-      openssl x509 -in "$cert_file" -noout -ext subjectAltName 2>/dev/null | grep -Fq "IP Address:$LAN_IP"; then
+    if { [ -z "${LAN_IP:-}" ] || ! command -v openssl >/dev/null 2>&1 || \
+      openssl x509 -in "$cert_file" -noout -ext subjectAltName 2>/dev/null | grep -Fq "IP Address:$LAN_IP"; } && \
+      { ! command -v openssl >/dev/null 2>&1 || \
+      openssl x509 -in "$cert_file" -noout -ext subjectAltName 2>/dev/null | grep -Fq "DNS:$local_dns"; }; then
       print_ok "HTTPS certificate found"
       return 0
     fi
@@ -259,13 +262,13 @@ ensure_https_certificate() {
     return 0
   fi
   print_info "Creating local HTTPS certificate for TrinaxAI..."
-  san_entries="DNS:localhost,DNS:$(hostname 2>/dev/null || echo trinaxai),IP:127.0.0.1,IP:::1"
+  san_entries="DNS:localhost,DNS:$(hostname 2>/dev/null || echo trinaxai),DNS:$local_dns,IP:127.0.0.1,IP:::1"
   if [ -n "${LAN_IP:-}" ]; then
     san_entries="$san_entries,IP:$LAN_IP"
   fi
   mkcert_ok=0
   if command -v mkcert >/dev/null 2>&1; then
-    mkcert_names=(localhost 127.0.0.1 ::1)
+    mkcert_names=(localhost "$(hostname 2>/dev/null || echo trinaxai)" "$local_dns" 127.0.0.1 ::1)
     if [ -n "${LAN_IP:-}" ]; then
       mkcert_names+=("$LAN_IP")
     fi
@@ -602,6 +605,7 @@ if [ "$ENABLE_LAN_SYSTEM" = "1" ] && [ -z "$ADMIN_TOKEN" ]; then
 fi
 
 LAN_IP="$(lan_ip)"
+LAN_HOSTNAME="$(hostname 2>/dev/null || echo trinaxai)"
 cat > .env <<EOF
 # TrinaxAI — Generated configuration ($(date +%Y-%m-%d))
 # See .env.example for all available options.
@@ -643,7 +647,7 @@ VITE_TRINAXAI_VISION_MODEL=$VISION_MODEL
 TRINAXAI_RERANK=0
 
 # Security
-TRINAXAI_CORS_ORIGINS=https://localhost:3334,http://localhost:3334,https://127.0.0.1:3334,http://127.0.0.1:3334,https://localhost:3335,http://localhost:3335,https://127.0.0.1:3335,http://127.0.0.1:3335${LAN_IP:+,https://$LAN_IP:3334,http://$LAN_IP:3334,https://$LAN_IP:3335,http://$LAN_IP:3335}
+TRINAXAI_CORS_ORIGINS=https://localhost:3334,http://localhost:3334,https://127.0.0.1:3334,http://127.0.0.1:3334,https://localhost:3335,http://localhost:3335,https://127.0.0.1:3335,http://127.0.0.1:3335,https://$LAN_HOSTNAME.local:3334,http://$LAN_HOSTNAME.local:3334,https://$LAN_HOSTNAME.local:3335,http://$LAN_HOSTNAME.local:3335${LAN_IP:+,https://$LAN_IP:3334,http://$LAN_IP:3334,https://$LAN_IP:3335,http://$LAN_IP:3335}
 TRINAXAI_ALLOW_LAN_SYSTEM=$ENABLE_LAN_SYSTEM
 TRINAXAI_ADMIN_TOKEN=$ADMIN_TOKEN
 
