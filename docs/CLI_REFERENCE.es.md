@@ -24,6 +24,7 @@ trinaxai --api-url https://localhost:3333 --ca-file /ruta/rootCA.pem ask "Estado
 | `--install-root PATH` | Indica la raíz de una instalación completa. |
 | `--config PATH` | Carga un TOML concreto. |
 | `--no-color` | Desactiva color ANSI. |
+| `--language`, `--lang en\|es` | Selecciona el idioma humano de la CLI; también admite `TRINAXAI_LANG` y `ui.language` en TOML. |
 | `-v`, `--verbose` | Activa logs de depuración. |
 | `--version` | Muestra la versión. |
 

@@ -1,5 +1,7 @@
 # Environment variable inventory
 
+[Versión en español](ENVIRONMENT_VARIABLES.es.md)
+
 This is the canonical inventory of environment variables understood by TrinaxAI.
 Use [`.env.example`](../.env.example) as a starting template and keep only the
 overrides that your installation needs. Values in the process environment take
@@ -45,6 +47,7 @@ child processes and normally should not be added to `.env`.
 | `TRINAXAI_LOCAL_CA_FILE` | auto-detected | Optional CA bundle used by the PWA gateway for verified HTTPS calls to the loopback RAG API. |
 | `TRINAXAI_APP_STATE_MAX_BYTES` | `6291456` | Maximum persisted shared PWA state size. |
 | `TRINAXAI_CONFIG` | platform config path | Explicit TOML path for the packaged CLI. |
+| `TRINAXAI_LANG` | auto-detected | Human-facing CLI language: `en` or `es`. |
 | `TRINAXAI_NO_COLOR` | unset | Disables ANSI color in CLI output when set. |
 
 ## Docker Compose

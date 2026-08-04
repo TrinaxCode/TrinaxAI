@@ -23,6 +23,7 @@ trinaxai --api-url https://localhost:3333 --ca-file /path/to/rootCA.pem ask "Sho
 | `--install-root PATH` | Point to a full TrinaxAI installation. |
 | `--config PATH` | Load a specific TOML file. |
 | `--no-color` | Disable ANSI colors. |
+| `--language`, `--lang en\|es` | Select the human-facing CLI language; also supports `TRINAXAI_LANG` and `ui.language` in TOML. |
 | `-v`, `--verbose` | Enable debug logging. |
 | `--version` | Print the version. |
 

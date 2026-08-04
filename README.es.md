@@ -319,7 +319,7 @@ El instalador elige un **perfil de hardware** según tu RAM. Los perfiles soport
 
 † Los perfiles `max` y `ultra` usan modelos (9B, 30B MoE, 35B MoE) que requieren 24GB+ de RAM y no se han probado en el hardware de desarrollo principal (16GB solo CPU). Están definidos para uso de la comunidad pero se entregan sin garantías de rendimiento. Reporta tu experiencia con estos perfiles.
 
-El **pipeline de generación** dirige cada solicitud entre los modelos general, profundo, de código y rápido del perfil. Qwen3.5 también procesa visión, evitando mantener otro modelo VL en memoria. Los modelos de visión se descargan al analizar la primera imagen, así la instalación y los updates no se bloquean por un pull grande. Confirma los nombres con `ollama list` y ajusta `.env` si cambias de modelo. Mira [docs/CONFIGURATION.es.md](docs/CONFIGURATION.es.md) y [docs/ENVIRONMENT_VARIABLES.md](docs/ENVIRONMENT_VARIABLES.md).
+El **pipeline de generación** dirige cada solicitud entre los modelos general, profundo, de código y rápido del perfil. Qwen3.5 también procesa visión, evitando mantener otro modelo VL en memoria. Los modelos de visión se descargan al analizar la primera imagen, así la instalación y los updates no se bloquean por un pull grande. Confirma los nombres con `ollama list` y ajusta `.env` si cambias de modelo. Mira [docs/CONFIGURATION.es.md](docs/CONFIGURATION.es.md) y [docs/ENVIRONMENT_VARIABLES.es.md](docs/ENVIRONMENT_VARIABLES.es.md).
 
 ---
 
@@ -374,7 +374,7 @@ Empieza en el [hub de documentación](docs/README.es.md). Referencias clave:
 |---|---|
 | Arquitectura y flujo de datos | [docs/ARCHITECTURE.es.md](docs/ARCHITECTURE.es.md) |
 | Configuración | [docs/CONFIGURATION.es.md](docs/CONFIGURATION.es.md) |
-| Variables de entorno | [docs/ENVIRONMENT_VARIABLES.md](docs/ENVIRONMENT_VARIABLES.md) |
+| Variables de entorno | [docs/ENVIRONMENT_VARIABLES.es.md](docs/ENVIRONMENT_VARIABLES.es.md) |
 | Referencia de la CLI | [docs/CLI_REFERENCE.es.md](docs/CLI_REFERENCE.es.md) |
 | API HTTP | [docs/API_REFERENCE.es.md](docs/API_REFERENCE.es.md) |
 | Guía del desarrollador | [docs/DEVELOPER_GUIDE.es.md](docs/DEVELOPER_GUIDE.es.md) |

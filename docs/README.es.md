@@ -22,7 +22,8 @@ Este directorio es el punto de entrada a la documentación técnica y operativa 
 | Instalar y usar TrinaxAI | [README principal](../README.es.md) |
 | Entender los componentes y flujos | [Arquitectura](ARCHITECTURE.es.md) |
 | Configurar modelos, red, RAG y PWA | [Referencia de configuración](CONFIGURATION.es.md) |
-| Consultar cualquier variable de entorno | [Inventario de variables](ENVIRONMENT_VARIABLES.md) |
+| Consultar cualquier variable de entorno | [Inventario de variables](ENVIRONMENT_VARIABLES.es.md) |
+| Comparar perfiles y mediciones de modelos locales | [Benchmark de modelos](MODEL_BENCHMARK.es.md) |
 | Usar la terminal | [Referencia de CLI](CLI_REFERENCE.es.md) |
 | Integrar un cliente HTTP | [Referencia de API](API_REFERENCE.es.md) |
 | Desarrollar y depurar | [Guía del desarrollador](DEVELOPER_GUIDE.es.md) |
@@ -56,13 +57,13 @@ Para evitar documentación desactualizada, estas son las fuentes autoritativas:
 | Dependencias y comandos Python | `pyproject.toml`, `requirements*.txt`, `Makefile` |
 | Comandos y flags de CLI | `trinaxai_cli/app.py` |
 | Endpoints HTTP | `app/routes/`, `app/main.py`, `/openapi.json` |
-| Variables de entorno | `docs/ENVIRONMENT_VARIABLES.md`, `.env.example` |
+| Variables de entorno | `docs/ENVIRONMENT_VARIABLES.es.md`, `.env.example` |
 | Scripts de frontend | `chat-pwa/package.json` |
 | Manifest, caché y proxies PWA | `chat-pwa/vite.config.ts` |
 
 ## Convenciones de la documentación
 
-- Los archivos sin sufijo están en inglés; los archivos `.es.md`, en español.
+- Los archivos sin sufijo están en inglés; los archivos `.es.md` y los documentos bajo `docs/es/`, en español.
 - Los comandos se ejecutan desde la raíz del repositorio salvo que se indique `cd chat-pwa`.
 - Los puertos por defecto son `3334` (PWA), `3333` (API RAG) y `11434` (Ollama).
 - Las rutas locales de datos (`storage/`, `local_sources/`, `logs/`, `backups/`) no deben versionarse.

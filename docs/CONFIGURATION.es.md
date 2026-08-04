@@ -7,7 +7,7 @@ cp .env.example .env
 ```
 
 No confirmes `.env`, certificados ni tokens. Los valores de esta guía son los predeterminados de la rama actual; [`.env.example`](../.env.example) es la plantilla ejecutable.
-El [inventario canónico de variables de entorno](ENVIRONMENT_VARIABLES.md)
+El [inventario canónico de variables de entorno](ENVIRONMENT_VARIABLES.es.md)
 reúne todas las variables `TRINAXAI_*` y `VITE_TRINAXAI_*` admitidas.
 
 ## Cómo se carga

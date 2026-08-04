@@ -1,5 +1,7 @@
 # Local model benchmark
 
+[Versión en español](MODEL_BENCHMARK.es.md)
+
 Measured on the TrinaxAI target host (Ryzen 7 5700U, 16 GB RAM, CPU-only) on
 2026-07-18 through Ollama `/api/generate`. Every model received the same Spanish
 RAG explanation prompt, `num_ctx=2048`, `num_predict=96`, `temperature=0`,

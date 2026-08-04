@@ -23,6 +23,7 @@ This directory is the entry point for the technical and operational documentatio
 | Understand components and data flows | [Architecture](ARCHITECTURE.md) |
 | Configure models, networking, RAG, and the PWA | [Configuration reference](CONFIGURATION.md) |
 | Look up any environment variable | [Environment variable inventory](ENVIRONMENT_VARIABLES.md) |
+| Compare local model profiles and measurements | [Model benchmark](MODEL_BENCHMARK.md) |
 | Use the terminal interface | [CLI reference](CLI_REFERENCE.md) |
 | Integrate an HTTP client | [API reference](API_REFERENCE.md) |
 | Develop and debug | [Developer guide](DEVELOPER_GUIDE.md) |
@@ -60,7 +61,7 @@ This directory is the entry point for the technical and operational documentatio
 
 ## Documentation conventions
 
-- Files without a suffix are English; `.es.md` files are Spanish.
+- Files without a suffix are English; `.es.md` files and documents under `docs/es/` are Spanish.
 - Commands run from the repository root unless `cd chat-pwa` is shown.
 - Default ports are `3334` (PWA), `3333` (RAG API), and `11434` (Ollama).
 - Local data paths (`storage/`, `local_sources/`, `logs/`, `backups/`) must not be committed.
