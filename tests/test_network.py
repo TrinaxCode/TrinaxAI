@@ -42,12 +42,15 @@ def test_update_env_replaces_stale_network_without_touching_secrets(tmp_path: Pa
         "TRINAXAI_ADMIN_TOKEN=keep-me\nTRINAXAI_CORS_ORIGINS=https://old-router.local:3334\n", encoding="utf-8"
     )
     env.chmod(0o600)
+    # Windows ignores POSIX mode bits, so assert the mode is preserved rather
+    # than hardcoding 0o600: that also catches a widened secrets file there.
+    mode_before = env.stat().st_mode
     network.update_env(tmp_path, ["192.168.0.18"])
     updated = env.read_text(encoding="utf-8")
     assert "TRINAXAI_ADMIN_TOKEN=keep-me" in updated
     assert "old-router.local" not in updated
     assert "192.168.0.18" in updated
-    assert env.stat().st_mode & 0o777 == 0o600
+    assert env.stat().st_mode == mode_before
 
 
 def test_update_env_appends_missing_origin_and_rejects_missing_file(tmp_path: Path) -> None:
@@ -135,6 +138,8 @@ def test_refresh_certificate_falls_back_to_openssl(tmp_path: Path, monkeypatch) 
 
     monkeypatch.setattr(network.shutil, "which", lambda name: None if name == "mkcert" else "/bin/openssl")
     monkeypatch.setattr(network.subprocess, "run", run)
+    # Pin the platform: on Windows the extra PFX export call carries no -keyout.
+    monkeypatch.setattr(network.platform, "system", lambda: "Linux")
     network.refresh_certificate(tmp_path, ["192.168.0.18"])
     assert (tmp_path / "chat-pwa" / "certs" / "localhost.pem").is_file()
 
