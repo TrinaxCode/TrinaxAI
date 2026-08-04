@@ -21,7 +21,13 @@ def run_cli(*args: str) -> subprocess.CompletedProcess[str]:
         text=True,
         capture_output=True,
         env=env,
-        timeout=20,
+        # Hang guard, not a latency assertion. `doctor` deliberately probes a
+        # dead backend and its own caps already bound it: 3s + 3s for the HTTP
+        # probes, 5s per client GET (each retried once), and 10s for the
+        # service_manager subprocess. 20s sat below that documented worst case,
+        # so a cold Windows runner spawning two interpreters tripped the guard
+        # while the command was still behaving correctly.
+        timeout=60,
         check=False,
     )
 

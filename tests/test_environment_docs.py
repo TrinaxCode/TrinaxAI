@@ -32,5 +32,8 @@ def test_all_production_trinaxai_variables_are_in_the_canonical_inventory() -> N
 
 
 def test_readmes_link_the_canonical_environment_inventory() -> None:
-    for name in ("README.md", "README.es.md"):
-        assert "docs/ENVIRONMENT_VARIABLES.md" in (ROOT / name).read_text(encoding="utf-8")
+    for name, inventory in (
+        ("README.md", "docs/ENVIRONMENT_VARIABLES.md"),
+        ("README.es.md", "docs/ENVIRONMENT_VARIABLES.es.md"),
+    ):
+        assert inventory in (ROOT / name).read_text(encoding="utf-8")
