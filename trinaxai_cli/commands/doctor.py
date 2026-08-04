@@ -124,7 +124,10 @@ def run(args: Any, client: Any, ui: Any, config: Any) -> int:
             ],
             capture_output=True,
             text=True,
-            timeout=30,
+            # A health check must answer quickly: a slow service_manager is
+            # itself the diagnosis. 30s outlived every caller's own timeout,
+            # so the outer one fired first and the degraded path never ran.
+            timeout=10,
             check=False,
         )
         service_items = json.loads(status.stdout or "[]") if status.returncode == 0 else []
