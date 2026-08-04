@@ -87,12 +87,12 @@ def test_build_nodes_falls_back_when_code_splitter_returns_no_nodes(monkeypatch)
         text="def answer():\n    return 'grounded'",
         metadata={"rel_path": "answer.py", "collection_id": "docs", "source_id": "source"},
     )
-    monkeypatch.setattr(indexer, "_code_splitter", lambda _language: SimpleNamespace(
-        get_nodes_from_documents=lambda _documents: []
-    ))
-    monkeypatch.setattr(indexer, "_sentence_splitter", lambda: SimpleNamespace(
-        get_nodes_from_documents=lambda _documents: []
-    ))
+    monkeypatch.setattr(
+        indexer, "_code_splitter", lambda _language: SimpleNamespace(get_nodes_from_documents=lambda _documents: [])
+    )
+    monkeypatch.setattr(
+        indexer, "_sentence_splitter", lambda: SimpleNamespace(get_nodes_from_documents=lambda _documents: [])
+    )
 
     nodes = indexer.build_nodes([document])
 

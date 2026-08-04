@@ -146,8 +146,7 @@ def _job_run_is_current(job_id: str, run_token: str) -> bool:
 
 def _next_queued_job_locked() -> dict | None:
     candidates = [
-        job for job in state.index_jobs.values()
-        if job.get("status") == "queued" and not job.get("cancel_requested")
+        job for job in state.index_jobs.values() if job.get("status") == "queued" and not job.get("cancel_requested")
     ]
     return min(candidates, key=lambda item: item.get("created_at", 0), default=None)
 

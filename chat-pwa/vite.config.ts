@@ -622,6 +622,7 @@ export default defineConfig({
           motion: ['framer-motion'],
           markdown: ['react-markdown'],
           icons: ['react-icons/md', 'react-icons/fa'],
+          i18n: ['./src/i18n/translations.ts'],
         },
       },
     },

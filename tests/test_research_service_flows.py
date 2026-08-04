@@ -150,9 +150,7 @@ def test_research_rejects_empty_selected_collection(monkeypatch, tmp_path) -> No
     monkeypatch.setattr(research.state, "fusion_retriever", object())
     monkeypatch.setattr(research.state, "index_docstore", SimpleNamespace(docs={}))
 
-    result = research._research_sync(
-        ResearchRequest(query="local question", collections=["empty"], web_search=False)
-    )
+    result = research._research_sync(ResearchRequest(query="local question", collections=["empty"], web_search=False))
 
     assert result["error_code"] == "collection_empty"
     assert result["sources"] == []
@@ -163,12 +161,19 @@ def test_research_web_only_does_not_require_local_collection(monkeypatch) -> Non
     monkeypatch.setattr(research.state, "fusion_retriever", None)
     monkeypatch.setattr(research, "wants_web_search", lambda _query: False)
     monkeypatch.setattr(research, "configured_provider", lambda: "duckduckgo")
-    monkeypatch.setattr(research, "get_llm", lambda *_args, **_kwargs: SimpleNamespace(
-        complete=lambda _prompt: SimpleNamespace(text="respuesta")
-    ))
-    monkeypatch.setattr(research, "search_web", lambda *_args, **_kwargs: (
-        [{"url": "https://example.test", "title": "Source", "snippet": "Fact"}], "duckduckgo"
-    ))
+    monkeypatch.setattr(
+        research,
+        "get_llm",
+        lambda *_args, **_kwargs: SimpleNamespace(complete=lambda _prompt: SimpleNamespace(text="respuesta")),
+    )
+    monkeypatch.setattr(
+        research,
+        "search_web",
+        lambda *_args, **_kwargs: (
+            [{"url": "https://example.test", "title": "Source", "snippet": "Fact"}],
+            "duckduckgo",
+        ),
+    )
     monkeypatch.setattr(research, "read_web_results", lambda rows, limit: rows)
 
     result = research._research_sync(ResearchRequest(query="current question", web_search=True, include_local=False))
