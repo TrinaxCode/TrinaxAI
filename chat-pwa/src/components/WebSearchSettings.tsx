@@ -7,15 +7,15 @@ import {
   saveWebSearchSettings,
   resetWebSearchSettings,
   testWebSearchProvider,
+  userFacingError,
   type WebSearchSettings as Settings,
 } from '../lib/api';
 
 const PROVIDERS = ['auto', 'duckduckgo', 'brave', 'searxng'] as const;
 
 export default function WebSearchSettings({ canManageSystem }: { canManageSystem: boolean }) {
-  const { lang } = useI18n();
+  const { t } = useI18n();
   const { isDark } = useTheme();
-  const es = lang === 'es';
   const [settings, setSettings] = useState<Settings | null>(null);
   const [provider, setProvider] = useState<'auto' | 'duckduckgo' | 'brave' | 'searxng'>('auto');
   const [enabled, setEnabled] = useState(true);
@@ -34,7 +34,7 @@ export default function WebSearchSettings({ canManageSystem }: { canManageSystem
         setProvider(value.preferred_provider as typeof provider);
       } else setProvider(value.active_provider as typeof provider);
       setSearxngUrl(value.providers.searxng?.base_url || '');
-    }).catch((error) => { if (!controller.signal.aborted) setMessage(String(error?.message || error)); });
+    }).catch((error) => { if (!controller.signal.aborted) setMessage(userFacingError(error, 'external_service_unavailable')); });
     return () => controller.abort();
   }, []);
 
@@ -47,78 +47,78 @@ export default function WebSearchSettings({ canManageSystem }: { canManageSystem
         ...(provider === 'searxng' && !settings?.externally_managed.searxng_url ? { searxng_url: searxngUrl.trim() } : {}),
       });
       setSettings(next); setBraveKey('');
-      setMessage(es ? 'Configuración guardada.' : 'Settings saved.');
+      setMessage(t('webSearchSaved'));
       return true;
-    } catch (error) { setMessage(String((error as Error).message)); return false; }
+    } catch (error) { setMessage(userFacingError(error, 'external_service_unavailable')); return false; }
     finally { setBusy(false); }
   };
 
   const test = async () => {
-    setBusy(true); setMessage(es ? 'Probando conexión…' : 'Testing connection…');
+    setBusy(true); setMessage(t('webSearchTesting'));
     try {
       if (braveKey.trim() || (provider === 'searxng' && searxngUrl.trim() !== settings?.providers.searxng?.base_url)) {
         if (!await save()) return;
         setBusy(true);
       }
       const result = await testWebSearchProvider(provider);
-      setMessage((es ? 'Conexión correcta: ' : 'Connection successful: ') + result.provider);
-    } catch (error) { setMessage(String((error as Error).message)); }
+      setMessage(t('webSearchConnectionSuccess').replace('{provider}', result.provider));
+    } catch (error) { setMessage(userFacingError(error, 'external_service_unavailable')); }
     finally { setBusy(false); }
   };
 
-  if (!canManageSystem) return <p role="alert">{es ? 'Se requiere el permiso system.' : 'The system permission is required.'}</p>;
-  if (!settings) return <p>{message || (es ? 'Cargando…' : 'Loading…')}</p>;
+  if (!canManageSystem) return <p role="alert">{t('webSearchSystemPermission')}</p>;
+  if (!settings) return <p>{message || t('webSearchLoading')}</p>;
   const configured = settings.providers[provider]?.configured;
   const providerExternal = settings.externally_managed.preferred_provider;
   const hasExternal = Object.values(settings.externally_managed).some(Boolean);
 
   const removeBraveKey = async () => {
-    if (!window.confirm(es ? '¿Eliminar API key?' : 'Delete API key?')) return;
+    if (!window.confirm(t('webSearchDeleteKeyConfirm'))) return;
     setBusy(true); setMessage('');
     try { setSettings(await deleteWebSearchCredential('brave')); }
-    catch (error) { setMessage(String((error as Error).message)); }
+    catch (error) { setMessage(userFacingError(error, 'external_service_unavailable')); }
     finally { setBusy(false); }
   };
 
   const reset = async () => {
-    if (!window.confirm(es ? '¿Restablecer la búsqueda web?' : 'Reset web-search settings?')) return;
+    if (!window.confirm(t('webSearchResetConfirm'))) return;
     setBusy(true); setMessage('');
     try { setSettings(await resetWebSearchSettings()); }
-    catch (error) { setMessage(String((error as Error).message)); }
+    catch (error) { setMessage(userFacingError(error, 'external_service_unavailable')); }
     finally { setBusy(false); }
   };
 
   return <section className={`rounded-xl border p-4 space-y-4 ${card}`} aria-labelledby="web-search-settings-title">
     <div>
-      <h3 id="web-search-settings-title" className="font-semibold">{es ? 'Búsqueda web' : 'Web search'}</h3>
-      <p className="text-xs opacity-60">{es ? 'Las credenciales se guardan únicamente en el backend local.' : 'Credentials are stored only by the local backend.'}</p>
+      <h3 id="web-search-settings-title" className="font-semibold">{t('webSearchSettingsTitle')}</h3>
+      <p className="text-xs opacity-60">{t('webSearchCredentialsLocalOnly')}</p>
     </div>
     <label className="flex items-center justify-between gap-3">
-      <span>{es ? 'Activar búsqueda web' : 'Enable web search'}</span>
+      <span>{t('webSearchEnable')}</span>
       <input name="web-search-enabled" type="checkbox" checked={enabled} onChange={(event) => setEnabled(event.target.checked)} disabled={providerExternal || busy} />
     </label>
     <label className="block space-y-1">
-      <span>{es ? 'Motor de búsqueda preferido' : 'Preferred search engine'}</span>
-      <select name="web-search-provider" autoComplete="off" aria-label={es ? 'Motor de búsqueda preferido' : 'Preferred search engine'} value={provider} onChange={(event) => setProvider(event.target.value as typeof provider)} disabled={providerExternal || busy} className={`w-full rounded-lg border p-2 ${input}`}>
-        <option value="auto">{es ? 'Automático' : 'Automatic'}</option><option value="duckduckgo">DuckDuckGo</option><option value="brave">Brave Search</option><option value="searxng">SearXNG</option>
+      <span>{t('webSearchPreferredProvider')}</span>
+      <select name="web-search-provider" autoComplete="off" aria-label={t('webSearchPreferredProvider')} value={provider} onChange={(event) => setProvider(event.target.value as typeof provider)} disabled={providerExternal || busy} className={`w-full rounded-lg border p-2 ${input}`}>
+        <option value="auto">{t('webSearchAutomatic')}</option><option value="duckduckgo">DuckDuckGo</option><option value="brave">Brave Search</option><option value="searxng">SearXNG</option>
       </select>
     </label>
-    {provider === 'auto' && <p className="text-sm">{es ? 'Usa Brave o SearXNG si están configurados; después DuckDuckGo y el fallback público integrado.' : 'Uses configured Brave or SearXNG first, then DuckDuckGo and the built-in public fallback.'}</p>}
-    {provider === 'duckduckgo' && <p className="text-sm">{es ? 'No requiere API key; puede aplicar límites contra automatización.' : 'No API key required; automated searches may be rate-limited.'}</p>}
+    {provider === 'auto' && <p className="text-sm">{t('webSearchAutoDescription')}</p>}
+    {provider === 'duckduckgo' && <p className="text-sm">{t('webSearchDuckDescription')}</p>}
     {provider === 'brave' && <label className="block space-y-1">
-      <span>Brave Search API key — {configured ? (es ? 'Configurada' : 'Configured') : (es ? 'No configurada' : 'Not configured')}</span>
-      <input name="brave-api-key" type="password" autoComplete="new-password" disabled={settings.externally_managed.brave_api_key || busy} value={braveKey} onChange={(event) => setBraveKey(event.target.value)} placeholder={configured ? (es ? 'Configurada — introduce una nueva para reemplazarla' : 'Configured — enter a new value to replace it') : 'BSA…'} className={`w-full rounded-lg border p-2 disabled:opacity-60 ${input}`} />
-      {configured && !settings.externally_managed.brave_api_key && <button type="button" onClick={removeBraveKey} className="text-sm text-red-500">{es ? 'Eliminar API key' : 'Delete API key'}</button>}
+      <span>Brave Search API key — {configured ? t('webSearchConfigured') : t('webSearchNotConfigured')}</span>
+      <input name="brave-api-key" type="password" autoComplete="new-password" disabled={settings.externally_managed.brave_api_key || busy} value={braveKey} onChange={(event) => setBraveKey(event.target.value)} placeholder={configured ? t('webSearchReplaceKey') : 'BSA…'} className={`w-full rounded-lg border p-2 disabled:opacity-60 ${input}`} />
+      {configured && !settings.externally_managed.brave_api_key && <button type="button" onClick={removeBraveKey} className="text-sm text-red-500">{t('webSearchDeleteKey')}</button>}
     </label>}
     {provider === 'searxng' && <label className="block space-y-1">
-      <span>{es ? 'URL pública de la instancia SearXNG' : 'Public SearXNG instance URL'}</span>
+      <span>{t('webSearchPublicSearxUrl')}</span>
       <input name="searxng-url" type="url" autoComplete="off" disabled={settings.externally_managed.searxng_url || busy} value={searxngUrl} onChange={(event) => setSearxngUrl(event.target.value)} placeholder="https://search.example.org…" className={`w-full rounded-lg border p-2 disabled:opacity-60 ${input}`} />
     </label>}
-    {hasExternal && <p className="text-sm text-amber-500">{es ? 'Algunos campos están configurados mediante variables de entorno.' : 'Some fields are managed by environment variables.'}</p>}
+    {hasExternal && <p className="text-sm text-amber-500">{t('webSearchEnvironmentManaged')}</p>}
     <div className="flex flex-wrap gap-2">
-      <button type="button" disabled={busy} onClick={save} className="rounded-lg bg-[#006bbd] px-4 py-2 text-white disabled:opacity-50">{busy ? (es ? 'Guardando…' : 'Saving…') : (es ? 'Guardar' : 'Save')}</button>
-      <button type="button" disabled={busy} onClick={test} className="rounded-lg border px-4 py-2 disabled:opacity-50">{es ? 'Probar conexión' : 'Test connection'}</button>
-      <button type="button" disabled={busy || hasExternal} onClick={reset} className="rounded-lg border px-4 py-2 disabled:opacity-50">{es ? 'Restablecer' : 'Reset'}</button>
+      <button type="button" disabled={busy} onClick={save} className="rounded-lg bg-[#006bbd] px-4 py-2 text-white disabled:opacity-50">{busy ? t('webSearchSaving') : t('save')}</button>
+      <button type="button" disabled={busy} onClick={test} className="rounded-lg border px-4 py-2 disabled:opacity-50">{t('webSearchTestButton')}</button>
+      <button type="button" disabled={busy || hasExternal} onClick={reset} className="rounded-lg border px-4 py-2 disabled:opacity-50">{t('webSearchResetButton')}</button>
     </div>
     {message && <p role="status" className="text-sm">{message}</p>}
   </section>;

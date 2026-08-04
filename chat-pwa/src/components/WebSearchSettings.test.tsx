@@ -10,8 +10,20 @@ vi.mock('../lib/api', () => ({
   testWebSearchProvider: (...args: unknown[]) => test(...args),
   deleteWebSearchCredential: (...args: unknown[]) => remove(...args),
   resetWebSearchSettings: (...args: unknown[]) => reset(...args),
+  userFacingError: (error: unknown) => error instanceof Error ? error.message : 'unknown error',
 }));
-vi.mock('../i18n/I18nContext', () => ({ useI18n: () => ({ lang: 'en' }) }));
+vi.mock('../i18n/I18nContext', async () => {
+  const actual = await vi.importActual<typeof import('../i18n/I18nContext')>('../i18n/I18nContext');
+  return { ...actual, useI18n: () => ({ lang: 'en', t: (key: string) => ({
+    webSearchPreferredProvider: 'Preferred search engine',
+    webSearchSettingsTitle: 'Web search',
+    save: 'Save',
+    webSearchTestButton: 'Test connection',
+    webSearchSystemPermission: 'The system permission is required.',
+    webSearchResetButton: 'Reset',
+    webSearchConnectionSuccess: 'Connection successful: {provider}',
+  } as Record<string, string>)[key] || key }) };
+});
 vi.mock('../theme/ThemeContext', () => ({ useTheme: () => ({ isDark: false }) }));
 
 const state = {

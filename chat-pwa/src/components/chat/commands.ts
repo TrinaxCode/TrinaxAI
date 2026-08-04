@@ -1,29 +1,32 @@
 import type { BuiltinCommand, QuickChipDef } from './types';
+import { translations, type TranslationKey } from '../../i18n/translations';
 
 const BUILTIN_COMMANDS: BuiltinCommand[] = [
-  { name: 'index', text: '', builtin: true, kind: 'navigate_indexing', hint: 'Ajustes → Indexar carpeta' },
-  { name: 'browse', text: '', builtin: true, kind: 'navigate_browser', hint: 'Knowledge Browser' },
-  { name: 'memory', text: '', builtin: true, kind: 'navigate_memory', hint: 'Notas persistentes' },
-  { name: 'watch', text: '', builtin: true, kind: 'navigate_indexing', hint: 'Watcher de archivos' },
-  { name: 'research', text: '', builtin: true, kind: 'deep_research', hint: 'Multi-pass deep research' },
-  { name: 'summarize', text: '', builtin: true, kind: 'summarize', hint: 'Resumir conversación' },
-  { name: 'export', text: '', builtin: true, kind: 'export_markdown', hint: 'Exportar como Markdown' },
-  { name: 'sources', text: '', builtin: true, kind: 'navigate_browser', hint: 'Ver fuentes indexadas' },
+  { name: 'index', text: '', builtin: true, kind: 'navigate_indexing', hint: '' },
+  { name: 'browse', text: '', builtin: true, kind: 'navigate_browser', hint: '' },
+  { name: 'memory', text: '', builtin: true, kind: 'navigate_memory', hint: '' },
+  { name: 'watch', text: '', builtin: true, kind: 'navigate_indexing', hint: '' },
+  { name: 'research', text: '', builtin: true, kind: 'deep_research', hint: '' },
+  { name: 'summarize', text: '', builtin: true, kind: 'summarize', hint: '' },
+  { name: 'export', text: '', builtin: true, kind: 'export_markdown', hint: '' },
+  { name: 'sources', text: '', builtin: true, kind: 'navigate_browser', hint: '' },
 ];
 
+const BUILTIN_HINT_KEYS: Record<string, TranslationKey> = {
+  index: 'builtinHint_index',
+  browse: 'builtinHint_browse',
+  memory: 'builtinHint_memory',
+  watch: 'builtinHint_watch',
+  research: 'builtinHint_research',
+  summarize: 'builtinHint_summarize',
+  resumir: 'builtinHint_summarize',
+  export: 'builtinHint_export',
+  sources: 'builtinHint_sources',
+};
+
 export function getBuiltinHint(name: string, lang: 'es' | 'en'): string {
-  const hints: Record<string, { es: string; en: string }> = {
-    index: { es: 'Ajustes → Indexar carpeta', en: 'Settings → Index folder' },
-    browse: { es: 'Navegador de conocimiento', en: 'Knowledge Browser' },
-    memory: { es: 'Notas persistentes', en: 'Persistent notes' },
-    watch: { es: 'Watcher de archivos', en: 'File watcher' },
-    research: { es: 'Investigación profunda', en: 'Multi-pass deep research' },
-    summarize: { es: 'Resumir conversación', en: 'Summarize conversation' },
-    resumir: { es: 'Resumir conversación', en: 'Summarize conversation' },
-    export: { es: 'Descargar chat (MD, PDF, Word)', en: 'Download chat (MD, PDF, Word)' },
-    sources: { es: 'Ver fuentes indexadas', en: 'View indexed sources' },
-  };
-  return hints[name]?.[lang] ?? '';
+  const key = BUILTIN_HINT_KEYS[name];
+  return key ? translations[lang][key] : '';
 }
 
 export function localizedBuiltins(lang: 'es' | 'en'): BuiltinCommand[] {

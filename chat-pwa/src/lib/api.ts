@@ -67,6 +67,7 @@ const LEGACY_ERROR_CATEGORIES: Record<string, ErrorCategory> = {
   model_incompatible: 'ai_model_unavailable',
   embedding_error: 'ai_model_unavailable',
   collection_empty: 'file_not_found',
+  collection_not_found: 'file_not_found',
   web_search_disabled: 'external_service_unavailable',
   provider_timeout: 'network_timeout',
   provider_unavailable: 'external_service_unavailable',
@@ -98,6 +99,21 @@ function categoryFor(status: number, code = ''): ErrorCategory {
 }
 
 const LEGACY_MESSAGES: Record<string, [string, string]> = {
+  proxy_operation_not_exposed: ['Esta operación no está disponible a través de TrinaxAI.', 'This operation is not exposed through TrinaxAI.'],
+  method_not_allowed: ['El método solicitado no está permitido.', 'The requested method is not allowed.'],
+  invalid_request_url: ['La URL de la solicitud no es válida.', 'The request URL is invalid.'],
+  network_refresh_failed: ['No se pudo actualizar la configuración de red local.', 'The local network configuration could not be refreshed.'],
+  system_start_failed: ['No se pudieron iniciar los servicios de IA. Revisa los registros locales.', 'AI services could not be started. Check the local service logs.'],
+  frontend_build_missing: ['No se encontró la compilación de la interfaz. Ejecuta npm run build.', 'The frontend build was not found. Run npm run build.'],
+  proxy_scope_required: ['Este dispositivo no tiene el permiso necesario para usar esta función.', 'This device does not have the permission required for this feature.'],
+  proxy_rate_limited: ['Se alcanzó el límite temporal de solicitudes. Espera un momento e inténtalo de nuevo.', 'The temporary request limit was reached. Wait a moment and try again.'],
+  proxy_identity_unavailable: ['El gateway local no pudo verificar la conexión segura.', 'The local gateway could not verify the secure connection.'],
+  proxy_queue_timeout: ['La cola de inferencia local tardó demasiado. Inténtalo de nuevo.', 'The local inference queue took too long. Try again.'],
+  proxy_unavailable: ['El servicio de IA local no está disponible.', 'The local AI service is unavailable.'],
+  proxy_invalid_configuration: ['La configuración del proxy local no es válida.', 'The local proxy configuration is invalid.'],
+  system_scope_required: ['El control del sistema requiere un dispositivo vinculado con permisos o un administrador.', 'System control requires a paired device with permission or an administrator.'],
+  unknown_system_action: ['La acción del sistema no es válida.', 'The system action is invalid.'],
+  route_not_found: ['La ruta solicitada no existe.', 'The requested route does not exist.'],
   provider_not_configured: ['El proveedor seleccionado no está configurado.', 'The selected provider is not configured.'],
   invalid_credential: ['La credencial del proveedor no es válida.', 'The provider credential is invalid.'],
   rate_limited: ['El proveedor limitó temporalmente las solicitudes.', 'The provider temporarily rate-limited requests.'],
@@ -186,7 +202,9 @@ export function apiErrorFromPayload(status: number, payload: unknown, fallbackCo
 
 export function userFacingError(error: unknown, fallbackCategory: ErrorCategory = 'unknown_error'): string {
   if (error instanceof ApiError) return error.message;
-  if (error instanceof DOMException && error.name === 'AbortError') return error.message;
+  if (error instanceof DOMException && error.name === 'AbortError') {
+    return languageIsEnglish() ? 'This request was cancelled.' : 'Cancelaste esta petición.';
+  }
   const info = ERROR_DEFINITIONS[fallbackCategory];
   return languageIsEnglish() ? info.en : info.es;
 }
@@ -236,6 +254,7 @@ export interface StreamMeta {
 
 export interface StreamOptions {
   collections?: string[];
+  mode?: 'auto' | 'knowledge' | 'model';
   /** Avoid analytics/usage writes for an in-memory temporary chat. */
   temporary?: boolean;
 }
@@ -1394,6 +1413,7 @@ export async function runResearch(
       ollama_unavailable: 'Ollama is not running or is not reachable.',
       model_unavailable: `The selected model is not installed: ${detail}`,
       collection_empty: `The selected RAG collection is empty or not initialized: ${detail}`,
+      collection_not_found: `The selected RAG collection was not found: ${detail}`,
       web_search_disabled: 'Web search is disabled in the server configuration.',
     };
     throw new ApiError(messages[code] || detail || 'Research preflight failed.', 424, code);
@@ -2283,9 +2303,7 @@ export async function streamRag(
       model: routeOllamaModel(lastUser, messages),
       keep_alive: keepAlive,
       aggressive_quant: aggressiveQuantizationEnabled(),
-      // Choosing the RAG engine is an explicit product intent: retrieval must
-      // run even when the natural-language classifier sees no grounding phrase.
-      mode: 'knowledge',
+      mode: options.mode ?? 'knowledge',
     }),
     signal,
   });

@@ -23,6 +23,7 @@ describe('NetworkNotice', () => {
     vi.restoreAllMocks();
     systemFetch.mockReset();
     wipeRevokedDeviceData.mockReset();
+    localStorage.clear();
     vi.stubGlobal('fetch', vi.fn());
     Object.defineProperty(navigator, 'clipboard', {
       configurable: true,
@@ -52,6 +53,24 @@ describe('NetworkNotice', () => {
     expect(await screen.findByText('networkOfflineTitle')).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'networkCopyCommand' }));
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith('trinaxai network refresh');
+  });
+
+  it('stays dismissed for the same network but returns when the addresses change', async () => {
+    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify(network), { status: 200 }));
+    const { unmount } = render(<NetworkNotice canManageSystem />);
+    await userEvent.click(await screen.findByRole('button', { name: 'close' }));
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    unmount();
+
+    render(<NetworkNotice canManageSystem />);
+    await waitFor(() => expect(screen.queryByRole('status')).not.toBeInTheDocument());
+
+    vi.mocked(fetch).mockResolvedValue(new Response(
+      JSON.stringify({ ...network, urls: ['https://192.168.1.42:3334'] }),
+      { status: 200 },
+    ));
+    render(<NetworkNotice canManageSystem />);
+    expect(await screen.findByText('networkChangedTitle')).toBeInTheDocument();
   });
 
   it('removes an old offline origin only after explicit confirmation', async () => {

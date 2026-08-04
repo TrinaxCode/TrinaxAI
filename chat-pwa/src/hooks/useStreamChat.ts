@@ -10,6 +10,7 @@ export interface SendResult {
 export interface SendOptions {
   onToken?: (token: string, fullText: string) => void;
   collections?: string[];
+  mode?: 'auto' | 'knowledge' | 'model';
   temporary?: boolean;
 }
 
@@ -130,7 +131,7 @@ export function useStreamChat() {
           }
           options?.onToken?.(token, accumRef.current + queueRef.current);
         };
-        const streamOptions = { collections: options?.collections, temporary: options?.temporary };
+        const streamOptions = { collections: options?.collections, mode: options?.mode, temporary: options?.temporary };
         const full = engine === 'rag'
           ? await streamRag(messages, handleToken, ctrl.signal, onMeta, streamOptions)
           : await streamOllama(messages, handleToken, ctrl.signal, onMeta, streamOptions);

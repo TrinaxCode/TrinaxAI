@@ -1,0 +1,37 @@
+{
+  "id": "/",
+  "name": "Chat de TrinaxAI",
+  "short_name": "TrinaxAI",
+  "description": "TrinaxAI — Ollama y RAG al alcance de tu mano.",
+  "dir": "ltr",
+  "lang": "es",
+  "categories": ["productivity", "utilities"],
+  "theme_color": "#000000",
+  "background_color": "#000000",
+  "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone", "minimal-ui"],
+  "orientation": "any",
+  "scope": "/",
+  "start_url": "/",
+  "icons": [
+    { "src": "/apple-touch-icon.png", "sizes": "180x180", "type": "image/png", "purpose": "any" },
+    { "src": "/android-chrome-192x192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "/android-chrome-512x512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ],
+  "shortcuts": [
+    {
+      "name": "Nuevo chat",
+      "short_name": "Chat",
+      "description": "Iniciar una nueva conversación",
+      "url": "/",
+      "icons": [{ "src": "/android-chrome-192x192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Configuración",
+      "short_name": "Ajustes",
+      "description": "Abrir la configuración de la aplicación",
+      "url": "/#settings",
+      "icons": [{ "src": "/android-chrome-192x192.png", "sizes": "192x192" }]
+    }
+  ]
+}

@@ -169,6 +169,34 @@ describe('api helpers', () => {
     } finally { vi.unstubAllGlobals(); }
   });
 
+  it('uses explicit knowledge mode for RAG chat and allows an explicit override', async () => {
+    const encoder = new TextEncoder();
+    const sse = 'data: {"choices":[{"delta":{"content":"ok"}}]}\n\ndata: [DONE]\n\n';
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(new Response(new ReadableStream({
+      start(controller) {
+        controller.enqueue(encoder.encode(sse));
+        controller.close();
+      },
+    }), { status: 200 })));
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      await expect(streamRag([{ role: 'user', content: 'hola' }], vi.fn())).resolves.toBe('ok');
+      expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toMatchObject({ mode: 'knowledge' });
+
+      await expect(streamRag(
+        [{ role: 'user', content: 'que archivos hay en el rag' }],
+        vi.fn(),
+        undefined,
+        undefined,
+        { mode: 'knowledge', collections: ['prueba-1'] },
+      )).resolves.toBe('ok');
+      expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toMatchObject({
+        mode: 'knowledge',
+        collections: ['prueba-1'],
+      });
+    } finally { vi.unstubAllGlobals(); }
+  });
+
   it('switches from a warm chat model to the code role immediately', async () => {
     clearOllamaModelAvailabilityCache();
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ models: [
@@ -515,7 +543,7 @@ def mystery(A):
         () => undefined,
         undefined,
         (meta) => metadata.push(meta),
-        { collections: ['docs'] },
+         { collections: ['docs'], mode: 'knowledge' },
       );
       expect(answer).toBe('grounded');
       const [, init] = fetchMock.mock.calls[0];

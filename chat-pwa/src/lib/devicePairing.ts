@@ -1,4 +1,5 @@
 import { APP_CONFIG } from './config';
+import { apiErrorFromPayload } from './api';
 import {
   DEVICE_TOKEN_STORAGE_KEY,
   clearRevokedDeviceSession,
@@ -95,13 +96,7 @@ export async function revokePairedDevice(deviceId: string): Promise<void> {
 
 async function responseJson(response: Response): Promise<Record<string, unknown>> {
   const payload = await response.json().catch(() => ({})) as Record<string, unknown>;
-  if (!response.ok) {
-    const en = typeof document !== 'undefined' && document.documentElement.lang.toLowerCase().startsWith('en');
-    const detail = response.status === 401 || response.status === 403
-      ? en ? 'This device does not have permission for that action. Pair it from your main device using a new code.' : 'Este dispositivo no tiene permiso para esta acción. Vincúlalo desde tu dispositivo principal usando un código nuevo.'
-      : typeof payload.detail === 'string' ? payload.detail : en ? `The action could not be completed (code ${response.status}).` : `No se pudo completar la acción (código ${response.status}).`;
-    throw new Error(detail);
-  }
+  if (!response.ok) throw apiErrorFromPayload(response.status, payload);
   return payload;
 }
 

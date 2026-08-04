@@ -134,6 +134,10 @@ function sendJson(res, status, body) {
   res.end(JSON.stringify(body));
 }
 
+function sendError(res, status, code) {
+  sendJson(res, status, { ok: false, error: { code } });
+}
+
 function rateAllowed(peer) {
   const limit = Math.max(1, Number(process.env.TRINAXAI_OLLAMA_PROXY_RATE_LIMIT || 30) || 30);
   const now = Date.now();
@@ -151,13 +155,21 @@ function rateAllowed(peer) {
   return true;
 }
 
+function canonicalProxyPath(pathname) {
+  try {
+    return decodeURIComponent(pathname);
+  } catch {
+    return pathname;
+  }
+}
+
 function signedIdentity(req, pathname) {
   const secret = proxySecret();
   const clientIp = normalizeAddress(req.socket.remoteAddress || 'unknown');
   if (!secret || net.isIP(clientIp) === 0) return {};
   const timestamp = String(Math.floor(Date.now() / 1000));
   const nonce = randomBytes(16).toString('hex');
-  const payload = ['v1', clientIp, timestamp, nonce, req.method || 'GET', pathname].join('\n');
+  const payload = ['v1', clientIp, timestamp, nonce, req.method || 'GET', canonicalProxyPath(pathname)].join('\n');
   return {
     'x-trinaxai-proxy': 'v1',
     'x-trinaxai-client-ip': clientIp,
@@ -179,7 +191,7 @@ async function proxyRequest(req, res, url, prefix) {
   const ollama = prefix === '/api/ollama';
   if (ollama) {
     if (!isAllowedOllamaProxyRequest(req.method || 'GET', browserPath)) {
-      sendJson(res, 404, { ok: false, error: 'Ollama operation is not exposed by TrinaxAI.' });
+      sendError(res, 404, 'proxy_operation_not_exposed');
       return;
     }
     const scope = requiredOllamaProxyScope(browserPath);
@@ -194,16 +206,16 @@ async function proxyRequest(req, res, url, prefix) {
         pairedDeviceGrants(device, scope),
       );
     if (!authorized) {
-      sendJson(res, 403, { ok: false, error: `Ollama access requires a paired ${scope} device or administrator.` });
+      sendError(res, 403, 'proxy_scope_required');
       return;
     }
     if (!rateAllowed(peer)) {
       res.setHeader('Retry-After', '2');
-      sendJson(res, 429, { ok: false, error: 'Too many Ollama requests.' });
+      sendError(res, 429, 'proxy_rate_limited');
       return;
     }
   } else if (!isLoopbackAddress(peer) && !proxySecret()) {
-    sendJson(res, 503, { ok: false, error: 'Trusted RAG proxy identity is unavailable.' });
+    sendError(res, 503, 'proxy_identity_unavailable');
     return;
   }
 
@@ -214,7 +226,7 @@ async function proxyRequest(req, res, url, prefix) {
       : proxyTarget('TRINAXAI_RAG_TARGET', env('VITE_TRINAXAI_RAG_TARGET', 'http://127.0.0.1:3333'));
   } catch (error) {
     console.error(`Invalid TrinaxAI proxy target: ${error.message}`);
-    sendJson(res, 503, { ok: false, error: 'The local AI proxy is not configured correctly.' });
+    sendError(res, 503, 'proxy_invalid_configuration');
     return;
   }
   let release = () => {};
@@ -228,7 +240,7 @@ async function proxyRequest(req, res, url, prefix) {
         { timeoutMs: Math.max(1000, Number(process.env.TRINAXAI_INFERENCE_QUEUE_TIMEOUT || 600) * 1000) },
       );
     } catch {
-      sendJson(res, 503, { ok: false, error: 'Local inference queue timed out.' });
+      sendError(res, 503, 'proxy_queue_timeout');
       return;
     }
   }
@@ -273,13 +285,13 @@ async function proxyRequest(req, res, url, prefix) {
   } catch (error) {
     console.error('TrinaxAI proxy setup failure.');
     releaseOnce();
-    sendJson(res, 502, { ok: false, error: 'The local AI service is unavailable.' });
+    sendError(res, 502, 'proxy_unavailable');
     return;
   }
   upstream.on('error', (error) => {
     console.error('TrinaxAI proxy failure.');
     releaseOnce();
-    if (!res.headersSent) sendJson(res, 502, { ok: false, error: 'The local AI service is unavailable.' });
+    if (!res.headersSent) sendError(res, 502, 'proxy_unavailable');
     else res.destroy();
   });
   req.once('aborted', () => {
@@ -355,13 +367,25 @@ function hasExistingInstallation() {
   }
 }
 
+// The running service keeps the environment it was started with, so the file on
+// disk is the only current source for origins refreshed after a network change.
+function configuredCorsOrigins() {
+  try {
+    const lines = readBounded(path.join(repoRoot, '.env'), 1024 * 1024, 'utf8').split('\n');
+    for (let index = lines.length - 1; index >= 0; index -= 1) {
+      if (lines[index].startsWith('TRINAXAI_CORS_ORIGINS=')) return lines[index].split('=', 2)[1].trim();
+    }
+  } catch { /* Without a readable .env the process environment is the best source. */ }
+  return String(process.env.TRINAXAI_CORS_ORIGINS || '');
+}
+
 function networkStatus() {
   const hostname = os.hostname().split('.', 1)[0] || 'trinaxai';
   const stableHost = `${hostname}.local`;
   const addresses = lanAddresses();
   const renderUrl = (address) => `https://${address.includes(':') ? `[${address}]` : address}:${port}`;
   const urls = [...addresses.map(renderUrl), renderUrl(stableHost)];
-  const configuredOrigins = String(process.env.TRINAXAI_CORS_ORIGINS || '');
+  const configuredOrigins = configuredCorsOrigins();
   const configurationCurrent = urls.every((url) => configuredOrigins.includes(url));
   let certificateCurrent = null;
   try {
@@ -386,7 +410,7 @@ function networkStatus() {
 
 function networkInfo(req, res) {
   if (req.method !== 'GET') {
-    sendJson(res, 405, { ok: false, error: 'Method not allowed.' });
+    sendError(res, 405, 'method_not_allowed');
     return;
   }
   sendJson(res, 200, networkStatus());
@@ -394,11 +418,11 @@ function networkInfo(req, res) {
 
 function systemControl(req, res, pathname) {
   if (req.method !== 'POST') {
-    sendJson(res, 405, { ok: false, error: 'Method not allowed.' });
+    sendError(res, 405, 'method_not_allowed');
     return;
   }
   if (!systemAuthorized(req)) {
-    sendJson(res, 403, { ok: false, error: 'System control requires a paired system device or administrator.' });
+    sendError(res, 403, 'system_scope_required');
     return;
   }
   const action = pathname.slice('/api/system/'.length);
@@ -410,7 +434,7 @@ function systemControl(req, res, pathname) {
     execFile(localPython(), args, { cwd: repoRoot, windowsHide: true }, (error) => {
       if (error) {
         console.error(`TrinaxAI network refresh failed: ${error.message}`);
-        sendJson(res, 500, { ok: false, error: 'The local network configuration could not be refreshed.' });
+        sendError(res, 500, 'network_refresh_failed');
         return;
       }
       sendJson(res, 200, { ok: true, ...networkStatus(), restartRequired: true });
@@ -427,7 +451,7 @@ function systemControl(req, res, pathname) {
   }
   const managerAction = action === 'startup' ? 'start-ai' : action === 'shutdown' ? 'stop-ai' : 'stop-all';
   if (!['startup', 'shutdown', 'stop-all'].includes(action)) {
-    sendJson(res, 404, { ok: false, error: 'Unknown system action.' });
+    sendError(res, 404, 'unknown_system_action');
     return;
   }
   const args = [path.join(repoRoot, 'service_manager.py'), managerAction, '--base-dir', repoRoot];
@@ -442,7 +466,7 @@ function systemControl(req, res, pathname) {
   execFile(localPython(), args, { cwd: repoRoot, windowsHide: true }, (error) => {
     if (error) {
       console.error(`TrinaxAI startup failed: ${error.message}`);
-      sendJson(res, 500, { ok: false, error: 'AI services could not be started. Check the local service logs.' });
+      sendError(res, 500, 'system_start_failed');
     } else {
       sendJson(res, 200, { ok: true, output: 'AI services started.' });
     }
@@ -482,7 +506,7 @@ function staticFile(url) {
 function serveStatic(req, res, url) {
   const file = staticFile(url);
   if (!file || !fs.existsSync(file)) {
-    sendJson(res, 404, { ok: false, error: 'Frontend build not found. Run npm run build.' });
+    sendError(res, 404, 'frontend_build_missing');
     return;
   }
   const extension = path.extname(file).toLowerCase();
@@ -505,7 +529,7 @@ function requestHandler(req, res) {
   try {
     url = new URL(req.url || '/', 'http://localhost');
   } catch {
-    sendJson(res, 400, { ok: false, error: 'Invalid request URL.' });
+    sendError(res, 400, 'invalid_request_url');
     return;
   }
   if (url.pathname === '/api/rag' || url.pathname.startsWith('/api/rag/')) {
@@ -517,11 +541,11 @@ function requestHandler(req, res) {
   } else if (url.pathname === '/api/network') {
     networkInfo(req, res);
   } else if (url.pathname.startsWith('/api/')) {
-    sendJson(res, 404, { ok: false, error: 'API route not found.' });
+    sendError(res, 404, 'route_not_found');
   } else if (req.method === 'GET' || req.method === 'HEAD') {
     serveStatic(req, res, url);
   } else {
-    sendJson(res, 404, { ok: false, error: 'Route not found.' });
+    sendError(res, 404, 'route_not_found');
   }
 }
 
@@ -536,14 +560,26 @@ if (!fs.existsSync(distDir)) {
   const key = path.join(certDir, 'localhost-key.pem');
   const cert = path.join(certDir, 'localhost.pem');
   const tlsEnabled = process.env.CI !== 'true' && (fs.existsSync(pfx) || (fs.existsSync(key) && fs.existsSync(cert)));
-  const server = tlsEnabled && fs.existsSync(pfx)
-    ? https.createServer(
-      { pfx: fs.readFileSync(pfx), passphrase: process.env.TRINAXAI_CERT_PASSPHRASE || 'trinaxai-local' },
-      requestHandler,
-    )
-    : tlsEnabled
-      ? https.createServer({ key: fs.readFileSync(key), cert: fs.readFileSync(cert) }, requestHandler)
-      : http.createServer(requestHandler);
+  const tlsOptions = () => (fs.existsSync(pfx)
+    ? { pfx: fs.readFileSync(pfx), passphrase: process.env.TRINAXAI_CERT_PASSPHRASE || 'trinaxai-local' }
+    : { key: fs.readFileSync(key), cert: fs.readFileSync(cert) });
+  const server = tlsEnabled ? https.createServer(tlsOptions(), requestHandler) : http.createServer(requestHandler);
+  if (tlsEnabled) {
+    // A network refresh renews the certificate in place; adopting it here keeps
+    // the new LAN address trusted without requiring a privileged restart.
+    let reloadTimer;
+    fs.watch(certDir, () => {
+      clearTimeout(reloadTimer);
+      reloadTimer = setTimeout(() => {
+        try {
+          server.setSecureContext(tlsOptions());
+          console.log('TrinaxAI PWA reloaded the local HTTPS certificate.');
+        } catch (error) {
+          console.error(`TrinaxAI PWA kept the previous certificate: ${error.message}`);
+        }
+      }, 500).unref();
+    }).unref();
+  }
   server.listen(port, host, () => {
     console.log(`TrinaxAI PWA listening on ${tlsEnabled ? 'https' : 'http'}://${host}:${port}`);
   });

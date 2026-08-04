@@ -36,6 +36,10 @@ export function setDeviceSessionScopes(scopes: string[] | null): void {
 export function systemRequestHeaders(headers?: HeadersInit): Headers {
   const result = new Headers(headers);
   try {
+    const language = document.documentElement.lang.toLowerCase().startsWith('es') ? 'es' : 'en';
+    if (!result.has('Accept-Language')) result.set('Accept-Language', language);
+  } catch { /* document unavailable */ }
+  try {
     const adminToken = sessionStorage.getItem(ADMIN_TOKEN_STORAGE_KEY)?.trim();
     const deviceToken = isLocalAdminOrigin() ? '' : (
       localStorage.getItem(DEVICE_TOKEN_STORAGE_KEY)

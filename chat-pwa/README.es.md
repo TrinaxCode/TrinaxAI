@@ -122,6 +122,8 @@ Al adjuntar un archivo, la PWA intenta guardarlo primero en FastAPI para que una
 
 `vite-plugin-pwa` genera manifest y service worker Workbox:
 
+- Manifests localizados: `/manifest.en.webmanifest` y `/manifest.es.webmanifest` mantienen los metadatos y accesos directos en el idioma elegido; el shell React cambia el manifest cuando cambia `tc-lang`.
+- La pantalla offline es un HTML bilingüe independiente que usa `tc-lang` o el idioma del navegador sin cargar React.
 - `CacheFirst` para JS/CSS e imágenes locales.
 - `NetworkFirst` solo para salud pública; datos privados de API no entran en el runtime cache.
 - Fallback de navegación a `/index.html`, excepto rutas `/api/*`.

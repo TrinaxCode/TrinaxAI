@@ -4,7 +4,7 @@ import { MdAdd, MdAutoFixHigh, MdClose, MdDelete, MdEdit, MdSave } from 'react-i
 import { useI18n } from '../i18n/I18nContext';
 import { useTheme } from '../theme/ThemeContext';
 import { useToast } from './Toast';
-import { listMemories, addMemory, deleteMemory, refreshMemorySummary, getMemorySummary, updateMemory, type MemoryEntry, type MemorySummary } from '../lib/api';
+import { listMemories, addMemory, deleteMemory, refreshMemorySummary, getMemorySummary, updateMemory, userFacingError, type MemoryEntry, type MemorySummary } from '../lib/api';
 import ConfirmModal from './ConfirmModal';
 
 const PROJECT_MEMORY_KEY = 'tc-project-memory';
@@ -34,7 +34,7 @@ export default function MemoryPanel() {
   const showConnectionErrorOnce = useCallback((err: unknown) => {
     if (connectionToastShownRef.current) return;
     connectionToastShownRef.current = true;
-    toast.toast(err instanceof Error ? err.message.slice(0, 180) : t('noConnection'), 'error');
+    toast.toast(userFacingError(err, 'external_service_unavailable'), 'error');
   }, [toast, t]);
 
   const refresh = useCallback(async () => {

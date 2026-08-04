@@ -156,7 +156,9 @@ The frontend deliberately uses several storage layers:
 `vite-plugin-pwa` generates the manifest and Workbox service worker.
 
 - Display modes: `standalone`, with `window-controls-overlay` preferred when supported.
-- Shortcuts: New Chat and Settings.
+- Localized manifests: `/manifest.en.webmanifest` and `/manifest.es.webmanifest` keep app metadata and shortcuts in the selected language; the React shell switches the manifest when `tc-lang` changes.
+- Shortcuts: New Chat and Settings (localized in each manifest).
+- The offline page is a standalone bilingual HTML screen that uses `tc-lang` or the browser language without loading React.
 - Precaching: built JS/CSS/HTML plus icons, fonts, and images matching the configured patterns.
 - Runtime cache: `CacheFirst` for built JS/CSS and local images, and
   `NetworkFirst` only for the public health response. Private API

@@ -11,6 +11,7 @@ import {
   startWatch,
   stopWatch,
   type WatchJobStatus,
+  userFacingError,
 } from '../lib/api';
 
 interface Props {
@@ -100,7 +101,7 @@ export default function WatcherCard({ collections }: Props) {
       toast.toast(t('watcherFoldersActive').replace('{count}', String(foldersRef.current.length)), 'success');
     } catch (error) {
       updateFolders(foldersRef.current.filter((item) => item.id !== id));
-      toast.toast(error instanceof Error ? error.message.slice(0, 220) : t('watcherSyncFailed'), 'error');
+      toast.toast(userFacingError(error, 'external_service_unavailable'), 'error');
     } finally {
       setBusy(false);
     }
@@ -119,7 +120,7 @@ export default function WatcherCard({ collections }: Props) {
     } catch (error) {
       // Canceling the native picker is not an error worth surfacing.
       if (error instanceof DOMException && error.name === 'AbortError') return;
-      toast.toast(error instanceof Error ? error.message.slice(0, 180) : t('watcherSyncFailed'), 'error');
+      toast.toast(userFacingError(error, 'external_service_unavailable'), 'error');
     }
   }, [addFiles, t, toast]);
 
@@ -139,7 +140,7 @@ export default function WatcherCard({ collections }: Props) {
     try {
       await deleteIndexedImport(folder.importPath, folder.collectionId);
     } catch (error) {
-      toast.toast(error instanceof Error ? error.message.slice(0, 180) : t('watcherSyncFailed'), 'error');
+      toast.toast(userFacingError(error, 'external_service_unavailable'), 'error');
     }
   }, [t, toast, updateFolders]);
 
@@ -159,7 +160,7 @@ export default function WatcherCard({ collections }: Props) {
         setServerWatching(true);
         setRunning(true);
       } catch (error) {
-        toast.toast(error instanceof Error ? error.message.slice(0, 180) : t('watcherSyncFailed'), 'error');
+        toast.toast(userFacingError(error, 'external_service_unavailable'), 'error');
       } finally {
         setBusy(false);
       }

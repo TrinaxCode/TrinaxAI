@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="es" class="dark">
+<html lang="en" class="dark">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
@@ -40,8 +40,23 @@
 </head>
 <body>
   <div class="icon">📡</div>
-  <h1>Sin conexión</h1>
-  <p>No se puede alcanzar el equipo donde corre TrinaxAI. Vuelve a conectarte a ese equipo, a su red local o a tu VPN e inténtalo de nuevo.</p>
-  <button onclick="location.reload()">Reintentar</button>
+  <h1 id="title">Offline</h1>
+  <p id="message">The computer running TrinaxAI cannot be reached. Reconnect to that computer, its local network, or your VPN and try again.</p>
+  <button id="retry" onclick="location.reload()">Retry</button>
+  <script>
+    (() => {
+      let language = 'en';
+      try {
+        const stored = localStorage.getItem('tc-lang');
+        language = stored === 'es' ? 'es' : (navigator.language || '').toLowerCase().startsWith('es') ? 'es' : 'en';
+      } catch {}
+      if (language !== 'es') return;
+      document.documentElement.lang = 'es';
+      document.title = 'Sin conexión — TrinaxAI';
+      document.getElementById('title').textContent = 'Sin conexión';
+      document.getElementById('message').textContent = 'No se puede alcanzar el equipo donde corre TrinaxAI. Vuelve a conectarte a ese equipo, a su red local o a tu VPN e inténtalo de nuevo.';
+      document.getElementById('retry').textContent = 'Reintentar';
+    })();
+  </script>
 </body>
 </html>

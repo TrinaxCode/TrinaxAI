@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useState, useCallback } from 'react';
+import { useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { MdArrowBack, MdSearch, MdFolder, MdDescription, MdContentCopy, MdCheck, MdClose, MdFolderOpen, MdDelete, MdDeleteSweep, MdChevronRight } from 'react-icons/md';
 import { useTheme } from '../theme/ThemeContext';
 import { useI18n } from '../i18n/I18nContext';
 import { useToast } from './Toast';
 import { escapeRegExp } from '../utils/str';
-import { getCollections, getCollectionSources, getFileChunks, deleteCollectionSources, deleteSource, type Collection, type CollectionSourceRow, type FileChunk } from '../lib/api';
+import { getCollections, getCollectionSources, getFileChunks, deleteCollectionSources, deleteSource, userFacingError, type Collection, type CollectionSourceRow, type FileChunk } from '../lib/api';
 
 interface Props {
   onBack: () => void;
@@ -50,6 +50,8 @@ export default function KnowledgeBrowser({ onBack, initialCollection, initialFil
   const [confirmDelete, setConfirmDelete] = useState<{ file: string; name: string; sourceId: string | null } | null>(null);
   // Mobile: which panel is visible ('collections' | 'files' | 'chunks')
   const [mobileView, setMobileView] = useState<'collections' | 'files' | 'chunks'>('collections');
+  const sourcesRequestRef = useRef(0);
+  const chunksRequestRef = useRef(0);
 
   // Load collections on mount
   useEffect(() => {
@@ -92,24 +94,38 @@ export default function KnowledgeBrowser({ onBack, initialCollection, initialFil
   // Load sources when collection changes
   useEffect(() => {
     if (!activeCollectionId) return;
+    const requestId = ++sourcesRequestRef.current;
     const c = new AbortController();
     setLoadingSources(true);
+    setSources([]);
     getCollectionSources(activeCollectionId, c.signal)
-      .then((res) => setSources(res.sources || []))
-      .catch(() => setSources([]))
-      .finally(() => setLoadingSources(false));
+      .then((res) => {
+        if (requestId !== sourcesRequestRef.current || c.signal.aborted) return;
+        setSources(res.sources || []);
+      })
+      .catch(() => {
+        if (requestId !== sourcesRequestRef.current || c.signal.aborted) return;
+        setSources([]);
+      })
+      .finally(() => {
+        if (requestId === sourcesRequestRef.current) setLoadingSources(false);
+      });
     return () => c.abort();
   }, [activeCollectionId]);
 
   // Load chunks when active file changes (or when chunk query changes).
   useEffect(() => {
+    const requestId = ++chunksRequestRef.current;
     if (!activeCollectionId || !activeFile) {
       setChunks([]);
       setChunkTotal(0);
+      setLoadingChunks(false);
       return;
     }
     const c = new AbortController();
     setLoadingChunks(true);
+    setChunks([]);
+    setChunkTotal(0);
     const q = chunkQuery.trim();
     // Server-side search when the user has typed a query; otherwise fetch all.
     const opts: Parameters<typeof getFileChunks>[2] = {
@@ -123,14 +139,19 @@ export default function KnowledgeBrowser({ onBack, initialCollection, initialFil
     const id = window.setTimeout(() => {
       getFileChunks(activeCollectionId, activeFile, opts)
         .then((res) => {
-          setChunks(res.chunks || []);
-          setChunkTotal(res.total || (res.chunks || []).length);
+          if (requestId !== chunksRequestRef.current || c.signal.aborted) return;
+          const nextChunks = res.chunks || [];
+          setChunks(nextChunks);
+          setChunkTotal(typeof res.total === 'number' ? res.total : nextChunks.length);
         })
         .catch(() => {
+          if (requestId !== chunksRequestRef.current || c.signal.aborted) return;
           setChunks([]);
           setChunkTotal(0);
         })
-        .finally(() => setLoadingChunks(false));
+        .finally(() => {
+          if (requestId === chunksRequestRef.current) setLoadingChunks(false);
+        });
     }, delay);
     return () => { c.abort(); window.clearTimeout(id); };
   }, [activeCollectionId, activeFile, activeSourceId, chunkQuery]);
@@ -180,7 +201,7 @@ export default function KnowledgeBrowser({ onBack, initialCollection, initialFil
       // Refresh the source list
       refreshSources();
     } catch (err) {
-      toast.toast(err instanceof Error ? err.message.slice(0, 180) : t('sourceDeleteFailed'), 'error');
+      toast.toast(userFacingError(err, 'external_service_unavailable'), 'error');
     } finally {
       setDeletingFile(null);
       setConfirmDelete(null);

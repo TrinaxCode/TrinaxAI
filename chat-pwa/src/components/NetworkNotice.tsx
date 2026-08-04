@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { MdContentCopy, MdDeleteOutline, MdLan, MdOpenInNew, MdRefresh } from 'react-icons/md';
+import { MdClose, MdContentCopy, MdDeleteOutline, MdLan, MdOpenInNew, MdRefresh } from 'react-icons/md';
 import { systemFetch } from '../lib/authHeaders';
 import { wipeRevokedDeviceData } from '../lib/deviceWipe';
 import { useI18n } from '../i18n/I18nContext';
@@ -13,6 +13,8 @@ interface NetworkInfo {
   refreshCommand: string;
 }
 
+const DISMISSED_KEY = 'tc-network-notice-dismissed';
+
 export default function NetworkNotice({ canManageSystem }: { canManageSystem: boolean }) {
   const { t } = useI18n();
   const { isDark } = useTheme();
@@ -22,6 +24,7 @@ export default function NetworkNotice({ canManageSystem }: { canManageSystem: bo
   const [readyUrl, setReadyUrl] = useState('');
   const [copied, setCopied] = useState(false);
   const [removing, setRemoving] = useState(false);
+  const [dismissed, setDismissed] = useState('');
 
   const check = useCallback(async () => {
     try {
@@ -34,7 +37,19 @@ export default function NetworkNotice({ canManageSystem }: { canManageSystem: bo
     }
   }, []);
 
+  // Dismissal is keyed by the detected addresses so a later network change asks again.
+  const signature = offline ? 'offline' : (info?.urls || []).join('|');
+  const dismiss = () => {
+    setDismissed(signature);
+    try {
+      localStorage.setItem(DISMISSED_KEY, signature);
+    } catch { /* Private browsing keeps the notice for the current session only. */ }
+  };
+
   useEffect(() => {
+    try {
+      setDismissed(localStorage.getItem(DISMISSED_KEY) || '');
+    } catch { /* Storage is unavailable; the notice stays visible. */ }
     void check();
     window.addEventListener('online', check);
     return () => window.removeEventListener('online', check);
@@ -72,6 +87,7 @@ export default function NetworkNotice({ canManageSystem }: { canManageSystem: bo
   };
 
   if (!offline && !readyUrl && !info?.needsRefresh) return null;
+  if (!readyUrl && dismissed === signature) return null;
   const command = info?.refreshCommand || 'trinaxai network refresh';
 
   return (
@@ -87,8 +103,7 @@ export default function NetworkNotice({ canManageSystem }: { canManageSystem: bo
           <MdLan size={20} aria-hidden="true" />
         </span>
         <div className="min-w-0 flex-1">
-          <h2 className="text-sm font-semibold">{readyUrl ? t('networkReadyTitle') : offline ? t('networkOfflineTitle') : t('networkChangedTitle')}</h2>
-          <p className={`mt-1 text-xs leading-relaxed ${isDark ? 'text-white/65' : 'text-gray-600'}`}>
+          <h2 className="text-sm font-semibold">{readyUrl ? t('networkReadyTitle') : offline ? t('networkOfflineTitle') : t('networkChangedTitle')}</h2>          <p className={`mt-1 text-xs leading-relaxed ${isDark ? 'text-white/65' : 'text-gray-600'}`}>
             {readyUrl ? t('networkReadyHint') : offline ? t('networkOfflineHint') : t('networkChangedHint')}
           </p>
           {readyUrl ? (
@@ -128,6 +143,14 @@ export default function NetworkNotice({ canManageSystem }: { canManageSystem: bo
             )}
           </div>
         </div>
+        <button
+          type="button"
+          onClick={dismiss}
+          aria-label={t('close')}
+          className={`-mr-1 -mt-1 grid h-9 w-9 shrink-0 place-items-center rounded-xl ${isDark ? 'text-white/55 hover:text-white' : 'text-gray-400 hover:text-gray-700'}`}
+        >
+          <MdClose size={18} />
+        </button>
       </div>
     </aside>
   );

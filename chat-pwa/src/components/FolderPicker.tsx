@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { MdArrowUpward, MdClose, MdFolder, MdHome, MdLock } from 'react-icons/md';
 import { useTheme } from '../theme/ThemeContext';
 import { useI18n } from '../i18n/I18nContext';
-import { browseDirectories, type DirectoryListing } from '../lib/api';
+import { browseDirectories, userFacingError, type DirectoryListing } from '../lib/api';
 import { useDialogAccessibility } from '../hooks/useDialogAccessibility';
 
 interface FolderPickerProps {
@@ -55,7 +55,7 @@ export default function FolderPicker({ initialPath, onSelect, onClose }: FolderP
         // Ignore aborts — they fire when the effect re-runs or the modal closes,
         // and must not clobber a successful listing or show a false error.
         if (controller.signal.aborted || (err instanceof DOMException && err.name === 'AbortError')) return;
-        setError(err instanceof Error ? err.message.slice(0, 200) : t('agentBrowseError'));
+        setError(userFacingError(err, 'permission_denied'));
       })
       .finally(() => {
         if (!controller.signal.aborted) setLoading(false);

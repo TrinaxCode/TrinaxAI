@@ -4,7 +4,7 @@ import { MdRefresh } from 'react-icons/md';
 import { useI18n } from '../i18n/I18nContext';
 import { useTheme } from '../theme/ThemeContext';
 import { useToast } from './Toast';
-import { getUsageStats, type UsageStats } from '../lib/api';
+import { getUsageStats, userFacingError, type UsageStats } from '../lib/api';
 
 function fmtDate(ts: number | null | undefined): string {
   if (!ts) return '—';
@@ -34,7 +34,7 @@ export default function StatsPanel() {
       setLoadError('');
       connectionToastShownRef.current = false;
     } catch (err) {
-      const msg = err instanceof Error ? err.message.slice(0, 180) : t('noStatsAvailable');
+      const msg = userFacingError(err, 'external_service_unavailable');
       setLoadError(msg);
       if (!connectionToastShownRef.current) {
         connectionToastShownRef.current = true;

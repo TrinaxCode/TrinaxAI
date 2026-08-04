@@ -12,7 +12,7 @@ import FolderPicker from './FolderPicker';
 import DevicePairingCard from './DevicePairingCard';
 import StatsPanel from './StatsPanel';
 import RecentIndexes from './RecentIndexes';
-import { DEFAULT_MODEL_SETTINGS, MODEL_KEYS, MODEL_PRESETS, OLLAMA_KEEP_ALIVE_DEFAULT, cancelIndexJob, createCollection, deleteCollection, folderLabelFromFiles, getCollections, getIndexJob, indexableFilesFrom, modelSetting, reconcileManagedModels, renameCollection, resetSharedAppState, retryIndexJob, startFolderIndex, systemRequestHeaders, type Collection, type IndexJobStatus, type ModelPreset } from '../lib/api';
+import { DEFAULT_MODEL_SETTINGS, MODEL_KEYS, MODEL_PRESETS, OLLAMA_KEEP_ALIVE_DEFAULT, cancelIndexJob, createCollection, deleteCollection, folderLabelFromFiles, getCollections, getIndexJob, indexableFilesFrom, modelSetting, reconcileManagedModels, renameCollection, resetSharedAppState, retryIndexJob, startFolderIndex, systemRequestHeaders, userFacingError, type Collection, type IndexJobStatus, type ModelPreset } from '../lib/api';
 import { APP_CONFIG } from '../lib/config';
 import { syncSharedStateOnce } from '../lib/sharedState';
 import { NICKNAME_KEY, isValidProfileName } from '../lib/userProfile';
@@ -225,7 +225,7 @@ export default function Settings({ onBack, onOpenDocs, initialSection = 'general
       setNewCollectionName('');
       toast.toast(t('collectionCreated'), 'success');
     } catch (err) {
-      toast.toast(err instanceof Error ? err.message.slice(0, 180) : t('collectionError'), 'error');
+      toast.toast(userFacingError(err, 'external_service_unavailable'), 'error');
     }
   };
   const updateCollectionName = async (id: string, current: string, next: string) => {
@@ -236,7 +236,7 @@ export default function Settings({ onBack, onOpenDocs, initialSection = 'general
       setCollections((items) => items.map((item) => item.id === id ? updated : item));
       toast.toast(t('collectionRenamed'), 'success');
     } catch (err) {
-      toast.toast(err instanceof Error ? err.message.slice(0, 180) : t('collectionError'), 'error');
+      toast.toast(userFacingError(err, 'external_service_unavailable'), 'error');
     }
   };
   const removeCollection = async (id: string) => {
@@ -248,7 +248,7 @@ export default function Settings({ onBack, onOpenDocs, initialSection = 'general
       setCollectionDeleteId(null);
       toast.toast(t('collectionDeleted'), 'info');
     } catch (err) {
-      toast.toast(err instanceof Error ? err.message.slice(0, 180) : t('collectionError'), 'error');
+      toast.toast(userFacingError(err, 'external_service_unavailable'), 'error');
     }
   };
   const sys = async (a:'shutdown'|'startup'|'stop-all') => {
@@ -307,11 +307,8 @@ export default function Settings({ onBack, onOpenDocs, initialSection = 'general
       if (err instanceof DOMException && err.name === 'AbortError') {
         toast.toast(t('indexCancelled'), 'info');
       } else {
-        const detail = err instanceof Error ? err.message : '';
-        const friendly = detail
-          ? `${t('indexBackendError')} ${detail.replace(/\s+/g, ' ').slice(0, 220)}`
-          : t('indexBackendOffline');
-        toast.toast(friendly, 'error');
+        const friendly = userFacingError(err, 'external_service_unavailable');
+        toast.toast(`${t('indexBackendError')} ${friendly}`, 'error');
       }
     }
     finally {
@@ -493,7 +490,7 @@ export default function Settings({ onBack, onOpenDocs, initialSection = 'general
             }`}
           >
             <MdTranslate size={18} />
-            {lang === 'es' ? 'Español' : 'English'}
+            {lang === 'es' ? t('languageSpanish') : t('languageEnglish')}
           </button>
 
           {/* Theme toggle */}

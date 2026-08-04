@@ -3,11 +3,11 @@ import { MdVisibilityOff } from 'react-icons/md';
 import { useI18n } from '../i18n/I18nContext';
 import { useTheme } from '../theme/ThemeContext';
 import { useToast } from './Toast';
-import type { ChatMessage, ChatEngine, Collection, ChatDocumentAttachment } from '../lib/api';
+import { userFacingError, type ChatMessage, type ChatEngine, type Collection, type ChatDocumentAttachment } from '../lib/api';
 import { buildWebSearchQuery, extractDocumentText, getCollections, getIndexJob, getRelevantMemoryContext, indexableFilesFrom, nextActiveCollections, normalizeActiveCollections, prepareImageForVision, runResearch, startFolderIndex } from '../lib/api';
 import { getPreferredUserName, rememberFromMessage } from '../lib/userProfile';
 import { useStreamChat } from '../hooks/useStreamChat';
-import { detectBackendVoice, detectSpeechRecognition, detectSpeechSynthesis, speakBackend, stopBackendSpeech, transcribeAudio } from '../services/voice';
+import { detectBackendVoice, detectSpeechRecognition, detectSpeechSynthesis, speakBackend, stopBackendSpeech, takeSpeechChunk, transcribeAudio } from '../services/voice';
 import { startAudioRecorder, type AudioRecorder } from '../utils/audioRecorder';
 import { audioManager } from '../services/audioManager';
 import { onSharedStateUpdated } from '../lib/sharedState';
@@ -449,7 +449,7 @@ function ChatInterface({
       }, 4500);
     } catch (err: unknown) {
       if (controller.signal.aborted) return;
-      setDocUploadStatus(err instanceof Error ? err.message.slice(0, 180) : t('chatUploadFailed'));
+      setDocUploadStatus(userFacingError(err, 'document_unreadable'));
     } finally {
       if (docIndexAbortRef.current === controller) docIndexAbortRef.current = null;
     }
@@ -483,7 +483,7 @@ function ChatInterface({
             },
           });
         } catch (err: unknown) {
-          const reason = err instanceof Error ? err.message.replace(/\s+/g, ' ').slice(0, 220) : t('chatDocReadFailed');
+          const reason = userFacingError(err, 'document_unreadable');
           failures.push(`${file.name}: ${reason}`);
           continue;
         }
@@ -511,7 +511,7 @@ function ChatInterface({
       );
     } catch (err: unknown) {
       setDocConvertProgress(null);
-      setDocUploadStatus(err instanceof Error ? err.message.slice(0, 180) : t('chatDocReadFailed'));
+      setDocUploadStatus(userFacingError(err, 'document_unreadable'));
     }
   }, [t]);
 
@@ -530,11 +530,13 @@ function ChatInterface({
   const [ttsSpeaking, setTtsSpeaking] = useState(false);
   const [voiceVersion, setVoiceVersion] = useState(0);
   const ttsTailRef = useRef('');
+  const ttsQueueRef = useRef<string[]>([]);
   const ttsSpeakingRef = useRef(false);
+  const ttsSourceDoneRef = useRef(false);
   const ttsEndRef = useRef<(() => void) | null>(null);
   const ttsPumpRef = useRef<number | null>(null);
+  const ttsRunRef = useRef(0);
   const voiceToastAtRef = useRef(0);
-  const flushVoiceTtsRef = useRef<(force?: boolean, onDone?: () => void) => void>(() => {});
   const ttsCancellingRef = useRef(false);
   const wakeLockRef = useRef<WakeLockSentinel | null>(null);
   const backendRecorderRef = useRef<AudioRecorder | null>(null);
@@ -709,6 +711,8 @@ function ChatInterface({
     ttsActiveKeyRef.current = null;
     setTtsActiveKey(null);
     ttsTailRef.current = '';
+    ttsQueueRef.current = [];
+    ttsSourceDoneRef.current = false;
     ttsSpeakingRef.current = false;
     setTtsSpeaking(false);
     ttsEndRef.current = null;
@@ -742,6 +746,10 @@ function ChatInterface({
   // closures and no state updates on an unmounted component.
   useEffect(() => () => {
     callModeRef.current = false;
+    ttsRunRef.current += 1;
+    ttsQueueRef.current = [];
+    ttsTailRef.current = '';
+    ttsSourceDoneRef.current = false;
     recognitionRunRef.current += 1;
     if (voiceRestartTimerRef.current !== null) {
       window.clearTimeout(voiceRestartTimerRef.current);
@@ -770,6 +778,7 @@ function ChatInterface({
 
   const stopSpeak = useCallback(() => {
     ttsCancellingRef.current = true;
+    ttsRunRef.current += 1;
     if (ttsSupported) window.speechSynthesis.cancel();
     stopTtsPump();
     stopBackendSpeech();
@@ -777,6 +786,104 @@ function ChatInterface({
     // Reset the cancelling flag after pending error events fire.
     window.setTimeout(() => { ttsCancellingRef.current = false; }, 200);
   }, [clearTtsState, stopTtsPump, ttsSupported]);
+
+  const cleanSpeechText = useCallback((text: string) => text
+    .replace(/```[\s\S]*?```/g, t('ttsCodeBlockReplacement'))
+    .replace(/`[^`]*`/g, '')
+    .replace(/\[(.*?)\]\(.*?\)/g, '$1')
+    .replace(/[#*_>~|]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim(), [t]);
+
+  const finishCallSpeech = useCallback((runId: number) => {
+    if (runId !== ttsRunRef.current) return;
+    stopTtsPump();
+    ttsActiveKeyRef.current = null;
+    setTtsActiveKey(null);
+    ttsSpeakingRef.current = false;
+    setTtsSpeaking(false);
+    const done = ttsEndRef.current;
+    ttsEndRef.current = null;
+    ttsSourceDoneRef.current = false;
+    done?.();
+  }, [stopTtsPump]);
+
+  const pumpCallSpeech = useCallback(() => {
+    if (ttsSpeakingRef.current) return;
+    const next = ttsQueueRef.current.shift();
+    if (!next) {
+      if (ttsSourceDoneRef.current) finishCallSpeech(ttsRunRef.current);
+      return;
+    }
+    const runId = ttsRunRef.current;
+    ttsSpeakingRef.current = true;
+    setTtsSpeaking(true);
+    startTtsPump();
+    const onComplete = () => {
+      if (runId !== ttsRunRef.current) return;
+      ttsSpeakingRef.current = false;
+      if (ttsQueueRef.current.length || ttsSourceDoneRef.current) pumpCallSpeech();
+      else setTtsSpeaking(false);
+    };
+    if (detectSpeechSynthesis()) {
+      const utterance = new SpeechSynthesisUtterance(next);
+      utterance.lang = voiceLang;
+      utterance.rate = 1.04;
+      utterance.pitch = 1;
+      utterance.volume = 1;
+      const voice = pickVoice();
+      if (voice) utterance.voice = voice;
+      utterance.onend = onComplete;
+      utterance.onerror = () => {
+        if (runId !== ttsRunRef.current) return;
+        if (!ttsCancellingRef.current) showVoiceToast(t('ttsUnavailable'));
+        onComplete();
+      };
+      try {
+        window.speechSynthesis.resume();
+        window.speechSynthesis.speak(utterance);
+      } catch {
+        if (!ttsCancellingRef.current) showVoiceToast(t('ttsUnavailable'));
+        onComplete();
+      }
+      return;
+    }
+    void speakBackend({
+      text: next,
+      lang: voiceLang,
+      onEnded: onComplete,
+      onError: () => {
+        if (runId !== ttsRunRef.current) return;
+        if (!ttsCancellingRef.current) showVoiceToast(t('ttsUnavailable'));
+        onComplete();
+      },
+    }).catch(() => {
+      if (runId !== ttsRunRef.current) return;
+      if (!ttsCancellingRef.current) showVoiceToast(t('ttsUnavailable'));
+      onComplete();
+    });
+  }, [finishCallSpeech, pickVoice, showVoiceToast, startTtsPump, t, voiceLang]);
+
+  const flushVoiceTts = useCallback((force = false, onDone?: () => void) => {
+    let pending = ttsTailRef.current;
+    while (pending) {
+      const next = takeSpeechChunk(pending, force);
+      if (!next.chunk) {
+        pending = next.remainder;
+        break;
+      }
+      const clean = cleanSpeechText(next.chunk);
+      if (clean) ttsQueueRef.current.push(clean);
+      pending = next.remainder;
+      if (!force && !pending) break;
+    }
+    ttsTailRef.current = pending;
+    if (force) {
+      ttsSourceDoneRef.current = true;
+      if (onDone) ttsEndRef.current = onDone;
+    }
+    pumpCallSpeech();
+  }, [cleanSpeechText, pumpCallSpeech]);
 
   const unlockSpeech = useCallback(() => {
     if (!ttsSupported) return;
@@ -855,132 +962,15 @@ function ChatInterface({
     });
   }, [clearTtsState, pickVoice, showVoiceToast, splitSpeech, startTtsPump, stopSpeak, stopTtsPump, t, ttsSupported, voiceLang]);
 
-  const speakWithFallback = useCallback((text: string, onDone?: () => void, key?: string) => {
-    if (detectSpeechSynthesis()) {
-      speak(text, onDone, key);
-    } else {
-      setTtsSpeaking(true);
-      ttsSpeakingRef.current = true;
-      void speakBackend({
-        text,
-        lang: voiceLang,
-        onEnded: () => {
-          setTtsSpeaking(false);
-          ttsSpeakingRef.current = false;
-          onDone?.();
-        },
-        onError: () => {
-          setTtsSpeaking(false);
-          ttsSpeakingRef.current = false;
-          showVoiceToast(t('ttsUnavailable'));
-          onDone?.();
-        },
-      }).catch(() => {
-        setTtsSpeaking(false);
-        ttsSpeakingRef.current = false;
-        showVoiceToast(t('ttsUnavailable'));
-        onDone?.();
-      });
-    }
-  }, [speak, showVoiceToast, t, voiceLang]);
-
-  const cleanSpeechText = useCallback((text: string) => text
-    .replace(/```[\s\S]*?```/g, t('ttsCodeBlockReplacement'))
-    .replace(/`[^`]*`/g, '')
-    .replace(/\[(.*?)\]\(.*?\)/g, '$1')
-    .replace(/[#*_>~|]/g, '')
-    .replace(/\s+/g, ' ')
-    .trim(), [t]);
-
-  const queueSpeech = useCallback((text: string, onDone?: () => void) => {
-    if (!ttsSupported || !text) {
-      onDone?.();
-      return;
-    }
-    const v = pickVoice();
-    const u = new SpeechSynthesisUtterance(text);
-    u.lang = voiceLang;
-    u.rate = 1.04;
-    u.pitch = 1;
-    u.volume = 1;
-    if (v) u.voice = v;
-    u.onend = () => {
-      stopTtsPump();
-      ttsActiveKeyRef.current = null;
-      setTtsActiveKey(null);
-      ttsSpeakingRef.current = false;
-      setTtsSpeaking(false);
-      const done = ttsEndRef.current ?? onDone;
-      if (cleanSpeechText(ttsTailRef.current)) {
-        window.setTimeout(() => flushVoiceTtsRef.current(true, done ?? undefined), 0);
-      } else {
-        ttsEndRef.current = null;
-        done?.();
-      }
-    };
-    u.onerror = () => {
-      stopTtsPump();
-      ttsSpeakingRef.current = false;
-      setTtsSpeaking(false);
-      const done = ttsEndRef.current ?? onDone;
-      ttsEndRef.current = null;
-      if (!ttsCancellingRef.current) showVoiceToast(t('ttsUnavailable'));
-      done?.();
-    };
-    ttsSpeakingRef.current = true;
-    setTtsSpeaking(true);
-    startTtsPump();
-    try {
-      window.speechSynthesis.resume();
-      window.speechSynthesis.speak(u);
-    } catch {
-      stopTtsPump();
-      ttsSpeakingRef.current = false;
-      setTtsSpeaking(false);
-      if (!ttsCancellingRef.current) showVoiceToast(t('ttsUnavailable'));
-      onDone?.();
-    }
-  }, [cleanSpeechText, pickVoice, showVoiceToast, startTtsPump, stopTtsPump, t, ttsSupported, voiceLang]);
-
-  // Some browsers occasionally omit SpeechSynthesisUtterance.onend. Keep the
-  // indicator tied to the actual browser queue so it cannot remain stuck on
-  // “TrinaxAI is speaking” after audio has finished.
-  useEffect(() => {
-    if (!ttsSpeaking || !ttsSupported) return undefined;
-    let idleSince = 0;
-    const timer = window.setInterval(() => {
-      const active = window.speechSynthesis.speaking || window.speechSynthesis.pending;
-      if (active || ttsTailRef.current) {
-        idleSince = 0;
-        return;
-      }
-      if (!idleSince) idleSince = Date.now();
-      if (Date.now() - idleSince < 700) return;
-      stopTtsPump();
-      ttsActiveKeyRef.current = null;
-      setTtsActiveKey(null);
-      ttsSpeakingRef.current = false;
-      setTtsSpeaking(false);
-      const done = ttsEndRef.current;
-      ttsEndRef.current = null;
-      done?.();
-    }, 250);
-    return () => window.clearInterval(timer);
-  }, [stopTtsPump, ttsSpeaking, ttsSupported]);
-
-  const flushVoiceTts = useCallback((force = false, onDone?: () => void) => {
-    const clean = cleanSpeechText(ttsTailRef.current);
-    if (!clean) {
-      onDone?.();
-      return;
-    }
-    if (!force && clean.length < 90 && !/[.!?]\s*$/.test(clean)) return;
-    ttsTailRef.current = '';
-    queueSpeech(clean, onDone);
-  }, [cleanSpeechText, queueSpeech]);
-
-  useEffect(() => {
-    flushVoiceTtsRef.current = flushVoiceTts;
+  const speakWithFallback = useCallback((text: string, onDone?: () => void) => {
+    ttsRunRef.current += 1;
+    ttsTailRef.current = text;
+    ttsQueueRef.current = [];
+    ttsSourceDoneRef.current = false;
+    ttsSpeakingRef.current = false;
+    setTtsSpeaking(false);
+    ttsEndRef.current = null;
+    flushVoiceTts(true, onDone);
   }, [flushVoiceTts]);
 
   // ── Imagen adjunta (visión) ──
@@ -1034,7 +1024,7 @@ function ChatInterface({
     } catch (err: unknown) {
       setAttachedImage(null);
       setAttachedImageFile(null);
-      setImageError(err instanceof Error ? err.message : t('imagePrepFailed'));
+      setImageError(userFacingError(err, 'document_unreadable'));
     } finally {
       e.target.value = '';
     }
@@ -1072,7 +1062,7 @@ function ChatInterface({
     } catch (err) {
       if (err instanceof Error && err.message === 'TRINAXAI_SILENT_ABORT') return;
       const cancelled = controller.signal.aborted;
-      const msg = err instanceof Error ? err.message.slice(0, 400) : t('deepResearchFailed');
+      const msg = userFacingError(err, 'external_service_unavailable');
       onMessagesChange([...baseMessages, { role: 'assistant', content: cancelled ? `_${t('requestCancelled')}_` : `❌ ${msg}` }]);
     } finally {
       if (researchAbortRef.current === controller) researchAbortRef.current = null;
@@ -1100,7 +1090,7 @@ function ChatInterface({
         project: meta.project,
       }]);
     } catch (err) {
-      const msg = err instanceof Error ? err.message.slice(0, 400) : assistantErrorMessage(err);
+      const msg = assistantErrorMessage(err);
       onMessagesChange([...baseMessages, { role: 'assistant', content: `❌ ${msg}` }]);
     }
   }, [lang, onMessagesChange, sendMessage, assistantErrorMessage]);
@@ -1287,7 +1277,7 @@ function ChatInterface({
           ? t('webSearchTimedOut')
           : cancelled
             ? `_${t('requestCancelled')}_`
-            : err instanceof Error ? err.message.slice(0, 400) : assistantErrorMessage(err);
+            : assistantErrorMessage(err);
         const settingsLink = !cancelled && webSearchRequested
           ? `\n\n[${lang === 'es' ? 'Abrir Configuración → Búsqueda web' : 'Open Settings → Web search'}](#/settings/web-search)`
           : '';
@@ -1311,7 +1301,10 @@ function ChatInterface({
       : temporary || hasImage || hasDocuments ? 'ollama' : engine;
     startActivity(hasImage ? 'image' : 'thinking');
     try {
+      ttsRunRef.current += 1;
       ttsTailRef.current = '';
+      ttsQueueRef.current = [];
+      ttsSourceDoneRef.current = false;
       ttsSpeakingRef.current = false;
       setTtsSpeaking(false);
       ttsEndRef.current = null;
@@ -1322,7 +1315,7 @@ function ChatInterface({
           stopActivity();
           if (!viaVoice || (!callModeRef.current && !continueCall)) return;
           ttsTailRef.current += token;
-          if (!ttsSpeakingRef.current) flushVoiceTts(false);
+          flushVoiceTts(false);
         },
       });
       const cancelledByUser = wasAborted() && !content;
@@ -1340,11 +1333,9 @@ function ChatInterface({
         const onDone = () => {
           if (continueCall && callModeRef.current) queueVoiceRestart(350);
         };
-        if (ttsSpeakingRef.current || ttsTailRef.current) {
-          ttsEndRef.current = onDone;
-          window.setTimeout(() => {
-            if (!ttsSpeakingRef.current) flushVoiceTts(true, ttsEndRef.current ?? undefined);
-          }, 120);
+        ttsEndRef.current = onDone;
+        if (ttsTailRef.current || ttsQueueRef.current.length || ttsSpeakingRef.current) {
+          flushVoiceTts(true, onDone);
         } else {
           speakWithFallback(content, onDone);
         }

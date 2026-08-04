@@ -27,6 +27,7 @@ vi.mock('../lib/api', () => ({
   deleteMemory: vi.fn(),
   refreshMemorySummary: vi.fn(),
   updateMemory: vi.fn(),
+  userFacingError: (error: unknown) => error instanceof Error ? error.message : 'unknown error',
 }));
 
 describe('MemoryPanel', () => {

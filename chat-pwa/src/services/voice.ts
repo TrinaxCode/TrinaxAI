@@ -9,6 +9,30 @@ export interface VoiceCapabilities {
   tts: { available: boolean; preferred: string | null; backends: string[] };
 }
 
+export interface SpeechChunk {
+  chunk: string;
+  remainder: string;
+}
+
+export function takeSpeechChunk(text: string, force = false): SpeechChunk {
+  const normalized = text.replace(/\s+/g, ' ').trimStart();
+  if (!normalized.trim()) return { chunk: '', remainder: '' };
+  if (force) return { chunk: normalized.trim(), remainder: '' };
+
+  const sentence = /[.!?](?:["'”»)]*)?(?=\s|$)/g;
+  let match: RegExpExecArray | null;
+  while ((match = sentence.exec(normalized))) {
+    const end = match.index + match[0].length;
+    if (end >= 12) return { chunk: normalized.slice(0, end).trim(), remainder: normalized.slice(end).trimStart() };
+  }
+
+  if (normalized.length < 48) return { chunk: '', remainder: normalized };
+  const limit = Math.min(normalized.length, 88);
+  const cut = normalized.lastIndexOf(' ', limit);
+  if (cut < 24) return { chunk: '', remainder: normalized };
+  return { chunk: normalized.slice(0, cut).trim(), remainder: normalized.slice(cut).trimStart() };
+}
+
 export function detectSpeechRecognition(): boolean {
   return typeof window !== 'undefined' && !!(window.SpeechRecognition || window.webkitSpeechRecognition);
 }

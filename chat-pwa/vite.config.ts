@@ -156,6 +156,14 @@ function proxySecret(): string {
   return proxySecretCache || '';
 }
 
+function canonicalProxyPath(pathname: string): string {
+  try {
+    return decodeURIComponent(pathname);
+  } catch {
+    return pathname;
+  }
+}
+
 function signProxyIdentity(
   secret: string,
   clientIp: string,
@@ -164,7 +172,7 @@ function signProxyIdentity(
   method: string,
   pathname: string,
 ): string {
-  const payload = ['v1', clientIp, timestamp, nonce, method.toUpperCase(), pathname].join('\n');
+  const payload = ['v1', clientIp, timestamp, nonce, method.toUpperCase(), canonicalProxyPath(pathname)].join('\n');
   return createHmac('sha256', secret).update(payload, 'utf8').digest('hex');
 }
 
@@ -185,11 +193,11 @@ function attachSignedProxyIdentity(proxyReq: any, req: any): void {
   proxyReq.setHeader('X-TrinaxAI-Proxy-Signature', signature);
 }
 
-function sendProxyError(res: any, status: number, error: string): void {
+function sendProxyError(res: any, status: number, code: string): void {
   res.statusCode = status;
   res.setHeader('Content-Type', 'application/json');
   res.setHeader('Cache-Control', 'no-store');
-  res.end(JSON.stringify({ ok: false, error }));
+  res.end(JSON.stringify({ ok: false, error: { code } }));
 }
 
 function ollamaProxyRateLimit(): number {
@@ -229,7 +237,7 @@ function installProxyBoundary(server: any): void {
 
     if (pathname.startsWith('/api/rag')) {
       if (!isLoopbackAddress(peer) && !proxySecret()) {
-        sendProxyError(res, 503, 'Trusted RAG proxy identity is unavailable.');
+        sendProxyError(res, 503, 'proxy_identity_unavailable');
         return;
       }
       next();
@@ -237,7 +245,7 @@ function installProxyBoundary(server: any): void {
     }
 
     if (!isAllowedOllamaProxyRequest(req.method || 'GET', pathname)) {
-      sendProxyError(res, 404, 'Ollama operation is not exposed by TrinaxAI.');
+      sendProxyError(res, 404, 'proxy_operation_not_exposed');
       return;
     }
     const suppliedToken = String(req.headers['x-admin-token'] || '');
@@ -252,7 +260,7 @@ function installProxyBoundary(server: any): void {
       pairedDeviceGrants(deviceToken, requiredScope),
     );
     if (!authorized) {
-      sendProxyError(res, 403, `Ollama access requires a paired ${requiredScope} device or administrator.`);
+      sendProxyError(res, 403, 'proxy_scope_required');
       return;
     }
     // Ollama has no use for TrinaxAI's credential; do not forward it.
@@ -260,7 +268,7 @@ function installProxyBoundary(server: any): void {
     delete req.headers['x-trinaxai-device-token'];
     if (!ollamaRateAllowed(peer)) {
       res.setHeader('Retry-After', String(Math.max(1, Math.ceil(60 / ollamaProxyRateLimit()))));
-      sendProxyError(res, 429, 'Too many Ollama requests.');
+      sendProxyError(res, 429, 'proxy_rate_limited');
       return;
     }
     if (!needsInferenceLock(pathname)) {
@@ -290,7 +298,7 @@ function installProxyBoundary(server: any): void {
       next();
     }).catch(() => {
       res.setHeader('Retry-After', String(Math.ceil(timeoutMs / 1000)));
-      sendProxyError(res, 503, 'Local inference queue timed out.');
+      sendProxyError(res, 503, 'proxy_queue_timeout');
     });
   });
 }
@@ -487,6 +495,8 @@ export default defineConfig({
         'logo-for-ai.webp',
         'new-logo-for-AI.webp',
         'offline.html',
+        'manifest.en.webmanifest',
+        'manifest.es.webmanifest',
       ],
       manifest: {
         id: '/',
@@ -494,7 +504,7 @@ export default defineConfig({
         short_name: 'TrinaxAI',
         description: 'TrinaxAI — Ollama & RAG at your fingertips.',
         dir: 'ltr',
-        lang: 'es',
+        lang: 'en',
         categories: ['productivity', 'utilities'],
         theme_color: '#000000',
         background_color: '#000000',

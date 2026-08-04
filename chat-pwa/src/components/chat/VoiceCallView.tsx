@@ -23,7 +23,7 @@ export default function VoiceCallView({ isDark, listening, speaking, thinking, o
       aria-label={t('voiceMode')}
     >
       {/* Subtle radial overlay for depth */}
-      <div className={`pointer-events-none absolute inset-0 ${isDark ? 'bg-[radial-gradient(circle_at_50%_38%,rgba(244,63,94,0.10),transparent_50%),radial-gradient(circle_at_18%_82%,rgba(225,29,72,0.06),transparent_35%)]' : 'bg-[radial-gradient(circle_at_50%_38%,rgba(244,63,94,0.08),transparent_50%),radial-gradient(circle_at_18%_82%,rgba(225,29,72,0.05),transparent_35%)]'}`} />
+      <div className={`pointer-events-none absolute inset-0 ${isDark ? 'bg-[radial-gradient(circle_at_50%_38%,rgba(78,163,224,0.14),transparent_50%),radial-gradient(circle_at_18%_82%,rgba(0,107,189,0.10),transparent_35%)]' : 'bg-[radial-gradient(circle_at_50%_38%,rgba(78,163,224,0.12),transparent_50%),radial-gradient(circle_at_18%_82%,rgba(0,107,189,0.08),transparent_35%)]'}`} />
       <div className={`pointer-events-none absolute inset-x-0 bottom-0 h-40 bg-gradient-to-t ${isDark ? 'from-black/50' : 'from-white/70'} to-transparent`} />
 
       <div className="relative z-10 flex flex-col items-center text-center">
@@ -31,15 +31,15 @@ export default function VoiceCallView({ isDark, listening, speaking, thinking, o
           {[1, 0.78, 0.58].map((scale, index) => (
             <motion.span
               key={scale}
-              className={`absolute inset-0 rounded-full border ${isDark ? 'border-rose-300/15' : 'border-rose-700/12'}`}
+              className={`absolute inset-0 rounded-full border ${isDark ? 'border-[#4ea3e0]/25' : 'border-[#006bbd]/20'}`}
               style={{ scale }}
               animate={active && !reduceMotion ? { opacity: [0.15, 0.55, 0.15], scale: [scale, scale + 0.035, scale] } : { opacity: 0.3, scale }}
               transition={{ duration: 2.5, delay: index * 0.25, repeat: active && !reduceMotion ? Infinity : 0, ease: 'easeInOut' }}
             />
           ))}
           <motion.div
-            className="relative grid h-28 w-28 place-items-center rounded-full border border-white/30 bg-gradient-to-br from-[#fb7185] via-[#e11d48] to-[#881337] shadow-[0_20px_65px_rgba(225,29,72,0.42)] sm:h-32 sm:w-32"
-            animate={active && !reduceMotion ? { scale: [1, 1.055, 1], boxShadow: ['0 20px 55px rgba(225,29,72,.34)', '0 20px 80px rgba(244,63,94,.55)', '0 20px 55px rgba(225,29,72,.34)'] } : { scale: 1 }}
+            className="relative grid h-28 w-28 place-items-center rounded-full border border-white/30 bg-gradient-to-br from-[#4ea3e0] via-[#006bbd] to-[#004d8a] shadow-[0_20px_65px_rgba(0,107,189,0.42)] sm:h-32 sm:w-32"
+            animate={active && !reduceMotion ? { scale: [1, 1.055, 1], boxShadow: ['0 20px 55px rgba(0,107,189,.34)', '0 20px 80px rgba(78,163,224,.55)', '0 20px 55px rgba(0,107,189,.34)'] } : { scale: 1 }}
             transition={{ duration: speaking ? 1.05 : 1.8, repeat: active && !reduceMotion ? Infinity : 0, ease: 'easeInOut' }}
           >
             <div className="absolute inset-2 rounded-full border border-white/20" />
@@ -54,7 +54,7 @@ export default function VoiceCallView({ isDark, listening, speaking, thinking, o
           {[0, 1, 2, 3, 4].map((bar) => (
             <motion.span
               key={bar}
-              className={`w-1 rounded-full ${active ? 'bg-rose-400' : isDark ? 'bg-white/20' : 'bg-slate-300'}`}
+              className={`w-1 rounded-full ${active ? 'bg-[#4ea3e0]' : isDark ? 'bg-white/20' : 'bg-slate-300'}`}
               animate={active && !reduceMotion ? { height: [5, 20 - Math.abs(2 - bar) * 4, 5] } : { height: 5 }}
               transition={{ duration: 0.8, delay: bar * 0.1, repeat: active && !reduceMotion ? Infinity : 0, ease: 'easeInOut' }}
             />

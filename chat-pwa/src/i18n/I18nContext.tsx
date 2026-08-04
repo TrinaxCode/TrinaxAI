@@ -36,6 +36,25 @@ export function I18nProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     document.documentElement.lang = lang;
+    const metadata = lang === 'es'
+      ? {
+          title: 'TrinaxAI Chat',
+          description: 'TrinaxAI — Ollama y RAG al alcance de tu mano.',
+        }
+      : {
+          title: 'TrinaxAI Chat',
+          description: 'TrinaxAI — Ollama & RAG at your fingertips.',
+        };
+    document.title = metadata.title;
+    document.querySelector('meta[name="description"]')?.setAttribute('content', metadata.description);
+    document.querySelector('meta[property="og:title"]')?.setAttribute('content', metadata.title);
+    document.querySelector('meta[property="og:description"]')?.setAttribute('content', metadata.description);
+    document.querySelector('meta[name="twitter:title"]')?.setAttribute('content', metadata.title);
+    document.querySelector('meta[name="twitter:description"]')?.setAttribute('content', metadata.description);
+    document.querySelector('meta[name="application-name"]')?.setAttribute('content', metadata.title);
+    document.querySelector('meta[name="apple-mobile-web-app-title"]')?.setAttribute('content', metadata.title);
+    const manifest = document.querySelector<HTMLLinkElement>('link[rel="manifest"]');
+    if (manifest) manifest.href = `/manifest.${lang}.webmanifest`;
   }, [lang]);
 
   useEffect(() => onSharedStateUpdated(() => {

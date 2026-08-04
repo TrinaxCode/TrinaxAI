@@ -236,7 +236,7 @@ export default function OnboardingWizard({ onComplete, canConfigureSystem }: Pro
                     className={`p-5 rounded-2xl border-2 text-center transition-[background-color,color,border-color,box-shadow,transform] ${lang === l ? selectedCard : `border-transparent ${cardBg} hover:border-white/10`}`}
                   >
                     <span className="text-3xl">{l === 'es' ? '🇪🇸' : '🇺🇸'}</span>
-                    <p className={`mt-2 font-medium ${textMain}`}>{l === 'es' ? 'Español' : 'English'}</p>
+                    <p className={`mt-2 font-medium ${textMain}`}>{l === 'es' ? t('languageSpanish') : t('languageEnglish')}</p>
                   </motion.button>
                 ))}
               </div>

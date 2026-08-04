@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHmac } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import http from 'node:http';
@@ -47,6 +48,47 @@ async function waitFor(predicate, timeoutMs = 3000) {
   }
 }
 
+test('network status reads CORS origins from disk instead of the stale service environment', async () => {
+  ensureFrontendFixture();
+  const gatewayPort = await unusedPort();
+  const gateway = spawn(process.execPath, ['server.mjs'], {
+    cwd: new URL('.', import.meta.url),
+    env: {
+      ...process.env,
+      CI: 'true',
+      TRINAXAI_PWA_HOST: '127.0.0.1',
+      TRINAXAI_PWA_PORT: String(gatewayPort),
+      // A refresh rewrites .env while the service keeps this outdated value.
+      TRINAXAI_CORS_ORIGINS: 'https://stale.invalid:3334',
+    },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  try {
+    await new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error('gateway startup timed out')), 5000);
+      gateway.once('exit', (code) => reject(new Error(`gateway exited with ${code}`)));
+      gateway.stdout.on('data', (chunk) => {
+        if (!String(chunk).includes('listening')) return;
+        clearTimeout(timeout);
+        resolve();
+      });
+    });
+
+    const status = await (await fetch(`http://127.0.0.1:${gatewayPort}/api/network`)).json();
+    let onDisk = '';
+    try {
+      const lines = fs.readFileSync(path.join(appDir, '..', '.env'), 'utf8').split('\n');
+      onDisk = lines.filter((line) => line.startsWith('TRINAXAI_CORS_ORIGINS=')).pop()?.split('=', 2)[1].trim() || '';
+    } catch { /* Without a .env the status falls back to the process environment. */ }
+    assert.equal(
+      status.configurationCurrent,
+      status.urls.every((url) => (onDisk || 'https://stale.invalid:3334').includes(url)),
+    );
+  } finally {
+    gateway.kill();
+  }
+});
+
 test('production gateway preserves credentials, replaces proxy identity, and rejects missing assets', async () => {
   ensureFrontendFixture();
   let received;
@@ -91,6 +133,23 @@ test('production gateway preserves credentials, replaces proxy identity, and rej
     assert.equal(received.headers['x-trinaxai-device-token'], 'device-credential');
     assert.equal(received.headers['x-trinaxai-proxy'], 'v1');
     assert.notEqual(received.headers['x-trinaxai-proxy-signature'], undefined);
+
+    const encodedPath = await fetch(`http://127.0.0.1:${gatewayPort}/api/rag/private%20file?value=1`, {
+      headers: { 'X-TrinaxAI-Device-Token': 'device-credential' },
+    });
+    assert.equal(encodedPath.status, 200);
+    const signedPath = '/private file';
+    const payload = [
+      'v1',
+      '127.0.0.1',
+      received.headers['x-trinaxai-proxy-timestamp'],
+      received.headers['x-trinaxai-proxy-nonce'],
+      'GET',
+      signedPath,
+    ].join('\n');
+    const expectedSignature = createHmac('sha256', 'test-only-proxy-secret').update(payload, 'utf8').digest('hex');
+    assert.equal(received.path, '/private%20file?value=1');
+    assert.equal(received.headers['x-trinaxai-proxy-signature'], expectedSignature);
 
     const missing = await fetch(`http://127.0.0.1:${gatewayPort}/assets/missing.js`);
     assert.equal(missing.status, 404);

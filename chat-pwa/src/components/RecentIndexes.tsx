@@ -5,7 +5,7 @@ import { useI18n } from '../i18n/I18nContext';
 import { useTheme } from '../theme/ThemeContext';
 import { useToast } from './Toast';
 import ConfirmModal from './ConfirmModal';
-import { deleteIndexedImport, startWatch } from '../lib/api';
+import { deleteIndexedImport, startWatch, userFacingError } from '../lib/api';
 
 interface RecentIndex {
   label: string;
@@ -106,7 +106,7 @@ export default function RecentIndexes() {
         'success',
       );
     } catch (err) {
-      toast.toast(err instanceof Error ? err.message.slice(0, 180) : t('recentWatcherStartFailed'), 'error');
+      toast.toast(userFacingError(err, 'external_service_unavailable'), 'error');
     }
   }, [toast, t]);
 
@@ -143,7 +143,7 @@ export default function RecentIndexes() {
       }
       forget(key);
     } catch (err) {
-      toast.toast(err instanceof Error ? err.message.slice(0, 180) : t('recentIndexDeleteFailed'), 'error');
+      toast.toast(userFacingError(err, 'external_service_unavailable'), 'error');
     } finally {
       setDeleting(false);
     }

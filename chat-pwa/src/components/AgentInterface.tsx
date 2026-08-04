@@ -16,6 +16,7 @@ import {
   modelSetting,
   resolveAgentModel,
   runAgent,
+  userFacingError,
   type AgentEvent,
   type ChatMessage,
 } from '../lib/api';
@@ -294,16 +295,16 @@ export default function AgentInterface({ onBack, initialRequest, onRequestConsum
       case 'start':
         agentRunSessionRef.current = event.session_id;
         setWorkspace(event.workspace);
-        setAgentActivity(lang === 'en' ? 'Starting agent' : 'Iniciando agente');
+        setAgentActivity(t('agentStarting'));
         patchAssistant((turn) => ({ ...turn, model: event.model }));
         break;
       case 'status':
         setAgentActivity(event.current_tool
-          ? `${lang === 'en' ? 'Using' : 'Usando'} ${event.current_tool === 'model' && lang !== 'en' ? 'modelo' : event.current_tool} · ${event.elapsed_seconds}s`
-          : `${lang === 'en' ? 'Planning' : 'Planificando'} · ${event.elapsed_seconds}s`);
+          ? `${event.current_tool === 'model' ? t('agentUsingModel') : `${t('agentUsing')} ${event.current_tool}`} · ${event.elapsed_seconds}s`
+          : `${t('agentPlanning')} · ${event.elapsed_seconds}s`);
         break;
       case 'tool_start':
-        setAgentActivity(`${lang === 'en' ? 'Using' : 'Usando'} ${event.tool}`);
+        setAgentActivity(`${t('agentUsing')} ${event.tool}`);
         audioManager.play('tool-running');
         patchAssistant((turn) => ({
           ...turn,
@@ -334,7 +335,7 @@ export default function AgentInterface({ onBack, initialRequest, onRequestConsum
         });
         break;
       case 'tool_result':
-        setAgentActivity(lang === 'en' ? 'Processing tool result' : 'Procesando resultado');
+        setAgentActivity(t('agentProcessingToolResult'));
         audioManager.play('tool-complete');
         patchAssistant((turn) => {
           const steps = [...(turn.steps ?? [])];
@@ -349,25 +350,25 @@ export default function AgentInterface({ onBack, initialRequest, onRequestConsum
         });
         break;
       case 'token':
-        setAgentActivity(lang === 'en' ? 'Writing response' : 'Escribiendo respuesta');
+        setAgentActivity(t('agentWritingResponse'));
         if (!sawAgentTokenRef.current) setAnswering(true);
         sawAgentTokenRef.current = true;
         queueAgentText(event.content);
         break;
       case 'done':
-        setAgentActivity(lang === 'en' ? 'Completed' : 'Completado');
+        setAgentActivity(t('agentCompleted'));
         // A tool-only turn (no streamed tokens) still stops "thinking" here.
         setAnswering(true);
         if (!sawAgentTokenRef.current) queueAgentText(event.answer);
         break;
       case 'error':
-        setAgentActivity(lang === 'en' ? 'Recoverable error' : 'Error recuperable');
+        setAgentActivity(t('agentRecoverableError'));
         queueAgentText(`\n\n❌ ${event.error}`);
         break;
       default:
         break;
     }
-  }, [lang, patchAssistant, queueAgentText]);
+  }, [patchAssistant, queueAgentText, t]);
 
   const approve = useCallback(async (step: AgentStep, approved: boolean) => {
     if (!step.approvalId || !step.runSessionId) return;
@@ -448,7 +449,7 @@ export default function AgentInterface({ onBack, initialRequest, onRequestConsum
           if (description) requestText = `${requestText}\n\n[${t('agentImageContext')}]:\n${description}`;
         } catch (err) {
           if (!controller.signal.aborted) {
-            const msg = err instanceof Error ? err.message.slice(0, 200) : t('imagePrepFailed');
+            const msg = userFacingError(err, 'document_unreadable');
             queueAgentText(`\n\n❌ ${msg}`);
           }
         } finally {
@@ -476,7 +477,7 @@ export default function AgentInterface({ onBack, initialRequest, onRequestConsum
       await waitForAgentTypewriter();
     } catch (err) {
       if (!controller.signal.aborted) {
-        const msg = err instanceof Error ? err.message.slice(0, 300) : t('agentFailed');
+        const msg = userFacingError(err, 'external_service_unavailable');
         queueAgentText(`\n\n❌ ${msg}`);
         await waitForAgentTypewriter();
       }
@@ -540,7 +541,7 @@ export default function AgentInterface({ onBack, initialRequest, onRequestConsum
       audioManager.play('file-ready');
     } catch (err) {
       setAttachedImage(null);
-      setImageError(err instanceof Error ? err.message : t('imagePrepFailed'));
+      setImageError(userFacingError(err, 'document_unreadable'));
     }
   }, [t]);
 
@@ -566,7 +567,7 @@ export default function AgentInterface({ onBack, initialRequest, onRequestConsum
       setAttachedDocs(documents);
       audioManager.play('file-ready');
     } catch (err) {
-      setImageError(err instanceof Error ? err.message.slice(0, 180) : t('chatDocReadFailed'));
+      setImageError(userFacingError(err, 'document_unreadable'));
     }
   }, [t]);
 

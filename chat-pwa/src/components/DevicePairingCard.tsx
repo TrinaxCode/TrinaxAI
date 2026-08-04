@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { MdCheck, MdContentCopy, MdDevices, MdLink, MdLinkOff } from 'react-icons/md';
 
 import { useI18n } from '../i18n/I18nContext';
+import { userFacingError } from '../lib/api';
 import {
   claimDevice,
   createPairingCode,
@@ -89,7 +90,7 @@ export default function DevicePairingCard({ isDark }: { isDark: boolean }) {
       clearPairingCodeFromLocation();
       window.dispatchEvent(new Event('trinaxai-device-paired'));
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : t('devicePairingFailed'));
+      setError(userFacingError(reason, 'authentication_failed'));
     } finally { setBusy(false); }
   };
 
@@ -101,7 +102,7 @@ export default function DevicePairingCard({ isDark }: { isDark: boolean }) {
       setCopiedCode(false);
       setShowGeneratedCode(true);
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : t('devicePairingGenerateFailed'));
+      setError(userFacingError(reason, 'authentication_failed'));
     } finally { setGenerating(false); }
   };
 
@@ -112,7 +113,7 @@ export default function DevicePairingCard({ isDark }: { isDark: boolean }) {
       await loadManagedDevices();
       if (device?.id === deviceId) setDevice(null);
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : t('deviceRevokeFailed'));
+      setError(userFacingError(reason, 'authentication_failed'));
     } finally { setRevokingId(''); }
   };
 
@@ -130,7 +131,7 @@ export default function DevicePairingCard({ isDark }: { isDark: boolean }) {
       await revokeCurrentPairedDevice();
       setDevice(null);
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : t('deviceRevokeFailed'));
+      setError(userFacingError(reason, 'authentication_failed'));
     } finally { setBusy(false); }
   };
 
