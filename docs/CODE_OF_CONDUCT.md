@@ -1,6 +1,6 @@
 # Code of Conduct
 
-[Versión en español](docs/es/CODE_OF_CONDUCT.md)
+[Versión en español](CODE_OF_CONDUCT.es.md)
 
 TrinaxAI welcomes contributors who want to improve local-first AI.
 

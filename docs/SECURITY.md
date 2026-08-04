@@ -1,6 +1,6 @@
 # Security Policy — TrinaxAI
 
-[Versión en español](docs/es/SECURITY.md)
+[Versión en español](SECURITY.es.md)
 
 ## Supported Versions
 

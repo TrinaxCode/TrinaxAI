@@ -12,7 +12,7 @@ Este directorio es el punto de entrada a la documentación técnica y operativa 
 | Agente | CLI y PWA, herramientas de archivos/shell, workspace, sandbox y aprobaciones | [CLI](CLI_REFERENCE.es.md) |
 | Multimodal | Visión, adjuntos, extracción documental, STT y TTS | [PWA](../chat-pwa/README.es.md) |
 | Datos locales | Memoria, historial, sincronización, estadísticas, watcher y backups | [Arquitectura](ARCHITECTURE.es.md) |
-| Dispositivos | PWA instalable, shell offline, LAN, pairing por scopes y revocación | [Seguridad](es/SECURITY.md) |
+| Dispositivos | PWA instalable, shell offline, LAN, pairing por scopes y revocación | [Seguridad](SECURITY.es.md) |
 | Operación | Instaladores, actualizador, gestor de servicios, doctor y perfiles de hardware | [README](../README.es.md) |
 
 ## Empieza aquí
@@ -40,13 +40,13 @@ Este directorio es el punto de entrada a la documentación técnica y operativa 
 - La configuración parte de [`.env.example`](../.env.example); no confirmes `.env` al repositorio.
 - Usa `trinaxai doctor` para diagnóstico y `trinaxai status` para estado de servicios.
 - Usa `./backup.sh` antes de cambios de versión o modificaciones del índice.
-- Consulta [soporte](es/SUPPORT.md) para pedir ayuda y [seguridad](es/SECURITY.md) para reportar vulnerabilidades.
+- Consulta [soporte](SUPPORT.es.md) para pedir ayuda y [seguridad](SECURITY.es.md) para reportar vulnerabilidades.
 
 ## Proyecto y contribución
 
-- [Contribuir](es/CONTRIBUTING.md)
-- [Código de conducta](es/CODE_OF_CONDUCT.md)
-- [Changelog](../CHANGELOG.es.md)
+- [Contribuir](CONTRIBUTING.es.md)
+- [Código de conducta](CODE_OF_CONDUCT.es.md)
+- [Changelog](CHANGELOG.es.md)
 
 ## Fuentes de verdad
 
@@ -63,7 +63,7 @@ Para evitar documentación desactualizada, estas son las fuentes autoritativas:
 
 ## Convenciones de la documentación
 
-- Los archivos sin sufijo están en inglés; los archivos `.es.md` y los documentos bajo `docs/es/`, en español.
+- Los archivos sin sufijo están en inglés; los archivos `.es.md`, en español.
 - Los comandos se ejecutan desde la raíz del repositorio salvo que se indique `cd chat-pwa`.
 - Los puertos por defecto son `3334` (PWA), `3333` (API RAG) y `11434` (Ollama).
 - Las rutas locales de datos (`storage/`, `local_sources/`, `logs/`, `backups/`) no deben versionarse.

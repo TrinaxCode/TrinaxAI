@@ -1,6 +1,6 @@
 # Contribuir a TrinaxAI
 
-[English](../../CONTRIBUTING.md)
+[English](CONTRIBUTING.md)
 
 ¡Ante todo, gracias por considerar contribuir a TrinaxAI!
 
@@ -8,7 +8,7 @@ TrinaxAI es un proyecto de código abierto y nos encanta recibir contribuciones 
 
 ## Código de Conducta
 
-Este proyecto sigue el [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md). Sé respetuoso, directo y constructivo.
+Este proyecto sigue el [CODE_OF_CONDUCT.es.md](CODE_OF_CONDUCT.es.md). Sé respetuoso, directo y constructivo.
 
 ## ¿Cómo puedo contribuir?
 
@@ -63,7 +63,7 @@ Mantén alineadas las versiones en inglés y `.es.md`. Verifica comandos en `tri
 
 ## Configuración del entorno de desarrollo
 
-Consulta la [guía de desarrollo](../DEVELOPER_GUIDE.es.md) para las instrucciones completas de configuración.
+Consulta la [guía de desarrollo](DEVELOPER_GUIDE.es.md) para las instrucciones completas de configuración.
 
 Inicio rápido:
 ```bash

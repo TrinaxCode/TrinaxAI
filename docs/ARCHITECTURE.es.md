@@ -284,7 +284,6 @@ Esta sección ayuda a los contribuidores a encontrar los archivos correctos para
 | Actualización | `update.sh` / `update.ps1` |
 | Desinstalación | `uninstall.sh` / `uninstall.ps1` |
 | Gestión de servicios | `service_manager.py` + `startup_ai.sh` / `shutdown_ai.sh` |
-| Configuración de perfil de hardware | `install_ollama_16gb_profile.sh` |
 
 ---
 
@@ -418,5 +417,5 @@ Estos principios guían todas las decisiones de diseño y contribución:
 - [Referencia de CLI](CLI_REFERENCE.es.md) — Comandos, flags y TOML
 - [Guía de Desarrollo](DEVELOPER_GUIDE.es.md) — Configuración local, convenciones y depuración
 - [Documentación de la PWA](../chat-pwa/README.es.md) — Ejecución y desarrollo del frontend
-- [Política de Seguridad](es/SECURITY.md) — Modelo de amenazas y reporte
-- [Guía de Contribución](es/CONTRIBUTING.md) — Proceso de PR y directrices
+- [Política de Seguridad](SECURITY.es.md) — Modelo de amenazas y reporte
+- [Guía de Contribución](CONTRIBUTING.es.md) — Proceso de PR y directrices

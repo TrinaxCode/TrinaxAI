@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0--or--later-blue.svg" alt="AGPL-3.0-or-later"></a>
-  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/version-1.0.2-006bbd.svg" alt="Version 1.0.2"></a>
+  <a href="docs/CHANGELOG.md"><img src="https://img.shields.io/badge/version-1.0.2-006bbd.svg" alt="Version 1.0.2"></a>
   <a href="https://github.com/TrinaxCode/TrinaxAI/pkgs/container/trinaxai"><img src="https://img.shields.io/badge/package-GHCR-2496ED.svg" alt="GitHub Container Registry"></a>
   <a href="#-quick-start"><img src="https://img.shields.io/badge/powered_by-Ollama-black.svg" alt="Ollama"></a>
   <a href="#️-supported-platforms"><img src="https://img.shields.io/badge/platform-Linux|macOS|Windows-lightgrey.svg" alt="Platforms"></a>
@@ -346,7 +346,7 @@ TrinaxAI is **local-first by design.**
 | **Agent** | File tools confined to registered roots; Linux shell uses networkless bubblewrap | Keep HTTP yolo disabled; never enable the unsandboxed escape hatch remotely |
 | **CORS** | localhost + your LAN IP | Customize via `TRINAXAI_CORS_ORIGINS` |
 
-For LAN/remote access: use a firewall to block ports 3333/11434, a VPN (Tailscale/WireGuard) rather than exposing ports, and `trinaxai pair start` with minimal scopes. Full threat model and reporting: [SECURITY.md](SECURITY.md).
+For LAN/remote access: use a firewall to block ports 3333/11434, a VPN (Tailscale/WireGuard) rather than exposing ports, and `trinaxai pair start` with minimal scopes. Full threat model and reporting: [SECURITY.md](docs/SECURITY.md).
 
 After changing Wi-Fi, router, or location, do not reinstall. Run `trinaxai network refresh` on the host; it renews local HTTPS, removes the stale LAN origin, prints the current IP address plus a `https://HOSTNAME.local:3334` alternative, and restarts the certificate consumers. The new address detects the existing installation; pair it once to restore chats and preferences. If an older offline address opens, use **Remove this old PWA** to erase that origin's data, cache, and service worker on the device.
 
@@ -430,7 +430,7 @@ does not grant access to private data or privileged functions.
 Yes. Beyond source code, the indexer extracts text from PDF/Office docs, Markdown/text/data files, HTML, EPUB, email, subtitles, calendars, contacts, and notebooks. Re-indexing is incremental; binary/media files are skipped.
 
 **What license?**
-AGPL-3.0-or-later — free for personal and commercial use. See [LICENSE](LICENSE) and [TRADEMARK.md](TRADEMARK.md).
+AGPL-3.0-or-later — free for personal and commercial use. See [LICENSE](LICENSE) and [TRADEMARK.md](docs/TRADEMARK.md).
 
 ---
 
@@ -438,13 +438,13 @@ AGPL-3.0-or-later — free for personal and commercial use. See [LICENSE](LICENS
 
 ## 🤝 Contributing
 
-PRs welcome — see [CONTRIBUTING.md](CONTRIBUTING.md). Report bugs · suggest features · improve docs · translate · submit PRs.
+PRs welcome — see [CONTRIBUTING.md](docs/CONTRIBUTING.md). Report bugs · suggest features · improve docs · translate · submit PRs.
 
 ---
 
 ## 📄 License
 
-AGPL-3.0-or-later — see [LICENSE](LICENSE). Name/logo usage: [TRADEMARK.md](TRADEMARK.md).
+AGPL-3.0-or-later — see [LICENSE](LICENSE). Name/logo usage: [TRADEMARK.md](docs/TRADEMARK.md).
 
 ---
 

@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0--or--later-blue.svg" alt="AGPL-3.0-or-later"></a>
-  <a href="CHANGELOG.es.md"><img src="https://img.shields.io/badge/version-1.0.2-006bbd.svg" alt="Versión 1.0.2"></a>
+  <a href="docs/CHANGELOG.es.md"><img src="https://img.shields.io/badge/version-1.0.2-006bbd.svg" alt="Versión 1.0.2"></a>
   <a href="https://github.com/TrinaxCode/TrinaxAI/pkgs/container/trinaxai"><img src="https://img.shields.io/badge/package-GHCR-2496ED.svg" alt="GitHub Container Registry"></a>
   <a href="#-inicio-rápido"><img src="https://img.shields.io/badge/powered_by-Ollama-black.svg" alt="Ollama"></a>
   <a href="#️-plataformas-compatibles"><img src="https://img.shields.io/badge/platform-Linux|macOS|Windows-lightgrey.svg" alt="Plataformas"></a>
@@ -338,7 +338,7 @@ TrinaxAI es **local-first por diseño.**
 | **Agente** | Herramientas de archivo confinadas a las raíces registradas; la shell en Linux usa bubblewrap sin red | Mantén el yolo HTTP desactivado; nunca habilites el escape sin sandbox de forma remota |
 | **CORS** | localhost + tu IP LAN | Personaliza con `TRINAXAI_CORS_ORIGINS` |
 
-Para acceso LAN/remoto: usa un firewall para bloquear los puertos 3333/11434, una VPN (Tailscale/WireGuard) en vez de exponer puertos, y `trinaxai pair start` con los mínimos scopes. Modelo de amenazas completo y reporte: [política de seguridad](docs/es/SECURITY.md).
+Para acceso LAN/remoto: usa un firewall para bloquear los puertos 3333/11434, una VPN (Tailscale/WireGuard) en vez de exponer puertos, y `trinaxai pair start` con los mínimos scopes. Modelo de amenazas completo y reporte: [política de seguridad](docs/SECURITY.es.md).
 
 Al cambiar de Wi-Fi, router o país no reinstales. Ejecuta `trinaxai network refresh` en el host: renueva HTTPS local, elimina el origen LAN anterior, muestra el enlace de la IP actual y una alternativa `https://NOMBRE-DEL-EQUIPO.local:3334`, y reinicia los servicios que usan el certificado. La dirección nueva detecta la instalación existente; vincúlala una vez para recuperar chats y preferencias. Si abres una dirección anterior sin conexión, usa **Eliminar esta PWA antigua** para borrar los datos, la caché y el service worker de ese origen en el dispositivo.
 
@@ -422,7 +422,7 @@ Compartir WiFi no concede datos privados ni funciones privilegiadas.
 Sí. Además de código, el indexador extrae texto de PDF/Office, Markdown/texto/datos, HTML, EPUB, correo, subtítulos, calendarios, contactos y notebooks. La reindexación es incremental; los binarios/media se omiten.
 
 **¿Qué licencia?**
-AGPL-3.0-or-later — libre para uso personal y comercial. Mira [LICENSE](LICENSE) y la [política de marca](docs/es/TRADEMARK.md).
+AGPL-3.0-or-later — libre para uso personal y comercial. Mira [LICENSE](LICENSE) y la [política de marca](docs/TRADEMARK.es.md).
 
 ---
 
@@ -430,13 +430,13 @@ AGPL-3.0-or-later — libre para uso personal y comercial. Mira [LICENSE](LICENS
 
 ## 🤝 Contribuir
 
-¡PRs bienvenidos! — mira [cómo contribuir](docs/es/CONTRIBUTING.md). Reporta bugs · sugiere funciones · mejora la docs · traduce · envía PRs.
+¡PRs bienvenidos! — mira [cómo contribuir](docs/CONTRIBUTING.es.md). Reporta bugs · sugiere funciones · mejora la docs · traduce · envía PRs.
 
 ---
 
 ## 📄 Licencia
 
-AGPL-3.0-or-later — mira [LICENSE](LICENSE). Uso de nombre/logo: [política de marca](docs/es/TRADEMARK.md).
+AGPL-3.0-or-later — mira [LICENSE](LICENSE). Uso de nombre/logo: [política de marca](docs/TRADEMARK.es.md).
 
 ---
 

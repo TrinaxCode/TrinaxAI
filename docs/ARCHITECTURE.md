@@ -286,7 +286,6 @@ This section helps contributors find the right files for common tasks.
 | Update | `update.sh` / `update.ps1` |
 | Uninstall | `uninstall.sh` / `uninstall.ps1` |
 | Service management | `service_manager.py` + `startup_ai.sh` / `shutdown_ai.sh` |
-| Hardware profile setup | `install_ollama_16gb_profile.sh` |
 
 ---
 
@@ -420,5 +419,5 @@ These principles guide all design and contribution decisions:
 - [CLI Reference](CLI_REFERENCE.md) — Commands, flags, and TOML
 - [Developer Guide](DEVELOPER_GUIDE.md) — Local setup, conventions, debugging
 - [PWA Documentation](../chat-pwa/README.md) — Frontend runtime and development
-- [Security Policy](../SECURITY.md) — Threat model and reporting
-- [Contributing Guide](../CONTRIBUTING.md) — PR process and guidelines
+- [Security Policy](SECURITY.md) — Threat model and reporting
+- [Contributing Guide](CONTRIBUTING.md) — PR process and guidelines

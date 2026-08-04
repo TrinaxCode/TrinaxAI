@@ -1,6 +1,6 @@
 # Contributing to TrinaxAI
 
-[Versión en español](docs/es/CONTRIBUTING.md)
+[Versión en español](CONTRIBUTING.es.md)
 
 First off, thank you for considering contributing to TrinaxAI!
 
@@ -63,7 +63,7 @@ Keep English and `.es.md` counterparts aligned. Verify command names against `tr
 
 ## Development Setup
 
-See [docs/DEVELOPER_GUIDE.md](docs/DEVELOPER_GUIDE.md) for full setup instructions.
+See [docs/DEVELOPER_GUIDE.md](DEVELOPER_GUIDE.md) for full setup instructions.
 
 Quick start:
 ```bash

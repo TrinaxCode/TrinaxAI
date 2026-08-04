@@ -1,6 +1,6 @@
 # Soporte
 
-[English](../../SUPPORT.md)
+[English](SUPPORT.md)
 
 TrinaxAI es un proyecto de código abierto con enfoque local. El soporte de la comunidad se gestiona mediante GitHub issues y discusiones.
 

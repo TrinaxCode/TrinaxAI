@@ -12,7 +12,7 @@ This directory is the entry point for the technical and operational documentatio
 | Agent | CLI and PWA, file/shell tools, workspaces, sandboxing, and approvals | [CLI](CLI_REFERENCE.md) |
 | Multimodal | Vision, attachments, document extraction, STT, and TTS | [PWA](../chat-pwa/README.md) |
 | Local data | Memory, history, synchronization, statistics, watcher, and backups | [Architecture](ARCHITECTURE.md) |
-| Devices | Installable PWA, offline shell, LAN, scoped pairing, and revocation | [Security](../SECURITY.md) |
+| Devices | Installable PWA, offline shell, LAN, scoped pairing, and revocation | [Security](SECURITY.md) |
 | Operations | Installers, updater, service manager, doctor, and hardware profiles | [README](../README.md) |
 
 ## Start here
@@ -40,13 +40,13 @@ This directory is the entry point for the technical and operational documentatio
 - Start from [`.env.example`](../.env.example); never commit `.env`.
 - Use `trinaxai doctor` for diagnostics and `trinaxai status` for service state.
 - Run `./backup.sh` before upgrades or index changes.
-- See [support](../SUPPORT.md) for help and [security](../SECURITY.md) for vulnerability reports.
+- See [support](SUPPORT.md) for help and [security](SECURITY.md) for vulnerability reports.
 
 ## Project and contributing
 
-- [Contributing](../CONTRIBUTING.md)
-- [Code of Conduct](../CODE_OF_CONDUCT.md)
-- [Changelog](../CHANGELOG.md)
+- [Contributing](CONTRIBUTING.md)
+- [Code of Conduct](CODE_OF_CONDUCT.md)
+- [Changelog](CHANGELOG.md)
 
 ## Sources of truth
 
@@ -61,7 +61,7 @@ This directory is the entry point for the technical and operational documentatio
 
 ## Documentation conventions
 
-- Files without a suffix are English; `.es.md` files and documents under `docs/es/` are Spanish.
+- Files without a suffix are English; `.es.md` files are Spanish.
 - Commands run from the repository root unless `cd chat-pwa` is shown.
 - Default ports are `3334` (PWA), `3333` (RAG API), and `11434` (Ollama).
 - Local data paths (`storage/`, `local_sources/`, `logs/`, `backups/`) must not be committed.
