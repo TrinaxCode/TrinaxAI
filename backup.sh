@@ -1,12 +1,33 @@
 #!/usr/bin/env bash
 # TrinaxAI backup/restore for local state and imported sources.
 set -euo pipefail
+
+LANGUAGE="${TRINAXAI_LANG:-${LANG:-en}}"
+LANGUAGE_LOWER="$(printf '%s' "$LANGUAGE" | tr '[:upper:]' '[:lower:]')"
+case "$LANGUAGE_LOWER" in es*|*_es*) LANGUAGE=es ;; *) LANGUAGE=en ;; esac
+
 # Backups contain tokens, conversations, attachments and private sources.
 # Never let a permissive caller umask expose them to a group or other users.
 umask 077
 
 usage() {
-  cat <<EOF
+  if [ "$LANGUAGE" = "es" ]; then
+    cat <<EOF
+Backup/restauración de TrinaxAI
+
+Uso:
+  ./backup.sh                         Crear un backup (por defecto)
+  ./backup.sh create                  Crear un backup con timestamp
+  ./backup.sh restore ARCHIVE         Restaurar un archivo
+  ./backup.sh --help                  Mostrar esta ayuda
+
+Incluye: .env, storage/, local_sources/
+Excluye: locks de ejecución, .venv, chat-pwa/node_modules, chat-pwa/dist
+
+Variable: TRINAXAI_BACKUP_DIR (directorio por defecto: ./backups)
+EOF
+  else
+    cat <<EOF
 TrinaxAI Backup/Restore
 
 Usage:
@@ -18,9 +39,9 @@ Usage:
 Backups include: .env, storage/, local_sources/
 Backups exclude: runtime locks, .venv, chat-pwa/node_modules, chat-pwa/dist
 
-Environment variables:
-  TRINAXAI_BACKUP_DIR   Backup directory (default: ./backups)
+Environment variable: TRINAXAI_BACKUP_DIR (default: ./backups)
 EOF
+  fi
   exit 0
 }
 

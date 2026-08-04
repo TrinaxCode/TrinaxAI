@@ -4,18 +4,62 @@
 
 set -euo pipefail
 
+LANGUAGE="${TRINAXAI_LANG:-${LANG:-en}}"
+LANGUAGE_LOWER="$(printf '%s' "$LANGUAGE" | tr '[:upper:]' '[:lower:]')"
+case "$LANGUAGE_LOWER" in es*|*_es*) LANGUAGE=es ;; *) LANGUAGE=en ;; esac
+if [ "$LANGUAGE" = "es" ]; then
+  tr_text() { case "$1" in title) echo 'Instalador de TrinaxAI en un comando' ;; usage) echo 'Uso:' ;; guided) echo 'Instalación guiada (pregunta opciones)' ;; automatic) echo 'Instalación automática para CI/scripts' ;; skip_models) echo 'Omitir descargas de modelos' ;; help) echo 'Mostrar esta ayuda' ;; *) echo "$1" ;; esac; }
+else
+  tr_text() { case "$1" in title) echo 'TrinaxAI One-Command Installer' ;; usage) echo 'Usage:' ;; guided) echo 'Guided install (asks optional choices)' ;; automatic) echo 'Automatic install for CI/scripts' ;; skip_models) echo 'Skip model downloads' ;; help) echo 'Show this help' ;; *) echo "$1" ;; esac; }
+fi
+
 RED='\033[0;31m'; GREEN='\033[0;32m'; BLUE='\033[0;34m'
 YELLOW='\033[1;33m'; CYAN='\033[0;36m'; NC='\033[0m'; BOLD='\033[1m'
 
 usage() {
-  cat <<EOF
-TrinaxAI One-Command Installer
+  if [ "$LANGUAGE" = "es" ]; then
+    cat <<EOF
+$(tr_text title)
 
-Usage:
-  ./install.sh                 Guided install (asks optional choices)
-  ./install.sh --interactive   Guided install (default)
-  ./install.sh --non-interactive  Automatic install for CI/scripts
-  ./install.sh --no-models     Skip model downloads
+$(tr_text usage):
+  ./install.sh                 $(tr_text guided)
+  ./install.sh --interactive   $(tr_text guided) (por defecto)
+  ./install.sh --non-interactive  $(tr_text automatic)
+  ./install.sh --no-models     $(tr_text skip_models)
+  ./install.sh --no-vision     Flag de compatibilidad; visión se descarga al usarla
+  ./install.sh --no-autostart  No activar el arranque automático
+  ./install.sh --no-auto-update No activar la actualización semanal automática
+  ./install.sh --no-start      No iniciar TrinaxAI después de instalar
+  ./install.sh --lan-system    Activar endpoints de control LAN (requiere token admin)
+  ./install.sh --profile 8gb|16gb|max|ultra
+  ./install.sh --install-dir PATH  Elegir el directorio de aplicación
+  ./install.sh --help          $(tr_text help)
+
+Qué hace:
+  1. Instala dependencias del sistema (Python, Node.js, npm, Git, curl, unzip)
+  2. Detecta la RAM y recomienda un perfil de hardware
+  3. Escribe .env con la IP LAN detectada y la flota de modelos
+  4. Instala Ollama si falta
+  5. Crea el entorno virtual de Python e instala dependencias
+  6. Construye el frontend PWA
+  7. Pregunta si debe descargar modelos Ollama recomendados
+  8. Pregunta si debe activar el arranque automático e iniciar TrinaxAI
+  9. Activa una comprobación semanal segura de GitHub
+
+Variables adicionales: TRINAXAI_PROFILE, TRINAXAI_INTERACTIVE, TRINAXAI_NONINTERACTIVE,
+TRINAXAI_INSTALL_MODELS, TRINAXAI_INSTALL_VISION, TRINAXAI_ENABLE_AUTOSTART,
+TRINAXAI_ENABLE_AUTO_UPDATE, TRINAXAI_START_NOW, TRINAXAI_ALLOW_LAN_SYSTEM,
+TRINAXAI_ADMIN_TOKEN, TRINAXAI_HOME y TRINAXAI_LANG.
+EOF
+  else
+    cat <<EOF
+$(tr_text title)
+
+$(tr_text usage):
+  ./install.sh                 $(tr_text guided)
+  ./install.sh --interactive   $(tr_text guided) (default)
+  ./install.sh --non-interactive  $(tr_text automatic)
+  ./install.sh --no-models     $(tr_text skip_models)
   ./install.sh --no-vision     Compatibility flag; vision downloads on first use
   ./install.sh --no-autostart  Do not enable boot autostart
   ./install.sh --no-auto-update Do not enable the weekly automatic update
@@ -23,34 +67,25 @@ Usage:
   ./install.sh --lan-system    Enable LAN system-control endpoints (requires admin token)
   ./install.sh --profile 8gb|16gb|max|ultra
   ./install.sh --install-dir PATH  Choose the application directory
-  ./install.sh --help          Show this help
+  ./install.sh --help          $(tr_text help)
 
 What it does:
   1. Installs system dependencies (Python, Node.js, npm, Git, curl, unzip)
-  2. Detects RAM and recommends a hardware profile (8gb/16gb/max/ultra)
-  3. Writes .env with auto-detected LAN IP and model fleet
+  2. Detects RAM and recommends a hardware profile
+  3. Writes .env with the detected LAN IP and model fleet
   4. Installs Ollama if missing
-  5. Creates Python virtual environment and installs dependencies
-  6. Builds the PWA frontend (Node.js required)
-  7. Asks whether to pull recommended text/RAG Ollama models
-  8. Asks whether to enable auto-start on boot and start TrinaxAI now
+  5. Creates the Python virtual environment and installs dependencies
+  6. Builds the PWA frontend
+  7. Asks whether to pull recommended Ollama models
+  8. Asks whether to enable boot autostart and start TrinaxAI
   9. Enables a safe weekly GitHub update check
 
-Supported: Linux (apt/dnf/pacman/zypper/apk), macOS (Homebrew), Windows (Git Bash / WSL2)
-
-Environment variables:
-  TRINAXAI_PROFILE              Override auto-detected profile (8gb/16gb/max/ultra)
-  TRINAXAI_INTERACTIVE=1        Ask before optional choices
-  TRINAXAI_NONINTERACTIVE=1     Do not ask optional choices
-  TRINAXAI_INSTALL_MODELS=0     Skip model downloads
-  TRINAXAI_INSTALL_VISION=0     Compatibility env; vision downloads on first use
-  TRINAXAI_ENABLE_AUTOSTART=0   Skip boot autostart
-  TRINAXAI_ENABLE_AUTO_UPDATE=0 Skip weekly automatic updates
-  TRINAXAI_START_NOW=0          Skip starting TrinaxAI at the end
-  TRINAXAI_ALLOW_LAN_SYSTEM=1   Enable LAN system-control endpoints
-  TRINAXAI_ADMIN_TOKEN=...      Admin token required for sensitive system endpoints
-  TRINAXAI_HOME=...             Application directory override
+Additional variables: TRINAXAI_PROFILE, TRINAXAI_INTERACTIVE, TRINAXAI_NONINTERACTIVE,
+TRINAXAI_INSTALL_MODELS, TRINAXAI_INSTALL_VISION, TRINAXAI_ENABLE_AUTOSTART,
+TRINAXAI_ENABLE_AUTO_UPDATE, TRINAXAI_START_NOW, TRINAXAI_ALLOW_LAN_SYSTEM,
+TRINAXAI_ADMIN_TOKEN, TRINAXAI_HOME and TRINAXAI_LANG.
 EOF
+  fi
   exit 0
 }
 

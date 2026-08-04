@@ -82,6 +82,26 @@ def test_converted_office_documents_require_converter_and_restore_original_path(
     assert indexer._load_converted_office_document(str(source), ".docx")[0].metadata["file_path"] == str(source)
 
 
+def test_build_nodes_falls_back_when_code_splitter_returns_no_nodes(monkeypatch) -> None:
+    document = SimpleNamespace(
+        text="def answer():\n    return 'grounded'",
+        metadata={"rel_path": "answer.py", "collection_id": "docs", "source_id": "source"},
+    )
+    monkeypatch.setattr(indexer, "_code_splitter", lambda _language: SimpleNamespace(
+        get_nodes_from_documents=lambda _documents: []
+    ))
+    monkeypatch.setattr(indexer, "_sentence_splitter", lambda: SimpleNamespace(
+        get_nodes_from_documents=lambda _documents: []
+    ))
+
+    nodes = indexer.build_nodes([document])
+
+    assert len(nodes) == 1
+    assert nodes[0].get_content() == document.text
+    assert nodes[0].metadata["collection_id"] == "docs"
+    assert nodes[0].metadata["source_id"] == "source"
+
+
 def test_full_index_publishes_only_successful_files(monkeypatch, tmp_path: Path) -> None:
     first = tmp_path / "one.txt"
     second = tmp_path / "two.txt"

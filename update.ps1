@@ -13,6 +13,8 @@ param(
   [switch]$RemoveOllama,
   [switch]$NoAudit,
   [switch]$Scheduled,
+  [ValidateSet("en", "es")]
+  [string]$Language = "",
   [string]$RepoRoot = ""
 )
 
@@ -26,6 +28,8 @@ model removal/download, backup, Git pull, autostart, restart, and audit.
 #>
 
 $ErrorActionPreference = "Stop"
+if ([string]::IsNullOrWhiteSpace($Language)) { $Language = if ($env:TRINAXAI_LANG -match '^es') { 'es' } elseif ((Get-Culture).Name -match '^es') { 'es' } else { 'en' } }
+function T($English, $Spanish) { if ($Language -eq 'es') { return $Spanish }; return $English }
 
 function Write-Step($Text) { Write-Host "`n  +-- $Text" -ForegroundColor Blue }
 function Write-Ok($Text) { Write-Host "  [OK] $Text" -ForegroundColor Green }
@@ -304,21 +308,21 @@ if ($Scheduled) {
 }
 
 if (-not $NonInteractive) {
-  $CreateBackup = Read-YesNo "Create a backup before updating?" $true
-  $PullCode = Read-YesNo "Pull latest code from Git?" $true
-  $RemoveOllamaApp = Read-YesNo "Remove Ollama application before continuing?" $false
+  $CreateBackup = Read-YesNo (T "Create a backup before updating?" "¿Crear un backup antes de actualizar?") $true
+  $PullCode = Read-YesNo (T "Pull latest code from Git?" "¿Descargar el código más reciente desde Git?") $true
+  $RemoveOllamaApp = Read-YesNo (T "Remove Ollama application before continuing?" "¿Eliminar Ollama antes de continuar?") $false
   if ($RemoveOllamaApp) {
-    $InstallOllamaAfterRemove = Read-YesNo "Install Ollama again with the official installer command after removal?" $true
+    $InstallOllamaAfterRemove = Read-YesNo (T "Install Ollama again with the official installer command after removal?" "¿Instalar Ollama de nuevo con el instalador oficial?") $true
   } else {
-    $RepairOllamaNow = Read-YesNo "Repair/reinstall Ollama with the official installer command?" $false
+    $RepairOllamaNow = Read-YesNo (T "Repair/reinstall Ollama with the official installer command?" "¿Reparar/reinstalar Ollama con el instalador oficial?") $false
   }
-  $PullModels = Read-YesNo "Download/update configured Ollama models too?" $false
-  $RemoveModelsFirst = Read-YesNo "Remove configured Ollama models before model update?" $false
-  if (Read-YesNo "Change boot auto-start setting?" $false) {
-    $AutostartAction = if (Read-YesNo "Start TrinaxAI automatically when Windows starts?" $true) { "enable-autostart" } else { "disable-autostart" }
+  $PullModels = Read-YesNo (T "Download/update configured Ollama models too?" "¿Descargar/actualizar también los modelos Ollama configurados?") $false
+  $RemoveModelsFirst = Read-YesNo (T "Remove configured Ollama models before model update?" "¿Eliminar los modelos Ollama antes de actualizarlos?") $false
+  if (Read-YesNo (T "Change boot auto-start setting?" "¿Cambiar el arranque automático?") $false) {
+    $AutostartAction = if (Read-YesNo (T "Start TrinaxAI automatically when Windows starts?" "¿Iniciar TrinaxAI automáticamente al iniciar Windows?") $true) { "enable-autostart" } else { "disable-autostart" }
   }
-  $RestartAfter = Read-YesNo "Restart TrinaxAI after the update?" $true
-  $RunAudit = Read-YesNo "Run public readiness audit after updating?" $true
+  $RestartAfter = Read-YesNo (T "Restart TrinaxAI after the update?" "¿Reiniciar TrinaxAI después de actualizar?") $true
+  $RunAudit = Read-YesNo (T "Run public readiness audit after updating?" "¿Ejecutar readiness audit después de actualizar?") $true
 }
 
 if (-not $PythonExe) {

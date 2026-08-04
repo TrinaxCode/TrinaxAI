@@ -117,6 +117,15 @@ def test_research_synthesis_uses_localized_fallback_and_valid_citations_only() -
     assert empty.startswith("I could not synthesize a complete answer")
     assert cited == "Fact [1], unsupported ."
 
+    local = research._research_synthesize(
+        SimpleNamespace(complete=lambda _prompt: SimpleNamespace(text="Fuente [n]ALFA-7319.")),
+        "¿Cuál es el identificador?",
+        ["Identificarlo"],
+        [{"id": "local", "text": "ALFA-7319", "metadata": {"rel_path": "first.txt"}, "score": 0.03}],
+        web_search=False,
+    )
+    assert local == "Fuente ALFA-7319."
+
 
 def test_research_without_index_returns_actionable_no_index_result(monkeypatch) -> None:
     monkeypatch.setattr(research.state, "fusion_retriever", None)
@@ -131,6 +140,41 @@ def test_research_without_index_returns_actionable_no_index_result(monkeypatch) 
         "passes": 0,
         "model": research.config.MODEL_GENERAL,
     }
+
+
+def test_research_rejects_empty_selected_collection(monkeypatch, tmp_path) -> None:
+    (tmp_path / "collections.json").write_text(
+        '{"collections": [{"id": "default", "name": "General"}, {"id": "empty", "name": "Empty"}]}'
+    )
+    monkeypatch.setattr(research.config, "COLLECTIONS_PATH", str(tmp_path / "collections.json"))
+    monkeypatch.setattr(research.state, "fusion_retriever", object())
+    monkeypatch.setattr(research.state, "index_docstore", SimpleNamespace(docs={}))
+
+    result = research._research_sync(
+        ResearchRequest(query="local question", collections=["empty"], web_search=False)
+    )
+
+    assert result["error_code"] == "collection_empty"
+    assert result["sources"] == []
+    assert "contains no indexed documents" in result["answer"]
+
+
+def test_research_web_only_does_not_require_local_collection(monkeypatch) -> None:
+    monkeypatch.setattr(research.state, "fusion_retriever", None)
+    monkeypatch.setattr(research, "wants_web_search", lambda _query: False)
+    monkeypatch.setattr(research, "configured_provider", lambda: "duckduckgo")
+    monkeypatch.setattr(research, "get_llm", lambda *_args, **_kwargs: SimpleNamespace(
+        complete=lambda _prompt: SimpleNamespace(text="respuesta")
+    ))
+    monkeypatch.setattr(research, "search_web", lambda *_args, **_kwargs: (
+        [{"url": "https://example.test", "title": "Source", "snippet": "Fact"}], "duckduckgo"
+    ))
+    monkeypatch.setattr(research, "read_web_results", lambda rows, limit: rows)
+
+    result = research._research_sync(ResearchRequest(query="current question", web_search=True, include_local=False))
+
+    assert result["web_search"] is True
+    assert result["sources"][0]["kind"] == "web"
 
 
 def test_research_continues_with_local_sources_when_web_search_fails(monkeypatch) -> None:

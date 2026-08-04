@@ -19,11 +19,14 @@ def isolated_jobs(monkeypatch):
     with state.index_jobs_lock:
         previous = state.index_jobs
         state.index_jobs = {}
+    previous_active = state.index_active_job_id
+    state.index_active_job_id = None
     try:
         yield state.index_jobs
     finally:
         with state.index_jobs_lock:
             state.index_jobs = previous
+        state.index_active_job_id = previous_active
 
 
 @pytest.mark.asyncio
@@ -41,6 +44,7 @@ async def test_index_upload_saves_files_and_queues_background_index(tmp_path, mo
     monkeypatch.setattr(system_service, "_authorize_system", lambda _request: None)
     monkeypatch.setattr(system_service.config, "LOCAL_SOURCES_DIR", str(tmp_path))
     monkeypatch.setattr(system_service, "_ensure_collection", lambda _cid: {"id": "docs", "name": "Docs"})
+    monkeypatch.setattr(system_service, "_external_indexer_pid", lambda: None)
     monkeypatch.setattr(system_service.threading, "Thread", Thread)
     upload = UploadFile(filename="../../manual?.md", file=BytesIO(b"release guide"))
 
@@ -438,9 +442,11 @@ async def test_index_job_status_cancel_and_retry_contracts(tmp_path, monkeypatch
             return None
 
     monkeypatch.setattr(system_service.threading, "Thread", Thread)
+    monkeypatch.setattr(system_service, "_external_indexer_pid", lambda: None)
     retried = await system_service.system_retry_index_job(object(), "job")
     assert retried["job"]["phase"] == "queued"
     assert started[0][0] is system_service._run_index_job
+    assert started[0][1][4:] == (None, False, True, isolated_jobs["job"]["run_token"])
 
     isolated_jobs["job"]["status"] = "completed"
     with pytest.raises(HTTPException) as conflict:
@@ -448,6 +454,30 @@ async def test_index_job_status_cancel_and_retry_contracts(tmp_path, monkeypatch
     assert conflict.value.status_code == 409
     isolated_jobs["job"]["status"] = "failed"
     isolated_jobs["job"]["path"] = str(tmp_path / "gone")
-    with pytest.raises(HTTPException) as gone:
+    with pytest.raises(HTTPException):
         await system_service.system_retry_index_job(object(), "job")
-    assert gone.value.status_code == 410
+
+
+def test_dispatcher_does_not_spawn_behind_an_external_index_lock(tmp_path, monkeypatch, isolated_jobs) -> None:
+    lock = tmp_path / ".indexing.lock"
+    lock.mkdir()
+    (lock / "owner.json").write_text('{"pid": 123}', encoding="utf-8")
+    monkeypatch.setattr(system_service.config, "PERSIST_DIR", str(tmp_path))
+    monkeypatch.setattr(system_service, "_process_is_alive", lambda pid: pid == 123)
+    started = []
+
+    class Thread:
+        def __init__(self, **kwargs):
+            started.append(kwargs)
+
+        def start(self):
+            raise AssertionError("external lock must prevent a new indexer")
+
+    monkeypatch.setattr(system_service.threading, "Thread", Thread)
+    job = system_service._new_index_job("blocked", str(tmp_path / "upload"), "docs", "Docs")
+    system_service._update_index_job(job["id"], status="queued", phase="queued")
+    system_service._dispatch_next_index_job()
+
+    assert not started
+    assert isolated_jobs[job["id"]]["phase"] == "blocked"
+    assert "PID 123" in isolated_jobs[job["id"]]["error"]

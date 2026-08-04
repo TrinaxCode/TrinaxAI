@@ -45,10 +45,12 @@ from .shared_runtime import (
     StreamingResponse,
     _authorize_system,
     _client_host,
+    _collection_scope,
     _inference_process_lock,
     _is_local_client,
     _model_slots,
     _read_collections_unlocked,
+    _retriever_for_collections,
     config,
     enforce_rate_limit,
     json,
@@ -326,22 +328,26 @@ def _touch_session(session: dict, *, current_tool: str | None = None, step: bool
         session["steps"] = int(session.get("steps", 0)) + 1
 
 
-def _search_knowledge(_workspace_root, query: str = "", **_kwargs) -> str:
-    """Query TrinaxAI's indexed knowledge base (RAG) and return matching passages.
-
-    Lets the agent reuse TrinaxAI's retrieval over previously indexed documents,
-    not just files in the workspace. Returns file-tagged snippets or a note when
-    nothing is indexed / found.
-    """
+def _search_knowledge(_workspace_root, query: str = "", collection_id: str = "", **_kwargs) -> str:
+    """Query indexed knowledge, optionally scoped to one collection."""
+    q = (query or "").strip()
+    if not q:
+        return format_tool_failure("search_knowledge", "The query must not be empty.")
+    requested = [collection_id] if (collection_id or "").strip() else None
+    normalized, scope_error = _collection_scope(requested)
+    if scope_error == "collection_not_found":
+        return format_tool_failure("search_knowledge", f"Collection not found: {normalized[0]}")
+    if scope_error == "collection_empty":
+        return format_tool_failure("search_knowledge", f"Collection contains no indexed documents: {normalized[0]}")
     if state.fusion_retriever is None:
         return format_tool_failure(
             "search_knowledge", "No indexed knowledge base is available; documents must be indexed first."
         )
-    q = (query or "").strip()
-    if not q:
-        return format_tool_failure("search_knowledge", "The query must not be empty.")
     try:
-        nodes = state.fusion_retriever.retrieve(q)[: config.SIMILARITY_TOP_K]
+        retriever = state.fusion_retriever if not normalized else _retriever_for_collections(normalized)
+        if retriever is None:
+            return format_tool_failure("search_knowledge", "The selected collection has no indexed retriever.")
+        nodes = retriever.retrieve(q)[: config.SIMILARITY_TOP_K]
     except Exception as exc:  # noqa: BLE001 - retrieval failure is reported to the model
         return format_tool_failure("search_knowledge", exc)
     if not nodes:
@@ -368,6 +374,7 @@ _SEARCH_KNOWLEDGE_TOOL = Tool(
         "type": "object",
         "properties": {
             "query": {"type": "string", "description": "What to search for in the indexed knowledge base."},
+            "collection_id": {"type": "string", "description": "Optional collection identifier to search exclusively."},
         },
         "required": ["query"],
     },

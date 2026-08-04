@@ -2,6 +2,10 @@
 # TrinaxAI updater. Keeps local data, updates code/deps, rebuilds PWA.
 set -euo pipefail
 
+LANGUAGE="${TRINAXAI_LANG:-${LANG:-en}}"
+LANGUAGE_LOWER="$(printf '%s' "$LANGUAGE" | tr '[:upper:]' '[:lower:]')"
+case "$LANGUAGE_LOWER" in es*|*_es*) LANGUAGE=es ;; *) LANGUAGE=en ;; esac
+
 GREEN='\033[0;32m'; BLUE='\033[0;34m'
 YELLOW='\033[1;33m'; CYAN='\033[0;36m'; NC='\033[0m'; BOLD='\033[1m'
 
@@ -11,7 +15,35 @@ print_warn() { echo -e "  ${YELLOW}⚠${NC} $1"; }
 print_info() { echo -e "  ${CYAN}›${NC} $1"; }
 
 usage() {
-  cat <<EOF
+  if [ "$LANGUAGE" = "es" ]; then
+    cat <<EOF
+Actualizador de TrinaxAI
+
+Uso:
+  ./update.sh                    Actualización guiada (pregunta opciones)
+  ./update.sh --non-interactive  Actualización automática para CI/scripts
+  ./update.sh --no-backup        Omitir backup previo
+  ./update.sh --no-pull          Omitir pull de Git
+  ./update.sh --models           Descargar/actualizar modelos Ollama configurados
+  ./update.sh --no-models        No descargar modelos Ollama
+  ./update.sh --remove-models-first Eliminar modelos configurados antes de actualizar
+  ./update.sh --repair-ollama    Reinstalar/reparar Ollama antes de actualizar modelos
+  ./update.sh --remove-ollama    Eliminar Ollama antes de continuar
+  ./update.sh --restart          Reiniciar TrinaxAI después de actualizar
+  ./update.sh --no-restart       No reiniciar después de actualizar
+  ./update.sh --enable-autostart Activar arranque automático
+  ./update.sh --disable-autostart Desactivar arranque automático
+  ./update.sh --no-audit         Omitir readiness audit
+  ./update.sh --scheduled        Solo comprobar actualizaciones
+  ./update.sh --help             Mostrar esta ayuda
+
+Las tareas obligatorias siguen siendo automáticas: actualizar dependencias Python,
+reinstalar la CLI editable, instalar npm y construir la PWA.
+
+TRINAXAI_LANG=es selecciona este idioma; `en` mantiene la salida inglesa.
+EOF
+  else
+    cat <<EOF
 TrinaxAI Updater
 
 Usage:
@@ -23,43 +55,21 @@ Usage:
   ./update.sh --no-models        Do not pull Ollama models
   ./update.sh --remove-models-first Remove configured models before updating them
   ./update.sh --repair-ollama    Reinstall/repair Ollama before updating models
-  ./update.sh --remove-ollama    Remove Ollama before continuing; guided mode asks to reinstall
+  ./update.sh --remove-ollama    Remove Ollama before continuing
   ./update.sh --restart          Restart TrinaxAI after update
   ./update.sh --no-restart       Do not restart after update
   ./update.sh --enable-autostart Enable boot autostart after update
   ./update.sh --disable-autostart Disable boot autostart after update
   ./update.sh --no-audit         Skip public readiness audit
-  ./update.sh --scheduled        Check for updates only (never executes remote code)
+  ./update.sh --scheduled        Check for updates only
   ./update.sh --help             Show this help
 
-What it asks:
-  - Create a backup before updating
-  - Pull latest code from Git
-  - Remove/reinstall Ollama
-  - Remove configured Ollama models before updating
-  - Pull/update configured Ollama models
-  - Change boot autostart setting
-  - Restart TrinaxAI after update
-  - Run the public readiness audit
+Required update work stays automatic: dependency refresh, editable CLI reinstall,
+npm install, and the production PWA build.
 
-Required update work stays automatic:
-  - Python dependency refresh from requirements.txt
-  - Editable CLI reinstall
-  - PWA npm install and production build
-
-Environment variables:
-  TRINAXAI_PYTHON             Override Python executable path
-  TRINAXAI_BACKUP_DIR         Backup directory for pre-update backup
-  TRINAXAI_INTERACTIVE=0      Do not ask optional choices
-  TRINAXAI_NONINTERACTIVE=1   Do not ask optional choices
-  TRINAXAI_UPDATE_BACKUP=0    Skip backup
-  TRINAXAI_UPDATE_PULL=0      Skip Git pull
-  TRINAXAI_UPDATE_MODELS=1    Pull configured models
-  TRINAXAI_UPDATE_REMOVE_MODELS=1 Remove configured models before updating
-  TRINAXAI_UPDATE_REPAIR_OLLAMA=1 Reinstall/repair Ollama
-  TRINAXAI_UPDATE_RESTART=1   Restart after update
-  TRINAXAI_UPDATE_AUDIT=0     Skip readiness audit
+TRINAXAI_LANG=es selects Spanish output; `en` keeps English output.
 EOF
+  fi
   exit 0
 }
 

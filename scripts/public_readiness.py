@@ -48,6 +48,10 @@ REQUIRED_FILES = [
     "docs/API_REFERENCE.md",
     "docs/CONFIGURATION.md",
     "chat-pwa/package.json",
+    "chat-pwa/public/manifest.en.webmanifest",
+    "chat-pwa/public/manifest.es.webmanifest",
+    "chat-pwa/public/offline.html",
+    "trinaxai_cli/i18n.py",
 ]
 ALLOW_HARDCODE_IN = {
     ".env.example",
@@ -172,8 +176,10 @@ def check_hardcodes(files: list[Path]) -> list[str]:
 
 def check_i18n() -> list[str]:
     src = (ROOT / "chat-pwa/src/i18n/translations.ts").read_text(encoding="utf-8")
-    es = set(re.findall(r"^\s+([A-Za-z0-9_]+):", src.split("\n  en: {", 1)[0], re.MULTILINE))
-    en = set(re.findall(r"^\s+([A-Za-z0-9_]+):", src.split("\n  en: {", 1)[1], re.MULTILINE))
+    es_section = src.split("\n  es: {", 1)[1].split("\n  en: {", 1)[0]
+    en_section = src.split("\n  en: {", 1)[1]
+    es = set(re.findall(r"^\s+([A-Za-z0-9_]+):", es_section, re.MULTILINE))
+    en = set(re.findall(r"^\s+([A-Za-z0-9_]+):", en_section, re.MULTILINE))
     used: set[str] = set()
     for path in (ROOT / "chat-pwa/src").rglob("*"):
         if path.suffix not in {".ts", ".tsx"}:
@@ -188,9 +194,57 @@ def check_i18n() -> list[str]:
             parts.append("es")
         if key not in en:
             parts.append("en")
-        if key not in used:
+        if parts:
+            errors.append(f"missing i18n key `{key}` in {', '.join(parts)}")
+    return errors
+
+
+def check_documentation_pairs() -> list[str]:
+    errors: list[str] = []
+    docs = ROOT / "docs"
+    for english in sorted(docs.glob("*.md")):
+        if english.name.endswith(".es.md"):
             continue
-        errors.append(f"missing i18n key `{key}` in {', '.join(parts)}")
+        spanish_suffix = english.with_name(f"{english.stem}.es.md")
+        spanish_dir = docs / "es" / english.name
+        if not spanish_suffix.exists() and not spanish_dir.exists():
+            errors.append(f"missing Spanish documentation pair for {english.relative_to(ROOT)}")
+    for spanish in sorted(docs.glob("*.es.md")):
+        english = docs / f"{spanish.stem}.md"
+        if not english.exists():
+            errors.append(f"missing English documentation pair for {spanish.relative_to(ROOT)}")
+    for spanish in sorted((docs / "es").glob("*.md")) if (docs / "es").is_dir() else []:
+        english_candidates = (docs / spanish.name, ROOT / spanish.name)
+        if not any(candidate.exists() for candidate in english_candidates):
+            errors.append(f"missing English documentation pair for {spanish.relative_to(ROOT)}")
+    return errors
+
+
+def check_pwa_locales() -> list[str]:
+    errors: list[str] = []
+    for name in ("manifest.en.webmanifest", "manifest.es.webmanifest"):
+        path = ROOT / "chat-pwa/public" / name
+        if not path.exists():
+            continue
+        try:
+            import json
+
+            manifest = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            errors.append(f"invalid PWA manifest {name}: {exc}")
+            continue
+        expected = "es" if ".es." in name else "en"
+        if manifest.get("lang") != expected:
+            errors.append(f"PWA manifest {name} must declare lang={expected}")
+    offline_path = ROOT / "chat-pwa/public/offline.html"
+    if offline_path.exists():
+        try:
+            offline = offline_path.read_text(encoding="utf-8")
+            for marker in ("localStorage", "Sin conexión", "Offline", "Reintentar", "Retry"):
+                if marker not in offline:
+                    errors.append(f"offline.html missing locale marker `{marker}`")
+        except OSError as exc:
+            errors.append(f"could not read offline.html: {exc}")
     return errors
 
 
@@ -302,6 +356,8 @@ def main() -> int:
     errors.extend(check_local_artifacts())
     errors.extend(check_hardcodes(files))
     errors.extend(check_i18n())
+    errors.extend(check_documentation_pairs())
+    errors.extend(check_pwa_locales())
     errors.extend(check_secrets(files))
     errors.extend(check_never_commit_files())
     errors.extend(check_tracked_never_commit_files())

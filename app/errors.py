@@ -20,6 +20,11 @@ def _request_id(request: Request) -> str | None:
     return value if isinstance(value, str) and value else None
 
 
+def _request_is_spanish(request: Request) -> bool:
+    value = request.headers.get("accept-language", "").lower()
+    return value.split(",", 1)[0].strip().startswith("es")
+
+
 def _log_failure(request: Request, info: ErrorInfo, exc: BaseException) -> None:
     # Keep exception text and tracebacks out of logs too: provider errors can
     # contain credentials, URLs, prompts, or local paths.
@@ -44,7 +49,7 @@ def _response(
 ) -> JSONResponse:
     info = classify_error(exc, status_code=status_code, hint=hint, category=category)
     _log_failure(request, info, exc)
-    canonical = info.to_client_dict()
+    canonical = info.to_client_dict(spanish=_request_is_spanish(request))
     detail: dict[str, Any] = {
         key: hint[key]
         for key in ("code", "provider", "field", "collection", "collection_id")

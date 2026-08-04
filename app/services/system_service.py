@@ -9,6 +9,8 @@ import re
 import httpx
 
 # ruff: noqa: F405
+from trinaxai_core import _process_is_alive
+
 from .shared_runtime import (
     _SAFE_SEGMENT,
     LOG,
@@ -132,6 +134,91 @@ def _ensure_collection(collection_id: str | None, name: str | None = None) -> di
         return created
 
 
+def _process_alive(process) -> bool:
+    return process is not None and process.poll() is None
+
+
+def _job_run_is_current(job_id: str, run_token: str) -> bool:
+    with state.index_jobs_lock:
+        job = state.index_jobs.get(job_id)
+        return bool(job and job.get("run_token") == run_token)
+
+
+def _next_queued_job_locked() -> dict | None:
+    candidates = [
+        job for job in state.index_jobs.values()
+        if job.get("status") == "queued" and not job.get("cancel_requested")
+    ]
+    return min(candidates, key=lambda item: item.get("created_at", 0), default=None)
+
+
+def _external_indexer_pid() -> int | None:
+    lock_file = os.path.join(config.PERSIST_DIR, ".indexing.lock", "owner.json")
+    try:
+        with open(lock_file, encoding="utf-8") as stream:
+            pid = int(json.load(stream).get("pid", 0))
+    except (OSError, TypeError, ValueError):
+        return None
+    return pid if pid > 0 and _process_is_alive(pid) else None
+
+
+def _release_index_slot(job_id: str, run_token: str | None) -> None:
+    if run_token is not None and not _job_run_is_current(job_id, run_token):
+        return
+    with state.index_dispatch_lock:
+        if state.index_active_job_id == job_id:
+            state.index_active_job_id = None
+    _dispatch_next_index_job()
+
+
+def _dispatch_next_index_job() -> None:
+    with state.index_dispatch_lock:
+        with state.index_jobs_lock:
+            active_id = state.index_active_job_id
+            active = state.index_jobs.get(active_id) if active_id else None
+            if active_id and active is None:
+                state.index_active_job_id = None
+                active_id = None
+            if active and (_process_alive(active.get("process")) or active.get("status") in {"indexing", "queued"}):
+                return
+            job = _next_queued_job_locked()
+            if not job:
+                state.index_active_job_id = None
+                return
+            external_pid = _external_indexer_pid()
+            if external_pid is not None:
+                job.update(
+                    status="failed",
+                    phase="blocked",
+                    progress=100,
+                    error=f"Another indexer process (PID {external_pid}) owns the index lock. Stop it and retry.",
+                    finished_at=time.time(),
+                )
+                state.index_active_job_id = None
+                _persist_index_jobs_locked()
+                return
+            job_id = job["id"]
+            run_token = uuid.uuid4().hex
+            job.update(status="indexing", phase="queued", progress=30, run_token=run_token, started_at=time.time())
+            state.index_active_job_id = job_id
+            _persist_index_jobs_locked()
+        threading.Thread(
+            target=_run_index_job,
+            args=(
+                job_id,
+                str(job["path"]),
+                str(job.get("collection_id") or config.DEFAULT_COLLECTION_ID),
+                str(job.get("collection_name") or config.DEFAULT_COLLECTION_NAME),
+                (str(job.get("embed_model") or "").strip() or None),
+                bool(job.get("aggressive_quant")),
+                bool(job.get("append_only", True)),
+                run_token,
+            ),
+            daemon=True,
+            name=f"trinaxai-index-{job_id[:8]}",
+        ).start()
+
+
 def _new_index_job(label: str, target: str, collection_id: str, collection_name: str) -> dict:
     now = time.time()
     job = {
@@ -156,6 +243,11 @@ def _new_index_job(label: str, target: str, collection_id: str, collection_name:
         "finished_at": None,
         "cancel_requested": False,
         "process": None,
+        "run_token": None,
+        "embed_model": None,
+        "aggressive_quant": False,
+        "append_only": True,
+        "watch_id": "",
         "pages_total": None,
         "pages_processed": 0,
         "chunks_generated": 0,
@@ -306,7 +398,12 @@ def _run_index_job(
     embed_model: str | None = None,
     aggressive_quant: bool = False,
     append_only: bool = True,
+    run_token: str | None = None,
 ) -> None:
+    def update(**changes) -> None:
+        if run_token is None or _job_run_is_current(job_id, run_token):
+            _update_index_job(job_id, **changes)
+
     env = {
         **os.environ,
         "TRINAXAI_INDEX_DIR": target,
@@ -317,18 +414,19 @@ def _run_index_job(
     }
     if embed_model:
         env["TRINAXAI_EMBED"] = embed_model
-    _update_index_job(job_id, status="indexing", phase="starting", progress=30, started_at=time.time())
-    process = subprocess.Popen(
-        [sys.executable, os.path.join(config.BASE_DIR, "index.py")],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-        encoding="utf-8",
-        bufsize=1,
-        env=env,
-    )
-    _update_index_job(job_id, process=process)
+    update(status="indexing", phase="starting", progress=30, started_at=time.time())
+    process = None
     try:
+        process = subprocess.Popen(
+            [sys.executable, os.path.join(config.BASE_DIR, "index.py")],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            encoding="utf-8",
+            bufsize=1,
+            env=env,
+        )
+        update(process=process)
         if process.stdout is None:
             raise RuntimeError("subprocess stdout is None — Popen was not configured with PIPE")
         lines: queue.Queue[str | None] = queue.Queue()
@@ -369,26 +467,30 @@ def _run_index_job(
             if line is None:
                 break
             last_activity = time.monotonic()
-            _append_index_output(job_id, line)
-            event = _structured_progress(line)
-            if event:
-                _update_index_job(job_id, **_progress_changes(event))
-            else:
-                progress, phase = _line_progress(line, current)
-                _update_index_job(job_id, progress=progress, phase=phase, progress_exact=False)
+            if run_token is not None and not _job_run_is_current(job_id, run_token):
+                process.terminate()
+                break
+            if run_token is None or _job_run_is_current(job_id, run_token):
+                _append_index_output(job_id, line)
+                event = _structured_progress(line)
+                if event:
+                    update(**_progress_changes(event))
+                else:
+                    progress, phase = _line_progress(line, current)
+                    update(progress=progress, phase=phase, progress_exact=False)
         code = process.wait(timeout=20)
         if timeout_error:
-            _update_index_job(
-                job_id, status="failed", phase="timeout", error=timeout_error, progress=100, finished_at=time.time()
-            )
+            update(status="failed", phase="timeout", error=timeout_error, progress=100, finished_at=time.time())
+            update(process=None)
+            _release_index_slot(job_id, run_token)
             return
     except subprocess.TimeoutExpired:
         process.kill()
         code = process.wait()
     except Exception as exc:
-        process.kill()
-        _update_index_job(
-            job_id,
+        if process is not None:
+            process.kill()
+        update(
             status="failed",
             phase="failed",
             error=str(exc),
@@ -396,43 +498,43 @@ def _run_index_job(
             finished_at=time.time(),
             process=None,
         )
+        _release_index_slot(job_id, run_token)
         return
     finally:
-        _update_index_job(job_id, process=None)
+        update(process=None)
 
     with state.index_jobs_lock:
         job = state.index_jobs.get(job_id)
         cancelled = bool(job and job.get("cancel_requested"))
 
     if cancelled:
-        _update_index_job(
-            job_id,
+        update(
             status="cancelled",
             phase="cancelled",
             progress=100,
             finished_at=time.time(),
         )
+        _release_index_slot(job_id, run_token)
         return
     if code != 0:
         with state.index_jobs_lock:
             failed_job = state.index_jobs.get(job_id) or {}
             detail = str(failed_job.get("recent_activity") or "").strip()
-        _update_index_job(
-            job_id,
+        update(
             status="failed",
             phase="failed",
             error=f"Indexing failed during {failed_job.get('phase', 'indexing')}: {detail or f'index.py exited with code {code}'}",
             progress=100,
             finished_at=time.time(),
         )
+        _release_index_slot(job_id, run_token)
         return
 
     ok = build_engine()
     _prune_old_jobs()
     if ok:
         _record_index_run()
-    _update_index_job(
-        job_id,
+    update(
         status="completed" if ok else "failed",
         phase="completed" if ok else "reload_failed",
         progress=100,
@@ -440,6 +542,7 @@ def _run_index_job(
         projects=state.known_projects,
         finished_at=time.time(),
     )
+    _release_index_slot(job_id, run_token)
 
 
 def _record_index_run() -> None:
@@ -672,10 +775,14 @@ async def system_index_upload(
                 for existing in state.index_jobs.values()
                 if existing.get("id") != job["id"]
                 and existing.get("dedupe_key") == dedupe_key
-                and existing.get("status") in {"saving", "indexing", "completed"}
+                and existing.get("status") in {"saving", "queued", "indexing", "completed"}
             ),
             None,
         )
+        if duplicate is None:
+            job["dedupe_key"] = dedupe_key
+            job["updated_at"] = time.time()
+            _persist_index_jobs_locked()
     if duplicate:
         shutil.rmtree(target, ignore_errors=True)
         _update_index_job(
@@ -714,25 +821,17 @@ async def system_index_upload(
         saved=saved,
         skipped=skipped,
         bytes=total_bytes,
+        status="queued",
         phase="queued",
         progress=30,
         estimated_total_seconds=_estimate_index_seconds(saved, total_bytes),
         dedupe_key=dedupe_key,
+        embed_model=(embed_model or "").strip() or None,
+        aggressive_quant=bool(aggressive_quant),
+        append_only=not bool(safe_watch_id),
+        watch_id=safe_watch_id,
     )
-    threading.Thread(
-        target=_run_index_job,
-        args=(
-            job["id"],
-            target,
-            collection["id"],
-            collection["name"],
-            (embed_model or "").strip() or None,
-            bool(aggressive_quant),
-            not bool(safe_watch_id),
-        ),
-        daemon=True,
-        name=f"trinaxai-index-{job['id'][:8]}",
-    ).start()
+    _dispatch_next_index_job()
     return {
         "ok": True,
         "job_id": job["id"],
@@ -808,11 +907,7 @@ async def system_index_job(request: Request, job_id: str):
 
 
 async def system_cancel_index_job(request: Request, job_id: str):
-    """Request cancellation of a running indexing job and mark it cancelled.
-
-    Solicita la cancelación de un trabajo de indexado en curso y lo marca
-    como cancelado.
-    """
+    """Request cancellation and wait until the indexer has exited."""
     _authorize_system(request)
     with state.index_jobs_lock:
         job = state.index_jobs.get(job_id)
@@ -822,16 +917,26 @@ async def system_cancel_index_job(request: Request, job_id: str):
         job["updated_at"] = time.time()
         process = job.get("process")
         _persist_index_jobs_locked()
-    if process and process.poll() is None:
+    if process and _process_alive(process):
         process.terminate()
+        wait = getattr(process, "wait", None)
+        if wait is not None:
+            try:
+                wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                wait(timeout=10)
     _update_index_job(
         job_id,
         status="cancelled",
         phase="cancelled",
         progress=100,
+        process=None,
         finished_at=time.time(),
     )
-    return {"ok": True, "job": _job_public(state.index_jobs[job_id])}
+    _release_index_slot(job_id, state.index_jobs.get(job_id, {}).get("run_token"))
+    with state.index_jobs_lock:
+        return {"ok": True, "job": _job_public(dict(state.index_jobs[job_id]))}
 
 
 async def system_retry_index_job(request: Request, job_id: str):
@@ -842,31 +947,27 @@ async def system_retry_index_job(request: Request, job_id: str):
             raise HTTPException(status_code=404, detail="Index job not found.")
         if job.get("status") not in {"failed", "cancelled"}:
             raise HTTPException(status_code=409, detail="Only failed or cancelled jobs can be retried.")
+        if _process_alive(job.get("process")):
+            raise HTTPException(status_code=409, detail="The previous indexer is still running.")
         target = str(job.get("path") or "")
         if not os.path.isdir(target):
             raise HTTPException(status_code=410, detail="The uploaded files are no longer available.")
-        collection_id = str(job.get("collection_id") or config.DEFAULT_COLLECTION_ID)
-        collection_name = str(job.get("collection_name") or config.DEFAULT_COLLECTION_NAME)
-    _update_index_job(
-        job_id,
-        status="indexing",
-        phase="queued",
-        progress=30,
-        error="",
-        output="",
-        cancel_requested=False,
-        finished_at=None,
-        pages_processed=0,
-        chunks_generated=0,
-        batches_processed=0,
-        recent_activity="Retry queued",
-    )
-    threading.Thread(
-        target=_run_index_job,
-        args=(job_id, target, collection_id, collection_name),
-        daemon=True,
-        name=f"trinaxai-index-retry-{job_id[:8]}",
-    ).start()
+        job.update(
+            status="queued",
+            phase="queued",
+            progress=30,
+            error="",
+            output="",
+            cancel_requested=False,
+            finished_at=None,
+            pages_processed=0,
+            chunks_generated=0,
+            batches_processed=0,
+            recent_activity="Retry queued",
+            process=None,
+        )
+        _persist_index_jobs_locked()
+    _dispatch_next_index_job()
     with state.index_jobs_lock:
         return {"ok": True, "job": _job_public(dict(state.index_jobs[job_id]))}
 

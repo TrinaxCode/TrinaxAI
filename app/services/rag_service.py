@@ -49,7 +49,7 @@ from .shared_runtime import (
 
 EMPTY_COLLECTION_MSG = "The selected collection contains no indexed documents."
 NO_RELEVANT_RESULTS_MSG = "No relevant information was found in the selected collection."
-RAG_MIN_SCORE = config._env_float("TRINAXAI_RAG_MIN_SCORE", 0.05, minimum=0.0, maximum=1.0)
+RAG_MIN_SCORE = config._env_float("TRINAXAI_RAG_MIN_SCORE", 0.02, minimum=0.0, maximum=1.0)
 _CATALOG_QUERY_PATTERNS = (
     r"\b(?:qué|que)\s+(?:proyectos?|archivos?|ficheros?|documentos?|colecciones?)\b.*\bindexad",
     r"\b(?:what|which)\s+(?:projects?|files?|documents?|collections?)\b.*\bindex",
@@ -61,28 +61,31 @@ _CATALOG_QUERY_PATTERNS = (
 
 def _knowledge_collection_state(collections: list[str] | None) -> str:
     """Validate forced-RAG collections before response headers are sent."""
-    requested = [str(value).strip() for value in (collections or []) if str(value).strip()]
-    if not requested:
-        requested = [config.DEFAULT_COLLECTION_ID]
-    with state.collections_lock:
-        existing = {item["id"] for item in _read_collections_unlocked()}
-    missing = [value for value in requested if value not in existing]
+    requested = collections or [config.DEFAULT_COLLECTION_ID]
+    normalized = tuple(
+        dict.fromkeys(
+            sanitize_collection_id(value, fallback=config.DEFAULT_COLLECTION_ID)
+            for value in requested
+            if isinstance(value, str) and value.strip()
+        )
+    )
+    known_ids = {item["id"] for item in _read_collections_unlocked()}
+    missing = next((value for value in normalized if value not in known_ids), None)
     if missing:
-        safe = sanitize_collection_id(missing[0], fallback="unknown")
         raise HTTPException(
             status_code=404,
             detail={
                 "code": "collection_not_found",
-                "collection": safe,
-                "message": f"Collection '{safe}' was not found.",
+                "collection": sanitize_collection_id(missing, fallback="unknown"),
+                "message": f"Collection '{missing}' was not found.",
             },
         )
     docs = getattr(state.index_docstore, "docs", {}) if state.index_docstore is not None else {}
     populated = {
-        (getattr(node, "metadata", {}) or {}).get("collection_id", config.DEFAULT_COLLECTION_ID)
+        str((getattr(node, "metadata", {}) or {}).get("collection_id") or config.DEFAULT_COLLECTION_ID)
         for node in docs.values()
     }
-    return "ready" if any(value in populated for value in requested) else "empty"
+    return "empty" if not any(collection_id in populated for collection_id in normalized) else "ready"
 
 
 def _cancel_ollama_model(model: str | None) -> None:

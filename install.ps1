@@ -9,7 +9,9 @@ param(
   [switch]$LanSystem,
   [string]$InstallDir = "",
   [ValidateSet("8gb", "16gb", "max", "ultra")]
-  [string]$Profile = ""
+  [string]$Profile = "",
+  [ValidateSet("en", "es")]
+  [string]$Language = ""
 )
 
 <# 
@@ -20,6 +22,8 @@ Run in PowerShell:
 #>
 
 $ErrorActionPreference = "Stop"
+if ([string]::IsNullOrWhiteSpace($Language)) { $Language = if ($env:TRINAXAI_LANG -match '^es') { 'es' } elseif ((Get-Culture).Name -match '^es') { 'es' } else { 'en' } }
+function T($English, $Spanish) { if ($Language -eq 'es') { return $Spanish }; return $English }
 
 function Write-Step($Text) { Write-Host "`n=== $Text ===`n" -ForegroundColor Blue }
 function Write-Ok($Text) { Write-Host "  [OK] $Text" -ForegroundColor Green }
@@ -481,6 +485,7 @@ if (
   if ($NoStart) { $Forward += "-NoStart" }
   if ($LanSystem) { $Forward += "-LanSystem" }
   if ($Profile) { $Forward += @("-Profile", $Profile) }
+  if ($Language) { $Forward += @("-Language", $Language) }
   $PowerShellHost = try { (Get-Process -Id $PID).Path } catch { "powershell.exe" }
   & $PowerShellHost @Forward
   exit $LASTEXITCODE
@@ -499,13 +504,13 @@ Write-Host "  Detected RAM: $RamGb GB" -ForegroundColor Cyan
 Write-Host "  Recommended profile: $AutoProfile" -ForegroundColor Green
 Write-Host ""
 $Mode = ""
-if (-not $NonInteractive) { $Mode = Read-Host "Setup mode: Normal recommended or Advanced manual? [N/a]" }
+if (-not $NonInteractive) { $Mode = Read-Host (T "Setup mode: Normal recommended or Advanced manual? [N/a]" "Modo de configuración: ¿Normal recomendado o Avanzado manual? [N/a]") }
 if ((-not $NonInteractive) -and $Mode -match "^[Aa]") {
-  Write-Host "  1) medium  Balanced default (about 16GB RAM)"
-  Write-Host "  2) high    Stronger CPU / more RAM"
-  Write-Host "  3) ultra   64GB+ RAM + powerful GPU"
-  Write-Host "  4) low     Low memory (about 8GB RAM)"
-  $Choice = Read-Host "Choose profile [default: $Profile]"
+  Write-Host (T "  1) medium  Balanced default (about 16GB RAM)" "  1) medium  Equilibrado (aprox. 16 GB de RAM)")
+  Write-Host (T "  2) high    Stronger CPU / more RAM" "  2) high    CPU más potente / más RAM")
+  Write-Host (T "  3) ultra   64GB+ RAM + powerful GPU" "  3) ultra   64 GB+ de RAM + GPU potente")
+  Write-Host (T "  4) low     Low memory (about 8GB RAM)" "  4) low     Poca memoria (aprox. 8 GB de RAM)")
+  $Choice = Read-Host (T "Choose profile [default: $Profile]" "Elige el perfil [por defecto: $Profile]")
   switch ($Choice) {
     "1" { $Profile = "16gb" }
     "medium" { $Profile = "16gb" }
@@ -624,6 +629,7 @@ if ($LanIp) { $Cors += ",https://$($LanIp):3334,http://$($LanIp):3334,https://$(
 $EnvLines = @(
   "# TrinaxAI generated configuration",
   "TRINAXAI_HOME=`"$Repo`"",
+  "TRINAXAI_LANG=$Language",
   "TRINAXAI_PROFILE=$Profile",
   "TRINAXAI_PERFORMANCE_MODE=fast",
   "TRINAXAI_HOST=127.0.0.1",
@@ -750,13 +756,13 @@ Write-Step "5/6 AI models"
 $Models = @($ModelCode, $ModelDeep, $ModelGeneral, $ModelFast, $EmbedModel) |
   Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
   Select-Object -Unique
-Write-Host "  General chat: $ModelGeneral"
-Write-Host "  Code:         $ModelCode"
-Write-Host "  Deep:         $ModelDeep"
-Write-Host "  Embeddings:   $EmbedModel"
-Write-Host "  Vision:       $VisionModel (downloads on first image analysis)"
+Write-Host "  $(T 'General chat' 'Chat general'): $ModelGeneral"
+Write-Host "  $(T 'Code' 'Código'):         $ModelCode"
+Write-Host "  $(T 'Deep' 'Profundo'):       $ModelDeep"
+Write-Host "  $(T 'Embeddings' 'Embeddings'):   $EmbedModel"
+Write-Host "  $(T 'Vision' 'Visión'):       $VisionModel ($(T 'downloads on first image analysis' 'se descarga al analizar la primera imagen'))"
 if (-not $NonInteractive) {
-  $SkipModels = Read-Host "Download these Ollama models now? Choose N if you already have your own. [Y/n]"
+  $SkipModels = Read-Host (T "Download these Ollama models now? Choose N if you already have your own. [Y/n]" "¿Descargar estos modelos Ollama ahora? Elige N si ya tienes los tuyos. [Y/n]")
   if ($SkipModels -match "^[Nn]") {
     $NoModels = $true
     Write-Warn "Model download skipped. The configured model names were still saved to .env."
@@ -778,7 +784,7 @@ if (-not $NoModels -and (Ensure-OllamaRunning)) {
 
 Write-Step "6/6 Start"
 if (-not $NoStart) {
-  if (Read-YesNo "Start TrinaxAI now after install?" $true) {
+  if (Read-YesNo (T "Start TrinaxAI now after install?" "¿Iniciar TrinaxAI ahora al terminar?" ) $true) {
     & ".\.venv\Scripts\python.exe" "service_manager.py" "start" "--base-dir" $Repo
     Write-Ok "TrinaxAI started"
   } else {
@@ -787,7 +793,7 @@ if (-not $NoStart) {
   }
 }
 if (-not $NoAutostart) {
-  if (-not (Read-YesNo "Start TrinaxAI automatically when Windows starts?" $true)) {
+  if (-not (Read-YesNo (T "Start TrinaxAI automatically when Windows starts?" "¿Iniciar TrinaxAI automáticamente al iniciar Windows?" ) $true)) {
     $NoAutostart = $true
   }
 }

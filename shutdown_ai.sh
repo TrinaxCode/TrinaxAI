@@ -4,6 +4,10 @@
 
 set -euo pipefail
 
+LANGUAGE="${TRINAXAI_LANG:-${LANG:-en}}"
+LANGUAGE_LOWER="$(printf '%s' "$LANGUAGE" | tr '[:upper:]' '[:lower:]')"
+case "$LANGUAGE_LOWER" in es*|*_es*) LANGUAGE=es ;; *) LANGUAGE=en ;; esac
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 if [ -x "$SCRIPT_DIR/.venv/bin/python" ]; then
@@ -14,6 +18,6 @@ else
   PY="${TRINAXAI_PYTHON:-python3}"
 fi
 
-echo "TrinaxAI: stopping AI services..."
+if [ "$LANGUAGE" = "es" ]; then echo "TrinaxAI: deteniendo servicios de IA..."; else echo "TrinaxAI: stopping AI services..."; fi
 "$PY" "$SCRIPT_DIR/service_manager.py" stop-ai --base-dir "$SCRIPT_DIR"
-echo "TrinaxAI: AI services stopped. The PWA remains available."
+if [ "$LANGUAGE" = "es" ]; then echo "TrinaxAI: servicios de IA detenidos. La PWA sigue disponible."; else echo "TrinaxAI: AI services stopped. The PWA remains available."; fi

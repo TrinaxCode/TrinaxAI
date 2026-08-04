@@ -9,6 +9,7 @@ import re
 import shutil
 import sys
 import time
+import uuid
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
@@ -159,8 +160,13 @@ def exclusive_process_lock(
                 except OSError:
                     stale = False
             if stale:
+                claimed = lock_dir.with_name(f".{lock_dir.name}.stale-{uuid.uuid4().hex}")
                 try:
-                    shutil.rmtree(lock_dir)
+                    os.replace(lock_dir, claimed)
+                except OSError:
+                    continue
+                try:
+                    shutil.rmtree(claimed)
                 except OSError:
                     pass
                 continue

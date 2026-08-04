@@ -107,7 +107,7 @@ from .runtime_context import (
 def _index_process_lock():
     return exclusive_process_lock(
         os.path.join(config.PERSIST_DIR, ".indexing.lock"),
-        timeout=config._env_float("TRINAXAI_INDEX_LOCK_TIMEOUT", 3600.0, minimum=1.0, maximum=86400.0),
+        timeout=config._env_float("TRINAXAI_INDEX_LOCK_TIMEOUT", 60.0, minimum=1.0, maximum=86400.0),
     )
 
 
@@ -229,6 +229,32 @@ def get_llm(
         return state.llm_cache[cache_key]
 
 
+def _reconcile_index_collections(docstore) -> None:
+    """Register collections present in indexed node metadata."""
+    discovered: dict[str, str] = {}
+    for node in getattr(docstore, "docs", {}).values():
+        metadata = getattr(node, "metadata", {}) or {}
+        raw_collection_id = str(metadata.get("collection_id") or "").strip()
+        if not raw_collection_id:
+            continue
+        collection_id = sanitize_collection_id(raw_collection_id, fallback=config.DEFAULT_COLLECTION_ID)
+        discovered.setdefault(
+            collection_id,
+            str(metadata.get("collection_name") or collection_id).strip() or collection_id,
+        )
+    if not discovered:
+        return
+    with state.collections_lock:
+        collections = _read_collections_unlocked()
+        existing = {item["id"] for item in collections}
+        now = time.time()
+        for collection_id, name in discovered.items():
+            if collection_id not in existing:
+                collections.append({"id": collection_id, "name": name[:80], "created_at": now, "updated_at": now})
+        if len(collections) != len(existing):
+            _write_collections_unlocked(collections)
+
+
 def _build_engine_from_disk() -> bool:
     """Load a complete on-disk generation. Caller owns the process lock."""
     with state.engine_lock:
@@ -259,6 +285,7 @@ def _build_engine_from_disk() -> bool:
                 llm=get_llm(config.LLM_MODEL),
             )
             state.index_docstore = index.docstore
+            _reconcile_index_collections(state.index_docstore)
             state.known_projects = sorted(
                 {n.metadata.get("project", "") for n in index.docstore.docs.values() if n.metadata.get("project")}
             )
@@ -314,6 +341,32 @@ def initialize_runtime() -> None:
         build_engine()
     except Exception:
         LOG.exception("Index initialization failed; continuing without document retrieval")
+
+
+def _collection_scope(collections: list[str] | tuple[str, ...] | None) -> tuple[tuple[str, ...], str | None]:
+    """Normalize and validate an optional collection scope against indexed nodes."""
+    requested = tuple(
+        dict.fromkeys(
+            sanitize_collection_id(value, fallback=config.DEFAULT_COLLECTION_ID)
+            for value in (collections or [])
+            if isinstance(value, str) and value.strip()
+        )
+    )
+    if not requested:
+        return (), None
+    with state.collections_lock:
+        existing = {item["id"] for item in _read_collections_unlocked()}
+    missing = next((collection_id for collection_id in requested if collection_id not in existing), None)
+    if missing:
+        return requested, "collection_not_found"
+    docs = getattr(state.index_docstore, "docs", {}) if state.index_docstore is not None else {}
+    populated = {
+        str((getattr(node, "metadata", {}) or {}).get("collection_id") or config.DEFAULT_COLLECTION_ID)
+        for node in docs.values()
+    }
+    if not any(collection_id in populated for collection_id in requested):
+        return requested, "collection_empty"
+    return requested, None
 
 
 def _retriever_for_collections(active_collections: tuple[str, ...]):

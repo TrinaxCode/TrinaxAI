@@ -4,6 +4,10 @@
 
 set -euo pipefail
 
+LANGUAGE="${TRINAXAI_LANG:-${LANG:-en}}"
+LANGUAGE_LOWER="$(printf '%s' "$LANGUAGE" | tr '[:upper:]' '[:lower:]')"
+case "$LANGUAGE_LOWER" in es*|*_es*) LANGUAGE=es ;; *) LANGUAGE=en ;; esac
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 if [ -x "$SCRIPT_DIR/.venv/bin/python" ]; then
@@ -14,9 +18,9 @@ else
   PY="${TRINAXAI_PYTHON:-python3}"
 fi
 
-echo "TrinaxAI: starting AI services..."
+if [ "$LANGUAGE" = "es" ]; then echo "TrinaxAI: iniciando servicios de IA..."; else echo "TrinaxAI: starting AI services..."; fi
 "$PY" "$SCRIPT_DIR/service_manager.py" start-ai --base-dir "$SCRIPT_DIR"
-echo "TrinaxAI: AI services started."
+if [ "$LANGUAGE" = "es" ]; then echo "TrinaxAI: servicios de IA iniciados."; else echo "TrinaxAI: AI services started."; fi
 echo "PWA: https://localhost:3334"
 echo "RAG API: http://localhost:3333"
 echo "Ollama: http://localhost:11434"

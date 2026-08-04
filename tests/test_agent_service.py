@@ -7,6 +7,7 @@ import time
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from starlette.testclient import TestClient
@@ -188,6 +189,39 @@ class AgentServiceHelperTests(unittest.TestCase):
             result = self.svc._search_knowledge(Path.cwd(), query="contract")
         self.assertIn("contract.md", result)
         self.assertNotIn("/home/private", result)
+
+    def test_knowledge_search_scopes_before_retrieval(self) -> None:
+        scoped = MagicMock()
+        node = MagicMock()
+        node.metadata = {"rel_path": "docs/manual.md", "collection_id": "docs"}
+        node.get_content.return_value = "Scoped evidence"
+        scoped.retrieve.return_value = [node]
+        global_retriever = MagicMock()
+        with (
+            patch.object(self.svc.state, "fusion_retriever", global_retriever),
+            patch.object(self.svc.state, "index_docstore", SimpleNamespace(docs={"node": node})),
+            patch.object(self.svc, "_collection_scope", return_value=(("docs",), None)),
+            patch.object(self.svc, "_retriever_for_collections", return_value=scoped) as resolver,
+        ):
+            result = self.svc._search_knowledge(Path.cwd(), query="evidence", collection_id="docs")
+
+        resolver.assert_called_once_with(("docs",))
+        global_retriever.retrieve.assert_not_called()
+        scoped.retrieve.assert_called_once_with("evidence")
+        self.assertIn("Scoped evidence", result)
+
+    def test_knowledge_search_reports_empty_collection_without_global_fallback(self) -> None:
+        global_retriever = MagicMock()
+        with (
+            patch.object(self.svc.state, "fusion_retriever", global_retriever),
+            patch.object(self.svc.state, "index_docstore", SimpleNamespace(docs={})),
+            patch.object(self.svc, "_collection_scope", return_value=(("empty",), "collection_empty")),
+        ):
+            result = self.svc._search_knowledge(Path.cwd(), query="evidence", collection_id="empty")
+
+        global_retriever.retrieve.assert_not_called()
+        self.assertIn("What happened:", result)
+        self.assertIn("no indexed documents", result.lower())
 
     def test_agent_request_makes_optional_information_tools_available_by_default(self) -> None:
         from app.schemas import AgentRequest

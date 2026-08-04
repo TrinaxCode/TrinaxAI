@@ -17,6 +17,8 @@ import sys
 from contextlib import contextmanager
 from typing import Any, Callable, Iterator, Sequence
 
+from trinaxai_cli.i18n import resolve_lang, text, translate
+
 try:
     from prompt_toolkit import PromptSession
     from prompt_toolkit.completion import Completer, Completion
@@ -97,16 +99,17 @@ def _want_color(no_color: bool) -> bool:
     return True
 
 
-def get_console(no_color: bool = False) -> "Console":
-    """Return a console honouring the ``NO_COLOR`` env var and the flag."""
-    return Console(no_color=no_color)
+def get_console(no_color: bool = False, language: str | None = None) -> "Console":
+    """Return a console honoring color settings and the selected locale."""
+    return Console(no_color=no_color, language=language)
 
 
 class Console:
     """UI facade.  Backed by :mod:`rich` when available, otherwise plain stdio."""
 
-    def __init__(self, no_color: bool = False) -> None:
+    def __init__(self, no_color: bool = False, language: str | None = None) -> None:
         global _WARNED_NO_RICH
+        self.language = resolve_lang(language)
         self.no_color = not _want_color(no_color)
         self._color_enabled = not self.no_color
         self._rich_console: Any = None
@@ -152,12 +155,13 @@ class Console:
         if type(exc).__name__ == "TrinaxAPIError":
             self.error(f"{action}: {exc}")
             return
-        self.error(f"{action} could not be completed. Try again; other commands remain available.")
+        self.error(text("failure_generic", self.language, action=action))
 
     def success(self, msg: Any) -> None:
         self._styled(msg, "success")
 
     def _styled(self, msg: Any, level: str) -> None:
+        msg = translate(msg, self.language)
         if self._rich_console is not None:
             styles = {
                 "info": "cyan",
@@ -183,6 +187,7 @@ class Console:
 
     # ----------------------------------------------------------------- prompt
     def prompt(self, question: str, default: str | None = None) -> str:
+        question = translate(question, self.language)
         if _RICH and _rich_prompt_cls is not None:
             try:
                 return _rich_prompt_cls.ask(
@@ -203,6 +208,7 @@ class Console:
         return value
 
     def confirm(self, question: str, default: bool = False) -> bool:
+        question = translate(question, self.language)
         if _RICH and _rich_confirm_cls is not None:
             try:
                 return _rich_confirm_cls.ask(

@@ -93,6 +93,16 @@ def _ollama_api_ok(base_url: str = "http://127.0.0.1:11434") -> bool:
 
 def run(args: Any, client: Any, ui: Any, config: Any) -> int:
     checks: list[dict[str, Any]] = []
+    # A health check probes a possibly-dead backend on purpose, and issues
+    # several GETs that _send retries once each. At the shared 30s timeout a
+    # single unreachable endpoint can outlast the whole diagnosis, so shorten
+    # it here: _send reads self.timeout per request.
+    try:
+        client_timeout = float(getattr(client, "timeout", 0) or 0)
+    except (TypeError, ValueError):
+        client_timeout = 0.0
+    if client_timeout > 5.0:
+        client.timeout = 5.0
 
     def add(name: str, ok: bool, detail: str, *, critical: bool = False) -> None:
         checks.append({"check": name, "ok": ok, "critical": critical, "detail": detail})

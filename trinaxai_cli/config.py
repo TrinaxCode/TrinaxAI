@@ -78,6 +78,7 @@ class CLIConfig:
     active_collection: str = "default"
 
     ui_color: str = "auto"  # auto | always | never
+    language: str = ""  # empty = detect from environment; es | en
 
     session_enabled: bool = False
     session_dir: str = ""
@@ -236,8 +237,11 @@ def _apply_section(cfg: CLIConfig, parsed: dict[str, Any]) -> None:
             cfg.active_collection = str(defaults["active_collection"])
 
     ui = parsed.get("ui") or {}
-    if isinstance(ui, dict) and "color" in ui:
-        cfg.ui_color = str(ui["color"])
+    if isinstance(ui, dict):
+        if "color" in ui:
+            cfg.ui_color = str(ui["color"])
+        if "language" in ui:
+            cfg.language = str(ui["language"])
 
     session = parsed.get("session") or {}
     if isinstance(session, dict):
@@ -262,6 +266,7 @@ def _render_toml(cfg: CLIConfig) -> str:
         "",
         "[ui]",
         f"color = {quote(cfg.ui_color)}",
+        f"language = {quote(cfg.language)}",
         "",
         "[session]",
         f"enabled = {str(cfg.session_enabled).lower()}",

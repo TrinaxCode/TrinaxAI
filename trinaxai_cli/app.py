@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any, Sequence
 
 from trinaxai_cli.config import CLIConfig
+from trinaxai_cli.i18n import help_text, resolve_lang
 from trinaxai_cli.ui import get_console
 
 LOG = logging.getLogger("trinaxai_cli")
@@ -28,15 +29,39 @@ VERSION = "1.0.2"
 # ----------------------------------------------------------------- argparse
 
 
-def _build_parser() -> argparse.ArgumentParser:
-    """Return the top-level argparse parser with all subcommands wired in."""
-    parser = argparse.ArgumentParser(
+class _LocalizedArgumentParser(argparse.ArgumentParser):
+    default_language = "en"
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        self.language = resolve_lang(kwargs.pop("language", None) or self.default_language)
+        super().__init__(*args, **kwargs)
+
+    def format_help(self) -> str:
+        return help_text(super().format_help(), self.language)
+
+
+def _build_parser(language: str | None = None) -> argparse.ArgumentParser:
+    """Return the top-level parser with localized human-facing help."""
+    detected = language
+    if detected is None:
+        argv = sys.argv[1:]
+        for flag in ("--language", "--lang"):
+            if flag in argv:
+                index = argv.index(flag)
+                if index + 1 < len(argv):
+                    detected = argv[index + 1]
+                    break
+    parser = _LocalizedArgumentParser(
+        language=detected,
         prog="trinaxai",
         description=(
             "TrinaxAI CLI — local-first terminal assistant. The default command opens a "
             "unified REPL that auto-routes between chat, web search, deep research, the "
             "private local coding agent and RAG."
         ),
+    )
+    parser.add_argument(
+        "--language", "--lang", dest="language", choices=["en", "es"], help="Interface language (en or es)."
     )
     parser.add_argument("--api-url", help="RAG API base URL (overrides config).")
     parser.add_argument("--ca-file", help="CA certificate bundle for verified HTTPS.")
@@ -62,7 +87,8 @@ def _build_parser() -> argparse.ArgumentParser:
         version=f"TrinaxAI CLI {VERSION}",
     )
 
-    sub = parser.add_subparsers(dest="command", metavar="COMMAND")
+    _LocalizedArgumentParser.default_language = parser.language
+    sub = parser.add_subparsers(dest="command", metavar="COMMAND", parser_class=_LocalizedArgumentParser)
 
     # Flat (no sub-subcommands) commands
     chat_p = sub.add_parser("chat", help="Unified REPL (chat · web · research · agent · RAG) or single prompt.")
@@ -221,6 +247,7 @@ def _build_parser() -> argparse.ArgumentParser:
     cu = col_sub.add_parser("use", help="Switch the active collection.")
     cu.add_argument("--collection-id", dest="collection_id", help="Collection id.")
 
+    _LocalizedArgumentParser.default_language = "en"
     return parser
 
 
@@ -297,14 +324,16 @@ def main(argv: Sequence[str] | None = None) -> int:
     elif not bool(config.api.get("verify_tls", True)):
         parser.error("api.verify_tls=false is not supported; use --ca-file or TRINAXAI_CA_FILE")
 
-    # 3. Build UI console (honours --no-color, $NO_COLOR, config.ui.color).
+    # 3. Resolve the interface language and build the localized console.
+    effective_lang = resolve_lang(getattr(args, "language", None), config.language)
+    config.language = effective_lang
     no_color = bool(args.no_color) or (str(config.ui.get("color", "auto")) == "never")
-    ui = get_console(no_color=no_color)
+    ui = get_console(no_color=no_color, language=effective_lang)
 
     # 4. Build HTTP client (lazy import keeps --help cheap).
     from trinaxai_cli.client import TrinaxAPIClient
 
-    client = TrinaxAPIClient(base_url=api_url, verify_tls=verify_tls)
+    client = TrinaxAPIClient(base_url=api_url, verify_tls=verify_tls, language=effective_lang)
 
     # 5. Dispatch (default = chat REPL).
     name = args.command or "chat"

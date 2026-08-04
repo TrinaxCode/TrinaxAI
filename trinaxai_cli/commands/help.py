@@ -6,5 +6,9 @@ from trinaxai_cli.app import _build_parser
 
 
 def run(args: Any, client: Any, ui: Any, config: Any) -> int:
-    ui.print(_build_parser().format_help())
+    try:
+        parser = _build_parser(getattr(ui, "language", None))
+    except TypeError:
+        parser = _build_parser()
+    ui.print(parser.format_help())
     return 0

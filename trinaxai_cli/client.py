@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any, Iterable
 from urllib.parse import urlencode, urlparse, urlunparse
 
+from trinaxai_cli.i18n import normalize_lang
 from trinaxai_errors import classify_error
 
 try:
@@ -33,10 +34,13 @@ class TrinaxAPIError(RuntimeError):
     response was ever received.
     """
 
-    def __init__(self, status: int, message: str, payload: Any | None = None) -> None:
+    def __init__(self, status: int, message: str, payload: Any | None = None, *, language: str = "en") -> None:
         self.technical_message = message
+        self.language = normalize_lang(language)
         info = classify_error(RuntimeError(message), status_code=status, hint=message)
-        super().__init__(f"{info.definition.message} {info.definition.recovery}")
+        public_message = info.definition.message_es if self.language == "es" else info.definition.message
+        public_recovery = info.definition.recovery_es if self.language == "es" else info.definition.recovery
+        super().__init__(f"{public_message} {public_recovery}")
         self.status = status
         self.payload = payload
         self.category = info.category.value
@@ -47,13 +51,18 @@ class TrinaxAPIError(RuntimeError):
 class TrinaxAPIClient:
     """Thin synchronous wrapper over the RAG API."""
 
-    def __init__(self, base_url: str, verify_tls: str | None = None, timeout: float = 30.0) -> None:
+    def __init__(
+        self, base_url: str, verify_tls: str | None = None, timeout: float = 30.0, language: str | None = None
+    ) -> None:
         if httpx is None:
             raise RuntimeError("httpx is required for the TrinaxAI CLI (install via requirements.txt).")
         self.base_url = (base_url or "https://localhost:3333").rstrip("/")
         self.verify_tls: bool | str = self._resolve_local_ca(verify_tls)
         self.timeout = timeout
+        self.language = normalize_lang(language)
         request_headers: dict[str, str] = {}
+        if language is not None:
+            request_headers["Accept-Language"] = self.language
         admin_token = os.getenv("TRINAXAI_ADMIN_TOKEN", "").strip()
         device_token = os.getenv("TRINAXAI_DEVICE_TOKEN", "").strip()
         if admin_token:
@@ -203,11 +212,11 @@ class TrinaxAPIClient:
         for attempt in range(2 if retryable_method else 1):
             try:
                 r = self._client.request(method, url, json=json, timeout=effective_timeout)
-                return self._handle(r)
+                return self._handle(r, language=getattr(self, "language", "en"))
             except httpx.TimeoutException:
-                error = TrinaxAPIError(0, "request timed out")
+                error = TrinaxAPIError(0, "request timed out", language=getattr(self, "language", "en"))
             except httpx.TransportError:
-                error = TrinaxAPIError(0, "local service unavailable")
+                error = TrinaxAPIError(0, "local service unavailable", language=getattr(self, "language", "en"))
             except TrinaxAPIError as caught:
                 error = caught
                 if not (retryable_method and error.retryable and attempt == 0):
@@ -237,7 +246,7 @@ class TrinaxAPIClient:
         return self._send("PATCH", path, json=body)
 
     @staticmethod
-    def _handle(r: Any) -> Any:
+    def _handle(r: Any, *, language: str = "en") -> Any:
         if r.status_code >= 400:
             try:
                 payload = r.json()
@@ -251,7 +260,7 @@ class TrinaxAPIClient:
                 message = str(detail) if detail else ""
             if not message:
                 message = (r.text or "").strip()[:400]
-            raise TrinaxAPIError(r.status_code, message, payload)
+            raise TrinaxAPIError(r.status_code, message, payload, language=language)
         if not r.content:
             return {}
         try:
@@ -342,7 +351,9 @@ class TrinaxAPIClient:
         else:
             memories = None
         if not isinstance(memories, list) or any(not isinstance(item, dict) for item in memories):
-            raise TrinaxAPIError(0, "unexpected memory-list response from the backend", data)
+            raise TrinaxAPIError(
+                0, "unexpected memory-list response from the backend", data, language=getattr(self, "language", "en")
+            )
         return memories
 
     def add_memory(self, text: str, tags: list[str] | None = None) -> dict[str, Any]:

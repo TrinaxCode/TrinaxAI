@@ -166,6 +166,8 @@ def test_index_job_helpers_bound_untrusted_names_output_and_progress(monkeypatch
     with state.index_jobs_lock:
         previous = state.index_jobs
         state.index_jobs = {job["id"]: job}
+    previous_active = state.index_active_job_id
+    state.index_active_job_id = None
     try:
         system_service._append_index_output(job["id"], "x" * 9000)
         public = system_service._job_public(job)
@@ -177,6 +179,7 @@ def test_index_job_helpers_bound_untrusted_names_output_and_progress(monkeypatch
     finally:
         with state.index_jobs_lock:
             state.index_jobs = previous
+        state.index_active_job_id = previous_active
 
     assert system_service._line_progress("Troceando documento", 10) == (45, "chunking")
     assert system_service._line_progress("Embeddings lote 2/4", 10) == (76, "embedding")
@@ -224,6 +227,7 @@ async def test_cancel_stops_process_and_retry_requeues(tmp_path, monkeypatch) ->
     monkeypatch.setattr(system_service, "_authorize_system", lambda _request: None)
     monkeypatch.setattr(system_service, "_persist_index_jobs_locked", lambda: None)
     monkeypatch.setattr(system_service.threading, "Thread", Thread)
+    monkeypatch.setattr(system_service, "_external_indexer_pid", lambda: None)
     with state.index_jobs_lock:
         previous = state.index_jobs
         state.index_jobs = {job["id"]: job}

@@ -59,6 +59,10 @@ class EngineState:
 
     index_jobs: dict[str, dict] = field(default_factory=dict)
     index_jobs_lock: threading.Lock = field(default_factory=threading.Lock)
+    index_dispatch_lock: threading.RLock = field(default_factory=threading.RLock)
+    index_active_job_id: str | None = None
+    index_dispatch_waiting: bool = False
+    index_active_run_token: str | None = None
     app_state_lock: threading.Lock = field(default_factory=threading.Lock)
     collections_lock: threading.Lock = field(default_factory=threading.Lock)
     memory_lock: threading.Lock = field(default_factory=threading.Lock)

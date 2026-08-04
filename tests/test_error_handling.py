@@ -39,3 +39,43 @@ def test_http_boundary_masks_raw_exception_detail() -> None:
 
     assert "secret token" not in response.body.decode()
     assert json.loads(response.body)["error"]["code"] == "ERR_INTERNAL_SERVER_ERROR"
+
+
+def test_http_boundary_localizes_canonical_errors_from_accept_language() -> None:
+    spanish_request = Request(
+        {
+            "type": "http",
+            "method": "GET",
+            "path": "/test",
+            "headers": [(b"accept-language", b"es-MX, en;q=0.8")],
+        }
+    )
+    english_request = Request(
+        {
+            "type": "http",
+            "method": "GET",
+            "path": "/test",
+            "headers": [(b"accept-language", b"en-US, es;q=0.8")],
+        }
+    )
+
+    spanish = json.loads(
+        asyncio.run(
+            http_exception_handler(
+                spanish_request,
+                HTTPException(status_code=503, detail="AI unavailable"),
+            )
+        ).body
+    )
+    english = json.loads(
+        asyncio.run(
+            http_exception_handler(
+                english_request,
+                HTTPException(status_code=503, detail="AI unavailable"),
+            )
+        ).body
+    )
+
+    assert spanish["error"]["message"] == "Un servicio externo no está disponible."
+    assert english["error"]["message"] == "An external service is unavailable."
+    assert spanish["error"]["message"] != english["error"]["message"]

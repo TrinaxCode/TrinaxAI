@@ -748,30 +748,34 @@ def load_docs(paths: list[str], context: SourceContext | None = None) -> list[Do
 def build_nodes(documents: list[Document]) -> list:
     """Trocea por extensión: código → AST, prosa → texto. La metadata del
     documento (proyecto, ruta) se hereda automáticamente en cada chunk."""
+    from llama_index.core.schema import TextNode
+
     nodes = []
     code_count = prose_count = fallback = 0
     for doc in documents:
         file_path = doc.metadata.get("rel_path", "")
         ext = os.path.splitext(file_path)[1].lower()
         language = config.CODE_LANG_BY_EXT.get(ext)
+        doc_nodes = []
 
-        doc_nodes = None
         if language:
             try:
-                doc_nodes = _code_splitter(language).get_nodes_from_documents([doc])
+                doc_nodes = _code_splitter(language).get_nodes_from_documents([doc]) or []
                 code_count += 1
             except Exception as e:
                 print(
                     f"   ⚠️  AST falló en {os.path.basename(file_path)} ({language}): {str(e)[:50]} — troceo por texto"
                 )
                 fallback += 1
-        if doc_nodes is None:
-            doc_nodes = _sentence_splitter().get_nodes_from_documents([doc])
+        if not doc_nodes:
+            doc_nodes = _sentence_splitter().get_nodes_from_documents([doc]) or []
             prose_count += 1
+        if not doc_nodes and str(doc.text or "").strip():
+            doc_nodes = [TextNode(text=str(doc.text).strip(), metadata=dict(doc.metadata or {}))]
+            fallback += 1
         nodes.extend(doc_nodes)
 
     print(f"   └─ {code_count} por AST, {prose_count} por texto ({fallback} con fallback) → {len(nodes)} chunks")
-    emit_progress("chunking", chunks_generated=len(nodes), determinate=False)
     return nodes
 
 
@@ -1108,6 +1112,7 @@ def apply_file_updates(
         if not prepared.nodes:
             continue
         result.total_nodes += len(prepared.nodes)
+        emit_progress("chunking", chunks_generated=result.total_nodes, determinate=False)
         insert_node_batches(index, prepared.nodes)
         result.indexed_paths.update(prepared.indexed_paths)
     return result
@@ -1311,6 +1316,7 @@ def run_full_index(
             continue
         indexed_paths.update(prepared.indexed_paths)
         total_nodes += len(nodes)
+        emit_progress("chunking", chunks_generated=total_nodes, determinate=False)
         index = insert_node_batches(index, nodes, initialize=index is None)
     if index is None:
         print("❌ No se pudieron generar chunks para indexar.")

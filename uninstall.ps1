@@ -12,7 +12,9 @@ param(
   [switch]$RemoveModels,
   [switch]$RemoveOllama,
   [switch]$Purge,
-  [switch]$KeepFirewall
+  [switch]$KeepFirewall,
+  [ValidateSet("en", "es")]
+  [string]$Language = ""
 )
 
 <# 
@@ -28,6 +30,8 @@ Guided mode asks what to remove:
 #>
 
 $ErrorActionPreference = "Stop"
+if ([string]::IsNullOrWhiteSpace($Language)) { $Language = if ($env:TRINAXAI_LANG -match '^es') { 'es' } elseif ((Get-Culture).Name -match '^es') { 'es' } else { 'en' } }
+function T($English, $Spanish) { if ($Language -eq 'es') { return $Spanish }; return $English }
 
 function Write-Step($Text) { Write-Host "`n=== $Text ===`n" -ForegroundColor Blue }
 function Write-Ok($Text) { Write-Host "  [OK] $Text" -ForegroundColor Green }
@@ -218,9 +222,9 @@ Write-Host "+========================================+" -ForegroundColor Blue
 Write-Host " Protected: source code, indexes, and Ollama models" -ForegroundColor Cyan
 
 if (-not ($Yes -or $NonInteractive)) {
-  $Confirm = Read-Host "Type UNINSTALL to continue"
+  $Confirm = Read-Host (T "Type UNINSTALL to continue" "Escribe UNINSTALL para continuar")
   if ($Confirm -ne "UNINSTALL") {
-    Write-Warn "Cancelled."
+    Write-Warn (T "Cancelled." "Cancelado.")
     exit 0
   }
 } elseif (-not $Yes) {
@@ -241,18 +245,18 @@ $RemoveOllamaApp = $RemoveOllama -or $Purge
 $RemoveFirewallRules = -not $KeepFirewall
 
 if (-not ($Yes -or $NonInteractive)) {
-  $StopServices = Read-YesNo "Stop running TrinaxAI services now?" $true
-  $DisableAutostart = Read-YesNo "Disable TrinaxAI auto-start on boot?" $true
-  $RemoveVenv = Read-YesNo "Remove Python virtual environment (.venv)?" $true
-  $RemoveFrontend = Read-YesNo "Remove frontend dependencies/build?" $true
-  $RemoveLogs = Read-YesNo "Remove logs?" $true
-  $RemoveEnv = Read-YesNo "Remove generated .env configuration and admin token?" $true
-  $RemoveRuntimeData = Read-YesNo "Remove RAG index, memory, and local_sources data?" $false
-  $RemoveRuntimeCerts = Read-YesNo "Remove generated local HTTPS cert files?" $false
-  $RemoveOllamaModels = Read-YesNo "Remove known Ollama models used by TrinaxAI?" $false
-  $RemoveOllamaApp = Read-YesNo "Remove Ollama application too?" $false
+  $StopServices = Read-YesNo (T "Stop running TrinaxAI services now?" "¿Detener los servicios activos de TrinaxAI?") $true
+  $DisableAutostart = Read-YesNo (T "Disable TrinaxAI auto-start on boot?" "¿Desactivar el arranque automático de TrinaxAI?") $true
+  $RemoveVenv = Read-YesNo (T "Remove Python virtual environment (.venv)?" "¿Eliminar el entorno virtual de Python (.venv)?") $true
+  $RemoveFrontend = Read-YesNo (T "Remove frontend dependencies/build?" "¿Eliminar dependencias/build del frontend?") $true
+  $RemoveLogs = Read-YesNo (T "Remove logs?" "¿Eliminar logs?") $true
+  $RemoveEnv = Read-YesNo (T "Remove generated .env configuration and admin token?" "¿Eliminar la configuración .env y el token admin generado?") $true
+  $RemoveRuntimeData = Read-YesNo (T "Remove RAG index, memory, and local_sources data?" "¿Eliminar el índice RAG, memoria y local_sources?") $false
+  $RemoveRuntimeCerts = Read-YesNo (T "Remove generated local HTTPS cert files?" "¿Eliminar certificados HTTPS locales generados?") $false
+  $RemoveOllamaModels = Read-YesNo (T "Remove known Ollama models used by TrinaxAI?" "¿Eliminar los modelos Ollama conocidos usados por TrinaxAI?") $false
+  $RemoveOllamaApp = Read-YesNo (T "Remove Ollama application too?" "¿Eliminar también la aplicación Ollama?") $false
   if ($RemoveOllamaApp) { $RemoveOllamaModels = $true }
-  $RemoveFirewallRules = Read-YesNo "Remove TrinaxAI Windows Firewall rules?" $true
+  $RemoveFirewallRules = Read-YesNo (T "Remove TrinaxAI Windows Firewall rules?" "¿Eliminar las reglas de Firewall de Windows de TrinaxAI?") $true
 }
 
 if ($StopServices) {

@@ -2,6 +2,10 @@
 # TrinaxAI uninstaller. Stops services and removes selected local runtime files.
 set -euo pipefail
 
+LANGUAGE="${TRINAXAI_LANG:-${LANG:-en}}"
+LANGUAGE_LOWER="$(printf '%s' "$LANGUAGE" | tr '[:upper:]' '[:lower:]')"
+case "$LANGUAGE_LOWER" in es*|*_es*) LANGUAGE=es ;; *) LANGUAGE=en ;; esac
+
 GREEN='\033[0;32m'; BLUE='\033[0;34m'
 YELLOW='\033[1;33m'; CYAN='\033[0;36m'; NC='\033[0m'; BOLD='\033[1m'
 print_step() { echo -e "\n${BLUE}${BOLD}┌─ $1${NC}"; }
@@ -19,7 +23,26 @@ as_root() {
 }
 
 usage() {
-  cat <<EOF
+  if [ "$LANGUAGE" = "es" ]; then
+    cat <<EOF
+Desinstalador de TrinaxAI
+
+Uso:
+  ./uninstall.sh                 Desinstalación guiada (pregunta cada borrado)
+  ./uninstall.sh --yes           Desinstalación no interactiva con valores seguros
+  ./uninstall.sh --remove-data   También elimina storage RAG y local_sources
+  ./uninstall.sh --remove-models También elimina modelos Ollama conocidos
+  ./uninstall.sh --remove-ollama También elimina la aplicación Ollama
+  ./uninstall.sh --purge         Elimina datos, certificados, modelos y Ollama
+  ./uninstall.sh --keep-env      Conserva el .env generado
+  ./uninstall.sh --remove-certs  Elimina certificados HTTPS locales generados
+  ./uninstall.sh --help          Mostrar esta ayuda
+
+Siempre conserva el repositorio, código fuente, scripts, documentación, tests y
+archivos del proyecto. TRINAXAI_LANG=es selecciona la salida española.
+EOF
+  else
+    cat <<EOF
 TrinaxAI Uninstaller
 
 Usage:
@@ -33,23 +56,10 @@ Usage:
   ./uninstall.sh --remove-certs  Remove generated local HTTPS cert files
   ./uninstall.sh --help          Show this help
 
-What it asks:
-  - Stop running TrinaxAI services
-  - Disable boot autostart
-  - Remove .venv
-  - Remove chat-pwa/node_modules and chat-pwa/dist
-  - Remove logs
-  - Remove generated .env
-  - Remove RAG index/memory data
-  - Remove generated local HTTPS cert files
-  - Remove known Ollama models
-  - Remove the Ollama application
-
-What it always keeps:
-  - Git repository and source code
-  - Shell scripts, docs, tests, and project files
-  - Ollama application unless you choose to remove it
+The Git repository, source code, shell scripts, docs, tests and project files are
+always kept. TRINAXAI_LANG=es selects Spanish output.
 EOF
+  fi
   exit 0
 }
 
