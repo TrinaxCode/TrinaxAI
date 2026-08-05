@@ -449,6 +449,6 @@ AGPL-3.0-or-later — see [LICENSE](LICENSE). Name/logo usage: [TRADEMARK.md](do
 
 <p align="center">
   <strong>Built by <a href="https://github.com/TrinaxCode">TrinaxCode</a></strong><br>
-  <strong>Official Website:</strong> <a href="https://www.trinaxai.app/">TrinaxAI Web</a><br>
+  <strong>Official Website: <a href="https://www.trinaxai.app/">TrinaxAI Web</a></strong><br>
   <sub>AI should be free, private, and local.</sub>
 </p>

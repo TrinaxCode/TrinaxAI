@@ -441,6 +441,6 @@ AGPL-3.0-or-later — mira [LICENSE](LICENSE). Uso de nombre/logo: [política de
 
 <p align="center">
   <strong>Hecho por <a href="https://github.com/TrinaxCode">TrinaxCode</a></strong><br>
-  <strong>Web oficial:</strong> <a href="https://www.trinaxai.app/">TrinaxAI Web</a><br>
+  <strong>Web oficial: <a href="https://www.trinaxai.app/">TrinaxAI Web</a></strong><br>
   <sub>La IA debería ser libre, privada y local.</sub>
 </p>
