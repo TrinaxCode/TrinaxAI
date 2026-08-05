@@ -47,7 +47,7 @@ Estos valores los consume `compose.yaml`; son ajustes de despliegue, no opciones
 
 | Variable | Predeterminado | Propósito |
 |---|---|---|
-| `TRINAXAI_DOCKER_IMAGE` | `trinaxai-api:local` | Imagen backend. Usa `ghcr.io/trinaxcode/trinaxai:1.0.2` para el paquete oficial fijado. |
+| `TRINAXAI_DOCKER_IMAGE` | `trinaxai-api:local` | Imagen backend. Usa `ghcr.io/trinaxcode/trinaxai:1.1.0` para el paquete oficial fijado. |
 | `TRINAXAI_DOCKER_UID` / `TRINAXAI_DOCKER_GID` | `1000` | Identidad del host dentro del contenedor para conservar propietarios de archivos montados. |
 | `TRINAXAI_DOCKER_PORT` | `3333` | Puerto loopback del host asignado al puerto `3333` del contenedor. |
 | `TRINAXAI_DOCKER_OLLAMA_URL` | `http://host.docker.internal:11434` | Endpoint Ollama accesible desde el contenedor. |

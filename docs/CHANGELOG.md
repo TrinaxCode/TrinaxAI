@@ -5,6 +5,8 @@ All notable changes to TrinaxAI are documented here. This project follows the
 
 ## [Unreleased]
 
+## [1.1.0] — 2026-08-05
+
 ### Added
 
 - Added `trinaxai network refresh` and an accessible PWA recovery notice for
@@ -13,6 +15,51 @@ All notable changes to TrinaxAI are documented here. This project follows the
   worker to remove an installation saved at an old address.
 - A new address detects existing server state and opens pairing recovery
   instead of repeating first-time setup.
+- The CLI is now translatable through `trinaxai_cli/i18n.py`, covering the
+  app, client, doctor, help and interface output.
+- The web app ships a manifest per locale, so an installed app keeps its
+  language in the launcher.
+- Added Spanish guides for the environment-variable inventory and the model
+  benchmark.
+
+### Changed
+
+- Community documentation (changelog, contributing, security, support, code of
+  conduct, trademark) moved into `docs/`, leaving the root to entry points,
+  build and runtime configuration, and lifecycle scripts.
+- Translated documents use a single `*.es.md` convention; `docs/es/` is gone.
+- `service_manager` returns accurate exit codes on start actions and gained a
+  `reload-network` action.
+- Static translation data is bundled as its own JavaScript chunk, cutting the
+  largest chunk from 384.5 KiB to 302.3 KiB with no change to total size.
+
+### Removed
+
+- Dropped `install_ollama_16gb_profile.sh`, a wrapper that only forwarded to
+  `install.sh --profile 16gb`. Use that command directly.
+
+### Fixed
+
+- `trinaxai doctor` caps its service probe at 10s, so a slow service manager is
+  reported as a failed check instead of hanging the command.
+- Voice calls and web-search settings behave correctly, and i18n coverage now
+  extends across chat, the knowledge browser, settings and pairing.
+- The installer, update, uninstall and backup scripts are more robust on Linux,
+  macOS and Windows.
+- Identity and creator answers are resolved deterministically, so small local
+  models no longer distort them.
+- Spanish pages link Spanish targets; every relative link in the repository
+  resolves.
+
+### Security
+
+- Cryptographic material, certificates, credentials and environment files are
+  excluded from indexing (`.key`, `.pem`, `.p12`, `.pfx`, `.netrc`,
+  `credentials.json`, `secrets.json` and similar).
+- Updated `aiohttp` to 3.14.3, clearing CVE-2026-59881, CVE-2026-69243 and
+  CVE-2026-69244.
+- Patched three high-severity frontend advisories: `brace-expansion` 5.0.9,
+  `fast-uri` 3.1.5 and `undici` 7.29.0.
 
 ## [1.0.2] — 2026-08-01
 
@@ -86,6 +133,7 @@ All notable changes to TrinaxAI are documented here. This project follows the
 - CI checks Python and frontend dependencies, static high-severity findings,
   committed secrets, package builds, browser flows and public-release readiness.
 
+[1.1.0]: https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.1.0
 [1.0.2]: https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.0.2
 [1.0.1]: https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.0.1
 [1.0.0]: https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.0.0

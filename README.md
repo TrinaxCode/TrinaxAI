@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0--or--later-blue.svg" alt="AGPL-3.0-or-later"></a>
-  <a href="docs/CHANGELOG.md"><img src="https://img.shields.io/badge/version-1.0.2-006bbd.svg" alt="Version 1.0.2"></a>
+  <a href="docs/CHANGELOG.md"><img src="https://img.shields.io/badge/version-1.1.0-006bbd.svg" alt="Version 1.1.0"></a>
   <a href="https://github.com/TrinaxCode/TrinaxAI/pkgs/container/trinaxai"><img src="https://img.shields.io/badge/package-GHCR-2496ED.svg" alt="GitHub Container Registry"></a>
   <a href="#-quick-start"><img src="https://img.shields.io/badge/powered_by-Ollama-black.svg" alt="Ollama"></a>
   <a href="#️-supported-platforms"><img src="https://img.shields.io/badge/platform-Linux|macOS|Windows-lightgrey.svg" alt="Platforms"></a>
@@ -65,7 +65,7 @@ Every release publishes the RAG API image to GitHub Container Registry. The
 PWA gateway and Ollama still run on the host:
 
 ```bash
-docker pull ghcr.io/trinaxcode/trinaxai:1.0.2
+docker pull ghcr.io/trinaxcode/trinaxai:1.1.0
 ```
 
 Use it with the included `compose.yaml` by setting `TRINAXAI_DOCKER_IMAGE`.
@@ -204,7 +204,7 @@ Folder browsing exposes local directory structure only on loopback or to a paire
 - 🔄 **State and usage sync** — versioned settings/history synchronization with conflict-safe revisions, explicit deletes, and local usage statistics.
 - 🛡️ **Local-first security** — loopback services, scoped device pairing, HMAC-signed gateway, sandboxed agent.
 
-**Project version:** 1.0.2 · **License:** [AGPL-3.0-or-later](LICENSE)
+**Project version:** 1.1.0 · **License:** [AGPL-3.0-or-later](LICENSE)
 
 ---
 

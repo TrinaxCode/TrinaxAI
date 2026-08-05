@@ -23,7 +23,7 @@ from trinaxai_cli.i18n import help_text, resolve_lang
 from trinaxai_cli.ui import get_console
 
 LOG = logging.getLogger("trinaxai_cli")
-VERSION = "1.0.2"
+VERSION = "1.1.0"
 
 
 # ----------------------------------------------------------------- argparse

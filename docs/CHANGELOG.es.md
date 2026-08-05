@@ -5,6 +5,8 @@ el formato de [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Sin publicar]
 
+## [1.1.0] — 2026-08-05
+
 ### Añadido
 
 - Se agregó `trinaxai network refresh` y un aviso accesible en la PWA para
@@ -13,6 +15,55 @@ el formato de [Keep a Changelog](https://keepachangelog.com/).
   service worker para retirar una instalación guardada en una dirección anterior.
 - Una dirección nueva detecta el estado existente del servidor y abre la
   recuperación por vinculación en vez de repetir la configuración inicial.
+- La CLI ahora es traducible mediante `trinaxai_cli/i18n.py`, con cobertura en
+  la aplicación, el cliente, el diagnóstico, la ayuda y la interfaz.
+- La aplicación web publica un manifiesto por idioma, de modo que una
+  instalación conserva su idioma en el lanzador.
+- Se añadieron las guías en español del inventario de variables de entorno y
+  del benchmark de modelos.
+
+### Cambiado
+
+- La documentación comunitaria (registro de cambios, contribución, seguridad,
+  soporte, código de conducta y marca) se movió a `docs/`, dejando en la raíz
+  solo los puntos de entrada, la configuración de build y ejecución, y los
+  scripts de ciclo de vida.
+- Los documentos traducidos usan una única convención `*.es.md`; `docs/es/`
+  desapareció.
+- `service_manager` devuelve códigos de salida correctos en las acciones de
+  arranque y añade la acción `reload-network`.
+- Los datos estáticos de traducción se empaquetan en su propio fragmento de
+  JavaScript: el fragmento mayor baja de 384.5 KiB a 302.3 KiB sin cambiar el
+  tamaño total.
+
+### Eliminado
+
+- Se retiró `install_ollama_16gb_profile.sh`, un envoltorio que solo delegaba en
+  `install.sh --profile 16gb`. Usa ese comando directamente.
+
+### Corregido
+
+- `trinaxai doctor` limita a 10s el sondeo de servicios, así que un gestor lento
+  se reporta como comprobación fallida en lugar de dejar el comando colgado.
+- Las llamadas de voz y los ajustes de búsqueda web funcionan correctamente, y
+  la cobertura de i18n se extiende al chat, el explorador de conocimiento, los
+  ajustes y la vinculación.
+- Los scripts de instalación, actualización, desinstalación y respaldo son más
+  robustos en Linux, macOS y Windows.
+- Las respuestas de identidad y autoría se resuelven de forma determinista, así
+  que los modelos locales pequeños ya no las distorsionan.
+- Las páginas en español enlazan destinos en español; todos los enlaces
+  relativos del repositorio resuelven.
+
+### Seguridad
+
+- El material criptográfico, los certificados, las credenciales y los archivos
+  de entorno quedan excluidos del indexado (`.key`, `.pem`, `.p12`, `.pfx`,
+  `.netrc`, `credentials.json`, `secrets.json` y similares).
+- Se actualizó `aiohttp` a 3.14.3, resolviendo CVE-2026-59881, CVE-2026-69243 y
+  CVE-2026-69244.
+- Se corrigieron tres avisos de severidad alta en el frontend:
+  `brace-expansion` 5.0.9, `fast-uri` 3.1.5 y `undici` 7.29.0.
 
 ## [1.0.2] — 2026-08-01
 
@@ -86,6 +137,7 @@ el formato de [Keep a Changelog](https://keepachangelog.com/).
 - CI revisa dependencias Python/frontend, hallazgos estáticos de severidad alta,
   secretos, paquetes, flujos del navegador y preparación para release pública.
 
+[1.1.0]: https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.1.0
 [1.0.2]: https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.0.2
 [1.0.1]: https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.0.1
 [1.0.0]: https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.0.0

@@ -57,7 +57,7 @@ FastAPI application options.
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `TRINAXAI_DOCKER_IMAGE` | `trinaxai-api:local` | Backend image. Set `ghcr.io/trinaxcode/trinaxai:1.0.2` to use the pinned official package. |
+| `TRINAXAI_DOCKER_IMAGE` | `trinaxai-api:local` | Backend image. Set `ghcr.io/trinaxcode/trinaxai:1.1.0` to use the pinned official package. |
 | `TRINAXAI_DOCKER_UID` / `TRINAXAI_DOCKER_GID` | `1000` | Host identity used inside the container so mounted files remain owned by the caller. |
 | `TRINAXAI_DOCKER_PORT` | `3333` | Host loopback port mapped to container port `3333`. |
 | `TRINAXAI_DOCKER_OLLAMA_URL` | `http://host.docker.internal:11434` | Ollama endpoint reachable from the container. |
