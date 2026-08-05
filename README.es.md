@@ -1,7 +1,7 @@
 # 🚀 TrinaxAI — Asistente de IA Local-First
 
 <p align="center">
-  <img src="chat-pwa/public/logo-of-app.webp" alt="Logo de TrinaxAI" width="180" />
+  <a href="https://www.trinaxai.app/"><img src="chat-pwa/public/logo-of-app.webp" alt="Logo de TrinaxAI" width="180" /></a>
 </p>
 
 <p align="center">
@@ -21,10 +21,6 @@
 </p>
 
 > **⭐ Si TrinaxAI te sirve, dale una estrella al repo — ayuda a que otros lo encuentren.**
-
-**Web oficial: [trinaxai.app](https://www.trinaxai.app/)** — funciones, capturas, arquitectura, modelo de seguridad, benchmarks y guías de instalación en un solo sitio.
-
-[**English →**](README.md)
 
 ---
 
@@ -445,6 +441,6 @@ AGPL-3.0-or-later — mira [LICENSE](LICENSE). Uso de nombre/logo: [política de
 
 <p align="center">
   <strong>Hecho por <a href="https://github.com/TrinaxCode">TrinaxCode</a></strong><br>
-  <a href="https://www.trinaxai.app/">trinaxai.app</a><br>
+  <strong>Web oficial:</strong> <a href="https://www.trinaxai.app/">TrinaxAI Web</a><br>
   <sub>La IA debería ser libre, privada y local.</sub>
 </p>
