@@ -30,6 +30,13 @@ dependencies = [
   "rich>=13.0",
 ]
 
+[project.urls]
+Homepage = "https://www.trinaxai.app/"
+Documentation = "https://github.com/TrinaxCode/TrinaxAI/blob/main/docs/README.md"
+Repository = "https://github.com/TrinaxCode/TrinaxAI"
+Changelog = "https://github.com/TrinaxCode/TrinaxAI/blob/main/docs/CHANGELOG.md"
+Issues = "https://github.com/TrinaxCode/TrinaxAI/issues"
+
 [project.optional-dependencies]
 server = [
   "fastapi>=0.115",

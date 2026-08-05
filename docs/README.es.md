@@ -2,6 +2,8 @@
 
 Este directorio es el punto de entrada a la documentación técnica y operativa de **TrinaxAI 1.1.0**, publicado bajo **AGPL-3.0-or-later**. La documentación describe el código de la rama actual; cuando una opción o endpoint sea crítico, confirma también su valor en `.env.example` o en la especificación OpenAPI expuesta por FastAPI.
 
+Para la vista general del producto, las capturas y los benchmarks, consulta la web oficial: **[trinaxai.app](https://www.trinaxai.app/)**.
+
 ## Capacidades de 1.0
 
 | Área | Incluye | Referencia |

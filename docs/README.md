@@ -2,6 +2,8 @@
 
 This directory is the entry point for the technical and operational documentation of **TrinaxAI 1.1.0**, released under **AGPL-3.0-or-later**. It documents the current branch. For critical settings and endpoints, also verify `.env.example` and FastAPI's generated OpenAPI specification.
 
+For the product overview, screenshots and benchmarks, see the official website: **[trinaxai.app](https://www.trinaxai.app/)**.
+
 ## 1.0 capabilities
 
 | Area | Includes | Reference |

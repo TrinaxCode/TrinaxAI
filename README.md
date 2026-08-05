@@ -10,6 +10,7 @@
 </p>
 
 <p align="center">
+  <a href="https://www.trinaxai.app/"><img src="https://img.shields.io/badge/website-trinaxai.app-006bbd.svg" alt="Official website"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0--or--later-blue.svg" alt="AGPL-3.0-or-later"></a>
   <a href="docs/CHANGELOG.md"><img src="https://img.shields.io/badge/version-1.1.0-006bbd.svg" alt="Version 1.1.0"></a>
   <a href="https://github.com/TrinaxCode/TrinaxAI/pkgs/container/trinaxai"><img src="https://img.shields.io/badge/package-GHCR-2496ED.svg" alt="GitHub Container Registry"></a>
@@ -20,6 +21,8 @@
 </p>
 
 > **⭐ If TrinaxAI helps you, please star the repo — it helps others find it.**
+
+**Official website: [trinaxai.app](https://www.trinaxai.app/)** — features, screenshots, architecture, security model, benchmarks and install guides in one place.
 
 [**Español →**](README.es.md)
 
@@ -376,7 +379,7 @@ Common tasks are wrapped in the `Makefile` (`make dev`, `make build`, `make lint
 
 ## 📚 Documentation
 
-Start at the [documentation hub](docs/README.md). Key references:
+The [official website](https://www.trinaxai.app/) is the overview: what TrinaxAI does, how it is built, and how to install it. This repository holds the reference documentation — start at the [documentation hub](docs/README.md). Key references:
 
 | Topic | Doc |
 |---|---|
@@ -450,5 +453,6 @@ AGPL-3.0-or-later — see [LICENSE](LICENSE). Name/logo usage: [TRADEMARK.md](do
 
 <p align="center">
   <strong>Built by <a href="https://github.com/TrinaxCode">TrinaxCode</a></strong><br>
+  <a href="https://www.trinaxai.app/">trinaxai.app</a><br>
   <sub>AI should be free, private, and local.</sub>
 </p>
