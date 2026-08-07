@@ -17,7 +17,8 @@
   <a href="#-quick-start"><img src="https://img.shields.io/badge/powered_by-Ollama-black.svg" alt="Ollama"></a>
   <a href="#️-supported-platforms"><img src="https://img.shields.io/badge/platform-Linux|macOS|Windows-lightgrey.svg" alt="Platforms"></a>
   <a href="chat-pwa/README.md"><img src="https://img.shields.io/badge/PWA-ready-brightgreen.svg" alt="PWA"></a>
-  <a href="README.es.md"><img src="https://img.shields.io/badge/idioma-Español-red.svg" alt="Español"></a>
+  <a href="https://github.com/TrinaxCode/TrinaxAI/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/TrinaxCode/TrinaxAI/ci.yml?branch=main&label=CI" alt="CI"></a>
+  <a href="https://github.com/TrinaxCode/TrinaxAI/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/TrinaxCode/TrinaxAI/ci.yml?branch=main&label=tests" alt="Tests"></a>
 </p>
 
 > **⭐ If TrinaxAI helps you, please star the repo — it helps others find it.**
