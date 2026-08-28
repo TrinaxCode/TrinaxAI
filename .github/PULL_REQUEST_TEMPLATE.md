@@ -1,3 +1,5 @@
+[Versión en español](PULL_REQUEST_TEMPLATE.es.md)
+
 ## Description
 <!-- Briefly describe what this PR does. -->
 

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "trinaxai"
-version = "1.1.0"
+version = "1.2.0"
 description = "TrinaxAI — local-first AI assistant with RAG, vision, voice, CLI, and PWA."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -78,6 +78,7 @@ rerank = [
 dev = [
   "pytest>=8.0",
   "pytest-cov>=7.0",
+  "mypy>=1.13",
   "ruff>=0.8",
   "pip-audit>=2.10.1",
   "bandit>=1.9.4",
@@ -97,6 +98,8 @@ py-modules = [
   "service_manager",
   "trinaxai_core",
   "trinaxai_errors",
+  "trinaxai_index_documents",
+  "trinaxai_index_state",
   "trinaxai_index_storage",
 ]
 
@@ -124,5 +127,17 @@ extend-exclude = [
 ]
 
 [tool.ruff.lint]
-select = ["E9", "F", "I"]
-ignore = ["E501"]
+select = ["E7", "E9", "F", "I", "B", "SIM"]
+# B008 is FastAPI's dependency declaration idiom. SIM105/SIM115 cover
+# deliberate best-effort cleanup and library-owned file handles; SIM112 keeps
+# the conventional TRINAXAI_* environment names readable; SIM117 leaves
+# lock/semaphore scopes explicit.
+ignore = ["E501", "B008", "SIM105", "SIM112", "SIM115", "SIM117"]
+
+[tool.mypy]
+python_version = "3.10"
+files = ["app/security", "app/services"]
+follow_imports = "skip"
+ignore_missing_imports = true
+allow_untyped_defs = true
+check_untyped_defs = true

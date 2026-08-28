@@ -25,10 +25,10 @@ Output review is qualitative and prompt-specific.
 
 ## Embedding choice
 
-The Qwen3 model card reports multilingual MTEB means of 64.33, 69.60, and
-70.88 for its 0.6B, 4B, and 8B embedding models. TrinaxAI therefore uses those
-sizes for its 8/16 GB, max, and ultra profiles with 1024, 2560, and 4096
-dimensions respectively. A local Spanish smoke check with 0.6B also separated a relevant
+The Qwen3 model card reports multilingual MTEB means of 64.33 and 69.60 for
+its 0.6B and 4B embedding models. TrinaxAI uses the 0.6B preset on `8gb` and
+`16gb`, and the 4B preset on `32gb` and `64gb`, with 1024 and 2560 dimensions.
+There is no current 8B embedding preset. A local Spanish smoke check with 0.6B also separated a relevant
 TrinaxAI profile passage (cosine 0.6686) from an unrelated recipe (0.1820), and
 matched the equivalent English query at 0.8412. TrinaxAI adds a retrieval
 instruction to queries and embeds stored passages without it.

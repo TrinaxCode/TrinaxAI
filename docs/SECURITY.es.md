@@ -75,10 +75,14 @@ El modelo de amenazas de TrinaxAI asume:
   `403`. Solo las rutas de salud/recursos declaradas públicas quedan disponibles
   sin credencial.
 - **Token de dispositivo robado:** Es una capability bearer limitada a sus
-  scopes. La PWA guarda el token en claro en `localStorage` como identidad
-  persistente, FastAPI conserva solo un hash con clave y el host/admin puede
-  revocarlo. Empareja equipos controlados y revoca uno perdido con
-  `trinaxai pair revoke`.
+  scopes. Un claim nuevo de la PWA lo conserva únicamente en una cookie
+  `HttpOnly; SameSite=Strict` con alcance `/api/rag`; el navegador nunca recibe
+  un bearer nuevo en JSON ni lo persiste en almacenamiento web. FastAPI conserva
+  solo un hash con clave y el host/admin puede revocarlo. El almacenamiento
+  legacy solo se consume durante la migración explícita de
+  `/v1/pairing/me` y se limpia tras una respuesta exitosa. Empareja equipos
+  controlados y revoca uno perdido con `trinaxai pair revoke`; la CLI sigue usando
+  cabecera.
 - **Identidad de proxy falsificada:** El gateway quita cabeceras de identidad
   aportadas por cliente. FastAPI solo acepta una firma HMAC fresca y de un uso
   desde loopback o un peer privado de runtime configurado explícitamente;
@@ -94,13 +98,12 @@ El modelo de amenazas de TrinaxAI asume:
 ## Buenas prácticas de seguridad para quien despliega
 
 1. **Mantén FastAPI y Ollama en loopback.** Deja `TRINAXAI_UNSAFE_BIND_BACKEND=0` y publica solo el gateway autenticado.
-2. **Empareja con mínimo privilegio.** `trinaxai pair start` concede solo
-   `chat,read_private`. Añade `index`, `system` o `agent` únicamente para una
-   necesidad concreta; revisa `trinaxai pair list` y revoca equipos perdidos o
-   en desuso. Yolo HTTP remoto sigue prohibido independientemente del scope.
-3. **Conserva `TRINAXAI_ADMIN_TOKEN` en el host** como supercredencial fuerte de
-   recuperación/administración. No la copies a un navegador si basta un token
-   con scope.
+2. **Empareja con mínimo privilegio.** `trinaxai pair start` concede
+   `chat,read_private` y solo puede añadir `web`. Revisa `trinaxai pair list` y
+   revoca equipos perdidos o en desuso.
+3. **Administra solo desde `https://localhost:3334`.** Indexación, Agente,
+   modelos, dispositivos, lifecycle y restauración total requieren loopback
+   verificado aunque se envíe credencial admin o un scope retirado.
 4. **Protege los secretos de credenciales.** No compartas
    `storage/.proxy_secret` ni `storage/.device_secret`; conserva modo `0600`
    también en `storage/device_pairing.json`.

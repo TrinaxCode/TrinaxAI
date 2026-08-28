@@ -24,10 +24,10 @@ La revisión de la salida es cualitativa y depende del prompt.
 
 ## Elección de embeddings
 
-La ficha del modelo Qwen reporta medias MTEB multilingües de 64.33, 69.60 y 70.88
-para sus modelos de embeddings 0.6B, 4B y 8B. Por eso TrinaxAI usa esos tamaños
-en los perfiles 8/16 GB, max y ultra, con dimensiones 1024, 2560 y 4096,
-respectivamente. Una comprobación local en español con 0.6B separó un pasaje
+La ficha del modelo Qwen reporta medias MTEB multilingües de 64.33 y 69.60
+para sus modelos de embeddings 0.6B y 4B. TrinaxAI usa el preset 0.6B en `8gb`
+y `16gb`, y el preset 4B en `32gb` y `64gb`, con dimensiones 1024 y 2560.
+No existe un preset actual de embeddings 8B. Una comprobación local en español con 0.6B separó un pasaje
 relevante del perfil de TrinaxAI (coseno 0.6686) de una receta no relacionada
 (0.1820), y coincidió con la consulta equivalente en inglés en 0.8412. TrinaxAI
 añade una instrucción de recuperación a las consultas y embebe los pasajes

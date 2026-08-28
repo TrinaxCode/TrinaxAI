@@ -1,5 +1,5 @@
 export type AppPage = 'chat' | 'settings' | 'docs' | 'browser' | 'agent';
-export type SettingsSection = 'general' | 'web-search' | 'indexing' | 'prompts' | 'memory' | 'stats';
+export type SettingsSection = 'general' | 'web-search' | 'indexing' | 'prompts' | 'memory' | 'stats' | 'help';
 
 export interface AppRoute {
   page: AppPage;
@@ -14,6 +14,7 @@ const SETTINGS_SECTIONS = new Set<SettingsSection>([
   'prompts',
   'memory',
   'stats',
+  'help',
 ]);
 
 function safeDecode(value?: string): string | undefined {

@@ -12,16 +12,20 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi import HTTPException
+from starlette.requests import Request
 from starlette.testclient import TestClient
 
+from app.routes import pairing as pairing_routes
 from app.security.admin_auth import (
     _client_host,
     _is_lan_client,
+    _is_local_browser_origin,
     _is_local_client,
     _is_trusted_proxy_peer,
     _load_proxy_secret,
     _validate_browser_origin,
     authorize_lan_or_scope,
+    authorize_scope,
     authorize_system,
     required_scopes_for_request,
 )
@@ -61,6 +65,19 @@ class TestLocalhostIPv4:
 
     def test_public_ipv6_rejected(self):
         assert _is_lan_client("2001:4860:4860::8888") is False
+
+
+@pytest.mark.asyncio
+async def test_pairing_revoke_returns_404_for_unknown_device(monkeypatch):
+    monkeypatch.setattr(pairing_routes, "authorize_scope", lambda *_args: None)
+    monkeypatch.setattr(pairing_routes, "revoke_device", lambda _device_id: None)
+    with pytest.raises(HTTPException) as exc:
+        await pairing_routes.pairing_revoke("missing-device", _make_request())
+    assert exc.value.status_code == 404
+
+    device = {"id": "known-device", "revoked_at": 1}
+    monkeypatch.setattr(pairing_routes, "revoke_device", lambda _device_id: device)
+    assert await pairing_routes.pairing_revoke("known-device", _make_request()) == {"ok": True, "device": device}
 
 
 class TestLocalhostIPv6:
@@ -118,6 +135,12 @@ def test_admin_helper_scope_mapping_origin_and_proxy_secret(tmp_path, monkeypatc
     assert required_scopes_for_request(request("/v1/sources/docs/file", "DELETE")) == ("index",)
     assert required_scopes_for_request(request("/app-state", "GET")) == ("read_private",)
     assert required_scopes_for_request(request("/app-state", "DELETE")) == ("system",)
+    assert required_scopes_for_request(request("/attachments/a/open", "POST")) == ("system",)
+    assert required_scopes_for_request(request("/attachments/a", "DELETE")) == ("system",)
+    assert required_scopes_for_request(request("/v1/memory", "POST")) == ("system",)
+    assert required_scopes_for_request(request("/v1/memory/context", "POST")) == ("read_private",)
+    assert required_scopes_for_request(request("/v1/settings/web-search", "PUT")) == ("system",)
+    assert required_scopes_for_request(request("/v1/settings", "PUT")) == ("system",)
     assert required_scopes_for_request(request("/unknown")) == ("system",)
 
     monkeypatch.delenv("TRINAXAI_CORS_ORIGINS", raising=False)
@@ -125,6 +148,65 @@ def test_admin_helper_scope_mapping_origin_and_proxy_secret(tmp_path, monkeypatc
     bad = request("/health", headers={"origin": "https://evil.example"})
     with pytest.raises(HTTPException):
         _validate_browser_origin(bad)
+
+
+def test_loopback_auto_trust_rejects_lan_browser_origin(monkeypatch):
+    import app.security.admin_auth as auth_mod
+
+    monkeypatch.setattr(auth_mod, "ADMIN_TOKEN", "")
+    monkeypatch.setenv("TRINAXAI_CORS_ORIGIN_REGEX", r"https?://192\.168\.1\.\d+:3334")
+    request = _make_request(
+        client_host="127.0.0.1",
+        headers={"Origin": "https://192.168.1.50:3334"},
+    )
+    with pytest.raises(HTTPException) as denied:
+        authorize_system(request)
+    assert denied.value.status_code == 403
+    assert "loopback" in str(denied.value.detail).lower()
+
+
+def test_loopback_origin_parser_does_not_trust_remote_hostnames():
+    assert _is_local_browser_origin("https://localhost:3334") is True
+    assert _is_local_browser_origin("https://127.0.0.1:3334") is True
+    assert _is_local_browser_origin("https://192.168.1.50:3334") is False
+    assert _is_local_browser_origin("https://localhost.evil.example:3334") is False
+
+
+@pytest.mark.parametrize(
+    ("path", "method"),
+    [
+        ("/app-state", "DELETE"),
+        ("/system/stop-all", "POST"),
+        ("/system/index-upload", "POST"),
+        ("/v1/agent", "POST"),
+        ("/collections", "POST"),
+        ("/v1/sources/file.txt", "DELETE"),
+        ("/attachments/abc/open", "POST"),
+        ("/attachments/abc", "DELETE"),
+        ("/v1/memory", "POST"),
+        ("/v1/pairing/devices", "GET"),
+    ],
+)
+def test_remote_admin_token_never_grants_host_only_matrix(path, method, monkeypatch):
+    import app.security.admin_auth as auth_mod
+
+    monkeypatch.setattr(auth_mod, "ADMIN_TOKEN", "remote-admin")
+    request = Request(
+        {
+            "type": "http",
+            "method": method,
+            "path": path,
+            "raw_path": path.encode(),
+            "query_string": b"",
+            "headers": [(b"x-admin-token", b"remote-admin")],
+            "client": ("192.168.1.90", 50000),
+            "server": ("localhost", 3333),
+        }
+    )
+    with pytest.raises(HTTPException) as denied:
+        authorize_system(request)
+    assert denied.value.status_code == 403
+    assert "localhost" in str(denied.value.detail).lower()
 
 
 class TestClientHost:
@@ -173,12 +255,25 @@ class TestLanDocumentAccess:
         assert exc.value.status_code == 403
 
 
+def test_device_without_required_scope_cannot_fall_back_to_lan(monkeypatch):
+    import app.security.admin_auth as auth_mod
+
+    monkeypatch.setattr(auth_mod, "authenticate_device_token", lambda *_args: None)
+    request = _make_request(
+        client_host="192.168.1.50",
+        headers={"X-TrinaxAI-Device-Token": "invalid-device-token"},
+    )
+    with pytest.raises(HTTPException) as exc:
+        authorize_scope(request, "read_private")
+    assert exc.value.status_code == 403
+
+
 # ── Admin token validation ──
 
 
 class TestAdminToken:
-    def test_accepts_correct_token(self, monkeypatch):
-        """Request with the correct X-Admin-Token should pass without error."""
+    def test_accepts_correct_token_for_remote_safe_scope(self, monkeypatch):
+        """An admin token may authenticate private reads, but not host control."""
         import app.security.admin_auth as auth_mod
 
         monkeypatch.setattr(auth_mod, "ADMIN_TOKEN", "secret123")
@@ -188,7 +283,7 @@ class TestAdminToken:
             headers={"X-Admin-Token": "secret123"},
         )
         try:
-            authorize_system(req)
+            authorize_scope(req, "read_private")
         except HTTPException:
             pytest.fail("Correct admin token should be accepted.")
 
@@ -240,7 +335,7 @@ class TestAdminToken:
         with pytest.raises(HTTPException) as exc:
             authorize_system(_make_request(client_host="192.168.1.20"))
         assert exc.value.status_code == 403
-        assert "token" in str(exc.value.detail).lower()
+        assert "localhost" in str(exc.value.detail).lower()
 
 
 class TestTrustedProxyIdentity:
@@ -293,10 +388,18 @@ class TestTrustedProxyIdentity:
         monkeypatch.setattr(auth_mod, "_PROXY_SECRET", secret)
         monkeypatch.setattr(auth_mod, "ADMIN_TOKEN", "required-token")
         monkeypatch.setattr(auth_mod, "ALLOW_LAN_SYSTEM", True)
-        request = self._signed_request(auth_mod, client_ip="192.168.1.77", secret=secret)
+        request = self._signed_request(
+            auth_mod,
+            client_ip="192.168.1.77",
+            secret=secret,
+            path="/system/shutdown",
+            method="POST",
+        )
+        request.headers["X-Admin-Token"] = "required-token"
         with pytest.raises(HTTPException) as exc:
             authorize_system(request)
         assert exc.value.status_code == 403
+        assert "localhost" in str(exc.value.detail).lower()
 
     def test_forged_proxy_identity_is_rejected(self, monkeypatch):
         import app.security.admin_auth as auth_mod
@@ -412,18 +515,16 @@ class TestLANSystemControl:
             authorize_system(req)
         assert exc.value.status_code == 403
 
-    def test_allows_lan_when_enabled(self, monkeypatch):
-        """LAN access must work when TRINAXAI_ALLOW_LAN_SYSTEM=1."""
+    def test_legacy_flag_never_allows_lan(self, monkeypatch):
+        """The retired flag must never turn a LAN peer into localhost."""
         import app.security.admin_auth as auth_mod
 
         monkeypatch.setattr(auth_mod, "ALLOW_LAN_SYSTEM", True)
         monkeypatch.setattr(auth_mod, "ADMIN_TOKEN", "")
 
-        req = _make_request(client_host="192.168.1.100")
-        try:
-            authorize_system(req)
-        except HTTPException:
-            pytest.fail("LAN should be allowed when TRINAXAI_ALLOW_LAN_SYSTEM=1.")
+        with pytest.raises(HTTPException) as exc:
+            authorize_system(_make_request(client_host="192.168.1.100"))
+        assert exc.value.status_code == 403
 
     def test_public_ip_rejected_without_token(self, monkeypatch):
         """Public IPs must be rejected when no admin token is set."""
@@ -458,7 +559,7 @@ class TestSystemEndpointSafety:
         # We test with a mock client that simulates a remote request
         import rag_api
 
-        client = TestClient(rag_api.app, raise_server_exceptions=False)
+        client = TestClient(rag_api.app, raise_server_exceptions=False, client=("127.0.0.1", 50000))
 
         # Simulate request from a public IP, no token
         response = client.post(
@@ -478,7 +579,7 @@ class TestSystemEndpointSafety:
         monkeypatch.setattr(rag_api, "ADMIN_TOKEN", "test-token")
         monkeypatch.setattr(rag_api, "ALLOW_LAN_SYSTEM", False)
 
-        client = TestClient(rag_api.app, raise_server_exceptions=False)
+        client = TestClient(rag_api.app, raise_server_exceptions=False, client=("127.0.0.1", 50000))
         response = client.post(
             "/system/reload",
             headers={"X-Admin-Token": "wrong-token"},
@@ -492,7 +593,7 @@ class TestSystemEndpointSafety:
         monkeypatch.setattr(rag_api, "ADMIN_TOKEN", "my-secret")
         monkeypatch.setattr(rag_api, "ALLOW_LAN_SYSTEM", False)
 
-        client = TestClient(rag_api.app, raise_server_exceptions=False)
+        client = TestClient(rag_api.app, raise_server_exceptions=False, client=("127.0.0.1", 50000))
         response = client.post(
             "/system/reload",
             headers={"X-Admin-Token": "my-secret"},
@@ -510,7 +611,7 @@ class TestSystemEndpointSafety:
 
         # Mock _spawn_service_manager to prevent real process spawn
         with patch.object(system_service, "_spawn_service_manager"):
-            client = TestClient(rag_api.app, raise_server_exceptions=False)
+            client = TestClient(rag_api.app, raise_server_exceptions=False, client=("127.0.0.1", 50000))
             response = client.post(
                 "/system/shutdown",
                 headers={"X-Admin-Token": "shutdown-secret"},
@@ -543,7 +644,7 @@ class TestSystemEndpointSafety:
         # Mock subprocess.run to prevent real execution
         with patch("rag_api.subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(returncode=0, stdout="ok", stderr="")
-            client = TestClient(rag_api.app, raise_server_exceptions=False)
+            client = TestClient(rag_api.app, raise_server_exceptions=False, client=("127.0.0.1", 50000))
             response = client.post(
                 "/system/startup",
                 headers={"X-Admin-Token": "start-token"},
@@ -580,7 +681,7 @@ class TestRuntimeAuthorizeSystem:
             rag_api._authorize_system(req)
         assert exc.value.status_code == 403
 
-    def test_runtime_accepts_admin_token_from_public_ip(self, monkeypatch):
+    def test_runtime_rejects_admin_token_from_public_ip(self, monkeypatch):
         import rag_api
 
         monkeypatch.setattr(rag_api, "ADMIN_TOKEN", "runtime-secret")
@@ -590,7 +691,9 @@ class TestRuntimeAuthorizeSystem:
             client_host="8.8.8.8",
             headers={"X-Admin-Token": "runtime-secret"},
         )
-        rag_api._authorize_system(req)
+        with pytest.raises(HTTPException) as exc:
+            rag_api._authorize_system(req)
+        assert exc.value.status_code == 403
 
     def test_runtime_ignores_x_forwarded_for(self, monkeypatch):
         import rag_api
@@ -672,6 +775,21 @@ class TestPrivateDataEndpoints:
 
         assert denied.status_code == 403
         assert authenticated.status_code == 404
+
+    def test_remote_attachment_host_open_is_forbidden(self, monkeypatch):
+        import app.security.admin_auth as auth_mod
+        from app.main import app
+
+        monkeypatch.setattr(auth_mod, "ADMIN_TOKEN", "private-token")
+        monkeypatch.setattr(auth_mod, "ALLOW_LAN_SYSTEM", True)
+        client = TestClient(app, client=("192.168.1.50", 50000))
+
+        response = client.post(
+            f"/attachments/{'a' * 32}/open",
+            headers={"X-Admin-Token": "private-token"},
+        )
+
+        assert response.status_code == 403
 
     def test_collection_names_are_private(self, monkeypatch):
         import app.security.admin_auth as auth_mod

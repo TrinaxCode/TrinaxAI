@@ -23,6 +23,15 @@ def test_generic_analysis_does_not_trigger_deep_coder() -> None:
     assert config.route_model("analiza la historia de México con detalle") == config.MODEL_GENERAL
 
 
+def test_code_topic_explanations_do_not_trigger_coder() -> None:
+    assert config.route_model("qué es una API") == config.MODEL_GENERAL
+    assert config.route_model("cómo funciona Python") == config.MODEL_GENERAL
+
+
+def test_everyday_words_do_not_match_code_substrings() -> None:
+    assert config.route_model("¿Cuál es la capital de Francia?") == config.MODEL_GENERAL
+
+
 def test_conversation_router_infers_affinity_without_model_metadata() -> None:
     messages = [
         {"role": "user", "content": "corrige este error de Python"},

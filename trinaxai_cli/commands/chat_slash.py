@@ -9,6 +9,7 @@ from typing import Any, Callable
 
 from trinaxai_cli.commands import _system
 from trinaxai_cli.commands.chat_state import ChatState
+from trinaxai_cli.i18n import slash_help, translate
 
 
 @dataclass(frozen=True)
@@ -54,9 +55,10 @@ def _numbered_choice(ui: Any, title: str, options: list[tuple[str, str]]) -> str
     if not options:
         ui.warn(f"No options available for {title}.")
         return None
-    ui.print(title)
+    language = getattr(ui, "language", "en")
+    ui.print(translate(title, language))
     for index, (_, label) in enumerate(options, start=1):
-        ui.print(f"  {index}) {label}")
+        ui.print(f"  {index}) {translate(label, language)}")
     raw = ui.prompt("Select number (or q to cancel)").strip()
     if raw.lower() in {"q", "quit", "cancel", "0", ""}:
         return None
@@ -180,6 +182,7 @@ def _help(_arg: str, ctx: SlashContext) -> None:
 
 def _clear(_arg: str, ctx: SlashContext) -> None:
     ctx.messages.clear()
+    ctx.state.agent_messages.clear()
     ctx.ui.success("Conversation cleared.")
 
 
@@ -248,6 +251,7 @@ def _research(arg: str, ctx: SlashContext) -> None:
 def _workspace(arg: str, ctx: SlashContext) -> None:
     ctx.state.workspace = arg or "."
     ctx.state.agent_engine = None
+    ctx.state.agent_messages.clear()
     resolved = Path(ctx.state.workspace).expanduser().resolve()
     ctx.ui.success(f"Agent workspace set to: {resolved}")
 
@@ -261,6 +265,34 @@ def _yolo(_arg: str, ctx: SlashContext) -> None:
     )
 
 
+def _thinking(arg: str, ctx: SlashContext) -> None:
+    """Toggle the session preference and persist it for future CLI calls."""
+    value = arg.strip().casefold()
+    if value in {"on", "enable", "enabled", "1", "true", "si", "sí"}:
+        enabled = True
+    elif value in {"off", "disable", "disabled", "0", "false", "no"}:
+        enabled = False
+    elif not value or value in {"toggle", "alternar"}:
+        enabled = not ctx.state.thinking
+    else:
+        ctx.ui.warn("Use /thinking on, /thinking off, or /thinking toggle.")
+        return
+    ctx.state.thinking = enabled
+    if hasattr(ctx.config, "thinking_enabled"):
+        ctx.config.thinking_enabled = enabled
+        save = getattr(ctx.config, "save", None)
+        if callable(save):
+            try:
+                save()
+            except OSError as exc:
+                ctx.ui.warn(f"Thinking preference changed for this session but could not be saved: {exc}")
+    ctx.ui.success(
+        "Thinking mode enabled. Reasoning is still skipped for simple turns."
+        if enabled
+        else "Thinking mode disabled. Provider reasoning will not run."
+    )
+
+
 def _memory(_arg: str, ctx: SlashContext) -> None:
     try:
         memories = ctx.client.list_memories()
@@ -271,7 +303,7 @@ def _memory(_arg: str, ctx: SlashContext) -> None:
         ctx.ui.info("No memories stored yet.")
         return
     for item in memories[:20]:
-        ctx.ui.print(f"  • {str(item.get('text') or '').strip()[:120]}")
+        ctx.ui.print(f"  - {str(item.get('text') or '').strip()[:120]}")
 
 
 def _collections(_arg: str, ctx: SlashContext) -> None:
@@ -284,7 +316,7 @@ def _collections(_arg: str, ctx: SlashContext) -> None:
         ctx.ui.info("No collections yet. Index a folder with /index PATH.")
         return
     for item in collections:
-        ctx.ui.print(f"  • {item.get('name') or item.get('id')}  (id: {item.get('id')})")
+        ctx.ui.print(f"  - {item.get('name') or item.get('id')}  (id: {item.get('id')})")
 
 
 def _watch(_arg: str, ctx: SlashContext) -> None:
@@ -295,10 +327,10 @@ def _watch(_arg: str, ctx: SlashContext) -> None:
         return
     running = status.get("running")
     watching = ", ".join(status.get("watching") or []) or "nothing"
-    ctx.ui.info(f"Watcher: {'running' if running else 'stopped'} · watching: {watching}")
+    ctx.ui.info(f"Watcher: {'running' if running else 'stopped'} | watching: {watching}")
     job = status.get("job") if isinstance(status.get("job"), dict) else {}
     if job.get("status") and job.get("status") != "idle":
-        ctx.ui.info(f"Indexer: {job['status']} · queued: {int(job.get('pending_events') or 0)}")
+        ctx.ui.info(f"Indexer: {job['status']} | queued: {int(job.get('pending_events') or 0)}")
     if job.get("last_error"):
         ctx.ui.error(f"Last watcher error: {job['last_error']}")
 
@@ -316,6 +348,7 @@ SLASH_COMMANDS: tuple[SlashCommand, ...] = (
     SlashCommand(("/model",), "Select an installed model and mode", "tools", _model),
     SlashCommand(("/workspace",), "Set the agent workspace", "tools", _workspace),
     SlashCommand(("/yolo",), "Toggle agent auto-approve (dangerous)", "tools", _yolo),
+    SlashCommand(("/thinking", "/think"), "Enable or disable efficient reasoning", "tools", _thinking),
     SlashCommand(("/index",), "Index a folder", "tools", _index),
     SlashCommand(("/memory",), "List persistent memories", "tools", _memory),
     SlashCommand(("/collections",), "List indexed collections", "tools", _collections),
@@ -340,37 +373,7 @@ SLASH_REGISTRY = _build_registry(SLASH_COMMANDS)
 
 def _slash_help(ui: Any) -> None:
     """Render stable help while the registry remains the source of commands."""
-    ui.print(
-        "\n".join(
-            [
-                "Slash commands:",
-                "  /help              Show this help",
-                "  /exit              Exit chat",
-                "  /clear             Clear the in-memory conversation",
-                "",
-                "  Modes (auto-detected each turn, or pin one):",
-                "  /chat              General chat (isolated Ollama)",
-                "  /agent (task)      Agentic mode: read/write/run code in a workspace",
-                "  /web (query)       Web-search-grounded answer",
-                "  /research (query)  Multi-pass deep research",
-                "  /rag (collection)  Ground answers on an indexed collection",
-                "  /general           Alias of /chat",
-                "  /auto              Back to automatic mode routing",
-                "",
-                "  Tools & session:",
-                "  /model             Select an installed model and Ollama/RAG mode",
-                "  /model NAME MODE   Set directly, e.g. /model qwen3.5:4b rag",
-                "  /workspace (path)  Set the agent workspace (default: current dir)",
-                "  cd PATH            Change the session directory",
-                "  /yolo              Toggle agent auto-approve (dangerous)",
-                "  /index (path)      Index a folder, default: current directory",
-                "  /memory            List persistent memories",
-                "  /collections       List indexed collections",
-                "  /watch             Show the file-watcher status",
-                "  /status            Show local service status",
-            ]
-        )
-    )
+    ui.print(slash_help(getattr(ui, "language", "en")))
 
 
 def handle_slash(

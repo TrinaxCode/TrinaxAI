@@ -1,0 +1,67 @@
+name: Test installers
+
+on:
+  push:
+    paths:
+      - 'install.sh'
+      - 'install.ps1'
+      - 'update.sh'
+      - 'update.ps1'
+      - 'uninstall.sh'
+      - 'uninstall.ps1'
+      - 'trinaxai_manager.py'
+      - 'scripts/build_manager.py'
+      - 'test-installers.*'
+      - 'TESTING.md'
+      - '.github/workflows/test-installers.yml'
+  pull_request:
+    paths:
+      - 'install.sh'
+      - 'install.ps1'
+      - 'update.sh'
+      - 'update.ps1'
+      - 'uninstall.sh'
+      - 'uninstall.ps1'
+      - 'trinaxai_manager.py'
+      - 'scripts/build_manager.py'
+      - 'test-installers.*'
+      - 'TESTING.md'
+      - '.github/workflows/test-installers.yml'
+
+jobs:
+  shell:
+    name: Shell installers (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run syntax and dry-run checks
+        shell: bash
+        run: ./test-installers.sh
+
+  windows:
+    name: PowerShell installers (windows-latest)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Run PowerShell dry-run checks
+        shell: pwsh
+        run: .\test-installers.ps1
+      - name: Run shell syntax and dry-run checks
+        shell: bash
+        run: ./test-installers.sh
+      - name: Build Windows Manager smoke artifact
+        shell: pwsh
+        run: |
+          python -m pip install "pyinstaller==6.22.2"
+          python scripts/build_manager.py --output manager-release
+          & ".\dist\TrinaxAI-Manager.exe" --version
+          if (-not (Test-Path -LiteralPath "manager-release\TrinaxAI-Manager-Windows.exe")) {
+            throw "The Windows Manager executable was not packaged"
+          }

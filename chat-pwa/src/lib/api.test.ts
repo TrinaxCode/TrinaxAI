@@ -3,19 +3,20 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   ApiError,
   generateTitle,
+  getRelevantMemoryContext,
   analyticalQualityIssues,
   apiErrorFromPayload,
-  ApiError,
   agentWorkspaceRoot,
   buildWebSearchQuery,
-  canonicalIdentityAnswer,
   compactChatContext,
   clearOllamaModelAvailabilityCache,
   creatorSystemPrompt,
   detectTurnLanguage,
   deleteSource,
+  describeImageForAgent,
   getFileChunks,
   indexableFilesFrom,
+  listMemories,
   isWebSearchRequest,
   isAnalyticalReasoning,
   ensureOllamaModel,
@@ -26,17 +27,36 @@ import {
   ollamaSystemPrompt,
   parseOllamaJsonLine,
   parseRagSseLine,
+  readStreamLines,
   routeOllamaModel,
   resolveAgentModel,
+  resolveVisionModel,
   resolveTextModel,
   runResearch,
+  mergeContinuation,
+  MAX_VISION_IMAGE_BYTES,
+  modelSetting,
+  prepareImageForVision,
   splitAnalyticalTask,
   streamOllama,
   streamRag,
+  startLocalAi,
+  structurallyIncomplete,
+  thinkingModeEnabled,
+  userFacingErrorDetails,
   visionSystemPrompt,
 } from './api';
 
 describe('api helpers', () => {
+  it('defaults the shared thinking preference on and honors its stored value', () => {
+    localStorage.removeItem('tc-thinking-mode');
+    expect(thinkingModeEnabled()).toBe(true);
+    localStorage.setItem('tc-thinking-mode', '0');
+    expect(thinkingModeEnabled()).toBe(false);
+    localStorage.setItem('tc-thinking-mode', '1');
+    expect(thinkingModeEnabled()).toBe(true);
+  });
+
   it('normalizes every backend error without exposing server detail', () => {
     const error = apiErrorFromPayload(503, {
       error: {
@@ -65,6 +85,84 @@ describe('api helpers', () => {
     expect(error.technicalMessage).toContain('RuntimeError');
     expect(log).toHaveBeenCalled();
     log.mockRestore();
+  });
+
+  it('exposes recovery and contextual actions for local service failures', () => {
+    const unavailable = apiErrorFromPayload(503, { detail: { code: 'ollama_unavailable' } });
+    const details = userFacingErrorDetails(unavailable);
+    const emptyCollection = apiErrorFromPayload(424, { detail: { code: 'collection_empty' } });
+    const indexingDetails = userFacingErrorDetails(emptyCollection);
+    const other = userFacingErrorDetails(new ApiError('', 403));
+
+    expect(details.canStartLocalAi).toBe(true);
+    expect(details.recovery).toContain('Encender IA');
+    expect(indexingDetails.canOpenIndexing).toBe(true);
+    expect(indexingDetails.recovery).toContain('Indexación');
+    expect(userFacingErrorDetails(new ApiError('', 424, 'model_unavailable')).canOpenSettings).toBe(true);
+    expect(other.canStartLocalAi).toBe(false);
+    expect(other.canOpenIndexing).toBe(false);
+  });
+
+  it('classifies unreachable local streaming services with actionable codes', async () => {
+    clearOllamaModelAvailabilityCache();
+    const log = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('Failed to fetch')));
+    try {
+      await expect(streamOllama([{ role: 'user', content: 'hola' }], vi.fn()))
+        .rejects.toMatchObject({ code: 'ollama_unavailable' });
+      await expect(streamRag([{ role: 'user', content: 'hola' }], vi.fn()))
+        .rejects.toMatchObject({ code: 'rag_unavailable' });
+    } finally {
+      log.mockRestore();
+      vi.unstubAllGlobals();
+      clearOllamaModelAvailabilityCache();
+    }
+  });
+
+  it('flushes a split UTF-8 character at the end of a stream', async () => {
+    const encoded = new TextEncoder().encode('data: á');
+    const split = [...encoded].findIndex((byte) => byte === 0xc3);
+    const lines: string[] = [];
+    const response = new Response(new ReadableStream({
+      start(controller) {
+        controller.enqueue(encoded.slice(0, split + 1));
+        controller.enqueue(encoded.slice(split + 1));
+        controller.close();
+      },
+    }));
+
+    await readStreamLines(response, undefined, (line) => lines.push(line));
+
+    expect(lines).toEqual(['data: á']);
+  });
+
+  it('starts local AI through the protected same-origin endpoint', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+    sessionStorage.setItem('trinaxai-admin-token', 'admin-test-token');
+
+    await startLocalAi();
+
+    expect(fetchMock).toHaveBeenCalledWith('/api/system/startup', expect.objectContaining({
+      method: 'POST',
+      headers: expect.any(Headers),
+    }));
+    const request = fetchMock.mock.calls[0][1] as RequestInit;
+    expect((request.headers as Headers).get('X-Admin-Token')).toBe('admin-test-token');
+    vi.unstubAllGlobals();
+  });
+
+  it('rejects malformed memory payloads instead of treating them as empty', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response('null', { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ memories: ['not-an-entry'] }), { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      await expect(listMemories()).rejects.toMatchObject({ errorCode: 'ERR_INTERNAL_SERVER_ERROR' });
+      await expect(getRelevantMemoryContext('current task')).rejects.toMatchObject({ errorCode: 'ERR_INTERNAL_SERVER_ERROR' });
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it('does not keep a broad Documents folder as the agent workspace', () => {
@@ -128,6 +226,68 @@ describe('api helpers', () => {
     } finally {
       vi.unstubAllGlobals();
     }
+  });
+
+  it('streams Search Mode tokens and keeps final sources', async () => {
+    const encoder = new TextEncoder();
+    const sse = [
+      'data: {"choices":[{"delta":{"content":"Primero "}}]}\n\n',
+      'data: {"choices":[{"delta":{"content":"segundo"}}]}\n\n',
+      'data: {"trinaxai_sources":[{"file":"https://example.test","url":"https://example.test","title":"Artículo","project":"","snippet":"evidence","score":null}],"trinaxai_research":{"passes":1,"web_search":true,"web_provider":"duckduckgo","search_query":"consulta fuente oficial"}}\n\n',
+      'data: [DONE]\n\n',
+    ].join('');
+    const tokens: string[] = [];
+    const fetchMock = vi.fn().mockImplementation((_url: string, init?: RequestInit) => {
+      if (String(init?.body || '').includes('"stream":true')) {
+        return Promise.resolve(new Response(new ReadableStream({
+          start(controller) {
+            controller.enqueue(encoder.encode(sse));
+            controller.close();
+          },
+        }), { status: 200 }));
+      }
+      return Promise.resolve(new Response(JSON.stringify({ ok: true, model: 'granite4:3b' }), { status: 200 }));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      await expect(runResearch('consulta', { webSearch: true, onToken: (token) => tokens.push(token) })).resolves.toMatchObject({
+        answer: 'Primero segundo',
+        sources: [{ title: 'Artículo' }],
+        search_query: 'consulta fuente oficial',
+      });
+      expect(tokens).toEqual(['Primero ', 'segundo']);
+      expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toMatchObject({ stream: true });
+    } finally { vi.unstubAllGlobals(); }
+  });
+
+  it('preserves streamed research failure metadata for the UI and export', async () => {
+    const encoder = new TextEncoder();
+    const sse = [
+      'data: {"choices":[{"delta":{"content":"Fallback"}}]}\n\n',
+      'data: {"trinaxai_sources":[],"trinaxai_research":{"passes":1,"degraded":true,"error_code":"web_search_unavailable","error_detail":"Provider refused the request.","failure_reason":"provider_error","failure_message":"Live search was unavailable."}}\n\n',
+      'data: [DONE]\n\n',
+    ].join('');
+    const fetchMock = vi.fn().mockImplementation((_url: string, init?: RequestInit) => {
+      if (String(init?.body || '').includes('"stream":true')) {
+        return Promise.resolve(new Response(new ReadableStream({
+          start(controller) {
+            controller.enqueue(encoder.encode(sse));
+            controller.close();
+          },
+        }), { status: 200 }));
+      }
+      return Promise.resolve(new Response(JSON.stringify({ ok: true, model: 'granite4:3b' }), { status: 200 }));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      await expect(runResearch('consulta', { webSearch: true, onToken: () => undefined })).resolves.toMatchObject({
+        degraded: true,
+        error_code: 'web_search_unavailable',
+        error_detail: 'Provider refused the request.',
+        failure_reason: 'provider_error',
+        failure_message: 'Live search was unavailable.',
+      });
+    } finally { vi.unstubAllGlobals(); }
   });
 
   it('distinguishes an unavailable RAG service when Ollama is reachable', async () => {
@@ -273,17 +433,76 @@ describe('api helpers', () => {
   });
 
   it('keeps vision presets sized for each hardware profile', () => {
-    expect(MODEL_PRESETS.low['tc-models-vision']).toBe('qwen3.5:2b');
-    expect(MODEL_PRESETS.balanced['tc-models-vision']).toBe('qwen3.5:4b');
-    expect(MODEL_PRESETS.max['tc-models-vision']).toBe('qwen3.5:9b');
-    expect(MODEL_PRESETS.ultra['tc-models-vision']).toBe('qwen3.5:35b');
+    expect(Object.keys(MODEL_PRESETS)).toEqual(['8gb', '16gb', '32gb', '64gb']);
+    expect(MODEL_PRESETS['8gb']['tc-models-vision']).toBe('qwen3.5:2b');
+    expect(MODEL_PRESETS['16gb']['tc-models-vision']).toBe('qwen3.5:4b');
+    expect(MODEL_PRESETS['32gb']['tc-models-vision']).toBe('qwen3.5:9b');
+    expect(MODEL_PRESETS['64gb']['tc-models-vision']).toBe('qwen3.5:35b');
+  });
+
+  it('rejects oversized vision input before reading it into memory', async () => {
+    const file = { type: 'image/jpeg', size: MAX_VISION_IMAGE_BYTES + 1 } as File;
+    await expect(prepareImageForVision(file)).rejects.toThrow('demasiado grande');
   });
 
   it('scales embedding quality only on memory-rich profiles', () => {
-    expect(MODEL_PRESETS.low['tc-models-embed']).toBe('qwen3-embedding:0.6b');
-    expect(MODEL_PRESETS.balanced['tc-models-embed']).toBe('qwen3-embedding:0.6b');
-    expect(MODEL_PRESETS.max['tc-models-embed']).toBe('qwen3-embedding:4b');
-    expect(MODEL_PRESETS.ultra['tc-models-embed']).toBe('qwen3-embedding:8b');
+    expect(MODEL_PRESETS['8gb']['tc-models-embed']).toBe('qwen3-embedding:0.6b');
+    expect(MODEL_PRESETS['16gb']['tc-models-embed']).toBe('qwen3-embedding:0.6b');
+    expect(MODEL_PRESETS['32gb']['tc-models-embed']).toBe('qwen3-embedding:4b');
+    expect(MODEL_PRESETS['64gb']['tc-models-embed']).toBe('qwen3-embedding:4b');
+  });
+
+  it('migrates retired installed-model settings to the 16 GB profile', () => {
+    localStorage.removeItem('tc-model-defaults-v6');
+    localStorage.setItem('tc-models-chat', 'llama3.2:3b');
+    localStorage.setItem('tc-models-vision', 'qwen2.5vl:3b');
+    localStorage.setItem('tc-models-code', 'qwen2.5-coder:3b');
+
+    expect(modelSetting('tc-models-chat', 'fallback')).toBe('qwen3.5:4b');
+    expect(modelSetting('tc-models-vision', 'fallback')).toBe('qwen3.5:4b');
+    expect(modelSetting('tc-models-code', 'fallback')).toBe('qwen3.5:4b');
+  });
+
+  it('falls back to an installed vision-capable model when the configured one is absent', async () => {
+    clearOllamaModelAvailabilityCache();
+    localStorage.removeItem('tc-model-defaults-v6');
+    localStorage.setItem('tc-models-vision', 'qwen3.5:4b');
+    vi.stubGlobal('fetch', vi.fn((url: string) => url.endsWith('/api/tags')
+      ? Promise.resolve(new Response(JSON.stringify({ models: [
+        { name: 'qwen3.5:2b', capabilities: ['vision', 'completion'] },
+        { name: 'qwen3-embedding:0.6b', capabilities: ['embedding'] },
+      ] }), { status: 200 }))
+      : Promise.resolve(new Response('{}', { status: 200 }))));
+    try {
+      await expect(resolveVisionModel('')).resolves.toBe('qwen3.5:2b');
+    } finally {
+      clearOllamaModelAvailabilityCache();
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('rejects a truncated vision description stream used by Agent Mode', async () => {
+    clearOllamaModelAvailabilityCache();
+    localStorage.setItem('tc-models-vision', 'qwen3.5:4b');
+    const encoder = new TextEncoder();
+    const fetchMock = vi.fn((url: string) => url.endsWith('/api/tags')
+      ? Promise.resolve(new Response(JSON.stringify({ models: [{ name: 'qwen3.5:4b', capabilities: ['vision'] }] }), { status: 200 }))
+      : Promise.resolve(new Response(new ReadableStream({
+        start(controller) {
+          controller.enqueue(encoder.encode('{"message":{"content":"partial"}}\n'));
+          controller.close();
+        },
+      }), { status: 200 })));
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      await expect(describeImageForAgent('data:image/png;base64,AA==', '¿Qué se ve?')).rejects.toMatchObject({
+        status: 502,
+        code: 'stream_incomplete',
+      });
+    } finally {
+      clearOllamaModelAvailabilityCache();
+      vi.unstubAllGlobals();
+    }
   });
 
   it('removes only previously managed profile models before pulling the new profile', async () => {
@@ -291,6 +510,7 @@ describe('api helpers', () => {
     const requests: Array<[string, RequestInit | undefined]> = [];
     vi.stubGlobal('fetch', vi.fn((url: string, init?: RequestInit) => {
       requests.push([url, init]);
+      if (url.endsWith('/api/pull')) return Promise.resolve(new Response('{"status":"success"}', { status: 200 }));
       return Promise.resolve(new Response('{}', { status: 200 }));
     }));
 
@@ -300,10 +520,82 @@ describe('api helpers', () => {
       && init?.method === 'DELETE' && String(init.body).includes('granite4:3b'))).toBe(true);
     expect(requests.some(([url, init]) => url.endsWith('/api/delete')
       && String(init.body).includes('bge-m3'))).toBe(false);
+    const pull = requests.find(([url]) => url.endsWith('/api/pull'));
+    expect(pull).toBeDefined();
+    expect(JSON.parse(String(pull?.[1]?.body))).toMatchObject({ model: 'qwen3.5:2b', stream: true });
     expect(JSON.parse(localStorage.getItem('tc-managed-ollama-models') || '[]')).toEqual([
       'bge-m3', 'qwen3.5:2b',
     ]);
     vi.unstubAllGlobals();
+  });
+
+  it('consumes Ollama pull progress before marking a model managed', async () => {
+    const progress: Array<[string, number, number]> = [];
+    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(new Response(
+      '{"status":"pulling","completed":50,"total":100}\n{"status":"success"}',
+      { status: 200, headers: { 'Content-Type': 'application/x-ndjson' } },
+    ))));
+
+    await reconcileManagedModels(['qwen3.5:4b'], (model, completed, total) => {
+      progress.push([model, completed, total]);
+    });
+
+    expect(progress).toEqual([['qwen3.5:4b', 50, 100]]);
+    expect(JSON.parse(localStorage.getItem('tc-managed-ollama-models') || '[]')).toContain('qwen3.5:4b');
+    vi.unstubAllGlobals();
+  });
+
+  it('does not mark a model managed when its pull stream is truncated', async () => {
+    localStorage.removeItem('tc-managed-ollama-models');
+    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(new Response(
+      '{"status":"pulling","completed":50,"total":100}',
+      { status: 200, headers: { 'Content-Type': 'application/x-ndjson' } },
+    ))));
+
+    await expect(reconcileManagedModels(['qwen3.5:4b'])).rejects.toMatchObject({ code: 'stream_incomplete' });
+    expect(JSON.parse(localStorage.getItem('tc-managed-ollama-models') || '[]')).not.toContain('qwen3.5:4b');
+    vi.unstubAllGlobals();
+  });
+
+  it('cancels an Ollama pull reader when the backend sends an error frame', async () => {
+    let cancelled = false;
+    const encoder = new TextEncoder();
+    const body = new ReadableStream({
+      start(controller) {
+        controller.enqueue(encoder.encode('{"error":"disk full"}\n'));
+      },
+      cancel() {
+        cancelled = true;
+      },
+    });
+    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(new Response(body, { status: 200 }))));
+
+    try {
+      await expect(reconcileManagedModels(['qwen3.5:4b'])).rejects.toMatchObject({ code: 'model_loading_failed' });
+      expect(cancelled).toBe(true);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('uses Ollama pull model field and drains automatic downloads', async () => {
+    clearOllamaModelAvailabilityCache();
+    localStorage.setItem('tc-auto-download-models', '1');
+    const fetchMock = vi.fn((url: string) => {
+      if (url.endsWith('/api/tags')) return Promise.resolve(new Response(JSON.stringify({ models: [] }), { status: 200 }));
+      return Promise.resolve(new Response('{"status":"success"}\n', { status: 200 }));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      await ensureOllamaModel('qwen3.5:4b');
+      const pull = fetchMock.mock.calls.find(([url]) => String(url).endsWith('/api/pull'));
+      expect(pull).toBeDefined();
+      expect(JSON.parse(String(pull?.[1]?.body))).toMatchObject({ model: 'qwen3.5:4b', stream: true });
+    } finally {
+      localStorage.removeItem('tc-auto-download-models');
+      clearOllamaModelAvailabilityCache();
+      vi.unstubAllGlobals();
+    }
   });
 
   it('keeps the warm coder for an ambiguous follow-up', () => {
@@ -408,6 +700,9 @@ def mystery(A):
     expect(parseRagSseLine('data: {"trinaxai":{"model":"m","project":"p"}}')).toEqual({
       meta: { model: 'm', project: 'p' },
     });
+    expect(parseRagSseLine('data: {"trinaxai":{"error_code":"collection_empty"}}')).toEqual({
+      meta: { errorCode: 'collection_empty' },
+    });
     expect(parseRagSseLine('data: [DONE]')).toEqual({ done: true });
   });
 
@@ -428,6 +723,14 @@ def mystery(A):
     expect(parseOllamaJsonLine('{"message":{"content":"rojo"},"done":false}')).toEqual({ token: 'rojo' });
     expect(parseOllamaJsonLine('{"message":{"content":""},"done":true,"done_reason":"length"}'))
       .toEqual({ doneReason: 'length' });
+  });
+
+  it('keeps Ollama thinking and final content as separate parser channels', () => {
+    expect(parseOllamaJsonLine('{"message":{"content":"final","thinking":"paso"}}'))
+      .toEqual({ token: 'final', thinking: 'paso' });
+    expect(parseRagSseLine('data: {"trinaxai_thinking":"paso"}')).toEqual({ thinking: 'paso' });
+    expect(parseRagSseLine('data: {"trinaxai_timing":{"total_ms":42.5,"thinking_duration_ms":12.5}}'))
+      .toEqual({ meta: { totalMs: 42.5, thinkingDurationMs: 12.5 }, thinkingDurationMs: 12.5 });
   });
 
   it('supports explicit multi-context RAG collection selection', () => {
@@ -476,25 +779,21 @@ def mystery(A):
     expect(compacted.at(-1)?.content).toContain('x'.repeat(100));
   });
 
-  it('answers fixed identity facts without loading or prompting a local model', async () => {
-    const creator = canonicalIdentityAnswer([{ role: 'user', content: '¿quien te creo?' }]);
-    const identity = canonicalIdentityAnswer([{ role: 'user', content: 'quién eres' }]);
-    const fetchMock = vi.fn();
-    vi.stubGlobal('fetch', fetchMock);
-    try {
-      const tokens: string[] = [];
-      await expect(streamOllama([{ role: 'user', content: 'quien te creo' }], (token) => tokens.push(token)))
-        .resolves.toBe(creator);
-      expect(identity).toContain('Soy TrinaxAI');
-      expect(creator).toContain('TrinaxAI fue creado por TrinaxCode');
-      expect(tokens).toEqual([creator]);
-      expect(fetchMock).not.toHaveBeenCalled();
-    } finally {
-      vi.unstubAllGlobals();
-    }
+  it('preserves the current request and system policy while joining a split Markdown answer', () => {
+    const compacted = compactChatContext([
+      { role: 'system', content: 'policy' },
+      { role: 'user', content: 'old request '.repeat(30) },
+      { role: 'assistant', content: 'old answer '.repeat(30) },
+      { role: 'user', content: 'current request' },
+    ], 80);
+
+    expect(compacted.some((message) => message.role === 'system')).toBe(true);
+    expect(compacted.some((message) => message.content.includes('current request'))).toBe(true);
+    expect(structurallyIncomplete('```ts\nconst value = 1')).toBe(true);
+    expect(mergeContinuation('```ts\nconst value = 1', '```ts\n\n\nconst value = 2\n```')).toBe('```ts\nconst value = 1\nconst value = 2\n```');
   });
 
-  it('authenticates Ollama discovery and streamed chat requests', async () => {
+  it('sends casual messages to Ollama without unnecessary reasoning', async () => {
     clearOllamaModelAvailabilityCache();
     sessionStorage.setItem('trinaxai-admin-token', 'ollama-secret');
     const fetchMock = vi.fn().mockImplementation((input: RequestInfo | URL) => {
@@ -512,8 +811,9 @@ def mystery(A):
     });
     vi.stubGlobal('fetch', fetchMock);
     try {
-      const answer = await streamOllama([{ role: 'user', content: 'salúdame brevemente' }], () => undefined);
+      const answer = await streamOllama([{ role: 'user', content: 'hola bro' }], () => undefined);
       expect(answer).toBe('hola');
+      expect(JSON.parse(fetchMock.mock.calls.find(([input]) => String(input).endsWith('/api/ollama/api/chat'))?.[1]?.body as string).think).toBe(false);
       const ollamaCalls = fetchMock.mock.calls.filter(([input]) => String(input).includes('/api/ollama/'));
       expect(ollamaCalls.length).toBeGreaterThanOrEqual(2);
       ollamaCalls.forEach(([, init]) => {
@@ -558,6 +858,33 @@ def mystery(A):
       ]));
     } finally {
       sessionStorage.clear();
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('localizes empty-collection streams and exposes no English token to the UI', async () => {
+    const previousLang = document.documentElement.lang;
+    localStorage.setItem('tc-lang', 'es');
+    document.documentElement.lang = 'en';
+    const frames = [
+      'data: {"trinaxai":{"mode":"knowledge","error_code":"collection_empty"}}',
+      'data: {"choices":[{"delta":{"content":"The selected collection contains no indexed documents."}}]}',
+      'data: {"trinaxai_sources":[],"trinaxai_retrieval":{"mode":"knowledge","error_code":"collection_empty"}}',
+      'data: [DONE]',
+      '',
+    ].join('\n');
+    const tokens: string[] = [];
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(frames, { status: 200 })));
+    try {
+      await expect(streamRag([{ role: 'user', content: 'consulta' }], (token) => tokens.push(token)))
+        .rejects.toMatchObject({
+          code: 'collection_empty',
+          message: 'La colección seleccionada no contiene documentos indexados.',
+        });
+      expect(tokens).toEqual([]);
+    } finally {
+      localStorage.removeItem('tc-lang');
+      document.documentElement.lang = previousLang;
       vi.unstubAllGlobals();
     }
   });

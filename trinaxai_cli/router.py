@@ -65,6 +65,10 @@ EXPLICIT_WEB = re.compile(
     r"\b(?:busca|buscar|consulta|investiga|verifica|search|check)\b",
     re.I,
 )
+DIRECT_LOOKUP = re.compile(
+    r"\b(?:busca|buscar|buscame|búscame|buscalo|búscalo|search|look\s+up|find\s+out)\b\s+(?!como\b|how\b)\S+",
+    re.I,
+)
 CURRENT_INFO = re.compile(
     r"\b(?:actual|actualmente|ahora|hoy|ultima|ultimo|ultimas|ultimos|reciente|noticias|"
     r"novedades|temporada|precio|cotizacion|version actual|latest|current|today|recent|"
@@ -72,9 +76,11 @@ CURRENT_INFO = re.compile(
     re.I,
 )
 DEEP = re.compile(
-    r"\b(?:investiga a fondo|investigacion profunda|modo investigacion|analisis exhaustivo|"
+    r"\b(?:investiga a fondo|investigacion profunda|investigacion compleja|modo investigacion|"
+    r"analisis exhaustivo|estudio exhaustivo|analisis comparativo|revision de varias fuentes|"
     r"informe detallado|compara varias fuentes|multiples fuentes|distintas perspectivas|"
-    r"deep\s*research|research thoroughly|comprehensive research|multiple sources|detailed report)\b",
+    r"deep\s*research|research thoroughly|complex research|comprehensive research|multiple sources|"
+    r"detailed report|comparative analysis)\b",
     re.I,
 )
 LOCAL_GROUNDING = re.compile(
@@ -83,16 +89,34 @@ LOCAL_GROUNDING = re.compile(
     r"my project|my repo|knowledge base)\b",
     re.I,
 )
+PERSONAL_KNOWLEDGE = re.compile(
+    r"\b(?:he hecho|hice|he creado|mis programas|mis proyectos|mi trabajo|mi codigo|"
+    r"mis aplicaciones|cuando hice|lo que hice|lo que he hecho|proyectos que hice|proyectos hice|"
+    r"i made|i created|what i made|what i built|my projects|my work|my code|my apps|projects i made)\b",
+    re.I,
+)
 AGENT_ACTION = re.compile(
     r"\b(?:modifica|edita|corrige|implementa|agrega|anade|elimina|refactoriza|ejecuta|instala|"
-    r"actualiza|crea|arregla|aplica|modify|edit|fix|implement|add|delete|remove|refactor|run|"
-    r"execute|install|update|create|apply)\b",
+    r"actualiza|crea|crear|arregla|aplica|disena|disenar|modify|edit|fix|implement|add|delete|remove|"
+    r"refactor|run|execute|install|update|create|apply|design|build|develop)\b",
     re.I,
 )
 AGENT_TARGET = re.compile(
     r"\b(?:archivo|archivos|proyecto|repo|repositorio|codigo fuente|componente|tests?|pruebas|"
-    r"comando|terminal|dependencias|package\.json|file|files|project|repository|codebase|"
-    r"component|command|dependencies)\b",
+    r"comando|terminal|dependencias|package\.json|pagina web|sitio web|landing page|frontend|"
+    r"front-end|interfaz web|aplicacion web|web app|website|web|file|files|project|repository|codebase|"
+    r"component|command|dependencies|web interface)\b",
+    re.I,
+)
+EDUCATIONAL_ONLY = re.compile(
+    r"\b(?:explica(?:me|r)?|como|ejemplo|ensena(?:me|r)?|explain|how to|example|teach)\b.{0,100}"
+    r"\b(?:editar|modificar|corregir|ejecutar|instalar|crear|construir|disenar|desarrollar|"
+    r"edit|modify|fix|run|install|create|build|design|develop)\b",
+    re.I,
+)
+EXPLICIT_NEGATION = re.compile(
+    r"\b(?:no|sin|never|don't|do not|solo|just)\b.{0,40}"
+    r"\b(?:modificar|editar|ejecutar|instalar|modify|edit|run|install)\b",
     re.I,
 )
 
@@ -110,25 +134,45 @@ def decide_mode(prompt: str, context: RouteContext | None = None) -> RouteDecisi
 
     if EXPLICIT_AGENT.search(current):
         return RouteDecision("agent", "rule", "explicit_agent", announce=True)
+    local_grounding = bool(LOCAL_GROUNDING.search(contextual) or PERSONAL_KNOWLEDGE.search(contextual))
+    direct_lookup = bool(DIRECT_LOOKUP.search(current))
+    explicit_web = bool(EXPLICIT_WEB.search(current))
+    agent_task = bool(AGENT_ACTION.search(current)) and bool(AGENT_TARGET.search(contextual))
+    needs_web_evidence = bool(explicit_web or CURRENT_INFO.search(current) or DEEP.search(current))
+    needs_combined_evidence = local_grounding and needs_web_evidence
+    educational_only = bool(EDUCATIONAL_ONLY.search(current) or EXPLICIT_NEGATION.search(current))
+    if (
+        (agent_task and not ctx.has_documents or needs_combined_evidence)
+        and not educational_only
+        and ctx.engine != "rag"
+        and not ctx.web_mode
+        and not ctx.research_mode
+    ):
+        return RouteDecision("agent", "rule", "workspace_action" if agent_task else "hybrid_evidence", announce=True)
+    if local_grounding and not explicit_web and not CURRENT_INFO.search(current):
+        return RouteDecision("rag", "rule", "local_grounding", announce=True)
+    if (
+        direct_lookup
+        and not explicit_web
+        and not educational_only
+        and not local_grounding
+        and not DEEP.search(current)
+        and ctx.engine != "rag"
+        and not ctx.web_mode
+        and not ctx.research_mode
+    ):
+        return RouteDecision("web", "rule", "direct_lookup", web_search=True, announce=True)
     if ctx.web_mode and ctx.research_mode:
         return RouteDecision("deep_research", "manual", "manual_web_research", web_search=True, depth=3)
     if ctx.web_mode:
         return RouteDecision("web", "manual", "manual_web", web_search=True)
     if ctx.research_mode:
         return RouteDecision("deep_research", "manual", "manual_research", depth=2)
-    if EXPLICIT_WEB.search(current):
+    if explicit_web:
         return RouteDecision("web", "rule", "explicit_web", web_search=True, announce=True)
 
-    agent_task = bool(AGENT_ACTION.search(current)) and bool(AGENT_TARGET.search(contextual))
-    if agent_task and not ctx.has_documents:
-        return RouteDecision("agent", "rule", "workspace_action", announce=True)
-
     if DEEP.search(current):
-        local = (
-            bool(LOCAL_GROUNDING.search(contextual))
-            and not EXPLICIT_WEB.search(current)
-            and not CURRENT_INFO.search(current)
-        )
+        local = local_grounding and not explicit_web and not CURRENT_INFO.search(current)
         return RouteDecision(
             "deep_research",
             "rule",
@@ -139,8 +183,6 @@ def decide_mode(prompt: str, context: RouteContext | None = None) -> RouteDecisi
         )
     if CURRENT_INFO.search(current):
         return RouteDecision("web", "rule", "current_information", web_search=True, announce=True)
-    if LOCAL_GROUNDING.search(current):
-        return RouteDecision("rag", "rule", "local_grounding", announce=True)
     if ctx.engine == "rag":
         return RouteDecision("rag", "manual", "manual_rag")
     return RouteDecision("chat", "rule", "ordinary_chat")

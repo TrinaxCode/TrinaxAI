@@ -1,5 +1,12 @@
 # TrinaxAI Developer Guide
 
+[Versión en español](DEVELOPER_GUIDE.es.md)
+
+Use the [documentation hub](README.md) to choose the right reference. When a
+user-facing behavior changes, update the English guide, its `.es.md` counterpart,
+the relevant in-app Docs section, and `CHANGELOG.md`. For user-facing failures,
+keep the action map aligned with [Troubleshooting](TROUBLESHOOTING.md).
+
 ## Setup
 
 ```bash
@@ -42,8 +49,8 @@ cp .env.example .env
 │
 ├── chat-pwa/              # React PWA frontend
 │   ├── src/components/    # React UI components
-│   ├── src/lib/           # API layer, config, shared state, user profile
-│   ├── src/hooks/         # useChatHistory and useStreamChat
+│   ├── src/lib/           # API domains/facade, config, shared state, profile
+│   ├── src/hooks/         # chat/Agent controllers and stream lifecycle
 │   ├── src/i18n/          # Spanish/English translations
 │   └── vite.config.ts     # Build config, PWA plugin, API proxy
 │
@@ -120,7 +127,9 @@ cp .env.example .env
 
 3. Add or update the Pydantic contract in `app/schemas/`.
 4. Add a route-contract test and update `docs/API_REFERENCE.md`.
-5. If the PWA needs it, add the fetch function in `chat-pwa/src/lib/api.ts`.
+5. If the PWA needs it, add the fetch function to the relevant
+   `chat-pwa/src/lib/api_*.ts` domain; update `api.ts` only when its public
+   export surface changes.
 
 ---
 
@@ -145,7 +154,8 @@ Verifies: Ollama running, embedding works, RAG query works.
 ```bash
 python scripts/public_readiness.py
 ```
-Checks: required files, hardcoded paths, i18n coverage, Python compile.
+Checks: required files, public-path and secret hygiene, i18n coverage, Python
+tests/compile, frontend type checking, and the production PWA build.
 
 ### CI
 `.github/workflows/ci.yml` runs on push/PR:
@@ -157,13 +167,17 @@ Checks: required files, hardcoded paths, i18n coverage, Python compile.
 
 ## Debugging Tips
 
+Start with the [troubleshooting and recovery guide](TROUBLESHOOTING.md). It
+explains when to retry, start AI, open indexing, reload a published index, or
+perform a full reindex.
+
 ### RAG API not starting
 ```bash
 # Check port
 lsof -i :3333
 
 # Run directly with verbose output
-python -c "import uvicorn; uvicorn.run('rag_api:app', host='0.0.0.0', port=3333, reload=True)"
+python -c "import uvicorn; uvicorn.run('rag_api:app', host='127.0.0.1', port=3333, reload=True)"
 ```
 
 ### Ollama not responding
@@ -182,12 +196,21 @@ npx vite --host 0.0.0.0 --port 3334
 # Check console for errors, CORS issues, or cert problems
 ```
 
+Use `--host 127.0.0.1` for local-only debugging. Keep `0.0.0.0` for a
+trusted private-network device test only, and never expose the development
+server or backend ports to the public Internet.
+
 ### Indexing issues
+
+Prefer the PWA's **Retry** action or `trinaxai index PATH`. The following is a
+destructive developer-only reset: back up `storage/`, stop the services, and
+confirm that a complete rebuild is actually required before running it.
+
 ```bash
-# Full reindex (nuclear option)
+# Full reindex (destructive developer reset)
 rm -rf storage/docstore.json storage/index_store.json storage/manifest.json
 python index.py
-curl -k -X POST http://localhost:3333/system/reload
+curl --cacert PATH_TO_PUBLIC_CA.pem -X POST https://localhost:3333/system/reload
 ```
 
 ---
@@ -234,6 +257,10 @@ Lazy-loaded pages (`React.lazy`) load on demand: `Settings`, `OnboardingWizard`,
 ## Common Tasks
 
 ### Reset everything
+
+This removes local indexes and built frontend output. Back up `storage/` and
+`.env` first; use the guided backup if the data matters.
+
 ```bash
 ./shutdown_ai.sh
 rm -rf storage/ chat-pwa/dist/
@@ -243,13 +270,29 @@ python index.py
 
 ### Update dependencies
 ```bash
-./update.sh  # backup, git pull, pip install, npm ci, rebuild PWA
+./update.sh  # backup, archive update, pip install, npm ci, rebuild PWA
 ```
 
 ### Add a new language
 1. Create `chat-pwa/src/i18n/translations.ts` entry for the new locale
 2. Update `I18nContext.tsx` to include the new language
 3. Add language option in `OnboardingWizard.tsx`
+
+### Update documentation
+
+Keep these layers aligned:
+
+1. The root README for the user-facing overview and quick start.
+2. `docs/` for complete operational and technical references.
+3. `chat-pwa/README.md` for frontend runtime/development details.
+4. `chat-pwa/src/components/Docs.tsx` for short, bilingual in-app guidance.
+5. `docs/TROUBLESHOOTING.md` and `.es.md` for recovery decisions and support data.
+
+Check commands against `trinaxai_cli/app.py`, routes against
+`app/routes/`/`/openapi.json`, environment names against `.env.example`,
+frontend scripts against `chat-pwa/package.json`, and visible error actions
+against `chat-pwa/src/lib/api_errors.ts`. Never include real tokens, private
+paths, or generated files from `storage/` in examples.
 
 ### Connect VSCode (Continue.dev)
 ```bash
@@ -269,5 +312,8 @@ git diff --check  # verify no trailing whitespace
 
 Use a semantic tag such as `v1.0.0` and keep it equal to the versions in
 `pyproject.toml`, `chat-pwa/package.json`, `chat-pwa/package-lock.json`, and
-`trinaxai_cli/app.py`. The tag workflow reruns the release gates and publishes
-the source archive, shell and PowerShell installers, checksums, and provenance.
+`trinaxai_cli/app.py`. To build the Manager locally on a native runner, run
+`python scripts/build_manager.py --output manager-release`; it produces the
+platform-native package plus a portable fallback. The tag workflow reruns the
+release gates and publishes the source archive, shell and PowerShell installers,
+Manager packages, checksums, and provenance.

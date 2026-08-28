@@ -16,6 +16,7 @@ class ChatState:
     engine: str = "ollama"
     collections: list[str] = field(default_factory=list)
     model: str | None = None
+    thinking: bool = True
     # ``forced_mode`` pins a mode; the remaining flags bias automatic routing.
     forced_mode: str | None = None
     web_mode: bool = False

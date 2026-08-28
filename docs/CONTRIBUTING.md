@@ -12,10 +12,11 @@ This project follows [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md). Be respectful, di
 
 ## How Can I Contribute?
 
-### 🐛 Reporting Bugs
+### Reporting Bugs
 
 Before creating a bug report:
 - Check the [docs](https://github.com/TrinaxCode/TrinaxAI/tree/main/docs)
+- Follow the [troubleshooting and recovery guide](TROUBLESHOOTING.md) and record which recovery action was offered or attempted
 - Search [existing issues](https://github.com/TrinaxCode/TrinaxAI/issues) to see if it's already reported
 
 When reporting a bug, please include:
@@ -24,15 +25,16 @@ When reporting a bug, please include:
 - Steps to reproduce
 - Expected vs actual behavior
 - Any error messages or logs
+- The API `request_id` and index-job ID when present; redact tokens, private paths, prompts, and document contents
 
-### 💡 Suggesting Features
+### Suggesting Features
 
 Feature suggestions are tracked as GitHub Issues. Please describe:
 - The problem you're trying to solve
 - How you'd like TrinaxAI to solve it
 - Any alternatives you've considered
 
-### 📝 Pull Requests
+### Pull Requests
 
 1. Fork the repo and create your branch from `main`
 2. Sign off every commit for DCO: `git commit -s`
@@ -40,14 +42,14 @@ Feature suggestions are tracked as GitHub Issues. Please describe:
 4. Run the pre-release checks (see below)
 5. Open the pull request
 
-### 🌍 Translations
+### Translations
 
 TrinaxAI supports multiple languages. To add or improve translations:
 - Edit `chat-pwa/src/i18n/translations.ts`
 - Add your language following the existing pattern (ES, EN)
 - Test that all UI elements display correctly
 
-### 📚 Documentation
+### Documentation
 
 Documentation improvements are always welcome! The docs live in:
 - `docs/README.md` — documentation map and maintenance sources of truth
@@ -57,7 +59,7 @@ Documentation improvements are always welcome! The docs live in:
 - `README.md` (project overview)
 - `README.es.md` (Spanish version)
 
-Keep English and `.es.md` counterparts aligned. Verify command names against `trinaxai_cli/app.py`, API paths against `/openapi.json`, and PWA scripts against `chat-pwa/package.json`.
+Keep English and `.es.md` counterparts aligned. Verify command names against `trinaxai_cli/app.py`, API paths against `/openapi.json`, PWA scripts against `chat-pwa/package.json`, and user-facing recovery actions against `chat-pwa/src/lib/api_errors.ts` and `chat-pwa/src/components/chat/MessageList.tsx`.
 
 ---
 
@@ -121,4 +123,4 @@ Open a [GitHub Discussion](https://github.com/TrinaxCode/TrinaxAI/discussions) o
 
 ---
 
-⭐ **Thanks for contributing!**
+**Thanks for contributing.**

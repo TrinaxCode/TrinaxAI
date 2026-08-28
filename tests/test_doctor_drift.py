@@ -17,7 +17,9 @@ def test_frontend_mode_detects_dev_preview_and_unknown_commands():
 
 def test_backend_bind_detection_rejects_public_listener():
     assert _safe_backend_command("uvicorn app.main:app --host 0.0.0.0 --port 3333") is False
+    assert _safe_backend_command("uvicorn app.main:app --host=0.0.0.0 --port 3333") is False
     assert _safe_backend_command("uvicorn app.main:app --host 127.0.0.1 --port 3333") is True
+    assert _safe_backend_command("uvicorn app.main:app --host=127.0.0.1 --port 3333") is True
     assert _safe_backend_command("") is None
 
 

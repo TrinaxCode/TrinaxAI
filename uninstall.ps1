@@ -1,5 +1,6 @@
 param(
   [switch]$Yes,
+  [switch]$Interactive,
   [switch]$NonInteractive,
   [switch]$KeepServices,
   [switch]$KeepAutostart,
@@ -7,11 +8,14 @@ param(
   [switch]$KeepFrontend,
   [switch]$KeepLogs,
   [switch]$KeepEnv,
+  [switch]$RemoveEnv,
   [switch]$RemoveData,
+  [switch]$RemoveApp,
   [switch]$RemoveCerts,
   [switch]$RemoveModels,
   [switch]$RemoveOllama,
   [switch]$Purge,
+  [switch]$DryRun,
   [switch]$KeepFirewall,
   [ValidateSet("en", "es")]
   [string]$Language = ""
@@ -30,8 +34,14 @@ Guided mode asks what to remove:
 #>
 
 $ErrorActionPreference = "Stop"
+$LanguageExplicit = -not [string]::IsNullOrWhiteSpace($Language) -or -not [string]::IsNullOrWhiteSpace($env:TRINAXAI_LANG)
 if ([string]::IsNullOrWhiteSpace($Language)) { $Language = if ($env:TRINAXAI_LANG -match '^es') { 'es' } elseif ((Get-Culture).Name -match '^es') { 'es' } else { 'en' } }
 function T($English, $Spanish) { if ($Language -eq 'es') { return $Spanish }; return $English }
+
+if (-not $LanguageExplicit -and -not $NonInteractive -and -not $DryRun) {
+  $Reply = Read-Host "Select language / Selecciona idioma [en/es, default: $Language]"
+  if ($Reply -match '^es') { $Language = 'es' } elseif ($Reply -match '^en') { $Language = 'en' }
+}
 
 function Write-Step($Text) { Write-Host "`n=== $Text ===`n" -ForegroundColor Blue }
 function Write-Ok($Text) { Write-Host "  [OK] $Text" -ForegroundColor Green }
@@ -52,11 +62,19 @@ function Get-PythonExe {
   return $null
 }
 function Invoke-Python([string[]]$PythonArgs) {
-  if (-not $PythonExe) { return }
+  if (-not $PythonExe) {
+    $script:LastPythonExitCode = 127
+    Write-Warn "Python was not found; skipped Python command: $($PythonArgs -join ' ')"
+    return
+  }
   if ($PythonExe -eq "py") {
     & py -3 @PythonArgs
   } else {
     & $PythonExe @PythonArgs
+  }
+  $script:LastPythonExitCode = $LASTEXITCODE
+  if ($script:LastPythonExitCode -ne 0) {
+    Write-Warn "Python command failed with exit code $($script:LastPythonExitCode): $($PythonArgs -join ' ')"
   }
 }
 function Invoke-ServiceManager($Action) {
@@ -86,9 +104,13 @@ function Remove-UserPath($PathToRemove) {
   $UserPath = [Environment]::GetEnvironmentVariable("Path", "User")
   if ([string]::IsNullOrWhiteSpace($UserPath)) { return }
   $Expected = [IO.Path]::GetFullPath($PathToRemove).TrimEnd('\')
-  $Parts = $UserPath.Split(";") | Where-Object {
-    -not [string]::IsNullOrWhiteSpace($_) -and
-    ([IO.Path]::GetFullPath($_).TrimEnd('\') -ne $Expected)
+  $Parts = foreach ($Part in $UserPath.Split(";")) {
+    if ([string]::IsNullOrWhiteSpace($Part)) { continue }
+    try {
+      if ([IO.Path]::GetFullPath($Part).TrimEnd('\') -ne $Expected) { $Part }
+    } catch {
+      $Part
+    }
   }
   [Environment]::SetEnvironmentVariable("Path", ($Parts -join ";"), "User")
 }
@@ -151,8 +173,9 @@ function Stop-OllamaProcesses {
 function Remove-KnownDirectory([string]$Path, [string]$Label) {
   if ([string]::IsNullOrWhiteSpace($Path)) { return }
   try {
+    if ($Path -notmatch '^(?:[A-Za-z]:[\\/]|\\\\)') { throw "Unsafe path: $Path" }
     $Full = [IO.Path]::GetFullPath($Path)
-    if ($Full.Length -lt 10) { throw "Unsafe path: $Full" }
+    if ($Full -eq [IO.Path]::GetPathRoot($Full)) { throw "Unsafe path: $Full" }
     if (Test-Path -LiteralPath $Full) {
       Remove-Item -LiteralPath $Full -Recurse -Force
       Write-Ok "Removed $Label"
@@ -160,6 +183,35 @@ function Remove-KnownDirectory([string]$Path, [string]$Label) {
   } catch {
     Write-Warn "Could not remove ${Label}: $($_.Exception.Message)"
   }
+}
+function Read-EnvValue($Key) {
+  $EnvPath = Join-Path $Repo ".env"
+  if (-not (Test-Path -LiteralPath $EnvPath -PathType Leaf)) { return "" }
+  foreach ($Line in Get-Content -LiteralPath $EnvPath) {
+    if ($Line -match "^\s*$([regex]::Escape($Key))=(.*)$") {
+      return $Matches[1].Trim().Trim('"').Trim("'")
+    }
+  }
+  return ""
+}
+function Add-ConfiguredModel([System.Collections.Generic.List[string]]$List, [string]$Model) {
+  if (-not [string]::IsNullOrWhiteSpace($Model) -and -not $List.Contains($Model)) {
+    $List.Add($Model) | Out-Null
+  }
+}
+function Get-ConfiguredModels {
+  $List = New-Object System.Collections.Generic.List[string]
+  Add-ConfiguredModel $List (Read-EnvValue "TRINAXAI_MODEL_CODE")
+  Add-ConfiguredModel $List (Read-EnvValue "TRINAXAI_MODEL_DEEP")
+  Add-ConfiguredModel $List (Read-EnvValue "TRINAXAI_MODEL_GENERAL")
+  Add-ConfiguredModel $List (Read-EnvValue "TRINAXAI_MODEL_FAST")
+  Add-ConfiguredModel $List (Read-EnvValue "TRINAXAI_EMBED")
+  if ($List.Count -eq 0) {
+    foreach ($Model in @("qwen3.5:2b", "qwen3.5:4b", "qwen3-embedding:0.6b")) {
+      Add-ConfiguredModel $List $Model
+    }
+  }
+  return $List
 }
 function Remove-OllamaModelsAndState {
   $Candidates = New-Object System.Collections.Generic.List[string]
@@ -170,10 +222,19 @@ function Remove-OllamaModelsAndState {
   $Seen = @{}
   foreach ($Candidate in $Candidates) {
     if ([string]::IsNullOrWhiteSpace($Candidate)) { continue }
-    $Full = [IO.Path]::GetFullPath($Candidate)
-    if ($Seen.ContainsKey($Full)) { continue }
-    $Seen[$Full] = $true
-    Remove-KnownDirectory $Full "Ollama models: $Full"
+    try {
+      $Full = [IO.Path]::GetFullPath($Candidate)
+      $Leaf = Split-Path -Leaf $Full.TrimEnd('\')
+      if ($Leaf -ine "models") {
+        Write-Warn "Skipped unsafe Ollama model path: $Full"
+        continue
+      }
+      if ($Seen.ContainsKey($Full)) { continue }
+      $Seen[$Full] = $true
+      Remove-KnownDirectory $Full "Ollama models: $Full"
+    } catch {
+      Write-Warn "Skipped unsafe Ollama model path: $Candidate"
+    }
   }
 }
 function Invoke-OllamaRegistryUninstall {
@@ -221,15 +282,42 @@ Write-Host "|       TrinaxAI - Clean Uninstaller     |" -ForegroundColor Blue
 Write-Host "+========================================+" -ForegroundColor Blue
 Write-Host " Protected: source code, indexes, and Ollama models" -ForegroundColor Cyan
 
-if (-not ($Yes -or $NonInteractive)) {
+if ($DryRun) {
+  Write-Host (T "DRY-RUN: nothing will be stopped, removed, or changed." "SIMULACIÓN: no se detendrá, borrará ni modificará nada.") -ForegroundColor Yellow
+  Write-Step (T "Services and autostart" "Servicios e inicio automático")
+  Write-Host (T "  Would stop services and disable Windows startup" "  Se detendrían los servicios y se desactivaría el inicio de Windows")
+  Write-Step (T "Automatic updates" "Actualizaciones automáticas")
+  Write-Host (T "  Would disable the weekly update task" "  Se desactivaría la tarea semanal de actualización")
+  Write-Step (T "Runtime files" "Archivos de ejecución")
+  Write-Host (T "  Would remove .venv, frontend build, logs, and generated .env" "  Se eliminarían .venv, la compilación frontend, los logs y el .env generado")
+  Write-Host (T "  Would preserve source code, indexes, models, and personal data by default" "  El código fuente, los índices, los modelos y los datos personales se conservarían por defecto")
+  Write-Step (T "Ollama" "Ollama")
+  Write-Host (T "  Would remove configured models/app only when explicitly requested" "  Solo se eliminarían los modelos o la aplicación configurados si se solicita explícitamente")
+  Write-Host ""
+  Write-Host (T "Links to enter" "Enlaces de acceso") -ForegroundColor Cyan
+  Write-Host "  Localhost:       https://localhost:3334"
+  Write-Host "  LAN:             https://[YOUR-LAN-IP]:3334"
+  Write-Host (T "  RAG health:      https://localhost:3333/health" "  Salud de RAG:    https://localhost:3333/health")
+  Write-Ok (T "Dry-run finished; no changes were made" "Simulación terminada; no se hicieron cambios")
+  exit 0
+}
+
+if (-not ($Interactive -or $Yes -or $NonInteractive)) {
+  $Interactive = $true
+}
+
+if ($NonInteractive -and -not ($Yes -or $DryRun)) {
+  throw (T "Non-interactive uninstall requires -Yes." "La desinstalación no interactiva requiere -Yes.")
+}
+
+if ($Interactive -and -not ($Yes -or $NonInteractive)) {
   $Confirm = Read-Host (T "Type UNINSTALL to continue" "Escribe UNINSTALL para continuar")
   if ($Confirm -ne "UNINSTALL") {
     Write-Warn (T "Cancelled." "Cancelado.")
     exit 0
   }
-} elseif (-not $Yes) {
-  Write-Warn "Non-interactive uninstall requires -Yes."
-  exit 1
+} elseif (-not ($Yes -or $NonInteractive)) {
+  $Yes = $true
 }
 
 $StopServices = -not $KeepServices
@@ -237,7 +325,7 @@ $DisableAutostart = -not $KeepAutostart
 $RemoveVenv = -not $KeepVenv
 $RemoveFrontend = -not $KeepFrontend
 $RemoveLogs = -not $KeepLogs
-$RemoveEnv = -not $KeepEnv
+$RemoveEnvRequested = [bool]$RemoveEnv -and -not $KeepEnv
 $RemoveRuntimeData = $RemoveData -or $Purge
 $RemoveRuntimeCerts = $RemoveCerts -or $Purge
 $RemoveOllamaModels = $RemoveModels -or $RemoveOllama -or $Purge
@@ -250,7 +338,7 @@ if (-not ($Yes -or $NonInteractive)) {
   $RemoveVenv = Read-YesNo (T "Remove Python virtual environment (.venv)?" "¿Eliminar el entorno virtual de Python (.venv)?") $true
   $RemoveFrontend = Read-YesNo (T "Remove frontend dependencies/build?" "¿Eliminar dependencias/build del frontend?") $true
   $RemoveLogs = Read-YesNo (T "Remove logs?" "¿Eliminar logs?") $true
-  $RemoveEnv = Read-YesNo (T "Remove generated .env configuration and admin token?" "¿Eliminar la configuración .env y el token admin generado?") $true
+  $RemoveEnvRequested = Read-YesNo (T "Remove generated .env configuration and admin token?" "¿Eliminar la configuración .env y el token admin generado?") $false
   $RemoveRuntimeData = Read-YesNo (T "Remove RAG index, memory, and local_sources data?" "¿Eliminar el índice RAG, memoria y local_sources?") $false
   $RemoveRuntimeCerts = Read-YesNo (T "Remove generated local HTTPS cert files?" "¿Eliminar certificados HTTPS locales generados?") $false
   $RemoveOllamaModels = Read-YesNo (T "Remove known Ollama models used by TrinaxAI?" "¿Eliminar los modelos Ollama conocidos usados por TrinaxAI?") $false
@@ -258,6 +346,10 @@ if (-not ($Yes -or $NonInteractive)) {
   if ($RemoveOllamaApp) { $RemoveOllamaModels = $true }
   $RemoveFirewallRules = Read-YesNo (T "Remove TrinaxAI Windows Firewall rules?" "¿Eliminar las reglas de Firewall de Windows de TrinaxAI?") $true
 }
+
+# Read the configured fleet before optional removal of .env; model-only cleanup
+# must never fall back to a directory-wide deletion or to a stale hardcoded list.
+$ModelsToRemove = @(Get-ConfiguredModels)
 
 if ($StopServices) {
   Write-Step "1/4 Services"
@@ -285,12 +377,21 @@ if ($RemoveFrontend) {
   $Targets.Add("chat-pwa\dist") | Out-Null
 }
 if ($RemoveLogs) { $Targets.Add("logs") | Out-Null }
-if ($RemoveEnv) { $Targets.Add(".env") | Out-Null }
+if ($RemoveEnvRequested) { $Targets.Add(".env") | Out-Null }
 if ($RemoveRuntimeData) {
   $Targets.Add("storage") | Out-Null
   $Targets.Add("local_sources") | Out-Null
 }
 if ($RemoveRuntimeCerts) { $Targets.Add("chat-pwa\certs") | Out-Null }
+if ($RemoveApp) {
+  if ((Test-Path (Join-Path $Repo ".trinaxai-managed")) -and (Test-Path (Join-Path $Repo "scripts\source_update.py"))) {
+    Invoke-Python @((Join-Path $Repo "scripts\source_update.py"), "remove", "--root", $Repo)
+    if ($script:LastPythonExitCode -eq 0) { Write-Ok "Managed TrinaxAI application files removed" }
+    else { Write-Warn "Managed TrinaxAI application files could not be removed completely." }
+  } else {
+    Write-Warn "Application source was kept because this is not a managed installation."
+  }
+}
 Remove-InRepo $Targets.ToArray()
 if ($RemoveVenv) {
   Remove-UserPath (Join-Path $Repo ".venv\Scripts")
@@ -308,8 +409,10 @@ if ($RemoveOllamaModels) {
   Write-Step "4/4 Ollama models"
   $Ollama = Get-OllamaCommand
   if ($Ollama) {
-    foreach ($Model in @("qwen3.5:9b", "qwen3.5:4b", "qwen3.5:2b", "qwen3.5:0.8b", "granite4:3b", "qwen3-vl:4b-instruct", "qwen3-vl:8b-instruct", "qwen3:4b-instruct-2507-q4_K_M", "qwen3:30b-a3b-instruct-2507-q4_K_M", "qwen2.5-coder:1.5b", "qwen2.5-coder:3b", "qwen2.5-coder:7b", "qwen3-coder:30b", "llama3.2:1b", "bge-m3", "qwen3-vl:2b", "qwen3-vl:4b", "qwen3-vl:8b", "qwen3-vl:32b", "qwen2.5-coder:14b", "llama3.2:3b", "nomic-embed-text", "moondream", "qwen2.5vl:3b", "qwen2.5vl:7b", "llava:7b")) {
+    foreach ($Model in $ModelsToRemove) {
+      Write-Host "  Removing $Model..."
       & $Ollama rm $Model 2>$null
+      if ($LASTEXITCODE -ne 0) { Write-Warn "Could not remove configured model $Model." }
     }
   } else {
     Write-Warn "Ollama not found; model removal skipped."

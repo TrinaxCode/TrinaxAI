@@ -11,10 +11,24 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import ssl
 from typing import TYPE_CHECKING, Any
 
-from trinaxai_core import VALID_PROFILES, _positive_float, _positive_int, normalize_http_base_url
+from trinaxai_core import (
+    VALID_PROFILES,
+    _positive_float,
+    _positive_int,
+    detect_hardware,
+    load_hardware_profile,
+    migrate_profile_env,
+    model_recommendations,
+    normalize_http_base_url,
+    normalize_profile,
+    recommended_ollama_gpu_layers,
+    save_hardware_profile,
+    select_profile,
+)
 
 LOG = logging.getLogger("trinaxai.config")
 
@@ -40,6 +54,9 @@ def _env_float(name: str, default: float, *, minimum: float = 0.0, maximum: floa
 # ==================== PATHS ====================
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
+# Rewrite historical profile values even when python-dotenv is unavailable.
+migrate_profile_env(os.path.join(BASE_DIR, ".env"))
+
 try:
     from dotenv import load_dotenv
 
@@ -47,7 +64,9 @@ try:
 except ImportError:
     pass
 
-PERSIST_DIR = os.path.join(BASE_DIR, "storage")
+# Override persisted runtime files when running an isolated backend instance.
+PERSIST_DIR = os.path.abspath(os.path.expanduser(os.getenv("TRINAXAI_PERSIST_DIR", os.path.join(BASE_DIR, "storage"))))
+HARDWARE_PROFILE_PATH = os.path.join(PERSIST_DIR, "hardware_profile.json")
 LOCAL_SOURCES_DIR = os.path.join(BASE_DIR, "local_sources")
 # File manifest (path -> mtime) for incremental indexing.
 MANIFEST_PATH = os.path.join(PERSIST_DIR, "manifest.json")
@@ -56,14 +75,23 @@ DEFAULT_COLLECTION_ID = "default"
 DEFAULT_COLLECTION_NAME = "General"
 
 # Directory to index recursively (with subdirectories).
-# Override with TRINAXAI_INDEX_DIR (e.g. ~/Documents or ~/Projects).
+# Defaults to this repository's local_sources/; override with TRINAXAI_INDEX_DIR
+# (e.g. ~/Documents or ~/Projects).
 PROJECTS_DIRS = [
-    os.path.abspath(os.path.expanduser(os.getenv("TRINAXAI_INDEX_DIR", os.path.dirname(BASE_DIR)))),
+    os.path.abspath(os.path.expanduser(os.getenv("TRINAXAI_INDEX_DIR") or LOCAL_SOURCES_DIR)),
 ]
 
 # ==================== MODELS ====================
 OLLAMA_BASE_URL = normalize_http_base_url(os.getenv("OLLAMA_BASE_URL"), "http://localhost:11434")
-TRINAXAI_PROFILE = os.getenv("TRINAXAI_PROFILE", "16gb").strip().lower()
+HARDWARE = detect_hardware()
+DETECTED_PROFILE = select_profile(HARDWARE)
+_RAW_PROFILE = os.getenv("TRINAXAI_PROFILE", "").strip().lower()
+_PROFILE_OVERRIDE = normalize_profile(_RAW_PROFILE)
+PROFILE_MIGRATED = bool(_RAW_PROFILE and _PROFILE_OVERRIDE and _PROFILE_OVERRIDE != _RAW_PROFILE)
+if PROFILE_MIGRATED:
+    migrate_profile_env(os.path.join(BASE_DIR, ".env"), fallback=DETECTED_PROFILE)
+TRINAXAI_PROFILE = _PROFILE_OVERRIDE if _PROFILE_OVERRIDE in VALID_PROFILES else DETECTED_PROFILE
+PROFILE_SOURCE = "environment" if _PROFILE_OVERRIDE in VALID_PROFILES else "detected"
 TRINAXAI_PERFORMANCE_MODE = os.getenv("TRINAXAI_PERFORMANCE_MODE", "fast").strip().lower() or "fast"
 if TRINAXAI_PERFORMANCE_MODE not in {"fast", "balanced", "quality"}:
     LOG.warning(
@@ -72,66 +100,52 @@ if TRINAXAI_PERFORMANCE_MODE not in {"fast", "balanced", "quality"}:
     )
     TRINAXAI_PERFORMANCE_MODE = "fast"
 
-# Validate profile — warn on unknown values but don't crash.
-if TRINAXAI_PROFILE not in VALID_PROFILES:
-    LOG.warning(
-        "Unknown TRINAXAI_PROFILE=%r; falling back to '16gb'",
-        TRINAXAI_PROFILE,
-    )
-    TRINAXAI_PROFILE = "16gb"
+# Default for API clients that omit the per-request ``think`` flag. Interfaces
+# such as the PWA and CLI send their explicit preference; this is the safe
+# server-side fallback for integrations that do not have a settings screen.
+TRINAXAI_THINKING_MODE = os.getenv("TRINAXAI_THINKING_MODE", "1").strip().lower() not in {
+    "0",
+    "false",
+    "no",
+    "off",
+}
 
-_ULTRA_PROFILE = TRINAXAI_PROFILE in {
-    "ultra",
-    "gpu",
-    "64gb",
-    "64g",
-    "4090",
-    "rtx",
-    "workstation",
-}
-_MAX_QUALITY_PROFILE = (
-    TRINAXAI_PROFILE in {"max", "high", "max_quality", "quality", "potente", "32gb", "32g", "alto"} or _ULTRA_PROFILE
-)
-_LOW_RESOURCE_PROFILE = TRINAXAI_PROFILE in {
-    "4gb",
-    "4g",
-    "8gb",
-    "8g",
-    "low",
-    "min",
-    "minimo",
-    "lite",
-    "light",
-    "bajo",
-}
+# Validate profile — warn on unknown values but don't crash.
+if _RAW_PROFILE and not _PROFILE_OVERRIDE:
+    LOG.warning(
+        "Unsupported profile override; using detected profile %r",
+        DETECTED_PROFILE,
+    )
+load_hardware_profile(HARDWARE_PROFILE_PATH, fallback=DETECTED_PROFILE)
+save_hardware_profile(HARDWARE_PROFILE_PATH, HARDWARE, TRINAXAI_PROFILE)
+PERSISTED_HARDWARE_PROFILE = load_hardware_profile(HARDWARE_PROFILE_PATH, fallback=TRINAXAI_PROFILE)
+
+MODEL_RECOMMENDATIONS = model_recommendations(HARDWARE, profile=TRINAXAI_PROFILE)
+_LARGE_PROFILE = TRINAXAI_PROFILE in {"32gb", "64gb"}
+_MEMORY_CONSTRAINED_PROFILE = TRINAXAI_PROFILE == "8gb"
 _FAST_MODE = TRINAXAI_PERFORMANCE_MODE == "fast"
 _QUALITY_MODE = TRINAXAI_PERFORMANCE_MODE == "quality"
 
 # ── Model fleet for AUTO-ROUTING ──
-# The router selects the model based on the query. Low-resource profiles default
+# The router selects the model based on the query. Memory-constrained profiles default
 # to smaller models so Windows laptops with 8 GB RAM do not pull the 16 GB set.
 #
 # Each tier leaves room for the embedding model and runtime overhead instead of
 # sizing the chat model as if it were the only resident process.
-_PROFILE_MODEL = (
-    "qwen3.5:35b"
-    if _ULTRA_PROFILE
-    else "qwen3.5:9b"
-    if _MAX_QUALITY_PROFILE
-    else "qwen3.5:2b"
-    if _LOW_RESOURCE_PROFILE
-    else "qwen3.5:4b"
-)
-_DEFAULT_MODEL_GENERAL = _PROFILE_MODEL
-_DEFAULT_MODEL_CODE = "qwen3-coder:30b" if _ULTRA_PROFILE else _PROFILE_MODEL
-_DEFAULT_MODEL_FAST = "qwen3.5:4b" if _ULTRA_PROFILE else "qwen3.5:2b"
-MODEL_GENERAL = os.getenv("TRINAXAI_MODEL_GENERAL", _DEFAULT_MODEL_GENERAL)  # non-code chat
-MODEL_CODE = os.getenv("TRINAXAI_MODEL_CODE", _DEFAULT_MODEL_CODE)  # regular code
-MODEL_DEEP = os.getenv(
-    "TRINAXAI_MODEL_DEEP",
-    _PROFILE_MODEL,
-)  # complex reasoning/code
-MODEL_FAST = os.getenv("TRINAXAI_MODEL_FAST", _DEFAULT_MODEL_FAST)  # trivial / ultra-fast
+_PROFILE_MODEL = MODEL_RECOMMENDATIONS["general"]
+_DEFAULT_MODEL_GENERAL = MODEL_RECOMMENDATIONS["general"]
+_DEFAULT_MODEL_CODE = MODEL_RECOMMENDATIONS["code"]
+_DEFAULT_MODEL_FAST = MODEL_RECOMMENDATIONS["fast"]
+
+
+def _model_env(name: str, default: str) -> str:
+    return default if PROFILE_MIGRATED else os.getenv(name, default)
+
+
+MODEL_GENERAL = _model_env("TRINAXAI_MODEL_GENERAL", _DEFAULT_MODEL_GENERAL)  # non-code chat
+MODEL_CODE = _model_env("TRINAXAI_MODEL_CODE", _DEFAULT_MODEL_CODE)  # regular code
+MODEL_DEEP = _model_env("TRINAXAI_MODEL_DEEP", _PROFILE_MODEL)  # complex reasoning/code
+MODEL_FAST = _model_env("TRINAXAI_MODEL_FAST", _DEFAULT_MODEL_FAST)  # trivial / fast response
 
 # Default model (when auto-router is disabled).
 LLM_MODEL = os.getenv("TRINAXAI_LLM", MODEL_CODE)
@@ -143,10 +157,9 @@ MODEL_FLEET = list(dict.fromkeys([MODEL_CODE, MODEL_DEEP, MODEL_GENERAL, MODEL_F
 
 # Embeddings. Qwen3 Embedding is multilingual, instruction-aware, and supports
 # 32K context while keeping the same 1024 dimensions at 0.6B.
-# Embedding preset: balanced | quality | max | lite | fast.
+# Embedding preset: balanced | quality | lite | fast.
 # - balanced: Qwen3 Embedding 0.6B (multilingual, instruction-aware)
 # - quality:  Qwen3 Embedding 4B (higher retrieval quality for 32 GB systems)
-# - max:      Qwen3 Embedding 8B (best retrieval quality for 64 GB systems)
 # - lite:     nomic-embed-text (smaller, faster, English-leaning)
 # - fast:     all-minilm (very small, English-only, fastest)
 EMBED_PRESETS = {
@@ -162,12 +175,6 @@ EMBED_PRESETS = {
         "ctx": 32768,
         "label": "Quality (Qwen3 Embedding 4B, multilingual)",
     },
-    "max": {
-        "model": "qwen3-embedding:8b",
-        "dims": 4096,
-        "ctx": 32768,
-        "label": "Max (Qwen3 Embedding 8B, multilingual)",
-    },
     "lite": {
         "model": "nomic-embed-text",
         "dims": 768,
@@ -181,17 +188,24 @@ EMBED_PRESETS = {
         "label": "Fast (all-minilm, smallest)",
     },
 }
-# Keep laptops on 0.6B; profiles with enough memory use the stronger official
-# Qwen3 embedding sizes without requiring manual post-install configuration.
-_EMBED_PRESET_DEFAULT = "max" if _ULTRA_PROFILE else "quality" if _MAX_QUALITY_PROFILE else "balanced"
+# Keep laptops on 0.6B; larger profiles use the strongest embedding that fits
+# without requiring manual post-install configuration.
+_EMBED_PRESET_DEFAULT = "quality" if _LARGE_PROFILE else "balanced"
 _EMBED_PRESET = os.getenv("TRINAXAI_EMBED_PRESET", _EMBED_PRESET_DEFAULT).strip().lower()
+if _EMBED_PRESET == "max":
+    _EMBED_PRESET = "quality"
 EMBED_PRESET = _EMBED_PRESET if _EMBED_PRESET in EMBED_PRESETS else "balanced"
 EMBED_MODEL = os.getenv("TRINAXAI_EMBED", EMBED_PRESETS[EMBED_PRESET]["model"])
 EMBED_DIMS = _env_int("TRINAXAI_EMBED_DIMS", int(EMBED_PRESETS[EMBED_PRESET]["dims"]), minimum=1, maximum=32768)
 
-# Quantization hints (Phase 4.2). Ollama respects OLLAMA_NUM_GPU at runtime.
-# We just expose the env var and a profile tag for the /health endpoint.
-OLLAMA_NUM_GPU = os.getenv("OLLAMA_NUM_GPU", "").strip()
+# Ollama uses 0 layers on CPU and a large value for all layers that fit on a
+# detected GPU. Users can override this when a particular model needs tuning.
+OLLAMA_NUM_GPU = _env_int(
+    "OLLAMA_NUM_GPU",
+    recommended_ollama_gpu_layers(HARDWARE),
+    minimum=0,
+    maximum=1024,
+)
 # Aggressive quantization toggle: 1 enables Q4_K_M-style offloading profile.
 TRINAXAI_AGGRESSIVE_QUANT = os.getenv("TRINAXAI_AGGRESSIVE_QUANT", "0").strip() in {
     "1",
@@ -206,7 +220,7 @@ TRINAXAI_OCR = os.getenv("TRINAXAI_OCR", "0").strip() in {"1", "true", "yes", "o
 # Context window. Must fit: prompt + top_k chunks + response.
 NUM_CTX = _env_int(
     "TRINAXAI_NUM_CTX",
-    16384 if _ULTRA_PROFILE else 8192 if _MAX_QUALITY_PROFILE else 2048 if _LOW_RESOURCE_PROFILE else 4096,
+    8192 if _LARGE_PROFILE else 2048 if _MEMORY_CONSTRAINED_PROFILE else 4096,
     minimum=512,
     maximum=131072,
 )
@@ -221,34 +235,34 @@ NUM_THREAD = _env_int("TRINAXAI_NUM_THREAD", 8, minimum=1, maximum=256)
 # requests to Ollama; still fully overridable for RAM-tight machines.
 EMBED_WORKERS = _env_int(
     "TRINAXAI_EMBED_WORKERS",
-    6 if _ULTRA_PROFILE else 4 if _MAX_QUALITY_PROFILE else 1 if _LOW_RESOURCE_PROFILE else 4,
+    6 if TRINAXAI_PROFILE == "64gb" else 4 if _LARGE_PROFILE else 1 if _MEMORY_CONSTRAINED_PROFILE else 4,
     minimum=1,
     maximum=16,
 )
 EMBED_BATCH_SIZE = _env_int(
     "TRINAXAI_EMBED_BATCH",
-    16 if _ULTRA_PROFILE else 8 if not _LOW_RESOURCE_PROFILE else 1,
+    16 if TRINAXAI_PROFILE == "64gb" else 8 if not _MEMORY_CONSTRAINED_PROFILE else 1,
     minimum=1,
     maximum=64,
 )
 # Fast mode keeps the local model warm so the next response does not pay the
-# Ollama load cost again. Low-memory users can still set TRINAXAI_KEEP_ALIVE=0s.
+# Ollama load cost again. Memory-constrained users can still set TRINAXAI_KEEP_ALIVE=0s.
 _KEEP_ALIVE_DEFAULT = (
     "60m"
-    if _ULTRA_PROFILE
+    if TRINAXAI_PROFILE == "64gb"
     else "30m"
-    if _MAX_QUALITY_PROFILE
+    if _LARGE_PROFILE
     else "10m"
-    if _FAST_MODE and not _LOW_RESOURCE_PROFILE
+    if _FAST_MODE and not _MEMORY_CONSTRAINED_PROFILE
     else "0s"
 )
 KEEP_ALIVE = os.getenv("TRINAXAI_KEEP_ALIVE", _KEEP_ALIVE_DEFAULT)
 # Embeddings are many short requests during indexing/search. Keeping only the
 # embedding model warm prevents Ollama from unloading/reloading it every batch,
 # which otherwise causes slow sawtooth CPU/GPU/RAM usage during indexing.
-if _ULTRA_PROFILE or _MAX_QUALITY_PROFILE:
+if _LARGE_PROFILE:
     _EMBED_KEEP_ALIVE_DEFAULT = "30m"
-elif _LOW_RESOURCE_PROFILE:
+elif _MEMORY_CONSTRAINED_PROFILE:
     _EMBED_KEEP_ALIVE_DEFAULT = "0s"
 else:
     _EMBED_KEEP_ALIVE_DEFAULT = "15m"
@@ -256,6 +270,11 @@ EMBED_KEEP_ALIVE = (
     os.getenv("TRINAXAI_EMBED_KEEP_ALIVE", _EMBED_KEEP_ALIVE_DEFAULT).strip() or _EMBED_KEEP_ALIVE_DEFAULT
 )
 REQUEST_TIMEOUT = _env_float("TRINAXAI_TIMEOUT", 300.0, minimum=1.0, maximum=86400.0)
+
+# Long answers are continued in bounded, explicit turns instead of pretending
+# the model has an infinite context or output window.
+GEN_NUM_CTX_MAX = _env_int("TRINAXAI_GEN_NUM_CTX_MAX", 16384, minimum=512, maximum=131072)
+MAX_CONTINUATIONS = _env_int("TRINAXAI_MAX_CONTINUATIONS", 2, minimum=0, maximum=8)
 
 # ==================== WEB SEARCH ====================
 # ``auto`` prefers a configured Brave key, then a configured SearXNG instance,
@@ -270,11 +289,11 @@ WEB_SEARCH_CACHE_SECONDS = _env_int("TRINAXAI_WEB_SEARCH_CACHE_SECONDS", 300, mi
 
 # ==================== CHUNKING ====================
 # Prose (md, txt, pdf, configs): token-based chunking.
-_CHUNK_SIZE_DEFAULT = 1536 if _ULTRA_PROFILE else 896 if _FAST_MODE else 1024
+_CHUNK_SIZE_DEFAULT = 1536 if TRINAXAI_PROFILE == "64gb" else 896 if _FAST_MODE else 1024
 CHUNK_SIZE = _env_int("TRINAXAI_CHUNK_SIZE", _CHUNK_SIZE_DEFAULT, minimum=64, maximum=8192)
 CHUNK_OVERLAP = _env_int(
     "TRINAXAI_CHUNK_OVERLAP",
-    220 if _ULTRA_PROFILE else 96 if _FAST_MODE else 150,
+    220 if TRINAXAI_PROFILE == "64gb" else 96 if _FAST_MODE else 150,
     minimum=0,
     maximum=CHUNK_SIZE,
 )
@@ -289,13 +308,13 @@ CODE_MAX_CHARS = _env_int("TRINAXAI_CODE_MAX_CHARS", 2000, minimum=100, maximum=
 # Final chunks injected into the LLM as context.
 _TOP_K_DEFAULT = (
     "8"
-    if _ULTRA_PROFILE and _QUALITY_MODE
+    if TRINAXAI_PROFILE == "64gb" and _QUALITY_MODE
     else "6"
-    if _ULTRA_PROFILE
+    if _LARGE_PROFILE
     else "5"
-    if _MAX_QUALITY_PROFILE
+    if TRINAXAI_PROFILE == "16gb"
     else "3"
-    if _LOW_RESOURCE_PROFILE and _FAST_MODE
+    if _MEMORY_CONSTRAINED_PROFILE and _FAST_MODE
     else "4"
     if _FAST_MODE
     else "5"
@@ -305,13 +324,13 @@ SIMILARITY_TOP_K = _env_int("TRINAXAI_SIMILARITY_TOP_K", int(_TOP_K_DEFAULT), mi
 # With reranking we ask for MORE candidates (the reranker narrows to the best).
 _FUSION_CANDIDATES_DEFAULT = (
     "32"
-    if _ULTRA_PROFILE and _QUALITY_MODE
+    if TRINAXAI_PROFILE == "64gb" and _QUALITY_MODE
     else "20"
-    if _ULTRA_PROFILE
+    if _LARGE_PROFILE
     else "12"
-    if _MAX_QUALITY_PROFILE
+    if TRINAXAI_PROFILE == "16gb"
     else "6"
-    if _LOW_RESOURCE_PROFILE and _FAST_MODE
+    if _MEMORY_CONSTRAINED_PROFILE and _FAST_MODE
     else "8"
     if _FAST_MODE
     else "12"
@@ -334,6 +353,7 @@ def make_llm(
     temperature: float = 0.0,
     model: str | None = None,
     *,
+    thinking: bool = True,
     keep_alive: str | int | None = None,
     aggressive_quant: bool | None = None,
     num_ctx: int | None = None,
@@ -369,9 +389,7 @@ def make_llm(
     if stop:
         runtime_kwargs["stop"] = list(stop)
 
-    use_aggressive = TRINAXAI_AGGRESSIVE_QUANT if aggressive_quant is None else aggressive_quant
-    if use_aggressive:
-        runtime_kwargs["num_gpu"] = 0
+    runtime_kwargs["num_gpu"] = OLLAMA_NUM_GPU
 
     return Ollama(
         model=model or LLM_MODEL,
@@ -380,11 +398,8 @@ def make_llm(
         request_timeout=REQUEST_TIMEOUT,
         keep_alive=KEEP_ALIVE if keep_alive is None else keep_alive,
         context_window=effective_ctx,
-        # Disable the model's reasoning phase: answers stream immediately instead
-        # of spending latency (and tokens) on hidden <think> output. Our fleet is
-        # already non-thinking, but this hard-guards any thinking model a user
-        # points TrinaxAI at, so a reply is always produced without a long wait.
-        thinking=False,
+        # Ollama ignores this on models without a thinking capability.
+        thinking=thinking,
         additional_kwargs=runtime_kwargs,
     )
 
@@ -395,10 +410,9 @@ def make_embed() -> OllamaEmbedding:
 
     embed_kwargs = {
         "num_thread": NUM_THREAD,
-        "num_ctx": 4096 if _ULTRA_PROFILE else 2048,
+        "num_ctx": 4096 if _LARGE_PROFILE else 2048,
     }
-    if TRINAXAI_AGGRESSIVE_QUANT:
-        embed_kwargs["num_gpu"] = 0
+    embed_kwargs["num_gpu"] = OLLAMA_NUM_GPU
 
     return OllamaEmbedding(
         model_name=EMBED_MODEL,
@@ -411,7 +425,7 @@ def make_embed() -> OllamaEmbedding:
         keep_alive=EMBED_KEEP_ALIVE,
         embed_batch_size=EMBED_BATCH_SIZE,
         num_workers=EMBED_WORKERS,  # concurrent requests to Ollama
-        # Ultra uses larger chunks; the rest keep context bounded for RAM.
+        # 64gb uses larger chunks; the rest keep context bounded for RAM.
         ollama_additional_kwargs=embed_kwargs,
     )
 
@@ -821,6 +835,20 @@ _TOPIC_SHIFT_HINTS = (
 )
 
 
+def _has_model_code_hint(text: str) -> bool:
+    """Match code hints without treating ordinary words as technical terms."""
+    for hint in _CODE_HINTS:
+        if hint == "compil":
+            matched = hint in text  # Intentional prefix: compilación, compile, etc.
+        elif hint.isalpha():
+            matched = re.search(rf"(?<!\w){re.escape(hint)}(?!\w)", text) is not None
+        else:
+            matched = hint in text
+        if matched:
+            return True
+    return False
+
+
 def route_model(text: str, previous_model: str | None = None) -> str:
     """Pick a model instantly, with affinity for the already-warm model.
 
@@ -830,10 +858,34 @@ def route_model(text: str, previous_model: str | None = None) -> str:
     if not AUTO_ROUTE or not text:
         return LLM_MODEL
     t = text.lower()
-    is_code = ("`" in text) or any(h in t for h in _CODE_HINTS)
+    explanation_question = any(
+        h in t for h in ("qué es", "que es", "what is", "cómo funciona", "como funciona", "para qué sirve")
+    )
+    actionable_code = any(
+        h in t
+        for h in (
+            "crea",
+            "genera",
+            "implementa",
+            "escribe",
+            "corrige",
+            "arregla",
+            "depura",
+            "debug",
+            "bug",
+            "error",
+            "falla",
+            "falló",
+            "no funciona",
+            "traceback",
+        )
+    )
+    is_code = ("`" in text) or (_has_model_code_hint(t) and not (explanation_question and not actionable_code))
     deep_signals = sum(h in t for h in _DEEP_HINTS)
     is_deep_code = is_code and (len(text) > 1_200 or deep_signals >= 2)
-    if is_deep_code:
+    if explanation_question and not actionable_code:
+        candidate = MODEL_GENERAL
+    elif is_deep_code:
         candidate = MODEL_DEEP
     elif is_code:
         candidate = MODEL_CODE

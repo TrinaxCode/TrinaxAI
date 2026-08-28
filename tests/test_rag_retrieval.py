@@ -37,8 +37,8 @@ def test_prepare_query_bounds_large_history_and_system_prompt() -> None:
 
 
 def test_knowledge_retrieval_rejects_near_zero_scores() -> None:
-    assert not rag_service._retrieval_is_relevant([SimpleNamespace(score=0.016)])
-    assert rag_service._retrieval_is_relevant([SimpleNamespace(score=0.033)])
+    assert not rag_service._retrieval_is_relevant([SimpleNamespace(score=0.014)])
+    assert rag_service._retrieval_is_relevant([SimpleNamespace(score=0.016)])
     assert rag_service._retrieval_is_relevant([SimpleNamespace(score=0.2)])
 
 

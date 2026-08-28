@@ -5,12 +5,15 @@ import os
 from pathlib import Path
 
 import pytest
-from fastapi import HTTPException
+from fastapi import HTTPException, Response
 from starlette.requests import Request
 from starlette.testclient import TestClient
 
 from app.main import create_app
+from app.routes import pairing as pairing_routes
+from app.routes.pairing import PairingClaimRequest
 from app.security import admin_auth
+from app.security.admin_auth import DEVICE_TOKEN_COOKIE, DEVICE_TOKEN_COOKIE_PATH
 from app.security.device_auth import (
     DEVICE_TOKEN_HEADER,
     DeviceRegistryError,
@@ -21,6 +24,7 @@ from app.security.device_auth import (
     authenticate_device_token,
     claim_pairing_code,
     create_pairing_code,
+    device_for_token,
     list_devices,
     normalize_pairing_code,
     revoke_device,
@@ -44,12 +48,16 @@ def _request(
     method: str = "GET",
     token: str | None = None,
     admin_token: str | None = None,
+    cookie: str | None = None,
+    scheme: str = "http",
 ) -> Request:
     headers = []
     if token:
         headers.append((DEVICE_TOKEN_HEADER.lower().encode(), token.encode()))
     if admin_token:
         headers.append((b"x-admin-token", admin_token.encode()))
+    if cookie:
+        headers.append((b"cookie", cookie.encode()))
     return Request(
         {
             "type": "http",
@@ -57,7 +65,7 @@ def _request(
             "path": path,
             "raw_path": path.encode(),
             "query_string": b"",
-            "scheme": "http",
+            "scheme": scheme,
             "server": ("localhost", 3333),
             "client": (client, 50000),
             "headers": headers,
@@ -105,7 +113,10 @@ def test_scoped_authorization_and_admin_super_scope(pairing_store: Path, monkeyp
     token = claim_pairing_code(code, "Laptop", now=101)["token"]
     monkeypatch.setattr(admin_auth, "ADMIN_TOKEN", "root-secret")
 
-    admin_auth.authorize_scope(_request("/system/shutdown", method="POST", admin_token="root-secret"), "system")
+    admin_auth.authorize_scope(
+        _request("/system/shutdown", client="127.0.0.1", method="POST", admin_token="root-secret"),
+        "system",
+    )
     admin_auth.authorize_scope(_request("/app-state", token=token), "read_private")
     with pytest.raises(HTTPException) as denied:
         admin_auth.authorize_scope(_request("/system/shutdown", method="POST", token=token), "system")
@@ -115,18 +126,37 @@ def test_scoped_authorization_and_admin_super_scope(pairing_store: Path, monkeyp
 def test_legacy_lan_system_flag_never_grants_private_data(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(admin_auth, "ADMIN_TOKEN", "")
     monkeypatch.setattr(admin_auth, "ALLOW_LAN_SYSTEM", True)
-    system_request = _request("/system/shutdown", method="POST")
-    admin_auth.authorize_system(system_request)
+    with pytest.raises(HTTPException) as system_denied:
+        admin_auth.authorize_system(_request("/system/shutdown", method="POST"))
+    assert system_denied.value.status_code == 403
     with pytest.raises(HTTPException) as denied:
         admin_auth.authorize_system(_request("/app-state"))
     assert denied.value.status_code == 403
 
 
-def test_unpaired_lan_can_search_web_but_cannot_read_private_data(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_paired_lan_can_search_web_but_unpaired_lan_cannot_read_private_data(
+    pairing_store: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setattr(admin_auth, "ADMIN_TOKEN", "")
-    admin_auth.authorize_scope(_request("/v1/research", method="POST"), "web")
+    with pytest.raises(HTTPException):
+        admin_auth.authorize_scope(_request("/v1/research", method="POST"), "web")
+    code = create_pairing_code(["chat", "read_private", "web"], now=100)["code"]
+    token = claim_pairing_code(code, "Research tablet", now=101)["token"]
+    admin_auth.authorize_scope(_request("/v1/research", method="POST", token=token), "web")
     with pytest.raises(HTTPException) as denied:
         admin_auth.authorize_scope(_request("/app-state"), "read_private")
+    assert denied.value.status_code == 403
+
+
+def test_web_scope_cannot_mutate_host_search_settings(pairing_store: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(admin_auth, "ADMIN_TOKEN", "")
+    code = create_pairing_code(["web"], now=100)["code"]
+    token = claim_pairing_code(code, "Research tablet", now=101)["token"]
+
+    with pytest.raises(HTTPException) as denied:
+        admin_auth.authorize_system(_request("/v1/settings/web-search", method="PUT", token=token))
+
     assert denied.value.status_code == 403
 
 
@@ -144,14 +174,65 @@ def test_remote_pairing_claim_and_revocation_endpoint(pairing_store: Path, monke
     with TestClient(app, client=("192.168.1.44", 50101)) as remote:
         claim = remote.post("/v1/pairing/claim", json={"code": code, "device_name": "Phone"})
         assert claim.status_code == 200
-        token = claim.json()["token"]
-        headers = {DEVICE_TOKEN_HEADER: token}
-        assert remote.get("/v1/pairing/me", headers=headers).status_code == 200
-        assert remote.delete("/v1/pairing/me", headers=headers).status_code == 200
-        assert remote.get("/v1/pairing/me", headers=headers).status_code == 403
+        assert "token" not in claim.json()
+        cookie = claim.headers["set-cookie"]
+        assert f"{DEVICE_TOKEN_COOKIE}=" in cookie
+        assert "HttpOnly" in cookie
+        assert "samesite=strict" in cookie.lower()
+        assert f"Path={DEVICE_TOKEN_COOKIE_PATH}" in cookie
+        assert "Secure" not in cookie
+        token = cookie.split(";", 1)[0].split("=", 1)[1]
+        cookie_header = f"{DEVICE_TOKEN_COOKIE}={token}"
+        assert remote.get("/v1/pairing/me", headers={"Cookie": cookie_header}).status_code == 200
+        revoked = remote.delete("/v1/pairing/me", headers={"Cookie": cookie_header})
+        assert revoked.status_code == 200
+        assert f"Path={DEVICE_TOKEN_COOKIE_PATH}" in revoked.headers["set-cookie"]
+        assert "Max-Age=0" in revoked.headers["set-cookie"]
+        assert remote.get("/v1/pairing/me", headers={"Cookie": cookie_header}).status_code == 403
+        assert remote.get("/v1/pairing/me", headers={DEVICE_TOKEN_HEADER: token}).status_code == 403
 
     document = json.loads(pairing_store.read_text(encoding="utf-8"))
     assert document["pairing_codes"] == {}
+
+
+@pytest.mark.asyncio
+async def test_pairing_me_migrates_legacy_header_to_cookie(pairing_store: Path) -> None:
+    claimed = claim_pairing_code(create_pairing_code(["chat"], now=100)["code"], "Legacy phone", now=101)
+    response = Response()
+    device = await pairing_routes.pairing_me(
+        _request("/v1/pairing/me", client="192.168.1.44", token=claimed["token"]),
+        response,
+    )
+    assert device["device"]["name"] == "Legacy phone"
+    cookie = response.headers["set-cookie"]
+    assert f"{DEVICE_TOKEN_COOKIE}=" in cookie
+    assert "HttpOnly" in cookie
+    assert "samesite=strict" in cookie.lower()
+
+
+def test_http_only_cookie_authorizes_scoped_protected_route(pairing_store: Path) -> None:
+    claimed = claim_pairing_code(create_pairing_code(["read_private"], now=100)["code"], "Cookie phone", now=101)
+
+    admin_auth.authorize_scope(
+        _request(
+            "/app-state",
+            client="192.168.1.44",
+            cookie=f"{DEVICE_TOKEN_COOKIE}={claimed['token']}",
+        ),
+        "read_private",
+    )
+
+
+@pytest.mark.asyncio
+async def test_pairing_claim_marks_cookie_secure_over_https(pairing_store: Path) -> None:
+    code = create_pairing_code(["chat"])["code"]
+    response = Response()
+    await pairing_routes.pairing_claim(
+        PairingClaimRequest(code=code, device_name="Secure phone"),
+        _request("/v1/pairing/claim", client="192.168.1.44", scheme="https"),
+        response,
+    )
+    assert "Secure" in response.headers["set-cookie"]
 
 
 def test_remote_cannot_start_or_inventory_pairing(pairing_store: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -168,7 +249,7 @@ def test_remote_cannot_start_or_inventory_pairing(pairing_store: Path, monkeypat
                 json={},
                 headers={"X-Admin-Token": "admin"},
             ).status_code
-            == 200
+            == 403
         )
 
 
@@ -218,11 +299,13 @@ def test_device_registry_and_scope_validation_fail_closed(tmp_path: Path) -> Non
 
     assert normalize_pairing_code(" ab-cd 12 ") == "ABCD12"
     assert validate_scopes(None) == ("chat", "read_private")
-    assert validate_scopes(["chat", "chat", "agent"]) == ("chat", "agent")
+    assert validate_scopes(["chat", "chat", "web"]) == ("chat", "web")
     with pytest.raises(ValueError):
         validate_scopes([])
     with pytest.raises(ValueError):
         validate_scopes(["agent_yolo"])
+    with pytest.raises(ValueError):
+        validate_scopes(["system"])
     with pytest.raises(ValueError):
         validate_scopes(["unknown"])
     assert sanitize_device_name("  Home   tablet ") == "Home tablet"
@@ -250,3 +333,17 @@ def test_pairing_limits_token_refresh_and_listing(pairing_store: Path) -> None:
     assert list_devices(include_revoked=False)[0]["id"] == device_id
     assert revoke_device("bad") is None
     assert revoke_device("f" * 24) is None
+
+
+def test_retired_host_scopes_are_removed_from_legacy_devices(pairing_store: Path) -> None:
+    created = create_pairing_code(["chat"], now=100)
+    claimed = claim_pairing_code(created["code"], "Legacy device", now=101)
+    document = json.loads(pairing_store.read_text(encoding="utf-8"))
+    document["devices"][claimed["device"]["id"]]["scopes"] = ["system", "index", "agent"]
+    pairing_store.write_text(json.dumps(document), encoding="utf-8")
+
+    assert authenticate_device_token(claimed["token"], "system", now=102) is None
+    assert authenticate_device_token(claimed["token"], "index", now=102) is None
+    assert authenticate_device_token(claimed["token"], "agent", now=102) is None
+    assert device_for_token(claimed["token"]) is None
+    assert list_devices()[0]["scopes"] == []

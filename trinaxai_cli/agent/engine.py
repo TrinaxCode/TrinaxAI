@@ -80,6 +80,12 @@ def default_system_prompt(workspace_root: Path) -> str:
         "Rules:\n"
         "- Never call web search, deep research, memory, document search, or any other tool "
         "by default. The user's intent and missing evidence determine whether a tool is needed.\n"
+        "- When the user asks to search or look something up without naming a source, infer the "
+        "right evidence: current/public facts use web_search; the user's projects, files, or "
+        "indexed documents use search_knowledge; saved personal context uses search_memory; "
+        "comparisons, detailed reports, or several sources use deep_research; code and workspace "
+        "requests use the filesystem tools when those tools are available. Do not answer an "
+        "evidence-seeking request from this prompt alone.\n"
         "- For new files use write_file; before edits, read the file. "
         "Use list_dir for a root-only listing and ** globs only for recursive searches.\n"
         "- Never guess paths or claim a file exists without exact tool evidence. Do not re-read "
@@ -128,6 +134,7 @@ class AgentEngine:
     _suppress_stream: bool = field(init=False, default=False)
     _active_response: Any | None = field(init=False, default=None, repr=False)
     _response_lock: threading.Lock = field(init=False, default_factory=threading.Lock, repr=False)
+    _last_call_key: tuple[str, str] | None = field(init=False, default=None, repr=False)
 
     def __post_init__(self) -> None:
         self.workspace_root = Path(self.workspace_root).expanduser().resolve()
@@ -165,11 +172,17 @@ class AgentEngine:
         simple_creation = _is_simple_file_creation(messages)
         spanish = bool(
             re.search(
-                r"[áéíóúñ¿¡]|\b(?:crea|archivo|explica|qué|que)\b",
+                r"[áéíóúñ¿¡]|\b(?:crea|crear|quiero|pagina|página|negocio|empresa|para|archivo|explica|qué|que|haz|mi|mis)\b",
                 _latest_user_text(messages),
                 re.I,
             )
         )
+        if _needs_web_clarification(messages):
+            prompt = _web_clarification_answer(spanish, _latest_user_text(messages))
+            if self.on_token:
+                self.on_token(prompt)
+            messages.append({"role": "assistant", "content": prompt})
+            return prompt
         # Native tool calls and recovered JSON are already filtered by
         # _chat_stream; hiding the whole turn made a slow CPU model look frozen.
         self._suppress_stream = review_mode
@@ -274,7 +287,7 @@ class AgentEngine:
                     messages.append({"role": "assistant", "content": answer})
                     return answer
             if not review_mode:
-                self._suppress_stream = not not degraded_results
+                self._suppress_stream = bool(degraded_results)
             if content:
                 final_answer = content
         # Ran out of steps.
@@ -408,17 +421,27 @@ class AgentEngine:
     def _execute_call(self, call: dict[str, Any]) -> str:
         self._raise_if_cancelled()
         name, args = _parse_tool_call(call)
+        call_key = (name, json.dumps(args, sort_keys=True, ensure_ascii=False, default=str))
         tool = self._tool_map.get(name)
         if tool is None:
-            return format_tool_failure(name or "unknown", "The requested tool is not registered in this agent.")
+            result = format_tool_failure(name or "unknown", "The requested tool is not registered in this agent.")
+            self._last_call_key = call_key
+            return result
         if self.on_tool_start:
             self.on_tool_start(tool, args)
-        if tool.dangerous and self.on_confirm is not None:
-            if not self.on_confirm(tool, args):
-                denied = format_tool_failure(name, "The action was denied by user, so no change was made.")
-                if self.on_tool_result:
-                    self.on_tool_result(tool, denied)
-                return denied
+        # ponytail: consecutive-call guard; broader state tracking is unnecessary
+        # until a model needs to repeat a call after a distinct state change.
+        if call_key == self._last_call_key:
+            result = format_tool_failure(name, "The same tool call was repeated without new progress.")
+            if self.on_tool_result:
+                self.on_tool_result(tool, result)
+            return result
+        if tool.dangerous and self.on_confirm is not None and not self.on_confirm(tool, args):
+            denied = format_tool_failure(name, "The action was denied by user, so no change was made.")
+            self._last_call_key = call_key
+            if self.on_tool_result:
+                self.on_tool_result(tool, denied)
+            return denied
         self._raise_if_cancelled()
         try:
             result = tool.handler(self.workspace_root, **args)
@@ -429,6 +452,7 @@ class AgentEngine:
         except Exception as exc:  # noqa: BLE001 - a tool failure must not crash the loop
             result = format_tool_failure(name, exc, external=tool.external)
         result = normalize_tool_result(name, result, external=tool.external)
+        self._last_call_key = call_key
         if self.on_tool_result:
             self.on_tool_result(tool, result)
         return result
@@ -492,6 +516,7 @@ class AgentEngine:
         emitted = False
         defer_json = False
         error: str | None = None
+        saw_done = False
         try:
             req = urllib.request.Request(
                 url,
@@ -520,6 +545,8 @@ class AgentEngine:
                     calls = msg.get("tool_calls")
                     if calls:
                         tool_calls.extend(calls)
+                    if chunk.get("done"):
+                        saw_done = True
                     # Stream prose live, but only while no tool call has appeared
                     # in this reply — once it's a tool turn, suppress trailing text.
                     if piece:
@@ -553,6 +580,9 @@ class AgentEngine:
                 self._active_response = None
         if error:
             raise RuntimeError(error)
+        self._raise_if_cancelled()
+        if not saw_done:
+            raise RuntimeError("agent: stream ended before completion")
         content = "".join(content_parts)
         recovered_text_call = not tool_calls and bool(_tool_calls_from_text(content, self._tool_map))
         if defer_json and not recovered_text_call and self.on_token:
@@ -665,6 +695,77 @@ _SIMPLE_ROOT_LIST_RE = re.compile(
     r"\b(?:lista|listar|list|show)\b.{0,120}\b(?:ra[ií]z|root|archivos?|files?)\b",
     re.IGNORECASE | re.DOTALL,
 )
+_WEB_CREATION_RE = re.compile(
+    r"\b(?:crea|crear|créame|creame|construye|construir|desarrolla|desarrollar|"
+    r"diseña|disenar|diseñar|implementa|implement|build|create|develop|design|make)\b"
+    r"[\s\S]{0,100}\b(?:p[aá]gina|sitio|website|web\s+app|landing\s+page|frontend|front-end|"
+    r"interfaz\s+web|aplicaci[oó]n\s+web|web\s+site)\b",
+    re.IGNORECASE,
+)
+_WEB_PLAN_RE = re.compile(
+    r"\b(?:plan|planning|ideas?|idea|brief|concepto|wireframe|propuesta|roadmap)\b",
+    re.IGNORECASE,
+)
+_WEB_REQUIREMENT_PATTERNS = (
+    re.compile(
+        r"\b(?:negocio|empresa|marca|tienda|restaurante|cafeter[ií]a|portfolio|portafolio|business|company|brand|store|restaurant|portfolio)\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\b(?:p[aá]ginas?(?!\s+web)|secciones?|inicio|home|servicios?|productos?|men[uú]|contacto|about|contact|services|products|sections?)\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\b(?:color(?:es)?|estilo|dise[nñ]o|moderna?|minimalista|oscuro|claro|logo|referencia|responsive|style|design|palette|logo|reference|dark|light)\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\b(?:react|next(?:\.js)?|vue|svelte|html|css|javascript|typescript|tailwind|vite|django|wordpress|astro)\b",
+        re.IGNORECASE,
+    ),
+)
+_CLARIFICATION_CUE_RE = re.compile(
+    r"(?:antes de crear archivos|antes de crear|necesito definir algunos detalles|"
+    r"before creating files|before creating|i need a few details)",
+    re.IGNORECASE,
+)
+
+
+def _needs_web_clarification(messages: list[dict[str, Any]]) -> bool:
+    current_index = next(
+        (index for index in range(len(messages) - 1, -1, -1) if messages[index].get("role") == "user"),
+        None,
+    )
+    current = str(messages[current_index].get("content") or "") if current_index is not None else ""
+    if not _WEB_CREATION_RE.search(current) or _WEB_PLAN_RE.search(current):
+        return False
+    previous_assistant = messages[current_index - 1] if current_index is not None and current_index > 0 else None
+    if (
+        previous_assistant
+        and previous_assistant.get("role") == "assistant"
+        and _CLARIFICATION_CUE_RE.search(str(previous_assistant.get("content") or ""))
+    ):
+        return False
+    return sum(bool(pattern.search(current)) for pattern in _WEB_REQUIREMENT_PATTERNS) < len(_WEB_REQUIREMENT_PATTERNS)
+
+
+def _web_clarification_answer(spanish: bool, prompt: str) -> str:
+    missing = [
+        spanish and "¿Qué tipo de negocio y objetivo debe tener?" or "What type of business and goal should it have?",
+        spanish and "¿Qué páginas o secciones necesitas?" or "Which pages or sections do you need?",
+        spanish and "¿Qué colores y estilo visual prefieres?" or "What colors and visual style do you prefer?",
+        spanish
+        and "¿Qué tecnología o restricciones debemos respetar?"
+        or "Which technology or constraints should we respect?",
+    ]
+    present = [bool(pattern.search(prompt)) for pattern in _WEB_REQUIREMENT_PATTERNS]
+    questions = [item for item, found in zip(missing, present, strict=True) if not found]
+    heading = (
+        "Antes de crear archivos, necesito definir algunos detalles:"
+        if spanish
+        else "Before creating files, I need a few details:"
+    )
+    return "\n".join([heading, *(f"{index}. {question}" for index, question in enumerate(questions, start=1))])
 
 
 def _latest_user_text(messages: list[dict[str, Any]]) -> str:
@@ -843,9 +944,7 @@ def _is_final_answer(content: str, used_tools: bool) -> bool:
         return True
     # After tool use we expect a summary. Reject a lone short fragment with no
     # spaces and no sentence punctuation — the classic truncation artifact.
-    if len(text) <= 3 and " " not in text and not text.endswith((".", "!", "?", ":", ")")):
-        return False
-    return True
+    return not (len(text) <= 3 and " " not in text and not text.endswith((".", "!", "?", ":", ")")))
 
 
 def _append_degradation_notes(content: str, results: list[str]) -> str:
@@ -937,10 +1036,9 @@ def _json_object_candidates(text: str) -> list[str]:
             if depth == 0:
                 start = i
             depth += 1
-        elif ch == "}":
-            if depth > 0:
-                depth -= 1
-                if depth == 0 and start >= 0:
-                    candidates.append(text[start : i + 1])
-                    start = -1
+        elif ch == "}" and depth > 0:
+            depth -= 1
+            if depth == 0 and start >= 0:
+                candidates.append(text[start : i + 1])
+                start = -1
     return candidates

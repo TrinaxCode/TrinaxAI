@@ -5,13 +5,35 @@ import { clearRevokedDeviceSession, systemRequestHeaders } from './authHeaders';
 const SYNC_EVENT = 'trinaxai:shared-state-updated';
 const SYNC_INTERVAL_MS = 8000;
 const SYNC_DEBOUNCE_MS = 350;
-const STORAGE_PREFIX = 'tc-';
 const LEGACY_META_KEY = 'tc-sync-meta';
 const CLIENT_META_KEY = 'trinaxai-sync-client-v2';
 const DEVICE_ID_KEY = 'trinaxai-sync-device-id';
 const CHAT_SESSIONS_KEY = 'tc-chat-sessions';
 const CHAT_DELETED_KEY = 'tc-chat-deleted-ids';
-const EXCLUDED_KEYS = new Set(['tc-chat-sessions-backup', LEGACY_META_KEY]);
+// Keep this list explicit: arbitrary `tc-*` values may be private or
+// device-local and must not cross the app-state boundary.
+const SUPPORTED_STATE_KEYS = new Set([
+  'tc-onboarding-complete',
+  'tc-user-nickname',
+  'tc-user-name',
+  'tc-lang',
+  'tc-theme',
+  'tc-models-chat',
+  'tc-models-deep',
+  'tc-models-vision',
+  'tc-models-vision-quality',
+  'tc-models-embed',
+  'tc-models-code',
+  'tc-models-fast',
+  'tc-aggressive-quant',
+  'tc-keep-alive',
+  'tc-thinking-mode',
+  CHAT_SESSIONS_KEY,
+  'tc-chat-folders',
+  'tc-prompts',
+  CHAT_DELETED_KEY,
+  'tc-reset-at',
+]);
 
 type SetOperation = { op: 'set'; key: string; value: string };
 type DeleteOperation = { op: 'delete'; key: string };
@@ -25,6 +47,7 @@ interface ClientSyncMeta {
   serverRevision: number;
   knownKeys: string[];
   pending: PendingOperations;
+  localSnapshot: Record<string, string>;
 }
 
 interface RemoteState {
@@ -46,11 +69,10 @@ class SharedStateAuthorizationError extends Error {}
 
 let syncStarted = false;
 let syncRuntimeCleanup: (() => void) | null = null;
-let storageHooksInstalled = false;
+let storageListenerInstalled = false;
 let syncInFlight = false;
 let syncAgain = false;
 let syncTimer: number | undefined;
-let applyingRemote = false;
 let syncBackoffUntil = 0;
 let syncFailureCount = 0;
 let syncAuthorizationBlocked = false;
@@ -64,11 +86,12 @@ function emptyMeta(): ClientSyncMeta {
     serverRevision: 0,
     knownKeys: [],
     pending: {},
+    localSnapshot: {},
   };
 }
 
 function isSyncableKey(key: string): boolean {
-  return key.startsWith(STORAGE_PREFIX) && !EXCLUDED_KEYS.has(key);
+  return SUPPORTED_STATE_KEYS.has(key);
 }
 
 function localKeys(): string[] {
@@ -103,6 +126,15 @@ function parsePending(value: unknown): PendingOperations {
   return pending;
 }
 
+function parseLocalSnapshot(value: unknown): Record<string, string> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  const snapshot: Record<string, string> = {};
+  for (const [key, candidate] of Object.entries(value)) {
+    if (isSyncableKey(key) && typeof candidate === 'string') snapshot[key] = candidate;
+  }
+  return snapshot;
+}
+
 function readClientMeta(): ClientSyncMeta {
   const raw = localStorage.getItem(CLIENT_META_KEY);
   if (!raw) {
@@ -122,6 +154,7 @@ function readClientMeta(): ClientSyncMeta {
         ? [...new Set(parsed.knownKeys.filter((key): key is string => typeof key === 'string' && isSyncableKey(key)))]
         : [],
       pending: parsePending(parsed.pending),
+      localSnapshot: parseLocalSnapshot(parsed.localSnapshot),
     };
   } catch {
     cachedMeta = emptyMeta();
@@ -154,6 +187,22 @@ function queueOperation(operation: StateOperation, schedule = true): void {
   meta.pending[operation.key] = operation;
   persistClientMeta(meta);
   if (schedule) scheduleSharedStateSync();
+}
+
+function detectLocalChanges(): void {
+  const meta = readClientMeta();
+  const current = snapshotLocalState();
+  const keys = new Set([...Object.keys(meta.localSnapshot), ...Object.keys(current)]);
+  for (const key of keys) {
+    const previousValue = meta.localSnapshot[key];
+    const currentValue = current[key];
+    if (previousValue === currentValue) continue;
+    meta.pending[key] = currentValue === undefined
+      ? { op: 'delete', key }
+      : { op: 'set', key, value: currentValue };
+  }
+  meta.localSnapshot = current;
+  persistClientMeta(meta);
 }
 
 function operationsEqual(left: StateOperation | undefined, right: StateOperation): boolean {
@@ -281,71 +330,67 @@ function applyRemoteState(remote: RemoteState): boolean {
 
   const remoteReset = parseResetTime(remoteValues['tc-reset-at']);
   const localReset = parseResetTime(local['tc-reset-at']);
-  applyingRemote = true;
-  try {
-    if (remoteReset && remoteReset > localReset) {
-      for (const key of localKeys()) changed = setLocalValue(key, null) || changed;
-      for (const [key, value] of Object.entries(remoteValues)) {
-        changed = setLocalValue(key, value) || changed;
-      }
-      meta.pending = {};
-    } else {
-      const mergedDeleted = mergeDeleted(local[CHAT_DELETED_KEY], remoteValues[CHAT_DELETED_KEY]);
-      const mergedSessions = mergeSessions(
-        local[CHAT_SESSIONS_KEY],
-        remoteValues[CHAT_SESSIONS_KEY],
-        mergedDeleted ?? undefined,
-      );
+  if (remoteReset && remoteReset > localReset) {
+    for (const key of localKeys()) changed = setLocalValue(key, null) || changed;
+    for (const [key, value] of Object.entries(remoteValues)) {
+      changed = setLocalValue(key, value) || changed;
+    }
+    meta.pending = {};
+  } else {
+    const mergedDeleted = mergeDeleted(local[CHAT_DELETED_KEY], remoteValues[CHAT_DELETED_KEY]);
+    const mergedSessions = mergeSessions(
+      local[CHAT_SESSIONS_KEY],
+      remoteValues[CHAT_SESSIONS_KEY],
+      mergedDeleted ?? undefined,
+    );
 
-      for (const [key, merged] of [
-        [CHAT_DELETED_KEY, mergedDeleted],
-        [CHAT_SESSIONS_KEY, mergedSessions],
-      ] as const) {
-        changed = setLocalValue(key, merged) || changed;
-        if (merged === null) {
-          if (remoteValues[key] !== undefined) meta.pending[key] = { op: 'delete', key };
-        } else if (merged !== remoteValues[key]) {
-          meta.pending[key] = { op: 'set', key, value: merged };
-        } else {
-          delete meta.pending[key];
-        }
-      }
-
-      const allKeys = new Set([
-        ...Object.keys(local),
-        ...Object.keys(remoteValues),
-        ...knownBefore,
-      ]);
-      allKeys.delete(CHAT_SESSIONS_KEY);
-      allKeys.delete(CHAT_DELETED_KEY);
-      for (const key of allKeys) {
-        const pending = meta.pending[key];
-        if (pending) continue;
-        const remoteValue = remoteValues[key];
-        if (remoteValue !== undefined) {
-          changed = setLocalValue(key, remoteValue) || changed;
-        } else if (knownBefore.has(key)) {
-          // An absent key in a newer server revision is an authoritative delete.
-          changed = setLocalValue(key, null) || changed;
-        } else if (!meta.initialized && local[key] !== undefined) {
-          // One-time migration of values created before operation tracking.
-          meta.pending[key] = { op: 'set', key, value: local[key] };
-        }
+    for (const [key, merged] of [
+      [CHAT_DELETED_KEY, mergedDeleted],
+      [CHAT_SESSIONS_KEY, mergedSessions],
+    ] as const) {
+      changed = setLocalValue(key, merged) || changed;
+      if (merged === null) {
+        if (remoteValues[key] !== undefined) meta.pending[key] = { op: 'delete', key };
+      } else if (merged !== remoteValues[key]) {
+        meta.pending[key] = { op: 'set', key, value: merged };
+      } else {
+        delete meta.pending[key];
       }
     }
 
-    // Remove the old timestamp metadata from both client and server.
-    if (remote.values[LEGACY_META_KEY] !== undefined) {
-      meta.pending[LEGACY_META_KEY] = { op: 'delete', key: LEGACY_META_KEY };
+    const allKeys = new Set([
+      ...Object.keys(local),
+      ...Object.keys(remoteValues),
+      ...knownBefore,
+    ]);
+    allKeys.delete(CHAT_SESSIONS_KEY);
+    allKeys.delete(CHAT_DELETED_KEY);
+    for (const key of allKeys) {
+      const pending = meta.pending[key];
+      if (pending) continue;
+      const remoteValue = remoteValues[key];
+      if (remoteValue !== undefined) {
+        changed = setLocalValue(key, remoteValue) || changed;
+      } else if (knownBefore.has(key)) {
+        // An absent key in a newer server revision is an authoritative delete.
+        changed = setLocalValue(key, null) || changed;
+      } else if (!meta.initialized && local[key] !== undefined) {
+        // One-time migration of values created before operation tracking.
+        meta.pending[key] = { op: 'set', key, value: local[key] };
+      }
     }
-    localStorage.removeItem(LEGACY_META_KEY);
-  } finally {
-    applyingRemote = false;
   }
+
+  // Remove the old timestamp metadata from both client and server.
+  if (remote.values[LEGACY_META_KEY] !== undefined) {
+    meta.pending[LEGACY_META_KEY] = { op: 'delete', key: LEGACY_META_KEY };
+  }
+  localStorage.removeItem(LEGACY_META_KEY);
 
   meta.initialized = true;
   meta.serverRevision = remote.revision;
   meta.knownKeys = Object.keys(remoteValues);
+  meta.localSnapshot = snapshotLocalState();
   persistClientMeta(meta);
   remoteStateEtag = etagForRevision(remote.revision);
   if (changed) window.dispatchEvent(new Event(SYNC_EVENT));
@@ -409,6 +454,7 @@ function acknowledgeOperations(operations: StateOperation[], revision: number): 
 }
 
 export async function syncSharedStateOnce(timeoutMs = 1800, force = false): Promise<void> {
+  if (typeof window === 'undefined') return;
   if (syncAuthorizationBlocked) return;
   if (!force && Date.now() < syncBackoffUntil) return;
   if (syncInFlight) {
@@ -416,13 +462,15 @@ export async function syncSharedStateOnce(timeoutMs = 1800, force = false): Prom
     return;
   }
   syncInFlight = true;
-  installLocalStorageSyncHooks();
+  installStorageEventListener();
   // Also resets cached revision/ETag after an explicit browser-storage clear.
   readClientMeta();
+  detectLocalChanges();
   const controller = new AbortController();
   const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
   try {
     const remote = await fetchRemoteState(controller.signal);
+    detectLocalChanges();
     if (remote) applyRemoteState(remote);
 
     // CAS conflicts are rebased on the returned authoritative revision. Local
@@ -433,6 +481,7 @@ export async function syncSharedStateOnce(timeoutMs = 1800, force = false): Prom
       if (operations.length === 0) break;
       const result = await pushOperations(operations, meta.serverRevision, controller.signal);
       if (result.kind === 'conflict') {
+        detectLocalChanges();
         applyRemoteState(result.remote);
         continue;
       }
@@ -462,6 +511,7 @@ export async function syncSharedStateOnce(timeoutMs = 1800, force = false): Prom
 }
 
 export function scheduleSharedStateSync(timeoutMs = 1800): void {
+  if (typeof window === 'undefined') return;
   if (syncAuthorizationBlocked) return;
   window.clearTimeout(syncTimer);
   syncTimer = window.setTimeout(() => {
@@ -469,27 +519,11 @@ export function scheduleSharedStateSync(timeoutMs = 1800): void {
   }, SYNC_DEBOUNCE_MS);
 }
 
-function installLocalStorageSyncHooks(): void {
-  if (storageHooksInstalled) return;
-  storageHooksInstalled = true;
-  const setItem = Storage.prototype.setItem;
-  const removeItem = Storage.prototype.removeItem;
-  Storage.prototype.setItem = function patchedSetItem(key: string, value: string) {
-    const before = this.getItem(key);
-    setItem.call(this, key, value);
-    if (!applyingRemote && isSyncableKey(key) && before !== value) {
-      queueOperation({ op: 'set', key, value });
-    }
-  };
-  Storage.prototype.removeItem = function patchedRemoveItem(key: string) {
-    const hadValue = this.getItem(key) !== null;
-    removeItem.call(this, key);
-    if (!applyingRemote && isSyncableKey(key) && hadValue) {
-      queueOperation({ op: 'delete', key });
-    }
-  };
+function installStorageEventListener(): void {
+  if (storageListenerInstalled) return;
+  storageListenerInstalled = true;
   window.addEventListener('storage', (event) => {
-    if (!event.key || !isSyncableKey(event.key)) return;
+    if ((event.storageArea && event.storageArea !== localStorage) || !event.key || !isSyncableKey(event.key)) return;
     queueOperation(event.newValue === null
       ? { op: 'delete', key: event.key }
       : { op: 'set', key: event.key, value: event.newValue });
@@ -507,7 +541,7 @@ export function markChatSessionDeleted(id: string): void {
 export function startSharedStateSync(): () => void {
   if (syncStarted) return syncRuntimeCleanup ?? (() => undefined);
   syncStarted = true;
-  installLocalStorageSyncHooks();
+  installStorageEventListener();
   // React Strict Mode mounts, cleans up, then mounts again in development.
   // Reuse the first request instead of scheduling a duplicate after it ends.
   if (!syncInFlight) void syncSharedStateOnce();

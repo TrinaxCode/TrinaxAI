@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import shlex
 import shutil
 import subprocess
 import sys
@@ -56,10 +57,22 @@ def _safe_backend_command(command: str) -> bool | None:
     normalized = " ".join(command.lower().split())
     if not normalized:
         return None
-    if "--host 0.0.0.0" in normalized or "--host ::" in normalized:
-        return False
-    if "--host 127." in normalized or "--host localhost" in normalized or "--host ::1" in normalized:
-        return True
+    try:
+        tokens = shlex.split(normalized)
+    except ValueError:
+        tokens = normalized.split()
+    for index, token in enumerate(tokens):
+        if token == "--host" and index + 1 < len(tokens):
+            host = tokens[index + 1]
+        elif token.startswith("--host="):
+            host = token.partition("=")[2]
+        else:
+            continue
+        # This is a validation check, not a bind operation.
+        if host == "0.0.0.0" or host in {"::", "[::]"}:  # nosec B104
+            return False
+        if host == "localhost" or host.startswith("127.") or host in {"::1", "[::1]"}:
+            return True
     return None
 
 

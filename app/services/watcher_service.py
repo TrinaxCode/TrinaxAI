@@ -160,7 +160,7 @@ class _watch_Handler(_WDFileSystemEventHandler):
         self._stop_event = threading.Event()
         self._busy_event = threading.Event()
         self._active_process_lock = threading.Lock()
-        self._active_process = None
+        self._active_process: subprocess.Popen[str] | None = None
         self._timeout_seconds = config._env_float(
             "TRINAXAI_WATCH_INDEX_TIMEOUT",
             1800.0,

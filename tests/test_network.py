@@ -35,6 +35,28 @@ def test_network_origins_include_stable_hostname_and_current_address(monkeypatch
     assert urls == ["https://192.168.0.18:3334", "https://Trinax-Host.local:3334"]
 
 
+def test_trust_certificate_prefers_mkcert_root_ca(tmp_path: Path, monkeypatch) -> None:
+    ca_root = tmp_path / "mkcert"
+    ca_root.mkdir()
+    ca_file = ca_root / "rootCA.pem"
+    ca_file.write_text("public certificate", encoding="utf-8")
+    monkeypatch.setattr(network.shutil, "which", lambda name: "/bin/mkcert" if name == "mkcert" else None)
+    monkeypatch.setattr(
+        network.subprocess,
+        "run",
+        lambda *_args, **_kwargs: SimpleNamespace(returncode=0, stdout=f"{ca_root}\n", stderr=""),
+    )
+    assert network.trust_certificate(tmp_path) == (ca_file, "mkcert")
+
+
+def test_trust_certificate_falls_back_to_leaf_certificate(tmp_path: Path, monkeypatch) -> None:
+    certificate = tmp_path / "chat-pwa" / "certs" / "trinaxai-local.crt"
+    certificate.parent.mkdir(parents=True)
+    certificate.write_text("public certificate", encoding="utf-8")
+    monkeypatch.setattr(network.shutil, "which", lambda _name: None)
+    assert network.trust_certificate(tmp_path) == (certificate, "self-signed")
+
+
 def test_update_env_replaces_stale_network_without_touching_secrets(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(network.socket, "gethostname", lambda: "trinax")
     env = tmp_path / ".env"

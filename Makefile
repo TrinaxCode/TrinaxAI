@@ -1,11 +1,11 @@
-.PHONY: setup frontend-install dev build lint test test-python test-frontend audit audit-optional index check clean clean-build clean-all help typecheck readiness
+.PHONY: setup frontend-install dev build lint test test-python test-frontend rag-eval audit audit-optional index check clean clean-build clean-all help typecheck readiness
 
 # Cross-platform Python detection: prefer venv, fall back to system python3/py.
 PYTHON ?= python3
 VENV_PYTHON := $(shell if test -f .venv/bin/python; then echo .venv/bin/python; \
                  elif test -f .venv/Scripts/python.exe; then echo .venv/Scripts/python.exe; \
                  else echo $(PYTHON); fi)
-REQUIREMENTS_FILE := $(if $(wildcard requirements.lock),requirements.lock,requirements.txt)
+REQUIREMENTS_INSTALL_ARGS := $(if $(wildcard requirements.lock),--require-hashes -r requirements.lock,-r requirements.txt)
 AUDIT_REQUIREMENTS := $(if $(wildcard requirements.lock),--require-hashes -r requirements.lock,-r requirements.txt)
 
 help:
@@ -14,11 +14,12 @@ help:
 	@echo "  setup            Create .venv, install Python + Node dependencies"
 	@echo "  frontend-install Install Node dependencies only"
 	@echo "  dev              Start frontend dev server (hot-reload)"
-	@echo "  lint             Run Python lint and frontend typecheck"
+	@echo "  lint             Run Python lint/format and frontend ESLint"
 	@echo "  typecheck        Run Python compile check + TypeScript typecheck"
 	@echo "  test             Run backend + frontend unit tests"
 	@echo "  test-python      Run Python tests only"
 	@echo "  test-frontend    Run frontend tests only"
+	@echo "  rag-eval         Evaluate the RAG golden set against a running API"
 	@echo "  build            Build frontend for production"
 	@echo "  index            Run the RAG indexer"
 	@echo "  audit            Run blocking local audits"
@@ -32,7 +33,7 @@ help:
 setup:
 	$(PYTHON) -m venv .venv
 	$(VENV_PYTHON) -m pip install --upgrade pip
-	$(VENV_PYTHON) -m pip install -r $(REQUIREMENTS_FILE)
+	$(VENV_PYTHON) -m pip install $(REQUIREMENTS_INSTALL_ARGS)
 	$(VENV_PYTHON) -m pip install -r requirements-dev.txt
 	$(VENV_PYTHON) -m pip install -e .
 	cd chat-pwa && npm ci
@@ -44,13 +45,13 @@ dev:
 	cd chat-pwa && npm run dev
 
 build:
-	$(VENV_PYTHON) -m py_compile rag_api.py config.py index.py trinaxai_cli/app.py
+	$(VENV_PYTHON) -m py_compile rag_api.py config.py index.py trinaxai_index_documents.py trinaxai_index_state.py trinaxai_cli/app.py
 	cd chat-pwa && npm run build && npm run check:bundle
 
 lint:
 	$(VENV_PYTHON) -m ruff check .
 	$(VENV_PYTHON) -m ruff format --check .
-	cd chat-pwa && npx tsc --noEmit
+	cd chat-pwa && npm run lint
 
 test: test-python test-frontend
 
@@ -58,13 +59,19 @@ test-python:
 	$(VENV_PYTHON) -m pytest -q \
 		--cov=app --cov=trinaxai_cli --cov=trinaxai_core \
 		--cov=service_manager --cov=index \
-		--cov-report=term --cov-fail-under=90
+		--cov-branch --cov-report=term --cov-fail-under=98
 
 test-frontend:
-	cd chat-pwa && npm test
+	cd chat-pwa && npm test && npm run test:coverage
+
+RAG_API_URL ?= http://127.0.0.1:3333
+RAG_EVAL_OUTPUT ?= rag-eval-report.json
+
+rag-eval:
+	$(VENV_PYTHON) scripts/evaluate_rag.py --api-url "$(RAG_API_URL)" --output "$(RAG_EVAL_OUTPUT)"
 
 typecheck:
-	$(VENV_PYTHON) -m py_compile rag_api.py config.py index.py trinaxai_core.py
+	$(VENV_PYTHON) -m py_compile rag_api.py config.py index.py trinaxai_index_documents.py trinaxai_index_state.py trinaxai_core.py
 	cd chat-pwa && npx tsc --noEmit
 
 readiness:

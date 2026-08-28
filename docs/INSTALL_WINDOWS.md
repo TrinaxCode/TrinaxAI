@@ -1,17 +1,19 @@
 # TrinaxAI on Windows
 
+[Versión en español](INSTALL_WINDOWS.es.md)
+
 Guide to install, configure, start, and get TrinaxAI running on Windows 10/11 with PowerShell.
 
 ## Support status
 
-The Windows installer is available and CI now validates Python smoke tests, CLI smoke tests, and PowerShell syntax on Windows. Full end-to-end installer validation on a real Windows machine is still pending.
+The Windows installer is available and CI validates Python/CLI smoke tests, PowerShell syntax and dry-runs, and the desktop Manager build on Windows. A full install with real dependency/model downloads and first-run behavior still requires the machine-level smoke test in [TESTING.md](../TESTING.md).
 
 ## What you'll have running
 
 When done, you should have:
 
 - Ollama installed and responding at `http://localhost:11434`.
-- RAG API at `http://localhost:3333`.
+- RAG API at `https://localhost:3333` when the managed certificate is available (HTTP is the fallback).
 - PWA at `https://localhost:3334`.
 - Python `.venv` environment.
 - PWA dependencies installed.
@@ -28,25 +30,37 @@ When done, you should have:
 | Free disk | 5 GB | 10-25 GB |
 | Python | 3.10 | 3.12 |
 | Node.js | 22 | 24 LTS |
-| Git | Yes | Yes |
 | Ollama | Yes | Latest version |
 | PowerShell | 5+ | PowerShell 7 |
 
-Install Python with the `Add python.exe to PATH` option checked.
+## Recommended graphical install
 
-## Recommended guided install
+1. [Download TrinaxAI Manager for Windows](https://github.com/TrinaxCode/TrinaxAI/releases/download/v1.2.0/TrinaxAI-Manager-Windows.exe).
+2. Open the executable.
+3. Select **Install** and wait until it says the process is running.
 
-Open PowerShell and run the guided one-command installer. It downloads TrinaxAI to `%LOCALAPPDATA%\TrinaxAI` by default:
+The Manager downloads and configures TrinaxAI directly. You do not need Git, PowerShell commands, or a preinstalled copy of Python. If Windows requests administrator permission, approve it so required components and firewall rules can be configured. Use the same Manager later for **Update** or **Uninstall**. A portable ZIP is also available on the release page.
+
+If SmartScreen reports an unknown publisher, verify the asset and `SHA256SUMS`
+from the [release signing notes](RELEASE_SIGNING.md) before choosing whether to
+continue. Do not disable SmartScreen globally.
+
+## Advanced PowerShell fallback
+
+Open PowerShell and download, inspect, then run the guided installer. It downloads TrinaxAI to `%LOCALAPPDATA%\TrinaxAI` by default:
 
 ```powershell
-irm https://raw.githubusercontent.com/TrinaxCode/TrinaxAI/main/install.ps1 | iex
+$installer = Join-Path $env:TEMP "TrinaxAI-1.2.0-installer.ps1"
+Invoke-WebRequest -Uri "https://github.com/TrinaxCode/TrinaxAI/releases/download/v1.2.0/TrinaxAI-1.2.0-installer.ps1" -OutFile $installer
+Get-Content -Path $installer
+& $installer
 ```
 
 The installer:
 
 - Detects RAM and selects a profile.
 - Creates `.env`.
-- Installs dependencies automatically. Ollama uses `winget` first, then the official silent installer fallback if needed.
+- Installs dependencies automatically. Ollama tries the official installer first, verifies the signed `OllamaSetup.exe` fallback when needed, and uses `winget` as a final fallback.
 - Creates `.venv`.
 - Installs Python packages.
 - Installs and builds the PWA.
@@ -54,7 +68,7 @@ The installer:
 - Asks whether to enable Windows startup.
 - Asks whether to start services now.
 
-Required dependencies are installed automatically. Optional choices such as models, LAN system control, startup, and service start are prompted by default. Use `-NonInteractive` for scripted installs. The installer should not send you to a browser to download Ollama manually.
+Required dependencies are installed automatically. Optional choices such as models, startup, and service start are prompted by default. Legacy LAN-system configuration is accepted for compatibility but never grants remote host administration. Use `-NonInteractive` for scripted installs. If the automatic paths cannot finish, the signed official `OllamaSetup.exe` opens in its own window; select **Install**, wait for it to finish, and rerun the installer if PowerShell still cannot find `ollama.exe`.
 
 If you already have the project or want to select another install directory:
 
@@ -78,7 +92,6 @@ You can install with `winget`:
 
 ```powershell
 winget install --id Python.Python.3.12 --silent
-winget install --id Git.Git --silent
 winget install --id OpenJS.NodeJS.LTS --silent
 winget install --id Ollama.Ollama --silent
 ```
@@ -86,7 +99,6 @@ winget install --id Ollama.Ollama --silent
 Or download manually:
 
 - Python: `https://python.org`
-- Git: `https://git-scm.com`
 - Node.js LTS: `https://nodejs.org`
 - Ollama: `https://ollama.com/download/windows`
 
@@ -96,7 +108,6 @@ Verify:
 
 ```powershell
 python --version
-git --version
 node --version
 npm --version
 ollama --version
@@ -104,10 +115,13 @@ ollama --version
 
 ## Manual install
 
-### 1. Clone the project
+### 1. Download the project
 
 ```powershell
-git clone https://github.com/TrinaxCode/TrinaxAI.git $env:USERPROFILE\trinaxai
+$zip = "$env:TEMP\trinaxai.zip"
+irm https://github.com/TrinaxCode/TrinaxAI/releases/download/v1.2.0/TrinaxAI-1.2.0.zip -OutFile $zip
+Expand-Archive $zip $env:TEMP -Force
+Move-Item "$env:TEMP\TrinaxAI-1.2.0" "$env:USERPROFILE\trinaxai"
 cd $env:USERPROFILE\trinaxai
 ```
 
@@ -116,14 +130,14 @@ cd $env:USERPROFILE\trinaxai
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install --upgrade pip
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe -m pip install --require-hashes -r requirements.lock
 ```
 
 ### 3. Install the PWA
 
 ```powershell
 cd chat-pwa
-npm install
+npm ci
 npm run build
 cd ..
 ```
@@ -154,7 +168,7 @@ Recommended values:
 TRINAXAI_PROFILE=16gb
 TRINAXAI_HOST=127.0.0.1
 TRINAXAI_PORT=3333
-TRINAXAI_INDEX_DIR=~/Documents
+TRINAXAI_INDEX_DIR=./local_sources
 TRINAXAI_ALLOW_LAN_SYSTEM=0
 TRINAXAI_CORS_ORIGINS=https://localhost:3334,http://localhost:3334,https://127.0.0.1:3334,http://127.0.0.1:3334
 OLLAMA_BASE_URL=http://localhost:11434
@@ -183,7 +197,7 @@ ollama pull qwen3-embedding:0.6b
 ```
 
 For every other profile, follow the current
-[Models & profiles table](../README.md#-models--profiles). The installer selects
+[Models & profiles table](../README.md#models-and-hardware-profiles). The installer selects
 and pulls the text/RAG fleet automatically. Vision models download on first
 image analysis.
 
@@ -203,6 +217,10 @@ cd $env:USERPROFILE\trinaxai
 .\.venv\Scripts\python.exe service_manager.py start --base-dir "$PWD"
 ```
 
+The gateway is loopback-only by default. For intentional LAN access, set
+`TRINAXAI_PWA_HOST=0.0.0.0` in `.env`, restart TrinaxAI, and pair the remote
+browser before using it.
+
 Open:
 
 ```text
@@ -215,7 +233,9 @@ From a phone or tablet on the same Wi-Fi:
 https://YOUR-LAN-IP:3334
 ```
 
-Accept the local certificate warning if it appears.
+If the browser reports an untrusted certificate, install the public CA printed by
+`trinaxai network` and trust it on that device. Do not bypass the warning for a
+LAN connection; see [LAN pairing and HTTPS trust](NETWORK_PAIRING.md).
 
 ## Shut down, restart, and check status
 
@@ -230,6 +250,8 @@ Shut down everything:
 ```powershell
 .\.venv\Scripts\python.exe service_manager.py stop-all --base-dir "$PWD"
 ```
+
+This leaves only the loopback recovery page at `https://localhost:3334`; LAN access stays closed until you start TrinaxAI there.
 
 Check status:
 
@@ -279,13 +301,13 @@ Manual checks:
 
 ```powershell
 Invoke-RestMethod http://localhost:11434/api/tags
-Invoke-RestMethod http://localhost:3333/health
+Invoke-RestMethod https://localhost:3333/health
 ```
 
 If your PowerShell does not support `-SkipCertificateCheck`, open in a browser:
 
 ```text
-http://localhost:3333/health
+https://localhost:3333/health
 ```
 
 ## Daily use
@@ -320,7 +342,7 @@ Back up manually:
 - `storage\`
 - `local_sources\`
 
-If you have Git Bash:
+If Bash is available:
 
 ```bash
 ./backup.sh create
@@ -350,7 +372,9 @@ It asks which runtime files to remove. RAG data and Ollama models are kept unles
 | 3333 | RAG API | Backend |
 | 3334 | PWA | Web interface |
 
-To access from a phone/tablet, Windows Defender Firewall must allow Node/Python on private networks. Do not allow these ports on public networks.
+To access from a phone/tablet, allow the PWA gateway on port `3334` on private
+networks only. Keep FastAPI `3333` and Ollama `11434` on loopback and do not
+allow them on public networks.
 
 ## Common issues
 
@@ -358,10 +382,10 @@ To access from a phone/tablet, Windows Defender Firewall must allow Node/Python 
 |---|---|
 | `python` not recognized | Reinstall Python with `Add python.exe to PATH` checked. |
 | `npm` not recognized | Install Node.js LTS and open a new terminal. |
-| `ollama` not recognized | Re-run `install.ps1`; it refreshes PATH and installs Ollama with the official silent installer if `winget` fails. |
+| `ollama` not recognized | Re-run `install.ps1`; it refreshes PATH and opens the signed official installer if the automatic paths fail. |
 | PowerShell permission error | Run with `-ExecutionPolicy Bypass`. |
-| PWA cannot open from phone | Run PowerShell as Administrator and re-run `install.ps1` so it can add Private-network firewall rules for TCP 3333/3334. Also verify same Wi-Fi. |
-| HTTPS API shows invalid certificate | Normal with a local certificate; accept the warning. |
+| PWA cannot open from phone | Run `trinaxai network refresh`, open the reported `https://HOST-LAN-IP:3334` URL, and allow the gateway on the private-network firewall. |
+| HTTPS API shows invalid certificate | Install/trust the public CA from `trinaxai network` on the device; do not bypass TLS on a LAN. See [LAN pairing and HTTPS trust](NETWORK_PAIRING.md). |
 | Out of memory | Use the `8gb` profile. Its text roles use `qwen3.5:2b` plus `qwen3-embedding:0.6b`; reduce context if necessary. |
 
 ## Note on WSL
@@ -370,7 +394,11 @@ You can run TrinaxAI inside WSL2 using the Linux guide, but for Windows users th
 
 ## Security
 
-Do not expose `3333`, `3334`, or `11434` to the internet. Use a VPN for remote access. If you need to block system actions outside of localhost:
+Keep FastAPI `3333` and Ollama `11434` on loopback; expose only the PWA
+gateway on `3334` to a trusted private network. Do not expose these ports to the
+internet. Use a VPN for remote access. System administration is always
+localhost-only; the legacy variable below is accepted for old `.env` files but
+cannot grant LAN authority:
 
 ```text
 TRINAXAI_ALLOW_LAN_SYSTEM=0

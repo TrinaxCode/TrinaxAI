@@ -52,6 +52,7 @@ BACKUP_DIR="${TRINAXAI_BACKUP_DIR:-$ROOT/backups}"
 STAMP="$(date +%Y%m%d-%H%M%S)"
 ACTION="${1:-create}"
 SERVICES_PAUSED=0
+API_STATUS_PREFIX='TrinaxAI RAG API: running'
 
 python_command() {
   if [ -n "${TRINAXAI_PYTHON:-}" ] && [ -x "${TRINAXAI_PYTHON}" ]; then
@@ -65,29 +66,49 @@ python_command() {
   fi
 }
 
+api_is_running() {
+  grep -Eq "^${API_STATUS_PREFIX}([[:space:]]|$)" <<<"$1"
+}
+
 quiesce_services() {
   [ "${TRINAXAI_BACKUP_QUIESCE:-1}" = "1" ] || return 0
   [ -f "$ROOT/service_manager.py" ] || return 0
   local python_bin status
   python_bin="$(python_command)"
   [ -n "$python_bin" ] || return 0
-  status="$($python_bin "$ROOT/service_manager.py" status --base-dir "$ROOT" 2>/dev/null || true)"
-  if grep -q '^rag_api: running' <<<"$status"; then
-    "$python_bin" "$ROOT/service_manager.py" stop-ai --base-dir "$ROOT" >/dev/null
-    status="$($python_bin "$ROOT/service_manager.py" status --base-dir "$ROOT" 2>/dev/null || true)"
-    if grep -q '^rag_api: running' <<<"$status"; then
+  if ! status="$($python_bin "$ROOT/service_manager.py" status --base-dir "$ROOT" 2>/dev/null)"; then
+    echo "Error: could not read service status before backup." >&2
+    return 1
+  fi
+  if api_is_running "$status"; then
+    SERVICES_PAUSED=1
+    if ! "$python_bin" "$ROOT/service_manager.py" stop-ai --base-dir "$ROOT" >/dev/null; then
       echo "Error: could not pause the API for a consistent backup." >&2
       return 1
     fi
-    SERVICES_PAUSED=1
+    if ! status="$($python_bin "$ROOT/service_manager.py" status --base-dir "$ROOT" 2>/dev/null)"; then
+      echo "Error: could not confirm the API stopped before backup." >&2
+      return 1
+    fi
+    if api_is_running "$status"; then
+      echo "Error: could not pause the API for a consistent backup." >&2
+      return 1
+    fi
   fi
 }
 
 resume_services() {
   if [ "$SERVICES_PAUSED" = "1" ] && [ -f "$ROOT/service_manager.py" ]; then
-    local python_bin
+    local python_bin status
     python_bin="$(python_command)"
-    [ -z "$python_bin" ] || "$python_bin" "$ROOT/service_manager.py" start-ai --base-dir "$ROOT" >/dev/null 2>&1 || true
+    if [ -z "$python_bin" ] || ! "$python_bin" "$ROOT/service_manager.py" start-ai --base-dir "$ROOT" >/dev/null 2>&1; then
+      echo "Error: could not restore the API after backup." >&2
+      return 1
+    fi
+    if ! status="$($python_bin "$ROOT/service_manager.py" status --base-dir "$ROOT" 2>/dev/null)" || ! api_is_running "$status"; then
+      echo "Error: could not confirm the API restarted after backup." >&2
+      return 1
+    fi
     SERVICES_PAUSED=0
   fi
 }
@@ -113,8 +134,8 @@ create_backup() {
   local tmp
   tmp="$(mktemp "$BACKUP_DIR/.trinaxai-backup-$STAMP.XXXXXX")"
 
-  quiesce_services
   trap resume_services EXIT
+  quiesce_services
 
   local tar_command=(tar -czf "$tmp" \
     --exclude='storage/.indexing.lock' \

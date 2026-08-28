@@ -1,11 +1,12 @@
 /**
- * Add the strongest available per-session credential without overriding
- * ordinary caller headers. Device tokens persist in localStorage so a paired
- * browser keeps its revocable device identity across browser/PWA restarts.
+ * Add the administrator credential without overriding ordinary caller
+ * headers. Device credentials live in the HttpOnly pairing cookie; the
+ * pairing module adds a legacy bearer only for its explicit /me migration.
  */
 export const DEVICE_TOKEN_STORAGE_KEY = 'trinaxai-device-token';
 const ADMIN_TOKEN_STORAGE_KEY = 'trinaxai-admin-token';
 const DEVICE_SCOPES_STORAGE_KEY = 'trinaxai-device-scopes';
+const REMOTE_DEVICE_SCOPES = new Set(['chat', 'read_private', 'web']);
 export const DEVICE_ACCESS_REVOKED_EVENT = 'trinaxai-device-access-revoked';
 
 export function isLocalHostBrowser(): boolean {
@@ -13,13 +14,13 @@ export function isLocalHostBrowser(): boolean {
   catch { return false; }
 }
 
-function isLocalAdminOrigin(): boolean {
-  try { return isLocalHostBrowser() && ['3334', '3335'].includes(window.location.port); }
-  catch { return false; }
+export function isLocalAuthority(): boolean {
+  return isLocalHostBrowser();
 }
 
 export function deviceSessionHasScope(scope: string): boolean {
   if (isLocalHostBrowser()) return true;
+  if (!REMOTE_DEVICE_SCOPES.has(scope)) return false;
   try {
     const parsed = JSON.parse(sessionStorage.getItem(DEVICE_SCOPES_STORAGE_KEY) || '[]');
     return Array.isArray(parsed) && parsed.includes(scope);
@@ -28,7 +29,8 @@ export function deviceSessionHasScope(scope: string): boolean {
 
 export function setDeviceSessionScopes(scopes: string[] | null): void {
   try {
-    if (scopes?.length) sessionStorage.setItem(DEVICE_SCOPES_STORAGE_KEY, JSON.stringify(scopes));
+    const safeScopes = [...new Set((scopes || []).filter((scope) => REMOTE_DEVICE_SCOPES.has(scope)))];
+    if (safeScopes.length) sessionStorage.setItem(DEVICE_SCOPES_STORAGE_KEY, JSON.stringify(safeScopes));
     else sessionStorage.removeItem(DEVICE_SCOPES_STORAGE_KEY);
   } catch { /* session storage unavailable */ }
 }
@@ -36,35 +38,26 @@ export function setDeviceSessionScopes(scopes: string[] | null): void {
 export function systemRequestHeaders(headers?: HeadersInit): Headers {
   const result = new Headers(headers);
   try {
-    const language = document.documentElement.lang.toLowerCase().startsWith('es') ? 'es' : 'en';
+    const stored = localStorage.getItem('tc-lang');
+    const language = stored === 'es' || stored === 'en'
+      ? stored
+      : document.documentElement.lang.toLowerCase().startsWith('es') ? 'es' : 'en';
     if (!result.has('Accept-Language')) result.set('Accept-Language', language);
   } catch { /* document unavailable */ }
   try {
     const adminToken = sessionStorage.getItem(ADMIN_TOKEN_STORAGE_KEY)?.trim();
-    const deviceToken = isLocalAdminOrigin() ? '' : (
-      localStorage.getItem(DEVICE_TOKEN_STORAGE_KEY)
-      || sessionStorage.getItem(DEVICE_TOKEN_STORAGE_KEY)
-    )?.trim();
     if (adminToken) {
       result.set('X-Admin-Token', adminToken);
       result.delete('X-TrinaxAI-Device-Token');
-    } else if (deviceToken) {
-      result.set('X-TrinaxAI-Device-Token', deviceToken);
     }
   } catch { /* session storage unavailable */ }
   return result;
 }
 
+/** Compatibility hook: new device bearers are cookie-only and never stored. */
 export function setDeviceSessionToken(token: string | null): void {
   try {
-    const value = token?.trim();
-    if (value) {
-      // A paired device must retain its identity across browser/PWA restarts so
-      // the host can later revoke and remotely wipe that specific device.
-      localStorage.setItem(DEVICE_TOKEN_STORAGE_KEY, value);
-      sessionStorage.removeItem(DEVICE_TOKEN_STORAGE_KEY);
-    }
-    else {
+    if (!token?.trim()) {
       localStorage.removeItem(DEVICE_TOKEN_STORAGE_KEY);
       sessionStorage.removeItem(DEVICE_TOKEN_STORAGE_KEY);
       sessionStorage.removeItem(DEVICE_SCOPES_STORAGE_KEY);
@@ -73,16 +66,31 @@ export function setDeviceSessionToken(token: string | null): void {
   } catch { /* session storage unavailable */ }
 }
 
-/** Clear a rejected device credential and return the UI to the authorization gate. */
-export function clearRevokedDeviceSession(): void {
+/** Remove a legacy bearer after the backend has migrated it into a cookie. */
+export function clearLegacyDeviceToken(): void {
   try {
-    if (!(localStorage.getItem(DEVICE_TOKEN_STORAGE_KEY) || sessionStorage.getItem(DEVICE_TOKEN_STORAGE_KEY))?.trim()) return;
-  } catch { return; }
-  setDeviceSessionToken(null);
-  window.dispatchEvent(new CustomEvent(DEVICE_ACCESS_REVOKED_EVENT));
+    localStorage.removeItem(DEVICE_TOKEN_STORAGE_KEY);
+    sessionStorage.removeItem(DEVICE_TOKEN_STORAGE_KEY);
+  } catch { /* storage unavailable */ }
 }
 
-/** Fetch a protected same-origin system/proxy route with the device token. */
+/** Clear a rejected device credential and return the UI to the authorization gate. */
+export function clearRevokedDeviceSession(force = false): void {
+  let hadCredential = false;
+  try {
+    hadCredential = Boolean(
+      (localStorage.getItem(DEVICE_TOKEN_STORAGE_KEY) || sessionStorage.getItem(DEVICE_TOKEN_STORAGE_KEY))?.trim()
+      || sessionStorage.getItem(DEVICE_SCOPES_STORAGE_KEY),
+    );
+    clearLegacyDeviceToken();
+    sessionStorage.removeItem(DEVICE_SCOPES_STORAGE_KEY);
+  } catch {
+    if (!force) return;
+  }
+  if (hadCredential || force) window.dispatchEvent(new CustomEvent(DEVICE_ACCESS_REVOKED_EVENT));
+}
+
+/** Fetch a protected same-origin system/proxy route with browser credentials. */
 export function systemFetch(input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> {
-  return fetch(input, { ...init, headers: systemRequestHeaders(init.headers) });
+  return fetch(input, { ...init, credentials: 'include', headers: systemRequestHeaders(init.headers) });
 }

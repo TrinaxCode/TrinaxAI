@@ -18,9 +18,9 @@ function detectedLang(): Lang {
   const stored = readLocalStorage(LANG_KEY);
   if (stored === 'en' || stored === 'es') return stored;
   try {
-    return navigator.language?.slice(0, 2) === 'en' ? 'en' : 'es';
+    return navigator.language?.slice(0, 2).toLowerCase() === 'es' ? 'es' : 'en';
   } catch {
-    return 'es';
+    return 'en';
   }
 }
 
@@ -63,8 +63,13 @@ export function rememberFromMessage(text: string): boolean {
   if (!value) return false;
   const memory = getUserMemory().filter((item) => item.toLowerCase() !== value.toLowerCase());
   memory.push(value);
-  localStorage.setItem(MEMORY_KEY, JSON.stringify(memory.slice(-30)));
-  return true;
+  try {
+    localStorage.setItem(MEMORY_KEY, JSON.stringify(memory.slice(-30)));
+    return true;
+  } catch {
+    // A blocked or full browser store must never prevent the chat request.
+    return false;
+  }
 }
 
 export function getUserSystemInstruction(lang: Lang = detectedLang()): string {

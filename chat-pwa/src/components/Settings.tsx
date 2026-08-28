@@ -1,6 +1,7 @@
 import { useRef, useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { MdArrowBack, MdAdd, MdDelete, MdTranslate, MdDarkMode, MdLightMode, MdBook, MdRefresh, MdStorage, MdPowerSettingsNew, MdRocketLaunch, MdStop, MdPerson, MdCheck, MdFolder, MdTune, MdKeyboardArrowDown, MdKeyboardArrowRight, MdVolumeOff, MdVolumeUp } from 'react-icons/md';
+import { MdAdd, MdDelete, MdDeleteSweep, MdTranslate, MdDarkMode, MdLightMode, MdBook, MdRefresh, MdStorage, MdPowerSettingsNew, MdRocketLaunch, MdStop, MdPerson, MdCheck, MdFolder, MdVolumeOff, MdVolumeUp, MdFavoriteBorder, MdStar, MdShare, MdCode } from 'react-icons/md';
+import { FaGithub } from 'react-icons/fa';
 import { useI18n } from '../i18n/I18nContext';
 import { useTheme } from '../theme/ThemeContext';
 import { useToast } from './Toast';
@@ -10,17 +11,19 @@ import WatcherCard from './WatcherCard';
 import MemoryPanel from './MemoryPanel';
 import FolderPicker from './FolderPicker';
 import DevicePairingCard from './DevicePairingCard';
+import BackButton from './BackButton';
 import StatsPanel from './StatsPanel';
 import RecentIndexes from './RecentIndexes';
-import { DEFAULT_MODEL_SETTINGS, MODEL_KEYS, MODEL_PRESETS, OLLAMA_KEEP_ALIVE_DEFAULT, cancelIndexJob, createCollection, deleteCollection, folderLabelFromFiles, getCollections, getIndexJob, indexableFilesFrom, modelSetting, reconcileManagedModels, renameCollection, resetSharedAppState, retryIndexJob, startFolderIndex, systemRequestHeaders, userFacingError, type Collection, type IndexJobStatus, type ModelPreset } from '../lib/api';
+import { MODEL_PRESETS, apiErrorFromPayload, cancelIndexJob, checkStatus, createCollection, deleteCollection, deleteCollectionSources, folderLabelFromFiles, formatUserFacingError, getCollections, getIndexJob, indexableFilesFrom, modelSetting, renameCollection, resetSharedAppState, retryIndexJob, startFolderIndex, startLocalAi, systemRequestHeaders, userFacingError, type Collection, type IndexJobStatus, type ModelPreset, type ModelSettingKey } from '../lib/api';
 import { APP_CONFIG } from '../lib/config';
 import { syncSharedStateOnce } from '../lib/sharedState';
 import { NICKNAME_KEY, isValidProfileName } from '../lib/userProfile';
-import { systemFetch } from '../lib/authHeaders';
 import { audioManager } from '../services/audioManager';
 import WebSearchSettings from './WebSearchSettings';
+import SettingsModels from './SettingsModels';
+import SettingsPrompts from './SettingsPrompts';
 
-type SettingsSection = 'general' | 'web-search' | 'indexing' | 'prompts' | 'memory' | 'stats';
+type SettingsSection = 'general' | 'web-search' | 'indexing' | 'prompts' | 'memory' | 'stats' | 'help';
 
 interface Props {
   onBack: () => void;
@@ -29,46 +32,13 @@ interface Props {
   onSectionChange?: (section: SettingsSection) => void;
   canManageSystem?: boolean;
 }
-interface CustomPrompt { name: string; text: string; }
-
-const PROMPTS_KEY = 'tc-prompts';
-const LEGACY_PROMPT_KEYS = ['tc-ollama-prompts', 'tc-rag-prompts'];
-
-const DEF_OLLAMA_ES = 'Eres TrinaxAI, asistente de IA local-first y open-source. Tu repositorio oficial es https://github.com/TrinaxCode/TrinaxAI. Si preguntan quién eres, preséntate brevemente, explica que puedes ayudar con chat, RAG, voz, visión y desarrollo, y comparte ese enlace. Fuiste creado por TrinaxCode — Full Stack Developer de Tuxtla Gutiérrez, Chiapas (originario de Nicaragua), enfocado en React, TypeScript, Python, Django, PostgreSQL y Firebase. Si preguntan por tu creador, responde de forma clara y factual; si piden sus enlaces o redes, comparte GitHub https://github.com/TrinaxCode, LinkedIn https://www.linkedin.com/in/trinaxcode/, X https://x.com/TrinaxCode, TikTok https://www.tiktok.com/@trinaxcode, Instagram https://www.instagram.com/trinaxcode/, Facebook https://www.facebook.com/TrinaxCode, ORCID https://orcid.org/0009-0009-2321-9834 y correo mailto:trinaxcode@gmail.com. No inventes datos.';
-const DEF_OLLAMA_EN = 'You are TrinaxAI, a local-first open-source AI assistant. Your official repository is https://github.com/TrinaxCode/TrinaxAI. When asked who you are, introduce yourself briefly, explain that you can help with chat, RAG, voice, vision and development, and share that link. You were created by TrinaxCode — a Full Stack Developer from Tuxtla Gutiérrez, Chiapas (originally from Nicaragua), focused on React, TypeScript, Python, Django, PostgreSQL and Firebase. When asked about your creator, give a clear factual answer; for their links or social media share GitHub https://github.com/TrinaxCode, LinkedIn https://www.linkedin.com/in/trinaxcode/, X https://x.com/TrinaxCode, TikTok https://www.tiktok.com/@trinaxcode, Instagram https://www.instagram.com/trinaxcode/, Facebook https://www.facebook.com/TrinaxCode, ORCID https://orcid.org/0009-0009-2321-9834 and email mailto:trinaxcode@gmail.com. Do not invent facts.';
-const DEF_SHARED_ES = `${DEF_OLLAMA_ES} Si hay contexto indexado, úsalo cuando sea relevante y distingue claramente entre datos encontrados y explicaciones generales.`;
-const DEF_SHARED_EN = `${DEF_OLLAMA_EN} When indexed context is available, use it when relevant and clearly distinguish found facts from general explanations.`;
-
-function loadPrompts(lang: 'es' | 'en'): CustomPrompt[] {
-  try {
-    const current = JSON.parse(localStorage.getItem(PROMPTS_KEY) || 'null');
-    if (Array.isArray(current) && current.length) return current;
-    const legacy = LEGACY_PROMPT_KEYS.flatMap((key) => {
-      try {
-        const value = JSON.parse(localStorage.getItem(key) || '[]');
-        return Array.isArray(value) ? value : [];
-      } catch { return []; }
-    });
-    const unique = new Map<string, CustomPrompt>();
-    legacy.forEach((prompt) => {
-      if (prompt?.name && prompt.name !== 'system') unique.set(String(prompt.name), { name: String(prompt.name), text: String(prompt.text || '') });
-    });
-    const system = legacy.find((prompt) => prompt?.name === 'system') || {
-      name: 'system',
-      text: lang === 'en' ? DEF_SHARED_EN : DEF_SHARED_ES,
-    };
-    return [{ name: 'system', text: String(system.text || '') }, ...unique.values()];
-  } catch {
-    return [{ name: 'system', text: lang === 'en' ? DEF_SHARED_EN : DEF_SHARED_ES }];
-  }
-}
-
-export default function Settings({ onBack, onOpenDocs, initialSection = 'general', onSectionChange, canManageSystem = true }: Props) {
+export default function Settings({ onBack, onOpenDocs, initialSection = 'general', onSectionChange, canManageSystem = false }: Props) {
   const { t, lang, setLang } = useI18n();
   const { theme, cycleTheme, isDark } = useTheme();
   const toast = useToast();
   const [section, setSection] = useState<SettingsSection>(initialSection);
   const [soundEffects, setSoundEffects] = useState(() => audioManager.enabled());
+  const [detectedProfile, setDetectedProfile] = useState<ModelPreset | null>(null);
   const changeSection = (next: SettingsSection) => {
     setSection(next);
     onSectionChange?.(next);
@@ -78,11 +48,19 @@ export default function Settings({ onBack, onOpenDocs, initialSection = 'general
     changeSection(initialSection);
   }, [initialSection]);
 
+  useEffect(() => {
+    let alive = true;
+    void Promise.resolve(checkStatus()).then((status) => {
+      if (alive && status?.profile) setDetectedProfile(status.profile);
+    }).catch(() => undefined);
+    return () => { alive = false; };
+  }, []);
+
   // Allow external callers (e.g. /memory slash command) to jump to a specific section.
   useEffect(() => {
     const onJump = (e: Event) => {
       const detail = (e as CustomEvent).detail as { section?: string } | undefined;
-      if (detail?.section && ['general', 'web-search', 'indexing', 'prompts', 'memory', 'stats'].includes(detail.section)) {
+      if (detail?.section && ['general', 'web-search', 'indexing', 'prompts', 'memory', 'stats', 'help'].includes(detail.section)) {
         changeSection(detail.section as typeof section);
       }
     };
@@ -116,29 +94,22 @@ export default function Settings({ onBack, onOpenDocs, initialSection = 'general
     toast.toast(t('profileNicknameSaved'), 'success');
     void syncSharedStateOnce(800);
   };
-  const [prompts, setPrompts] = useState<CustomPrompt[]>(() => loadPrompts(lang));
-  const [nn, setNn] = useState(''); const [nt, setNt] = useState('');
-  useEffect(() => {
-    localStorage.setItem(PROMPTS_KEY, JSON.stringify(prompts));
-    const id = window.setTimeout(() => { void syncSharedStateOnce(1200); }, 450);
-    return () => window.clearTimeout(id);
-  }, [prompts]);
-
   const [indexing, setIndexing] = useState(false);
   const [restoreConfirm, setRestoreConfirm] = useState('');
   const [showRestore, setShowRestore] = useState(false);
-  const [modelsExpanded, setModelsExpanded] = useState(false);
   const [confirmShutdown, setConfirmShutdown] = useState(false);
   const [confirmStartup, setConfirmStartup] = useState(false);
   const [confirmStopAll, setConfirmStopAll] = useState(false);
   const [stoppingAll, setStoppingAll] = useState(false);
   const [confirmIndex, setConfirmIndex] = useState(false);
   const [collectionDeleteId, setCollectionDeleteId] = useState<string | null>(null);
-  const [promptDeleteName, setPromptDeleteName] = useState<string | null>(null);
+  const [collectionClearId, setCollectionClearId] = useState<string | null>(null);
+  const [clearingCollectionId, setClearingCollectionId] = useState<string | null>(null);
   const [selectedFolderFiles, setSelectedFolderFiles] = useState<File[] | null>(null);
   const [selectedFolderTotal, setSelectedFolderTotal] = useState(0);
   const [indexJob, setIndexJob] = useState<IndexJobStatus | null>(null);
   const [uploadProgress, setUploadProgress] = useState(0);
+  const cancelNoticeShownRef = useRef(false);
   const [collections, setCollections] = useState<Collection[]>([]);
   const [newCollectionName, setNewCollectionName] = useState('');
   const [indexCollectionId, setIndexCollectionId] = useState(() => localStorage.getItem('tc-index-collection') || 'default');
@@ -176,6 +147,12 @@ export default function Settings({ onBack, onOpenDocs, initialSection = 'general
     refreshLocalSettings((rev) => rev + 1);
   };
 
+  const showCancelNotice = () => {
+    if (cancelNoticeShownRef.current) return;
+    cancelNoticeShownRef.current = true;
+    toast.toast(t('indexCancelled'), 'info');
+  };
+
   const refreshCollections = async () => {
     try {
       const items = await getCollections();
@@ -202,19 +179,6 @@ export default function Settings({ onBack, onOpenDocs, initialSection = 'general
     };
   }, []);
 
-  const add = () => {
-    const n = nn.trim().toLowerCase().replace(/\s+/g,'-'); if (!n||!nt.trim()) return;
-    if (prompts.some(p=>p.name===n)) { toast.toast(t('promptExists'), 'warning'); return; }
-    setPrompts([...prompts,{name:n,text:nt.trim()}]); setNn(''); setNt('');
-    toast.toast(t('promptAdded'), 'success');
-  };
-  const upd = (name:string, f:'name'|'text', v:string) => setPrompts(items=>items.map((item)=>item.name===name?{...item,[f]:v}:item));
-  const del = (name:string) => {
-    if (name === 'system') return;
-    setPrompts(items=>items.filter((item)=>item.name!==name));
-    setPromptDeleteName(null);
-    toast.toast(t('promptDeleted'), 'info');
-  };
   const addCollection = async () => {
     const name = newCollectionName.trim();
     if (!name) return;
@@ -251,17 +215,48 @@ export default function Settings({ onBack, onOpenDocs, initialSection = 'general
       toast.toast(userFacingError(err, 'external_service_unavailable'), 'error');
     }
   };
+  const clearCollection = async (id: string) => {
+    setClearingCollectionId(id);
+    try {
+      const result = await deleteCollectionSources(id);
+      const collection = collections.find((item) => item.id === id);
+      toast.toast(
+        t('collectionSourcesCleared')
+          .replace('{collection}', collection?.name || id)
+          .replace('{count}', String(result.deleted)),
+        'info',
+      );
+      setCollectionClearId(null);
+    } catch (err) {
+      toast.toast(userFacingError(err, 'external_service_unavailable'), 'error');
+    } finally {
+      setClearingCollectionId(null);
+    }
+  };
   const sys = async (a:'shutdown'|'startup'|'stop-all') => {
     const s = a === 'shutdown' ? setSd : a === 'startup' ? setSu : setStoppingAll; s(true);
-    try { const r=await fetch(`/api/system/${a}`,{method:'POST', headers: systemRequestHeaders()}); const d=await r.json();
-      toast.toast(d.ok?t('executedOk'):`${d.error||d.output}`, d.ok?'success':'error'); }
-    catch { toast.toast(t('noConnection'), 'error'); } finally { s(false); }
+    try {
+      if (a === 'startup') {
+        await startLocalAi();
+        toast.toast(t('executedOk'), 'success');
+        return;
+      }
+      const r = await fetch(`/api/system/${a}`, { method: 'POST', headers: systemRequestHeaders() });
+      const d = await r.json();
+      const ok = Boolean(d.ok);
+      toast.toast(ok && a === 'stop-all' ? t('stopAllInitiated') : ok ? t('executedOk') : formatUserFacingError(apiErrorFromPayload(r.status, d)), ok ? 'success' : 'error');
+    } catch (err) {
+      toast.toast(formatUserFacingError(err, 'external_service_unavailable'), 'error');
+    } finally {
+      s(false);
+    }
   };
 
   const triggerIndex = async () => {
     setIndexing(true); setConfirmIndex(false);
     setUploadProgress(0);
     setIndexJob(null);
+    cancelNoticeShownRef.current = false;
     // Cancel any pending clear-job timer from a previous run
     if (clearJobTimerRef.current) { clearTimeout(clearJobTimerRef.current); clearJobTimerRef.current = null; }
     const controller = new AbortController();
@@ -289,23 +284,23 @@ export default function Settings({ onBack, onOpenDocs, initialSection = 'general
           setSelectedFolderTotal(0);
           done = true;
         } else if (job.status === 'cancelled') {
-          toast.toast(t('indexCancelled'), 'info');
+          showCancelNotice();
           done = true;
         } else if (job.status === 'failed') {
-          toast.toast(job.error || t('indexFailed'), 'error');
+          toast.toast(job.error ? userFacingError(new Error(job.error), 'internal_server_error') : t('indexFailed'), 'error');
           done = true;
         } else {
           await new Promise((resolve) => setTimeout(resolve, 1000));
         }
       }
       if (controller.signal.aborted) {
-        toast.toast(t('indexCancelled'), 'info');
+        showCancelNotice();
         setSelectedFolderFiles(null);
         setSelectedFolderTotal(0);
       }
     } catch (err) {
       if (err instanceof DOMException && err.name === 'AbortError') {
-        toast.toast(t('indexCancelled'), 'info');
+        showCancelNotice();
       } else {
         const friendly = userFacingError(err, 'external_service_unavailable');
         toast.toast(`${t('indexBackendError')} ${friendly}`, 'error');
@@ -323,6 +318,7 @@ export default function Settings({ onBack, onOpenDocs, initialSection = 'general
   };
 
   const cancelIndex = async () => {
+    showCancelNotice();
     const current = indexJob;
     indexAbortRef.current?.abort();
     if (current?.id) {
@@ -330,18 +326,21 @@ export default function Settings({ onBack, onOpenDocs, initialSection = 'general
       if (cancelled) setIndexJob(cancelled);
     }
     setIndexing(false);
-    toast.toast(t('indexCancelled'), 'info');
   };
 
   const doRestore = async () => {
     if (restoreConfirm !== 'RESTAURAR' && restoreConfirm !== 'RESTORE') return;
-    // Wipe local first so the push propagates a clean slate to the backend.
+    try {
+      await resetSharedAppState();
+    } catch (reason) {
+      toast.toast(userFacingError(reason, 'permission_denied'), 'error');
+      return;
+    }
     const resetAt = String(Date.now() / 1000);
     try { sessionStorage.setItem('trinaxai-resetting', '1'); } catch { /* ignore */ }
     const keys = Object.keys(localStorage).filter(k => k.startsWith('tc-'));
     keys.forEach(k => localStorage.removeItem(k));
     localStorage.setItem('tc-reset-at', resetAt);
-    await resetSharedAppState().catch(() => undefined);
     await syncSharedStateOnce(1800).catch(() => undefined);
     window.location.reload();
   };
@@ -352,9 +351,13 @@ export default function Settings({ onBack, onOpenDocs, initialSection = 'general
     toast.toast(t('modelPresetApplied'), 'success');
   };
 
-  const getModel = (key: keyof typeof DEFAULT_MODEL_SETTINGS) => modelSetting(key, DEFAULT_MODEL_SETTINGS[key]);
-  const getKeepAlive = () => localStorage.getItem('tc-keep-alive') || OLLAMA_KEEP_ALIVE_DEFAULT;
+  const getModel = (key: ModelSettingKey) => {
+    const profile = detectedProfile || '16gb';
+    return modelSetting(key, MODEL_PRESETS[profile][key]);
+  };
   const progress = Math.max(uploadProgress, indexJob?.progress ?? 0);
+  const filesProcessed = indexJob?.files_processed || indexJob?.saved || 0;
+  const filesTotal = indexJob?.files_total || selectedFolderFiles?.length || indexJob?.saved || 0;
   const phaseLabel = (phase: string | undefined) => t(({
     saving: 'indexPhaseSaving',
     queued: 'indexPhaseQueued',
@@ -377,6 +380,9 @@ export default function Settings({ onBack, onOpenDocs, initialSection = 'general
   const btnBase = isDark
     ? 'bg-white/[0.03] border-white/[0.06] text-white/70 hover:bg-white/[0.06]'
     : 'bg-gray-50 border-gray-200 text-gray-700 hover:bg-gray-100';
+  const dangerButton = isDark
+    ? 'bg-red-500/10 border-red-400/30 text-red-300 hover:bg-red-500/20'
+    : 'bg-red-50 border-red-200 text-red-700 hover:bg-red-100';
 
   const bgCard = isDark ? 'bg-white/[0.03] border-white/[0.06]' : 'bg-gray-50 border-gray-200';
   const textHeading = isDark ? 'text-white/40' : 'text-gray-500';
@@ -386,20 +392,31 @@ export default function Settings({ onBack, onOpenDocs, initialSection = 'general
   const inputText = isDark ? 'text-white/70' : 'text-gray-700';
   const borderFocus = 'focus:border-[#006bbd]/40';
   const sectionBg = isDark ? 'bg-white/[0.03] border-white/[0.06]' : 'bg-gray-50 border-gray-200';
+  const shareProject = async () => {
+    const shareData = { title: 'TrinaxAI', text: t('helpProjectShareText'), url: APP_CONFIG.websiteUrl };
+    try {
+      if (navigator.share) await navigator.share(shareData);
+      else {
+        await navigator.clipboard.writeText(APP_CONFIG.websiteUrl);
+        toast.toast(t('helpProjectShareCopied'), 'success');
+      }
+    } catch { /* Sharing can be cancelled by the user. */ }
+  };
 
-  return (<motion.div className={`h-full flex flex-col min-w-0 max-w-full overflow-x-hidden ${isDark ? 'bg-black/70' : 'bg-white/70'}`} initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}}>
-    <div className={`shrink-0 flex items-center gap-3 px-4 pt-[env(safe-area-inset-top,0px)] pb-3 border-b ${isDark ? 'border-white/[0.06]' : 'border-gray-200'}`}>
-      <button onClick={onBack} aria-label={t('back')} className={`p-2 -ml-2 ${isDark ? 'text-white/60 hover:text-white' : 'text-gray-500 hover:text-gray-800'}`}><MdArrowBack size={20}/></button>
+  return (<motion.div className="settings-page h-full flex flex-col min-w-0 max-w-full overflow-x-hidden bg-transparent" initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}}>
+    <div className="page-header shrink-0 flex items-center gap-3 px-4 pt-[env(safe-area-inset-top,0px)] pb-3">
+      <BackButton onClick={onBack} label={t('back')} isDark={isDark} className="-ml-2" />
       <span className={`text-sm font-medium ${textLabel}`}>{t('settingsTitle')}</span>
     </div>
-    <div className={`shrink-0 flex gap-0.5 sm:gap-1 px-1 sm:px-2 pt-2 pb-1 border-b ${isDark ? 'border-white/[0.04]' : 'border-gray-100'} overflow-x-auto overscroll-x-contain`}>
+    <div className="page-tabs shrink-0 flex gap-0.5 sm:gap-1 px-1 sm:px-2 pt-2 pb-1 overflow-x-auto overscroll-x-contain">
       {([
         ['general', t('settingsGeneral')],
-        ['web-search', lang === 'es' ? 'Búsqueda web' : 'Web search'],
+        ['web-search', t('webSearchSettingsTitle')],
         ['indexing', t('settingsIndexing')],
         ['prompts', t('settingsPrompts')],
         ['memory', t('settingsMemory')],
         ['stats', t('settingsStats')],
+        ['help', t('helpProjectTitle')],
       ] as const).map(([k, lbl]) => (
         <button
           key={k}
@@ -414,7 +431,7 @@ export default function Settings({ onBack, onOpenDocs, initialSection = 'general
         </button>
       ))}
     </div>
-    <div className="flex-1 overflow-y-auto px-4 pt-6 pb-[calc(env(safe-area-inset-bottom,0px)+24px)] space-y-6">
+    <div className="settings-scroll flex-1 overflow-y-auto px-4 pt-6 pb-[calc(env(safe-area-inset-bottom,0px)+24px)] space-y-6">
 
       {section === 'general' && (<>
       {/* Status Section */}
@@ -457,12 +474,12 @@ export default function Settings({ onBack, onOpenDocs, initialSection = 'general
             ) : (
               <>
                 <span className={`min-w-0 flex-1 text-sm ${isDark ? 'text-white/70' : 'text-gray-700'}`}>
-                  {nickname.trim() || (lang === 'en' ? 'User' : 'Usuario')}
+                  {nickname.trim() || t('userLabel')}
                 </span>
                 <button
                   onClick={() => setNicknameEditing(true)}
                   className={`px-2 py-1 rounded-lg text-xs font-medium transition-colors ${
-                    isDark ? 'text-white/40 hover:text-white/70 hover:bg-white/[0.06]' : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'
+                    isDark ? 'text-white/40 hover:text-white/70 hover:bg-white/[0.06]' : 'text-gray-600 hover:text-gray-800 hover:bg-gray-100'
                   }`}
                 >
                   {t('edit')}
@@ -470,7 +487,7 @@ export default function Settings({ onBack, onOpenDocs, initialSection = 'general
               </>
             )}
           </div>
-          <p className={`text-[10px] leading-relaxed ${isDark ? 'text-white/25' : 'text-gray-400'}`}>
+          <p className={`text-[10px] leading-relaxed ${isDark ? 'text-white/25' : 'text-gray-600'}`}>
             {t('profileNicknameHint')}
           </p>
         </div>
@@ -537,9 +554,9 @@ export default function Settings({ onBack, onOpenDocs, initialSection = 'general
       {/* ── System Section ── */}
       <section>
         <h3 className={`text-xs font-medium uppercase tracking-widest mb-3 ${textHeading}`}>{t('system')}</h3>
-        <DevicePairingCard isDark={isDark} />
+        <DevicePairingCard isDark={isDark} canManageSystem={canManageSystem} />
         {canManageSystem && <div className={`${bgCard} mb-3 rounded-xl border px-4 py-3 space-y-1.5`}>
-          <label className={`text-[10px] uppercase tracking-wider ${textHeading}`}>{t('agentSettingsTitle')} — {t('agentWorkspaceRootLabel')}</label>
+          <label className={`text-[10px] uppercase tracking-wider ${textHeading}`}>{t('agentSettingsTitle')} | {t('agentWorkspaceRootLabel')}</label>
           <div className="flex items-center gap-2">
             <input
               type="text"
@@ -548,7 +565,7 @@ export default function Settings({ onBack, onOpenDocs, initialSection = 'general
               onChange={(event) => setAgentWorkspace(event.target.value)}
               onBlur={(event) => { try { localStorage.setItem('tc-agent-workspace', event.target.value.trim()); } catch { /* ignore */ } }}
               placeholder="/path/to/project"
-              aria-label={`${t('agentSettingsTitle')} — ${t('agentWorkspaceRootLabel')}`}
+              aria-label={`${t('agentSettingsTitle')} | ${t('agentWorkspaceRootLabel')}`}
               name="agent-workspace"
               autoComplete="off"
               className={`min-w-0 flex-1 rounded-lg border bg-transparent px-3 py-2 font-mono text-xs outline-none ${isDark ? 'border-white/[0.08] text-white/80 placeholder-white/25' : 'border-gray-200 text-gray-800 placeholder-gray-400'}`}
@@ -563,145 +580,22 @@ export default function Settings({ onBack, onOpenDocs, initialSection = 'general
           <p className={`text-[10px] ${textHeading}`}>{t('agentWorkspaceRootHint')}</p>
         </div>}
         {canManageSystem && <div className="flex flex-col sm:flex-row gap-3">
-          <button onClick={() => setConfirmShutdown(true)} disabled={sd} className="min-w-0 flex-1 flex items-center justify-center gap-1.5 px-4 py-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm font-medium text-center hover:bg-red-500/20 disabled:opacity-50 active:scale-95 transition-[background-color,opacity,transform]"><MdPowerSettingsNew className="shrink-0" size={16} /><span className="min-w-0 break-words">{sd?t('shuttingDown'):t('shutdownAI')}</span></button>
-          <button onClick={() => setConfirmStartup(true)} disabled={su} className="min-w-0 flex-1 flex items-center justify-center gap-1.5 px-4 py-3 rounded-xl bg-green-500/10 border border-green-500/20 text-green-400 text-sm font-medium text-center hover:bg-green-500/20 disabled:opacity-50 active:scale-95 transition-[background-color,opacity,transform]"><MdRocketLaunch className="shrink-0" size={16} /><span className="min-w-0 break-words">{su?t('startingUp'):t('startupAI')}</span></button>
+          <button onClick={() => setConfirmShutdown(true)} disabled={sd} className={`min-w-0 flex-1 flex items-center justify-center gap-1.5 px-4 py-3 rounded-xl border text-sm font-medium text-center disabled:opacity-50 active:scale-95 transition-[background-color,border-color,opacity,transform] ${dangerButton}`}><MdPowerSettingsNew className="shrink-0" size={16} /><span className="min-w-0 break-words">{sd?t('shuttingDown'):t('shutdownAI')}</span></button>
+          <button onClick={() => setConfirmStartup(true)} disabled={su} className={`min-w-0 flex-1 flex items-center justify-center gap-1.5 px-4 py-3 rounded-xl border text-sm font-medium text-center disabled:opacity-50 active:scale-95 transition-[background-color,border-color,opacity,transform] ${isDark ? 'bg-green-500/10 border-green-400/30 text-green-300 hover:bg-green-500/20' : 'bg-green-50 border-green-200 text-green-700 hover:bg-green-100'}`}><MdRocketLaunch className="shrink-0" size={16} /><span className="min-w-0 break-words">{su?t('startingUp'):t('startupAI')}</span></button>
         </div>}
       </section>
 
-      {/* ── Models Section (Advanced, collapsed) ── */}
-      {canManageSystem && <section className="min-w-0 max-w-full overflow-hidden">
-        <button onClick={() => setModelsExpanded(v => !v)}
-          aria-expanded={modelsExpanded}
-          className={`mb-3 flex w-full items-center text-xs font-medium uppercase tracking-widest ${textHeading} hover:opacity-80`}>
-          <span className="inline-flex min-w-0 items-center gap-2">
-            <MdTune size={16} aria-hidden="true" />
-            <span className="truncate">{t('modelCustomize')}</span>
-            {modelsExpanded
-              ? <MdKeyboardArrowDown aria-hidden="true" size={19} className={isDark ? 'text-white' : 'text-black'} />
-              : <MdKeyboardArrowRight aria-hidden="true" size={19} className={isDark ? 'text-white' : 'text-black'} />}
-          </span>
-        </button>
-        {modelsExpanded && (
-          <div className="space-y-2 min-w-0 max-w-full">
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-              <button onClick={() => setModelPreset('low')} className={`min-w-0 px-2 py-2 rounded-lg text-[11px] font-medium break-words ${btnBase}`}>{t('modelPresetLow')}</button>
-              <button onClick={() => setModelPreset('balanced')} className={`min-w-0 px-2 py-2 rounded-lg text-[11px] font-medium break-words ${btnBase}`}>{t('modelPresetBalanced')}</button>
-              <button onClick={() => setModelPreset('max')} className={`min-w-0 px-2 py-2 rounded-lg text-[11px] font-medium break-words ${btnBase}`}>{t('modelPresetMax')}</button>
-              <button onClick={() => setModelPreset('ultra')} className={`min-w-0 px-2 py-2 rounded-lg text-[11px] font-medium break-words ${btnBase}`}>{t('modelPresetUltra')}</button>
-            </div>
-            {([
-              { k: 'tc-models-chat', label: t('modelChat'), isEmbed: false },
-              { k: 'tc-models-deep', label: t('modelDeep'), isEmbed: false },
-              { k: 'tc-models-vision', label: t('modelVision'), isEmbed: false },
-              { k: 'tc-models-embed', label: t('modelEmbedding'), isEmbed: true },
-              { k: 'tc-models-code', label: t('modelCode'), isEmbed: false },
-              { k: 'tc-models-fast', label: t('modelFast'), isEmbed: false },
-            ] as const).map(({ k, label, isEmbed }) => (
-              <div key={k} className={`flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-2 px-3 py-2 rounded-lg ${bgCard} min-w-0 max-w-full overflow-hidden`}>
-                <span className={`min-w-0 text-[10px] sm:w-24 sm:shrink-0 break-words leading-tight ${textHeading}`}>{label}</span>
-                {isEmbed ? (
-                  <select
-                    value={getModel(k)}
-                    onChange={(e) => setLocalSetting(k, e.target.value)}
-                    className={`min-w-0 flex-1 text-[11px] font-mono bg-transparent outline-none border-b border-transparent hover:border-[#006bbd]/30 focus:border-[#006bbd] px-1 py-0.5 transition-colors max-w-full ${isDark ? 'text-white/70' : 'text-gray-700'}`}
-                  >
-                    <option value="qwen3-embedding:0.6b">qwen3-embedding:0.6b · 1024d</option>
-                    <option value="qwen3-embedding:4b">qwen3-embedding:4b · 2560d</option>
-                    <option value="qwen3-embedding:8b">qwen3-embedding:8b · 4096d</option>
-                    <option value="bge-m3">bge-m3 · 1024d · {t('modelEmbeddingBge')}</option>
-                    <option value="nomic-embed-text">nomic-embed-text · 768d · {t('modelEmbeddingNomic')}</option>
-                    <option value="all-minilm">all-minilm · 384d · {t('modelEmbeddingMini')}</option>
-                    <option value="mxbai-embed-large">mxbai-embed-large · 1024d</option>
-                  </select>
-                ) : (
-                  <input
-                    value={getModel(k)}
-                    onChange={(e) => setLocalSetting(k, e.target.value)}
-                    onBlur={(e) => { const v = e.target.value.trim(); if (v && v !== e.target.value) setLocalSetting(k, v); }}
-                    onKeyDown={(e) => { if (e.key === 'Enter') { const v = (e.target as HTMLInputElement).value.trim(); if (v) setLocalSetting(k, v); (e.target as HTMLInputElement).blur(); } }}
-                    className={`min-w-0 w-full flex-1 text-[11px] font-mono bg-transparent outline-none border-b border-transparent hover:border-[#006bbd]/30 focus:border-[#006bbd] px-1 py-0.5 transition-colors max-w-full ${isDark ? 'text-white/70' : 'text-gray-700'}`}
-                  />
-                )}
-              </div>
-            ))}
-            <div className="flex flex-col sm:flex-row gap-2">
-              <button onClick={async () => {
-                const models = Array.from(new Set(MODEL_KEYS.map(k => getModel(k)).filter(Boolean)));
-                toast.toast(t('modelPulling').replace('{model}', models.join(', ')), 'info');
-                try {
-                  await reconcileManagedModels(models);
-                  toast.toast(t('modelReady').replace('{model}', models.join(', ')), 'success');
-                } catch {
-                  toast.toast(t('modelPullFailed').replace('{model}', models.join(', ')), 'error');
-                }
-              }} className={`min-w-0 flex-1 px-3 py-2 rounded-lg text-xs font-medium break-words bg-[#006bbd] text-white hover:bg-[#0059a0] active:scale-95 transition-[background-color,transform]`}>
-                {t('modelSaveAndPull')}
-              </button>
-              <button onClick={() => {
-                setModelPreset('balanced');
-              }} className={`min-w-0 py-2 px-3 rounded-lg text-xs font-medium break-words ${btnBase} active:scale-95`}>
-                {t('modelRestoreDefaults')}
-              </button>
-            </div>
-
-            {/* Performance: aggressive quantization + OLLAMA_KEEP_ALIVE + Unload now */}
-            <div className={`mt-3 p-3 rounded-lg border space-y-3 ${bgCard}`}>
-              <div className={`text-[10px] uppercase tracking-widest ${textHeading}`}>{t('performance')}</div>
-
-              <label className="flex items-center justify-between gap-2 cursor-pointer">
-                <span className={`min-w-0 text-xs break-words ${textLabel}`}>{t('aggressiveQuant')}</span>
-                <input
-                  type="checkbox"
-                  checked={localStorage.getItem('tc-aggressive-quant') === '1'}
-                  onChange={(e) => setLocalSetting('tc-aggressive-quant', e.target.checked ? '1' : '0')}
-                  className="accent-[#006bbd]"
-                />
-              </label>
-
-              <div className="space-y-1">
-                <div className="flex items-center justify-between gap-2">
-                  <span className={`min-w-0 text-xs break-words ${textLabel}`}>{t('keepModelsLoaded')}</span>
-                  <span className={`text-[10px] font-mono ${textHeading}`}>{getKeepAlive()}</span>
-                </div>
-                <input
-                  type="range"
-                  min="0"
-                  max="60"
-                  step="5"
-                  value={parseInt(getKeepAlive().replace(/[^0-9]/g, '') || '0', 10)}
-                  onChange={(e) => setLocalSetting('tc-keep-alive', e.target.value === '0' ? '0s' : `${e.target.value}m`)}
-                  className="w-full accent-[#006bbd]"
-                />
-                <div className={`flex justify-between text-[9px] ${textHeading}`}>
-                  <span>{t('keepAliveOff')}</span><span>30m</span><span>60m</span>
-                </div>
-              </div>
-
-              <button
-                onClick={async () => {
-                  const models = Array.from(new Set(MODEL_KEYS.map(k => getModel(k)).filter(Boolean)));
-                  let ok = 0;
-                  for (const m of models) {
-                    try {
-                      await systemFetch(`${APP_CONFIG.ollamaBase}/api/generate`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ model: m, keep_alive: 0, prompt: '' }),
-                      });
-                      ok++;
-                    } catch { /* ignore */ }
-                  }
-                  toast.toast(t('modelsUnloaded').replace('{ok}', String(ok)).replace('{total}', String(models.length)), 'info');
-                }}
-                className={`w-full py-2 rounded-lg text-xs font-medium ${btnBase}`}
-              >
-                {t('unloadAllModelsNow')}
-              </button>
-            </div>
-          </div>
-        )}
-      </section>}
-
+      {canManageSystem && <SettingsModels
+        isDark={isDark}
+        detectedProfile={detectedProfile}
+        btnBase={btnBase}
+        bgCard={bgCard}
+        textHeading={textHeading}
+        textLabel={textLabel}
+        setLocalSetting={setLocalSetting}
+        setModelPreset={setModelPreset}
+        getModel={getModel}
+      />}
       {/* ── Docs Link ── */}
       <section>
         <button onClick={onOpenDocs}
@@ -712,10 +606,10 @@ export default function Settings({ onBack, onOpenDocs, initialSection = 'general
       </section>
 
       {/* ── Restore Config (Danger Zone) ── */}
-      <section className="pb-8">
+      {canManageSystem && <section className="pb-8">
         {!showRestore ? (
           <button onClick={() => setShowRestore(true)}
-            className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl border border-red-500/20 text-red-400 text-sm font-medium hover:bg-red-500/10 transition-[background-color,transform] active:scale-95">
+            className={`w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl border text-sm font-medium transition-[background-color,transform] active:scale-95 ${dangerButton}`}>
             <MdRefresh size={16} />
             {t('restoreConfig')}
           </button>
@@ -724,6 +618,7 @@ export default function Settings({ onBack, onOpenDocs, initialSection = 'general
             <p className="text-xs text-red-400/80">{t('restoreConfigConfirm')}</p>
             <input
               type="text"
+              aria-label={t('restoreConfigWarning')}
               value={restoreConfirm}
               onChange={(e) => setRestoreConfirm(e.target.value)}
               placeholder={t('restoreConfigWarning')}
@@ -736,7 +631,7 @@ export default function Settings({ onBack, onOpenDocs, initialSection = 'general
               </button>
               <button onClick={doRestore}
                 disabled={restoreConfirm !== 'RESTAURAR' && restoreConfirm !== 'RESTORE'}
-                className="flex-1 py-2 rounded-lg text-xs font-medium bg-red-500/20 text-red-400 hover:bg-red-500/30 disabled:opacity-30 transition-[background-color,opacity]">
+                className={`flex-1 py-2 rounded-lg text-xs font-medium disabled:opacity-30 transition-[background-color,opacity] ${dangerButton}`}>
                 {t('restoreConfig')}
               </button>
             </div>
@@ -744,11 +639,11 @@ export default function Settings({ onBack, onOpenDocs, initialSection = 'general
         )}
         {canManageSystem && <button onClick={() => setConfirmStopAll(true)}
           disabled={stoppingAll}
-          className="mt-3 w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl border border-red-500/30 text-red-400 text-sm font-medium hover:bg-red-500/10 transition-[background-color,transform] active:scale-95">
+          className={`mt-3 w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl border text-sm font-medium transition-[background-color,transform] active:scale-95 ${dangerButton}`}>
           <MdPowerSettingsNew size={16} />
-          {t('stopAllTrinaxAI')}
+          {stoppingAll ? t('shuttingDown') : t('stopAllTrinaxAI')}
         </button>}
-      </section>
+      </section>}
       </>)}
 
       {section === 'web-search' && <WebSearchSettings canManageSystem={canManageSystem} />}
@@ -761,6 +656,7 @@ export default function Settings({ onBack, onOpenDocs, initialSection = 'general
         <div className={`mb-3 flex items-center gap-2 px-3 py-2 rounded-xl border ${bgCard}`}>
           <span className={`text-[11px] shrink-0 ${textHeading}`}>{t('indexCollection')}</span>
           <select
+            aria-label={t('indexCollection')}
             value={indexCollectionId}
             onChange={(e) => setIndexCollectionId(e.target.value)}
             className={`min-w-0 flex-1 bg-transparent text-sm outline-none ${inputText}`}
@@ -774,6 +670,7 @@ export default function Settings({ onBack, onOpenDocs, initialSection = 'general
           <input
             ref={folderInputRef}
             type="file"
+            aria-label={t('chooseFolderIndex')}
             multiple
             className="hidden"
             onChange={(e) => {
@@ -794,17 +691,18 @@ export default function Settings({ onBack, onOpenDocs, initialSection = 'general
             className={`min-w-0 flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl border text-sm font-medium text-center transition-[background-color,color,border-color,opacity,transform] ${btnBase} disabled:opacity-50 active:scale-95`}>
             <MdStorage className="shrink-0" size={16} />
             <span className="min-w-0 break-words">
-              {indexing ? t('indexing') : lastIndexedLabel ? t('indexFolderSelected').replace('{folder}', lastIndexedLabel).replace('{count}', '—') : t('chooseFolderIndex')}
+              {indexing ? t('indexing') : lastIndexedLabel ? t('indexFolderSelected').replace('{folder}', lastIndexedLabel).replace('{count}', '-') : t('chooseFolderIndex')}
             </span>
           </button>
           {indexing && (
             <button
               onClick={cancelIndex}
-              className="px-4 py-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm font-medium hover:bg-red-500/20 active:scale-95 transition-[background-color,transform]"
+              className="flex min-h-12 flex-1 items-center justify-center gap-2 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm font-semibold text-red-400 shadow-sm transition-[background-color,border-color,transform] hover:border-red-500/50 hover:bg-red-500/20 active:scale-[.98] sm:flex-none"
               aria-label={t('indexCancel')}
               title={t('indexCancel')}
             >
               <MdStop size={16} />
+              <span>{t('indexCancel')}</span>
             </button>
           )}
         </div>
@@ -815,17 +713,24 @@ export default function Settings({ onBack, onOpenDocs, initialSection = 'general
               <>
                 <div className="flex items-center justify-between gap-3">
                   <span className={`text-xs font-medium ${textLabel}`}>{phaseLabel(indexJob?.phase || (uploadProgress > 0 ? 'saving' : 'queued'))}</span>
-                  <span className={`text-xs tabular-nums ${textHeading}`}>{indexJob && !indexJob.progress_exact ? t('indexIndeterminate') : `${progress}%`}</span>
+                  <span className={`text-xs font-semibold tabular-nums ${textLabel}`}>{progress}%</span>
                 </div>
-                {(uploadProgress > 0 && !indexJob || indexJob?.progress_exact) && <div className={`h-2 w-full overflow-hidden rounded-full ${isDark ? 'bg-white/[0.08]' : 'bg-gray-200'}`}>
+                <div
+                  className={`h-2.5 w-full overflow-hidden rounded-full ${isDark ? 'bg-white/[0.08]' : 'bg-gray-200'}`}
+                  role="progressbar"
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-valuenow={progress}
+                  aria-label={phaseLabel(indexJob?.phase || 'indexing')}
+                >
                   <div
-                    className="h-full rounded-full bg-[#006bbd] transition-[width] duration-500"
+                    className="h-full rounded-full bg-gradient-to-r from-[#006bbd] via-[#138bd1] to-[#42c6a5] shadow-[0_0_10px_rgba(0,107,189,.35)] transition-[width] duration-500"
                     style={{ width: `${Math.min(100, Math.max(0, progress))}%` }}
                   />
-                </div>}
+                </div>
                 <div className={`flex flex-wrap items-center justify-between gap-2 text-[11px] ${textHeading}`}>
                   <span>{t('indexElapsed')}: {indexJob?.elapsed_seconds ?? 0}s</span>
-                  <span>{t('indexFiles')}: {indexJob?.saved ?? 0} / {selectedFolderFiles?.length ?? indexJob?.saved ?? 0}</span>
+                  <span>{t('indexFiles')}: {filesProcessed} / {filesTotal}</span>
                   {!!indexJob?.pages_total && <span>{t('indexPages')}: {indexJob.pages_processed}/{indexJob.pages_total}</span>}
                   {!!indexJob?.chunks_generated && <span>{t('indexChunks')}: {indexJob.chunks_generated}</span>}
                   {!!indexJob?.skipped && <span>{t('indexSkipped')}: {indexJob.skipped}</span>}
@@ -835,7 +740,7 @@ export default function Settings({ onBack, onOpenDocs, initialSection = 'general
             ) : indexJob?.status === 'completed' ? (
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-2 text-sm min-w-0">
-                  <span className="text-green-400 text-base shrink-0">✅</span>
+                  <MdCheck className="text-green-400 text-base shrink-0" aria-hidden="true" />
                   <span className={`font-medium ${textLabel} truncate`}>{t('indexComplete')}</span>
                   <span className={`${textHeading} shrink-0`}>({indexJob.saved} {t('indexFiles').toLowerCase()})</span>
                 </div>
@@ -877,6 +782,17 @@ export default function Settings({ onBack, onOpenDocs, initialSection = 'general
                 }}
                 className={`min-w-0 flex-1 bg-transparent text-sm outline-none disabled:opacity-60 ${inputText}`}
               />
+              {canManageSystem && (
+                <button
+                  onClick={() => setCollectionClearId(collection.id)}
+                  disabled={clearingCollectionId === collection.id}
+                  className={`p-1.5 rounded-lg ${isDark ? 'text-white/25 hover:text-amber-400 hover:bg-white/[0.05]' : 'text-gray-300 hover:text-amber-600 hover:bg-gray-100'} disabled:opacity-30`}
+                  aria-label={`${t('clearCollection')} ${collection.name}`}
+                  title={t('clearCollection')}
+                >
+                  <MdDeleteSweep size={16} />
+                </button>
+              )}
               {collection.id !== 'default' && (
                 <button
                   onClick={() => setCollectionDeleteId(collection.id)}
@@ -910,29 +826,69 @@ export default function Settings({ onBack, onOpenDocs, initialSection = 'general
       <WatcherCard collections={collections} />
       </>)}
 
-      {section === 'prompts' && (<>
-        <section className="space-y-4">
-          {prompts.filter(p => p.name !== 'system').map((p)=>(<div key={p.name} className={`${sectionBg} rounded-xl p-4 space-y-2`}>
-            <div className="flex items-center justify-between">
-              <span className={`text-[10px] font-mono ${isDark ? 'text-white/30' : 'text-gray-400'}`}>/{p.name}</span>
-              {p.name!=='system'&&<button onClick={()=>setPromptDeleteName(p.name)} className={`p-1 ${isDark ? 'text-white/20' : 'text-gray-300'} hover:text-red-400`} aria-label={t('deletePrompt')} title={t('deletePrompt')}><MdDelete size={14}/></button>}
-            </div>
-            <textarea aria-label={`${t('promptText')} — ${p.name}`} value={p.text} onChange={e=>upd(p.name,'text',e.target.value)} rows={3} className={`w-full bg-transparent text-sm ${textValue} ${textPlaceholder} resize-none outline-none border rounded-lg px-3 py-2 ${isDark ? 'border-white/[0.06]' : 'border-gray-200'} ${borderFocus}`}/>
-          </div>))}
-          <div className={`border border-dashed rounded-xl p-4 space-y-3 ${isDark ? 'border-white/[0.08]' : 'border-gray-300'}`}>
-            <input aria-label={t('promptName')} value={nn} onChange={e=>setNn(e.target.value)} placeholder={t('promptName')} maxLength={30} className={`w-full bg-transparent text-sm ${textValue} ${textPlaceholder} outline-none`}/>
-            <textarea aria-label={t('promptText')} value={nt} onChange={e=>setNt(e.target.value)} placeholder={t('promptText')} rows={2} className={`w-full bg-transparent text-sm ${textValue} ${textPlaceholder} resize-none outline-none border rounded-lg px-3 py-2 ${isDark ? 'border-white/[0.06]' : 'border-gray-200'} ${borderFocus}`}/>
-            <button onClick={add} className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-[#006bbd]/15 text-[#006bbd] hover:bg-[#006bbd]/25"><MdAdd size={14}/> {t('addPrompt')}</button>
-          </div>
-        </section>
-      </>)}
-
+      {section === 'prompts' && (
+        <SettingsPrompts
+          isDark={isDark}
+          sectionBg={sectionBg}
+          textValue={textValue}
+          textPlaceholder={textPlaceholder}
+          borderFocus={borderFocus}
+        />
+      )}
       {section === 'memory' && (
-      <MemoryPanel />
+      <MemoryPanel canManageSystem={canManageSystem} />
       )}
 
       {section === 'stats' && (
       <StatsPanel />
+      )}
+
+      {section === 'help' && (
+        <section className="space-y-4">
+          <div className={`rounded-2xl border p-5 ${isDark ? 'border-[#006bbd]/30 bg-[#006bbd]/[0.08]' : 'border-[#006bbd]/20 bg-[#006bbd]/[0.04]'}`}>
+            <div className="flex items-center gap-3">
+              <MdFavoriteBorder className="shrink-0 text-[#006bbd]" size={26} />
+              <div>
+                <h2 className={`text-base font-semibold ${textLabel}`}>{t('helpProjectTitle')}</h2>
+                <p className={`mt-1 text-sm leading-relaxed ${textValue}`}>{t('helpProjectDescription')}</p>
+              </div>
+            </div>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <a href={APP_CONFIG.repoUrl} target="_blank" rel="noopener noreferrer" className={`rounded-xl border p-4 transition-colors ${btnBase}`}>
+              <div className="flex items-center gap-3 text-sm font-medium">
+                <MdStar className="text-[#eab308]" size={20} />
+                {t('helpProjectRate')}
+              </div>
+              <p className={`mt-2 text-xs leading-relaxed ${textHeading}`}>{t('helpProjectRateHint')}</p>
+            </a>
+            <a href="https://github.com/TrinaxCode" target="_blank" rel="noopener noreferrer" className={`rounded-xl border p-4 transition-colors ${btnBase}`}>
+              <div className="flex items-center gap-3 text-sm font-medium">
+                <FaGithub className="text-[#006bbd]" size={20} />
+                {t('helpProjectSupportCreator')}
+              </div>
+              <p className={`mt-2 text-xs leading-relaxed ${textHeading}`}>{t('helpProjectSupportCreatorHint')}</p>
+            </a>
+            <button onClick={() => void shareProject()} className={`flex items-center gap-3 rounded-xl border px-4 py-3 text-left text-sm font-medium transition-colors ${btnBase}`}>
+              <MdShare className="text-[#006bbd]" size={20} />
+              {t('helpProjectShare')}
+            </button>
+            <a href={`${APP_CONFIG.repoUrl}/issues`} target="_blank" rel="noopener noreferrer" className={`flex items-center gap-3 rounded-xl border px-4 py-3 text-sm font-medium transition-colors ${btnBase}`}>
+              <MdCode className="text-[#006bbd]" size={20} />
+              {t('helpProjectContribute')}
+            </a>
+          </div>
+          <p className={`text-center text-xs leading-relaxed ${textHeading}`}>{t('helpProjectOpenSource')}</p>
+        </section>
+      )}
+
+      {section === 'general' && (
+        <footer className="mt-auto pt-5 text-center">
+          <a href="https://github.com/TrinaxCode" target="_blank" rel="noopener noreferrer" className={`inline-flex items-center gap-2 text-sm ${textValue} hover:text-[#006bbd] transition-colors`}>
+            <FaGithub size={17} />
+            <span>{t('helpProjectCreatedBy')}</span>
+          </a>
+        </footer>
       )}
 
       <ConfirmModal
@@ -954,11 +910,11 @@ export default function Settings({ onBack, onOpenDocs, initialSection = 'general
       />
       <ConfirmModal
         open={confirmStopAll}
-        title={t('stopAllTrinaxAI')}
+        title={t('stopAllTrinaxAIConfirmTitle')}
         message={t('stopAllTrinaxAIConfirm')}
         confirmLabel={t('stopAllTrinaxAI')}
         danger
-        onConfirm={() => { setConfirmStopAll(false); sys('stop-all'); }}
+        onConfirm={() => { setConfirmStopAll(false); void sys('stop-all'); }}
         onCancel={() => setConfirmStopAll(false)}
       />
       <ConfirmModal
@@ -982,13 +938,17 @@ ${t('indexMayTakeTime')}`}
         onCancel={() => setCollectionDeleteId(null)}
       />
       <ConfirmModal
-        open={promptDeleteName !== null}
-        title={t('deletePrompt')}
-        message={t('promptDeleteConfirm').replace('{name}', promptDeleteName || '')}
-        confirmLabel={t('delete')}
+        open={canManageSystem && collectionClearId !== null}
+        title={t('clearCollection')}
+        message={t('clearCollectionConfirm').replace(
+          '{collection}',
+          collections.find((item) => item.id === collectionClearId)?.name || collectionClearId || '',
+        )}
+        confirmLabel={clearingCollectionId ? t('deleting') : t('clearCollection')}
         danger
-        onConfirm={() => { if (promptDeleteName) del(promptDeleteName); }}
-        onCancel={() => setPromptDeleteName(null)}
+        confirmDisabled={clearingCollectionId !== null}
+        onConfirm={() => { if (collectionClearId) void clearCollection(collectionClearId); }}
+        onCancel={() => setCollectionClearId(null)}
       />
       {agentPickerOpen && (
         <FolderPicker

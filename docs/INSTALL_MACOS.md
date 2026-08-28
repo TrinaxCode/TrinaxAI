@@ -1,5 +1,7 @@
 # TrinaxAI on macOS
 
+[Versión en español](INSTALL_MACOS.es.md)
+
 Guide to install, configure, start, and get TrinaxAI running on macOS, both Apple Silicon and Intel.
 
 ## Support status
@@ -11,7 +13,7 @@ The macOS installer is available and CI now validates Python tests, CLI smoke te
 When done, you should have:
 
 - Ollama running locally at `http://localhost:11434`.
-- TrinaxAI RAG API at `http://localhost:3333`.
+- TrinaxAI RAG API at `https://localhost:3333` when the managed certificate is available (HTTP is the fallback).
 - PWA at `https://localhost:3334`.
 - Python `.venv` environment ready.
 - PWA dependencies installed.
@@ -33,7 +35,19 @@ When done, you should have:
 
 Apple Silicon uses Metal automatically through Ollama when the model supports it.
 
-## Install base tools
+## Recommended graphical install
+
+1. [Download TrinaxAI Manager for macOS](https://github.com/TrinaxCode/TrinaxAI/releases/download/v1.2.0/TrinaxAI-Manager-macOS.dmg).
+2. Open the disk image, drag **TrinaxAI Manager** to Applications, and open it.
+3. Select **Install** and wait for the process to finish.
+
+The Manager downloads and configures TrinaxAI directly. You do not need Git or terminal commands. macOS may request your password or confirmation to open the downloaded application; approve it and leave the progress window open. Use the same Manager later for **Update** or **Uninstall**. A portable ZIP is also available on the release page.
+
+If Gatekeeper reports an unknown developer, verify the asset and `SHA256SUMS`
+from the [release signing notes](RELEASE_SIGNING.md) before choosing whether to
+continue. Do not disable Gatekeeper globally.
+
+## Advanced: install base tools manually
 
 Install Xcode Command Line Tools:
 
@@ -50,12 +64,12 @@ Install Homebrew if you don't have it:
 Install dependencies:
 
 ```bash
-brew install python@3.12 node git curl ollama
+brew install python@3.12 node curl ollama
 ```
 
 You can also install Ollama from the official macOS app and keep it open.
 
-## Recommended guided install
+## Advanced terminal fallback
 
 If you already have the repository:
 
@@ -67,12 +81,17 @@ bash install.sh
 If you don't have it yet, use the guided one-command installer. New installs live in `~/Library/Application Support/TrinaxAI`:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/TrinaxCode/TrinaxAI/main/install.sh | bash
+installer="$(mktemp)"
+trap 'rm -f "$installer"' EXIT
+curl --fail --location --output "$installer" "https://github.com/TrinaxCode/TrinaxAI/releases/download/v1.2.0/TrinaxAI-1.2.0-installer.sh"
+bash -n "$installer"
+less "$installer"
+bash "$installer"
 ```
 
-The installer detects RAM, creates `.env`, sets up Python, and installs the PWA automatically. Optional choices such as model downloads, LAN system control, autostart, and starting services are prompted by default. Use `bash install.sh --non-interactive` for scripted installs.
+The installer detects RAM, creates `.env`, sets up Python, and installs the PWA automatically. Optional choices such as model downloads, autostart, and starting services are prompted by default. Legacy LAN-system configuration is accepted for compatibility but never grants remote host administration. Use `bash install.sh --non-interactive` for scripted installs.
 
-The profile is chosen automatically. In interactive mode, choose `Normal` to use the recommended profile. Use `Advanced` only if you want to force `8gb`, `16gb`, `max`, or `ultra`.
+The profile is chosen automatically from CPU, RAM, GPU, and VRAM. In interactive mode, choose `Normal` to use the recommended profile. Use `Advanced` only if you want to force `8gb`, `16gb`, `32gb`, or `64gb`.
 
 After installation, manage it from any directory:
 
@@ -86,10 +105,11 @@ The uninstaller removes the TrinaxAI launcher and, when requested, its local tru
 
 ## Manual install
 
-### 1. Clone the project
+### 1. Download the project
 
 ```bash
-git clone https://github.com/TrinaxCode/TrinaxAI.git ~/trinaxai
+mkdir -p ~/trinaxai
+curl -fsSL https://github.com/TrinaxCode/TrinaxAI/releases/download/v1.2.0/TrinaxAI-1.2.0.tar.gz | tar -xz --strip-components=1 -C ~/trinaxai
 cd ~/trinaxai
 ```
 
@@ -99,14 +119,14 @@ cd ~/trinaxai
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
-python -m pip install -r requirements.txt
+python -m pip install --require-hashes -r requirements.lock
 ```
 
 ### 3. Install the PWA
 
 ```bash
 cd chat-pwa
-npm install
+npm ci
 npm run build
 cd ..
 ```
@@ -137,12 +157,14 @@ Recommended values:
 TRINAXAI_PROFILE=16gb
 TRINAXAI_HOST=127.0.0.1
 TRINAXAI_PORT=3333
-TRINAXAI_INDEX_DIR=~/Documents
+TRINAXAI_INDEX_DIR=./local_sources
 TRINAXAI_ALLOW_LAN_SYSTEM=0
 TRINAXAI_CORS_ORIGINS=https://localhost:3334,http://localhost:3334,https://127.0.0.1:3334,http://127.0.0.1:3334
 OLLAMA_BASE_URL=http://localhost:11434
 OLLAMA_HOST=127.0.0.1
-VITE_TRINAXAI_RAG_TARGET=http://localhost:3333
+TRINAXAI_RAG_HTTPS=1
+TRINAXAI_RAG_TARGET=https://127.0.0.1:3333
+VITE_TRINAXAI_RAG_TARGET=https://127.0.0.1:3333
 ```
 
 After changing Wi-Fi, renew the local address and HTTPS certificate:
@@ -164,7 +186,7 @@ ollama pull qwen3-embedding:0.6b
 ```
 
 For every other profile, follow the current
-[Models & profiles table](../README.md#-models--profiles). The installer selects
+[Models & profiles table](../README.md#models-and-hardware-profiles). The installer selects
 and pulls the text/RAG fleet automatically. Vision models download on first
 image analysis.
 
@@ -193,6 +215,10 @@ Alternative:
 .venv/bin/python service_manager.py start --base-dir "$PWD"
 ```
 
+The gateway is loopback-only by default. For intentional LAN access, set
+`TRINAXAI_PWA_HOST=0.0.0.0` in `.env`, restart TrinaxAI, and pair the remote
+browser before using it.
+
 Open:
 
 ```text
@@ -205,7 +231,9 @@ From a phone/tablet on the same Wi-Fi:
 https://YOUR-LAN-IP:3334
 ```
 
-Accept the local certificate warning if it appears.
+If the browser reports an untrusted certificate, install the public CA printed by
+`trinaxai network` and trust it on that device. Do not bypass the warning for a
+LAN connection; see [LAN pairing and HTTPS trust](NETWORK_PAIRING.md).
 
 ## Shut down, restart, and check status
 
@@ -220,6 +248,8 @@ Shut down everything:
 ```bash
 .venv/bin/python service_manager.py stop-all --base-dir "$PWD"
 ```
+
+This leaves only the loopback recovery page at `https://localhost:3334`; LAN access stays closed until you start TrinaxAI there.
 
 Check status:
 
@@ -275,7 +305,7 @@ Manual checks:
 
 ```bash
 curl http://localhost:11434/api/tags
-curl http://localhost:3333/health
+curl -k https://localhost:3333/health
 ```
 
 The PWA should open at:
@@ -304,18 +334,6 @@ The installer also creates a weekly check-only LaunchAgent. It records update
 availability in `logs/auto-update.log` but never downloads/executes an updater
 or changes the install. Review the tagged release and run the local updater
 manually; disable checks with `python scripts/auto_update.py disable`.
-
-Manual update:
-
-```bash
-git pull
-source .venv/bin/activate
-python -m pip install --require-hashes -r requirements.lock
-cd chat-pwa
-npm ci
-npm run build
-cd ..
-```
 
 ## Backups
 
@@ -362,13 +380,17 @@ If you enabled autostart:
 | `python3` points to an old version | Install `python@3.12` and use `python3.12 -m venv .venv`. |
 | Ollama does not respond | Open the Ollama app or run `ollama serve`. |
 | macOS blocks folder access | Check System Settings > Privacy & Security > Files and Folders. |
-| PWA cannot connect from iPhone | Make sure you're on the same Wi-Fi, LAN IP is in CORS, and firewall allows it. |
-| Untrusted certificate | Accept the local certificate for `localhost` or your LAN IP. |
-| Slow responses | Use 3B or 7B models depending on available RAM. |
+| PWA cannot connect from iPhone | Run `trinaxai network refresh`, open the reported `https://HOST-LAN-IP:3334` URL, and allow the gateway on the private network. |
+| Untrusted certificate | Install/trust the public CA from `trinaxai network` on the device; do not bypass TLS on a LAN. See [LAN pairing and HTTPS trust](NETWORK_PAIRING.md). |
+| Slow responses | Use the model/profile matrix in the root README, lower concurrency, or choose `8gb`/a smaller installed model. |
 
 ## Security
 
-Do not expose `3333`, `3334`, or `11434` to the internet. Use a VPN for remote access. If you need to restrict system actions to localhost only, configure:
+Keep FastAPI `3333` and Ollama `11434` on loopback; expose only the PWA gateway
+on `3334` to a trusted private network. Do not expose any of these ports to the
+internet. Use a VPN for remote access. System administration is always
+localhost-only; the legacy variable below is accepted for old `.env` files but
+cannot grant LAN authority:
 
 ```bash
 TRINAXAI_ALLOW_LAN_SYSTEM=0

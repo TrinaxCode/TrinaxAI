@@ -76,6 +76,7 @@ class CLIConfig:
     model: str = "qwen3.5:2b"
     collections: list[str] = field(default_factory=lambda: ["default"])
     active_collection: str = "default"
+    thinking_enabled: bool = True
 
     ui_color: str = "auto"  # auto | always | never
     language: str = ""  # empty = detect from environment; es | en
@@ -94,6 +95,7 @@ class CLIConfig:
             "model": self.model,
             "collections": list(self.collections),
             "active_collection": self.active_collection,
+            "thinking": self.thinking_enabled,
         }
 
     @property
@@ -235,6 +237,8 @@ def _apply_section(cfg: CLIConfig, parsed: dict[str, Any]) -> None:
                 cfg.collections = [str(c) for c in cols]
         if "active_collection" in defaults:
             cfg.active_collection = str(defaults["active_collection"])
+        if "thinking" in defaults:
+            cfg.thinking_enabled = bool(defaults["thinking"])
 
     ui = parsed.get("ui") or {}
     if isinstance(ui, dict):
@@ -252,7 +256,9 @@ def _apply_section(cfg: CLIConfig, parsed: dict[str, Any]) -> None:
 
 
 def _render_toml(cfg: CLIConfig) -> str:
-    quote = lambda value: json.dumps(value, ensure_ascii=False)
+    def quote(value):
+        return json.dumps(value, ensure_ascii=False)
+
     lines = [
         "[api]",
         f"base_url = {quote(cfg.api_base_url)}",
@@ -263,6 +269,7 @@ def _render_toml(cfg: CLIConfig) -> str:
         f"model = {quote(cfg.model)}",
         "collections = [" + ", ".join(quote(collection) for collection in cfg.collections) + "]",
         f"active_collection = {quote(cfg.active_collection)}",
+        f"thinking = {str(cfg.thinking_enabled).lower()}",
         "",
         "[ui]",
         f"color = {quote(cfg.ui_color)}",

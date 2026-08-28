@@ -53,11 +53,12 @@ export function citationLinksPlugin(sources: Source[]) {
           const url = safeCitationUrl(sources[sourceIndex]);
           if (!url) continue;
           if (match.index > cursor) parts.push({ type: 'text', value: child.value.slice(cursor, match.index) });
+          const source = sources[sourceIndex];
           parts.push({
             type: 'link',
             url,
-            title: sources[sourceIndex]?.title || `Source ${sourceIndex + 1}`,
-            children: [{ type: 'text', value: match[0] }],
+            title: source?.title || `Source ${sourceIndex + 1}`,
+            children: [{ type: 'text', value: source?.title || match[0] }],
           });
           cursor = match.index + match[0].length;
         }

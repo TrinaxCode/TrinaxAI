@@ -32,7 +32,6 @@ test('agent mode remains readable in light and dark themes', async ({ page }, te
     if (!localStorage.getItem('tc-theme')) localStorage.setItem('tc-theme', 'light');
   });
   await page.goto('/#/agent');
-  await expect(page.locator('.animate-intro-logo')).toHaveCount(0, { timeout: 10_000 });
   await expect(page.getByRole('heading', { name: /TrinaxAI Agent/i })).toBeVisible();
   await expect(page.locator('.animate-agent-avatar')).toBeVisible();
   await expect(page.getByLabel(/Historial del agente/i)).toBeVisible();
@@ -45,7 +44,7 @@ test('agent mode remains readable in light and dark themes', async ({ page }, te
     });
   }
   if (captureLabel !== 'before') {
-    await expect(page.locator('.agent-empty-avatar')).toHaveCSS('color', 'rgb(107, 114, 128)');
+    await expect(page.locator('.agent-empty-avatar')).toHaveCSS('color', 'rgb(22, 141, 226)');
   }
 
   if (captureLabel) {
@@ -57,7 +56,6 @@ test('agent mode remains readable in light and dark themes', async ({ page }, te
 
   await page.evaluate(() => localStorage.setItem('tc-theme', 'dark'));
   await page.reload();
-  await expect(page.locator('.animate-intro-logo')).toHaveCount(0, { timeout: 10_000 });
   await expect(page.locator('html')).toHaveClass(/dark/);
   await expect(page.getByRole('heading', { name: /TrinaxAI Agent/i })).toBeVisible();
   if (captureLabel) {
@@ -73,7 +71,6 @@ test('history sidebar fits the viewport and retains its controls', async ({ page
     if (!localStorage.getItem('tc-theme')) localStorage.setItem('tc-theme', 'light');
   });
   await page.goto('/#/');
-  await expect(page.locator('.animate-intro-logo')).toHaveCount(0, { timeout: 10_000 });
   await page.getByLabel(/Abrir historial/i).click();
   const sidebar = page.locator('aside.sidebar-surface');
   await expect(sidebar).toBeVisible();
@@ -94,10 +91,21 @@ test('agent controls fit a 200 percent zoom equivalent viewport', async ({ page 
   await page.addInitScript(() => {
     if (!localStorage.getItem('tc-theme')) localStorage.setItem('tc-theme', 'light');
   });
-  await page.setViewportSize({ width: 640, height: 360 });
+  await page.setViewportSize({ width: 639, height: 360 });
   await page.goto('/#/agent');
   await expect(page.getByRole('heading', { name: /TrinaxAI Agent/i })).toBeVisible();
   await expect(page.getByLabel(/Enviar/i)).toBeVisible();
+  const toolsButton = page.getByRole('button', { name: /Herramientas del agente/i });
+  await toolsButton.click();
+  const tools = toolsButton.locator('..');
+  await expect(tools.getByRole('button', { name: /RAG activado/i })).toBeVisible();
+  await expect(tools.getByRole('button', { name: /Búsqueda web activada/i })).toBeVisible();
+  await expect(tools.getByRole('button', { name: /Investigación profunda/i })).toBeVisible();
+  await expect(tools.getByRole('switch', { name: /Modo normal/i })).toHaveAttribute('aria-checked', 'false');
+  await expect(tools.getByRole('option', { name: 'Auto | Router' })).toBeAttached();
+  await expect(tools.getByRole('option', { name: 'General' })).toBeAttached();
+  await expect(tools.getByRole('option', { name: 'Profundo' })).toBeAttached();
+  await expect(tools.getByRole('option', { name: 'Rápido' })).toBeAttached();
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   expect(overflow).toBeLessThanOrEqual(1);
 });

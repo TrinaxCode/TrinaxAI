@@ -3,12 +3,29 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+import sys
 import tarfile
 from pathlib import Path
 
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_evaluate_rag_reports_invalid_saved_results(tmp_path: Path) -> None:
+    results = tmp_path / "results.json"
+    results.write_text("[]", encoding="utf-8")
+
+    completed = subprocess.run(
+        [sys.executable, str(ROOT / "scripts" / "evaluate_rag.py"), "--results", str(results)],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert completed.returncode == 2
+    assert "--results must contain a JSON object" in completed.stderr
 
 
 @pytest.mark.skipif(os.name == "nt", reason="Bash scripts are validated on POSIX runners")
@@ -99,9 +116,73 @@ def test_backup_quiesces_services_and_takes_index_lock() -> None:
     helper = (ROOT / "scripts" / "with_index_lock.py").read_text(encoding="utf-8")
 
     assert "stop-ai" in script and "start-ai" in script
+    assert "TrinaxAI RAG API: running" in script
+    assert "could not confirm the API stopped" in script
     assert "TRINAXAI_BACKUP_QUIESCE" in script
     assert "with_index_lock.py" in script
     assert "exclusive_process_lock" in helper
+
+
+@pytest.mark.skipif(os.name == "nt", reason="Bash scripts are validated on POSIX runners")
+def test_backup_stops_the_display_named_api_before_archive_and_restores_it(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    shutil.copy2(ROOT / "backup.sh", repo / "backup.sh")
+    (repo / ".env").write_text("SECRET=value\n", encoding="utf-8")
+    (repo / "storage").mkdir()
+    (repo / "storage" / "state.json").write_text("{}", encoding="utf-8")
+    (repo / "service_manager.py").write_text(
+        """
+import sys
+from pathlib import Path
+
+root = Path(__file__).parent
+state = root / "service.state"
+log = root / "service.log"
+action = sys.argv[1]
+log.open("a", encoding="utf-8").write(action + "\\n")
+if action == "status":
+    print(f"TrinaxAI RAG API: {'running' if state.read_text() == 'running' else 'stopped'}")
+elif action == "stop-ai":
+    state.write_text("stopped", encoding="utf-8")
+elif action == "start-ai":
+    state.write_text("running", encoding="utf-8")
+""".strip(),
+        encoding="utf-8",
+    )
+    (repo / "service.state").write_text("running", encoding="utf-8")
+
+    result = subprocess.run(
+        ["bash", str(repo / "backup.sh"), "create"],
+        cwd=repo,
+        env={**os.environ, "TRINAXAI_BACKUP_DIR": str(tmp_path / "backups")},
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert (repo / "service.log").read_text(encoding="utf-8").splitlines() == [
+        "status",
+        "stop-ai",
+        "status",
+        "start-ai",
+        "status",
+    ]
+    assert (repo / "service.state").read_text(encoding="utf-8") == "running"
+    assert Path(result.stdout.strip()).is_file()
+
+
+def test_windows_backup_pauses_and_restores_the_api_around_compression() -> None:
+    script = (ROOT / "update.ps1").read_text(encoding="utf-8")
+
+    assert "Get-TrinaxAIServiceStatus" in script
+    assert "Test-TrinaxAIRagApiRunning" in script
+    assert 'Invoke-ServiceManager "stop-ai"' in script
+    assert 'Invoke-ServiceManager "start-ai"' in script
+    assert "Compress-Archive" in script
+    assert "finally" in script
+    assert script.index('Invoke-ServiceManager "stop-ai"') < script.index("Compress-Archive")
 
 
 def test_windows_installer_has_automatic_ollama_fallback() -> None:
@@ -123,8 +204,21 @@ def test_installers_support_client_first_install_locations() -> None:
     assert "XDG_DATA_HOME" in posix
     assert "Application Support" in posix
     assert "[string]$InstallDir" in windows
-    assert "TrinaxAI/archive/refs/heads/main.zip" in windows
+    assert "releases/download/v$ReleaseVersion/$DefaultSourceArchiveName" in windows
     assert "TRINAXAI_HOME=" in windows
+
+
+def test_installers_never_advertise_or_forward_lan_host_administration() -> None:
+    posix = (ROOT / "install.sh").read_text(encoding="utf-8")
+    windows = (ROOT / "install.ps1").read_text(encoding="utf-8")
+
+    assert "Enable LAN system-control endpoints" not in posix
+    assert "Activar endpoints de control LAN" not in posix
+    assert "ENABLE_LAN_SYSTEM=0" in posix
+    assert 'PS_ARGS+=("-LanSystem")' not in posix
+    assert 'if ($LanSystem) { $Forward += "-LanSystem" }' not in windows
+    assert "$EnableLanSystem = 0" in windows
+    assert "TRINAXAI_ALLOW_LAN_SYSTEM=1" not in windows
 
 
 def test_installers_share_conservative_profile_thresholds_and_preserve_models() -> None:
@@ -137,10 +231,18 @@ def test_installers_share_conservative_profile_thresholds_and_preserve_models() 
     assert "$RamGb -ge 64" in windows
     assert "$RamGb -ge 32" in windows
     assert "qwen3.5:35b qwen3-coder:30b" in setup
-    assert "qwen3.5:2b qwen3.5:9b" in setup
-    assert "qwen3-embedding:8b qwen3.5:4b" in setup
-    assert "qwen3-embedding:4b qwen3.5:2b" in setup
+    assert "qwen3.5:4b qwen3.5:9b" in setup
+    assert "qwen3-embedding:4b qwen3.5:4b" in setup
     assert "ollama rm" not in setup
+
+
+def test_windows_installer_uses_canonical_profiles_and_embedding_fleet() -> None:
+    windows = (ROOT / "install.ps1").read_text(encoding="utf-8")
+
+    assert 'ValidateSet("8gb", "16gb", "32gb", "64gb"' in windows
+    assert '$AutoProfile = if ($RamGb -ge 64) { "64gb" } elseif ($RamGb -ge 32) { "32gb" }' in windows
+    assert "TRINAXAI_PROFILE=$Profile" in windows
+    assert "qwen3-embedding:8b" not in windows
 
 
 def test_git_bash_installer_forwards_custom_install_directory_to_powershell() -> None:
@@ -158,6 +260,19 @@ def test_uninstallers_remove_cli_registration_and_trusted_certificates() -> None
     assert "Remove-UserPath" in windows
     assert "Remove-TrinaxAICertificates" in windows
     assert "if ($RemoveOllamaApp) { Remove-OllamaModelsAndState }" in windows
+
+
+def test_uninstallers_default_to_guided_mode() -> None:
+    posix = (ROOT / "uninstall.sh").read_text(encoding="utf-8")
+    windows = (ROOT / "uninstall.ps1").read_text(encoding="utf-8")
+
+    assert 'INTERACTIVE="${TRINAXAI_INTERACTIVE:-1}"' in posix
+    assert "if (-not ($Interactive -or $Yes -or $NonInteractive))" in windows
+    assert "Type UNINSTALL to continue" in windows
+    assert "[switch]$RemoveEnv" in windows
+    assert "$RemoveEnvRequested = [bool]$RemoveEnv -and -not $KeepEnv" in windows
+    assert "Non-interactive uninstall requires -Yes." in windows
+    assert "$RemoveEnv = -not $KeepEnv" not in windows
 
 
 def test_windows_installer_configures_rag_transport_and_lan_firewall() -> None:
@@ -201,7 +316,7 @@ def test_windows_update_and_uninstall_scripts_exist() -> None:
     uninstall = (ROOT / "uninstall.ps1").read_text(encoding="utf-8")
 
     assert "Sync-TrinaxRepository" in update
-    assert "git fetch --prune origin main" in update
+    assert "scripts\\source_update.py" in update
     assert "npm run build" in update
     assert "service_manager.py" in update
     assert "Type UNINSTALL to continue" in uninstall
@@ -221,31 +336,31 @@ def test_installers_manage_weekly_automatic_updates() -> None:
     assert "TrinaxAI Weekly Update" in windows_uninstall
 
 
-def test_updaters_fail_closed_for_archives_and_scheduled_mode_is_check_only() -> None:
+def test_updaters_use_archives_and_scheduled_mode_is_check_only() -> None:
     posix = (ROOT / "update.sh").read_text(encoding="utf-8")
     windows = (ROOT / "update.ps1").read_text(encoding="utf-8")
 
     assert "--scheduled" in posix
     assert "git init -q" not in posix
-    assert "git fetch --prune origin main" in posix
+    assert 'scripts/source_update.py" update --root' in posix
+    assert "git fetch --prune origin main" not in posix
     assert "check-only" in posix
     assert "scripts/auto_update.py run" in posix
     assert "[switch]$Scheduled" in windows
     assert "git init -q" not in windows
-    assert "git fetch --prune origin main" in windows
+    assert '"update", "--root", $Repo' in windows
+    assert "git fetch --prune origin main" not in windows
     assert "no remote code execution" in windows
 
 
-def test_posix_update_rolls_back_a_clean_tree_after_partial_failure() -> None:
+def test_archive_update_rolls_back_after_partial_failure() -> None:
     updater = (ROOT / "update.sh").read_text(encoding="utf-8")
 
-    assert 'PRE_UPDATE_COMMIT="$(git rev-parse HEAD)"' in updater
-    assert 'git reset --hard "$PRE_UPDATE_COMMIT"' in updater
+    assert 'scripts/source_update.py" rollback --root' in updater
     assert "ROLLBACK_ACTIVE=1" in updater
-    assert "PWA_DIST_BACKUP" in updater
     windows = (ROOT / "update.ps1").read_text(encoding="utf-8")
     assert "Restore-FailedUpdate" in windows
-    assert "git reset --hard $script:PreUpdateCommit" in windows
+    assert '"rollback", "--root", $Repo' in windows
     assert "$script:RollbackActive = $true" in windows
 
 
@@ -262,7 +377,7 @@ def test_tagged_releases_publish_a_simple_verified_release() -> None:
     assert "gh release create" in workflow
     assert "--verify-tag" in workflow
     assert "--generate-notes" in workflow
-    assert "docker/setup-buildx-action@v4" in workflow
+    assert "docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e" in workflow
     assert "actions/attest@v4" not in workflow
 
 

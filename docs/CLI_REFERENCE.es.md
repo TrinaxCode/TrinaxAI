@@ -1,6 +1,8 @@
 # Referencia de la CLI de TrinaxAI
 
-La CLI `trinaxai` ofrece chat directo con Ollama, consultas RAG, indexación, administración de memoria y colecciones, y control de servicios. Requiere Python 3.10 o superior.
+[English](CLI_REFERENCE.md)
+
+La CLI `trinaxai` ofrece chat directo con Ollama, consultas RAG, indexación, administración de memoria y colecciones, y control de servicios. Requiere Python 3.10 o superior. Para recuperar fallos por síntoma, consulta la [guía de solución de problemas](TROUBLESHOOTING.es.md).
 
 ## Instalación y ayuda
 
@@ -24,7 +26,7 @@ trinaxai --api-url https://localhost:3333 --ca-file /ruta/rootCA.pem ask "Estado
 | `--install-root PATH` | Indica la raíz de una instalación completa. |
 | `--config PATH` | Carga un TOML concreto. |
 | `--no-color` | Desactiva color ANSI. |
-| `--language`, `--lang en\|es` | Selecciona el idioma humano de la CLI; también admite `TRINAXAI_LANG` y `ui.language` en TOML. |
+| `--language IDIOMA`, `--lang IDIOMA` | Selecciona `en` o `es` para la salida humana de la CLI; también admite `TRINAXAI_LANG` y `ui.language` en TOML. |
 | `-v`, `--verbose` | Activa logs de depuración. |
 | `--version` | Muestra la versión. |
 
@@ -32,17 +34,26 @@ trinaxai --api-url https://localhost:3333 --ca-file /ruta/rootCA.pem ask "Estado
 
 ```bash
 trinaxai chat
-trinaxai chat --prompt "Resume este proyecto" --engine rag --collections default,docs
-trinaxai ask "Escribe una prueba para esta función" --engine ollama
+trinaxai chat --prompt "Resume este proyecto" --engine rag --collections default,docs --thinking
+trinaxai chat --file ./foto.png --prompt "Describe esta imagen"
+trinaxai ask --file ./manual.pdf "Resume este documento"
+trinaxai ask "Escribe una prueba para esta función" --engine ollama --no-thinking
 trinaxai agent --workspace . --prompt "Corrige las pruebas"
-trinaxai research --query "Compara los módulos de seguridad" --depth 2 --collections default
+trinaxai research --query "Compara los módulos de seguridad" --session seguridad --depth 2 --collections default --thinking
 ```
+
+En el chat automático, TrinaxAI enruta cada turno por capacidad: las consultas públicas directas van a búsqueda web, las preguntas sobre tus propios proyectos o archivos van a RAG y las solicitudes complejas con varias fuentes van a investigación profunda. La ejecución con Agent es explícita: usa `/agent` (o `trinaxai agent`) antes de pedirle que escriba archivos. Usa `/chat`, `/web`, `/research`, `/rag` o `/agent` para fijar un modo.
 
 `--engine general` es un alias del chat directo con Ollama; `rag` usa documentos indexados. `--collections` acepta IDs separados por comas.
 
+Usa `trinaxai chat --file RUTA --prompt "Describe esto"` para analizar una
+imagen o archivo local de texto/documento. La ruta se valida localmente y la CLI
+no sube el archivo.
+
 `research` intenta leer texto acotado de las páginas (`full_page`) y conserva el
 extracto del buscador como fallback (`snippet_only`); las fuentes indican cuál
-se usó.
+se usó. Añade `--session NOMBRE` para guardar la pregunta, la respuesta, los
+metadatos públicos y las fuentes, y después exportar la sesión.
 
 ## Comandos slash interactivos
 
@@ -64,6 +75,7 @@ registro actual incluye:
 | `/workspace [RUTA]` | Cambia el workspace del agente. |
 | `cd [RUTA]` | Cambia el directorio de la sesión; las rutas relativas parten del directorio actual. |
 | `/yolo` | Alterna la aprobación automática peligrosa. |
+| `/thinking on|off` | Activa o desactiva el razonamiento eficiente; los turnos simples lo omiten. |
 | `/index [RUTA]` | Indexa una carpeta. |
 | `/memory` | Lista memorias persistentes. |
 | `/collections` | Lista colecciones indexadas. |
@@ -87,25 +99,26 @@ por lo que otra raíz de la misma colección ya no reemplaza rutas homónimas.
 
 ## Emparejar dispositivos LAN
 
-Crea y administra emparejamientos desde el host (o con la supercredencial
-admin):
+Crea y administra emparejamientos desde el host mediante loopback:
 
 ```bash
 trinaxai pair start
-trinaxai pair start --scopes chat,read_private,index --ttl 180 --device-ttl-days 30
+trinaxai pair start --scopes chat,read_private,web --ttl 180 --device-ttl-days 30
 trinaxai pair list
 trinaxai pair revoke ID_DISPOSITIVO
 ```
 
 `pair` sin acción equivale a `pair start`. Muestra un código de un solo uso y un
 enlace PWA. El código dura 60–900 segundos (`300` por defecto). Los scopes
-iniciales son `chat,read_private`; los elevados disponibles incluyen `index`,
-`system`, `agent` y `web`. `agent_yolo` queda reservado a política local y nunca vuelve
-automática la aprobación de herramientas HTTP remotas.
+iniciales son `chat,read_private`; `web` es el único scope adicional opcional.
+`index`, `system`, `agent` y `agent_yolo` están retirados para dispositivos
+vinculados y se rechazan incluso con credencial admin enviada desde LAN.
 
-El navegador conserva el bearer en `localStorage` para mantener su identidad
-revocable entre reinicios. Una CLI empaquetada
-que actúa como dispositivo remoto emparejado lee `TRINAXAI_DEVICE_TOKEN` y envía
+El navegador guarda las credenciales nuevas de pairing en una cookie
+`HttpOnly; SameSite=Strict` con alcance `/api/rag`; solo un bearer legacy se lee
+del almacenamiento web durante la migración explícita de `/v1/pairing/me`. Una
+CLI empaquetada que actúa como dispositivo remoto emparejado lee
+`TRINAXAI_DEVICE_TOKEN` y envía
 `X-TrinaxAI-Device-Token`; apunta `--api-url` a la base RAG del gateway, por
 ejemplo `https://host:3334/api/rag`. No pongas tokens en el historial ni en TOML
 versionado. Pairing representa una capability revocable, no una cuenta.
@@ -152,10 +165,10 @@ trinaxai collections delete --collection-id documentacion
 trinaxai watch start --paths ~/proyectos/app --collection default
 trinaxai watch status
 trinaxai watch stop
-trinaxai export --session SESSION --format md --output conversacion.md
+trinaxai export --session SESSION --format md --output conversacion
 ```
 
-El watcher requiere `watchdog`, incluido en las dependencias de servidor. La exportación disponible actualmente es Markdown.
+El watcher requiere `watchdog`, incluido en las dependencias de servidor. La exportación conserva metadatos públicos, fuentes y citas de investigación; admite `md`, `markdown`, `pdf`, `doc`, `docx` y `word`.
 
 ## Ciclo de vida y diagnóstico
 
@@ -172,6 +185,10 @@ trinaxai doctor --strict --json
 trinaxai update
 trinaxai uninstall
 ```
+
+`trinaxai stop --all` detiene la PWA y el resto de la pila; después solo queda
+la página de recuperación por loopback en `https://localhost:3334`. La LAN
+permanece cerrada hasta iniciar TrinaxAI desde esa página local.
 
 Consulta `trinaxai update --help` y `trinaxai uninstall --help` antes de automatizar mantenimiento. `uninstall --purge` puede eliminar datos, modelos, certificados y Ollama.
 
@@ -192,6 +209,7 @@ verify_tls = true
 engine = "ollama"
 model = "qwen3.5:2b"
 collections = ["default"]
+thinking = true
 
 [ui]
 color = "auto"
@@ -209,6 +227,9 @@ dir = ""
 
 `doctor` humano conserva salida diagnóstica. Para automatización,
 `trinaxai doctor --strict --json` emite un único documento JSON y devuelve
-nonzero si falla una comprobación crítica. Consulta también la
-[guía de desarrollo](DEVELOPER_GUIDE.es.md). MCP no se anuncia como comando
-utilizable en esta versión.
+nonzero si falla una comprobación crítica. Consulta la [guía de solución de
+problemas](TROUBLESHOOTING.es.md) y la [guía de desarrollo](DEVELOPER_GUIDE.es.md).
+`update` y `uninstall` pueden cambiar archivos instalados o borrar datos; lee su
+salida de `--help` antes de automatizarlos. El comando reservado `trinaxai mcp`
+termina con código `2` y no inicia un servidor MCP en esta versión; usa la API
+HTTP o los comandos de CLI disponibles.

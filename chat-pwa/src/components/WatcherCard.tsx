@@ -246,7 +246,7 @@ export default function WatcherCard({ collections }: Props) {
       <div className="flex gap-2">
         <button onClick={() => void chooseFolder()} disabled={busy} className="rounded-lg bg-[#006bbd] px-3 py-2 text-xs font-medium text-white hover:bg-[#0059a0] disabled:opacity-50 flex items-center gap-1.5"><MdFolder size={15} />{t('watcherAddFolder')}</button>
         <select value={collectionId} onChange={(event) => setCollectionId(event.target.value)} aria-label={t('collectionsLabel')} name="watcher-collection" className={`min-w-0 flex-1 rounded-lg border px-3 py-2 text-xs outline-none ${field}`}>
-          {(collections.length ? collections : [{ id: 'default', name: 'General' }]).map((collection) => <option key={collection.id} value={collection.id}>{collection.name} ({folders.filter((folder) => folder.collectionId === collection.id).length})</option>)}
+          {(collections.length ? collections : [{ id: 'default', name: t('generalCollection') }]).map((collection) => <option key={collection.id} value={collection.id}>{collection.name} ({folders.filter((folder) => folder.collectionId === collection.id).length})</option>)}
         </select>
       </div>
 
@@ -275,7 +275,7 @@ export default function WatcherCard({ collections }: Props) {
       {running && <p className={`text-[11px] ${muted} flex items-center gap-1.5`}><MdSync size={12} className="opacity-60" />{t('watcherAutoReindexDesc')}</p>}
       {serverJob && serverJob.status !== 'idle' && <p className={`text-[11px] ${muted}`} aria-live="polite">
         {t('watcherIndexStatus').replace('{status}', serverJob.status)}
-        {serverJob.pending_events > 0 ? ` · ${t('watcherPendingEvents').replace('{count}', String(serverJob.pending_events))}` : ''}
+        {serverJob.pending_events > 0 ? ` | ${t('watcherPendingEvents').replace('{count}', String(serverJob.pending_events))}` : ''}
       </p>}
       {serverJob?.last_error && <p className="text-[11px] text-red-400" role="alert">
         {t('watcherLastError').replace('{error}', serverJob.last_error.slice(0, 500))}

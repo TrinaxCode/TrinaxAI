@@ -63,8 +63,10 @@ async def usage_record(req: UsageRecordRequest, request: Request):
     _authorize_system(request)
     engine = (req.engine or "unknown").strip()[:40]
     model = (req.model or "unknown").strip()[:120]
-    collections = [str(c)[:120] for c in (req.collections or []) if str(c).strip()]
-    _record_usage(engine, model, req.project, collections, max(0, int(req.est_tokens or 0)))
+    project = (req.project or "").strip()[:120] or None
+    collections = [str(c)[:120] for c in (req.collections or []) if str(c).strip()][:50]
+    est_tokens = min(10_000_000, max(0, int(req.est_tokens or 0)))
+    _record_usage(engine, model, project, collections, est_tokens)
     return {"ok": True}
 
 

@@ -16,7 +16,9 @@ pytestmark = pytest.mark.skipif(
 
 def test_real_embedding_index_incremental_lifecycle(tmp_path, monkeypatch) -> None:
     """Exercise extraction, Ollama embeddings, retrieval, replace, and delete."""
-    from llama_index.core import StorageContext, load_index_from_storage
+    from llama_index.core import load_index_from_storage
+
+    from trinaxai_index_storage import storage_context_for_persist_dir
 
     root = tmp_path / "documents"
     storage = tmp_path / "storage"
@@ -32,7 +34,7 @@ def test_real_embedding_index_incremental_lifecycle(tmp_path, monkeypatch) -> No
     monkeypatch.setattr(index_module, "_embed_configured", False)
 
     assert index_module.run_index(str(root)) == 0
-    loaded = load_index_from_storage(StorageContext.from_defaults(persist_dir=str(storage)))
+    loaded = load_index_from_storage(storage_context_for_persist_dir(storage))
     matches = loaded.as_retriever(similarity_top_k=3).retrieve("¿Qué animal protege el archivo Aurora?")
     assert any("ajolote violeta" in match.node.get_content() for match in matches)
 
@@ -43,19 +45,21 @@ def test_real_embedding_index_incremental_lifecycle(tmp_path, monkeypatch) -> No
     stat = source.stat()
     os.utime(source, ns=(stat.st_atime_ns, stat.st_mtime_ns + 1_000_000_000))
     assert index_module.run_index(str(root)) == 0
-    loaded = load_index_from_storage(StorageContext.from_defaults(persist_dir=str(storage)))
+    loaded = load_index_from_storage(storage_context_for_persist_dir(storage))
     contents = "\n".join(node.get_content() for node in loaded.docstore.docs.values())
     assert "quetzal dorado" in contents
     assert "ajolote violeta" not in contents
 
     source.unlink()
     assert index_module.run_index(str(root)) == 0
-    loaded = load_index_from_storage(StorageContext.from_defaults(persist_dir=str(storage)))
+    loaded = load_index_from_storage(storage_context_for_persist_dir(storage))
     assert not loaded.docstore.docs
 
 
 def test_real_multiple_roots_with_same_relative_path_are_isolated(tmp_path, monkeypatch) -> None:
-    from llama_index.core import StorageContext, load_index_from_storage
+    from llama_index.core import load_index_from_storage
+
+    from trinaxai_index_storage import storage_context_for_persist_dir
 
     root_a = tmp_path / "alpha"
     root_b = tmp_path / "beta"
@@ -72,7 +76,7 @@ def test_real_multiple_roots_with_same_relative_path_are_isolated(tmp_path, monk
 
     assert index_module.run_index(str(root_a)) == 0
     assert index_module.run_index(str(root_b)) == 0
-    loaded = load_index_from_storage(StorageContext.from_defaults(persist_dir=str(storage)))
+    loaded = load_index_from_storage(storage_context_for_persist_dir(storage))
     contents = "\n".join(node.get_content() for node in loaded.docstore.docs.values())
     assert "AMATISTA" in contents
     assert "ZAFIRO" in contents
@@ -81,7 +85,7 @@ def test_real_multiple_roots_with_same_relative_path_are_isolated(tmp_path, monk
 
     source_a.unlink()
     assert index_module.run_index(str(root_a)) == 0
-    loaded = load_index_from_storage(StorageContext.from_defaults(persist_dir=str(storage)))
+    loaded = load_index_from_storage(storage_context_for_persist_dir(storage))
     contents = "\n".join(node.get_content() for node in loaded.docstore.docs.values())
     assert "AMATISTA" not in contents
     assert "ZAFIRO" in contents

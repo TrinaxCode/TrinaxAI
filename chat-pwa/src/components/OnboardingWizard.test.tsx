@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { I18nProvider } from '../i18n/I18nContext';
 import { ThemeProvider } from '../theme/ThemeContext';
 import OnboardingWizard from './OnboardingWizard';
+import { expectNoA11yViolations } from '../test/a11y';
 
 vi.mock('../lib/sharedState', () => ({
   onSharedStateUpdated: () => () => undefined,
@@ -18,7 +19,7 @@ describe('OnboardingWizard permissions', () => {
     Object.defineProperty(navigator, 'language', { configurable: true, value: 'en-US' });
   });
 
-  it('keeps an unprivileged device to language, theme, name, and the minimal summary', async () => {
+  it('keeps an unprivileged device to language, theme, name input, and the minimal summary', async () => {
     const user = userEvent.setup();
     const onComplete = vi.fn();
     render(
@@ -30,22 +31,26 @@ describe('OnboardingWizard permissions', () => {
     );
 
     expect(screen.getByText('Which language do you prefer?')).toBeInTheDocument();
+    await expectNoA11yViolations(document.body);
     await user.click(screen.getByRole('button', { name: 'Next' }));
     expect(await screen.findByText('Light or dark mode?')).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Next' }));
-    expect(await screen.findByText('What should TrinaxAI call you?')).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'What should TrinaxAI call you?' })).not.toBeInTheDocument();
+    expect(await screen.findByRole('textbox', { name: 'What should TrinaxAI call you?' })).toBeInTheDocument();
     await user.type(screen.getByRole('textbox'), 'Ana');
     await user.click(screen.getByRole('button', { name: 'Next' }));
 
-    expect(await screen.findByText("That's it! 🎉")).toBeInTheDocument();
+    expect(await screen.findByText("That's it!")).toBeInTheDocument();
     expect(screen.getByText('Ana')).toBeInTheDocument();
     expect(screen.getByText(/Theme:/)).toBeInTheDocument();
     expect(screen.getByText(/Language:/)).toBeInTheDocument();
     expect(screen.queryByText('Model setup')).not.toBeInTheDocument();
     expect(screen.queryByText('Ollama & Indexing')).not.toBeInTheDocument();
+    expect(screen.queryByText('canirun.ai')).not.toBeInTheDocument();
+    expect(screen.queryByText('Pass this prompt to the AI')).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: '🚀 Start now' }));
+    await user.click(screen.getByRole('button', { name: 'Start now' }));
     await waitFor(() => expect(onComplete).toHaveBeenCalledOnce());
     expect(localStorage.getItem('tc-models-chat')).toBeNull();
   });

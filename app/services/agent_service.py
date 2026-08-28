@@ -27,11 +27,13 @@ import threading
 import uuid
 from contextlib import contextmanager
 from pathlib import Path
+from typing import Any
 
 from app.schemas import AgentCancelRequest
 from app.security.admin_auth import authorize_scope
 from trinaxai_cli.agent import DEFAULT_TOOLS, AgentEngine, Tool, format_tool_failure  # noqa: E402
 from trinaxai_cli.agent.engine import AgentCancelled  # noqa: E402
+from trinaxai_cli.agent.tools import _bubblewrap_argv  # noqa: E402
 from trinaxai_errors import ErrorCategory, classify_error
 
 from .app_state_service import _read_app_state
@@ -49,6 +51,7 @@ from .shared_runtime import (
     _inference_process_lock,
     _is_local_client,
     _model_slots,
+    _public_rel_path,
     _read_collections_unlocked,
     _retriever_for_collections,
     config,
@@ -72,6 +75,18 @@ _AGENT_STALL_SECONDS = config._env_float("TRINAXAI_AGENT_STALL_TIMEOUT", 120.0, 
 _AGENT_WORKSPACE_KEY = "tc-agent-workspace"
 _AGENT_STATUS_INTERVAL_SECONDS = 3.0
 _AGENT_EVENT_RESULT_CHARS = 2500
+_AGENT_QUEUE_MAXSIZE = config._env_int("TRINAXAI_AGENT_QUEUE_MAXSIZE", 128, minimum=4, maximum=4096)
+_AGENT_QUEUE_PUT_TIMEOUT_SECONDS = config._env_float(
+    "TRINAXAI_AGENT_QUEUE_PUT_TIMEOUT", 0.25, minimum=0.01, maximum=5.0
+)
+
+
+def shutdown_runtime() -> None:
+    """Cancel active agent sessions before the API process exits."""
+    with _SESSIONS_LOCK:
+        session_ids = list(_SESSIONS)
+    for session_id in session_ids:
+        _drop_session(session_id)
 
 
 @contextmanager
@@ -220,9 +235,9 @@ def _resolve_model(requested: str | None, messages: list[dict] | None = None) ->
         except Exception:  # noqa: BLE001 - preserve the safe configured fallback
             LOG.debug("Agent model auto-routing failed; using the general model", exc_info=True)
     if not selected:
-        selected = getattr(config, "MODEL_GENERAL", None) or getattr(config, "LLM_MODEL", "qwen3.5:4b")
+        selected = str(getattr(config, "MODEL_GENERAL", None) or getattr(config, "LLM_MODEL", "qwen3.5:4b"))
     if selected.lower().startswith("qwen2.5-coder:"):
-        fallback = getattr(config, "MODEL_GENERAL", None) or getattr(config, "MODEL_DEEP", "qwen3.5:2b")
+        fallback = str(getattr(config, "MODEL_GENERAL", None) or getattr(config, "MODEL_DEEP", "qwen3.5:2b"))
         LOG.info("Agent router replaced incompatible model %s with %s", selected, fallback)
         return fallback
     return selected
@@ -260,8 +275,14 @@ def _identity_key(request: Request) -> tuple[str, str]:
 def _register_session(identity_key: tuple[str, str] = ("local", "local")) -> tuple[str, dict]:
     session_id = uuid.uuid4().hex
     session = {
-        "queue": queue.Queue(),
+        "queue": queue.Queue(maxsize=_AGENT_QUEUE_MAXSIZE),
+        "queue_lock": threading.Lock(),
+        "session_id": session_id,
+        "terminal_event": None,
+        "sentinel_queued": False,
+        "queue_backpressure": False,
         "approvals": {},
+        "approvals_lock": threading.Lock(),
         "closed": False,
         "cancelled": threading.Event(),
         "identity_key": identity_key,
@@ -276,38 +297,188 @@ def _register_session(identity_key: tuple[str, str] = ("local", "local")) -> tup
     return session_id, session
 
 
+def _approval_lock(session: dict):
+    """Return the lock protecting a session's approval registry.
+
+    The fallback keeps small direct unit-test sessions compatible with the
+    runtime registry while all real sessions create the lock up front.
+    """
+    return session.setdefault("approvals_lock", threading.Lock())
+
+
+def _queue_lock(session: dict):
+    return session.setdefault("queue_lock", threading.Lock())
+
+
+def _cancel_session(session: dict, *, close: bool = False) -> None:
+    with _approval_lock(session):
+        if close:
+            session["closed"] = True
+        cancelled = session.get("cancelled")
+        if cancelled is not None:
+            cancelled.set()
+        for pending in tuple(session.get("approvals", {}).values()):
+            pending["approved"] = False
+            pending["event"].set()
+    engine = session.get("engine")
+    if engine is not None:
+        engine.cancel()
+
+
+def _remove_session(session: dict) -> None:
+    session_id = session.get("session_id")
+    if not session_id:
+        return
+    with _SESSIONS_LOCK:
+        if _SESSIONS.get(session_id) is session:
+            _SESSIONS.pop(session_id, None)
+
+
 def _drop_session(session_id: str) -> None:
     with _SESSIONS_LOCK:
         session = _SESSIONS.pop(session_id, None)
     if session:
-        session["closed"] = True
-        session["cancelled"].set()
-        engine = session.get("engine")
-        if engine is not None:
-            engine.cancel()
-        # Unblock any approval still waiting so the worker can exit.
-        for pending in session["approvals"].values():
-            pending["approved"] = False
-            pending["event"].set()
+        _cancel_session(session, close=True)
+
+
+def _is_terminal_event(event: object) -> bool:
+    return isinstance(event, dict) and event.get("type") in {"done", "error"}
+
+
+def _discard_queued(q: object) -> object | None:
+    """Drop buffered events, retaining a queued terminal event when present."""
+    # ponytail: overflow drops progress to reserve a terminal event; durable
+    # replay needs a broker or per-client store, outside this in-memory stream.
+    retained = None
+    get_nowait = getattr(q, "get_nowait", None)
+    if get_nowait is None:
+        return retained
+    while True:
+        try:
+            item = get_nowait()
+        except queue.Empty:
+            break
+        if retained is None and _is_terminal_event(item):
+            retained = item
+        task_done = getattr(q, "task_done", None)
+        if task_done is not None:
+            task_done()
+    return retained
+
+
+def _queue_terminal(session: dict, event: object) -> bool:
+    """Enqueue a terminal event with priority over buffered progress events."""
+    q = session["queue"]
+    with _queue_lock(session):
+        if event is None:
+            if session.get("sentinel_queued"):
+                return False
+            try:
+                q.put_nowait(None)
+            except (AttributeError, queue.Full):
+                retained = _discard_queued(q)
+                if retained is not None:
+                    try:
+                        q.put_nowait(retained)
+                    except (AttributeError, queue.Full):
+                        q.put(retained)
+                try:
+                    q.put_nowait(None)
+                except AttributeError:
+                    q.put(None)
+                except queue.Full:
+                    # A tiny test queue may have room for the terminal event
+                    # but not a second sentinel. The stream exits on terminal
+                    # events, so keeping the terminal is the safe choice.
+                    return True
+            session["sentinel_queued"] = True
+            return True
+
+        if session.get("terminal_event") is not None:
+            return False
+        if session.get("closed") and not session.get("queue_backpressure"):
+            return False
+        retained = None
+        try:
+            q.put_nowait(event)
+        except (AttributeError, queue.Full):
+            retained = _discard_queued(q)
+            if retained is not None:
+                event = retained
+            try:
+                q.put_nowait(event)
+            except AttributeError:
+                q.put(event)
+        session["terminal_event"] = event
+        return True
+
+
+def _queue_backpressure_event() -> dict:
+    info = classify_error(
+        "Agent SSE event queue is full; the client is not consuming the stream.",
+        category=ErrorCategory.RESOURCE_EXHAUSTED,
+    )
+    return {
+        "type": "error",
+        "error": format_tool_failure("agent", "The SSE client stopped consuming events."),
+        **info.to_client_dict(),
+        "recoverable": True,
+        "finish_reason": "error",
+        "completion_status": "error",
+    }
+
+
+def _queue_event(session: dict, event: object, *, terminal: bool = False) -> bool:
+    if terminal:
+        return _queue_terminal(session, event)
+    cancelled = session.get("cancelled")
+    if session.get("closed") or (cancelled is not None and cancelled.is_set()):
+        return False
+    q = session["queue"]
+    try:
+        with _queue_lock(session):
+            q.put(event, timeout=_AGENT_QUEUE_PUT_TIMEOUT_SECONDS)
+        return True
+    except (AttributeError, TypeError):
+        # Small direct unit-test sessions may use a queue-compatible stub.
+        q.put(event)
+        return True
+    except queue.Full:
+        session["queue_backpressure"] = True
+        _cancel_session(session, close=True)
+        _remove_session(session)
+        _queue_terminal(session, _queue_backpressure_event())
+        return False
 
 
 def _wait_for_approval(session: dict, tool: Tool, args: dict) -> bool:
     approval_id = uuid.uuid4().hex
     event = threading.Event()
-    pending = {"event": event, "approved": False}
-    session["approvals"][approval_id] = pending
-    session["queue"].put(
+    pending: dict[str, Any] = {"event": event, "approved": False}
+    with _approval_lock(session):
+        cancelled = session.get("cancelled")
+        if session.get("closed") or (cancelled is not None and cancelled.is_set()):
+            return False
+        session["approvals"][approval_id] = pending
+    if not _queue_event(
+        session,
         {
             "type": "approval_request",
             "approval_id": approval_id,
             "tool": tool.name,
             "args": _safe_args(args),
-        }
-    )
+        },
+    ):
+        with _approval_lock(session):
+            session["approvals"].pop(approval_id, None)
+            pending["approved"] = False
+            pending["event"].set()
+        return False
     granted = event.wait(timeout=_APPROVAL_TIMEOUT_SECONDS)
-    session["approvals"].pop(approval_id, None)
+    with _approval_lock(session):
+        session["approvals"].pop(approval_id, None)
     if not granted:
-        session["queue"].put({"type": "approval_timeout", "approval_id": approval_id})
+        _queue_event(session, {"type": "approval_timeout", "approval_id": approval_id})
         return False
     return bool(pending["approved"])
 
@@ -355,7 +526,7 @@ def _search_knowledge(_workspace_root, query: str = "", collection_id: str = "",
     lines = []
     for index, node in enumerate(nodes, start=1):
         meta = getattr(node, "metadata", {}) or {}
-        rel = meta.get("rel_path") or os.path.basename(str(meta.get("file_path") or "")) or "unknown"
+        rel = _public_rel_path(meta)
         text = node.get_content() if hasattr(node, "get_content") else str(node)
         snippet = text.strip().replace("\n", " ")
         if len(snippet) > 600:
@@ -534,8 +705,9 @@ def _agent_tools(
     web_search: bool = True,
     knowledge_search: bool = True,
     deep_research: bool = True,
+    available_names: set[str] | frozenset[str] | None = None,
 ) -> tuple[Tool, ...]:
-    """Expose available capabilities; booleans restrict availability, never force use."""
+    """Build the registered tool list; flags and capabilities only restrict it."""
     tools = (
         *DEFAULT_TOOLS,
         _SEARCH_MEMORY_TOOL,
@@ -547,24 +719,74 @@ def _agent_tools(
         tools = (*tools, _DEEP_RESEARCH_TOOL)
     if knowledge_search:
         tools = (*tools, _SEARCH_KNOWLEDGE_TOOL)
+    if available_names is not None:
+        tools = tuple(tool for tool in tools if tool.name in available_names)
     return tools
 
 
-def _run_engine_worker(session: dict, req: AgentRequest, workspace: Path, model: str) -> None:
-    q: queue.Queue = session["queue"]
+def _request_scopes(request: Request) -> frozenset[str] | None:
+    """Read the scope already established by the shared request authorizer."""
+    identity = getattr(getattr(request, "state", None), "trinaxai_identity", None)
+    if not isinstance(identity, dict):
+        return None
+    scopes = identity.get("scopes")
+    if not isinstance(scopes, (list, tuple, set, frozenset)):
+        return frozenset()
+    normalized = frozenset(str(scope).strip() for scope in scopes if str(scope).strip())
+    return None if "*" in normalized else normalized
+
+
+def _available_agent_tool_names(
+    req: AgentRequest,
+    request: Request,
+    workspace: Path | None = None,
+) -> frozenset[str]:
+    """Intersect requested flags with live services and the authenticated scopes."""
+    scopes = _request_scopes(request)
+    privileged = scopes is None
+    can_private = privileged or (scopes is not None and "read_private" in scopes)
+    can_web = privileged or (scopes is not None and "web" in scopes)
+    provider = str(getattr(config, "WEB_SEARCH_PROVIDER", "auto") or "auto").strip().lower()
+    web_available = provider in {"auto", "brave", "searxng", "duckduckgo", "bing-rss"}
+    index_available = state.fusion_retriever is not None
+
+    names = {tool.name for tool in DEFAULT_TOOLS}
+    if can_private:
+        names.update({"search_memory"})
+        if index_available and req.knowledge_search:
+            names.update({"search_knowledge", "list_collections"})
+    if can_web and web_available and req.web_search:
+        names.add("web_search")
+        if req.deep_research:
+            names.add("deep_research")
+    if workspace is not None and _bubblewrap_argv(workspace, "true") is None:
+        names.discard("run_command")
+    return frozenset(names)
+
+
+def _run_engine_worker(
+    session: dict,
+    req: AgentRequest,
+    workspace: Path,
+    model: str,
+    tools: tuple[Tool, ...] | None = None,
+) -> None:
     messages = [dict(m) for m in req.messages]
 
     def on_tool_start(tool: Tool, args: dict) -> None:
         _touch_session(session, current_tool=tool.name, step=True)
-        q.put({"type": "tool_start", "tool": tool.name, "dangerous": tool.dangerous, "args": _safe_args(args)})
+        _queue_event(
+            session,
+            {"type": "tool_start", "tool": tool.name, "dangerous": tool.dangerous, "args": _safe_args(args)},
+        )
 
     def on_tool_result(tool: Tool, result: str) -> None:
         _touch_session(session, current_tool=None)
-        q.put({"type": "tool_result", "tool": tool.name, "result": result[:_AGENT_EVENT_RESULT_CHARS]})
+        _queue_event(session, {"type": "tool_result", "tool": tool.name, "result": result[:_AGENT_EVENT_RESULT_CHARS]})
 
     def on_token(text: str) -> None:
         _touch_session(session, current_tool=None)
-        q.put({"type": "token", "content": text})
+        _queue_event(session, {"type": "token", "content": text})
 
     def on_confirm(tool: Tool, args: dict) -> bool:
         if session.get("closed"):
@@ -589,7 +811,8 @@ def _run_engine_worker(session: dict, req: AgentRequest, workspace: Path, model:
         ollama_url=getattr(config, "OLLAMA_BASE_URL", "http://localhost:11434"),
         max_steps=int(req.max_steps or 25),
         num_ctx=_agent_num_ctx(),
-        tools=_agent_tools(
+        tools=tools
+        or _agent_tools(
             web_search=req.web_search,
             knowledge_search=req.knowledge_search,
             deep_research=req.deep_research,
@@ -604,9 +827,18 @@ def _run_engine_worker(session: dict, req: AgentRequest, workspace: Path, model:
     session["engine"] = engine
     try:
         answer = engine.run(messages)
-        q.put({"type": "done", "answer": answer})
+        _queue_event(
+            session,
+            {"type": "done", "answer": answer, "finish_reason": "stop", "completion_status": "complete"},
+            terminal=True,
+        )
     except AgentCancelled:
         LOG.info("Agent worker cancelled after client disconnect")
+        _queue_event(
+            session,
+            {"type": "done", "answer": "", "finish_reason": "cancelled", "completion_status": "cancelled"},
+            terminal=True,
+        )
     except Exception as exc:  # noqa: BLE001 - report failures to the client
         info = classify_error(exc, status_code=500)
         LOG.error(
@@ -615,22 +847,33 @@ def _run_engine_worker(session: dict, req: AgentRequest, workspace: Path, model:
             info.code,
             type(exc).__name__,
         )
-        q.put(
+        _queue_event(
+            session,
             {
                 "type": "error",
                 "error": format_tool_failure("agent", f"{info.definition.message} {info.definition.recovery}"),
                 **info.to_client_dict(),
                 "recoverable": info.retryable,
-            }
+                "finish_reason": "error",
+                "completion_status": "error",
+            },
+            terminal=True,
         )
     finally:
-        q.put(None)  # sentinel: no more events
+        _queue_event(session, None, terminal=True)  # sentinel: no more events
 
 
-def _agent_event_stream(session_id: str, session: dict, req: AgentRequest, workspace: Path, model: str):
+def _agent_event_stream(
+    session_id: str,
+    session: dict,
+    req: AgentRequest,
+    workspace: Path,
+    model: str,
+    tools: tuple[Tool, ...] | None = None,
+):
     q: queue.Queue = session["queue"]
-    q.put({"type": "start", "session_id": session_id, "workspace": str(workspace), "model": model})
-    worker = threading.Thread(target=_run_engine_worker, args=(session, req, workspace, model), daemon=True)
+    _queue_event(session, {"type": "start", "session_id": session_id, "workspace": str(workspace), "model": model})
+    worker = threading.Thread(target=_run_engine_worker, args=(session, req, workspace, model, tools), daemon=True)
     worker.start()
     last_status = 0.0
     try:
@@ -638,14 +881,16 @@ def _agent_event_stream(session_id: str, session: dict, req: AgentRequest, works
             try:
                 event = q.get(timeout=1.0)
             except queue.Empty:
+                if session.get("closed"):
+                    break
                 now = time.monotonic()
                 elapsed = now - session["started_at"]
                 idle = now - session["last_activity"]
                 timeout = elapsed >= _AGENT_MAX_SECONDS
+                with _approval_lock(session):
+                    has_pending_approval = bool(session["approvals"])
                 stalled = (
-                    idle >= _AGENT_STALL_SECONDS
-                    and not session.get("approvals")
-                    and not session.get("inference_active")
+                    idle >= _AGENT_STALL_SECONDS and not has_pending_approval and not session.get("inference_active")
                 )
                 if timeout or stalled:
                     session["cancelled"].set()
@@ -666,6 +911,8 @@ def _agent_event_stream(session_id: str, session: dict, req: AgentRequest, works
                             ),
                             **info.to_client_dict(),
                             "recoverable": True,
+                            "finish_reason": "error",
+                            "completion_status": "error",
                         }
                     )
                     break
@@ -686,6 +933,8 @@ def _agent_event_stream(session_id: str, session: dict, req: AgentRequest, works
             if event is None:
                 break
             yield _sse(event)
+            if _is_terminal_event(event):
+                break
     finally:
         _drop_session(session_id)
         worker.join(timeout=2)
@@ -699,9 +948,15 @@ async def agent(req: AgentRequest, request: Request):
     enforce_rate_limit(request, bucket="chat")
     workspace = _resolve_workspace(req.workspace)
     model = _resolve_model(req.model, req.messages)
+    tools = _agent_tools(
+        web_search=req.web_search,
+        knowledge_search=req.knowledge_search,
+        deep_research=req.deep_research,
+        available_names=_available_agent_tool_names(req, request, workspace),
+    )
     session_id, session = _register_session(_identity_key(request))
     return StreamingResponse(
-        _agent_event_stream(session_id, session, req, workspace, model),
+        _agent_event_stream(session_id, session, req, workspace, model, tools),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
@@ -713,11 +968,13 @@ async def agent_approve(req: AgentApprovalRequest, request: Request):
     with _SESSIONS_LOCK:
         session = _SESSIONS.get(req.session_id)
     if session is not None and session["identity_key"] == _identity_key(request):
-        pending = session["approvals"].get(req.approval_id)
-        if pending is not None:
-            pending["approved"] = bool(req.approved)
-            pending["event"].set()
-            return {"ok": True, "approved": bool(req.approved)}
+        with _approval_lock(session):
+            cancelled = session.get("cancelled")
+            pending = session["approvals"].get(req.approval_id)
+            if pending is not None and not session.get("closed") and not (cancelled is not None and cancelled.is_set()):
+                pending["approved"] = bool(req.approved)
+                pending["event"].set()
+                return {"ok": True, "approved": bool(req.approved)}
     raise HTTPException(status_code=404, detail="No pending approval with that id (it may have timed out).")
 
 
@@ -727,13 +984,15 @@ async def agent_cancel(req: AgentCancelRequest, request: Request):
         session = _SESSIONS.get(req.session_id)
     if session is None or session["identity_key"] != _identity_key(request):
         raise HTTPException(status_code=404, detail="Agent session is no longer running.")
-    session["cancelled"].set()
+    with _approval_lock(session):
+        session["cancelled"].set()
+        pending_approvals = tuple(session["approvals"].values())
+        for pending in pending_approvals:
+            pending["approved"] = False
+            pending["event"].set()
     engine = session.get("engine")
     if engine is not None:
         engine.cancel()
-    for pending in session["approvals"].values():
-        pending["approved"] = False
-        pending["event"].set()
     return {"ok": True, "cancelled": True}
 
 
@@ -768,7 +1027,7 @@ async def agent_browse(request: Request):
                 readable = False
             entries.append({"name": child.name, "path": str(safe_child), "readable": readable})
     except PermissionError:
-        raise HTTPException(status_code=403, detail=f"Permission denied: {resolved}")
+        raise HTTPException(status_code=403, detail=f"Permission denied: {resolved}") from None
     parent = str(resolved.parent) if resolved != enclosing_root else None
     return {"path": str(resolved), "parent": parent, "home": str(_default_workspace(roots)), "directories": entries}
 

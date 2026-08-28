@@ -13,10 +13,10 @@ function loadProjectMemory(): string {
   try { return localStorage.getItem(PROJECT_MEMORY_KEY) || ''; } catch { return ''; }
 }
 
-export default function MemoryPanel() {
+export default function MemoryPanel({ canManageSystem = false }: { canManageSystem?: boolean }) {
   const { t } = useI18n();
   const { isDark } = useTheme();
-  const toast = useToast();
+  const { toast: showToast } = useToast();
   const [mems, setMems] = useState<MemoryEntry[]>([]);
   const [summary, setSummary] = useState<MemorySummary>({ summary: '', count: 0, updated_at: 0 });
   const [newText, setNewText] = useState('');
@@ -30,25 +30,32 @@ export default function MemoryPanel() {
   const [editKind, setEditKind] = useState<MemoryEntry['kind']>('note');
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
   const connectionToastShownRef = useRef(false);
+  const refreshRunRef = useRef(0);
 
   const showConnectionErrorOnce = useCallback((err: unknown) => {
     if (connectionToastShownRef.current) return;
     connectionToastShownRef.current = true;
-    toast.toast(userFacingError(err, 'external_service_unavailable'), 'error');
-  }, [toast, t]);
+    showToast(userFacingError(err, 'external_service_unavailable'), 'error');
+  }, [showToast]);
 
   const refresh = useCallback(async () => {
+    const runId = ++refreshRunRef.current;
     try {
       const [list, sum] = await Promise.all([listMemories(), getMemorySummary()]);
+      if (runId !== refreshRunRef.current) return;
       setMems(list);
       setSummary(sum);
       connectionToastShownRef.current = false;
     } catch (err) {
+      if (runId !== refreshRunRef.current) return;
       showConnectionErrorOnce(err);
     }
   }, [showConnectionErrorOnce]);
 
-  useEffect(() => { void refresh(); }, [refresh]);
+  useEffect(() => {
+    void refresh();
+    return () => { refreshRunRef.current += 1; };
+  }, [refresh]);
 
   useEffect(() => {
     try {
@@ -76,13 +83,13 @@ export default function MemoryPanel() {
       setNewTags('');
       setNewKind('note');
       setNewExpiry('');
-      toast.toast(t('memoryAdded'), 'success');
+      showToast(t('memoryAdded'), 'success');
       invalidateCache();
       await refresh();
     } catch (err) {
       showConnectionErrorOnce(err);
     }
-  }, [newText, newTags, newKind, newExpiry, toast, t, refresh, invalidateCache, showConnectionErrorOnce]);
+  }, [newText, newTags, newKind, newExpiry, showToast, t, refresh, invalidateCache, showConnectionErrorOnce]);
 
   const del = useCallback(async (id: string) => {
     try {
@@ -107,11 +114,11 @@ export default function MemoryPanel() {
       setEditingId(null);
       invalidateCache();
       await refresh();
-      toast.toast(t('memoryUpdated'), 'success');
+      showToast(t('memoryUpdated'), 'success');
     } catch (err) {
       showConnectionErrorOnce(err);
     }
-  }, [editKind, editText, editingId, invalidateCache, refresh, showConnectionErrorOnce, t, toast]);
+  }, [editKind, editText, editingId, invalidateCache, refresh, showConnectionErrorOnce, t, showToast]);
 
   const doRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -119,13 +126,13 @@ export default function MemoryPanel() {
       await refreshMemorySummary();
       await refresh();
       invalidateCache();
-      toast.toast(t('memorySummaryRefreshed'), 'success');
+      showToast(t('memorySummaryRefreshed'), 'success');
     } catch (err) {
       showConnectionErrorOnce(err);
     } finally {
       setRefreshing(false);
     }
-  }, [refresh, toast, t, invalidateCache, showConnectionErrorOnce]);
+  }, [refresh, showToast, t, invalidateCache, showConnectionErrorOnce]);
 
   const cardBg = isDark ? 'bg-white/[0.03] border-white/[0.06]' : 'bg-gray-50 border-gray-200';
   const muted = isDark ? 'text-white/45' : 'text-gray-500';
@@ -164,13 +171,13 @@ export default function MemoryPanel() {
               {t('memoryAutoSummaryDesc').replace('{count}', String(summary.count))}
             </div>
           </div>
-          <button
+          {canManageSystem && <button
             onClick={doRefresh}
             disabled={refreshing}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#006bbd]/15 text-[#006bbd] text-xs font-medium hover:bg-[#006bbd]/25 disabled:opacity-50 transition-colors"
           >
             <MdAutoFixHigh size={14} /> {t('refresh')}
-          </button>
+          </button>}
         </div>
         <div className={`rounded-lg border p-3 text-xs ${isDark ? 'bg-black/30 border-white/[0.06] text-white/70' : 'bg-white border-gray-200 text-gray-700'}`}>
           {summary.summary
@@ -180,7 +187,7 @@ export default function MemoryPanel() {
       </div>
 
       {/* Add new memory */}
-      <div className={`rounded-xl border border-dashed p-4 space-y-2 ${cardBg}`}>
+      {canManageSystem ? <div className={`rounded-xl border border-dashed p-4 space-y-2 ${cardBg}`}>
         <div className={`text-sm font-medium ${label}`}>{t('addMemoryTitle')}</div>
         <input
           value={newText}
@@ -223,7 +230,7 @@ export default function MemoryPanel() {
         >
           <MdAdd size={14} /> {t('add')}
         </button>
-      </div>
+      </div> : <p role="note" className={`rounded-xl border p-3 text-xs ${cardBg} ${muted}`}>{t('deviceSystemScopeHint')}</p>}
 
       {/* Memory list */}
       <div className="space-y-2">
@@ -263,7 +270,7 @@ export default function MemoryPanel() {
                 <div className={`mt-1.5 flex flex-wrap items-center gap-2 text-[10px] ${muted}`}>
                   <span>{new Date(m.created_at * 1000).toLocaleString()}</span>
                   <span title={t('memoryWhyHint')}>
-                    {t(`memoryKind_${m.kind ?? 'note'}`)} · {t(`memoryProvenance_${m.provenance ?? 'manual'}`)}
+                    {t(`memoryKind_${m.kind ?? 'note'}`)} | {t(`memoryProvenance_${m.provenance ?? 'manual'}`)}
                   </span>
                   {m.expires_at ? <span>{t('memoryExpires')}: {new Date(m.expires_at * 1000).toLocaleDateString()}</span> : null}
                   {m.tags?.length ? (
@@ -275,7 +282,7 @@ export default function MemoryPanel() {
                   ) : null}
                 </div>
               </div>
-              {editingId === m.id ? (
+              {canManageSystem && (editingId === m.id ? (
                 <div className="flex shrink-0 gap-1">
                   <button onClick={() => void saveEdit()} className="rounded-lg p-1.5 text-emerald-500" aria-label={t('save')}>
                     <MdSave size={14} />
@@ -292,19 +299,19 @@ export default function MemoryPanel() {
                 >
                   <MdEdit size={14} />
                 </button>
-              )}
-              <button
+              ))}
+              {canManageSystem && <button
                 onClick={() => setPendingDelete(m.id)}
                 className={`shrink-0 p-1.5 rounded-lg ${isDark ? 'text-white/25 hover:text-red-400 hover:bg-white/[0.05]' : 'text-gray-300 hover:text-red-500 hover:bg-gray-100'}`}
                 aria-label={t('delete')}
               >
                 <MdDelete size={14} />
-              </button>
+              </button>}
             </motion.div>
           ))
         )}
       </div>
-      <ConfirmModal
+      {canManageSystem && <ConfirmModal
         open={pendingDelete !== null}
         title={t('delete')}
         message={t('memoryDeleteConfirm')}
@@ -317,7 +324,7 @@ export default function MemoryPanel() {
           setPendingDelete(null);
           if (id) void del(id);
         }}
-      />
+      />}
     </section>
   );
 }

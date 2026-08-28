@@ -93,7 +93,6 @@ _ES_WORDS = {
     "son",
     "soy",
     "eres",
-    "esta",
     "estan",
     "hay",
     "que",
@@ -144,6 +143,37 @@ def detect_lang(text: str) -> str:
     return "es" if re.search(r"[¿¡ñáéíóúü]", text or "", flags=re.IGNORECASE) else "en"
 
 
+_REASONING_ACTION_RE = re.compile(
+    r"\b(?:demuestra|demostrar|demostracion|demostración|prueba|probar|prove|proof|"
+    r"resuelve|resolver|calcula|calcular|deriva|derivar|analiza|analizar|determina|"
+    r"determinar|compara|compare|paso a paso|step by step|a fondo|exhaustivo|thorough)\b",
+    re.IGNORECASE,
+)
+_EXPLANATION_ONLY_RE = re.compile(
+    r"^\s*[¿?]?\s*(?:qué es|que es|qué son|que son|cómo funciona|como funciona|"
+    r"what is|what are|how does|how do)\b",
+    re.IGNORECASE,
+)
+_COMPLEX_CODE_RE = re.compile(
+    r"\b(?:implementa|implement|crea|create|construye|build|refactoriza|refactor|"
+    r"depura|debug)\b.{0,120}\b(?:tests?|pruebas?|benchmark|varios archivos|"
+    r"multiple files|completo|complete)\b",
+    re.IGNORECASE,
+)
+
+
+def should_think_for_turn(text: str, enabled: bool = True) -> bool:
+    """Keep the user toggle explicit while avoiding thoughtless simple turns."""
+    if not enabled:
+        return False
+    current = (text or "").casefold()
+    if _COMPLEX_CODE_RE.search(current):
+        return True
+    if _EXPLANATION_ONLY_RE.search(current):
+        return False
+    return bool(_REASONING_ACTION_RE.search(current))
+
+
 # ── general identity prompt (port of ollamaSystemPrompt) ──
 
 _GENERAL_EN = (
@@ -151,6 +181,7 @@ _GENERAL_EN = (
     "Answer the current request first and follow the user's latest correction or constraint. "
     "Do not mention your identity, creator, local execution, privacy, links, or product mission unless the user asks about them. "
     "Always answer in the language of the current user message. Be direct, useful, honest, and natural. "
+    "If internal reasoning is enabled, use it only for the current task, verify critical steps, and stop when ready; never repeat the prompt, invent alternatives, or narrate irrelevant thoughts. "
     'Treat words such as "only", "just", "nothing else", and equivalent corrections as strict scope limits. '
     "Do not add unrequested background, marketing, setup, next steps, or a follow-up question. "
     "Use only messages from this conversation; never assume facts from other chats or indexed documents. "
@@ -171,6 +202,7 @@ _GENERAL_ES = (
     "Responde primero a la petición actual y respeta la corrección o restricción más reciente del usuario. "
     "No menciones tu identidad, creador, ejecución local, privacidad, enlaces ni misión del producto salvo que el usuario lo pregunte. "
     "Responde en el idioma del usuario. Sé directo, útil, honesto y natural. "
+    "Si el razonamiento interno está activado, úsalo solo para la petición actual, verifica los pasos críticos y detente cuando esté lista; nunca repitas la pregunta, inventes alternativas ni narres pensamientos irrelevantes. "
     'Trata expresiones como "solo", "nada más" y correcciones equivalentes como límites estrictos de alcance. '
     "No añadas contexto, marketing, preparación, próximos pasos ni preguntas finales que no se pidieron. "
     "Usa únicamente mensajes de esta conversación; no supongas datos de otras conversaciones ni documentos indexados. "
@@ -250,11 +282,10 @@ def _wants_creator_facts(messages: list[dict[str, str]]) -> bool:
         return True
     # Follow-up like "sus enlaces" right after a creator question.
     recent = "\n".join(str(m.get("content") or "").lower() for m in messages[-6:])
-    if re.search(r"\b(enlaces|links?|github|linkedin|redes|perfil)\b", current) and any(
-        hint in recent for hint in _CREATOR_HINTS
-    ):
-        return True
-    return False
+    return bool(
+        re.search(r"\b(enlaces|links?|github|linkedin|redes|perfil)\b", current)
+        and any(hint in recent for hint in _CREATOR_HINTS)
+    )
 
 
 def general_system_messages(messages: list[dict[str, str]], lang: str | None = None) -> list[dict[str, str]]:
@@ -271,6 +302,27 @@ def general_system_messages(messages: list[dict[str, str]], lang: str | None = N
     return system
 
 
+_VISION_EN = (
+    "Analyze the attached image and answer only the user's question. "
+    "Start with directly visible evidence, distinguish observations from uncertain inferences, "
+    "and never invent hidden details. Keep simple identification questions concise. "
+    "Do not mention TrinaxAI, its creator, links, local execution, or privacy unless explicitly asked."
+)
+_VISION_ES = (
+    "Analiza la imagen adjunta y responde solo la pregunta del usuario. "
+    "Empieza por la evidencia directamente visible, distingue observaciones de inferencias inciertas "
+    "y no inventes detalles ocultos. Sé breve ante preguntas simples de identificación. "
+    "No menciones TrinaxAI, su creador, enlaces, ejecución local ni privacidad salvo que se pregunte explícitamente."
+)
+
+
+def vision_system_messages(messages: list[dict[str, str]], lang: str | None = None) -> list[dict[str, str]]:
+    """Build the minimal system policy used for local Ollama image turns."""
+    last_user = next((str(m.get("content") or "") for m in reversed(messages) if m.get("role") == "user"), "")
+    resolved = lang or detect_lang(last_user)
+    return [{"role": "system", "content": _VISION_EN if resolved == "en" else _VISION_ES}]
+
+
 def creator_facts_message(messages: list[dict[str, str]], lang: str | None = None) -> dict[str, str] | None:
     """Return the creator-facts system message when relevant, else None.
 
@@ -282,62 +334,3 @@ def creator_facts_message(messages: list[dict[str, str]], lang: str | None = Non
     last_user = next((str(m.get("content") or "") for m in reversed(messages) if m.get("role") == "user"), "")
     resolved = lang or detect_lang(last_user)
     return {"role": "system", "content": _CREATOR_EN if resolved == "en" else _CREATOR_ES}
-
-
-def canonical_identity_answer(messages: list[dict[str, str]]) -> str | None:
-    """Return deterministic product facts for simple identity questions.
-
-    Small local models sometimes shorten or distort these fixed facts. They do
-    not require inference, so answering them directly keeps CLI/PWA identity
-    consistent while every open-ended request still goes through the model.
-    """
-    latest = next((str(m.get("content") or "") for m in reversed(messages) if m.get("role") == "user"), "")
-    normalized = re.sub(r"[^a-záéíóúüñ ]+", " ", latest.casefold())
-    normalized = re.sub(r"\s+", " ", normalized).strip()
-    lang = detect_lang(latest)
-    creator_question = any(
-        hint in normalized
-        for hint in (
-            "quien te creo",
-            "quién te creó",
-            "quien es tu creador",
-            "quién es tu creador",
-            "who created you",
-            "who made you",
-            "your creator",
-        )
-    )
-    if creator_question:
-        if lang == "en":
-            return (
-                "TrinaxAI was created by TrinaxCode, a Full Stack Web Developer based in "
-                "Tuxtla Gutiérrez, Chiapas, and originally from Nicaragua. Their main expertise "
-                "includes React, TypeScript, Django, PostgreSQL and Firebase, with a focus on "
-                "production products that generate real traffic, leads and revenue. Official GitHub: "
-                "https://github.com/TrinaxCode"
-            )
-        return (
-            "TrinaxAI fue creado por TrinaxCode, un Full Stack Web Developer radicado en "
-            "Tuxtla Gutiérrez, Chiapas, y originario de Nicaragua. Su experiencia principal incluye "
-            "React, TypeScript, Django, PostgreSQL y Firebase, con enfoque en productos reales que "
-            "generan tráfico, leads e ingresos. GitHub oficial: https://github.com/TrinaxCode"
-        )
-    identity_question = normalized in {
-        "quien eres",
-        "quién eres",
-        "que eres",
-        "qué eres",
-        "who are you",
-        "what are you",
-    }
-    if identity_question:
-        return (
-            "I’m TrinaxAI, a general-purpose local-first AI assistant. I can help with chat, "
-            "RAG, web research, vision, voice and software development. Official repository: "
-            "https://github.com/TrinaxCode/TrinaxAI"
-            if lang == "en"
-            else "Soy TrinaxAI, un asistente de IA local-first de propósito general. Puedo ayudarte con "
-            "chat, RAG, investigación web, visión, voz y desarrollo de software. Repositorio oficial: "
-            "https://github.com/TrinaxCode/TrinaxAI"
-        )
-    return None

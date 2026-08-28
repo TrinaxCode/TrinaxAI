@@ -1,7 +1,7 @@
-import { useState, useMemo, useId } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useTheme } from '../theme/ThemeContext';
 import { useI18n } from '../i18n/I18nContext';
-import { MdContentCopy, MdCheck, MdLibraryBooks, MdOpenInNew } from 'react-icons/md';
+import { MdContentCopy, MdCheck, MdLibraryBooks, MdOpenInNew, MdKeyboardArrowDown } from 'react-icons/md';
 import { escapeRegExp } from '../utils/str';
 import type { Source } from '../lib/api';
 
@@ -59,10 +59,15 @@ function highlight(text: string, terms: string[]): React.ReactNode {
 export default function Sources({ sources, model, project, query, onOpenInBrowser }: Props) {
   const [open, setOpen] = useState(false);
   const [copiedIdx, setCopiedIdx] = useState<number | null>(null);
+  const copyResetTimerRef = useRef<number | null>(null);
   const { isDark } = useTheme();
   const { t } = useI18n();
   const sourcesId = useId();
   const terms = useMemo(() => extractTerms(query || ''), [query]);
+
+  useEffect(() => () => {
+    if (copyResetTimerRef.current !== null) window.clearTimeout(copyResetTimerRef.current);
+  }, []);
 
   const hasSources = sources && sources.length > 0;
   const webProviders = [...new Set((sources || []).map((source) => source.provider).filter(Boolean))];
@@ -72,7 +77,11 @@ export default function Sources({ sources, model, project, query, onOpenInBrowse
     try {
       await navigator.clipboard.writeText(path);
       setCopiedIdx(idx);
-      window.setTimeout(() => setCopiedIdx((cur) => (cur === idx ? null : cur)), 1400);
+      if (copyResetTimerRef.current !== null) window.clearTimeout(copyResetTimerRef.current);
+      copyResetTimerRef.current = window.setTimeout(() => {
+        setCopiedIdx((cur) => (cur === idx ? null : cur));
+        copyResetTimerRef.current = null;
+      }, 1400);
     } catch { /* ignore */ }
   };
 
@@ -85,17 +94,18 @@ export default function Sources({ sources, model, project, query, onOpenInBrowse
         <span className={isDark ? 'text-white/35' : 'text-gray-400'}>{model}</span>
       )}
       {webProviders.length > 0 && (
-        <span className={isDark ? 'text-white/35' : 'text-gray-400'}>Web: {webProviders.join(', ')}</span>
+        <span className={isDark ? 'text-white/35' : 'text-gray-400'}>{t('sourceWeb')}: {webProviders.join(', ')}</span>
       )}
       {hasSources && (
         <button
           type="button"
           onClick={() => setOpen((v) => !v)}
-          className={`hover:underline transition-colors ${isDark ? 'text-white/40 hover:text-white/70' : 'text-gray-400 hover:text-gray-600'}`}
+           className={`inline-flex items-center gap-0.5 rounded-full border px-2 py-0.5 font-medium transition-colors ${isDark ? 'border-white/[0.08] bg-white/[0.04] text-white/55 hover:border-white/20 hover:text-white/85' : 'border-gray-200 bg-white text-gray-500 shadow-sm hover:border-[#006bbd]/30 hover:text-[#006bbd]'}`}
           aria-expanded={open}
           aria-controls={sourcesId}
         >
-          {open ? '▾' : '▸'} {sources!.length} {sources!.length === 1 ? t('source') : t('sources')}
+           <MdKeyboardArrowDown size={14} className={`transition-transform ${open ? 'rotate-180' : ''}`} aria-hidden="true" />
+           {sources!.length} {sources!.length === 1 ? t('source') : t('sources')}
         </button>
       )}
 
@@ -124,7 +134,7 @@ export default function Sources({ sources, model, project, query, onOpenInBrowse
                     type="button"
                     className={`min-w-0 truncate text-left text-[11px] font-mono hover:underline ${isDark ? 'text-[#4ea3e0]' : 'text-[#006bbd]'}`}
                     onClick={() => copyPath(s.file, i)}
-                    title={`${s.file} — ${t('clickToCopy')}`}
+                    title={`${s.file} | ${t('clickToCopy')}`}
                     aria-label={`${t('copy')}: ${s.file}`}
                   >
                     {s.file}
@@ -137,7 +147,7 @@ export default function Sources({ sources, model, project, query, onOpenInBrowse
                   <button
                     type="button"
                     onClick={() => copyPath(externalUrl || s.file, i)}
-                    className={`p-0.5 rounded ${isDark ? 'text-white/25 hover:text-white/70' : 'text-gray-300 hover:text-gray-600'}`}
+                    className={`inline-flex min-h-7 min-w-7 items-center justify-center rounded ${isDark ? 'text-white/25 hover:text-white/70' : 'text-gray-300 hover:text-gray-600'}`}
                     aria-label={t('copy')}
                     title={t('copy')}
                   >
@@ -148,7 +158,7 @@ export default function Sources({ sources, model, project, query, onOpenInBrowse
                       href={externalUrl}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className={`p-0.5 rounded ${isDark ? 'text-white/25 hover:text-white/70' : 'text-gray-300 hover:text-gray-600'}`}
+                      className={`inline-flex min-h-7 min-w-7 items-center justify-center rounded ${isDark ? 'text-white/25 hover:text-white/70' : 'text-gray-300 hover:text-gray-600'}`}
                       aria-label={`${t('openInBrowser')}: ${s.title || externalUrl}`}
                       title={t('openInBrowser')}
                     >
@@ -158,7 +168,7 @@ export default function Sources({ sources, model, project, query, onOpenInBrowse
                     <button
                       type="button"
                       onClick={() => onOpenInBrowser(s.file, s.collection_id)}
-                      className={`p-0.5 rounded ${isDark ? 'text-white/25 hover:text-white/70' : 'text-gray-300 hover:text-gray-600'}`}
+                      className={`inline-flex min-h-7 min-w-7 items-center justify-center rounded ${isDark ? 'text-white/25 hover:text-white/70' : 'text-gray-300 hover:text-gray-600'}`}
                       aria-label={t('openInBrowser')}
                       title={t('openInKnowledgeBrowser')}
                     >

@@ -64,6 +64,26 @@ html.light .chip-elegant:hover {
 }
 
 
+.agent-activity {
+  min-height: 1.25rem;
+  align-items: center;
+  overflow: hidden;
+}
+
+.agent-activity-dot {
+  width: 0.35rem;
+  height: 0.35rem;
+  flex: 0 0 auto;
+  border-radius: 9999px;
+  background: #168de2;
+  animation: agent-activity-pulse 1.15s ease-in-out infinite;
+}
+
+@keyframes agent-activity-pulse {
+  0%, 100% { opacity: 0.35; transform: scale(0.86); }
+  50% { opacity: 1; transform: scale(1); }
+}
+
 .chat-markdown {
   min-width: 0;
   max-width: 100%;
@@ -195,6 +215,91 @@ html.light .chip-elegant:hover {
   overflow-wrap: anywhere;
   word-break: normal;
   line-height: 1.65;
+}
+
+.chat-assistant-avatar {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+}
+
+.chat-assistant-avatar-dark {
+  background: #000;
+}
+
+.chat-assistant-avatar-light {
+  background: #fff;
+  box-shadow: none;
+}
+
+.chat-bubble-assistant {
+  transition: background-color 0.3s ease;
+}
+
+.chat-bubble-assistant-dark {
+  background: rgba(255, 255, 255, 0.03);
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.chat-bubble-assistant-light {
+  background: rgba(0, 0, 0, 0.03);
+  color: #374151;
+}
+
+.chat-bubble-streaming {
+  min-width: 4.75rem;
+}
+
+.chat-generating-indicator {
+  display: flex;
+  min-height: 1.45rem;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.1rem 0.15rem;
+}
+
+.chat-generating-label {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  color: rgba(107, 114, 128, 0.78);
+  font-size: 0.75rem;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-generating-label > span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+html.dark .chat-generating-label {
+  color: rgba(203, 213, 225, 0.62);
+}
+
+.chat-generating-dots {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 0.2rem;
+  height: 1rem;
+}
+
+.chat-generating-dots span {
+  width: 0.24rem;
+  height: 0.24rem;
+  border-radius: 9999px;
+  background: #168de2;
+  animation: assistant-dot-pulse 1.15s ease-in-out infinite;
+}
+
+@keyframes assistant-dot-pulse {
+  0%, 100% { opacity: 0.3; transform: translateY(0); }
+  50% { opacity: 0.9; transform: translateY(-0.12rem); }
 }
 
 .chat-plain-text {

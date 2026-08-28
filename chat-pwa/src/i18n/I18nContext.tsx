@@ -39,11 +39,11 @@ export function I18nProvider({ children }: { children: ReactNode }) {
     const metadata = lang === 'es'
       ? {
           title: 'TrinaxAI Chat',
-          description: 'TrinaxAI — Ollama y RAG al alcance de tu mano.',
+          description: 'TrinaxAI - Ollama y RAG al alcance de tu mano.',
         }
       : {
           title: 'TrinaxAI Chat',
-          description: 'TrinaxAI — Ollama & RAG at your fingertips.',
+          description: 'TrinaxAI - Ollama & RAG at your fingertips.',
         };
     document.title = metadata.title;
     document.querySelector('meta[name="description"]')?.setAttribute('content', metadata.description);
@@ -63,7 +63,7 @@ export function I18nProvider({ children }: { children: ReactNode }) {
 
   const t = useCallback(
     (key: TranslationKey): string => {
-      return translations[lang][key] ?? translations.es[key] ?? key;
+      return translations[lang][key] ?? key;
     },
     [lang],
   );

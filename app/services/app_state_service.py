@@ -2,6 +2,12 @@
 
 from __future__ import annotations
 
+from .runtime_context import (
+    _ensure_private_directory,
+    _ensure_private_file,
+    _open_private_file,
+)
+
 # ruff: noqa: F405
 from .shared_runtime import (
     APP_STATE_MAX_BYTES,
@@ -132,7 +138,7 @@ def _factory_reset_runtime_state(reset_state: dict[str, str]) -> dict[str, Any]:
                 preserve_names=frozenset({".proxy_secret", ".inference.lock"}),
             )
         )
-        os.makedirs(config.PERSIST_DIR, exist_ok=True)
+        _ensure_private_directory(config.PERSIST_DIR)
         # Never reuse a revision after reset: a pre-reset offline device with a
         # stale base revision must conflict instead of restoring deleted data.
         _write_app_state_document(
@@ -168,6 +174,10 @@ def _clean_app_state_values(values: object) -> dict[str, str]:
 def _read_app_state_document() -> tuple[dict[str, Any], bool]:
     """Read v2 state and detect legacy ``{tc-*: value}`` documents."""
     try:
+        parent = os.path.dirname(APP_STATE_PATH)
+        if parent and os.path.isdir(parent):
+            _ensure_private_directory(parent)
+        _ensure_private_file(APP_STATE_PATH)
         with open(APP_STATE_PATH, encoding="utf-8") as f:
             raw = json.load(f)
     except (OSError, ValueError):
@@ -200,7 +210,8 @@ def _read_app_state() -> dict[str, str]:
 
 def _write_app_state_document(document: dict[str, Any]) -> None:
     parent = os.path.dirname(APP_STATE_PATH) or "."
-    os.makedirs(parent, exist_ok=True)
+    if parent != ".":
+        _ensure_private_directory(parent)
     payload = {
         "schema_version": _APP_STATE_SCHEMA_VERSION,
         "revision": int(document["revision"]),
@@ -211,11 +222,16 @@ def _write_app_state_document(document: dict[str, Any]) -> None:
         raise HTTPException(status_code=413, detail="Shared app state is too large.")
     tmp = f"{APP_STATE_PATH}.tmp-{uuid.uuid4().hex}"
     try:
-        with open(tmp, "w", encoding="utf-8") as f:
+        with os.fdopen(
+            _open_private_file(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL),
+            "w",
+            encoding="utf-8",
+        ) as f:
             f.write(encoded)
             f.flush()
             os.fsync(f.fileno())
         os.replace(tmp, APP_STATE_PATH)
+        _ensure_private_file(APP_STATE_PATH)
         try:
             directory_fd = os.open(parent, os.O_RDONLY)
             try:

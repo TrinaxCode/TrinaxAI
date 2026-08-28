@@ -14,12 +14,14 @@ import { fileURLToPath } from 'node:url';
 import {
   isAllowedOllamaProxyRequest,
   isAuthorizedScopedProxyPeer,
+  isAuthorizedSystemProxyPeer,
   deviceTokenHasScope,
   isLoopbackAddress,
-  isPrivateLanAddress,
   normalizeAddress,
   needsInferenceLock,
   requiredOllamaProxyScope,
+  requiredRagProxyScope,
+  deviceTokenFromCookie,
 } from './vite-security';
 import { acquireInferenceProcessLock } from './inference-lock';
 import { PWA_SECURITY_HEADERS } from './security-headers';
@@ -65,8 +67,22 @@ const httpsConfig = process.env.CI === 'true'
     ? { key: fs.readFileSync(certKey), cert: fs.readFileSync(certFile) }
     : undefined;
 
+// Vite's React refresh preamble is inline during local development. Keep the
+// production/preview policy strict while allowing the dev server to render.
+const devSecurityHeaders = {
+  ...PWA_SECURITY_HEADERS,
+  'Content-Security-Policy': PWA_SECURITY_HEADERS['Content-Security-Policy'].replace(
+    "script-src 'self'",
+    "script-src 'self' 'unsafe-inline'",
+  ),
+};
+
 function env(name: string, fallback: string): string {
   return process.env[name] || fallback;
+}
+
+export function indexDirectory(explicitDir?: string | null): string {
+  return explicitDir || env('TRINAXAI_INDEX_DIR', path.join(repoRoot, 'local_sources'));
 }
 
 const PROXY_IDENTITY_HEADERS = [
@@ -178,6 +194,7 @@ function signProxyIdentity(
 
 function attachSignedProxyIdentity(proxyReq: any, req: any): void {
   for (const header of PROXY_IDENTITY_HEADERS) proxyReq.removeHeader(header);
+  proxyReq.setHeader('X-Forwarded-Proto', req.socket?.encrypted ? 'https' : 'http');
   const secret = proxySecret();
   if (!secret) return;
   const clientIp = normalizeAddress(req.socket?.remoteAddress || 'unknown');
@@ -240,6 +257,20 @@ function installProxyBoundary(server: any): void {
         sendProxyError(res, 503, 'proxy_identity_unavailable');
         return;
       }
+      const requiredScope = requiredRagProxyScope(pathname, req.method || 'GET');
+      const suppliedAdminToken = String(req.headers['x-admin-token'] || '');
+      const deviceToken = String(req.headers['x-trinaxai-device-token'] || '')
+        || deviceTokenFromCookie(req.headers.cookie);
+      if (requiredScope && !isAuthorizedScopedProxyPeer(
+        peer,
+        suppliedAdminToken,
+        process.env.TRINAXAI_ADMIN_TOKEN || '',
+        deviceToken,
+        pairedDeviceGrants(deviceToken, requiredScope),
+      )) {
+        sendProxyError(res, 403, 'proxy_scope_required');
+        return;
+      }
       next();
       return;
     }
@@ -252,13 +283,15 @@ function installProxyBoundary(server: any): void {
     const deviceToken = String(req.headers['x-trinaxai-device-token'] || '');
     const adminToken = process.env.TRINAXAI_ADMIN_TOKEN || '';
     const requiredScope = requiredOllamaProxyScope(pathname);
-    const authorized = (requiredScope === 'chat' && isPrivateLanAddress(peer)) || isAuthorizedScopedProxyPeer(
-      peer,
-      suppliedToken,
-      adminToken,
-      deviceToken,
-      pairedDeviceGrants(deviceToken, requiredScope),
-    );
+    const authorized = requiredScope === 'system'
+      ? isAuthorizedSystemProxyPeer(peer)
+      : isAuthorizedScopedProxyPeer(
+        peer,
+        suppliedToken,
+        adminToken,
+        deviceToken,
+        pairedDeviceGrants(deviceToken, requiredScope),
+      );
     if (!authorized) {
       sendProxyError(res, 403, 'proxy_scope_required');
       return;
@@ -301,15 +334,6 @@ function installProxyBoundary(server: any): void {
       sendProxyError(res, 503, 'proxy_queue_timeout');
     });
   });
-}
-
-function userHome(): string {
-  return process.env.TRINAXAI_HOME
-    || process.env.HOME
-    || process.env.USERPROFILE
-    || (process.env.HOMEPATH && process.env.HOMEDRIVE
-      ? path.join(process.env.HOMEDRIVE || '', process.env.HOMEPATH || '')
-      : repoRoot);
 }
 
 function localPython(): string {
@@ -391,31 +415,21 @@ function installSystemControl(server: any): void {
   const ragTarget = env('TRINAXAI_RAG_TARGET', env('VITE_TRINAXAI_RAG_TARGET', 'http://127.0.0.1:3333'));
   server.middlewares.use('/api/system', async (req: any, res: any) => {
     if (req.method !== 'POST') { res.statusCode = 405; res.end(); return; }
-    const token = req.headers['x-admin-token'] as string | undefined;
-    const deviceToken = String(req.headers['x-trinaxai-device-token'] || '');
-    const adminToken = process.env.TRINAXAI_ADMIN_TOKEN;
     const peer = req.socket?.remoteAddress || '127.0.0.1';
     const origin = String(req.headers.origin || '');
     const trustedBrowserOrigin = !origin || (() => {
       try {
         const parsed = new URL(origin);
-        return ['3334', '3335'].includes(parsed.port) && isPrivateLanAddress(parsed.hostname);
+        return ['3334', '3335'].includes(parsed.port) && isLoopbackAddress(parsed.hostname);
       } catch {
         return false;
       }
     })();
-    const scopedAuthorized = isAuthorizedScopedProxyPeer(
-      peer,
-      token || '',
-      adminToken || '',
-      deviceToken,
-      pairedDeviceGrants(deviceToken, 'system'),
-    );
-    const authorized = trustedBrowserOrigin && scopedAuthorized;
+    const authorized = trustedBrowserOrigin && isAuthorizedSystemProxyPeer(peer);
     if (!authorized) {
       res.statusCode = 403;
       res.setHeader('Content-Type', 'application/json');
-      res.end(JSON.stringify({ ok: false, error: 'Operación no autorizada. Usa un dispositivo vinculado o X-Admin-Token.' }));
+      res.end(JSON.stringify({ ok: false, error: 'Operación disponible solo desde localhost.' }));
       return;
     }
     const url = new URL(req.url || '/', 'http://localhost');
@@ -441,7 +455,7 @@ function installSystemControl(server: any): void {
         sendJson(err ? 500 : 200, { ok: !err, output: stdout, error: stderr || (err?.message ?? '') });
       });
     } else if (action === 'index') {
-      const dir = url.searchParams.get('dir') || env('TRINAXAI_INDEX_DIR', path.join(userHome(), 'Documents'));
+      const dir = indexDirectory(url.searchParams.get('dir'));
       execFile(localPython(), [path.join(repoRoot, 'index.py')], {
         timeout: 600000,
         env: { ...process.env, TRINAXAI_INDEX_DIR: dir },
@@ -491,9 +505,7 @@ export default defineConfig({
         'android-chrome-192x192.png',
         'android-chrome-512x512.png',
         'logo.webp',
-        'logo-of-app.webp',
         'logo-for-ai.webp',
-        'new-logo-for-AI.webp',
         'offline.html',
         'manifest.en.webmanifest',
         'manifest.es.webmanifest',
@@ -551,11 +563,23 @@ export default defineConfig({
         ],
       },
       workbox: {
+        // The custom navigation NetworkFirst route below owns SPA navigation
+        // and provides the explicit offline.html fallback.
+        navigateFallback: null,
         cleanupOutdatedCaches: true,
         globPatterns: ['**/*.{js,css,html,ico,png,webp,svg,woff2}'],
-        navigateFallback: '/index.html',
-        navigateFallbackDenylist: [/^\/api\//],
         runtimeCaching: [
+          {
+            // Always ask the current host for navigations first. Fall back to
+            // the precached offline page when the host is unavailable.
+            urlPattern: ({ request }: { request: Request }) => request.mode === 'navigate',
+            handler: 'NetworkFirst',
+            options: {
+              cacheName: 'navigation-pages',
+              networkTimeoutSeconds: 3,
+              precacheFallback: { fallbackURL: '/offline.html' },
+            },
+          },
           {
             // Cache static assets (JS, CSS) with CacheFirst for instant reloads
             urlPattern: /\.(?:js|css)$/i,
@@ -602,19 +626,22 @@ export default defineConfig({
   ],
   server: {
     https: httpsConfig,
-    host: '0.0.0.0',
+    host: process.env.TRINAXAI_PWA_HOST || '127.0.0.1',
     port: 3334,
-    headers: PWA_SECURITY_HEADERS,
+    headers: devSecurityHeaders,
     proxy: proxyConfig(),
   },
   preview: {
     https: httpsConfig,
-    host: '0.0.0.0',
+    host: process.env.TRINAXAI_PWA_HOST || '127.0.0.1',
     port: 3334,
     headers: PWA_SECURITY_HEADERS,
     proxy: proxyConfig(),
   },
   build: {
+    // Parallel E2E agents use one checkout. Give each gateway its own output
+    // tree so one build cannot delete another gateway's live frontend.
+    outDir: process.env.TRINAXAI_PWA_DIST || 'dist',
     rollupOptions: {
       output: {
         manualChunks: {

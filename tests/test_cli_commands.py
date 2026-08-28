@@ -44,6 +44,17 @@ def test_cli_version() -> None:
     assert "TrinaxAI CLI" in result.stdout
 
 
+def test_local_version_does_not_construct_http_client(monkeypatch) -> None:
+    import trinaxai_cli.app as app
+    import trinaxai_cli.client as client_module
+
+    def fail_if_constructed(*_args, **_kwargs):
+        raise AssertionError("local CLI command opened the HTTP client")
+
+    monkeypatch.setattr(client_module, "TrinaxAPIClient", fail_if_constructed)
+    assert app.main(["version"]) == 0
+
+
 def test_cli_requires_verified_tls_and_accepts_a_ca_file(tmp_path: Path) -> None:
     config = tmp_path / "config.toml"
     config.write_text("[api]\nverify_tls = false\n", encoding="utf-8")
@@ -212,16 +223,19 @@ def test_index_success_reloads_live_rag_index(tmp_path: Path) -> None:
     ui = MagicMock()
     args = SimpleNamespace(path=str(source), collection="docs", append=False)
     process = MagicMock()
+    spawn = MagicMock(return_value=process)
 
-    with (
-        patch.object(index, "find_install_root", return_value=tmp_path),
-        patch.object(index, "spawn_process_group", return_value=process),
-        patch.object(index, "wait_process_group", return_value=0),
-    ):
-        result = index.run(args, client, ui, CLIConfig())
+    with patch.dict(os.environ, {"TRINAXAI_INDEX_APPEND": "1"}):
+        with (
+            patch.object(index, "find_install_root", return_value=tmp_path),
+            patch.object(index, "spawn_process_group", spawn),
+            patch.object(index, "wait_process_group", return_value=0),
+        ):
+            result = index.run(args, client, ui, CLIConfig())
 
     assert result == 0
     client.reload_index.assert_called_once_with()
+    assert spawn.call_args.kwargs["env"]["TRINAXAI_INDEX_APPEND"] == "0"
 
 
 def test_cli_export_produces_markdown_with_session_name(tmp_path: Path) -> None:

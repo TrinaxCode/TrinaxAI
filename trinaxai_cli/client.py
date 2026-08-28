@@ -197,7 +197,7 @@ class TrinaxAPIClient:
         except Exception:
             pass
 
-    # ── low-level ──
+    # ── internal details ──
     def _send(
         self,
         method: str,
@@ -374,7 +374,14 @@ class TrinaxAPIClient:
             {"query": query, "max_entries": max_entries},
         )
         memories = result.get("memories") if isinstance(result, dict) else None
-        return memories if isinstance(memories, list) else []
+        if not isinstance(memories, list) or any(not isinstance(item, dict) for item in memories):
+            raise TrinaxAPIError(
+                502,
+                "unexpected memory-context response from the backend",
+                result,
+                language=getattr(self, "language", "en"),
+            )
+        return memories
 
     # ── Research ──
     def research(
@@ -388,6 +395,7 @@ class TrinaxAPIClient:
         context: str | None = None,
         include_local: bool = False,
         model: str | None = None,
+        thinking: bool | None = None,
     ) -> dict[str, Any]:
         """Run a research pass. ``web_search`` grounds the answer on the live web.
 
@@ -411,6 +419,8 @@ class TrinaxAPIClient:
             body["include_local"] = True
         if model:
             body["model"] = model
+        if thinking is not None:
+            body["think"] = bool(thinking)
         return self._post(
             "/v1/research",
             body,

@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import asyncio
+import threading
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 
 import httpx
 
 # ruff: noqa: F405
 from app.security.admin_auth import authorize_scope
+from app.security.rate_limit import enforce_rate_limit
 from trinaxai_cli.agent.tools import external_failure_message, format_tool_failure
 from trinaxai_errors import ErrorCategory, classify_error
 
@@ -16,8 +20,9 @@ from .shared_runtime import (
     NO_INDEX_MSG,
     Request,
     ResearchRequest,
-    _authorize_system,
+    StreamingResponse,
     _collection_scope,
+    _public_rel_path,
     _research_serialize_node,
     _retriever_for_collections,
     _run_model_task,
@@ -37,6 +42,35 @@ from .web_search_service import (
     search_web,
     wants_web_search,
 )
+
+
+class _ResearchCancelled(RuntimeError):
+    """Stop synchronous research after its client stream has disconnected."""
+
+
+def _research_source_label(metadata: dict) -> str:
+    """Return a safe local label while keeping web URLs available as fallback."""
+    if metadata.get("source_type") == "web":
+        return str(metadata.get("title") or metadata.get("url") or "Fuente")
+    return _public_rel_path(metadata)
+
+
+def _authorize_research_request(request: Request, *, use_web: bool, include_local: bool) -> None:
+    if use_web:
+        authorize_scope(request, "web")
+    if include_local or not use_web:
+        authorize_scope(request, "read_private")
+
+
+def _cancelled_result(model: str) -> dict:
+    return {
+        "answer": "",
+        "sub_questions": [],
+        "sources": [],
+        "passes": 0,
+        "model": model,
+        "cancelled": True,
+    }
 
 
 def _research_language(text: str) -> str:
@@ -165,7 +199,7 @@ def _research_decompose(llm, query: str, depth: int) -> list[str]:
     if not isinstance(data, list):
         return [query]
     cleaned = [str(item).strip() for item in data if str(item).strip()]
-    return cleaned or [query]
+    return cleaned[:4] or [query]
 
 
 def _research_fallback(chunks: list, *, web_search: bool, language: str = "Spanish") -> str:
@@ -191,7 +225,7 @@ def _research_fallback(chunks: list, *, web_search: bool, language: str = "Spani
     rows = []
     for idx, chunk in enumerate(chunks[:5], start=1):
         meta = chunk.get("metadata", {}) or {}
-        label = meta.get("title") or meta.get("rel_path", "Fuente")
+        label = meta.get("title") or _research_source_label(meta)
         url = meta.get("url")
         scope = meta.get("content_scope")
         scope_label = " [sólo snippet del buscador]" if scope == "snippet_only" else ""
@@ -238,15 +272,27 @@ def _research_synthesize(
     context: str = "",
     web_search: bool = False,
     depth: int = 1,
+    on_token: Callable[[str], None] | None = None,
+    cancel_event: threading.Event | None = None,
 ) -> str:
     """Combine local and web chunks into one grounded, cited answer."""
+    if cancel_event is not None and cancel_event.is_set():
+        raise _ResearchCancelled
+
+    def check_cancelled() -> None:
+        if cancel_event is not None and cancel_event.is_set():
+            raise _ResearchCancelled
+
     language = _research_language(query)
     if not chunks:
-        return (
+        answer = (
             "No se encontró contexto relevante en los documentos indexados."
             if language == "Spanish"
             else "No relevant context was found in the indexed documents."
         )
+        if on_token is not None:
+            on_token(answer)
+        return answer
     # Encode every source as data and escape angle brackets so hostile page
     # text cannot forge our source delimiters. Retrieved pages, snippets and
     # conversation context are all untrusted input, never model instructions.
@@ -259,7 +305,7 @@ def _research_synthesize(
             snippet = snippet[:snippet_limit] + "..."
         source_data = {
             "citation": idx,
-            "title": meta.get("title") or meta.get("rel_path", "unknown"),
+            "title": meta.get("title") or _research_source_label(meta),
             "url": meta.get("url"),
             "search_url": meta.get("search_url"),
             "canonical_url": meta.get("canonical_url"),
@@ -320,10 +366,31 @@ def _research_synthesize(
         "Answer:"
     )
     try:
-        resp = llm.complete(prompt)
-        answer = (resp.text if hasattr(resp, "text") else str(resp)).strip()
+        if on_token is None:
+            resp = llm.complete(prompt)
+            answer = (resp.text if hasattr(resp, "text") else str(resp)).strip()
+        else:
+            generated: list[str] = []
+            stream = llm.stream_complete(prompt)
+            try:
+                for chunk in stream:
+                    check_cancelled()
+                    token = getattr(chunk, "delta", None)
+                    if token is None:
+                        token = str(chunk)
+                    if token:
+                        generated.append(token)
+                        on_token(token)
+            finally:
+                close = getattr(stream, "close", None)
+                if close is not None:
+                    close()
+            answer = "".join(generated).strip()
         if not answer or answer.lower() == "no answer produced.":
-            return _research_fallback(chunks, web_search=web_search, language=language)
+            fallback = _research_fallback(chunks, web_search=web_search, language=language)
+            if on_token is not None and fallback:
+                on_token(fallback)
+            return fallback
         answer = re.sub(r"\[n\]", "", answer, flags=re.IGNORECASE)
         if web_search:
             max_source = len(chunks)
@@ -337,12 +404,21 @@ def _research_synthesize(
                     f"[{idx}]" for idx in range(1, min(max_source, 5) + 1)
                 )
         return answer
+    except _ResearchCancelled:
+        raise
     except Exception as exc:
         LOG.warning("Research synthesis failed: %s", exc)
-        return _research_fallback(chunks, web_search=web_search, language=language)
+        fallback = _research_fallback(chunks, web_search=web_search, language=language)
+        if on_token is not None and fallback:
+            on_token(fallback)
+        return fallback
 
 
-def _research_sync(req: ResearchRequest):
+def _research_sync(
+    req: ResearchRequest,
+    on_token: Callable[[str], None] | None = None,
+    cancel_event: threading.Event | None = None,
+):
     """Multi-pass retrieval + LLM synthesis with optional sub-question decomposition.
 
     Response: ``{"answer": str, "sub_questions": [...], "sources": [...],
@@ -355,6 +431,8 @@ def _research_sync(req: ResearchRequest):
     # model; the code-specialized model is never the prose synthesizer.
     default_model = config.MODEL_FAST if use_web and depth == 1 else config.MODEL_GENERAL
     model_name = (req.model or "").strip() or default_model
+    if cancel_event is not None and cancel_event.is_set():
+        return _cancelled_result(model_name)
     use_local = state.fusion_retriever is not None and (not use_web or req.include_local)
     search_query = (req.search_query or req.query).strip()
     normalized_collections, collection_error = _collection_scope(req.collections)
@@ -374,6 +452,8 @@ def _research_sync(req: ResearchRequest):
                 else "The selected collection contains no indexed documents."
             )
             error_code = "collection_empty"
+        if on_token is not None:
+            on_token(answer)
         return {
             "answer": answer,
             "sub_questions": [],
@@ -385,6 +465,8 @@ def _research_sync(req: ResearchRequest):
             "error_detail": ", ".join(normalized_collections),
         }
     if state.fusion_retriever is None and not use_web:
+        if on_token is not None:
+            on_token(NO_INDEX_MSG)
         return {
             "answer": NO_INDEX_MSG,
             "sub_questions": [],
@@ -396,6 +478,7 @@ def _research_sync(req: ResearchRequest):
         model_name,
         keep_alive=req.keep_alive,
         aggressive_quant=req.aggressive_quant,
+        thinking=config.TRINAXAI_THINKING_MODE if req.think is None else bool(req.think),
         **({"num_ctx": min(config.NUM_CTX, 3072), "num_predict": 180} if use_web else {}),
     )
     # A normal web lookup needs one search and one synthesis. For an explicit
@@ -409,10 +492,14 @@ def _research_sync(req: ResearchRequest):
         if use_web
         else _research_decompose(llm, req.query, depth)
     )
+    if cancel_event is not None and cancel_event.is_set():
+        return _cancelled_result(model_name)
     passes = max(1, len(sub_questions))
     seen: dict[str, dict] = {}
     if use_local:
         for sub in sub_questions:
+            if cancel_event is not None and cancel_event.is_set():
+                return _cancelled_result(model_name)
             try:
                 nodes = _research_retrieve(sub, req.collections, top_k=config.SIMILARITY_TOP_K)
             except Exception as exc:
@@ -449,6 +536,8 @@ def _research_sync(req: ResearchRequest):
         search_passes = [search_query] if configured_provider() == "duckduckgo" else sub_questions
 
         def run_search(sub_question: str):
+            if cancel_event is not None and cancel_event.is_set():
+                return None, None
             try:
                 return search_web(sub_question, limit=min(config.WEB_SEARCH_MAX_RESULTS, 5)), None
             except WebSearchError as exc:
@@ -466,6 +555,8 @@ def _research_sync(req: ResearchRequest):
             search_outcomes = [run_search(search_passes[0])]
 
         for outcome, error in search_outcomes:
+            if cancel_event is not None and cancel_event.is_set():
+                return _cancelled_result(model_name)
             if error:
                 web_errors.append(error)
                 continue
@@ -486,6 +577,8 @@ def _research_sync(req: ResearchRequest):
             list(web_candidates.values()),
             limit=min(max(config.WEB_SEARCH_MAX_RESULTS, 3), 8),
         )
+        if cancel_event is not None and cancel_event.is_set():
+            return _cancelled_result(model_name)
         for result in enriched_results:
             key = f"web:{result['url']}"
             source_text = result.get("content") or result.get("snippet") or result["title"]
@@ -516,8 +609,11 @@ def _research_sync(req: ResearchRequest):
                 # gateway failure. Return a typed result so every client can
                 # show its localized, friendly retry guidance.
                 detail = "; ".join(web_errors) or "The web search returned no results."
+                fallback = _research_local_fallback(llm, req.query, detail)
+                if on_token is not None:
+                    on_token(fallback)
                 return {
-                    "answer": _research_local_fallback(llm, req.query, detail),
+                    "answer": fallback,
                     "sub_questions": sub_questions,
                     "sources": [],
                     "passes": 0,
@@ -538,6 +634,8 @@ def _research_sync(req: ResearchRequest):
     chunks = list(seen.values())
     # Depth 3: an extra cross-pass using the original query to fill gaps.
     if depth >= 3 and use_local and req.query not in sub_questions:
+        if cancel_event is not None and cancel_event.is_set():
+            return _cancelled_result(model_name)
         for node in _research_retrieve(req.query, req.collections, top_k=config.SIMILARITY_TOP_K):
             serialized = _research_serialize_node(node)
             key = serialized["id"] or f"{serialized['metadata'].get('rel_path', '')}:{len(seen)}"
@@ -553,6 +651,8 @@ def _research_sync(req: ResearchRequest):
         context=req.context or "",
         web_search=use_web,
         depth=depth,
+        on_token=on_token,
+        cancel_event=cancel_event,
     )
     failure_message = external_failure_message("; ".join(web_errors)) if web_errors else ""
     if failure_message:
@@ -562,7 +662,11 @@ def _research_sync(req: ResearchRequest):
         )
     sources = [
         {
-            "file": c["metadata"].get("rel_path", "?"),
+            "file": (
+                c["metadata"].get("rel_path", "?")
+                if c["metadata"].get("source_type") == "web"
+                else _public_rel_path(c["metadata"])
+            ),
             "url": c["metadata"].get("url"),
             "search_url": c["metadata"].get("search_url"),
             "title": c["metadata"].get("title"),
@@ -596,23 +700,120 @@ def _research_sync(req: ResearchRequest):
     }
 
 
+def _research_sse(payload: dict) -> str:
+    return f"data: {json.dumps(payload, ensure_ascii=False, separators=(',', ':'))}\n\n"
+
+
+def _research_sse_error(exc: Exception) -> str:
+    info = classify_error(exc, status_code=503)
+    error = info.to_client_dict()
+    error["recovery"] = f"{error['recovery']} Please retry."
+    return _research_sse(
+        {
+            "trinaxai_error": error,
+            "trinaxai_finish": {
+                "reason": "error",
+                "status": "error",
+                "can_continue": False,
+                "max_continuations": config.MAX_CONTINUATIONS,
+            },
+        }
+    )
+
+
+async def _research_stream(req: ResearchRequest):
+    loop = asyncio.get_running_loop()
+    queue: asyncio.Queue[tuple[str, object]] = asyncio.Queue()
+    cancel_event = threading.Event()
+
+    def publish(token: str) -> None:
+        if cancel_event.is_set():
+            return
+        loop.call_soon_threadsafe(queue.put_nowait, ("token", token))
+
+    async def run() -> None:
+        try:
+            result = await run_in_threadpool(_run_model_task, _research_sync, req, publish, cancel_event)
+            await queue.put(("result", result))
+        except Exception as exc:  # noqa: BLE001 - serialized through the public error contract
+            await queue.put(("error", exc))
+        finally:
+            await queue.put(("done", None))
+
+    task = asyncio.create_task(run())
+    result: dict | None = None
+    try:
+        while True:
+            kind, value = await queue.get()
+            if kind == "token":
+                yield _research_sse({"choices": [{"delta": {"content": value}}]})
+            elif kind == "result":
+                result = value if isinstance(value, dict) else None
+            elif kind == "error":
+                yield _research_sse_error(
+                    value if isinstance(value, Exception) else RuntimeError("research stream failed")
+                )
+            elif kind == "done":
+                break
+        if result is not None:
+            metadata = {
+                key: result[key]
+                for key in (
+                    "degraded",
+                    "error_code",
+                    "error_detail",
+                    "failure_reason",
+                    "failure_message",
+                    "web_search",
+                    "web_provider",
+                    "search_query",
+                    "passes",
+                    "sub_questions",
+                )
+                if key in result
+            }
+            yield _research_sse(
+                {
+                    "trinaxai_finish": {
+                        "reason": result.get("finish_reason", "stop"),
+                        "status": result.get("completion_status", "complete"),
+                        "can_continue": False,
+                        "max_continuations": config.MAX_CONTINUATIONS,
+                    },
+                    "trinaxai_sources": result.get("sources", []),
+                    "trinaxai_research": metadata,
+                }
+            )
+    finally:
+        cancel_event.set()
+        if not task.done():
+            task.cancel()
+    yield "data: [DONE]\n\n"
+
+
 async def research(req: ResearchRequest, request: Request):
     """Run deep research without blocking FastAPI's event loop."""
     use_web = bool(req.web_search) or wants_web_search(req.query)
-    if use_web and not req.include_local:
-        authorize_scope(request, "web")
-    else:
-        _authorize_system(request)
-    return await run_in_threadpool(_run_model_task, _research_sync, req)
+    _authorize_research_request(request, use_web=use_web, include_local=req.include_local)
+    enforce_rate_limit(request, bucket="research")
+    if req.stream:
+        return StreamingResponse(
+            _research_stream(req),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
+    result = await run_in_threadpool(_run_model_task, _research_sync, req)
+    if isinstance(result, dict) and "answer" in result:
+        result.setdefault("finish_reason", "stop")
+        result.setdefault("completion_status", "complete")
+    return result
 
 
 async def research_preflight(req: ResearchRequest, request: Request):
     """Validate research dependencies before starting expensive work."""
     use_web = bool(req.web_search) or wants_web_search(req.query)
-    if use_web and not req.include_local:
-        authorize_scope(request, "web")
-    else:
-        _authorize_system(request)
+    _authorize_research_request(request, use_web=use_web, include_local=req.include_local)
+    enforce_rate_limit(request, bucket="research_preflight")
     model = (req.model or "").strip() or (
         config.MODEL_FAST if use_web and int(req.depth or 2) == 1 else config.MODEL_GENERAL
     )

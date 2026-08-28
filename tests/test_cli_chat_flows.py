@@ -64,20 +64,14 @@ def test_rag_stream_ignores_noise_and_reports_safe_protocol_errors() -> None:
         chat._stream_from_rag(client, ui, [])
 
 
-def test_ollama_stream_handles_identity_empty_and_provider_errors(monkeypatch) -> None:
+def test_ollama_stream_sends_identity_and_handles_provider_errors(monkeypatch) -> None:
     ui = _ui()
     client = MagicMock()
     monkeypatch.setattr(chat._system, "env_value", lambda _name: "")
-    monkeypatch.setattr(
-        chat.prompts if hasattr(chat, "prompts") else __import__("trinaxai_cli.prompts", fromlist=[""]),
-        "canonical_identity_answer",
-        lambda _messages: "Canonical identity",
-    )
-    assert chat._stream_from_ollama(client, ui, [{"role": "user", "content": "who are you"}]) == "Canonical identity"
+    client.stream_ollama.return_value = _Response(['{"message":{"content":"model identity"},"done":true}'])
+    assert chat._stream_from_ollama(client, ui, [{"role": "user", "content": "who are you"}]) == "model identity"
+    assert client.stream_ollama.call_args.args[1]["think"] is False
 
-    from trinaxai_cli import prompts
-
-    monkeypatch.setattr(prompts, "canonical_identity_answer", lambda _messages: None)
     client.stream_ollama.return_value = _Response(["not-json", '{"done":true}'])
     assert chat._stream_from_ollama(client, ui, []) == "(no answer)"
 
@@ -276,6 +270,36 @@ def test_agent_turn_builds_engine_once(monkeypatch, tmp_path: Path) -> None:
     assert len(state.agent_messages) == 2
 
 
+def test_agent_api_tools_keep_web_and_rag_scopes_distinct(tmp_path: Path) -> None:
+    from trinaxai_cli.commands import agent as agent_cmd
+
+    class Client:
+        def __init__(self) -> None:
+            self.calls: list[dict] = []
+
+        def research(self, query: str, **kwargs):
+            self.calls.append({"query": query, **kwargs})
+            return {"answer": "grounded answer", "sources": [{"file": "project.md", "page": 2}]}
+
+        def memory_context(self, _query: str):
+            return [{"text": "saved context"}]
+
+        def list_collections(self):
+            return [{"id": "docs"}]
+
+    client = Client()
+    tools = {tool.name: tool for tool in agent_cmd.build_api_tools(client, ["docs"])}
+
+    tools["search_knowledge"].handler(tmp_path, query="when I made the project")
+    tools["web_search"].handler(tmp_path, query="last Real Madrid match")
+    tools["deep_research"].handler(tmp_path, query="compare several sources")
+
+    assert client.calls[0]["web_search"] is False
+    assert client.calls[0]["collections"] == ["docs"]
+    assert client.calls[1]["web_search"] is True
+    assert client.calls[2]["depth"] == 3
+
+
 def test_slash_handlers_update_state_and_render_operational_data(monkeypatch, tmp_path: Path) -> None:
     ui = _ui()
     client = MagicMock()
@@ -287,19 +311,23 @@ def test_slash_handlers_update_state_and_render_operational_data(monkeypatch, tm
         "job": {"status": "indexing", "pending_events": 2, "last_error": "retrying"},
     }
     messages = [{"role": "user", "content": "old"}]
-    state = ChatState(workspace=str(tmp_path))
+    state = ChatState(
+        workspace=str(tmp_path),
+        agent_engine=object(),
+        agent_messages=[{"role": "user", "content": "old agent context"}],
+    )
     monkeypatch.setattr(slash._system, "run_service_action", lambda *_args, **_kwargs: 0)
     from trinaxai_cli.commands import index as index_cmd
 
     monkeypatch.setattr(index_cmd, "run", lambda *_args, **_kwargs: 0)
 
     for command in (
+        f"/workspace {tmp_path}",
         "/clear",
         "/chat",
         "/auto",
         "/agent do work",
         "/research investigate",
-        f"/workspace {tmp_path}",
         "/yolo",
         "/memory",
         "/collections",
@@ -309,8 +337,12 @@ def test_slash_handlers_update_state_and_render_operational_data(monkeypatch, tm
     ):
         handled, code = slash.handle_slash(command, messages, client, ui, CLIConfig(), state)
         assert handled and code is None
+        if command.startswith("/workspace"):
+            assert state.agent_engine is None
+            assert state.agent_messages == []
 
     assert messages == []
+    assert state.agent_messages == []
     assert state.yolo is True
     assert state.workspace == str(tmp_path)
     assert ui.print.called

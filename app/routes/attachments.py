@@ -8,4 +8,5 @@ from app.services import attachment_service as runtime
 router = APIRouter(tags=["attachments"], dependencies=[Depends(authorize_system)])
 router.add_api_route("/attachments", runtime.attachment_upload, methods=["POST"])
 router.add_api_route("/attachments/{attachment_id}", runtime.attachment_get, methods=["GET"])
+router.add_api_route("/attachments/{attachment_id}/open", runtime.attachment_open, methods=["POST"])
 router.add_api_route("/attachments/{attachment_id}", runtime.attachment_delete, methods=["DELETE"])

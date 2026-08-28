@@ -47,6 +47,7 @@ from .shared_runtime import (
     time,
     uuid,
 )
+from .watcher_service import _watch_stop_sync
 
 
 def _persist_index_jobs_locked() -> None:
@@ -171,6 +172,8 @@ def _release_index_slot(job_id: str, run_token: str | None) -> None:
 
 
 def _dispatch_next_index_job() -> None:
+    if state.lifecycle_stopping.is_set():
+        return
     with state.index_dispatch_lock:
         with state.index_jobs_lock:
             active_id = state.index_active_job_id
@@ -218,7 +221,13 @@ def _dispatch_next_index_job() -> None:
         ).start()
 
 
-def _new_index_job(label: str, target: str, collection_id: str, collection_name: str) -> dict:
+def _new_index_job(
+    label: str,
+    target: str,
+    collection_id: str,
+    collection_name: str,
+    files_total: int = 0,
+) -> dict:
     now = time.time()
     job = {
         "id": uuid.uuid4().hex,
@@ -249,6 +258,8 @@ def _new_index_job(label: str, target: str, collection_id: str, collection_name:
         "watch_id": "",
         "pages_total": None,
         "pages_processed": 0,
+        "files_total": max(0, files_total),
+        "files_processed": 0,
         "chunks_generated": 0,
         "batches_total": None,
         "batches_processed": 0,
@@ -256,7 +267,7 @@ def _new_index_job(label: str, target: str, collection_id: str, collection_name:
         "recent_activity": "Upload job created",
     }
     with state.index_jobs_lock:
-        state.index_jobs[job["id"]] = job
+        state.index_jobs[str(job["id"])] = job
         _persist_index_jobs_locked()
     return job
 
@@ -324,6 +335,8 @@ def _job_public(job: dict) -> dict:
         "finished_at": job.get("finished_at"),
         "pages_total": job.get("pages_total"),
         "pages_processed": job.get("pages_processed", 0),
+        "files_total": job.get("files_total", 0),
+        "files_processed": job.get("files_processed", 0),
         "chunks_generated": job.get("chunks_generated", 0),
         "batches_total": job.get("batches_total"),
         "batches_processed": job.get("batches_processed", 0),
@@ -376,11 +389,21 @@ def _structured_progress(line: str) -> dict | None:
 def _progress_changes(event: dict) -> dict:
     phase = event["phase"]
     changes = {"phase": phase, "progress_exact": bool(event.get("determinate")), "recent_activity": phase}
-    for key in ("pages_total", "pages_processed", "chunks_generated", "batches_total", "batches_processed"):
+    for key in (
+        "pages_total",
+        "pages_processed",
+        "files_total",
+        "files_processed",
+        "chunks_generated",
+        "batches_total",
+        "batches_processed",
+    ):
         if isinstance(event.get(key), int):
             changes[key] = max(0, event[key])
     if phase == "extracting" and changes.get("pages_total"):
         changes["progress"] = 30 + int(25 * changes.get("pages_processed", 0) / changes["pages_total"])
+    elif phase == "chunking" and changes.get("files_total"):
+        changes["progress"] = 55 + int(10 * changes.get("files_processed", 0) / changes["files_total"])
     elif phase == "chunking":
         changes["progress"] = 60
         changes["progress_exact"] = False
@@ -424,15 +447,18 @@ def _run_index_job(
             encoding="utf-8",
             bufsize=1,
             env=env,
+            start_new_session=(os.name == "posix"),
+            creationflags=(getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0) if os.name == "nt" else 0),
         )
         update(process=process)
-        if process.stdout is None:
+        process_stdout = process.stdout
+        if process_stdout is None:
             raise RuntimeError("subprocess stdout is None — Popen was not configured with PIPE")
         lines: queue.Queue[str | None] = queue.Queue()
 
         def read_output() -> None:
             try:
-                for output_line in process.stdout:
+                for output_line in process_stdout:
                     lines.put(output_line)
             finally:
                 lines.put(None)
@@ -443,7 +469,7 @@ def _run_index_job(
         while True:
             with state.index_jobs_lock:
                 job = state.index_jobs.get(job_id)
-                cancelled = bool(job and job.get("cancel_requested"))
+                cancelled = bool(job and job.get("cancel_requested")) or state.lifecycle_stopping.is_set()
                 current = int(job.get("progress", 30)) if job else 30
             if cancelled:
                 process.terminate()
@@ -473,7 +499,10 @@ def _run_index_job(
                 _append_index_output(job_id, line)
                 event = _structured_progress(line)
                 if event:
-                    update(**_progress_changes(event))
+                    changes = _progress_changes(event)
+                    if "progress" in changes:
+                        changes["progress"] = max(current, changes["progress"])
+                    update(**changes)
                 else:
                     progress, phase = _line_progress(line, current)
                     update(progress=progress, phase=phase, progress_exact=False)
@@ -484,6 +513,8 @@ def _run_index_job(
             _release_index_slot(job_id, run_token)
             return
     except subprocess.TimeoutExpired:
+        if process is None:
+            raise
         process.kill()
         code = process.wait()
     except Exception as exc:
@@ -561,6 +592,43 @@ def _record_index_run() -> None:
         LOG.debug("Best-effort operation failed", exc_info=True)
 
 
+def shutdown_runtime() -> None:
+    """Stop in-process workers before the API process is terminated."""
+    state.lifecycle_stopping.set()
+    try:
+        _watch_stop_sync()
+    except Exception:
+        LOG.exception("[lifecycle] watcher shutdown failed")
+    with state.index_jobs_lock:
+        jobs = list(state.index_jobs.values())
+        for job in jobs:
+            job["cancel_requested"] = True
+            process = job.get("process")
+            if process is not None and _process_alive(process):
+                try:
+                    if os.name == "posix":
+                        os.killpg(os.getpgid(process.pid), 15)
+                    else:
+                        process.terminate()
+                except (OSError, ProcessLookupError):
+                    pass
+            elif job.get("status") in {"queued", "saving"}:
+                job.update(
+                    status="cancelled",
+                    phase="cancelled",
+                    progress=100,
+                    finished_at=time.time(),
+                )
+        _persist_index_jobs_locked()
+    try:
+        from . import agent_service
+
+        agent_service.shutdown_runtime()
+    except Exception:
+        LOG.exception("[lifecycle] agent shutdown failed")
+    LOG.info("[lifecycle] backend workers stopped")
+
+
 def _spawn_service_manager(script: str, action: str) -> None:
     kwargs: dict[str, Any] = {
         "stdout": subprocess.DEVNULL,
@@ -578,6 +646,8 @@ def _spawn_service_manager(script: str, action: str) -> None:
         kwargs["startupinfo"] = startupinfo
     else:
         kwargs["start_new_session"] = True
+    if action == "stop-all":
+        kwargs["env"] = {**os.environ, "TRINAXAI_STOP_ALL_DELAY": "0.25"}
     subprocess.Popen(
         [sys.executable, script, action, "--base-dir", config.BASE_DIR],
         **kwargs,
@@ -628,7 +698,7 @@ async def system_stop_all(request: Request):
     _authorize_system(request)
     script = os.path.join(config.BASE_DIR, "service_manager.py")
     _spawn_service_manager(script, "stop-all")
-    return {"ok": True, "output": "Full TrinaxAI shutdown initiated."}
+    return {"ok": True, "state": "stopping", "output": "Full TrinaxAI shutdown initiated."}
 
 
 async def system_reload(request: Request):
@@ -689,7 +759,7 @@ async def system_index_upload(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail="Unsafe collection path.") from exc
     os.makedirs(target, exist_ok=True)
-    job = _new_index_job(safe_label, target, collection["id"], collection["name"])
+    job = _new_index_job(safe_label, target, collection["id"], collection["name"], len(files))
 
     saved = 0
     skipped = 0
@@ -960,6 +1030,7 @@ async def system_retry_index_job(request: Request, job_id: str):
             cancel_requested=False,
             finished_at=None,
             pages_processed=0,
+            files_processed=0,
             chunks_generated=0,
             batches_processed=0,
             recent_activity="Retry queued",
@@ -1043,6 +1114,9 @@ def system_self_test(request: Request):
         "results": results,
         "optional": {"voice_routes": results["voice_routes"]},
         "profile": config.TRINAXAI_PROFILE,
+        "detected_profile": config.DETECTED_PROFILE,
+        "hardware": config.HARDWARE,
+        "model_recommendations": config.MODEL_RECOMMENDATIONS,
     }
 
 

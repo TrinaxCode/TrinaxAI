@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 import builtins
+import runpy
 from types import SimpleNamespace
+
+import pytest
 
 from trinaxai_cli import branding
 from trinaxai_cli import ui as cli_ui
+from trinaxai_cli.client import TrinaxAPIError
 
 
 def test_slash_command_completion_only_matches_the_first_token() -> None:
@@ -318,3 +322,195 @@ def test_assistant_label_has_plain_fallback(monkeypatch, capsys) -> None:
     console.assistant_label("Local")
 
     assert "● Local" in capsys.readouterr().out
+
+
+def test_ui_remaining_rich_error_and_fallback_paths(monkeypatch, capsys) -> None:
+    real_import = builtins.__import__
+
+    def without_rich(name, *args, **kwargs):
+        if name.startswith("rich"):
+            raise ImportError("rich unavailable")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", without_rich)
+    fallback_module = runpy.run_path(cli_ui.__file__, run_name="cli_ui_fallback")
+    assert fallback_module["_RICH"] is False
+    monkeypatch.setattr(builtins, "__import__", real_import)
+
+    class RichConsole:
+        def __init__(self) -> None:
+            self.printed = []
+
+        def print(self, value="", **kwargs) -> None:
+            self.printed.append((value, kwargs))
+
+    rich_console = RichConsole()
+    constructor_calls = 0
+
+    def old_rich_constructor(**kwargs):
+        nonlocal constructor_calls
+        constructor_calls += 1
+        if "force_terminal" in kwargs:
+            raise TypeError("old rich")
+        return rich_console
+
+    monkeypatch.setattr(cli_ui, "_RICH", True)
+    monkeypatch.setattr(cli_ui, "_rich_console_cls", old_rich_constructor)
+    monkeypatch.setattr(
+        cli_ui,
+        "_rich_progress_cls",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("progress")),
+    )
+    console = cli_ui.Console()
+    assert constructor_calls == 2
+    with console.spinner("Working"):
+        pass
+
+    console.failure("Request", TrinaxAPIError(400, "bad request"))
+    monkeypatch.setattr(
+        branding,
+        "set_terminal_title",
+        lambda *_args: (_ for _ in ()).throw(RuntimeError("title")),
+    )
+    console.no_color = False
+    console.set_title("ignored")
+
+    monkeypatch.setattr(
+        cli_ui,
+        "_rich_prompt_cls",
+        SimpleNamespace(ask=lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("prompt"))),
+    )
+    monkeypatch.setattr(
+        cli_ui,
+        "_rich_confirm_cls",
+        SimpleNamespace(ask=lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("confirm"))),
+    )
+    answers = iter(["typed", ""])
+    monkeypatch.setattr(builtins, "input", lambda _prompt: next(answers))
+    assert console.prompt("Question") == "typed"
+    assert console.confirm("Continue?") is False
+
+    monkeypatch.setattr(cli_ui, "_PROMPT_TOOLKIT", True)
+    monkeypatch.setattr(cli_ui.sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr(cli_ui.sys.stdout, "isatty", lambda: True)
+    monkeypatch.setattr(
+        cli_ui,
+        "PromptSession",
+        lambda **_kwargs: SimpleNamespace(
+            prompt=lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("terminal"))
+        ),
+    )
+    monkeypatch.setattr(cli_ui, "InMemoryHistory", lambda: object())
+    monkeypatch.setattr(cli_ui, "_RICH", False)
+    monkeypatch.setattr(builtins, "input", lambda _prompt: "toolkit fallback")
+    assert cli_ui.Console(no_color=True).chat_prompt("chat") == "toolkit fallback"
+    monkeypatch.setattr(
+        cli_ui,
+        "PromptSession",
+        lambda **_kwargs: SimpleNamespace(prompt=lambda *_args, **_kwargs: (_ for _ in ()).throw(EOFError())),
+    )
+    with pytest.raises(EOFError):
+        cli_ui.Console(no_color=True).chat_prompt("chat")
+
+    monkeypatch.setattr(cli_ui, "_RICH", True)
+    monkeypatch.setattr(cli_ui, "_PROMPT_TOOLKIT", False)
+
+    class RichPrompt:
+        def __init__(self, _question, **_kwargs) -> None:
+            self.prompt_suffix = ""
+
+        def __call__(self) -> str:
+            return "rich answer"
+
+    monkeypatch.setattr(cli_ui, "_rich_prompt_cls", RichPrompt)
+    colored_console = cli_ui.Console(no_color=False)
+    colored_console._color_enabled = True
+    assert colored_console.chat_prompt("chat") == "rich answer"
+    assert cli_ui.Console(no_color=True).chat_prompt("chat") == "rich answer"
+
+    class EofPrompt:
+        def __init__(self, *_args, **_kwargs) -> None:
+            pass
+
+        def __call__(self) -> str:
+            raise EOFError
+
+    monkeypatch.setattr(cli_ui, "_rich_prompt_cls", EofPrompt)
+    with pytest.raises(EOFError):
+        cli_ui.Console(no_color=True).chat_prompt("chat")
+
+    class BrokenPrompt:
+        def __init__(self, *_args, **_kwargs) -> None:
+            raise RuntimeError("prompt construction")
+
+    monkeypatch.setattr(cli_ui, "_rich_prompt_cls", BrokenPrompt)
+    monkeypatch.setattr(builtins, "input", lambda _prompt: "plain answer")
+    assert cli_ui.Console(no_color=False).chat_prompt("chat") == "plain answer"
+
+    class FlakyConsole(RichConsole):
+        def __init__(self) -> None:
+            super().__init__()
+            self.calls = 0
+
+        def print(self, value="", **kwargs) -> None:
+            self.calls += 1
+            if self.calls == 1:
+                raise RuntimeError("label")
+            super().print(value, **kwargs)
+
+    label_console = cli_ui.Console(no_color=False)
+    label_console._color_enabled = True
+    label_console._rich_console = FlakyConsole()
+    label_console.assistant_label("Local")
+    clean_label_console = cli_ui.Console(no_color=False)
+    clean_label_console._color_enabled = True
+    clean_label_console._rich_console = RichConsole()
+    clean_label_console.assistant_label("Local")
+
+    table_console = cli_ui.Console(no_color=True)
+    table_console._rich_console = None
+
+    class Table:
+        def add_column(self, _value) -> None:
+            pass
+
+        def add_row(self, *_values) -> None:
+            pass
+
+    monkeypatch.setattr(cli_ui, "_rich_table_cls", lambda **_kwargs: Table())
+    table_console.table(["name"], [["docs"]], "Rows")
+    monkeypatch.setattr(
+        cli_ui,
+        "_rich_table_cls",
+        lambda **_kwargs: (_ for _ in ()).throw(RuntimeError("table")),
+    )
+    table_console.table(["name"], [["docs"]], "Rows")
+
+    monkeypatch.setattr(cli_ui, "_rich_panel_cls", SimpleNamespace(fit=lambda *_args, **_kwargs: "panel"))
+    table_console.panel("body", "Panel")
+    monkeypatch.setattr(
+        cli_ui,
+        "_rich_panel_cls",
+        SimpleNamespace(fit=lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("panel"))),
+    )
+    table_console.panel("body", "Panel")
+
+    monkeypatch.setattr(cli_ui, "_rich_markdown_cls", lambda text: ("markdown", text))
+    table_console.markdown("body")
+    monkeypatch.setattr(
+        cli_ui,
+        "_rich_markdown_cls",
+        lambda _text: (_ for _ in ()).throw(RuntimeError("markdown")),
+    )
+    table_console.markdown("body")
+
+    monkeypatch.setattr(cli_ui, "_rich_syntax_cls", lambda text, *_args, **_kwargs: ("code", text))
+    table_console.code("body")
+    monkeypatch.setattr(
+        cli_ui,
+        "_rich_syntax_cls",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("code")),
+    )
+    table_console.code("body")
+
+    assert "Rows" in capsys.readouterr().out

@@ -7,8 +7,8 @@ import { useToast } from './Toast';
 import { getUsageStats, userFacingError, type UsageStats } from '../lib/api';
 
 function fmtDate(ts: number | null | undefined): string {
-  if (!ts) return '—';
-  try { return new Date(ts * 1000).toLocaleString(); } catch { return '—'; }
+  if (!ts) return '-';
+  try { return new Date(ts * 1000).toLocaleString(); } catch { return '-'; }
 }
 
 function fmtNumber(n: number): string {

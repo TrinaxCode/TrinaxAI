@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import zipfile
+
 # ruff: noqa: F405
 from .shared_runtime import (
     DOC_EXTRACT_MAX_BYTES,
@@ -21,6 +23,27 @@ from .shared_runtime import (
     subprocess,
     tempfile,
 )
+
+_ARCHIVE_EXTENSIONS = frozenset({".docx", ".pptx", ".xlsx", ".odt", ".ods", ".odp"})
+_ARCHIVE_MAX_MEMBERS = 10_000
+_ARCHIVE_MAX_UNCOMPRESSED_BYTES = 256 * 1024 * 1024
+
+
+def _validate_archive(filename: str, data: bytes) -> None:
+    if os.path.splitext(filename.lower())[1] not in _ARCHIVE_EXTENSIONS:
+        return
+    try:
+        with zipfile.ZipFile(BytesIO(data)) as archive:
+            members = archive.infolist()
+            expanded = 0
+            for member in members:
+                expanded += max(0, member.file_size)
+                if expanded > _ARCHIVE_MAX_UNCOMPRESSED_BYTES:
+                    raise HTTPException(status_code=413, detail="Document archive expands beyond the allowed limit.")
+            if len(members) > _ARCHIVE_MAX_MEMBERS:
+                raise HTTPException(status_code=413, detail="Document archive contains too many files.")
+    except zipfile.BadZipFile as exc:
+        raise HTTPException(status_code=422, detail="Could not extract document: invalid archive.") from exc
 
 
 def _decode_text_bytes(data: bytes) -> str:
@@ -224,6 +247,7 @@ def _convert_office_bytes(data: bytes, source_ext: str, target_ext: str) -> byte
 
 
 def _extract_document_text(filename: str, data: bytes) -> str:
+    _validate_archive(filename, data)
     ext = os.path.splitext(filename.lower())[1]
     if ext == ".pdf":
         return _extract_pdf_text(data)

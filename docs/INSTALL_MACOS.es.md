@@ -1,39 +1,53 @@
 # TrinaxAI en macOS
 
+[English](INSTALL_MACOS.md)
+
 Guía para instalar, configurar, iniciar y dejar listo TrinaxAI en macOS, tanto Apple Silicon como Intel.
 
 ## Estado de soporte
 
-El instalador de macOS esta disponible y el CI ahora valida tests Python, smoke tests de CLI y sintaxis bash en macOS. La validacion end-to-end del instalador en hardware macOS real sigue pendiente.
+El instalador de macOS está disponible y el CI ahora valida tests Python, smoke tests de CLI y sintaxis bash en macOS. La validación end-to-end del instalador en hardware macOS real sigue pendiente.
 
-## Que queda funcionando
+## Qué queda funcionando
 
-Al terminar deberias tener:
+Al terminar deberías tener:
 
 - Ollama corriendo localmente en `http://localhost:11434`.
-- API RAG de TrinaxAI en `http://localhost:3333`.
+- API RAG de TrinaxAI en `https://localhost:3333` cuando existe el certificado administrado (HTTP es el fallback).
 - PWA en `https://localhost:3334`.
 - Entorno Python `.venv` preparado.
 - Dependencias de la PWA instaladas.
-- Modelos base descargados si eliges esa opcion.
+- Modelos base descargados si eliges esa opción.
 - `.env` generado.
 - Autoarranque opcional con LaunchAgent: la PWA vuelve al iniciar el equipo y la IA respeta si quedo encendida o apagada.
 
 ## Requisitos
 
-| Recurso | Minimo | Recomendado |
+| Recurso | Mínimo | Recomendado |
 |---|---:|---:|
-| macOS | Version moderna soportada por Homebrew/Ollama | Ultima estable |
-| RAM | 8 GB | 16 GB o mas |
+| macOS | Versión moderna soportada por Homebrew/Ollama | Última estable |
+| RAM | 8 GB | 16 GB o más |
 | Disco libre | 5 GB | 10-25 GB |
 | Python | 3.10 | 3.12 |
 | Node.js | 22 | 24 LTS |
 | Homebrew | Recomendado | Si |
-| Ollama | Si | Ultima version |
+| Ollama | Sí | Última versión |
 
-Apple Silicon usa Metal automaticamente a traves de Ollama cuando el modelo lo permite.
+Apple Silicon usa Metal automáticamente a través de Ollama cuando el modelo lo permite.
 
-## Instalar herramientas base
+## Instalación gráfica recomendada
+
+1. [Descarga el Gestor de TrinaxAI para macOS](https://github.com/TrinaxCode/TrinaxAI/releases/download/v1.2.0/TrinaxAI-Manager-macOS.dmg).
+2. Abre la imagen de disco, arrastra **Gestor de TrinaxAI** a Aplicaciones y ábrelo.
+3. Pulsa **Instalar** y espera a que termine el proceso.
+
+El Gestor descarga y configura TrinaxAI directamente. No necesitas Git ni comandos de terminal. macOS puede solicitar tu contraseña o confirmación para abrir la aplicación descargada; acéptala y mantén abierta la ventana de progreso. Usa el mismo Gestor después para **Actualizar** o **Desinstalar**. También hay un ZIP portátil en la página del release.
+
+Si Gatekeeper informa que el desarrollador es desconocido, verifica el archivo y
+`SHA256SUMS` con las [notas de firma del release](RELEASE_SIGNING.es.md) antes
+de decidir si continúas. No desactives Gatekeeper globalmente.
+
+## Avanzado: instalar herramientas base manualmente
 
 Instala Xcode Command Line Tools:
 
@@ -50,12 +64,12 @@ Instala Homebrew si no lo tienes:
 Instala dependencias:
 
 ```bash
-brew install python@3.12 node git curl ollama
+brew install python@3.12 node curl ollama
 ```
 
-Tambien puedes instalar Ollama desde la app oficial para macOS y dejarla abierta.
+También puedes instalar Ollama desde la app oficial para macOS y dejarla abierta.
 
-## Instalacion automatica recomendada
+## Alternativa avanzada por terminal
 
 Si ya tienes el repositorio:
 
@@ -67,12 +81,17 @@ bash install.sh
 Si todavia no lo tienes, el instalador de un comando lo guarda en `~/Library/Application Support/TrinaxAI`:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/TrinaxCode/TrinaxAI/main/install.sh | bash
+installer="$(mktemp)"
+trap 'rm -f "$installer"' EXIT
+curl --fail --location --output "$installer" "https://github.com/TrinaxCode/TrinaxAI/releases/download/v1.2.0/TrinaxAI-1.2.0-installer.sh"
+bash -n "$installer"
+less "$installer"
+bash "$installer"
 ```
 
-El instalador detecta RAM, crea `.env`, prepara Python e instala la PWA automaticamente. Las opciones como descargar modelos, control LAN, autoarranque e iniciar servicios se preguntan por defecto. Usa `bash install.sh --non-interactive` para instalaciones automatizadas.
+El instalador detecta RAM, crea `.env`, prepara Python e instala la PWA automáticamente. Las opciones como descargar modelos, autoarranque e iniciar servicios se preguntan por defecto. La configuración legacy de sistema por LAN se acepta por compatibilidad, pero nunca concede administración remota del host. Usa `bash install.sh --non-interactive` para instalaciones automatizadas.
 
-El perfil se elige automaticamente. En modo interactivo, elige `Normal` para usar el perfil recomendado. Usa `Advanced` solo si quieres forzar `8gb`, `16gb`, `max` o `ultra`.
+El perfil se elige automáticamente según CPU, RAM, GPU y VRAM. En modo interactivo, elige `Normal` para usar el perfil recomendado. Usa `Advanced` solo si quieres forzar `8gb`, `16gb`, `32gb` o `64gb`.
 
 La administracion posterior funciona desde cualquier carpeta:
 
@@ -82,12 +101,13 @@ trinaxai update
 trinaxai uninstall
 ```
 
-## Instalacion manual
+## Instalación manual
 
-### 1. Clonar el proyecto
+### 1. Descargar el proyecto
 
 ```bash
-git clone https://github.com/TrinaxCode/TrinaxAI.git ~/trinaxai
+mkdir -p ~/trinaxai
+curl -fsSL https://github.com/TrinaxCode/TrinaxAI/releases/download/v1.2.0/TrinaxAI-1.2.0.tar.gz | tar -xz --strip-components=1 -C ~/trinaxai
 cd ~/trinaxai
 ```
 
@@ -97,14 +117,14 @@ cd ~/trinaxai
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
-python -m pip install -r requirements.txt
+python -m pip install --require-hashes -r requirements.lock
 ```
 
 ### 3. Instalar la PWA
 
 ```bash
 cd chat-pwa
-npm install
+npm ci
 npm run build
 cd ..
 ```
@@ -135,12 +155,14 @@ Valores recomendados:
 TRINAXAI_PROFILE=16gb
 TRINAXAI_HOST=127.0.0.1
 TRINAXAI_PORT=3333
-TRINAXAI_INDEX_DIR=~/Documents
+TRINAXAI_INDEX_DIR=./local_sources
 TRINAXAI_ALLOW_LAN_SYSTEM=0
 TRINAXAI_CORS_ORIGINS=https://localhost:3334,http://localhost:3334,https://127.0.0.1:3334,http://127.0.0.1:3334
 OLLAMA_BASE_URL=http://localhost:11434
 OLLAMA_HOST=127.0.0.1
-VITE_TRINAXAI_RAG_TARGET=http://localhost:3333
+TRINAXAI_RAG_HTTPS=1
+TRINAXAI_RAG_TARGET=https://127.0.0.1:3333
+VITE_TRINAXAI_RAG_TARGET=https://127.0.0.1:3333
 ```
 
 Tras cambiar de Wi-Fi, renueva la dirección local y el certificado HTTPS:
@@ -162,8 +184,8 @@ ollama pull qwen3-embedding:0.6b
 ```
 
 Para los demás perfiles, consulta la
-[tabla vigente de modelos y perfiles](../README.es.md#-modelos-y-perfiles). El
-instalador selecciona y descarga automáticamente la flota de texto/RAG. Vision
+[tabla vigente de modelos y perfiles](../README.es.md#modelos-y-perfiles-de-hardware). El
+instalador selecciona y descarga automáticamente la flota de texto/RAG. La visión
 se descarga al analizar la primera imagen.
 
 ## Indexar tus archivos
@@ -174,7 +196,7 @@ source .venv/bin/activate
 python index.py
 ```
 
-Tambien puedes hacerlo desde la PWA en configuracion: elige una carpeta, asignala a una coleccion y espera a que termine el progreso de subida/indexacion.
+También puedes hacerlo desde la PWA en configuración: elige una carpeta, asígnala a una colección y espera a que termine el progreso de subida/indexación.
 
 macOS puede pedir permiso para acceder a carpetas como Documents, Desktop o Downloads. Acepta el permiso si quieres indexar esas ubicaciones.
 
@@ -191,19 +213,25 @@ Alternativa:
 .venv/bin/python service_manager.py start --base-dir "$PWD"
 ```
 
+El gateway escucha en loopback por defecto. Para un acceso LAN intencional,
+establece `TRINAXAI_PWA_HOST=0.0.0.0` en `.env`, reinicia TrinaxAI y vincula el
+navegador remoto antes de usarlo.
+
 Abre:
 
 ```text
 https://localhost:3334
 ```
 
-Desde telefono/tablet en la misma WiFi:
+Desde teléfono/tablet en la misma WiFi:
 
 ```text
 https://TU-IP-LAN:3334
 ```
 
-Acepta la advertencia del certificado local si aparece.
+Si el navegador informa que el certificado no es confiable, instala la CA pública
+que muestra `trinaxai network` y confía en ella en ese dispositivo. No omitas la
+advertencia en una conexión LAN; consulta [pairing LAN y confianza HTTPS](NETWORK_PAIRING.es.md).
 
 ## Apagar, reiniciar y revisar estado
 
@@ -219,6 +247,8 @@ Apagar todo:
 .venv/bin/python service_manager.py stop-all --base-dir "$PWD"
 ```
 
+Esto deja solo la página de recuperación por loopback en `https://localhost:3334`; el acceso LAN permanece cerrado hasta iniciar TrinaxAI allí.
+
 Ver estado:
 
 ```bash
@@ -233,7 +263,7 @@ Supervisor manual:
 
 ## Autoarranque en macOS
 
-El instalador lo habilita automaticamente. TrinaxAI usa un LaunchAgent en `~/Library/LaunchAgents/`. El supervisor siempre intenta mantener la PWA disponible; si apagaste la IA con `./shutdown_ai.sh` o desde la PWA, el siguiente arranque no levanta Ollama/RAG hasta que vuelvas a encender la IA.
+El instalador lo habilita automáticamente. TrinaxAI usa un LaunchAgent en `~/Library/LaunchAgents/`. El supervisor siempre intenta mantener la PWA disponible; si apagaste la IA con `./shutdown_ai.sh` o desde la PWA, el siguiente arranque no levanta Ollama/RAG hasta que vuelvas a encender la IA.
 
 Habilitar:
 
@@ -273,7 +303,7 @@ Pruebas manuales:
 
 ```bash
 curl http://localhost:11434/api/tags
-curl http://localhost:3333/health
+curl -k https://localhost:3333/health
 ```
 
 La PWA debe abrir en:
@@ -296,24 +326,12 @@ cd ~/trinaxai
 ./update.sh
 ```
 
-El actualizador pregunta si quieres crear backup, descargar codigo nuevo, actualizar modelos, cambiar autoarranque, reiniciar servicios y correr la auditoria. Las dependencias Python/npm y el build de la PWA siguen siendo automaticos.
+El actualizador pregunta si quieres crear backup, descargar código nuevo, actualizar modelos, cambiar autoarranque, reiniciar servicios y correr la auditoría. Las dependencias Python/npm y el build de la PWA siguen siendo automáticos.
 
 El instalador crea un LaunchAgent semanal solo de comprobación. Registra
 disponibilidad en `logs/auto-update.log`, pero nunca descarga/ejecuta un updater
 ni cambia la instalación. Revisa el release y ejecuta manualmente el updater
 local; desactívalo con `python scripts/auto_update.py disable`.
-
-Actualizacion manual:
-
-```bash
-git pull
-source .venv/bin/activate
-python -m pip install --require-hashes -r requirements.lock
-cd chat-pwa
-npm ci
-npm run build
-cd ..
-```
 
 ## Copias de seguridad
 
@@ -321,9 +339,10 @@ cd ..
 ./backup.sh create
 ```
 
-El archive se publica con modo `0600` y contiene `.env`, chats, adjuntos,
-fuentes e índices. Cifra copias off-host. Restore valida rutas/tipos, extrae a
-staging y revierte un reemplazo fallido; pruébalo antes de actualizar.
+El archivo se publica con modo `0600` y contiene `.env`, chats, adjuntos,
+fuentes e índices. Cifra copias fuera del host. La restauración valida
+rutas/tipos, extrae a staging y revierte un reemplazo fallido; pruébala antes de
+actualizar.
 
 Datos importantes:
 
@@ -337,9 +356,9 @@ Datos importantes:
 ./uninstall.sh
 ```
 
-El desinstalador pregunta que archivos runtime quieres quitar. Los datos RAG y modelos de Ollama se conservan salvo que elijas borrarlos.
+El desinstalador pregunta qué archivos runtime quieres quitar. Los datos RAG y modelos de Ollama se conservan salvo que elijas borrarlos.
 
-Para dejar preseleccionada la opcion de quitar tambien los modelos:
+Para dejar preseleccionada la opción de quitar también los modelos:
 
 ```bash
 ./uninstall.sh --remove-models
@@ -353,19 +372,23 @@ Si habilitaste autoarranque:
 
 ## Problemas comunes
 
-| Problema | Solucion |
+| Problema | Solución |
 |---|---|
 | `brew` no existe | Instala Homebrew y abre una terminal nueva. |
-| `python3` apunta a una version antigua | Instala `python@3.12` y usa `python3.12 -m venv .venv`. |
+| `python3` apunta a una versión antigua | Instala `python@3.12` y usa `python3.12 -m venv .venv`. |
 | Ollama no responde | Abre la app Ollama o ejecuta `ollama serve`. |
 | macOS bloquea acceso a carpetas | Revisa Ajustes del Sistema > Privacidad y seguridad > Archivos y carpetas. |
-| PWA no conecta desde iPhone | Asegura misma WiFi, IP LAN en CORS y firewall permitido. |
-| Certificado no confiable | Acepta el certificado local para `localhost` o tu IP LAN. |
-| Respuestas lentas | Usa modelos 3B o 7B segun RAM disponible. |
+| La PWA no conecta desde iPhone | Ejecuta `trinaxai network refresh`, abre la URL `https://HOST-LAN-IP:3334` que muestra y permite el gateway en la red privada. |
+| Certificado no confiable | Instala/confía en la CA pública que muestra `trinaxai network`; no omitas TLS en una LAN. Consulta [pairing LAN y confianza HTTPS](NETWORK_PAIRING.es.md). |
+| Respuestas lentas | Usa la matriz de modelos/perfiles del README raíz, reduce la concurrencia o elige `8gb`/un modelo instalado más pequeño. |
 
 ## Seguridad
 
-No expongas `3333`, `3334` ni `11434` a internet. Para acceso remoto usa VPN. Si necesitas cerrar acciones de sistema a solo localhost, configura:
+Mantén FastAPI `3333` y Ollama `11434` en loopback; expón solo el gateway PWA
+en `3334` dentro de una red privada confiable. No expongas estos puertos a
+Internet. Para acceso remoto usa VPN. La administración del sistema siempre
+queda solo en localhost; la variable legacy se acepta para `.env` antiguos,
+pero nunca concede autoridad por LAN:
 
 ```bash
 TRINAXAI_ALLOW_LAN_SYSTEM=0

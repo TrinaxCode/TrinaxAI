@@ -48,6 +48,17 @@ export function detectBackendVoice(): boolean {
   return typeof navigator !== 'undefined' && typeof navigator.mediaDevices?.getUserMedia === 'function';
 }
 
+// ponytail: fixed retry cap; add backoff/telemetry only if deployment data justifies it.
+export const MAX_BACKEND_VOICE_RETRIES = 3;
+
+export function shouldStopBackendVoice(retries: number): boolean {
+  return retries >= MAX_BACKEND_VOICE_RETRIES;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
 async function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit, timeoutMs: number): Promise<Response> {
   const controller = new AbortController();
   const onAbort = () => controller.abort(init.signal?.reason);
@@ -65,18 +76,37 @@ async function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit, tim
 export async function getVoiceCapabilities(): Promise<VoiceCapabilities> {
   const res = await fetchWithTimeout(`${RAG_BASE}/v1/voice/capabilities`, { headers: systemRequestHeaders() }, 8000);
   if (!res.ok) throw new Error('voiceCapabilitiesFailed');
-  return res.json();
+  const data: unknown = await res.json().catch(() => null);
+  const stt = isRecord(data) && isRecord(data.stt) ? data.stt : null;
+  const tts = isRecord(data) && isRecord(data.tts) ? data.tts : null;
+  const validModel = (value: unknown): value is string | null => value === null || typeof value === 'string';
+  if (!stt || typeof stt.available !== 'boolean' || typeof stt.engine !== 'string' || !validModel(stt.model)
+    || !tts || typeof tts.available !== 'boolean' || !validModel(tts.preferred)
+    || !Array.isArray(tts.backends) || !tts.backends.every((backend) => typeof backend === 'string')) {
+    throw new Error('voiceCapabilitiesInvalid');
+  }
+  return {
+    stt: { available: stt.available, engine: stt.engine, model: stt.model },
+    tts: { available: tts.available, preferred: tts.preferred, backends: tts.backends },
+  };
 }
 
 export async function transcribeAudio(blob: Blob, lang: string, signal?: AbortSignal): Promise<string> {
   const form = new FormData();
-  const ext = blob.type.includes('mp4') || blob.type.includes('m4a') ? 'mp4' : 'webm';
+  const ext = blob.type.includes('mp4') || blob.type.includes('m4a')
+    ? 'mp4'
+    : blob.type.includes('ogg')
+      ? 'ogg'
+      : blob.type.includes('wav')
+        ? 'wav'
+        : 'webm';
   form.append('file', blob, `recording.${ext}`);
   form.append('lang', lang.slice(0, 2));
   const res = await fetchWithTimeout(`${RAG_BASE}/v1/voice/stt`, { method: 'POST', headers: systemRequestHeaders(), body: form, signal }, 60_000);
   if (!res.ok) throw new Error(`voiceSttFailed:${res.status}`);
-  const data = await res.json();
-  return data.text as string;
+  const data: unknown = await res.json().catch(() => null);
+  if (!isRecord(data) || typeof data.text !== 'string') throw new Error('voiceSttInvalidResponse');
+  return data.text;
 }
 
 export interface BackendTTSOptions {
@@ -88,8 +118,13 @@ export interface BackendTTSOptions {
 
 let activeBackendAudio: HTMLAudioElement | null = null;
 let activeBackendAudioUrl: string | null = null;
+let activeBackendRequest: AbortController | null = null;
+let backendSpeechGeneration = 0;
 
 export function stopBackendSpeech(): void {
+  activeBackendRequest?.abort();
+  activeBackendRequest = null;
+  backendSpeechGeneration += 1;
   activeBackendAudio?.pause();
   activeBackendAudio?.removeAttribute('src');
   if (activeBackendAudioUrl) URL.revokeObjectURL(activeBackendAudioUrl);
@@ -99,38 +134,55 @@ export function stopBackendSpeech(): void {
 
 export async function speakBackend({ text, lang, onEnded, onError }: BackendTTSOptions): Promise<HTMLAudioElement> {
   stopBackendSpeech();
-  const res = await fetchWithTimeout(`${RAG_BASE}/v1/voice/tts`, {
-    method: 'POST',
-    headers: systemRequestHeaders({ 'Content-Type': 'application/json' }),
-    body: JSON.stringify({ text, lang: lang.slice(0, 2) }),
-  }, 60_000);
-  if (!res.ok) throw new Error(`voiceTtsFailed:${res.status}`);
-  const blob = await res.blob();
-  const url = URL.createObjectURL(blob);
-  const audio = new Audio(url);
-  activeBackendAudio = audio;
-  activeBackendAudioUrl = url;
-  const release = () => {
-    if (activeBackendAudio !== audio) return;
-    URL.revokeObjectURL(url);
-    activeBackendAudio = null;
-    activeBackendAudioUrl = null;
-  };
-  audio.onended = () => {
-    release();
-    onEnded?.();
-  };
-  audio.onerror = () => {
-    release();
-    onError?.();
-  };
+  const requestController = new AbortController();
+  const generation = backendSpeechGeneration;
+  activeBackendRequest = requestController;
   try {
-    await audio.play();
-  } catch (err) {
-    // Autoplay policy / no user gesture: revoke the URL we just created,
-    // otherwise every blocked attempt leaks a blob URL.
-    release();
-    throw err;
+    const res = await fetchWithTimeout(`${RAG_BASE}/v1/voice/tts`, {
+      method: 'POST',
+      headers: systemRequestHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ text, lang: lang.slice(0, 2) }),
+      signal: requestController.signal,
+    }, 60_000);
+    if (generation !== backendSpeechGeneration || requestController.signal.aborted) {
+      throw new DOMException('Speech request aborted', 'AbortError');
+    }
+    if (!res.ok) throw new Error(`voiceTtsFailed:${res.status}`);
+    const blob = await res.blob();
+    if (generation !== backendSpeechGeneration || requestController.signal.aborted) {
+      throw new DOMException('Speech request aborted', 'AbortError');
+    }
+    const url = URL.createObjectURL(blob);
+    const audio = new Audio(url);
+    activeBackendAudio = audio;
+    activeBackendAudioUrl = url;
+    const release = () => {
+      if (activeBackendAudio !== audio) return false;
+      URL.revokeObjectURL(url);
+      activeBackendAudio = null;
+      activeBackendAudioUrl = null;
+      return true;
+    };
+    audio.onended = () => {
+      if (release()) onEnded?.();
+    };
+    audio.onerror = () => {
+      if (release()) onError?.();
+    };
+    try {
+      await audio.play();
+    } catch (err) {
+      // Autoplay policy / no user gesture: revoke the URL we just created,
+      // otherwise every blocked attempt leaks a blob URL.
+      release();
+      throw err;
+    }
+    if (generation !== backendSpeechGeneration || requestController.signal.aborted) {
+      release();
+      throw new DOMException('Speech request aborted', 'AbortError');
+    }
+    return audio;
+  } finally {
+    if (activeBackendRequest === requestController) activeBackendRequest = null;
   }
-  return audio;
 }

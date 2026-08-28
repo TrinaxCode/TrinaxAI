@@ -44,7 +44,8 @@ jobs:
               pytest -q
               --cov=app --cov=trinaxai_cli --cov=trinaxai_core
               --cov=service_manager --cov=index
-              --cov-report=xml:coverage.xml --cov-fail-under=90
+              --cov-branch
+              --cov-report=xml:coverage.xml --cov-fail-under=98
           - os: macos-latest
             pytest-command: pytest -q
           - os: windows-latest
@@ -67,18 +68,24 @@ jobs:
       - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -r requirements.lock
+          python -m pip install --require-hashes -r requirements.lock
           python -m pip install -r requirements-dev.txt
           python -m pip install -e .
 
       - name: Python syntax check
-        run: python -m py_compile rag_api.py config.py index.py trinaxai_cli/app.py
+        run: python -m py_compile rag_api.py config.py index.py trinaxai_index_documents.py trinaxai_index_state.py trinaxai_cli/app.py
 
       - name: Ruff lint
         run: ruff check .
 
       - name: Ruff format check
         run: ruff format --check .
+
+      - name: Mypy gradual boundary
+        run: mypy
+
+      - name: Golden RAG fixture
+        run: pytest -q tests/test_rag_metrics.py -k checked_in_rag_golden_fixture
 
       - name: Pytest
         run: ${{ matrix.pytest-command }}
@@ -116,7 +123,7 @@ jobs:
       - name: Install CLI
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -r requirements.lock
+          python -m pip install --require-hashes -r requirements.lock
           python -m pip install -r requirements-dev.txt
           python -m pip install -e .
 
@@ -193,9 +200,17 @@ jobs:
         working-directory: chat-pwa
         run: npm test
 
+      - name: Frontend coverage
+        working-directory: chat-pwa
+        run: npm run test:coverage
+
       - name: TypeScript check
         working-directory: chat-pwa
         run: npx tsc --noEmit
+
+      - name: ESLint
+        working-directory: chat-pwa
+        run: npm run lint
 
       - name: Build PWA
         working-directory: chat-pwa
@@ -216,6 +231,53 @@ jobs:
       - name: npm audit high
         working-directory: chat-pwa
         run: npm audit --audit-level=high
+
+  e2e-real:
+    name: Browser E2E (real FastAPI)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            requirements.lock
+            requirements-dev.txt
+            pyproject.toml
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: chat-pwa/package-lock.json
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install --require-hashes -r requirements.lock
+          python -m pip install -r requirements-dev.txt
+          python -m pip install -e .
+
+      - name: Install frontend dependencies
+        working-directory: chat-pwa
+        run: npm ci
+
+      - name: Install Playwright Chromium
+        working-directory: chat-pwa
+        run: npx playwright install --with-deps chromium
+
+      - name: TypeScript check
+        working-directory: chat-pwa
+        run: npm run typecheck
+
+      - name: Browser E2E through the real backend
+        working-directory: chat-pwa
+        run: TRINAXAI_E2E_REAL=1 TRINAXAI_E2E_PORT=3335 TRINAXAI_E2E_RAG_PORT=3336 npx playwright test --grep @real --project=chromium-desktop
 
   security:
     runs-on: ubuntu-latest
@@ -282,6 +344,30 @@ jobs:
         uses: actions/setup-python@v6
         with:
           python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements.lock
+            requirements-dev.txt
+            pyproject.toml
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: chat-pwa/package-lock.json
+
+      - name: Install readiness dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install --require-hashes -r requirements.lock
+          python -m pip install -r requirements-dev.txt
+          python -m pip install -e .
+
+      - name: Install frontend dependencies
+        working-directory: chat-pwa
+        run: npm ci
 
       - name: Public readiness audit
         run: python scripts/public_readiness.py

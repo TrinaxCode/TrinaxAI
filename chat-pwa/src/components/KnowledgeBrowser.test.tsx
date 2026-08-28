@@ -9,6 +9,7 @@ const apiMocks = vi.hoisted(() => ({
   getFileChunks: vi.fn(),
   deleteCollectionSources: vi.fn(),
   deleteSource: vi.fn(),
+  userFacingError: vi.fn(() => 'friendly error'),
 }));
 
 vi.mock('../lib/api', () => apiMocks);
@@ -50,6 +51,9 @@ describe('KnowledgeBrowser request races', () => {
     ]);
     apiMocks.getCollectionSources.mockReset();
     apiMocks.getFileChunks.mockReset();
+    apiMocks.deleteSource.mockReset();
+    apiMocks.userFacingError.mockClear();
+    (window as any).__tc_browser_open = null;
   });
 
   it('ignores a stale collection response after switching collections', async () => {
@@ -66,6 +70,7 @@ describe('KnowledgeBrowser request races', () => {
 
     await waitFor(() => expect(screen.getByText('docs/manual.md')).toBeInTheDocument());
     expect(screen.queryByText('stale.md')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'delete docs/manual.md' })).not.toBeInTheDocument();
   });
 
   it('keeps the newest file chunks when an older request resolves later', async () => {
@@ -85,8 +90,53 @@ describe('KnowledgeBrowser request races', () => {
     await userEvent.click(bButton!);
     first.resolve({ collection: 'docs', file: 'a.md', total: 0, chunks: [] });
 
-    await waitFor(() => expect(screen.getByText('B')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getAllByText('B').length).toBeGreaterThan(0));
     expect(screen.queryByText('A')).not.toBeInTheDocument();
-    expect(screen.getByText('1 chunksTotal')).toBeInTheDocument();
+    expect(screen.getAllByText('1 chunksTotal').length).toBeGreaterThan(0);
+  });
+
+  it('uses an accessible modal and restores focus when source deletion is cancelled', async () => {
+    apiMocks.getCollectionSources.mockResolvedValue({
+      collection: 'default',
+      sources: [source('docs/manual.md')],
+    });
+    const user = userEvent.setup();
+
+    render(<KnowledgeBrowser onBack={vi.fn()} canManageSystem />);
+    const deleteButton = await screen.findByRole('button', { name: 'delete docs/manual.md' });
+    await user.click(deleteButton);
+
+    expect(screen.getByRole('dialog', { name: 'deleteSourceConfirm' })).toBeInTheDocument();
+    await user.keyboard('{Escape}');
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    await waitFor(() => expect(deleteButton).toHaveFocus());
+    expect(apiMocks.deleteSource).not.toHaveBeenCalled();
+  });
+
+  it('shows a user-facing source error and retries', async () => {
+    apiMocks.getCollectionSources
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockResolvedValueOnce({ collection: 'default', sources: [source('retried.md')] });
+    const user = userEvent.setup();
+
+    render(<KnowledgeBrowser onBack={vi.fn()} />);
+    expect((await screen.findAllByText('friendly error')).length).toBeGreaterThan(0);
+    await user.click(screen.getAllByRole('button', { name: 'retry' })[0]);
+
+    expect(await screen.findByText('retried.md')).toBeInTheDocument();
+    expect(apiMocks.userFacingError).toHaveBeenCalled();
+  });
+
+  it.each([
+    ['initialFile', undefined],
+    ['pending handoff', { collection: 'docs', file: 'a.md', source_id: 'alpha' }],
+  ])('opens the mobile chunks panel for %s', async (_label, pending) => {
+    apiMocks.getCollectionSources.mockResolvedValue({ collection: 'docs', sources: [source('a.md', 'alpha')] });
+    apiMocks.getFileChunks.mockResolvedValue({ collection: 'docs', file: 'a.md', total: 1, chunks: [chunk('a', 'A')] });
+    (window as any).__tc_browser_open = pending;
+
+    render(<KnowledgeBrowser onBack={vi.fn()} initialCollection="docs" initialFile={pending ? undefined : 'a.md'} />);
+
+    expect((await screen.findAllByText('A')).length).toBeGreaterThan(1);
   });
 });

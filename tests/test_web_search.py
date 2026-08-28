@@ -52,6 +52,11 @@ def _research_does_not_use_the_network(monkeypatch):
 def test_explicit_web_search_intent_is_conservative() -> None:
     assert web.wants_web_search("Busca en internet las noticias de hoy")
     assert web.wants_web_search("Can you search the web for the latest release?")
+    assert web.wants_web_search("Busca quién es TrinaxCode")
+    assert web.wants_web_search("Búscame quién es TrinaxCode")
+    assert web.wants_web_search("Can you search who TrinaxCode is?")
+    assert not web.wants_web_search("Busca en mis documentos el contrato")
+    assert not web.wants_web_search("Busca cuándo hice el proyecto Tal")
     assert not web.wants_web_search("Explícame cómo funciona Internet")
     assert not web.wants_web_search("Diseña una página web")
 

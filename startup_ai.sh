@@ -22,5 +22,5 @@ if [ "$LANGUAGE" = "es" ]; then echo "TrinaxAI: iniciando servicios de IA..."; e
 "$PY" "$SCRIPT_DIR/service_manager.py" start-ai --base-dir "$SCRIPT_DIR"
 if [ "$LANGUAGE" = "es" ]; then echo "TrinaxAI: servicios de IA iniciados."; else echo "TrinaxAI: AI services started."; fi
 echo "PWA: https://localhost:3334"
-echo "RAG API: http://localhost:3333"
+echo "RAG API: https://localhost:3333 (HTTP fallback if no local certificate)"
 echo "Ollama: http://localhost:11434"

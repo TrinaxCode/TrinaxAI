@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import os
+import stat
 
 from starlette.testclient import TestClient
 
@@ -51,7 +53,7 @@ def test_legacy_document_is_migrated_without_losing_values(tmp_path, monkeypatch
 
 
 def test_incremental_set_and_real_delete_advance_revision(tmp_path, monkeypatch) -> None:
-    client, _state_path = _client(tmp_path, monkeypatch)
+    client, state_path = _client(tmp_path, monkeypatch)
 
     created = _put(client, 0, [{"op": "set", "key": "tc-theme", "value": "dark"}])
     deleted = _put(client, 1, [{"op": "delete", "key": "tc-theme"}])
@@ -63,6 +65,9 @@ def test_incremental_set_and_real_delete_advance_revision(tmp_path, monkeypatch)
     assert deleted.json()["revision"] == 2
     assert current.json()["values"] == {}
     assert current.headers["etag"] == '"trinaxai-app-state-v2-2"'
+    if os.name == "posix":
+        assert stat.S_IMODE(state_path.parent.stat().st_mode) == 0o700
+        assert stat.S_IMODE(state_path.stat().st_mode) == 0o600
 
 
 def test_two_devices_conflict_then_rebase_on_server_revision(tmp_path, monkeypatch) -> None:

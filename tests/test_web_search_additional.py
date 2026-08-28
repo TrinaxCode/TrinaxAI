@@ -7,6 +7,7 @@ import pytest
 
 import config
 from app.services import web_search_service as web
+from app.services import web_search_settings_service as settings
 
 
 class _Response:
@@ -181,6 +182,11 @@ def test_brave_and_searxng_normalize_provider_results(monkeypatch) -> None:
 
     monkeypatch.setattr(config, "WEB_SEARCH_BRAVE_API_KEY", "key")
     monkeypatch.setattr(config, "WEB_SEARCH_SEARXNG_URL", "https://search.example")
+    monkeypatch.setattr(
+        web.socket,
+        "getaddrinfo",
+        lambda *_args, **_kwargs: [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 443))],
+    )
     responses = iter(
         [
             _Response(
@@ -214,6 +220,74 @@ def test_brave_and_searxng_normalize_provider_results(monkeypatch) -> None:
 
     assert web._search_brave("query", 2)[0]["snippet"] == "Description Extra"
     assert web._search_searxng("query", 2)[0]["title"] == "SearX"
+
+
+def test_searxng_provider_rejects_private_targets_and_redirects(monkeypatch) -> None:
+    monkeypatch.setattr(config, "WEB_SEARCH_SEARXNG_URL", "http://127.0.0.1")
+    with pytest.raises(web.WebSearchError, match="not public"):
+        web._search_searxng("query", 1)
+
+    monkeypatch.setattr(config, "WEB_SEARCH_SEARXNG_URL", "https://search.example")
+    monkeypatch.setattr(
+        web.socket,
+        "getaddrinfo",
+        lambda *_args, **_kwargs: [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 443))],
+    )
+    captured = {}
+
+    class Redirect:
+        status_code = 302
+
+        def raise_for_status(self):
+            return None
+
+    def fake_get(*_args, **kwargs):
+        captured.update(kwargs)
+        return Redirect()
+
+    monkeypatch.setattr(web.httpx, "get", fake_get)
+    with pytest.raises(web.WebSearchError, match="redirect"):
+        web._search_searxng("query", 1)
+    assert captured["follow_redirects"] is False
+
+
+def test_searxng_accepts_only_documented_loopback_endpoint(monkeypatch) -> None:
+    monkeypatch.setattr(
+        web.socket,
+        "getaddrinfo",
+        lambda _host, port, **_kwargs: [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", port))],
+    )
+    assert web._validated_provider_url("http://127.0.0.1:8080") == "http://127.0.0.1:8080"
+    assert settings._validate_searxng_url("http://127.0.0.1:8080/") == "http://127.0.0.1:8080"
+    monkeypatch.setattr(config, "WEB_SEARCH_SEARXNG_URL", "http://127.0.0.1:8080")
+    requested = {}
+
+    def fake_get(url, **kwargs):
+        requested.update(url=url, **kwargs)
+        return _Response({"results": []})
+
+    monkeypatch.setattr(web.httpx, "get", fake_get)
+    assert web._search_searxng("query", 1) == []
+    assert requested["url"] == "http://127.0.0.1:8080/search"
+
+    for url in ("http://127.0.0.1", "http://127.0.0.1:8081", "http://10.0.0.7:8080"):
+        with pytest.raises(web.PageFetchError):
+            web._validated_provider_url(url)
+
+
+def test_searxng_loopback_dns_rebinding_stays_blocked(monkeypatch) -> None:
+    monkeypatch.setattr(config, "WEB_SEARCH_SEARXNG_URL", "http://localhost:8080")
+    monkeypatch.setattr(
+        web.socket,
+        "getaddrinfo",
+        lambda *_args, **_kwargs: [
+            (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", 8080)),
+            (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("10.0.0.7", 8080)),
+        ],
+    )
+
+    with pytest.raises(web.WebSearchError, match="not public"):
+        web._search_searxng("query", 1)
 
 
 def test_duckduckgo_instant_flattens_topics(monkeypatch) -> None:

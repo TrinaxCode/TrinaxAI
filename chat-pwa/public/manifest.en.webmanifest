@@ -2,7 +2,7 @@
   "id": "/",
   "name": "TrinaxAI Chat",
   "short_name": "TrinaxAI",
-  "description": "TrinaxAI — Ollama & RAG at your fingertips.",
+  "description": "TrinaxAI - Ollama & RAG at your fingertips.",
   "dir": "ltr",
   "lang": "en",
   "categories": ["productivity", "utilities"],

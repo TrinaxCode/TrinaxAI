@@ -21,7 +21,10 @@ def test_optional_document_loaders_extract_structured_content(monkeypatch, tmp_p
     assert len(pdf_docs) == 1 and "[Page 1]" in pdf_docs[0].text
 
     text_shape = SimpleNamespace(has_text_frame=True, has_table=False, text="Title")
-    cell = lambda value: SimpleNamespace(text=value)
+
+    def cell(value):
+        return SimpleNamespace(text=value)
+
     table_shape = SimpleNamespace(
         has_text_frame=False,
         has_table=True,

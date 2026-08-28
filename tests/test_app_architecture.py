@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import pytest
+from starlette.requests import Request
+from starlette.responses import Response
+
 import rag_api
 from app.main import app
 from app.services.engine_state import EngineState, state
@@ -52,6 +56,7 @@ EXPECTED_OPERATIONS = {
     ("DELETE", "/app-state"),
     ("POST", "/attachments"),
     ("GET", "/attachments/{attachment_id}"),
+    ("POST", "/attachments/{attachment_id}/open"),
     ("DELETE", "/attachments/{attachment_id}"),
     ("POST", "/documents/extract"),
     ("GET", "/collections"),
@@ -97,3 +102,51 @@ def test_legacy_state_alias_points_to_canonical_state(monkeypatch) -> None:
     monkeypatch.setattr(rag_api, "_fusion_retriever", marker)
     assert state.fusion_retriever is marker
     assert rag_api._fusion_retriever is marker
+
+
+def _request(path: str, *, scheme: str = "http") -> Request:
+    return Request(
+        {
+            "type": "http",
+            "method": "GET",
+            "path": path,
+            "raw_path": path.encode(),
+            "query_string": b"",
+            "headers": [(b"x-request-id", b"bad id")],
+            "client": ("127.0.0.1", 3333),
+            "server": ("localhost", 3333),
+            "scheme": scheme,
+        }
+    )
+
+
+@pytest.mark.asyncio
+async def test_security_middleware_and_cors_fallbacks(monkeypatch) -> None:
+    import app.main as app_main
+
+    response = await app_main._security_and_observability(
+        _request("/app-state", scheme="https"), lambda _request: _response()
+    )
+    assert response.headers["Strict-Transport-Security"] == "max-age=31536000"
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["X-Request-ID"]
+
+    monkeypatch.setenv("TRINAXAI_CORS_ORIGINS", "*")
+    assert app_main._cors_origins() == ["*"]
+    monkeypatch.setenv("TRINAXAI_CORS_ORIGINS", "   ")
+    assert app_main._cors_origins()
+
+
+async def _response() -> Response:
+    return Response("ok")
+
+
+def test_legacy_facade_handles_unknown_attribute_mutations() -> None:
+    import app.api_runtime as facade
+
+    name = "_test_facade_attribute"
+    facade.__setattr__(name, "value")
+    try:
+        assert getattr(facade, name) == "value"
+    finally:
+        facade.__delattr__(name)

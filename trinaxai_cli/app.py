@@ -19,11 +19,11 @@ from pathlib import Path
 from typing import Any, Sequence
 
 from trinaxai_cli.config import CLIConfig
-from trinaxai_cli.i18n import help_text, resolve_lang
+from trinaxai_cli.i18n import help_text, resolve_lang, translate
 from trinaxai_cli.ui import get_console
 
 LOG = logging.getLogger("trinaxai_cli")
-VERSION = "1.1.0"
+VERSION = "1.2.0"
 
 
 # ----------------------------------------------------------------- argparse
@@ -38,6 +38,10 @@ class _LocalizedArgumentParser(argparse.ArgumentParser):
 
     def format_help(self) -> str:
         return help_text(super().format_help(), self.language)
+
+    def error(self, message: str) -> None:
+        self.print_usage(sys.stderr)
+        self.exit(2, f"{self.prog}: error: {translate(message, self.language)}\n")
 
 
 def _build_parser(language: str | None = None) -> argparse.ArgumentParser:
@@ -55,7 +59,7 @@ def _build_parser(language: str | None = None) -> argparse.ArgumentParser:
         language=detected,
         prog="trinaxai",
         description=(
-            "TrinaxAI CLI — local-first terminal assistant. The default command opens a "
+            "TrinaxAI CLI - local-first terminal assistant. The default command opens a "
             "unified REPL that auto-routes between chat, web search, deep research, the "
             "private local coding agent and RAG."
         ),
@@ -85,14 +89,16 @@ def _build_parser(language: str | None = None) -> argparse.ArgumentParser:
         "--version",
         action="version",
         version=f"TrinaxAI CLI {VERSION}",
+        help="Print TrinaxAI CLI version.",
     )
 
     _LocalizedArgumentParser.default_language = parser.language
     sub = parser.add_subparsers(dest="command", metavar="COMMAND", parser_class=_LocalizedArgumentParser)
 
     # Flat (no sub-subcommands) commands
-    chat_p = sub.add_parser("chat", help="Unified REPL (chat · web · research · agent · RAG) or single prompt.")
+    chat_p = sub.add_parser("chat", help="Unified REPL (chat | web | research | agent | RAG) or single prompt.")
     chat_p.add_argument("--prompt", help="Run a single prompt and exit.")
+    chat_p.add_argument("--file", help="Attach one local image or text/document file to the prompt.")
     chat_p.add_argument("--session", help="Session name. A unique name is created when omitted.")
     chat_p.add_argument("--collections", help="Comma-separated collection ids.")
     chat_p.add_argument(
@@ -101,12 +107,29 @@ def _build_parser(language: str | None = None) -> argparse.ArgumentParser:
         help="Chat engine. General uses Ollama without indexed-document context.",
     )
     chat_p.add_argument("--workspace", help="Agent workspace root for /agent turns (default: current dir).")
+    chat_thinking = chat_p.add_mutually_exclusive_group()
+    chat_thinking.add_argument(
+        "--thinking", dest="thinking", action="store_true", help="Allow efficient reasoning on demanding turns."
+    )
+    chat_thinking.add_argument(
+        "--no-thinking", dest="thinking", action="store_false", help="Disable provider reasoning for this chat."
+    )
+    chat_p.set_defaults(thinking=None)
 
     ask_p = sub.add_parser("ask", help="Ask one question and exit.")
     ask_p.add_argument("prompt", nargs="*", help="Question to send, or omit it to read UTF-8 text from stdin.")
+    ask_p.add_argument("--file", help="Analyze one local image or document.")
     ask_p.add_argument("--session", help="Session name. A unique name is created when omitted.")
     ask_p.add_argument("--collections", help="Comma-separated collection ids.")
     ask_p.add_argument("--engine", choices=["general", "ollama", "rag"])
+    ask_thinking = ask_p.add_mutually_exclusive_group()
+    ask_thinking.add_argument(
+        "--thinking", dest="thinking", action="store_true", help="Allow efficient reasoning on demanding turns."
+    )
+    ask_thinking.add_argument(
+        "--no-thinking", dest="thinking", action="store_false", help="Disable provider reasoning for this request."
+    )
+    ask_p.set_defaults(thinking=None)
 
     agent_p = sub.add_parser(
         "agent",
@@ -141,8 +164,17 @@ def _build_parser(language: str | None = None) -> argparse.ArgumentParser:
 
     res_p = sub.add_parser("research", help="Multi-pass deep research query.")
     res_p.add_argument("--query", required=True)
+    res_p.add_argument("--session", help="Persist the research turn in a named session for later export.")
     res_p.add_argument("--collections", help="Comma-separated collection ids.")
     res_p.add_argument("--depth", type=int, default=2, choices=[1, 2, 3])
+    research_thinking = res_p.add_mutually_exclusive_group()
+    research_thinking.add_argument(
+        "--thinking", dest="thinking", action="store_true", help="Allow efficient reasoning during research."
+    )
+    research_thinking.add_argument(
+        "--no-thinking", dest="thinking", action="store_false", help="Disable provider reasoning during research."
+    )
+    res_p.set_defaults(thinking=None)
 
     sub.add_parser("status", help="Show local service status.")
     sub.add_parser("start", help="Start TrinaxAI local services.")
@@ -206,7 +238,12 @@ def _build_parser(language: str | None = None) -> argparse.ArgumentParser:
     sub.add_parser("mcp", help=argparse.SUPPRESS)
     exp_p = sub.add_parser("export", help="Export a saved session.")
     exp_p.add_argument("--session", default="default")
-    exp_p.add_argument("--format", default="md", choices=["md"])
+    exp_p.add_argument(
+        "--format",
+        default="md",
+        choices=["md", "markdown", "pdf", "doc", "docx", "word"],
+        help="Export format: md, pdf, or Word (docx).",
+    )
     exp_p.add_argument("--output", help="Output file path.")
 
     obs_p = sub.add_parser("obsidian", help="Import an Obsidian vault into a collection.")
@@ -295,7 +332,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
     # Preserve where the person invoked TrinaxAI before config/imports or an
     # installation wrapper can change process context.
-    setattr(args, "invocation_cwd", invocation_cwd)
+    args.invocation_cwd = invocation_cwd
 
     if args.install_root:
         os.environ["TRINAXAI_HOME"] = str(Path(args.install_root).expanduser())
@@ -330,13 +367,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     no_color = bool(args.no_color) or (str(config.ui.get("color", "auto")) == "never")
     ui = get_console(no_color=no_color, language=effective_lang)
 
-    # 4. Build HTTP client (lazy import keeps --help cheap).
+    # 4. Dispatch local commands without opening an HTTP client.
+    name = args.command or "chat"
+    if name in {"config", "help", "mcp", "version"}:
+        return _dispatch(name, args, None, ui, config)
+
+    # 5. Build the HTTP client only for commands that need it.
     from trinaxai_cli.client import TrinaxAPIClient
 
     client = TrinaxAPIClient(base_url=api_url, verify_tls=verify_tls, language=effective_lang)
-
-    # 5. Dispatch (default = chat REPL).
-    name = args.command or "chat"
     try:
         return _dispatch(name, args, client, ui, config)
     finally:

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import index
-from app.services.system_service import _line_progress
+from app.services.system_service import _line_progress, _progress_changes
 
 # ── Subprocess stdout → UI progress bar mapping ───────────────────────────
 # index.py emits one "Embeddings lote N/M..." line per batch instead of tqdm's
@@ -58,3 +58,17 @@ def test_emit_embed_progress_prints_parseable_line(capsys):
 def test_emit_embed_progress_ignores_zero_total(capsys):
     index._emit_embed_progress(0, 0)
     assert capsys.readouterr().out == ""
+
+
+def test_chunking_progress_uses_processed_files_as_exact_units():
+    changes = {
+        "phase": "chunking",
+        "files_total": 10,
+        "files_processed": 5,
+        "determinate": True,
+    }
+
+    result = _progress_changes(changes)
+
+    assert result["progress"] == 60
+    assert result["progress_exact"] is True

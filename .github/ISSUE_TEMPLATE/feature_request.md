@@ -6,6 +6,8 @@ labels: ['enhancement']
 assignees: []
 ---
 
+[Versión en español](feature_request.es.md)
+
 **Is your feature request related to a problem?**
 A clear description of what the problem is. Ex: I'm always frustrated when [...]
 

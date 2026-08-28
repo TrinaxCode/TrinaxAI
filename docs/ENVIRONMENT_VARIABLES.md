@@ -8,6 +8,11 @@ overrides that your installation needs. Values in the process environment take
 precedence over the repository-root `.env` when services are launched by
 `service_manager.py`.
 
+If an override causes a failure, use the [troubleshooting and recovery
+guide](TROUBLESHOOTING.md) before stacking additional overrides. Remember that
+`VITE_*` values are build-time settings, while backend and gateway values are
+read at runtime.
+
 Boolean values generally accept `1`/`0`; security and service settings also
 accept `true`/`false`, `yes`/`no`, and `on`/`off` where noted in code. Byte limits
 are integer bytes. Variables marked **internal** are set by TrinaxAI scripts for
@@ -19,8 +24,9 @@ child processes and normally should not be added to `.env`.
 |---|---|---|
 | `TRINAXAI_HOME` | auto-detected | Installation root used by the CLI, frontend gateway, and lifecycle scripts. |
 | `TRINAXAI_PYTHON` | current Python | Python executable used by service and maintenance scripts. |
-| `TRINAXAI_PROFILE` | `16gb` | Hardware preset. Canonical accepted values and aliases live in `trinaxai_core.VALID_PROFILES`. |
+| `TRINAXAI_PROFILE` | auto-detected | Hardware preset: `8gb`, `16gb`, `32gb`, or `64gb`. CPU/RAM/GPU detection is persisted in `storage/hardware_profile.json`. |
 | `TRINAXAI_PERFORMANCE_MODE` | `fast` | Runtime tuning: `fast`, `balanced`, or `quality`. |
+| `TRINAXAI_THINKING_MODE` | `1` | Backend fallback for provider reasoning when a client omits the `think` field; `0` disables it. |
 | `TRINAXAI_HOST` | `127.0.0.1` in the hardened template | API bind address. Keep FastAPI behind the same-host gateway; do not publish it directly. |
 | `TRINAXAI_UNSAFE_BIND_BACKEND` | `0` | Explicit high-risk escape hatch that lets the backend honor a non-loopback `TRINAXAI_HOST`. Leave disabled; LAN clients should enter through the authenticated gateway. |
 | `TRINAXAI_PORT` | `3333` | API TCP port. |
@@ -28,12 +34,19 @@ child processes and normally should not be added to `.env`.
 | `TRINAXAI_CA_FILE` | auto-detected | Explicit CA bundle for verified CLI HTTPS; local mkcert/self-signed roots are discovered automatically. |
 | `TRINAXAI_HEALTH_URL` | derived from port/TLS | Health URL used by installers and diagnostics. |
 | `TRINAXAI_FRONTEND_URL` | `https://localhost:3334` | Public/local URL reported for the PWA. |
+| `TRINAXAI_PWA_PORT` | `3334` | TCP port used by the normal PWA gateway and its loopback recovery listener. |
+| `TRINAXAI_PWA_HOST` | `127.0.0.1` | PWA gateway bind address. Set `0.0.0.0` only for an intentional HTTPS LAN pairing setup; remote browsers still need a paired scope. |
+| `TRINAXAI_PWA_DIST` | `dist` | Optional frontend build/output directory relative to `chat-pwa`; useful for isolated parallel previews and E2E runs. |
+| `TRINAXAI_ALLOW_INSECURE_HTTP` | `0` | Test-only escape hatch for serving HTTP on a non-loopback PWA host. Keep disabled; loopback HTTP remains available for local tests. |
 | `TRINAXAI_FRONTEND_MODE` | `serve` | Production Node gateway used by the service manager; `dev` selects Vite HMR. |
+| `TRINAXAI_DRY_RUN` | `0` | Installer/updater diagnostic mode that avoids applying system changes. |
+| `TRINAXAI_START_SUPERVISOR` | unset | Internal recovery handoff flag that restores the service supervisor after a successful local start. |
+| `TRINAXAI_STOP_ALL_DELAY` | `0` (`0.25` during API handoff) | Short internal delay that lets the stop-all response flush before the supervisor exits. |
 | `TRINAXAI_TLS_VERIFY` | `0` | Verify TLS certificates for selected outgoing backend requests. The CLI always verifies TLS; use `--ca-file` or `TRINAXAI_CA_FILE` for a private CA. |
 | `TRINAXAI_CORS_ORIGINS` | safe local origins | Comma-separated exact browser origins. CORS is not authentication. |
 | `TRINAXAI_CORS_ORIGIN_REGEX` | private-LAN regex | Additional FastAPI origin regular expression. Review carefully before widening it. |
-| `TRINAXAI_ALLOW_LAN_SYSTEM` | `0` | Enables the legacy private-LAN fallback for system control only when no admin token exists. Prefer scoped device pairing. |
-| `TRINAXAI_ADMIN_TOKEN` | empty | Administrator super-credential for protected remote operations. Prefer least-privilege device tokens in browsers and ordinary clients. |
+| `TRINAXAI_ALLOW_LAN_SYSTEM` | `0` | Deprecated compatibility variable; it no longer grants LAN host administration. |
+| `TRINAXAI_ADMIN_TOKEN` | empty | Administrator credential for protected low-risk operations. It never overrides the loopback requirement for host administration. |
 | `TRINAXAI_DEVICE_REGISTRY` | `storage/device_pairing.json` | Atomic mode-0600 registry containing keyed hashes, device metadata/scopes, and short-lived pairing-code hashes. It never stores clear device tokens. |
 | `TRINAXAI_DEVICE_SECRET_FILE` | `storage/.device_secret` | Mode-0600 key used to hash pairing codes and device bearer tokens. FastAPI and the PWA gateway must share the same file. |
 | `TRINAXAI_DEVICE_TOKEN` | empty | Packaged CLI credential for a paired device, sent as `X-TrinaxAI-Device-Token`. Prefer process-secret storage over shell history or committed config. |
@@ -57,7 +70,7 @@ FastAPI application options.
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `TRINAXAI_DOCKER_IMAGE` | `trinaxai-api:local` | Backend image. Set `ghcr.io/trinaxcode/trinaxai:1.1.0` to use the pinned official package. |
+| `TRINAXAI_DOCKER_IMAGE` | `trinaxai-api:local` | Backend image. Set `ghcr.io/trinaxcode/trinaxai:1.2.0` to use the pinned official package. |
 | `TRINAXAI_DOCKER_UID` / `TRINAXAI_DOCKER_GID` | `1000` | Host identity used inside the container so mounted files remain owned by the caller. |
 | `TRINAXAI_DOCKER_PORT` | `3333` | Host loopback port mapped to container port `3333`. |
 | `TRINAXAI_DOCKER_OLLAMA_URL` | `http://host.docker.internal:11434` | Ollama endpoint reachable from the container. |
@@ -71,7 +84,7 @@ FastAPI application options.
 | `TRINAXAI_MODEL_GENERAL` | profile-derived | General conversation model. |
 | `TRINAXAI_MODEL_CODE` | profile-derived | Normal code model. |
 | `TRINAXAI_MODEL_DEEP` | profile-derived | Complex code/reasoning model. |
-| `TRINAXAI_MODEL_FAST` | profile-derived | Low-latency model. |
+| `TRINAXAI_MODEL_FAST` | profile-derived | Fast-response model. |
 | `TRINAXAI_LLM` | code model | Model used when automatic routing is disabled. |
 | `TRINAXAI_LLM_HEAVY` | deep model | Heavy fallback used when automatic routing is disabled. |
 | `TRINAXAI_AUTO_ROUTE` | `1` | Enables task-based model routing. |
@@ -79,14 +92,19 @@ FastAPI application options.
 | `TRINAXAI_AGENT_NUM_CTX` | derived from `TRINAXAI_NUM_CTX` | Context window for TrinaxAI Agent tool-use. Larger than chat so file reads and command output don't overflow and degrade small models; capped for CPU-only boxes. |
 | `TRINAXAI_AGENT_TIMEOUT` | `600` | Maximum wall-clock seconds for one HTTP Agent run before cancellation. |
 | `TRINAXAI_AGENT_STALL_TIMEOUT` | `120` | Maximum seconds without tokens, tool activity, or pending approval before a run is cancelled as stalled. |
+| `TRINAXAI_AGENT_QUEUE_MAXSIZE` | `128` | Maximum buffered SSE events per Agent session before the run is cancelled with backpressure. |
+| `TRINAXAI_AGENT_QUEUE_PUT_TIMEOUT` | `0.25` | Seconds the Agent worker waits to enqueue one SSE event before treating the client as unable to keep up. |
 | `TRINAXAI_NUM_THREAD` | `8` | CPU threads requested per Ollama generation. |
+| `OLLAMA_NUM_GPU` | auto-detected | Ollama GPU layer hint; `0` keeps inference on CPU, while a high value offloads all layers that fit on a detected GPU. |
 | `TRINAXAI_KEEP_ALIVE` | profile-derived | Ollama chat-model residency duration, such as `0s` or `10m`. |
 | `TRINAXAI_TIMEOUT` | `300` | Ollama request timeout in seconds. |
-| `TRINAXAI_MODEL_MAX_CONCURRENCY` | `1` | Concurrent model tasks; keep low to avoid RAM/VRAM thrashing. |
+| `TRINAXAI_MODEL_MAX_CONCURRENCY` | `1` | Concurrent model tasks; keep constrained to avoid RAM/VRAM thrashing. |
 | `TRINAXAI_INFERENCE_QUEUE_TIMEOUT` | `600` | Seconds FastAPI and the PWA gateway wait for the shared cross-process inference lock. |
 | `TRINAXAI_INFERENCE_LOCK_FILE` | `storage/.inference.lock` | Shared atomic lock-directory path used by the gateway. It must match the backend's storage lock when overridden. |
 | `TRINAXAI_GEN_NUM_CTX` | task/profile-derived | Context window for the free-form generation pipeline. |
 | `TRINAXAI_GEN_NUM_CTX_MAX` | `16384` | Hard cap when generation context grows automatically. |
+| `TRINAXAI_MAX_CONTINUATIONS` | `2` | Maximum bounded continuation turns after a length-limited or structurally incomplete answer. `0` disables automatic continuation. |
+| `VITE_TRINAXAI_MAX_CONTINUATIONS` | `2` | Frontend fallback for bounded continuation turns when the backend does not report a limit. |
 | `TRINAXAI_GEN_NUM_PREDICT` | task-derived | Fixed generation output-token budget override. |
 | `TRINAXAI_GEN_MAX_FIX` | task-derived | Maximum generate/validate/fix passes. |
 | `TRINAXAI_GEN_TEMPERATURE_CODE_GEN` | `0.15` | Temperature override for code generation. |
@@ -94,7 +112,7 @@ FastAPI application options.
 | `TRINAXAI_GEN_TEMPERATURE_EXPLAIN` | `0.4` | Temperature override for explanations. |
 | `TRINAXAI_GEN_TEMPERATURE_GROUNDED_QA` | `0.0` | Temperature override for grounded RAG answers. |
 | `TRINAXAI_GEN_TEMPERATURE_<REGIME>` | regime-derived | General form consumed by the generation preset loader. |
-| `TRINAXAI_EMBED_PRESET` | profile-derived | Embedding preset: `balanced` (0.6B), `quality` (4B), `max` (8B), `lite`, or `fast`. |
+| `TRINAXAI_EMBED_PRESET` | profile-derived | Embedding preset: `balanced` (0.6B), `quality` (4B), `lite`, or `fast`. Legacy `max` values migrate to `quality`. |
 | `TRINAXAI_EMBED` | preset-derived | Ollama embedding model. Changing it requires reindexing. |
 | `TRINAXAI_EMBED_DIMS` | preset-derived | Embedding vector dimensions. Changing it requires reindexing. |
 | `TRINAXAI_EMBED_WORKERS` | profile-derived | Concurrent embedding requests. |
@@ -111,7 +129,7 @@ Ollama also consumes `OLLAMA_BASE_URL` (backend endpoint), `OLLAMA_HOST`
 |---|---|---|
 | `TRINAXAI_WEB_SEARCH_PROVIDER` | `auto` | Search provider: automatic selection, Brave, SearXNG, or disabled. |
 | `TRINAXAI_BRAVE_SEARCH_API_KEY` | empty | API key used by the Brave Search provider. |
-| `TRINAXAI_SEARXNG_URL` | empty | Base URL of a local or remote SearXNG instance. |
+| `TRINAXAI_SEARXNG_URL` | empty | Base URL of a public SearXNG instance or the documented local loopback endpoint `http://127.0.0.1:8080`; JSON search must be enabled. |
 | `TRINAXAI_WEB_SEARCH_TIMEOUT` | `15` | Search request timeout in seconds. |
 | `TRINAXAI_WEB_SEARCH_MAX_RESULTS` | `6` | Maximum results returned per search. |
 | `TRINAXAI_WEB_SEARCH_CACHE_SECONDS` | `300` | In-memory result-cache lifetime. |
@@ -120,7 +138,8 @@ Ollama also consumes `OLLAMA_BASE_URL` (backend endpoint), `OLLAMA_HOST`
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `TRINAXAI_INDEX_DIR` | parent of repository | Directory indexed recursively. |
+| `TRINAXAI_PERSIST_DIR` | `storage/` | Directory for the persisted index and runtime state; useful for isolated or disposable backend instances. |
+| `TRINAXAI_INDEX_DIR` | repository `local_sources/` | Directory indexed recursively; empty or unset uses this repository-local folder. |
 | `TRINAXAI_COLLECTION_ID` | `default` | Collection identifier passed to the indexer. |
 | `TRINAXAI_COLLECTION_NAME` | `General` | Human-readable collection name passed to the indexer. |
 | `TRINAXAI_DEFAULT_COLLECTION_ID` | `default` | Default collection accepted by the pure runtime validator. |
@@ -130,7 +149,7 @@ Ollama also consumes `OLLAMA_BASE_URL` (backend endpoint), `OLLAMA_HOST`
 | `TRINAXAI_INDEX_STAGE_TIMEOUT` | `900` | Maximum seconds an index stage may run without structured progress before cancellation. |
 | `TRINAXAI_PROGRESS` | structured stdout marker | **Internal:** prefix emitted by the indexer and parsed by its supervisor; it is not a user setting. |
 | `TRINAXAI_INDEX_LOAD_WORKERS` | up to `8` | Concurrent source-file loaders. |
-| `TRINAXAI_INDEX_LOCK_TIMEOUT` | `3600` | Seconds to wait for the cross-process index writer lock. |
+| `TRINAXAI_INDEX_LOCK_TIMEOUT` | `60` | Seconds to wait for the cross-process index writer lock. |
 | `TRINAXAI_INDEX_TIMEOUT` | `3600` | Seconds the packaged CLI waits for its spawned indexer process before terminating the process group. |
 | `TRINAXAI_WATCH_INDEX_TIMEOUT` | `1800` | Seconds the watcher allows one queued indexer subprocess before terminating its process group and reporting the failure. |
 | `TRINAXAI_WATCH_RELOAD_TIMEOUT` | `30` | Seconds the watcher waits for the RAG backend to reload engines after a successful index job before treating the reload as timed out. |
@@ -145,7 +164,7 @@ Ollama also consumes `OLLAMA_BASE_URL` (backend endpoint), `OLLAMA_HOST`
 | `TRINAXAI_SIMILARITY_TOP_K` | profile-derived | Final retrieved chunks supplied to the model. |
 | `TRINAXAI_FUSION_CANDIDATES` | profile-derived | Candidate count per retriever before fusion. |
 | `TRINAXAI_RETRIEVAL_CACHE_SECONDS` | mode-derived | In-memory retrieval-cache lifetime. `0` disables it. |
-| `TRINAXAI_RAG_MIN_SCORE` | `0.05` | Minimum top retrieval score accepted by explicit Knowledge mode; lower-only results return the deterministic no-relevant-information response. |
+| `TRINAXAI_RAG_MIN_SCORE` | `0.015` | Minimum reciprocal-rank score accepted by explicit Knowledge mode; lower-only results return the deterministic no-relevant-information response. |
 | `TRINAXAI_SOURCES_CACHE_SECONDS` | mode-derived | Knowledge-source listing cache lifetime. `0` disables it. |
 | `TRINAXAI_RETRIEVER_CACHE_MAX_COMBINATIONS` | `32` | LRU bound for distinct active-collection retriever combinations; prevents unbounded combination growth. |
 | `TRINAXAI_RERANK` | `0` | Enables optional cross-encoder reranking. |
@@ -161,7 +180,7 @@ Ollama also consumes `OLLAMA_BASE_URL` (backend endpoint), `OLLAMA_HOST`
 | `TRINAXAI_CHAT_ATTACHMENT_MAX_BYTES` | `536870912` | Maximum retained chat attachment size. |
 | `TRINAXAI_CHAT_ATTACHMENTS_MAX_BYTES` | `4294967296` | Total retained chat-attachment quota. |
 | `TRINAXAI_CHAT_ATTACHMENTS_MAX_FILES` | `1000` | Retained chat-attachment count quota. |
-| `TRINAXAI_OCR` | `0` | Enables optional OCR for low-text scanned PDFs. |
+| `TRINAXAI_OCR` | `0` | Enables optional OCR for sparse-text scanned PDFs. |
 
 The indexer recognizes source code, common prose/data formats, PDF and Office
 documents, HTML, EPUB, email, subtitles, calendars, contacts, and notebooks.
@@ -223,9 +242,10 @@ changing them. Non-`VITE_*` proxy targets are read by the production gateway at 
 | `VITE_TRINAXAI_OLLAMA_BASE` | `/api/ollama` | Production browser Ollama base. |
 | `VITE_TRINAXAI_DEV_RAG_BASE` | `/api/rag` | Development browser RAG base. |
 | `VITE_TRINAXAI_DEV_OLLAMA_BASE` | `/api/ollama` | Development browser Ollama base. |
-| `VITE_TRINAXAI_INDEX_DIR` | empty (server-selected project root) | Optional initial index-directory hint displayed by the PWA. |
+| `VITE_TRINAXAI_INDEX_DIR` | empty (server-selected `local_sources/`) | Optional initial index-directory hint displayed by the PWA. |
 | `VITE_TRINAXAI_REPO_URL` | project repository | Repository link displayed by the PWA. |
 | `VITE_TRINAXAI_DOCS_URL` | repository README | Documentation link displayed by the PWA. |
+| `TRINAXAI_VISION_MODEL` | `qwen3.5:4b` | CLI vision model used for image analysis when no model is passed explicitly. |
 | `VITE_TRINAXAI_VISION_MODEL` | `qwen3.5:4b` | Model used for OCR, screenshots, documents, and general image analysis; downloaded on first image analysis if missing. |
 | `VITE_TRINAXAI_KEEP_ALIVE` | `10m` | Direct-chat Ollama keep-alive sent by the browser. |
 
@@ -253,6 +273,9 @@ runtime.
 | `TRINAXAI_UPDATE_REPAIR_OLLAMA` | `0` | Reinstalls or repairs Ollama during update. |
 | `TRINAXAI_UPDATE_RESTART` | auto/prompted | Restarts services after update when enabled. |
 | `TRINAXAI_UPDATE_AUDIT` | `1` | Runs the post-update readiness audit. |
+| `TRINAXAI_RELEASE_VERSION` | `1.2.0` | **Installer:** pinned GitHub release version used for source downloads. |
+| `TRINAXAI_SOURCE_URL` | official GitHub archive | **Install source:** HTTPS archive URL used when installing from a source checkout. |
+| `TRINAXAI_SOURCE_SHA256` | release manifest | **Installer:** SHA-256 for a custom source archive URL; required with `TRINAXAI_SOURCE_URL`. |
 | `TRINAXAI_UPDATE_ROOT` | script directory | **Internal:** installation root passed to the automatic updater. |
 | `TRINAXAI_PRIVILEGED_WRAPPER` | unset | **Internal:** prevents recursion when a sudoers lifecycle wrapper invokes the manager. |
 
@@ -265,5 +288,7 @@ curl -k https://localhost:3333/health
 ```
 
 Changing embedding model/dimensions or chunking behavior requires a full
-reindex. Never commit `.env`, tokens, local certificates, `storage/`, or
-`local_sources/`.
+reindex. `POST /system/reload` only refreshes a published generation in memory;
+it does not rebuild vectors. Never commit `.env`, tokens, local certificates,
+`storage/`, or `local_sources/`. See [Troubleshooting](TROUBLESHOOTING.md) for
+the safe recovery order.

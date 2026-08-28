@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { uid } from '../lib/chatUtils';
-import type { AgentTurn } from '../components/AgentInterface';
+import type { AgentTurn } from '../components/agent/agentTypes';
 import { LOCAL_DEVICE_WIPE_EVENT } from '../lib/deviceWipe';
 
 /**
@@ -34,7 +34,7 @@ function titleFrom(turns: AgentTurn[]): string {
   const firstUser = turns.find((turn) => turn.role === 'user');
   const text = (firstUser?.content ?? '').trim().replace(/\s+/g, ' ');
   if (!text) return '';
-  return text.length > 48 ? `${text.slice(0, 48)}…` : text;
+  return text.length > 48 ? `${text.slice(0, 48)}...` : text;
 }
 
 export function useAgentHistory() {

@@ -61,7 +61,7 @@ export default function VoiceCallView({ isDark, listening, speaking, thinking, o
           ))}
         </div>
       </div>
-      <button type="button" onClick={onEnd} className="absolute bottom-[max(2rem,env(safe-area-inset-bottom))] z-10 flex min-h-14 items-center gap-3 rounded-full bg-red-500 px-6 font-semibold text-white shadow-lg shadow-red-500/25 transition hover:bg-red-600 active:scale-95" aria-label={t('exitVoiceMode')} title={t('exitVoiceMode')}>
+      <button autoFocus type="button" onClick={onEnd} className="absolute bottom-[max(2rem,env(safe-area-inset-bottom))] z-10 flex min-h-14 items-center gap-3 rounded-full bg-red-500 px-6 font-semibold text-white shadow-lg shadow-red-500/25 transition hover:bg-red-600 active:scale-95" aria-label={t('exitVoiceMode')} title={t('exitVoiceMode')}>
         <MdCallEnd size={24} />
         <span>{t('exitVoiceMode')}</span>
       </button>

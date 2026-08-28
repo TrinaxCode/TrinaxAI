@@ -1,16 +1,180 @@
 #!/usr/bin/env bash
-# TrinaxAI — One-Command Installer (Linux/macOS/Windows Git Bash)
-# Usage: curl -fsSL https://raw.githubusercontent.com/TrinaxCode/TrinaxAI/main/install.sh | bash
+# TrinaxAI — One-Command Installer (Linux/macOS/Windows Bash)
+# Download, inspect, then run:
+#   curl --fail --location --output /tmp/TrinaxAI-1.2.0-installer.sh https://github.com/TrinaxCode/TrinaxAI/releases/download/v1.2.0/TrinaxAI-1.2.0-installer.sh
+#   bash -n /tmp/TrinaxAI-1.2.0-installer.sh && less /tmp/TrinaxAI-1.2.0-installer.sh && bash /tmp/TrinaxAI-1.2.0-installer.sh
 
 set -euo pipefail
 
 LANGUAGE="${TRINAXAI_LANG:-${LANG:-en}}"
+LANGUAGE_EXPLICIT="${TRINAXAI_LANG:-}"
 LANGUAGE_LOWER="$(printf '%s' "$LANGUAGE" | tr '[:upper:]' '[:lower:]')"
 case "$LANGUAGE_LOWER" in es*|*_es*) LANGUAGE=es ;; *) LANGUAGE=en ;; esac
+for language_arg in "$@"; do
+  case "$language_arg" in
+    --language=*|--lang=*) LANGUAGE_EXPLICIT="${language_arg#*=}"; LANGUAGE_LOWER="$(printf '%s' "$LANGUAGE_EXPLICIT" | tr '[:upper:]' '[:lower:]')"; case "$LANGUAGE_LOWER" in es*) LANGUAGE=es ;; *) LANGUAGE=en ;; esac ;;
+  esac
+done
+ARG_NONINTERACTIVE=0
+for argument in "$@"; do
+  case "$argument" in --non-interactive|--yes|-y|--dry-run) ARG_NONINTERACTIVE=1;; esac
+done
+if [ -z "$LANGUAGE_EXPLICIT" ] && [ "${TRINAXAI_NONINTERACTIVE:-0}" != "1" ] && [ "$ARG_NONINTERACTIVE" != "1" ] && [ "${TRINAXAI_DRY_RUN:-0}" != "1" ] && [ -r /dev/tty ]; then
+  read -r -p "Select language / Selecciona idioma [en/es, default: $LANGUAGE]: " language_reply </dev/tty || language_reply=""
+  case "$(printf '%s' "$language_reply" | tr '[:upper:]' '[:lower:]')" in es*) LANGUAGE=es ;; en*) LANGUAGE=en ;; esac
+  LANGUAGE_EXPLICIT=prompt
+fi
 if [ "$LANGUAGE" = "es" ]; then
-  tr_text() { case "$1" in title) echo 'Instalador de TrinaxAI en un comando' ;; usage) echo 'Uso:' ;; guided) echo 'Instalación guiada (pregunta opciones)' ;; automatic) echo 'Instalación automática para CI/scripts' ;; skip_models) echo 'Omitir descargas de modelos' ;; help) echo 'Mostrar esta ayuda' ;; *) echo "$1" ;; esac; }
+  tr_text_es() {
+    case "$1" in
+      title) echo 'Instalador de TrinaxAI en un comando' ;;
+      'TrinaxAI - Local AI Assistant') echo 'TrinaxAI - Asistente de IA local' ;;
+      'TrinaxAI is ready!') echo 'TrinaxAI está listo' ;;
+      usage) echo 'Uso' ;;
+      guided) echo 'Instalación guiada (pregunta opciones)' ;;
+      automatic) echo 'Instalación automática para CI/scripts' ;;
+      skip_models) echo 'Omitir descargas de modelos' ;;
+      help) echo 'Mostrar esta ayuda' ;;
+      '--install-dir requires a path') echo 'Se requiere una ruta para --install-dir' ;;
+      'Unknown option:'*) echo "Opción desconocida:${1#Unknown option:}" ;;
+      'Privacy') echo 'Privacidad' ;;
+      'Local-first; web search and downloads use the network') echo 'Local-first; la búsqueda web y las descargas usan Internet' ;;
+      'Detected RAM') echo 'RAM detectada' ;;
+      'Recommended profile') echo 'Perfil recomendado' ;;
+      '  1) 8gb     About 8GB RAM') echo '  1) 8gb     Aproximadamente 8 GB de RAM' ;;
+      '  2) 16gb    About 16GB RAM') echo '  2) 16gb    Aproximadamente 16 GB de RAM' ;;
+      '  3) 32gb    About 32GB RAM or capable GPU') echo '  3) 32gb    Aproximadamente 32 GB o GPU capaz' ;;
+      '  4) 64gb    64GB+ RAM or powerful GPU') echo '  4) 64gb    64 GB+ de RAM o GPU potente' ;;
+      'Model roles TrinaxAI needs:') echo 'Roles de modelos que necesita TrinaxAI:' ;;
+      '  General chat: conversation and everyday questions') echo '  Chat general: conversación y preguntas cotidianas' ;;
+      '  Code/deep:    code, reasoning, refactors, project analysis') echo '  Código/profundo: código, razonamiento, refactors y análisis de proyectos' ;;
+      '  Embeddings:   RAG indexing and semantic search') echo '  Embeddings: indexación RAG y búsqueda semántica' ;;
+      '  Vision:       image and screenshot analysis') echo '  Visión: análisis de imágenes y capturas de pantalla' ;;
+      'Deprecated LAN system option ignored; host administration stays localhost-only.') echo 'La opción obsoleta de sistema por LAN se ignora; la administración del host queda solo en localhost.' ;;
+      'Links to enter') echo 'Enlaces de acceso' ;;
+      'Localhost') echo 'Localhost' ;;
+      'LAN / Red local') echo 'LAN' ;;
+      'RAG health') echo 'Salud de RAG' ;;
+      'Ollama API') echo 'API de Ollama' ;;
+      'Quick start') echo 'Inicio rápido' ;;
+      'CLI') echo 'CLI' ;;
+      'New terminal') echo 'Terminal nueva' ;;
+      'Open one if your current shell cannot find the new CLI yet') echo 'Abre una si tu shell actual todavía no encuentra la nueva CLI' ;;
+      'Shutdown') echo 'Apagado' ;;
+      'System test') echo 'Prueba del sistema' ;;
+      'Updates') echo 'Actualizaciones' ;;
+      'Automatic check every week') echo 'Comprobación automática semanal' ;;
+      'Docs') echo 'Documentación' ;;
+      'Same WiFi network required. Check firewall: ports 3333, 3334') echo 'Se requiere la misma red WiFi. Comprueba el firewall: puertos 3333 y 3334' ;;
+      'LAN system control remains localhost-only') echo 'El control del sistema por LAN queda restringido a localhost' ;;
+      'Star the repo') echo 'Dale una estrella al repositorio' ;;
+      '100% open source - AGPL-3.0-or-later') echo '100% código abierto - AGPL-3.0-or-later' ;;
+      'DRY-RUN: nothing will be downloaded, installed, or changed.') echo 'SIMULACIÓN: no se descargará, instalará ni modificará nada.' ;;
+      '0/6 Repository') echo '0/6 Repositorio' ;;
+      '1/6 System Dependencies') echo '1/6 Dependencias del sistema' ;;
+      '1.5/6 TrinaxAI Profile') echo '1.5/6 Perfil de TrinaxAI' ;;
+      '2/6 Ollama (Local AI Engine)') echo '2/6 Ollama (motor de IA local)' ;;
+      '3/6 Python Virtual Environment') echo '3/6 Entorno virtual de Python' ;;
+      '4/6 PWA Frontend') echo '4/6 Frontend PWA' ;;
+      '5/6 AI Models') echo '5/6 Modelos de IA' ;;
+      '6/6 Auto-Start on Boot') echo '6/6 Inicio automático' ;;
+      'Would use repository directory:'*) echo "Se usaría el directorio del repositorio:${1#Would use repository directory:}" ;;
+      'Source package download simulated') echo 'Descarga del paquete fuente simulada' ;;
+      'Would check/install Python 3.10+, Node.js 22+, npm, curl, unzip, and OpenSSL') echo 'Se comprobarían/instalarían Python 3.10+, Node.js 22+, npm, curl, unzip y OpenSSL' ;;
+      'Python, Node.js, and system dependency checks simulated') echo 'Comprobaciones de Python, Node.js y dependencias simuladas' ;;
+      'Would detect RAM, select a hardware profile, and write .env') echo 'Se detectaría la RAM, se elegiría un perfil de hardware y se escribiría .env' ;;
+      'Profile and configuration generation simulated') echo 'Generación de perfil y configuración simulada' ;;
+      'Would check Ollama, start it if needed, and verify http://localhost:11434/api/tags') echo 'Se comprobaría Ollama, se iniciaría si hace falta y se verificaría http://localhost:11434/api/tags' ;;
+      'Would use the official Ollama installer if ollama is unavailable') echo 'Se usaría el instalador oficial de Ollama si Ollama no está disponible' ;;
+      'Ollama availability and fallback checks simulated') echo 'Comprobaciones de Ollama y fallback simuladas' ;;
+      'Would create/update .venv and install Python dependencies') echo 'Se crearía/actualizaría .venv y se instalarían las dependencias Python' ;;
+      'Python environment changes simulated') echo 'Cambios del entorno Python simulados' ;;
+      'Would run npm ci and npm run build') echo 'Se ejecutarían npm ci y npm run build' ;;
+      'PWA build simulated') echo 'Compilación de la PWA simulada' ;;
+      'Would check Ollama and pull configured models') echo 'Se comprobaría Ollama y se descargarían los modelos configurados' ;;
+      'Model checks and downloads simulated') echo 'Comprobaciones y descargas de modelos simuladas' ;;
+      'Would optionally start TrinaxAI and configure auto-start/weekly updates') echo 'Se iniciaría TrinaxAI opcionalmente y se configurarían el inicio automático y las actualizaciones semanales' ;;
+      'Service and auto-start changes simulated') echo 'Cambios de servicio e inicio automático simulados' ;;
+      'Dry-run finished; no changes were made') echo 'Simulación terminada; no se hicieron cambios' ;;
+      'CLI PATH saved in '*) echo "PATH de la CLI guardado en ${1#CLI PATH saved in }" ;;
+      'Administrator access is required for:'*) echo "Se requieren permisos de administrador para:${1#Administrator access is required for:}" ;;
+      'Install the system dependencies manually, then run this installer again.') echo 'Instala las dependencias del sistema manualmente y vuelve a ejecutar este instalador.' ;;
+      'Starting Ollama locally...') echo 'Iniciando Ollama localmente...' ;;
+      'HTTPS certificate found') echo 'Certificado HTTPS encontrado' ;;
+      'LAN IP changed to '*'; renewing the HTTPS certificate...') echo "La IP LAN cambió a ${1#LAN IP changed to }; renovando el certificado HTTPS..." ;;
+      'OpenSSL was not found. HTTPS certificate generation skipped.') echo 'No se encontró OpenSSL. Se omitió la generación del certificado HTTPS.' ;;
+      'The PWA may run as HTTP or show a browser security warning.') echo 'La PWA puede ejecutarse por HTTP o mostrar una advertencia de seguridad del navegador.' ;;
+      'Creating local HTTPS certificate for TrinaxAI...') echo 'Creando certificado HTTPS local para TrinaxAI...' ;;
+      'mkcert could not generate HTTPS certificate; trying OpenSSL.') echo 'mkcert no pudo generar el certificado HTTPS; se probará OpenSSL.' ;;
+      'Could not generate HTTPS certificate.') echo 'No se pudo generar el certificado HTTPS.' ;;
+      'HTTPS certificate generated') echo 'Certificado HTTPS generado' ;;
+      'HTTPS certificate trusted in macOS login keychain') echo 'Certificado HTTPS confiado en el llavero de inicio de sesión de macOS' ;;
+      'Could not auto-trust the certificate.'*) echo "No se pudo confiar automáticamente en el certificado.${1#Could not auto-trust the certificate.}" ;;
+      'HTTPS certificate trusted in system CA store') echo 'Certificado HTTPS confiado en el almacén de CA del sistema' ;;
+      'No supported CA trust updater found.'*) echo "No se encontró un actualizador de confianza CA compatible.${1#No supported CA trust updater found.}" ;;
+      'Installing packages (Python, Node.js, npm, curl, unzip)...') echo 'Instalando paquetes (Python, Node.js, npm, curl, unzip)...' ;;
+      'npm was not installed.'*) echo "npm no se instaló.${1#npm was not installed.}" ;;
+      Install\ Node.js\ 22+\ with\ npm\ from\ *) echo "Instala Node.js 22+ con npm desde ${1#Install Node.js 22+ with npm from }" ;;
+      'Unknown Linux package manager.'*) echo "Gestor de paquetes de Linux desconocido.${1#Unknown Linux package manager.}" ;;
+      'Linux dependencies ready') echo 'Dependencias de Linux listas' ;;
+      'Installing Homebrew...') echo 'Instalando Homebrew...' ;;
+      'macOS dependencies ready') echo 'Dependencias de macOS listas' ;;
+      'Windows detected. Please ensure you have:') echo 'Windows detectado. Asegúrate de tener:' ;;
+      'Python 3.10 or newer was not found.') echo 'No se encontró Python 3.10 o posterior.' ;;
+      'Node.js 22 or newer is required.'*) echo "Se requiere Node.js 22 o posterior.${1#Node.js 22 or newer is required.}" ;;
+      'npm was not found next to Node.js.'*) echo "No se encontró npm junto a Node.js.${1#npm was not found next to Node.js.}" ;;
+      'Runtime versions ready:'*) echo "Versiones del entorno listas:${1#Runtime versions ready:}" ;;
+      'Unknown TRINAXAI_PROFILE='*) echo "TRINAXAI_PROFILE desconocido; se usará el perfil automático" ;;
+      'Automatic setup selected: profile='*) echo "Configuración automática seleccionada: perfil=${1#Automatic setup selected: profile=}" ;;
+      'Could not generate admin token.'*) echo "No se pudo generar el token de administrador.${1#Could not generate admin token.}" ;;
+      'Admin token generated and saved to .env') echo 'Token de administrador generado y guardado en .env' ;;
+      '.env written with profile='*) echo ".env escrito con el perfil ${1#.env written with profile=}" ;;
+      'Ollama already installed') echo 'Ollama ya está instalado' ;;
+      'Installing Ollama...') echo 'Instalando Ollama...' ;;
+      'Download Ollama from:'*) echo "Descarga Ollama desde:${1#Download Ollama from:}" ;;
+      'Install Ollama, then re-run this script for full setup.') echo 'Instala Ollama y vuelve a ejecutar este script para completar la configuración.' ;;
+      'Continuing with Python and frontend setup...') echo 'Continuando con la configuración de Python y frontend...' ;;
+      'Ollama installed') echo 'Ollama instalado' ;;
+      'Could not create Python virtual environment.') echo 'No se pudo crear el entorno virtual de Python.' ;;
+      'Install Python 3.10+ with venv support, then rerun ./install.sh') echo 'Instala Python 3.10+ con soporte venv y vuelve a ejecutar ./install.sh' ;;
+      'Virtual environment exists but activation script was not found.') echo 'Existe el entorno virtual, pero no se encontró su script de activación.' ;;
+      'Locked Python packages installed') echo 'Paquetes Python bloqueados instalados' ;;
+      'Python packages installed') echo 'Paquetes Python instalados' ;;
+      'requirements.txt not found - skipping') echo 'No se encontró requirements.txt; se omite' ;;
+      'TrinaxAI CLI installed in editable mode') echo 'CLI de TrinaxAI instalada en modo editable' ;;
+      'CLI command linked:'*) echo "Comando CLI enlazado:${1#CLI command linked:}" ;;
+      'CLI entry point was not found at '*) echo "No se encontró el punto de entrada de la CLI en ${1#CLI entry point was not found at }" ;;
+      'PWA build failed - you can retry with:'*) echo "Falló la compilación de la PWA; puedes reintentarlo con:${1#PWA build failed - you can retry with:}" ;;
+      'PWA dependencies installed') echo 'Dependencias de la PWA instaladas' ;;
+      Node.js\ not\ found.\ Install\ from\ *) echo "No se encontró Node.js. Instálalo desde ${1#Node.js not found. Install from }" ;;
+      'The PWA needs Node.js 22+ to build and serve') echo 'La PWA necesita Node.js 22+ para compilarse y servirse' ;;
+      'chat-pwa/ directory not found') echo 'No se encontró el directorio chat-pwa/' ;;
+      Only\ *GB\ free.*) echo "Solo queda ${1#Only }; las descargas de modelos pueden fallar; libera espacio antes de descargar modelos grandes." ;;
+      Vision\ model\ *\ will\ download\ on\ first\ image\ analysis.) echo "El modelo de visión ${1#Vision model }; se descargará al analizar la primera imagen." ;;
+      'Ollama is not available yet; skipping model downloads.'*) echo "Ollama aún no está disponible; se omiten las descargas de modelos. TrinaxAI se instalará de todos modos." ;;
+      'After installing/starting Ollama, run:'*) echo "Después de instalar/iniciar Ollama, ejecuta:${1#After installing/starting Ollama, run:}" ;;
+      'Skipping model download.'*) echo "Se omite la descarga de modelos. Puedes descargarlos después con:${1#Skipping model download.}" ;;
+      'Starting TrinaxAI services...') echo 'Iniciando servicios de TrinaxAI...' ;;
+      'Supervisor returned a non-zero status; checking the RAG API directly.') echo 'El supervisor devolvió un estado distinto de cero; se comprobará la API RAG directamente.' ;;
+      'TrinaxAI and the RAG API are ready') echo 'TrinaxAI y la API RAG están listas' ;;
+      'TrinaxAI did not answer on the health endpoint yet.'*) echo "TrinaxAI aún no responde en el endpoint de salud.${1#TrinaxAI did not answer on the health endpoint yet.}" ;;
+      'Start skipped.'*) echo "Inicio omitido.${1#Start skipped.}" ;;
+      'Enabling safe weekly updates from GitHub...') echo 'Activando actualizaciones semanales seguras desde GitHub...' ;;
+      'Automatic updates enabled (weekly)') echo 'Actualizaciones automáticas activadas (semanales)' ;;
+      'Could not enable the weekly task.'*) echo "No se pudo activar la tarea semanal.${1#Could not enable the weekly task.}" ;;
+      'Auto-start enabled') echo 'Inicio automático activado' ;;
+      'Could not enable auto-start automatically.'*) echo "No se pudo activar el inicio automático.${1#Could not enable auto-start automatically.}" ;;
+      'Auto-start skipped.'*) echo "Inicio automático omitido.${1#Auto-start skipped.}" ;;
+      *) echo "$1" ;;
+    esac
+  }
 else
-  tr_text() { case "$1" in title) echo 'TrinaxAI One-Command Installer' ;; usage) echo 'Usage:' ;; guided) echo 'Guided install (asks optional choices)' ;; automatic) echo 'Automatic install for CI/scripts' ;; skip_models) echo 'Skip model downloads' ;; help) echo 'Show this help' ;; *) echo "$1" ;; esac; }
+  tr_text_en() { case "$1" in title) echo 'TrinaxAI One-Command Installer' ;; usage) echo 'Usage:' ;; guided) echo 'Guided install (asks optional choices)' ;; automatic) echo 'Automatic install for CI/scripts' ;; skip_models) echo 'Skip model downloads' ;; help) echo 'Show this help' ;; 'LAN / Red local') echo 'LAN' ;; *) echo "$1" ;; esac; }
+fi
+if [ "$LANGUAGE" = "es" ]; then
+  tr_text() { tr_text_es "$@"; }
+else
+  tr_text() { tr_text_en "$@"; }
 fi
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; BLUE='\033[0;34m'
@@ -30,14 +194,15 @@ $(tr_text usage):
   ./install.sh --no-autostart  No activar el arranque automático
   ./install.sh --no-auto-update No activar la actualización semanal automática
   ./install.sh --no-start      No iniciar TrinaxAI después de instalar
-  ./install.sh --lan-system    Activar endpoints de control LAN (requiere token admin)
-  ./install.sh --profile 8gb|16gb|max|ultra
+  ./install.sh --dry-run      Simular todos los pasos sin modificar el sistema
+  ./install.sh --lan-system    Compatibilidad obsoleta; se ignora y el host sigue siendo solo localhost
+  ./install.sh --profile 8gb|16gb|32gb|64gb
   ./install.sh --install-dir PATH  Elegir el directorio de aplicación
   ./install.sh --help          $(tr_text help)
 
 Qué hace:
-  1. Instala dependencias del sistema (Python, Node.js, npm, Git, curl, unzip)
-  2. Detecta la RAM y recomienda un perfil de hardware
+  1. Instala dependencias del sistema (Python, Node.js, npm, curl, unzip)
+  2. Detecta CPU, RAM, GPU y VRAM; recomienda un perfil de hardware
   3. Escribe .env con la IP LAN detectada y la flota de modelos
   4. Instala Ollama si falta
   5. Crea el entorno virtual de Python e instala dependencias
@@ -48,7 +213,7 @@ Qué hace:
 
 Variables adicionales: TRINAXAI_PROFILE, TRINAXAI_INTERACTIVE, TRINAXAI_NONINTERACTIVE,
 TRINAXAI_INSTALL_MODELS, TRINAXAI_INSTALL_VISION, TRINAXAI_ENABLE_AUTOSTART,
-TRINAXAI_ENABLE_AUTO_UPDATE, TRINAXAI_START_NOW, TRINAXAI_ALLOW_LAN_SYSTEM,
+TRINAXAI_ENABLE_AUTO_UPDATE, TRINAXAI_START_NOW, TRINAXAI_ALLOW_LAN_SYSTEM (obsoleta e ignorada),
 TRINAXAI_ADMIN_TOKEN, TRINAXAI_HOME y TRINAXAI_LANG.
 EOF
   else
@@ -64,14 +229,15 @@ $(tr_text usage):
   ./install.sh --no-autostart  Do not enable boot autostart
   ./install.sh --no-auto-update Do not enable the weekly automatic update
   ./install.sh --no-start      Do not start TrinaxAI after install
-  ./install.sh --lan-system    Enable LAN system-control endpoints (requires admin token)
-  ./install.sh --profile 8gb|16gb|max|ultra
+  ./install.sh --dry-run      Simulate every step without changing the system
+  ./install.sh --lan-system    Deprecated compatibility flag; ignored, host administration stays localhost-only
+  ./install.sh --profile 8gb|16gb|32gb|64gb
   ./install.sh --install-dir PATH  Choose the application directory
   ./install.sh --help          $(tr_text help)
 
 What it does:
-  1. Installs system dependencies (Python, Node.js, npm, Git, curl, unzip)
-  2. Detects RAM and recommends a hardware profile
+  1. Installs system dependencies (Python, Node.js, npm, curl, unzip)
+  2. Detects CPU, RAM, GPU and VRAM; recommends a hardware profile
   3. Writes .env with the detected LAN IP and model fleet
   4. Installs Ollama if missing
   5. Creates the Python virtual environment and installs dependencies
@@ -82,11 +248,11 @@ What it does:
 
 Additional variables: TRINAXAI_PROFILE, TRINAXAI_INTERACTIVE, TRINAXAI_NONINTERACTIVE,
 TRINAXAI_INSTALL_MODELS, TRINAXAI_INSTALL_VISION, TRINAXAI_ENABLE_AUTOSTART,
-TRINAXAI_ENABLE_AUTO_UPDATE, TRINAXAI_START_NOW, TRINAXAI_ALLOW_LAN_SYSTEM,
+TRINAXAI_ENABLE_AUTO_UPDATE, TRINAXAI_START_NOW, TRINAXAI_ALLOW_LAN_SYSTEM (deprecated and ignored),
 TRINAXAI_ADMIN_TOKEN, TRINAXAI_HOME and TRINAXAI_LANG.
 EOF
   fi
-  exit 0
+  exit "${1:-0}"
 }
 
 INTERACTIVE="${TRINAXAI_INTERACTIVE:-1}"
@@ -99,8 +265,11 @@ INSTALL_VISION="${TRINAXAI_INSTALL_VISION:-1}"
 ENABLE_AUTOSTART="${TRINAXAI_ENABLE_AUTOSTART:-1}"
 ENABLE_AUTO_UPDATE="${TRINAXAI_ENABLE_AUTO_UPDATE:-1}"
 START_NOW="${TRINAXAI_START_NOW:-1}"
+DRY_RUN="${TRINAXAI_DRY_RUN:-0}"
 PROFILE_OVERRIDE="${TRINAXAI_PROFILE:-}"
-ENABLE_LAN_SYSTEM="${TRINAXAI_ALLOW_LAN_SYSTEM:-0}"
+LEGACY_LAN_SYSTEM_REQUEST=0
+if [ "${TRINAXAI_ALLOW_LAN_SYSTEM:-0}" = "1" ]; then LEGACY_LAN_SYSTEM_REQUEST=1; fi
+ENABLE_LAN_SYSTEM=0
 ADMIN_TOKEN="${TRINAXAI_ADMIN_TOKEN:-}"
 INSTALL_DIR="${TRINAXAI_HOME:-}"
 
@@ -114,31 +283,66 @@ while [ "$#" -gt 0 ]; do
     --no-autostart) ENABLE_AUTOSTART=0;;
     --no-auto-update) ENABLE_AUTO_UPDATE=0;;
     --no-start) START_NOW=0;;
-    --lan-system) ENABLE_LAN_SYSTEM=1;;
+    --dry-run) DRY_RUN=1; INTERACTIVE=0; NONINTERACTIVE=1; INSTALL_MODELS=1;;
+    --lan-system) LEGACY_LAN_SYSTEM_REQUEST=1;;
     --profile)
       shift
+      [ "$#" -gt 0 ] || { echo "--profile requires a value" >&2; exit 2; }
       PROFILE_OVERRIDE="${1:-}"
       ;;
-    --profile=*) PROFILE_OVERRIDE="${1#*=}";;
+    --profile=*)
+      PROFILE_OVERRIDE="${1#*=}"
+      [ -n "$PROFILE_OVERRIDE" ] || { echo "--profile requires a value" >&2; exit 2; }
+      ;;
     --install-dir)
       shift
       INSTALL_DIR="${1:-}"
-      [ -n "$INSTALL_DIR" ] || { echo "--install-dir requires a path" >&2; exit 2; }
+      [ -n "$INSTALL_DIR" ] || { echo "$(tr_text '--install-dir requires a path')" >&2; exit 2; }
       ;;
-    --install-dir=*) INSTALL_DIR="${1#*=}";;
+    --install-dir=*)
+      INSTALL_DIR="${1#*=}"
+      [ -n "$INSTALL_DIR" ] || { echo "$(tr_text '--install-dir requires a path')" >&2; exit 2; }
+      ;;
+    --language|--lang)
+      shift
+      [ "$#" -gt 0 ] || { echo "--language requires a value" >&2; exit 2; }
+      LANGUAGE_EXPLICIT="${1:-}"
+      LANGUAGE_LOWER="$(printf '%s' "$LANGUAGE_EXPLICIT" | tr '[:upper:]' '[:lower:]')"
+      case "$LANGUAGE_LOWER" in es*|*_es*) LANGUAGE=es ;; *) LANGUAGE=en ;; esac
+      ;;
+    --language=*|--lang=*)
+      LANGUAGE_EXPLICIT="${1#*=}"
+      [ -n "$LANGUAGE_EXPLICIT" ] || { echo "--language requires a value" >&2; exit 2; }
+      LANGUAGE_LOWER="$(printf '%s' "$LANGUAGE_EXPLICIT" | tr '[:upper:]' '[:lower:]')"
+      case "$LANGUAGE_LOWER" in es*|*_es*) LANGUAGE=es ;; *) LANGUAGE=en ;; esac
+      ;;
     *)
-      echo "Unknown option: $1" >&2
-      usage
+      echo "$(tr_text "Unknown option: $1")" >&2
+      usage 2
       ;;
   esac
   shift
 done
 
-print_header() { echo -e "\n${BLUE}${BOLD}═══ $1 ═══${NC}\n"; }
-print_ok()    { echo -e "  ${GREEN}[OK]${NC} $1"; }
-print_warn()  { echo -e "  ${YELLOW}[!]${NC} $1"; }
-print_err()   { echo -e "  ${RED}[X]${NC} $1"; }
-print_info()  { echo -e "  ${CYAN}[i]${NC} $1"; }
+if [ -z "$LANGUAGE_EXPLICIT" ] && [ "$INTERACTIVE" = "1" ] && [ -r /dev/tty ]; then
+  language_reply=""
+  read -r -p "Select language / Selecciona idioma [en/es, default: $LANGUAGE]: " language_reply </dev/tty || language_reply=""
+  case "$(printf '%s' "$language_reply" | tr '[:upper:]' '[:lower:]')" in
+  es|es-es|es_*) LANGUAGE=es ;;
+    en|en-us|en_*) LANGUAGE=en ;;
+  esac
+fi
+if [ "$LANGUAGE" = "es" ]; then
+  tr_text() { tr_text_es "$@"; }
+else
+  tr_text() { tr_text_en "$@"; }
+fi
+
+print_header() { echo -e "\n${BLUE}${BOLD}=== $(tr_text "$1") ===${NC}\n"; }
+print_ok()    { echo -e "  ${GREEN}[OK]${NC} $(tr_text "$1")"; }
+print_warn()  { echo -e "  ${YELLOW}[!]${NC} $(tr_text "$1")"; }
+print_err()   { echo -e "  ${RED}[X]${NC} $(tr_text "$1")"; }
+print_info()  { echo -e "  ${CYAN}[i]${NC} $(tr_text "$1")"; }
 ensure_cli_path() {
   case ":$PATH:" in
     *":$HOME/.local/bin:"*) return 0 ;;
@@ -182,7 +386,7 @@ as_root() {
   fi
 }
 ask() {
-  local prompt="$1" reply=""
+  local prompt="$(tr_text "$1")" reply=""
   if [ "${INTERACTIVE:-1}" != "1" ]; then
     echo ""
     return 0
@@ -236,13 +440,15 @@ detect_ram_gb() {
 recommended_profile() {
   ram_gb="$(detect_ram_gb)"
   if [ "${ram_gb:-0}" -ge 64 ]; then
-    echo "ultra"
+    echo "64gb"
   elif [ "${ram_gb:-0}" -ge 32 ]; then
-    echo "max"
-  elif [ "${ram_gb:-0}" -le 8 ] && [ "${ram_gb:-0}" -gt 0 ]; then
+    echo "32gb"
+  elif [ "${ram_gb:-0}" -ge 16 ]; then
+    echo "16gb"
+  elif [ "${ram_gb:-0}" -ge 8 ]; then
     echo "8gb"
   else
-    echo "16gb"
+    echo "8gb"
   fi
 }
 
@@ -348,12 +554,21 @@ ensure_https_certificate() {
 }
 
 install_linux_deps() {
-  print_info "Installing packages (Python, Node.js, npm, curl, git, unzip)..."
+  if command -v python3 >/dev/null 2>&1 &&
+    python3 -c 'import sys; raise SystemExit(sys.version_info < (3, 10))' 2>/dev/null &&
+    command -v node >/dev/null 2>&1 &&
+    node -e 'process.exit(Number(process.versions.node.split(".")[0]) >= 22 ? 0 : 1)' 2>/dev/null &&
+    command -v npm >/dev/null 2>&1 && command -v curl >/dev/null 2>&1 &&
+    command -v unzip >/dev/null 2>&1 && command -v openssl >/dev/null 2>&1; then
+    print_ok "System dependencies already available"
+    return 0
+  fi
+  print_info "Installing packages (Python, Node.js, npm, curl, unzip)..."
   if command -v apt-get >/dev/null 2>&1; then
     as_root apt-get update -qq
     # npm ships with NodeSource/Node.js, but the distro npm package may conflict.
     # Try nodejs + npm together; if that fails, install nodejs alone.
-    as_root apt-get install -y python3 python3-pip python3-venv curl git unzip ufw openssl
+    as_root apt-get install -y python3 python3-pip python3-venv curl unzip ufw openssl
     if ! command -v node >/dev/null 2>&1; then
       as_root apt-get install -y nodejs npm 2>/dev/null || as_root apt-get install -y nodejs || true
     fi
@@ -362,15 +577,15 @@ install_linux_deps() {
       print_info "Install Node.js 22+ with npm from https://nodejs.org or use your package manager."
     fi
   elif command -v dnf >/dev/null 2>&1; then
-    as_root dnf install -y python3 python3-pip nodejs npm curl git unzip openssl
+    as_root dnf install -y python3 python3-pip nodejs npm curl unzip openssl
   elif command -v pacman >/dev/null 2>&1; then
-    as_root pacman -Sy --needed --noconfirm python python-pip nodejs npm curl git unzip openssl
+    as_root pacman -Sy --needed --noconfirm python python-pip nodejs npm curl unzip openssl
   elif command -v zypper >/dev/null 2>&1; then
-    as_root zypper --non-interactive install python3 python3-pip nodejs npm curl git unzip openssl
+    as_root zypper --non-interactive install python3 python3-pip nodejs npm curl unzip openssl
   elif command -v apk >/dev/null 2>&1; then
-    as_root apk add python3 py3-pip py3-virtualenv nodejs npm curl git unzip openssl
+    as_root apk add python3 py3-pip py3-virtualenv nodejs npm curl unzip openssl
   else
-    print_warn "Unknown Linux package manager. Install Python 3.10+, pip, venv, Node.js 22+, npm, curl, git, unzip manually."
+    print_warn "Unknown Linux package manager. Install Python 3.10+, pip, venv, Node.js 22+, npm, curl, unzip manually."
   fi
 }
 
@@ -381,6 +596,144 @@ case "$(uname -s)" in
   MINGW*|MSYS*|CYGWIN*) OS="windows";;
 esac
 
+validate_install_dir() {
+  case "$INSTALL_DIR" in
+    ""|/|.|..|../*|*/../*|*/..|*$'\n'*|*$'\r'*)
+      print_err "Refusing an unsafe installation directory: $INSTALL_DIR"
+      exit 2
+      ;;
+  esac
+  if [ -L "$INSTALL_DIR" ]; then
+    print_err "Installation directory must not be a symbolic link: $INSTALL_DIR"
+    exit 2
+  fi
+  if [ -e "$INSTALL_DIR" ] && [ ! -d "$INSTALL_DIR" ]; then
+    print_err "Installation directory is not a directory: $INSTALL_DIR"
+    exit 2
+  fi
+}
+
+validate_source_archive() {
+  local archive="$1" listing="$2" normalized_listing types entry root relative top line
+  [ -s "$archive" ] || { print_err "Downloaded source package is empty."; return 1; }
+  if ! LC_ALL=C tar -tzf "$archive" > "$listing" 2>/dev/null; then
+    print_err "Downloaded source package is not a valid gzip-compressed tar archive."
+    return 1
+  fi
+  normalized_listing="${listing}.normalized"
+  sed 's:/$::' "$listing" > "$normalized_listing"
+  if [ "$(sort "$normalized_listing" | uniq -d | head -n 1)" ]; then
+    print_err "Downloaded source package contains duplicate paths."
+    return 1
+  fi
+
+  root=""
+  while IFS= read -r entry || [ -n "$entry" ]; do
+    [ -n "$entry" ] || continue
+    case "$entry" in
+      *$'\r'*|*$'\t'*|/*|\\*|[A-Za-z]:*|../*|*/../*|*/..|..|*//*|./*|*/./*|*/.)
+        print_err "Downloaded source package contains an unsafe path: $entry"
+        return 1
+        ;;
+    esac
+    top="${entry%%/*}"
+    if [ -z "$root" ]; then
+      root="$top"
+    elif [ "$top" != "$root" ]; then
+      print_err "Downloaded source package must contain one source directory."
+      return 1
+    fi
+    if [ "$entry" != "$root" ]; then
+      relative="${entry#"$root"/}"
+      case "$relative" in
+        .env|.env/*|.venv|.venv/*|backups|backups/*|local_sources|local_sources/*|logs|logs/*|storage|storage/*|chat-pwa/certs|chat-pwa/certs/*)
+          print_err "Downloaded source package contains runtime data: $entry"
+          return 1
+          ;;
+      esac
+    fi
+  done < "$normalized_listing"
+
+  case "$root" in TrinaxAI-*) ;; *) print_err "Downloaded source package has an unexpected root directory."; return 1;; esac
+  if ! grep -Fqx "$root/pyproject.toml" "$normalized_listing"; then
+    print_err "Downloaded source package is missing pyproject.toml."
+    return 1
+  fi
+  types="${listing}.types"
+  if ! LC_ALL=C tar -tvzf "$archive" > "$types" 2>/dev/null; then
+    print_err "Downloaded source package metadata could not be inspected."
+    return 1
+  fi
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "${line:0:1}" in
+      d|-) ;;
+      *) print_err "Downloaded source package contains an unsafe link or file type."; return 1;;
+    esac
+  done < "$types"
+  SOURCE_ARCHIVE_ROOT="$root"
+}
+
+extract_source_archive() {
+  local archive="$1" destination="$2" tar_options=()
+  validate_source_archive "$archive" "${archive}.listing"
+  mkdir -p "$destination"
+  if tar --no-same-owner -tzf "$archive" >/dev/null 2>&1; then
+    tar_options+=(--no-same-owner)
+  fi
+  if tar --no-same-permissions -tzf "$archive" >/dev/null 2>&1; then
+    tar_options+=(--no-same-permissions)
+  fi
+  LC_ALL=C tar "${tar_options[@]}" -xzf "$archive" -C "$destination"
+  [ -d "$destination/$SOURCE_ARCHIVE_ROOT" ] || {
+    print_err "Downloaded source package has no usable source directory."
+    return 1
+  }
+}
+
+run_dry_run() {
+  echo ""
+  echo -e "${YELLOW}${BOLD}$(tr_text 'DRY-RUN: nothing will be downloaded, installed, or changed.')${NC}"
+  echo ""
+  print_header "0/6 Repository"
+  print_info "Would use repository directory: ${INSTALL_DIR:-<auto-detected>}"
+  print_ok "Source package download simulated"
+  print_header "1/6 System Dependencies"
+  print_info "Would check/install Python 3.10+, Node.js 22+, npm, curl, unzip, and OpenSSL"
+  print_ok "Python, Node.js, and system dependency checks simulated"
+  print_header "1.5/6 TrinaxAI Profile"
+  print_info "Would detect RAM, select a hardware profile, and write .env"
+  print_ok "Profile and configuration generation simulated"
+  print_header "2/6 Ollama (Local AI Engine)"
+  print_info "Would check Ollama, start it if needed, and verify http://localhost:11434/api/tags"
+  print_info "Would use the official Ollama installer if ollama is unavailable"
+  print_ok "Ollama availability and fallback checks simulated"
+  print_header "3/6 Python Virtual Environment"
+  print_info "Would create/update .venv and install Python dependencies"
+  print_ok "Python environment changes simulated"
+  print_header "4/6 PWA Frontend"
+  print_info "Would run npm ci and npm run build"
+  print_ok "PWA build simulated"
+  print_header "5/6 AI Models"
+  print_info "Would check Ollama and pull configured models"
+  print_ok "Model checks and downloads simulated"
+  print_header "6/6 Auto-Start on Boot"
+  print_info "Would optionally start TrinaxAI and configure auto-start/weekly updates"
+  print_ok "Service and auto-start changes simulated"
+  echo ""
+  echo -e "${BOLD}${CYAN}$(tr_text 'Links to enter')${NC}"
+  echo "  Localhost:       https://localhost:3334"
+  echo "  $(tr_text 'LAN / Red local'): https://[YOUR-LAN-IP]:3334"
+  echo "  $(tr_text 'RAG health'):      https://localhost:3333/health"
+  echo ""
+  print_ok "Dry-run finished; no changes were made"
+  return 0
+}
+
+if [ "$DRY_RUN" = "1" ]; then
+  run_dry_run
+  exit 0
+fi
+
 if [ -z "$INSTALL_DIR" ]; then
   if [ -f "$HOME/trinaxai/rag_api.py" ]; then
     INSTALL_DIR="$HOME/trinaxai"
@@ -390,6 +743,7 @@ if [ -z "$INSTALL_DIR" ]; then
     INSTALL_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/trinaxai"
   fi
 fi
+validate_install_dir
 
 if [ "$OS" = "windows" ] && [ -f "install.ps1" ] && command -v powershell.exe >/dev/null 2>&1; then
   PS_ARGS=("-ExecutionPolicy" "Bypass" "-File" "$(pwd -W 2>/dev/null || pwd)/install.ps1")
@@ -400,26 +754,24 @@ if [ "$OS" = "windows" ] && [ -f "install.ps1" ] && command -v powershell.exe >/
   [ "$ENABLE_AUTOSTART" = "1" ] || PS_ARGS+=("-NoAutostart")
   [ "$ENABLE_AUTO_UPDATE" = "1" ] || PS_ARGS+=("-NoAutoUpdate")
   [ "$START_NOW" = "1" ] || PS_ARGS+=("-NoStart")
-  [ "$ENABLE_LAN_SYSTEM" = "1" ] && PS_ARGS+=("-LanSystem")
   [ -z "$PROFILE_OVERRIDE" ] || PS_ARGS+=("-Profile" "$PROFILE_OVERRIDE")
+  [ -z "$LANGUAGE_EXPLICIT" ] || PS_ARGS+=("-Language" "$LANGUAGE")
   [ -z "$INSTALL_DIR" ] || PS_ARGS+=("-InstallDir" "$INSTALL_DIR")
   exec powershell.exe "${PS_ARGS[@]}"
 fi
 
 echo ""
-echo -e "${BLUE}${BOLD}╔══════════════════════════════════════════╗${NC}"
-echo -e "${BLUE}${BOLD}║        TrinaxAI — Local AI Assistant      ║${NC}"
-echo -e "${BLUE}${BOLD}║    github.com/TrinaxCode/TrinaxAI         ║${NC}"
-echo -e "${BLUE}${BOLD}╚══════════════════════════════════════════╝${NC}"
+echo -e "${BLUE}${BOLD}$(tr_text 'TrinaxAI - Local AI Assistant')${NC}"
+echo -e "${BLUE}${BOLD}github.com/TrinaxCode/TrinaxAI${NC}"
 echo -e "  ${CYAN}OS:${NC} ${GREEN}${OS}${NC}"
-echo -e "  ${CYAN}Privacy:${NC} 100% local — nothing leaves your machine"
+echo -e "  ${CYAN}$(tr_text 'Privacy'):${NC} $(tr_text 'Local-first; web search and downloads use the network')"
 echo ""
 
-# ── Clone repo if running from piped script ──
+# Download the source package when running from a piped script.
 REPO_DIR="$INSTALL_DIR"
 MANAGED_INSTALL=0
 if [ ! -f "rag_api.py" ]; then
-  print_header "0/6 Cloning TrinaxAI repository"
+  print_header "0/6 Downloading TrinaxAI"
   if [ -d "$REPO_DIR" ]; then
     if [ ! -f "$REPO_DIR/rag_api.py" ] || [ ! -f "$REPO_DIR/pyproject.toml" ]; then
       print_err "Install directory exists but is not a TrinaxAI installation: $REPO_DIR"
@@ -430,14 +782,54 @@ if [ ! -f "rag_api.py" ]; then
     cd "$REPO_DIR"
   else
     mkdir -p "$(dirname "$REPO_DIR")"
-    git clone https://github.com/TrinaxCode/TrinaxAI.git "$REPO_DIR" 2>/dev/null || {
-      print_warn "Could not clone repo. Downloading a source archive..."
-      temp_dir="$(mktemp -d "${TMPDIR:-/tmp}/trinaxai.XXXXXX")"
-      curl -fsSL -o "$temp_dir/trinaxai.tar.gz" https://github.com/TrinaxCode/TrinaxAI/archive/refs/heads/main.tar.gz
-      tar -xzf "$temp_dir/trinaxai.tar.gz" -C "$temp_dir"
-      mv "$temp_dir/TrinaxAI-main" "$REPO_DIR"
-      rm -rf "$temp_dir"
-    }
+    temp_dir="$(mktemp -d "${TMPDIR:-/tmp}/trinaxai.XXXXXX")"
+    trap 'rm -rf -- "$temp_dir"' EXIT
+    release_version="${TRINAXAI_RELEASE_VERSION:-1.2.0}"
+    if [[ ! "$release_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+      print_err "TRINAXAI_RELEASE_VERSION must be a semantic version."
+      exit 2
+    fi
+    source_archive_name="TrinaxAI-${release_version}.tar.gz"
+    default_source_archive_url="https://github.com/TrinaxCode/TrinaxAI/releases/download/v${release_version}/${source_archive_name}"
+    source_url_override="${TRINAXAI_SOURCE_URL:-}"
+    source_archive_url="${source_url_override:-$default_source_archive_url}"
+    case "$source_archive_url" in
+      https://*) ;;
+      *) print_err "Source package URL must use HTTPS."; exit 2 ;;
+    esac
+    curl -fsSL --retry 3 --connect-timeout 15 --max-time 300 \
+      -o "$temp_dir/trinaxai.tar.gz" "$source_archive_url"
+    if [ -n "$source_url_override" ]; then
+      source_checksum="$(printf '%s' "${TRINAXAI_SOURCE_SHA256:-}" | tr -d '[:space:]')"
+      if [ -z "$source_checksum" ]; then
+        print_err "TRINAXAI_SOURCE_URL requires TRINAXAI_SOURCE_SHA256."
+        exit 2
+      fi
+    else
+      source_checksum="$(curl -fsSL --retry 3 --connect-timeout 15 --max-time 60 \
+        "https://github.com/TrinaxCode/TrinaxAI/releases/download/v${release_version}/SHA256SUMS" \
+        | awk -v asset="$source_archive_name" '$2 == asset || $2 == "*" asset { print $1; exit }')"
+    fi
+    if [[ ! "$source_checksum" =~ ^[0-9a-fA-F]{64}$ ]]; then
+      print_err "Could not obtain a valid SHA-256 for the source package."
+      exit 2
+    fi
+    if command -v sha256sum >/dev/null 2>&1; then
+      source_archive_digest="$(sha256sum "$temp_dir/trinaxai.tar.gz" | awk '{print $1}')"
+    elif command -v shasum >/dev/null 2>&1; then
+      source_archive_digest="$(shasum -a 256 "$temp_dir/trinaxai.tar.gz" | awk '{print $1}')"
+    else
+      print_err "sha256sum or shasum is required to verify the source package."
+      exit 2
+    fi
+    if [ "${source_archive_digest,,}" != "${source_checksum,,}" ]; then
+      print_err "The source package failed SHA-256 verification."
+      exit 2
+    fi
+    extract_source_archive "$temp_dir/trinaxai.tar.gz" "$temp_dir/extracted"
+    mv "$temp_dir/extracted/$SOURCE_ARCHIVE_ROOT" "$REPO_DIR"
+    rm -rf -- "$temp_dir"
+    trap - EXIT
     MANAGED_INSTALL=1
     cd "$REPO_DIR"
     print_ok "Repository ready at $REPO_DIR"
@@ -461,8 +853,8 @@ if [ "$OS" = "windows" ] && [ -f "install.ps1" ] && command -v powershell.exe >/
   [ "$ENABLE_AUTOSTART" = "1" ] || PS_ARGS+=("-NoAutostart")
   [ "$ENABLE_AUTO_UPDATE" = "1" ] || PS_ARGS+=("-NoAutoUpdate")
   [ "$START_NOW" = "1" ] || PS_ARGS+=("-NoStart")
-  [ "$ENABLE_LAN_SYSTEM" = "1" ] && PS_ARGS+=("-LanSystem")
   [ -z "$PROFILE_OVERRIDE" ] || PS_ARGS+=("-Profile" "$PROFILE_OVERRIDE")
+  [ -z "$LANGUAGE_EXPLICIT" ] || PS_ARGS+=("-Language" "$LANGUAGE")
   [ -z "$INSTALL_DIR" ] || PS_ARGS+=("-InstallDir" "$INSTALL_DIR")
   exec powershell.exe "${PS_ARGS[@]}"
 fi
@@ -482,12 +874,11 @@ elif [ "$OS" = "macos" ]; then
       eval "$(/usr/local/bin/brew shellenv)"
     fi
   fi
-  brew install python@3.11 node curl git openssl 2>/dev/null || true
+  brew install python@3.11 node curl openssl 2>/dev/null || true
   print_ok "macOS dependencies ready"
 elif [ "$OS" = "windows" ]; then
   print_warn "Windows detected. Please ensure you have:"
   print_info "  • Python 3.10+ from https://python.org"
-  print_info "  • Git from https://git-scm.com"
   print_info "  • WSL2 recommended for full functionality"
 fi
 
@@ -516,30 +907,28 @@ print_ok "Runtime versions ready: $($PYTHON_BIN --version 2>&1), Node $(node --v
 print_header "1.5/6 TrinaxAI Profile"
 AUTO_PROFILE="$(recommended_profile)"
 RAM_GB="$(detect_ram_gb)"
-echo -e "  ${CYAN}Detected RAM:${NC} ${RAM_GB:-unknown} GB"
-echo -e "  ${CYAN}Recommended profile:${NC} ${GREEN}${AUTO_PROFILE}${NC}"
+  echo -e "  ${CYAN}$(tr_text 'Detected RAM'):${NC} ${RAM_GB:-unknown} GB"
+  echo -e "  ${CYAN}$(tr_text 'Recommended profile'):${NC} ${GREEN}${AUTO_PROFILE}${NC}"
 echo ""
 if [ -n "$PROFILE_OVERRIDE" ]; then
   case "$PROFILE_OVERRIDE" in
-    8gb|16gb|max|ultra) PROFILE="$PROFILE_OVERRIDE";;
-    low|lite) PROFILE="8gb";;
-    medium|normal) PROFILE="16gb";;
-    high) PROFILE="max";;
+    8gb|16gb|32gb|64gb) PROFILE="$PROFILE_OVERRIDE";;
     *) print_warn "Unknown TRINAXAI_PROFILE=$PROFILE_OVERRIDE; using $AUTO_PROFILE"; PROFILE="$AUTO_PROFILE";;
   esac
 elif [ "$INTERACTIVE" = "1" ]; then
   reply=$(ask "Setup mode: Normal recommended or Advanced manual? [N/a]")
   if [[ "$reply" =~ ^[Aa] ]]; then
-    echo "  1) medium  Balanced default (about 16GB RAM)"
-    echo "  2) high    Stronger CPU / more RAM"
-    echo "  3) ultra   64GB+ RAM + powerful GPU, bigger context"
-    echo "  4) low     Low memory (about 8GB RAM)"
+    echo "$(tr_text '  1) 8gb     About 8GB RAM')"
+    echo "$(tr_text '  2) 16gb    About 16GB RAM')"
+    echo "$(tr_text '  3) 32gb    About 32GB RAM or capable GPU')"
+    echo "$(tr_text '  4) 64gb    64GB+ RAM or powerful GPU')"
     reply=$(ask "Choose profile [default: $AUTO_PROFILE]")
     case "$reply" in
-      1|medium|16gb|"") PROFILE="$AUTO_PROFILE";;
-      2|high|max) PROFILE="max";;
-      3|ultra) PROFILE="ultra";;
-      4|low|8gb) PROFILE="8gb";;
+      1|8gb) PROFILE="8gb";;
+      2|16gb) PROFILE="16gb";;
+      3|32gb) PROFILE="32gb";;
+      4|64gb) PROFILE="64gb";;
+      "") PROFILE="$AUTO_PROFILE";;
       *) PROFILE="$AUTO_PROFILE";;
     esac
   else
@@ -571,35 +960,35 @@ if [ "$PROFILE" = "8gb" ]; then
   EMBED_BATCH="1"
   EMBED_KEEP_ALIVE="0s"
   VISION_MODEL="qwen3.5:2b"
-elif [ "$PROFILE" = "max" ]; then
+elif [ "$PROFILE" = "32gb" ]; then
   MODEL_GENERAL="qwen3.5:9b"
   MODEL_CODE="qwen3.5:9b"
   MODEL_DEEP="qwen3.5:9b"
-  MODEL_FAST="qwen3.5:2b"
+  MODEL_FAST="qwen3.5:4b"
   VISION_MODEL="qwen3.5:9b"
   EMBED_PRESET="quality"
   EMBED_MODEL="qwen3-embedding:4b"
   EMBED_DIMS="2560"
   EMBED_KEEP_ALIVE="30m"
-elif [ "$PROFILE" = "ultra" ]; then
+elif [ "$PROFILE" = "64gb" ]; then
   MODEL_GENERAL="qwen3.5:35b"
   MODEL_CODE="qwen3-coder:30b"
   MODEL_DEEP="qwen3.5:35b"
   MODEL_FAST="qwen3.5:4b"
   VISION_MODEL="qwen3.5:35b"
-  EMBED_PRESET="max"
-  EMBED_MODEL="qwen3-embedding:8b"
-  EMBED_DIMS="4096"
+  EMBED_PRESET="quality"
+  EMBED_MODEL="qwen3-embedding:4b"
+  EMBED_DIMS="2560"
   EMBED_BATCH="16"
   EMBED_KEEP_ALIVE="30m"
 fi
 
 echo ""
-echo -e "${CYAN}Model roles TrinaxAI needs:${NC}"
-echo "  General chat: conversation and everyday questions"
-echo "  Code/deep:    code, reasoning, refactors, project analysis"
-echo "  Embeddings:   RAG indexing and semantic search"
-echo "  Vision:       image and screenshot analysis"
+echo -e "${CYAN}$(tr_text 'Model roles TrinaxAI needs:')${NC}"
+echo "$(tr_text '  General chat: conversation and everyday questions')"
+echo "$(tr_text '  Code/deep:    code, reasoning, refactors, project analysis')"
+echo "$(tr_text '  Embeddings:   RAG indexing and semantic search')"
+echo "$(tr_text '  Vision:       image and screenshot analysis')"
 reply="r"
 if [ "$INTERACTIVE" = "1" ]; then
   reply=$(ask "Use recommended Ollama models, or configure your own? [R/o]")
@@ -613,40 +1002,29 @@ if [[ "$reply" =~ ^[Oo]$ ]]; then
   VISION_MODEL="$(ask_default "Vision/image model" "$VISION_MODEL")"
 fi
 
-# ── LAN System Control ──
-if [ "$ENABLE_LAN_SYSTEM" != "1" ]; then
-  echo ""
-  echo -e "${YELLOW}Security option: LAN system control${NC}"
-  echo "This allows devices on your local network to call sensitive system endpoints"
-  echo "(shutdown, startup, reload, indexing, file watchers, collection management)."
-  echo "Only enable this if you trust your local network and use a strong admin token."
-  if [ "$INTERACTIVE" != "1" ]; then
-    echo -e "  ${CYAN}Default: disabled.${NC} Use --lan-system to enable non-interactively."
-  fi
-  if ask_yes_no "Enable LAN system control?" n; then
-    ENABLE_LAN_SYSTEM=1
-  else
-    ENABLE_LAN_SYSTEM=0
-  fi
+if [ "$LEGACY_LAN_SYSTEM_REQUEST" = "1" ]; then
+  print_warn "Deprecated LAN system option ignored; host administration stays localhost-only."
 fi
-
-if [ "$ENABLE_LAN_SYSTEM" = "1" ] && [ -z "$ADMIN_TOKEN" ]; then
-  ADMIN_TOKEN="$(openssl rand -hex 32 2>/dev/null || "$PYTHON_BIN" -c 'import secrets; print(secrets.token_hex(32))' 2>/dev/null || true)"
-  if [ -z "$ADMIN_TOKEN" ]; then
-    print_err "Could not generate admin token. Install openssl or Python 3.6+."
-    exit 1
-  fi
-  print_ok "Admin token generated and saved to .env"
-fi
+ENABLE_LAN_SYSTEM=0
 
 LAN_IP="$(lan_ip)"
 LAN_HOSTNAME="$(hostname 2>/dev/null || echo trinaxai)"
-cat > .env <<EOF
+if [ -L .env ]; then
+  print_err "Refusing to write .env through a symbolic link."
+  exit 1
+fi
+if [ -f .env ]; then
+  print_ok ".env already exists; preserving the existing configuration"
+else
+  umask 077
+  env_tmp="$(mktemp "$SCRIPT_DIR/.env.tmp.XXXXXX")"
+  cat > "$env_tmp" <<EOF
 # TrinaxAI — Generated configuration ($(date +%Y-%m-%d))
 # See .env.example for all available options.
 
 # Profile (auto-detected: $AUTO_PROFILE, RAM: ${RAM_GB:-unknown} GB)
 TRINAXAI_HOME="$SCRIPT_DIR"
+TRINAXAI_LANG=$LANGUAGE
 TRINAXAI_PROFILE=$PROFILE
 TRINAXAI_PERFORMANCE_MODE=fast
 
@@ -687,21 +1065,24 @@ TRINAXAI_ALLOW_LAN_SYSTEM=$ENABLE_LAN_SYSTEM
 TRINAXAI_ADMIN_TOKEN=$ADMIN_TOKEN
 
 # Indexing
-TRINAXAI_INDEX_DIR=~/Documents
+TRINAXAI_INDEX_DIR="$SCRIPT_DIR/local_sources"
 EOF
-chmod 600 .env 2>/dev/null || true
-if [ "$PROFILE" = "ultra" ]; then
-  cat >> .env <<'EOF'
+  if [ "$PROFILE" = "64gb" ]; then
+    cat >> "$env_tmp" <<'EOF'
 TRINAXAI_NUM_CTX=16384
 TRINAXAI_EMBED_WORKERS=6
 EOF
-elif [ "$PROFILE" = "max" ]; then
-  cat >> .env <<'EOF'
+  elif [ "$PROFILE" = "32gb" ]; then
+    cat >> "$env_tmp" <<'EOF'
 TRINAXAI_NUM_CTX=8192
 TRINAXAI_EMBED_WORKERS=4
 EOF
+  fi
+  chmod 600 "$env_tmp"
+  mv -f -- "$env_tmp" .env
+  env_tmp=""
+  print_ok ".env written with profile=$PROFILE"
 fi
-print_ok ".env written with profile=$PROFILE"
 
 ensure_https_certificate
 
@@ -749,17 +1130,22 @@ fi
 python -m pip install --upgrade pip
 
 if [ -f "requirements.lock" ]; then
-  python -m pip install -r requirements.lock
+  python -m pip install --require-hashes -r requirements.lock
   print_ok "Locked Python packages installed"
 elif [ -f "requirements.txt" ]; then
   python -m pip install -r requirements.txt
   print_ok "Python packages installed"
 else
-  print_warn "requirements.txt not found — skipping"
+  print_warn "requirements.txt not found - skipping"
 fi
 
 python -m pip install -e .
 print_ok "TrinaxAI CLI installed in editable mode"
+
+if [ -f "$SCRIPT_DIR/scripts/generate_continue_config.py" ]; then
+  python "$SCRIPT_DIR/scripts/generate_continue_config.py" --root "$SCRIPT_DIR" --install-user-config
+  print_ok "Continue configuration generated for profile=$PROFILE"
+fi
 
 if [ "$OS" = "linux" ] || [ "$OS" = "macos" ]; then
   mkdir -p "$HOME/.local/bin"
@@ -779,8 +1165,8 @@ print_header "4/6 PWA Frontend"
 if [ -d "chat-pwa" ]; then
   cd chat-pwa
   if command -v node &>/dev/null; then
-    npm install --silent 2>/dev/null || npm install
-    npm run build >/dev/null 2>&1 || print_warn "PWA build failed — you can retry with: cd chat-pwa && npm run build"
+    npm ci --silent 2>/dev/null || npm ci
+    npm run build >/dev/null 2>&1 || print_warn "PWA build failed - you can retry with: cd chat-pwa && npm run build"
     print_ok "PWA dependencies installed"
   else
     print_warn "Node.js not found. Install from https://nodejs.org"
@@ -802,7 +1188,7 @@ fi
 DEFAULT_MODELS=()
 for model in "$MODEL_CODE" "$MODEL_DEEP" "$MODEL_GENERAL" "$MODEL_FAST" "$EMBED_MODEL"; do
   [ -n "$model" ] || continue
-  case " ${DEFAULT_MODELS[*]} " in
+  case " ${DEFAULT_MODELS[*]-} " in
     *" $model "*) ;;
     *) DEFAULT_MODELS+=("$model");;
   esac
@@ -847,8 +1233,14 @@ print_header "6/6 Auto-Start on Boot"
 if [ "$START_NOW" = "1" ]; then
   if ask_yes_no "Start TrinaxAI now after install?" y; then
     print_info "Starting TrinaxAI services..."
-    python service_manager.py start --base-dir "$SCRIPT_DIR" && print_ok "TrinaxAI started" || \
-      print_warn "Could not start automatically. Run: ./startup_ai.sh"
+    python service_manager.py start --base-dir "$SCRIPT_DIR" || \
+      print_info "Supervisor returned a non-zero status; checking the RAG API directly."
+    sleep 2
+    if curl -kfsS "https://127.0.0.1:3333/health" >/dev/null 2>&1 || curl -fsS "http://127.0.0.1:3333/health" >/dev/null 2>&1; then
+      print_ok "TrinaxAI and the RAG API are ready"
+    else
+      print_warn "TrinaxAI did not answer on the health endpoint yet. Run: ./startup_ai.sh"
+    fi
   else
     START_NOW=0
     print_info "Start skipped. Run ./startup_ai.sh or trinaxai start when ready."
@@ -867,7 +1259,7 @@ if [ "$ENABLE_AUTOSTART" = "1" ]; then
 fi
 
 if [ "$ENABLE_AUTO_UPDATE" = "1" ] && [ -f "$SCRIPT_DIR/scripts/auto_update.py" ]; then
-  print_info "Enabling safe weekly updates from GitHub…"
+  print_info "Enabling safe weekly updates from GitHub..."
   python scripts/auto_update.py enable --base-dir "$SCRIPT_DIR" && \
     print_ok "Automatic updates enabled (weekly)" || \
     print_warn "Could not enable the weekly task. Run: python scripts/auto_update.py enable"
@@ -883,34 +1275,30 @@ fi
 
 # ── Done ──
 echo ""
-echo -e "${GREEN}${BOLD}╔══════════════════════════════════════════╗${NC}"
-echo -e "${GREEN}${BOLD}║      TrinaxAI is ready!                  ║${NC}"
-echo -e "${GREEN}${BOLD}╚══════════════════════════════════════════╝${NC}"
+echo -e "${GREEN}${BOLD}$(tr_text 'TrinaxAI is ready!')${NC}"
 echo ""
-echo -e "  ${BLUE}PWA Frontend:${NC}  https://localhost:3334"
-echo -e "  ${BLUE}RAG API:${NC}      https://localhost:3333/health"
-echo -e "  ${BLUE}Ollama API:${NC}    http://localhost:11434"
-echo ""
-echo -e "  ${BLUE}Quick start:${NC}   ./startup_ai.sh"
-echo -e "  ${BLUE}CLI:${NC}           trinaxai"
-echo -e "  ${BLUE}New terminal:${NC}  Open one if your current shell cannot find the new CLI yet"
-echo -e "  ${BLUE}Shutdown:${NC}     ./shutdown_ai.sh"
-echo -e "  ${BLUE}System test:${NC}   python test_system.py --verbose"
-echo -e "  ${BLUE}Updates:${NC}       Automatic check every week"
-echo -e "  ${BLUE}Docs:${NC}         https://github.com/TrinaxCode/TrinaxAI"
-echo ""
-echo -e "  ${YELLOW}From your phone:${NC} https://[YOUR-LAN-IP]:3334"
-echo -e "  (Same WiFi network required. Check firewall: ports 3333, 3334)"
-echo ""
-if [ "$ENABLE_LAN_SYSTEM" = "1" ]; then
-  echo -e "  ${YELLOW}LAN system control:${NC} enabled"
-  echo -e "  ${YELLOW}Admin token:${NC} saved in .env (TRINAXAI_ADMIN_TOKEN)"
-  echo ""
+echo -e "${BOLD}${CYAN}$(tr_text 'Links to enter')${NC}"
+echo -e "  ${BLUE}$(tr_text 'Localhost'):${NC}     https://localhost:3334"
+if [ -n "${LAN_IP:-}" ]; then
+  echo -e "  ${BLUE}$(tr_text 'LAN / Red local'):${NC} https://${LAN_IP}:3334"
 else
-  echo -e "  ${YELLOW}LAN system control:${NC} disabled by default"
-  echo -e "  To enable later: set TRINAXAI_ALLOW_LAN_SYSTEM=1 and TRINAXAI_ADMIN_TOKEN in .env"
-  echo ""
+  echo -e "  ${BLUE}$(tr_text 'LAN / Red local'):${NC} https://[YOUR-LAN-IP]:3334"
 fi
-echo -e "  ${YELLOW}⭐ Star the repo:${NC} github.com/TrinaxCode/TrinaxAI"
-echo -e "  ${GREEN}100% open source — AGPL-3.0-or-later${NC}"
+echo -e "  ${BLUE}$(tr_text 'RAG health'):${NC}    https://localhost:3333/health"
+echo -e "  ${BLUE}$(tr_text 'Ollama API'):${NC}    http://localhost:11434"
+echo ""
+echo -e "  ${BLUE}$(tr_text 'Quick start'):${NC}   ./startup_ai.sh"
+echo -e "  ${BLUE}$(tr_text 'CLI'):${NC}           trinaxai"
+echo -e "  ${BLUE}$(tr_text 'New terminal'):${NC}  $(tr_text 'Open one if your current shell cannot find the new CLI yet')"
+echo -e "  ${BLUE}$(tr_text 'Shutdown'):${NC}     ./shutdown_ai.sh"
+echo -e "  ${BLUE}$(tr_text 'System test'):${NC}   python test_system.py --verbose"
+echo -e "  ${BLUE}$(tr_text 'Updates'):${NC}       $(tr_text 'Automatic check every week')"
+echo -e "  ${BLUE}$(tr_text 'Docs'):${NC}         https://github.com/TrinaxCode/TrinaxAI"
+echo ""
+echo -e "  ($(tr_text 'Same WiFi network required. Check firewall: ports 3333, 3334'))"
+echo ""
+echo -e "  ${YELLOW}$(tr_text 'LAN system control remains localhost-only')${NC}"
+echo ""
+echo -e "  ${YELLOW}$(tr_text 'Star the repo'):${NC} github.com/TrinaxCode/TrinaxAI"
+echo -e "  ${GREEN}$(tr_text '100% open source - AGPL-3.0-or-later')${NC}"
 echo ""

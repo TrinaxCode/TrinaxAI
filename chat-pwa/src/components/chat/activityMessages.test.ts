@@ -12,4 +12,9 @@ describe('activity messages', () => {
   it('does not immediately repeat the previous activity message', () => {
     expect(pickActivityMessage('web', t, 'webSearching', () => 0)).toBe('activityWebSources');
   });
+
+  it('uses work messages without exposing the thinking label', () => {
+    expect(pickActivityMessage('working', t, '', () => 0)).toBe('activityThinkingPrepare');
+    expect(pickActivityMessage('working', t, '', () => 0.99)).toBe('activityThinkingShape');
+  });
 });

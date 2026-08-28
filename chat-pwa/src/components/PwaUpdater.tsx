@@ -21,15 +21,15 @@ export default function PwaUpdater({ needsUpdate, onRefresh }: PwaUpdaterProps) 
     <AnimatePresence>
       {needsUpdate && !dismissed && (
         <div
-          className="pointer-events-none fixed inset-x-0 bottom-0 z-[101] flex justify-center px-3"
+          className="pointer-events-none fixed inset-x-0 top-0 z-[101] flex justify-center px-3"
           style={{
-            marginBottom: 'calc(env(safe-area-inset-bottom, 12px) + 12px)',
+            marginTop: 'calc(env(safe-area-inset-top, 12px) + 12px)',
           }}
         >
           <motion.div
-            initial={{ opacity: 0, y: 16, scale: 0.96 }}
+            initial={{ opacity: 0, y: -16, scale: 0.96 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 8, scale: 0.96 }}
+            exit={{ opacity: 0, y: -8, scale: 0.96 }}
             role="status"
             aria-live="polite"
             className="pointer-events-auto flex w-fit max-w-full items-center gap-2 overflow-hidden rounded-lg border px-2.5 py-2 text-center text-[11px] font-medium shadow-lg"

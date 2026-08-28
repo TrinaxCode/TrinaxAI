@@ -63,6 +63,7 @@ class EngineState:
     index_active_job_id: str | None = None
     index_dispatch_waiting: bool = False
     index_active_run_token: str | None = None
+    lifecycle_stopping: threading.Event = field(default_factory=threading.Event)
     app_state_lock: threading.Lock = field(default_factory=threading.Lock)
     collections_lock: threading.Lock = field(default_factory=threading.Lock)
     memory_lock: threading.Lock = field(default_factory=threading.Lock)

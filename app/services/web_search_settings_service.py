@@ -81,7 +81,7 @@ def _validate_searxng_url(value: str) -> str:
     if not normalized:
         return ""
     try:
-        web_search_service._validated_target(normalized)
+        web_search_service._validated_provider_url(normalized)
     except web_search_service.PageFetchError as exc:
         raise HTTPException(status_code=422, detail={"code": "invalid_searxng_url", "message": str(exc)}) from exc
     return normalized

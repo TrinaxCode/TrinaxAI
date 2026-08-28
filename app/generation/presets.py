@@ -12,6 +12,8 @@ prompt can never silently truncate the answer without us knowing.
 
 from __future__ import annotations
 
+import re
+
 import config
 from app.generation.classifier import classify, strip_attachment_context
 from app.generation.scoring import complexity_score
@@ -47,7 +49,7 @@ _REGIME_BASE: dict[Regime, dict] = {
         use_rag=False,
     ),
     Regime.REASONING: dict(
-        # Maths / science / proofs / algorithm analysis. Low-but-not-greedy
+        # Maths / science / proofs / algorithm analysis. Minimal-but-not-greedy
         # temperature for step-by-step rigor, a generous output budget (exams
         # and multi-part problem sets are long), and — via _select_model — the
         # instruct model the CLI uses, never the small coder.
@@ -86,6 +88,30 @@ _MODE_PREDICT_SCALE = {
 
 # A hard floor so even trivial answers are not clipped.
 _MIN_PREDICT = 512
+_REASONING_ACTION_RE = re.compile(
+    r"\b(?:demuestra|demostrar|demostracion|demostración|prueba|probar|prove|proof|"
+    r"resuelve|resolver|calcula|calcular|deriva|derivar|analiza|analizar|"
+    r"determina|determinar|compara|compare|paso a paso|step by step|"
+    r"a fondo|exhaustivo|thorough)\b",
+    re.IGNORECASE,
+)
+_EXPLANATION_ONLY_RE = re.compile(
+    r"^\s*[¿?]?\s*(?:qué es|que es|qué son|que son|cómo funciona|como funciona|"
+    r"what is|what are|how does|how do)\b",
+    re.IGNORECASE,
+)
+
+
+def _should_think(regime: Regime, mode: str, score: int, instruction: str) -> bool:
+    """Enable provider reasoning only when the task can benefit from it."""
+    if regime is Regime.REASONING:
+        # A domain word alone (for example, "what is an integral?") is an
+        # explanation request, not a reasoning task. Formal actions or an
+        # already substantial prompt justify the provider's thinking channel.
+        return not _EXPLANATION_ONLY_RE.search(instruction) and (
+            bool(_REASONING_ACTION_RE.search(instruction)) or score >= 20
+        )
+    return score >= 56 and mode in {"complex", "deep"}
 
 
 def _select_model(regime: Regime, mode: str, is_code: bool, short: bool) -> str:
@@ -182,7 +208,8 @@ def build_task_spec(
         # get the larger window; everything overridable.
         gen_ctx = 8192 if (mode in ("complex", "deep") or regime is Regime.REASONING) else max(base_ctx, 6144)
         base_ctx = max(base_ctx, gen_ctx)
-    num_ctx = _env_int("TRINAXAI_GEN_NUM_CTX", base_ctx)
+    _CTX_HARD_MAX = config.GEN_NUM_CTX_MAX
+    num_ctx = min(_env_int("TRINAXAI_GEN_NUM_CTX", base_ctx), _CTX_HARD_MAX)
 
     # Output budget: base × mode scale, floored, then reservation-capped.
     predict_scale = _MODE_PREDICT_SCALE.get(mode, 1.0)
@@ -196,7 +223,6 @@ def build_task_spec(
     # large we first try to SHRINK the output down to its floor; if even that
     # does not fit, we GROW the window (capped) rather than silently overflow.
     _MARGIN = 256
-    _CTX_HARD_MAX = _env_int("TRINAXAI_GEN_NUM_CTX_MAX", 16384)
     if estimated_prompt_tokens > 0:
         room = num_ctx - estimated_prompt_tokens - _MARGIN
         if room < desired:
@@ -210,8 +236,14 @@ def build_task_spec(
             room = num_ctx - estimated_prompt_tokens - _MARGIN
             desired = max(_MIN_PREDICT, min(desired, room))
     num_predict = _env_int("TRINAXAI_GEN_NUM_PREDICT", desired)
+    if estimated_prompt_tokens + num_predict + _MARGIN > _CTX_HARD_MAX:
+        raise ValueError(
+            "Generation context is too small for this request; reduce the prompt/history "
+            "or increase TRINAXAI_GEN_NUM_CTX_MAX/reduce TRINAXAI_GEN_NUM_PREDICT."
+        )
 
     temperature = _env_float("TRINAXAI_GEN_TEMPERATURE_" + regime.name, base["temperature"])
+    thinking = _should_think(regime, mode, score.total, instruction)
 
     # Validation / fix policy (Phase 6/7): only for code-bearing complex work.
     do_validate = regime in (Regime.CODE_GEN, Regime.CREATIVE) and score.total >= 56
@@ -239,6 +271,7 @@ def build_task_spec(
         top_k=base["top_k"],
         repeat_penalty=base["repeat_penalty"],
         stop=None,
+        thinking=thinking,
         retrieval_mode=retrieval_mode,
         use_rag=use_rag,
         validate=do_validate,

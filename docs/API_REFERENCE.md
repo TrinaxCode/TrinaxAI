@@ -1,13 +1,22 @@
 # TrinaxAI API Reference
 
+[Versión en español](API_REFERENCE.es.md)
+
 The FastAPI service connects the PWA and CLI to RAG, memory, voice, and local administration. Its default managed URL is `https://localhost:3333`. Live schema endpoints are `/docs`, `/redoc`, and `/openapi.json`.
+
+Managed installations prefer HTTPS. Use the public CA printed by `trinaxai
+network` with API clients; direct HTTP is only a loopback development fallback.
+LAN clients must enter through the PWA gateway on port `3334`, trust the public
+CA on their device, and must not connect directly to port `3333` or Ollama
+`11434`. For a symptom-first recovery path, see [Troubleshooting](TROUBLESHOOTING.md).
 
 ## Authorization
 
-Protected endpoints allow a direct loopback request, a scoped paired-device
-credential (`X-TrinaxAI-Device-Token`), or the administrator super-credential
-(`X-Admin-Token`). The private-LAN fallback is limited to legacy system control
-when no admin token is configured and LAN control was explicitly enabled. The local PWA gateway strips
+Protected low-risk endpoints allow a direct loopback request, a scoped
+paired-device credential (`X-TrinaxAI-Device-Token`), or the administrator
+credential (`X-Admin-Token`). Host-only scopes (`system`, `index`, `agent`, and
+`agent_yolo`) first require verified original loopback provenance; no credential
+and no legacy LAN setting can override that requirement. The local PWA gateway strips
 client identity headers and signs the original peer, method and path with a
 fresh, single-use HMAC assertion. FastAPI accepts that assertion only from
 loopback or an explicitly configured private runtime peer that also proves the
@@ -22,32 +31,36 @@ curl -k -H "X-Admin-Token: $TOKEN" https://localhost:3333/v1/memory
 curl -k -H "X-TrinaxAI-Device-Token: $DEVICE_TOKEN" https://localhost:3333/v1/memory
 ```
 
-Device scopes are `chat`, `read_private`, `index`, `system`, `agent`, `web`, and
-`agent_yolo`. Admin tokens grant every scope. An invalid supplied credential is
-never bypassed merely because its transport peer is loopback. Default pairing
-grants only `chat` and `read_private`; grant elevated scopes only when needed.
+Device scopes are `chat`, `read_private`, and `web`; default pairing grants
+`chat` and `read_private`. Requests for retired scopes (`index`, `system`,
+`agent`, and `agent_yolo`) are rejected, and those scopes are ignored on old
+tokens. An admin token can authenticate protected reads but cannot turn a LAN
+peer into localhost. An invalid supplied credential is never bypassed merely
+because its transport peer is loopback.
 
 ## Endpoint map
 
 | Method and path | Access | Purpose |
 |---|---|---|
 | `POST /v1/chat/completions`, `/v1/research` | `chat` + rate limited | JSON/SSE chat and research. |
-| `POST /v1/agent`, `/v1/agent/approve`, `/v1/agent/cancel`, `GET /v1/agent/browse` | `agent` | Workspace agent stream, approval/cancellation, and registered-root browsing. |
+| `POST /v1/agent`, `/v1/agent/approve`, `/v1/agent/cancel`, `GET /v1/agent/browse` | Loopback only | Workspace agent stream, approval/cancellation, and registered-root browsing. |
 | `GET/POST /v1/voice/*` | `chat` + rate limited | Speech recognition and synthesis. |
 | `POST /documents/extract` | LAN/VPN or `chat` + rate limited | Stateless temporary document extraction. |
-| `GET /v1/sources/*`, `/v1/memory/*`, `GET /v1/stats` | `read_private` | Private indexed and user data. |
-| `DELETE /v1/sources/*`, `/v1/watch/*`, collection mutations | `index` | Index content and watcher administration. |
+| `GET /v1/sources/*`, `GET /v1/memory/*`, `POST /v1/memory/context`, `GET /v1/stats` | `read_private` | Private indexed and user data. |
+| `DELETE /v1/sources/*`, memory writes, `/v1/watch/*`, collection mutations | Loopback only | Host data and watcher administration. |
 | `POST /v1/usage` | `chat` | Local usage accounting. |
 | `GET /health`, `GET /ready`, `GET /resources` | Public | Liveness, model-provider readiness, and RAM data. |
-| `GET/PUT/DELETE /app-state` | `read_private` | Versioned shared PWA state and factory reset. |
-| `POST /attachments`, `GET/DELETE /attachments/{attachment_id}` | `read_private` + rate limited | Store, retrieve, or delete host-backed chat attachments. |
-| `GET /collections` / mutations | `read_private` / `index` | Collection metadata and administration. |
-| `/system/index*` / other `/system/*` | `index` / `system` | Indexing versus lifecycle/reload/self-test. |
+| `GET/PUT/DELETE /v1/settings/web-search*` | Loopback only | Host-local web-search provider settings and credential reset. |
+| `GET/PUT /app-state` / `DELETE /app-state` | `read_private` / loopback (`system`) | Versioned shared PWA state / factory reset. |
+| `POST /attachments`, `GET /attachments/{id}` / `DELETE /attachments/{id}`, `POST /attachments/{id}/open` | `read_private` / loopback (`system`) | Store/retrieve versus delete/open host-backed chat attachments. |
+| `GET /collections` / mutations | `read_private` / loopback only | Collection metadata and administration. |
+| `/system/index*` / other `/system/*` | Loopback only | Indexing versus lifecycle/reload/self-test. |
 | `/v1/pairing/*` | Mixed | One-time device pairing and revocation. |
 
 ## Error contract
 
-Every API error returns a safe `error` object (and the same fields in `detail`):
+Every API error returns a safe `error` object (and the same canonical fields in
+`detail`):
 `category`, internal `code`, user-facing `message`, `recovery`, and `retryable`.
 Categories are `internet_unavailable`, `external_service_unavailable`,
 `ai_model_unavailable`, `model_loading_failed`, `tool_timeout`,
@@ -58,9 +71,14 @@ Categories are `internet_unavailable`, `external_service_unavailable`,
 details stay in server-side developer logs; `request_id` is returned for support.
 Safe idempotent browser/CLI reads retry once when `retryable` is true.
 
+Older RAG responses may identify an empty or missing collection with the legacy
+codes `collection_empty` or `collection_not_found`. The PWA maps both to its
+**Open indexing** action. API clients should use `category`, `code`,
+`recovery`, and `retryable` rather than matching localized message text.
+
 ## Device pairing
 
-Create codes only from a real loopback peer or with the admin token:
+Create codes only from a real loopback peer. Admin credentials from LAN do not qualify:
 
 ```http
 POST /v1/pairing/start
@@ -70,18 +88,23 @@ POST /v1/pairing/start
 The clear code is returned once. A LAN/VPN client claims it with
 `POST /v1/pairing/claim {"code":"ABCD-EFGH","device_name":"Phone"}`.
 Claim attempts are limited to five per client per five minutes. The returned
-device token is also shown once; only keyed hashes are persisted. Codes expire
-after 60–900 seconds and are single-use.
+response sets an `HttpOnly; SameSite=Strict` cookie scoped to `/api/rag` and
+contains device metadata but no bearer. Only keyed hashes are persisted. Codes
+expire after 60–900 seconds and are single-use.
 
-The PWA stores the bearer in `localStorage` so the paired identity survives
-browser/PWA restarts; revocation clears it when the client next checks in. The
-registry and hashing secret are separate atomic mode-0600 files. Pairing
-authenticates a device/capability; it is not a multi-user account or
-authorization delegation system.
+The PWA sends that cookie automatically and does not persist newly claimed
+device tokens in `localStorage` or `sessionStorage`. For compatibility, an
+older stored bearer is sent only as the `X-TrinaxAI-Device-Token` header to the
+explicit `GET /v1/pairing/me` migration; after a successful response the PWA
+removes the legacy value. The CLI continues to use that header (for example via
+`TRINAXAI_DEVICE_TOKEN`). The registry and hashing secret are separate atomic
+mode-0600 files. Pairing authenticates a device/capability; it is not a
+multi-user account or authorization delegation system.
 
-`GET /v1/pairing/me` and `DELETE /v1/pairing/me` use the device-token header.
-`GET /v1/pairing/devices` and `DELETE /v1/pairing/devices/{id}` are loopback/admin
-operations. Revocation takes effect for FastAPI and the Ollama gateway.
+`GET /v1/pairing/me` and `DELETE /v1/pairing/me` accept the cookie; the legacy
+header remains supported for CLI clients and migration. `GET /v1/pairing/devices`
+and `DELETE /v1/pairing/devices/{id}` are loopback-only operations. Revocation
+takes effect for FastAPI and the Ollama gateway.
 
 ## RAG chat
 
@@ -97,6 +120,7 @@ Content-Type: application/json
   "stream": true,
   "collections": ["default"],
   "mode": "knowledge",
+  "think": true,
   "keep_alive": "10m",
   "aggressive_quant": false
 }
@@ -108,12 +132,22 @@ user message, limits each message to 100,000 characters and the conversation to
 are accepted. `mode` is one of:
 
 - `auto`: classify whether indexed evidence is needed;
-- `knowledge`: always retrieve, or return the explicit no-index response;
+- `knowledge`: always retrieve and answer only from retrieved evidence, or return
+  an explicit no-index/no-relevant-evidence response;
 - `model`: do not retrieve, even when the wording resembles a document query.
 
+In automatic conversational routing, the client selects the capability before calling its endpoint: a direct public lookup such as `Search who TrinaxCode is` uses web search; a question about the user's own projects such as `What Python programs have I made?` uses `knowledge`; and complex multi-source research uses `/v1/research`. Agent execution is never inferred from wording: enter Agent mode explicitly before calling `/v1/agent`. `route_model()` only selects the model and does not select web, RAG, research, or Agent.
+
+`think` is an explicit client preference. `false` disables provider reasoning;
+`true` permits it only for analytical or complex tasks; omitted uses
+`TRINAXAI_THINKING_MODE`. Simple turns never need the reasoning channel.
+
 With `stream=false`, the result is an OpenAI-shaped `chat.completion` plus
-`trinaxai` metadata (`mode`, `rag_used`, collections, result count, request ID
-and sources) and an explicitly estimated `usage`. With `stream=true`, SSE emits
+`trinaxai` metadata (`mode`, `rag_used`, `abstained`, collections, result count,
+request ID and sources) and an explicitly estimated `usage`. `abstained` is
+`true` for deterministic no-index, empty-collection, or no-relevant-evidence
+responses, and for a clear model refusal to answer from the supplied context.
+With `stream=true`, SSE emits
 the plan, content deltas, sources, retrieval metadata, estimated usage, timing,
 post-stream **quality heuristics**, and finally `[DONE]`. These heuristics detect
 likely omissions or malformed output; they are not a compiler, type checker,
@@ -124,13 +158,14 @@ response rather than an HTTP failure.
 
 ### Web-search settings
 
-`GET|PUT|DELETE /v1/settings/web-search` reads, updates or resets host-local search settings. `POST /v1/settings/web-search/test` tests the selected provider from the backend, and `DELETE /v1/settings/web-search/credentials/brave` explicitly removes the managed Brave key. Every route requires local/admin or paired-device `system` authorization. Secret values are write-only and never serialized.
+`GET|PUT|DELETE /v1/settings/web-search` reads, updates or resets host-local search settings. `POST /v1/settings/web-search/test` tests the selected provider from the backend, and `DELETE /v1/settings/web-search/credentials/brave` explicitly removes the managed Brave key. Every route is host-only and requires verified loopback provenance. Secret values are write-only and never serialized.
 
 ```json
 {
   "query": "Compare persistence mechanisms",
   "collections": ["default"],
   "depth": 2,
+  "think": true,
   "model": null,
   "keep_alive": "10m",
   "aggressive_quant": false
@@ -246,9 +281,11 @@ The default state limit is 6 MiB (`TRINAXAI_APP_STATE_MAX_BYTES`).
 `storage/chat_attachments/` so synchronized conversations can open it in
 another authorized browser. It returns the ID, name, size, MIME type, and a
 `server:` storage key. GET and DELETE require the same authorization and are
-rate limited. Unknown response types are downloads with `nosniff`. Defaults are
-512 MiB per file, 4 GiB total, and 1,000 retained files. Chat history stores the
-attachment reference, not a second persistent copy of the full extracted text.
+rate limited. `POST /attachments/{attachment_id}/open` asks the host OS to open
+the stored file with its default application and is also authorized/rate limited.
+Unknown response types are downloads with `nosniff`. Defaults are 512 MiB per
+file, 4 GiB total, and 1,000 retained files. Chat history stores the attachment
+reference, not a second persistent copy of the full extracted text.
 
 ## Agent
 
@@ -288,11 +325,16 @@ TTS returns audio bytes with the detected content type. STT/TTS return `501` if 
 |---|---|
 | `POST /system/shutdown` | Stop AI while leaving the PWA available. |
 | `POST /system/startup` | Start AI services. |
-| `POST /system/stop-all` | Stop all services. |
+| `POST /system/stop-all` | Stop all services; only loopback recovery remains at `https://localhost:3334` and LAN access stays closed until local start. |
 | `POST /system/reload` | Reload the persisted index in memory. |
 | `POST /system/self-test` | Check Ollama, embeddings, and RAG/index state. |
-| `GET /health` | Models, profile, collections, index state, and feature flags. |
+| `GET /health` | Models, active/detected profile, hardware, recommendations, collections, index state, and feature flags. |
 | `GET /ready` | Same status payload; returns `503` until Ollama responds. |
-| `GET /resources` | RAM values in bytes; VRAM is currently `null`. |
+| `GET /resources` | RAM and detected VRAM values in bytes, plus the hardware snapshot. |
 
-FastAPI errors use `{"detail":"message"}`. Common statuses are `400`, `403`, `404`, `409`, `413`, `422`, `429`, `500`, `501`, and `503`. See [configuration](CONFIGURATION.md) for limits and network settings.
+FastAPI errors use `{"detail": {...}, "error": {...}, "request_id": "..."}`.
+`detail` may also include a safe legacy code or field hint for client
+compatibility; it never contains raw exception text. Retryable responses include
+`Retry-After: 1`. Common statuses are `400`, `403`, `404`, `409`, `413`, `422`,
+`429`, `500`, `501`, and `503`. See [Troubleshooting](TROUBLESHOOTING.md) and
+[configuration](CONFIGURATION.md) for recovery, limits, and network settings.

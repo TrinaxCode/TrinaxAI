@@ -1,3 +1,6 @@
+from pathlib import Path
+from types import SimpleNamespace
+
 from scripts import public_readiness
 
 
@@ -15,3 +18,73 @@ def test_secret_scan_distinguishes_runtime_token_reads_from_literals(tmp_path, m
 
     assert not any("safe.ts" in error for error in errors)
     assert any("exposed.py" in error for error in errors)
+
+
+def test_release_contract_matches_the_repository():
+    assert public_readiness.check_release_contract() == []
+
+
+def test_release_workflow_security_contract_is_fail_closed_and_reproducible():
+    workflow = (Path(public_readiness.__file__).resolve().parents[1] / ".github/workflows/release.yml").read_text(
+        encoding="utf-8"
+    )
+
+    assert public_readiness.check_release_workflow_security(workflow) == []
+
+
+def test_release_workflow_security_contract_catches_regressions():
+    workflow = (Path(public_readiness.__file__).resolve().parents[1] / ".github/workflows/release.yml").read_text(
+        encoding="utf-8"
+    )
+
+    mutable_action = workflow.replace(
+        "actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803",
+        "actions/checkout@v6",
+        1,
+    )
+    assert any("commit SHA" in error for error in public_readiness.check_release_workflow_security(mutable_action))
+
+    unsigned = workflow.replace("gpg --batch --verify", "gpg --batch --inspect", 1)
+    assert any("gpg --batch --verify" in error for error in public_readiness.check_release_workflow_security(unsigned))
+
+    floating_tool = workflow.replace('"pyinstaller==6.22.2"', '"pyinstaller"', 1)
+    assert any("PyInstaller" in error for error in public_readiness.check_release_workflow_security(floating_tool))
+
+
+def test_required_gates_run_repository_commands_with_diagnostics(monkeypatch, capsys):
+    calls = []
+
+    def run(command, **kwargs):
+        calls.append((command, kwargs))
+        return SimpleNamespace(returncode=0, stdout="gate output", stderr="")
+
+    monkeypatch.setattr(public_readiness.subprocess, "run", run)
+
+    assert public_readiness.check_required_gates() == []
+    assert len(calls) == 4
+    assert calls[0][0][0] == public_readiness.sys.executable
+    assert "--cov-branch" in calls[0][0]
+    assert "--cov-fail-under=98" in calls[0][0]
+    assert calls[1][0][1:] == ["run", "typecheck"]
+    assert calls[2][0][1:] == ["run", "test:coverage"]
+    assert calls[3][0][1:] == ["run", "build"]
+    assert "gate output" in capsys.readouterr().out
+
+
+def test_required_gate_failure_is_reported_without_hiding_output(monkeypatch, capsys):
+    responses = iter(
+        [
+            SimpleNamespace(returncode=0, stdout="coverage ok", stderr=""),
+            SimpleNamespace(returncode=2, stdout="typecheck output", stderr="typecheck failed"),
+            SimpleNamespace(returncode=0, stdout="frontend coverage ok", stderr=""),
+            SimpleNamespace(returncode=0, stdout="build ok", stderr=""),
+        ]
+    )
+    monkeypatch.setattr(public_readiness.subprocess, "run", lambda *_args, **_kwargs: next(responses))
+
+    errors = public_readiness.check_required_gates()
+
+    assert errors == ["TypeScript typecheck failed with exit code 2"]
+    output = capsys.readouterr().out
+    assert "typecheck output" in output
+    assert "typecheck failed" in output

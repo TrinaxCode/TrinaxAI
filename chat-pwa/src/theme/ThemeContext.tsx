@@ -52,7 +52,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   // Apply the initial theme on first render (no animation)
   useEffect(() => {
     applyHtmlTheme(initial);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => onSharedStateUpdated(() => {
     const stored = loadTheme();

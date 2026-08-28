@@ -11,6 +11,19 @@ from trinaxai_cli import network
 from trinaxai_cli.commands import _system
 
 
+def _show_trust_certificate(root: Any, ui: Any) -> None:
+    certificate = network.trust_certificate(root)
+    if not certificate:
+        return
+    path, kind = certificate
+    if kind == "mkcert":
+        ui.info(f"LAN trust CA for phones: {path}")
+        ui.info("Install this CA only on devices you control; never share the private key.")
+    else:
+        ui.info(f"LAN certificate for phones: {path}")
+        ui.info("Import this certificate only on devices you control; never share the private key.")
+
+
 def run(args: Any, _client: Any, ui: Any, _config: Any) -> int:
     root = _system.project_root()
     if root is None:
@@ -23,6 +36,7 @@ def run(args: Any, _client: Any, ui: Any, _config: Any) -> int:
         ui.info(f"LAN addresses: {', '.join(addresses) if addresses else '(none detected)'}")
         for url in urls:
             ui.print(url)
+        _show_trust_certificate(root, ui)
         ui.info("Use 'trinaxai network refresh' after changing Wi-Fi or router.")
         return 0
 
@@ -43,6 +57,7 @@ def run(args: Any, _client: Any, ui: Any, _config: Any) -> int:
     ui.success("Current network added and local HTTPS certificate renewed.")
     for url in urls:
         ui.print(url)
+    _show_trust_certificate(root, ui)
     if getattr(args, "no_restart", False):
         ui.warn("Restart TrinaxAI before opening the new address.")
         return 0

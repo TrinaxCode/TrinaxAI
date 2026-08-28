@@ -66,6 +66,31 @@ def cors_origins(addresses: list[str] | None = None) -> str:
     return ",".join(origins)
 
 
+def trust_certificate(root: Path) -> tuple[Path, str] | None:
+    """Return the public certificate a LAN device must trust, if available."""
+    mkcert = shutil.which("mkcert")
+    if mkcert:
+        try:
+            result = subprocess.run(
+                [mkcert, "-CAROOT"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+                check=False,
+            )
+        except (OSError, subprocess.SubprocessError):
+            result = None
+        if result and result.returncode == 0:
+            ca_file = Path(getattr(result, "stdout", "").strip()) / "rootCA.pem"
+            if ca_file.is_file():
+                return ca_file, "mkcert"
+
+    certificate = root / "chat-pwa" / "certs" / "trinaxai-local.crt"
+    if certificate.is_file():
+        return certificate, "self-signed"
+    return None
+
+
 def update_env(root: Path, addresses: list[str]) -> None:
     path = root / ".env"
     if not path.is_file():

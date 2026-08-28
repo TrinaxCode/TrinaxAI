@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import ctypes
+
 from trinaxai_cli import branding
 
 
@@ -44,3 +46,25 @@ def test_clear_terminal_erases_viewport_and_scrollback_on_tty(monkeypatch, capsy
     out = capsys.readouterr().out
     assert "\033[2J" in out
     assert "\033[3J" in out
+
+
+def test_windows_branding_uses_native_console_apis(monkeypatch, capsys) -> None:
+    monkeypatch.setattr(branding, "_is_tty", lambda: True)
+    monkeypatch.delenv("NO_COLOR", raising=False)
+    monkeypatch.delenv("TRINAXAI_NO_COLOR", raising=False)
+    monkeypatch.setattr(branding.os, "name", "nt")
+    calls: list[str] = []
+
+    class Kernel32:
+        def SetConsoleTitleW(self, title: str) -> None:
+            calls.append(title)
+
+    class Ctypes:
+        windll = type("Windll", (), {"kernel32": Kernel32()})()
+
+    monkeypatch.setattr(branding, "os", branding.os)
+    monkeypatch.setattr(ctypes, "windll", Ctypes.windll, raising=False)
+    branding.set_terminal_title("TrinaxAI")
+    branding.reset_terminal_title()
+    assert calls == ["TrinaxAI", ""]
+    assert "\033]0;" not in capsys.readouterr().out

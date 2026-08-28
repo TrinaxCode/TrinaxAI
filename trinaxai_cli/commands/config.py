@@ -23,6 +23,7 @@ def run(args: Any, client: Any, ui: Any, config: CLIConfig) -> int:
         ["defaults.engine", config.engine],
         ["defaults.model", config.model],
         ["defaults.collections", ", ".join(config.collections)],
+        ["defaults.thinking", str(config.thinking_enabled)],
         ["ui.color", config.ui_color],
         ["install_root", str(_system.project_root() or "(not found)")],
     ]

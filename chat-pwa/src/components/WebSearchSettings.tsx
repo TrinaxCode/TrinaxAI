@@ -4,6 +4,7 @@ import { useTheme } from '../theme/ThemeContext';
 import {
   deleteWebSearchCredential,
   getWebSearchSettings,
+  notifyWebSearchSettingsUpdated,
   saveWebSearchSettings,
   resetWebSearchSettings,
   testWebSearchProvider,
@@ -12,12 +13,22 @@ import {
 } from '../lib/api';
 
 const PROVIDERS = ['auto', 'duckduckgo', 'brave', 'searxng'] as const;
+type Provider = typeof PROVIDERS[number];
+const WEB_SEARCH_PROVIDER_KEY = 'tc-web-search-provider';
+
+function validProvider(value: string | undefined, fallback: Provider = 'auto'): Provider {
+  return PROVIDERS.includes(value as Provider) ? value as Provider : fallback;
+}
+
+function rememberedProvider(): Provider {
+  try { return validProvider(localStorage.getItem(WEB_SEARCH_PROVIDER_KEY) || undefined); } catch { return 'auto'; }
+}
 
 export default function WebSearchSettings({ canManageSystem }: { canManageSystem: boolean }) {
   const { t } = useI18n();
   const { isDark } = useTheme();
   const [settings, setSettings] = useState<Settings | null>(null);
-  const [provider, setProvider] = useState<'auto' | 'duckduckgo' | 'brave' | 'searxng'>('auto');
+  const [provider, setProvider] = useState<Provider>(rememberedProvider());
   const [enabled, setEnabled] = useState(true);
   const [braveKey, setBraveKey] = useState('');
   const [searxngUrl, setSearxngUrl] = useState('');
@@ -27,16 +38,19 @@ export default function WebSearchSettings({ canManageSystem }: { canManageSystem
   const input = isDark ? 'border-white/10 bg-black/20 text-white' : 'border-gray-200 bg-white text-gray-900';
 
   useEffect(() => {
+    if (!canManageSystem) return;
     const controller = new AbortController();
     getWebSearchSettings(controller.signal).then((value) => {
+      const nextProvider = validProvider(value.preferred_provider, validProvider(value.active_provider, rememberedProvider()));
       setSettings(value); setEnabled(value.enabled);
-      if (PROVIDERS.includes(value.preferred_provider as typeof PROVIDERS[number])) {
-        setProvider(value.preferred_provider as typeof provider);
-      } else setProvider(value.active_provider as typeof provider);
+      setProvider(nextProvider);
+      if (value.enabled) {
+        try { localStorage.setItem(WEB_SEARCH_PROVIDER_KEY, nextProvider); } catch { /* ignore */ }
+      }
       setSearxngUrl(value.providers.searxng?.base_url || '');
     }).catch((error) => { if (!controller.signal.aborted) setMessage(userFacingError(error, 'external_service_unavailable')); });
     return () => controller.abort();
-  }, []);
+  }, [canManageSystem]);
 
   const save = async (): Promise<boolean> => {
     setBusy(true); setMessage('');
@@ -46,7 +60,15 @@ export default function WebSearchSettings({ canManageSystem }: { canManageSystem
         ...(braveKey.trim() && !settings?.externally_managed.brave_api_key ? { brave_api_key: braveKey.trim() } : {}),
         ...(provider === 'searxng' && !settings?.externally_managed.searxng_url ? { searxng_url: searxngUrl.trim() } : {}),
       });
-      setSettings(next); setBraveKey('');
+      setSettings(next);
+      setEnabled(next.enabled);
+      const nextProvider = validProvider(next.preferred_provider, provider);
+      setProvider(nextProvider);
+      if (next.enabled) {
+        try { localStorage.setItem(WEB_SEARCH_PROVIDER_KEY, nextProvider); } catch { /* ignore */ }
+      }
+      setBraveKey('');
+      notifyWebSearchSettingsUpdated(next);
       setMessage(t('webSearchSaved'));
       return true;
     } catch (error) { setMessage(userFacingError(error, 'external_service_unavailable')); return false; }
@@ -75,7 +97,13 @@ export default function WebSearchSettings({ canManageSystem }: { canManageSystem
   const removeBraveKey = async () => {
     if (!window.confirm(t('webSearchDeleteKeyConfirm'))) return;
     setBusy(true); setMessage('');
-    try { setSettings(await deleteWebSearchCredential('brave')); }
+    try {
+      const next = await deleteWebSearchCredential('brave');
+      setSettings(next);
+      setEnabled(next.enabled);
+      setProvider(validProvider(next.preferred_provider, provider));
+      notifyWebSearchSettingsUpdated(next);
+    }
     catch (error) { setMessage(userFacingError(error, 'external_service_unavailable')); }
     finally { setBusy(false); }
   };
@@ -83,7 +111,13 @@ export default function WebSearchSettings({ canManageSystem }: { canManageSystem
   const reset = async () => {
     if (!window.confirm(t('webSearchResetConfirm'))) return;
     setBusy(true); setMessage('');
-    try { setSettings(await resetWebSearchSettings()); }
+    try {
+      const next = await resetWebSearchSettings();
+      setSettings(next);
+      setEnabled(next.enabled);
+      setProvider(validProvider(next.preferred_provider, provider));
+      notifyWebSearchSettingsUpdated(next);
+    }
     catch (error) { setMessage(userFacingError(error, 'external_service_unavailable')); }
     finally { setBusy(false); }
   };
@@ -106,13 +140,13 @@ export default function WebSearchSettings({ canManageSystem }: { canManageSystem
     {provider === 'auto' && <p className="text-sm">{t('webSearchAutoDescription')}</p>}
     {provider === 'duckduckgo' && <p className="text-sm">{t('webSearchDuckDescription')}</p>}
     {provider === 'brave' && <label className="block space-y-1">
-      <span>Brave Search API key — {configured ? t('webSearchConfigured') : t('webSearchNotConfigured')}</span>
-      <input name="brave-api-key" type="password" autoComplete="new-password" disabled={settings.externally_managed.brave_api_key || busy} value={braveKey} onChange={(event) => setBraveKey(event.target.value)} placeholder={configured ? t('webSearchReplaceKey') : 'BSA…'} className={`w-full rounded-lg border p-2 disabled:opacity-60 ${input}`} />
+      <span>{t('webSearchBraveApiKey')} | {configured ? t('webSearchConfigured') : t('webSearchNotConfigured')}</span>
+      <input name="brave-api-key" type="password" autoComplete="new-password" disabled={settings.externally_managed.brave_api_key || busy} value={braveKey} onChange={(event) => setBraveKey(event.target.value)} placeholder={configured ? t('webSearchReplaceKey') : 'BSA...'} className={`w-full rounded-lg border p-2 disabled:opacity-60 ${input}`} />
       {configured && !settings.externally_managed.brave_api_key && <button type="button" onClick={removeBraveKey} className="text-sm text-red-500">{t('webSearchDeleteKey')}</button>}
     </label>}
     {provider === 'searxng' && <label className="block space-y-1">
       <span>{t('webSearchPublicSearxUrl')}</span>
-      <input name="searxng-url" type="url" autoComplete="off" disabled={settings.externally_managed.searxng_url || busy} value={searxngUrl} onChange={(event) => setSearxngUrl(event.target.value)} placeholder="https://search.example.org…" className={`w-full rounded-lg border p-2 disabled:opacity-60 ${input}`} />
+      <input name="searxng-url" type="url" autoComplete="off" disabled={settings.externally_managed.searxng_url || busy} value={searxngUrl} onChange={(event) => setSearxngUrl(event.target.value)} placeholder="https://search.example.org..." className={`w-full rounded-lg border p-2 disabled:opacity-60 ${input}`} />
     </label>}
     {hasExternal && <p className="text-sm text-amber-500">{t('webSearchEnvironmentManaged')}</p>}
     <div className="flex flex-wrap gap-2">

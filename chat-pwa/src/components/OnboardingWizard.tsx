@@ -1,12 +1,13 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { MdContentCopy, MdCheck } from 'react-icons/md';
+import { MdContentCopy, MdCheck, MdStop } from 'react-icons/md';
 import { useI18n } from '../i18n/I18nContext';
 import { useTheme } from '../theme/ThemeContext';
 import { APP_CONFIG } from '../lib/config';
 import { cancelIndexJob, folderLabelFromFiles, getIndexJob, indexableFilesFrom, startFolderIndex, type IndexJobStatus } from '../lib/api';
 import { systemFetch } from '../lib/authHeaders';
 import { syncSharedStateOnce } from '../lib/sharedState';
+import BackButton from './BackButton';
 
 interface Props {
   onComplete: () => void;
@@ -203,6 +204,9 @@ export default function OnboardingWizard({ onComplete, canConfigureSystem }: Pro
   return (
     <motion.div
       className={`fixed inset-0 z-50 flex flex-col items-center justify-center overflow-y-auto ${bg} px-4 py-6 transition-colors duration-300`}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="onboarding-title"
       style={{
         paddingTop: 'max(1.5rem, calc(env(safe-area-inset-top, 0px) + 1rem))',
         paddingBottom: 'max(1.5rem, calc(env(safe-area-inset-bottom, 0px) + 1rem))',
@@ -210,16 +214,11 @@ export default function OnboardingWizard({ onComplete, canConfigureSystem }: Pro
       initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
     >
       <div className="my-auto w-full max-w-lg flex flex-col gap-5 sm:gap-6 px-1 sm:px-0">
-        {/* Progress dots */}
-        <div className="flex justify-center gap-2">
-          {visibleSteps.map((s) => (
-            <motion.div
-              key={s}
-              className={`h-1.5 rounded-full transition-[width,background-color] duration-300 ${stepDot(s)}`}
-              animate={{ width: step === s ? 24 : 8 }}
-            />
-          ))}
-        </div>
+        <header className="text-center">
+          <p className={`text-[11px] font-semibold uppercase tracking-[0.2em] ${textSub}`}>{t('onboardingEyebrow')}</p>
+          <h1 id="onboarding-title" className={`mt-2 text-2xl font-semibold text-wrap-balance ${textMain}`}>{t('onboardingWelcome')}</h1>
+          <p className={`mt-2 text-sm ${textSub}`}>{t('onboardingIntro')}</p>
+        </header>
 
         <AnimatePresence mode="wait">
           {/* Step 1: Language */}
@@ -270,15 +269,17 @@ export default function OnboardingWizard({ onComplete, canConfigureSystem }: Pro
           {/* Step 3: Name */}
           {step === 3 && (
             <motion.div key="s3" variants={stepVariants} initial="enter" animate="center" exit="exit" transition={{ duration: 0.25 }} className="flex flex-col gap-5">
-              <h2 className={`text-2xl font-semibold text-center ${textMain}`}>{t('onboardingStep3Title')}</h2>
-              <p className={`text-sm text-center ${textSub}`}>{t('onboardingStep3Desc')}</p>
               <div className="space-y-4">
+                <label htmlFor="onboarding-nickname" className="sr-only">{t('onboardingStep3NicknameLabel')}</label>
                 <input
+                  id="onboarding-nickname"
+                  name="nickname"
                   type="text"
                   value={nickname}
                   onChange={(e) => setNickname(e.target.value)}
                   placeholder={t('onboardingStep3NicknameLabel')}
-                  className={`w-full px-4 py-3 rounded-xl border text-sm outline-none focus:border-[#006bbd]/40 transition-colors ${inputBg}`}
+                  autoComplete="nickname"
+                  className={`w-full px-4 py-3 rounded-xl border text-sm outline-none focus-visible:border-[#006bbd] focus-visible:ring-2 focus-visible:ring-[#006bbd]/25 transition-[border-color,box-shadow] ${inputBg}`}
                 />
               </div>
             </motion.div>
@@ -307,39 +308,31 @@ export default function OnboardingWizard({ onComplete, canConfigureSystem }: Pro
                       <p className={`text-xs mt-1 ${textSub}`}>{t(`onboardingStep5${choice === 'default' ? 'Default' : choice === 'custom' ? 'Custom' : 'AutoTest'}Desc` as any)}</p>
                     </motion.button>
                   ))}
-                  <div className={`p-3 rounded-xl text-xs ${cardBg}`}>
-                    <span className={textSub}>{t('onboardingStep5Info')} </span>
-                    <a href="https://www.canirun.ai" target="_blank" rel="noopener noreferrer" className="text-[#006bbd] underline">{t('onboardingStep5InfoLink')}</a>
-                    <span className={textSub}> {t('onboardingStep5InfoText')}</span>
-                  </div>
-                  <details className={`p-3 rounded-xl text-xs ${cardBg}`}>
-                    <summary className={`font-medium cursor-pointer ${textMain}`}>{t('onboardingStep5PromptTitle')}</summary>
-                    <pre className={`mt-2 p-2 rounded-lg text-[11px] whitespace-pre-wrap ${isDark ? 'bg-black/30 text-white/60' : 'bg-gray-200 text-gray-600'}`}>
-                      {t('onboardingStep5PromptText')}
-                    </pre>
-                  </details>
                 </div>
               )}
 
               {/* Back to model choice */}
               {modelChoice && (
-                <button onClick={() => { setModelChoice(null); setTestResults(null); setCustomStep(0); }}
-                  className={`text-xs ${isDark ? 'text-white/30 hover:text-white/60' : 'text-gray-400 hover:text-gray-600'} transition-colors self-start`}>
-                  {t('onboardingBack')}
-                </button>
+                <BackButton
+                  onClick={() => { setModelChoice(null); setTestResults(null); setCustomStep(0); }}
+                  label={t('onboardingBack')}
+                  isDark={isDark}
+                  className="self-start"
+                />
               )}
               {modelChoice === 'test' && testResults && (
                 <div className={`p-4 rounded-xl ${cardBg} space-y-2`}>
                   <div className="flex items-center justify-between">
                     <p className={`text-sm font-medium ${textMain}`}>{t('systemCheckTitle')}</p>
-                    <button onClick={() => { setModelChoice(null); setTestResults(null); }}
-                      className={`text-xs ${isDark ? 'text-white/30 hover:text-white/60' : 'text-gray-400 hover:text-gray-600'}`}>
-                      {t('onboardingBack')}
-                    </button>
+                    <BackButton
+                      onClick={() => { setModelChoice(null); setTestResults(null); }}
+                      label={t('onboardingBack')}
+                      isDark={isDark}
+                    />
                   </div>
                   {Object.entries(testResults).map(([k, v]) => (
                     <div key={k} className="flex items-center gap-2 text-xs">
-                      <span className={v ? 'text-green-400' : 'text-red-400'}>{v ? '✅' : '❌'}</span>
+                      <span className={v ? 'text-green-400' : 'text-red-400'} aria-label={v ? t('systemCheckPassed') : t('systemCheckFailed')}>{v ? <MdCheck size={15} /> : '-'}</span>
                       <span className={textSub}>{t(k as any)}</span>
                     </div>
                   ))}
@@ -468,18 +461,29 @@ export default function OnboardingWizard({ onComplete, canConfigureSystem }: Pro
                       <>
                         <div className="flex items-center justify-between text-xs">
                           <span className={textSub}>{indexJob?.phase ? t('indexing') : t('loading')}</span>
-                          <span className={textSub}>{indexProgress}%</span>
+                          <span className={`font-semibold tabular-nums ${textMain}`}>{indexProgress}%</span>
                         </div>
-                        <div className={`h-2 w-full overflow-hidden rounded-full ${isDark ? 'bg-white/[0.08]' : 'bg-gray-200'}`}>
-                          <div className="h-full rounded-full bg-[#006bbd] transition-[width] duration-500" style={{ width: `${Math.min(100, indexProgress)}%` }} />
+                        <div
+                          className={`h-2.5 w-full overflow-hidden rounded-full ${isDark ? 'bg-white/[0.08]' : 'bg-gray-200'}`}
+                          role="progressbar"
+                          aria-valuemin={0}
+                          aria-valuemax={100}
+                          aria-valuenow={indexProgress}
+                          aria-label={t('indexing')}
+                        >
+                          <div className="h-full rounded-full bg-gradient-to-r from-[#006bbd] via-[#138bd1] to-[#42c6a5] shadow-[0_0_10px_rgba(0,107,189,.35)] transition-[width] duration-500" style={{ width: `${Math.min(100, indexProgress)}%` }} />
                         </div>
-                        <button onClick={cancelIndex} className="w-full py-2 rounded-lg text-xs font-medium bg-red-500/10 text-red-400 hover:bg-red-500/20">
+                        <div className={`text-[11px] ${textSub}`}>
+                          {t('indexFiles')}: {indexJob?.files_processed || indexJob?.saved || 0} / {indexJob?.files_total || selectedFolderCount}
+                        </div>
+                        <button onClick={cancelIndex} className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-red-500/30 bg-red-500/10 py-2.5 text-xs font-semibold text-red-400 shadow-sm transition-[background-color,border-color,transform] hover:border-red-500/50 hover:bg-red-500/20 active:scale-[.98]">
+                          <MdStop size={15} />
                           {t('indexCancel')}
                         </button>
                       </>
                     ) : indexJob?.status === 'completed' ? (
                       <div className="flex items-center gap-2 text-sm">
-                        <span className="text-green-400">✅</span>
+                        <MdCheck className="text-green-400" size={16} aria-hidden="true" />
                         <span className={`font-medium ${textMain}`}>{t('indexComplete')}</span>
                         <span className={textSub}>({indexJob.saved} {t('indexFiles').toLowerCase()})</span>
                       </div>
@@ -503,9 +507,9 @@ export default function OnboardingWizard({ onComplete, canConfigureSystem }: Pro
               <p className={`text-sm ${textSub}`}>{t('onboardingStep7Desc')}</p>
 
               <div className={`w-full p-4 rounded-xl ${cardBg} space-y-2 text-left text-sm`}>
-                <p className={textSub}>👤 {t('onboardingStep3NameLabel')}: <strong className={textMain}>{nickname || t('onboardingDefaultName')}</strong></p>
-                <p className={textSub}>🎨 {t('theme')}: <strong className={textMain}>{isDark ? t('darkMode') : t('lightMode')}</strong></p>
-                <p className={textSub}>🌐 {t('language')}: <strong className={textMain}>{lang === 'es' ? 'Español' : 'English'}</strong></p>
+                <p className={textSub}>{t('onboardingStep3NameLabel')}: <strong className={textMain}>{nickname || t('onboardingDefaultName')}</strong></p>
+                <p className={textSub}>{t('theme')}: <strong className={textMain}>{isDark ? t('darkMode') : t('lightMode')}</strong></p>
+                <p className={textSub}>{t('language')}: <strong className={textMain}>{lang === 'es' ? t('languageSpanish') : t('languageEnglish')}</strong></p>
               </div>
 
               <motion.button
@@ -541,8 +545,31 @@ export default function OnboardingWizard({ onComplete, canConfigureSystem }: Pro
               {finishing ? t('onboardingFinish') : step === 5 ? t('onboardingFinish') : t('onboardingNext')}
             </motion.button>
           </div>
-        )}
-      </div>
+         )}
+
+         {/* Progress stays at the bottom of the onboarding flow. */}
+         <div aria-label={t('onboardingProgress')} className="flex items-center gap-2">
+           <div className={`h-1.5 flex-1 overflow-hidden rounded-full ${isDark ? 'bg-white/[0.12]' : 'bg-gray-200'}`}>
+             <motion.div
+               className="h-full rounded-full bg-[#006bbd]"
+               animate={{ width: `${Math.max(8, ((visibleSteps.indexOf(step) + 1) / visibleSteps.length) * 100)}%` }}
+               transition={{ duration: 0.25 }}
+             />
+           </div>
+           <span className={`shrink-0 text-xs tabular-nums ${textSub}`}>{visibleSteps.indexOf(step) + 1}/{visibleSteps.length}</span>
+         </div>
+
+         <div className="sr-only">{t('onboardingProgressStep').replace('{current}', String(visibleSteps.indexOf(step) + 1)).replace('{total}', String(visibleSteps.length))}</div>
+         <div className="flex justify-center gap-2">
+           {visibleSteps.map((s) => (
+             <motion.div
+               key={s}
+               className={`h-1.5 rounded-full transition-[width,background-color] duration-300 ${stepDot(s)}`}
+               animate={{ width: step === s ? 24 : 8 }}
+             />
+           ))}
+         </div>
+       </div>
     </motion.div>
   );
 }

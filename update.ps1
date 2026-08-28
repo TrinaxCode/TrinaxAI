@@ -1,4 +1,5 @@
 param(
+  [switch]$Interactive,
   [switch]$NonInteractive,
   [switch]$NoBackup,
   [switch]$NoPull,
@@ -6,6 +7,7 @@ param(
   [switch]$NoModels,
   [switch]$Restart,
   [switch]$NoRestart,
+  [switch]$DryRun,
   [switch]$EnableAutostart,
   [switch]$DisableAutostart,
   [switch]$RepairOllama,
@@ -24,18 +26,40 @@ Run in PowerShell:
   powershell -ExecutionPolicy Bypass -File .\update.ps1
 
 Guided mode asks what to update or repair, including Ollama reinstall/removal,
-model removal/download, backup, Git pull, autostart, restart, and audit.
+model removal/download, backup, source download, autostart, restart, and audit.
 #>
 
 $ErrorActionPreference = "Stop"
+$LanguageExplicit = -not [string]::IsNullOrWhiteSpace($Language) -or -not [string]::IsNullOrWhiteSpace($env:TRINAXAI_LANG)
 if ([string]::IsNullOrWhiteSpace($Language)) { $Language = if ($env:TRINAXAI_LANG -match '^es') { 'es' } elseif ((Get-Culture).Name -match '^es') { 'es' } else { 'en' } }
 function T($English, $Spanish) { if ($Language -eq 'es') { return $Spanish }; return $English }
+
+if (-not $LanguageExplicit -and -not $NonInteractive -and -not $DryRun) {
+  $Reply = Read-Host "Select language / Selecciona idioma [en/es, default: $Language]"
+  if ($Reply -match '^es') { $Language = 'es' } elseif ($Reply -match '^en') { $Language = 'en' }
+}
 
 function Write-Step($Text) { Write-Host "`n  +-- $Text" -ForegroundColor Blue }
 function Write-Ok($Text) { Write-Host "  [OK] $Text" -ForegroundColor Green }
 function Write-Warn($Text) { Write-Host "  [!] $Text" -ForegroundColor Yellow }
 function Write-Info($Text) { Write-Host "  [>] $Text" -ForegroundColor Cyan }
 function Test-Cmd($Name) { return $null -ne (Get-Command $Name -ErrorAction SilentlyContinue) }
+function Update-ProcessPath {
+  $MachinePath = [Environment]::GetEnvironmentVariable("Path", "Machine")
+  $UserPath = [Environment]::GetEnvironmentVariable("Path", "User")
+  $ExtraPaths = @(
+    (Join-Path $env:LOCALAPPDATA "Programs\Ollama"),
+    (Join-Path $env:ProgramFiles "Ollama")
+  ) | Where-Object { $_ -and (Test-Path -LiteralPath $_) }
+  $env:Path = (@($MachinePath, $UserPath) + $ExtraPaths) -join ";"
+}
+function Invoke-NativeChecked([string]$FilePath, [string[]]$Arguments, [string]$Label) {
+  & $FilePath @Arguments
+  $ExitCode = $LASTEXITCODE
+  if ($ExitCode -ne 0) {
+    throw "$Label failed with exit code $ExitCode."
+  }
+}
 function Read-YesNo($Prompt, [bool]$DefaultYes = $true) {
   if ($NonInteractive) { return $DefaultYes }
   $Suffix = if ($DefaultYes) { "[Y/n]" } else { "[y/N]" }
@@ -56,8 +80,13 @@ function Invoke-Python([string[]]$PythonArgs) {
   } else {
     & $PythonExe @PythonArgs
   }
+  $ExitCode = $LASTEXITCODE
+  if ($ExitCode -ne 0) {
+    throw "Python command failed with exit code ${ExitCode}: $PythonExe $($PythonArgs -join ' ')"
+  }
 }
 function Get-OllamaCommand {
+  Update-ProcessPath
   $Candidates = @(
     "ollama",
     (Join-Path $env:LOCALAPPDATA "Programs\Ollama\ollama.exe"),
@@ -116,8 +145,10 @@ function Install-OllamaOfficial {
     $PowerShellExe = (Get-Command powershell.exe -ErrorAction SilentlyContinue).Source
     if (-not $PowerShellExe) { $PowerShellExe = "powershell.exe" }
     $Command = "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; irm https://ollama.com/install.ps1 | iex"
-    & $PowerShellExe -NoProfile -ExecutionPolicy Bypass -Command $Command
-    if ($LASTEXITCODE -ne 0) { return $false }
+    if (-not (Invoke-ExternalWithTimeout $PowerShellExe @("-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", $Command) 90)) {
+      return $false
+    }
+    Update-ProcessPath
     return [bool](Get-OllamaCommand)
   } catch {
     Write-Warn "Official Ollama install command failed: $($_.Exception.Message)"
@@ -127,8 +158,9 @@ function Install-OllamaOfficial {
 function Remove-KnownDirectory([string]$Path, [string]$Label) {
   if ([string]::IsNullOrWhiteSpace($Path)) { return }
   try {
+    if ($Path -notmatch '^(?:[A-Za-z]:[\\/]|\\\\)') { throw "Unsafe path: $Path" }
     $Full = [IO.Path]::GetFullPath($Path)
-    if ($Full.Length -lt 10) { throw "Unsafe path: $Full" }
+    if ($Full -eq [IO.Path]::GetPathRoot($Full)) { throw "Unsafe path: $Full" }
     if (Test-Path -LiteralPath $Full) {
       Remove-Item -LiteralPath $Full -Recurse -Force
       Write-Ok "Removed $Label"
@@ -140,7 +172,9 @@ function Remove-KnownDirectory([string]$Path, [string]$Label) {
 function Remove-OllamaApp {
   Stop-OllamaProcesses
   if (Test-Cmd "winget") {
-    Invoke-ExternalWithTimeout "winget" @("uninstall", "--id", "Ollama.Ollama", "--silent", "--accept-source-agreements") 120 | Out-Null
+    if (-not (Invoke-ExternalWithTimeout "winget" @("uninstall", "--id", "Ollama.Ollama", "--silent", "--accept-source-agreements") 120)) {
+      Write-Warn "winget could not remove the Ollama package; continuing with known application paths."
+    }
   }
   Stop-OllamaProcesses
   Remove-KnownDirectory (Join-Path $env:LOCALAPPDATA "Programs\Ollama") "Ollama app"
@@ -183,10 +217,9 @@ function Remove-ConfiguredModels {
     foreach ($Model in Get-ConfiguredModels) {
       Write-Host "  Removing $Model..."
       & $Ollama rm $Model 2>$null
+      if ($LASTEXITCODE -ne 0) { Write-Warn "Could not remove configured model $Model." }
     }
   }
-  Remove-KnownDirectory (Join-Path $env:USERPROFILE ".ollama\models") "Ollama models"
-  Remove-KnownDirectory (Join-Path $env:LOCALAPPDATA "Ollama\models") "Ollama local models"
 }
 function New-TrinaxAIBackup {
   $BackupDir = Join-Path $Repo "backups"
@@ -203,77 +236,101 @@ function New-TrinaxAIBackup {
     Write-Warn "No runtime files found to back up."
     return
   }
-  Compress-Archive -Path $Items -DestinationPath $ZipPath -Force
-  if (Test-Cmd "icacls") {
-    & icacls $ZipPath /inheritance:r /grant:r "${env:USERNAME}:F" | Out-Null
+
+  if (-not $PythonExe) { throw "Python is required to pause services before backup." }
+  $Status = Get-TrinaxAIServiceStatus
+  $ApiWasRunning = Test-TrinaxAIRagApiRunning $Status
+  try {
+    if ($ApiWasRunning) {
+      Invoke-ServiceManager "stop-ai"
+      if (Test-TrinaxAIRagApiRunning (Get-TrinaxAIServiceStatus)) {
+        throw "The TrinaxAI RAG API is still running; backup was not created."
+      }
+    }
+    Compress-Archive -Path $Items -DestinationPath $ZipPath -Force
+    if (Test-Cmd "icacls") {
+      & icacls $ZipPath /inheritance:r /grant:r "${env:USERNAME}:F" | Out-Null
+    }
+    Write-Ok "Backup created: $ZipPath"
+  } finally {
+    if ($ApiWasRunning) {
+      Invoke-ServiceManager "start-ai"
+      if (-not (Test-TrinaxAIRagApiRunning (Get-TrinaxAIServiceStatus))) {
+        throw "The TrinaxAI RAG API could not be restored after backup."
+      }
+    }
   }
-  Write-Ok "Backup created: $ZipPath"
 }
 function Invoke-ServiceManager($Action) {
   if (-not $PythonExe) { Write-Warn "Python not found; skipped service_manager $Action."; return }
   Invoke-Python @((Join-Path $Repo "service_manager.py"), $Action, "--base-dir", $Repo)
 }
+function Get-TrinaxAIServiceStatus {
+  $Output = @(Invoke-Python @((Join-Path $Repo "service_manager.py"), "status", "--json", "--base-dir", $Repo) 2>$null)
+  if ($Output.Count -eq 0) { throw "The service manager returned no status." }
+  try {
+    return (($Output -join [Environment]::NewLine) | ConvertFrom-Json)
+  } catch {
+    throw "The service manager returned invalid status JSON: $($_.Exception.Message)"
+  }
+}
+function Test-TrinaxAIRagApiRunning($Status) {
+  $Api = @($Status | Where-Object { $_.name -eq "rag_api" } | Select-Object -First 1)
+  return $Api.Count -eq 1 -and [bool]$Api[0].running
+}
 
 function Sync-TrinaxRepository {
-  $Remote = "https://github.com/TrinaxCode/TrinaxAI.git"
-  $Managed = Test-Path ".trinaxai-managed"
-  if (-not (Test-Cmd "git")) { throw "Git is required to update TrinaxAI." }
-  Write-Info "Fetching the latest TrinaxAI source from GitHub..."
-  if (-not (Test-Path ".git")) {
-    throw "Archive installations are not overwritten in place. Re-run the installer for a reviewed upgrade."
+  if (-not (Test-Path -LiteralPath (Join-Path $Repo ".trinaxai-managed") -PathType Leaf)) {
+    throw "This is not a managed TrinaxAI installation; source update stopped safely."
   }
-  if ($Managed) {
-    $Exclude = ".git\info\exclude"
-    if (-not (Select-String -Path $Exclude -SimpleMatch ".trinaxai-managed" -Quiet -ErrorAction SilentlyContinue)) {
-      Add-Content -Encoding UTF8 $Exclude ".trinaxai-managed"
-    }
+  if (-not (Test-Path -LiteralPath (Join-Path $Repo "scripts\source_update.py") -PathType Leaf)) {
+    throw "The safe source updater is missing; source update stopped safely."
   }
-  git remote get-url origin 2>$null | Out-Null
-  if ($LASTEXITCODE -eq 0) { git remote set-url origin $Remote }
-  else { git remote add origin $Remote }
-  $Dirty = -not [string]::IsNullOrWhiteSpace((git status --porcelain --untracked-files=normal | Out-String))
-  if ($Dirty) {
-    throw "Local changes detected; update stopped to protect them. Commit or stash them explicitly first."
-  }
-  $script:PreUpdateCommit = (git rev-parse HEAD).Trim()
-  $Dist = Join-Path $Repo "chat-pwa\dist"
-  if (Test-Path $Dist) {
-    $TempRoot = Join-Path ([IO.Path]::GetTempPath()) ("trinaxai-dist-" + [guid]::NewGuid().ToString("N"))
-    New-Item -ItemType Directory -Force -Path $TempRoot | Out-Null
-    $script:PwaDistBackup = Join-Path $TempRoot "dist"
-    Copy-Item -LiteralPath $Dist -Destination $script:PwaDistBackup -Recurse -Force
-  }
+  Write-Info "Downloading the latest TrinaxAI source package from GitHub..."
+  Invoke-Python @((Join-Path $Repo "scripts\source_update.py"), "update", "--root", $Repo)
   $script:RollbackActive = $true
-  git fetch --prune origin main
-  if ($LASTEXITCODE -ne 0) { throw "Could not fetch origin/main." }
-  git merge --ff-only origin/main
-  if ($LASTEXITCODE -eq 0) {
-    Write-Ok "Repository synchronized with origin/main"
-  } else {
-    throw "The local branch diverged from origin/main; update stopped safely."
-  }
+  Write-Ok "Source package updated"
 }
 
 function Restore-FailedUpdate {
-  if (-not $script:RollbackActive -or [string]::IsNullOrWhiteSpace($script:PreUpdateCommit)) { return }
+  if (-not $script:RollbackActive) { return }
   Write-Warn "Update failed; restoring the previously working source tree."
   try {
-    git reset --hard $script:PreUpdateCommit | Out-Null
+    Invoke-Python @((Join-Path $Repo "scripts\source_update.py"), "rollback", "--root", $Repo)
   } catch {
     Write-Warn "Automatic source rollback failed: $($_.Exception.Message)"
-  }
-  if ($script:PwaDistBackup -and (Test-Path $script:PwaDistBackup)) {
-    $Dist = Join-Path $Repo "chat-pwa\dist"
-    Remove-Item -LiteralPath $Dist -Recurse -Force -ErrorAction SilentlyContinue
-    Move-Item -LiteralPath $script:PwaDistBackup -Destination $Dist -Force -ErrorAction SilentlyContinue
   }
 }
 
 $Repo = if ($RepoRoot) { [IO.Path]::GetFullPath($RepoRoot) } else { Split-Path -Parent $MyInvocation.MyCommand.Path }
 Set-Location $Repo
+
+if ($DryRun) {
+  Write-Host (T "DRY-RUN: nothing will be downloaded, installed, or changed." "SIMULACIÓN: no se descargará, instalará ni modificará nada.") -ForegroundColor Yellow
+  Write-Step (T "Source Code" "Código fuente")
+  Write-Info (T "Would download the latest source package from GitHub" "Se descargaría el paquete fuente más reciente desde GitHub")
+  Write-Step (T "Backup" "Copia de seguridad")
+  Write-Info (T "Would create a backup of runtime configuration and data" "Se crearía una copia de la configuración y los datos de ejecución")
+  Write-Step (T "Python Dependencies" "Dependencias de Python")
+  Write-Info (T "Would refresh pip, requirements, and the editable CLI" "Se actualizarían pip, requirements y la CLI editable")
+  Write-Step (T "Web App" "Aplicación web")
+  Write-Info (T "Would run npm ci and npm run build" "Se ejecutarían npm ci y npm run build")
+  Write-Step (T "Ollama Models" "Modelos de Ollama")
+  Write-Info (T "Would check Ollama and pull configured models if requested" "Se comprobaría Ollama y se descargarían los modelos configurados si se solicita")
+  Write-Step (T "Autostart and Audit" "Inicio automático y auditoría")
+  Write-Info (T "Would change autostart and run readiness checks" "Se cambiaría el inicio automático y se ejecutarían comprobaciones de preparación")
+  Write-Step (T "Restart" "Reinicio")
+  Write-Info (T "Would restart TrinaxAI if requested" "Se reiniciaría TrinaxAI si se solicita")
+  Write-Host ""
+  Write-Host (T "Links to enter" "Enlaces de acceso") -ForegroundColor Cyan
+  Write-Host "  Localhost:       https://localhost:3334"
+  Write-Host "  LAN:             https://[YOUR-LAN-IP]:3334"
+  Write-Host (T "  RAG health:      https://localhost:3333/health" "  Salud de RAG:    https://localhost:3333/health")
+  Write-Ok (T "Dry-run finished; no changes were made" "Simulación terminada; no se hicieron cambios")
+  exit 0
+}
+
 $PythonExe = Get-PythonExe
-$script:PreUpdateCommit = ""
-$script:PwaDistBackup = ""
 $script:RollbackActive = $false
 trap {
   Restore-FailedUpdate
@@ -307,9 +364,9 @@ if ($Scheduled) {
   $RestartAfter = $false
 }
 
-if (-not $NonInteractive) {
+if (-not $NonInteractive -and ($Interactive -or $env:TRINAXAI_INTERACTIVE -eq "1")) {
   $CreateBackup = Read-YesNo (T "Create a backup before updating?" "¿Crear un backup antes de actualizar?") $true
-  $PullCode = Read-YesNo (T "Pull latest code from Git?" "¿Descargar el código más reciente desde Git?") $true
+  $PullCode = Read-YesNo (T "Download the latest TrinaxAI version?" "¿Descargar la versión más reciente de TrinaxAI?") $true
   $RemoveOllamaApp = Read-YesNo (T "Remove Ollama application before continuing?" "¿Eliminar Ollama antes de continuar?") $false
   if ($RemoveOllamaApp) {
     $InstallOllamaAfterRemove = Read-YesNo (T "Install Ollama again with the official installer command after removal?" "¿Instalar Ollama de nuevo con el instalador oficial?") $true
@@ -332,7 +389,7 @@ if (-not $PythonExe) {
 
 if ($Scheduled) {
   Invoke-Python @("scripts\auto_update.py", "run", "--base-dir", $Repo)
-  exit $LASTEXITCODE
+  exit 0
 }
 
 if ($CreateBackup) {
@@ -341,7 +398,7 @@ if ($CreateBackup) {
 }
 
 if ($PullCode) {
-  Write-Step "2/7 Git"
+  Write-Step "2/7 Source"
   Sync-TrinaxRepository
 }
 
@@ -361,16 +418,27 @@ if ($RemoveOllamaApp) {
 Write-Step "3/7 Python dependencies"
 Invoke-Python @("-m", "pip", "install", "--upgrade", "pip")
 $RequirementsFile = if (Test-Path "requirements.lock") { "requirements.lock" } else { "requirements.txt" }
-Invoke-Python @("-m", "pip", "install", "-r", $RequirementsFile)
+if ($RequirementsFile -eq "requirements.lock") {
+  Invoke-Python @("-m", "pip", "install", "--require-hashes", "-r", $RequirementsFile)
+} else {
+  Invoke-Python @("-m", "pip", "install", "-r", $RequirementsFile)
+}
 Invoke-Python @("-m", "pip", "install", "-e", ".")
 Write-Ok "Python dependencies updated"
+if (Test-Path "scripts\generate_continue_config.py") {
+  Invoke-Python @((Join-Path $Repo "scripts\generate_continue_config.py"), "--root", $Repo, "--install-user-config")
+  Write-Ok "Continue configuration regenerated"
+}
 
 Write-Step "4/7 PWA frontend"
 if ((Test-Cmd "npm") -and (Test-Path "chat-pwa")) {
   Push-Location "chat-pwa"
-  if (Test-Path "package-lock.json") { npm ci } else { npm install }
-  npm run build
-  Pop-Location
+  try {
+    Invoke-NativeChecked "npm" @("ci") "npm ci"
+    Invoke-NativeChecked "npm" @("run", "build") "npm run build"
+  } finally {
+    Pop-Location
+  }
   Write-Ok "PWA rebuilt"
 } else {
   Write-Warn "npm or chat-pwa not found; PWA build skipped."
@@ -386,6 +454,7 @@ if ($PullModels) {
     foreach ($Model in Get-ConfiguredModels) {
       Write-Host "  Pulling $Model..."
       & $Ollama pull $Model
+      if ($LASTEXITCODE -ne 0) { Write-Warn "Could not pull configured model $Model." }
     }
     Write-Ok "Models updated"
   } else {
@@ -412,9 +481,7 @@ if ($RestartAfter) {
   Write-Warn "Restart skipped. Run .\.venv\Scripts\trinaxai.exe start when ready."
 }
 
+Invoke-Python @((Join-Path $Repo "scripts\source_update.py"), "finish", "--root", $Repo)
+$script:RollbackActive = $false
 Write-Ok "TrinaxAI update finished"
 Write-Info "Settings, indexes, models, and personal data were preserved."
-$script:RollbackActive = $false
-if ($script:PwaDistBackup) {
-  Remove-Item -LiteralPath (Split-Path -Parent $script:PwaDistBackup) -Recurse -Force -ErrorAction SilentlyContinue
-}

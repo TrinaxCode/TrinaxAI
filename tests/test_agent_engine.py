@@ -16,6 +16,7 @@ from trinaxai_cli.agent.engine import (
     _is_code_review_request,
     _is_final_answer,
     _is_simple_root_listing,
+    _needs_web_clarification,
     _parse_tool_call,
     _tool_calls_from_text,
 )
@@ -105,6 +106,18 @@ class ToolHandlerTests(unittest.TestCase):
             self.assertEqual(glob(root, pattern="./*.py"), "main.py")
             with self.assertRaises(SandboxError):
                 glob(root, pattern="../*.py")
+
+    def test_grep_does_not_follow_symlinked_files(self) -> None:
+        with TemporaryDirectory() as tmp, TemporaryDirectory() as external:
+            root = Path(tmp)
+            secret = Path(external) / "secret.txt"
+            secret.write_text("outside-secret", encoding="utf-8")
+            try:
+                (root / "linked.txt").symlink_to(secret)
+            except OSError:
+                self.skipTest("symlinks are unavailable")
+            result = build_tool_map()["grep"].handler(root, pattern="outside-secret")
+            self.assertIn("no matches", result)
 
     def test_write_then_read_roundtrip(self) -> None:
         with TemporaryDirectory() as tmp:
@@ -352,6 +365,8 @@ class AgentPromptQualityTests(unittest.TestCase):
         self.assertIn("without network access", prompt)
         self.assertIn("Answer directly when no tool is needed", prompt)
         self.assertIn("order multiple calls by dependency", prompt)
+        self.assertIn("current/public facts use web_search", prompt)
+        self.assertIn("indexed documents use search_knowledge", prompt)
 
 
 class _ScriptedEngine(AgentEngine):
@@ -438,6 +453,25 @@ class EngineReliabilityTests(unittest.TestCase):
             bad = engine._execute_call({"function": {"name": "read_file", "arguments": {"limit": "bad"}}})
             self.assertIn("could not complete", bad)
 
+    def test_identical_consecutive_tool_call_is_not_executed_twice(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "a.txt").write_text("data")
+            calls: list[str] = []
+            tool = Tool(
+                name="read_file",
+                description="read",
+                parameters={"type": "object", "properties": {}},
+                handler=lambda _root, **_args: calls.append("read") or "data",
+                dangerous=False,
+            )
+            engine = AgentEngine(model="test", workspace_root=root, tools=(tool,))
+            call = {"function": {"name": "read_file", "arguments": {"path": "a.txt"}}}
+            self.assertEqual(engine._execute_call(call), "data")
+            repeated = engine._execute_call(call)
+            self.assertIn("repeated without new progress", repeated)
+            self.assertEqual(calls, ["read"])
+
     def test_stream_parser_emits_content_and_collects_tools(self) -> None:
         with TemporaryDirectory() as tmp:
             tokens: list[str] = []
@@ -457,6 +491,7 @@ class EngineReliabilityTests(unittest.TestCase):
                             b'{"message":{"content":"hello "}}\n',
                             b'{"message":{"content":"world"}}\n',
                             b'{"message":{"tool_calls":[{"function":{"name":"read_file","arguments":{"path":"a"}}}]}}\n',
+                            b'{"message":{"content":""},"done":true}\n',
                         ]
                     )
 
@@ -622,6 +657,67 @@ class EngineReliabilityTests(unittest.TestCase):
 
             self.assertIn("alcance", answer)
             self.assertEqual(len(engine.requests), 1)
+
+    def test_incomplete_web_creation_asks_before_using_mutating_tools(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            engine = _ScriptedEngine(root, replies=[])
+            messages = [{"role": "user", "content": "Crea una página web para mi negocio"}]
+            tokens: list[str] = []
+            engine.on_token = tokens.append
+
+            answer = engine.run(messages)
+
+            self.assertTrue(
+                _needs_web_clarification([{"role": "user", "content": "Crea una página web para mi negocio"}])
+            )
+            self.assertIn("colores", answer)
+            self.assertIn("tecnología", answer)
+            self.assertIn("secciones", answer)
+            self.assertEqual(engine.requests, [])
+            self.assertEqual(tokens, [answer])
+            self.assertFalse((root / "index.html").exists())
+            self.assertEqual(messages[-1]["role"], "assistant")
+            self.assertIn("Antes de crear archivos", answer)
+
+    def test_web_creation_continues_after_requirements_are_provided(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            engine = _ScriptedEngine(
+                root,
+                replies=[
+                    {
+                        "content": "",
+                        "tool_calls": [
+                            {
+                                "function": {
+                                    "name": "write_file",
+                                    "arguments": {"path": "index.html", "content": "<h1>Café</h1>"},
+                                },
+                            }
+                        ],
+                    },
+                    {"content": "Sitio creado con los requisitos indicados."},
+                ],
+                on_confirm=lambda _tool, _args: True,
+            )
+            messages = [
+                {"role": "user", "content": "Crea una página web para mi negocio"},
+                {
+                    "role": "assistant",
+                    "content": "Antes de crear archivos, necesito definir algunos detalles:\n1. ¿Qué colores y estilo visual prefieres?",
+                },
+                {
+                    "role": "user",
+                    "content": "Es una cafetería, con inicio, menú y contacto, colores verdes, estilo moderno y React.",
+                },
+            ]
+
+            answer = engine.run(messages)
+
+            self.assertEqual(answer, "Sitio creado con los requisitos indicados.")
+            self.assertTrue((root / "index.html").exists())
+            self.assertEqual(len(engine.requests), 2)
 
     def test_multiple_model_selected_tools_are_merged_before_the_answer(self) -> None:
         with TemporaryDirectory() as tmp:
@@ -826,6 +922,15 @@ class StreamingChatTests(unittest.TestCase):
             # Deltas are emitted live as they arrive, not buffered into one chunk.
             self.assertEqual(tokens, ["Hola ", "mundo"])
             self.assertTrue(msg["_streamed"])
+
+    def test_stream_parser_rejects_truncated_stream(self) -> None:
+        with TemporaryDirectory() as tmp:
+            with self.assertRaisesRegex(RuntimeError, "ended before completion"):
+                self._run_stream(
+                    Path(tmp),
+                    [b'{"message":{"content":"partial"}}\n'],
+                    [],
+                )
 
     def test_tool_call_stream_does_not_emit_prose(self) -> None:
         with TemporaryDirectory() as tmp:

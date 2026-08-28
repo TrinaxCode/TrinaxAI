@@ -27,25 +27,40 @@ When done, you should have:
 | Free disk | 5 GB | 10-25 GB |
 | Python | 3.10 | 3.12 |
 | Node.js | 22 | 24 LTS |
-| Git | Yes | Yes |
+| Git | Only for manual clone install | For development |
 | Ollama | Yes | Latest version |
 
 If you use NVIDIA, install the drivers before downloading large models. TrinaxAI also works CPU-only, but responses will be slower.
+
+## Recommended graphical install
+
+1. [Download the TrinaxAI Manager package for Linux](https://github.com/TrinaxCode/TrinaxAI/releases/download/v1.2.0/TrinaxAI-Manager-Linux.deb).
+2. Open the downloaded package with your system's software installer.
+3. Open **TrinaxAI Manager**, select **Install**, and wait for the process to finish.
+
+The Manager downloads and configures TrinaxAI directly. You do not need Git or terminal commands. A system progress window may ask for your password to install required packages; keep it open until it finishes. Use the same Manager later for **Update** or **Uninstall**. If your distribution does not support `.deb`, use the portable `TrinaxAI-Manager-Linux.tar.gz` from the release page.
 
 ## Recommended guided install
 
 From a terminal:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/TrinaxCode/TrinaxAI/main/install.sh | bash
+installer="$(mktemp)"
+trap 'rm -f "$installer"' EXIT
+curl --fail --location --output "$installer" "https://github.com/TrinaxCode/TrinaxAI/releases/download/v1.2.0/TrinaxAI-1.2.0-installer.sh"
+bash -n "$installer"
+less "$installer"
+bash "$installer"
 ```
 
-The installer uses `$XDG_DATA_HOME/trinaxai` (normally `~/.local/share/trinaxai`) for a new installation, while continuing to recognize an existing legacy `~/trinaxai` install. It detects RAM, creates `.env`, installs required dependencies, and prepares the PWA automatically. Optional choices such as model downloads, LAN system control, autostart, and starting services are prompted by default.
+The installer uses `$XDG_DATA_HOME/trinaxai` (normally `~/.local/share/trinaxai`) for a new installation, while continuing to recognize an existing legacy `~/trinaxai` install. It detects RAM, creates `.env`, installs required dependencies, and prepares the PWA automatically. Optional choices such as model downloads, autostart, and starting services are prompted by default. Host administration remains localhost-only.
 
 Choose a different application directory when needed:
 
+If you used the download block above, replace its final command with:
+
 ```bash
-curl -fsSL https://raw.githubusercontent.com/TrinaxCode/TrinaxAI/main/install.sh | bash -s -- --install-dir "$HOME/apps/trinaxai"
+bash "$installer" --install-dir "$HOME/apps/trinaxai"
 ```
 
 After installation, lifecycle operations do not require changing directories:
@@ -70,8 +85,8 @@ The profile is chosen automatically. In interactive mode, choose `Normal` unless
 
 - `8gb`: low-memory machines.
 - `16gb`: balanced profile.
-- `max`: more RAM/CPU, larger models.
-- `ultra`: 32 GB+ and powerful hardware.
+- `32gb`: more RAM or a capable GPU.
+- `64gb`: abundant memory or a powerful GPU.
 
 ## Manual install
 
@@ -117,14 +132,14 @@ cd ~/trinaxai
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
-python -m pip install -r requirements.txt
+python -m pip install --require-hashes -r requirements.lock
 ```
 
 ### 4. Install the PWA
 
 ```bash
 cd chat-pwa
-npm install
+npm ci
 npm run build
 cd ..
 ```
@@ -156,7 +171,8 @@ Recommended starting values:
 TRINAXAI_PROFILE=16gb
 TRINAXAI_HOST=127.0.0.1
 TRINAXAI_PORT=3333
-TRINAXAI_INDEX_DIR=~/Documents
+TRINAXAI_INDEX_DIR=./local_sources
+# Deprecated compatibility value; host administration is always localhost-only.
 TRINAXAI_ALLOW_LAN_SYSTEM=0
 TRINAXAI_CORS_ORIGINS=https://localhost:3334,http://localhost:3334,https://127.0.0.1:3334,http://127.0.0.1:3334
 OLLAMA_BASE_URL=http://localhost:11434
@@ -182,8 +198,8 @@ ollama pull qwen3.5:4b
 ollama pull qwen3-embedding:0.6b
 ```
 
-For `8gb`, `max`, and `ultra`, use the exact current fleet in the
-[Models & profiles table](../README.md#-models--profiles). The installer pulls
+For `8gb`, `32gb`, and `64gb`, use the exact current fleet in the
+[Models & profiles table](../README.md#models-and-hardware-profiles). The installer pulls
 the text/RAG set automatically. Vision models download on first image analysis;
 manual pulls are only needed for custom setups.
 
@@ -216,6 +232,10 @@ Direct alternative:
 .venv/bin/python service_manager.py start --base-dir "$PWD"
 ```
 
+The gateway is loopback-only by default. For intentional LAN access, set
+`TRINAXAI_PWA_HOST=0.0.0.0` in `.env`, restart TrinaxAI, and pair the remote
+browser before using it.
+
 Open:
 
 ```text
@@ -228,7 +248,9 @@ From a phone or tablet on the same Wi-Fi:
 https://YOUR-LAN-IP:3334
 ```
 
-Accept the certificate warning if it appears. It is a local/self-signed certificate.
+If the browser reports an untrusted certificate, install the public CA printed by
+`trinaxai network` and trust it on that device. Do not bypass the warning for a
+LAN connection; see [LAN pairing and HTTPS trust](NETWORK_PAIRING.md).
 
 ## Shut down, restart, and check status
 
@@ -275,7 +297,7 @@ Disable:
 .venv/bin/python service_manager.py disable-autostart --base-dir "$PWD"
 ```
 
-### Advanced option with system systemd
+### Advanced option with system-wide systemd
 
 `setup_trinaxai.sh` is Linux-only. It creates systemd units in `/etc/systemd/system`, configures Ollama, and adds a sudoers rule to allow starting/stopping from the PWA without a password prompt.
 
@@ -357,13 +379,13 @@ Then start only the host PWA gateway and the Docker API:
 ```bash
 export TRINAXAI_DOCKER_UID="$(id -u)"
 export TRINAXAI_DOCKER_GID="$(id -g)"
-export TRINAXAI_DOCKER_IMAGE=ghcr.io/trinaxcode/trinaxai:1.1.0
+export TRINAXAI_DOCKER_IMAGE=ghcr.io/trinaxcode/trinaxai:1.2.0
 docker compose pull
 docker compose up --no-build -d
 .venv/bin/python service_manager.py start-frontend --base-dir "$PWD"
 ```
 
-The registry also publishes `1.1`, `1`, and `latest` tags. Pin `1.1.0` for a
+The registry also publishes `1.2`, `1`, and `latest` tags. Pin `1.2.0` for a
 reproducible deployment. To build the current checkout instead, omit
 `TRINAXAI_DOCKER_IMAGE` and run `docker compose up --build -d`.
 
@@ -475,7 +497,9 @@ To preselect removing Ollama models:
 | 3333 | RAG API | FastAPI backend |
 | 3334 | PWA | Web interface |
 
-If you use a phone/tablet, allow `3333` and `3334` only on your private network. Do not expose these ports to the internet.
+If you use a phone/tablet, allow only the PWA gateway on `3334` on your private
+network. Keep FastAPI `3333` and Ollama `11434` bound to loopback; do not expose
+them to the LAN or internet.
 
 Ollama has no built-in authentication. If `OLLAMA_HOST=0.0.0.0`, other devices on your LAN could use your models. For remote access, use a VPN such as Tailscale or WireGuard.
 
@@ -487,6 +511,6 @@ Ollama has no built-in authentication. If `OLLAMA_HOST=0.0.0.0`, other devices o
 | PWA does not open | Run `cd chat-pwa && npm run dev`. |
 | API does not respond | Run `./startup_ai.sh` and check `logs/rag_api.log`. |
 | Model not found | Run `ollama pull model-name`. |
-| Phone cannot connect | Add your LAN IP to `TRINAXAI_CORS_ORIGINS` and check your firewall. |
-| Untrusted certificate | Accept the warning for local use. |
+| Phone cannot connect | Run `trinaxai network refresh`, open the reported `https://HOST-LAN-IP:3334` URL, and allow only the gateway on the private-network firewall. |
+| Untrusted certificate | Install/trust the public CA from `trinaxai network` on the device; do not bypass TLS on a LAN. See [LAN pairing and HTTPS trust](NETWORK_PAIRING.md). |
 | Slow responses | Use smaller models or a lower profile with `TRINAXAI_PROFILE=8gb ./install.sh`. |

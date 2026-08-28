@@ -1,5 +1,7 @@
 # Arquitectura de TrinaxAI
 
+[English](ARCHITECTURE.md)
+
 ## Visión General
 
 ```
@@ -16,14 +18,16 @@ CLI local ───────────────────────�
 
 TrinaxAI es un **stack local de tres capas**:
 
-1. **Frontend PWA** (React 19 + TypeScript + Vite) en el puerto 3334
+1. **Frontend PWA** (React 19 + TypeScript, compilado con Vite) en el puerto 3334
 2. **API RAG** (FastAPI + LlamaIndex) en loopback:3333
 3. **Ollama** (entorno de ejecución de modelos) en loopback:11434
 
-El gateway PWA en 3334 es la frontera orientada a LAN. Reenvía a ambos servicios
-loopback, firma el peer original verificado para FastAPI y solo publica las
-operaciones Ollama necesarias. Inferencia/datos permanecen en el host por
-defecto; instalación/modelos, investigación opt-in y endpoints externos usan red.
+El gateway PWA de producción es el pequeño servidor Node de `chat-pwa/server.mjs`;
+el proxy integrado de Vite se usa solo durante el desarrollo. El gateway en 3334
+es la frontera orientada a LAN: reenvía a ambos servicios loopback, firma el
+peer original verificado para FastAPI y solo publica las operaciones Ollama
+necesarias. Inferencia/datos permanecen en el host por defecto; instalación,
+modelos, investigación opt-in y endpoints externos usan red.
 
 ---
 
@@ -34,7 +38,7 @@ defecto; instalación/modelos, investigación opt-in y endpoints externos usan r
 La fuente única de verdad para todos los subsistemas. Define:
 
 - **Flota de modelos** — `MODEL_GENERAL`, `MODEL_CODE`, `MODEL_DEEP` y `MODEL_FAST`; los nombres concretos dependen del perfil activo y se pueden sobrescribir en `.env`.
-- **Perfiles de hardware** — ajustados automáticamente por `TRINAXAI_PROFILE` (4gb/8gb/16gb/max/ultra)
+- **Perfiles de hardware** — conscientes de CPU/RAM/GPU (`8gb`/`16gb`/`32gb`/`64gb`), guardados en `storage/hardware_profile.json`
 - **Presets de embeddings** — Qwen3 Embedding 0.6B/4B/8B según perfil, nomic lite, all-minilm rápido
 - **Funciones de fábrica** — `make_llm()`, `make_embed()`, `make_reranker()`
 - **Enrutador automático** — clasificador heurístico `route_model()` (sin llamada al LLM)
@@ -47,6 +51,13 @@ inicialización por lifespan. `app/routes/` define HTTP, `app/schemas/` los
 contratos y `app/services/` la lógica por dominio. El único estado mutable del
 motor está en `app/services/engine_state.py`. `rag_api.py` queda como fachada
 compatible.
+
+La superficie RAG/runtime está separada por responsabilidad: `rag_service.py`
+coordina la política de cada request y la recuperación, `rag_generation.py`
+contiene las primitivas de respuesta del modelo, `rag_streaming.py` gestiona el
+SSE sync/async y la cancelación, y `shared_runtime.py` conserva una fachada
+legacy pequeña y compatible. `runtime_engine.py`, `runtime_index.py` y
+`runtime_usage.py` aíslan motor, manifiestos y persistencia de uso.
 
 Subsistemas clave:
 
@@ -64,10 +75,17 @@ Subsistemas clave:
 | **Estadísticas de uso** | Analítica local basada en JSONL |
 | **Sincronización de estado** | Operaciones schema-v2, deletes explícitos, revisión server, ETag/CAS y merge de conflicto |
 
-### `index.py` — Indexador de Documentos
+### `index.py` — Punto de Entrada del Indexador
+
+`index.py` sigue siendo el punto de entrada CLI y la fachada compatible. Sus
+responsabilidades están separadas en `trinaxai_index_documents.py` (descubrimiento
+y extracción de formatos), `trinaxai_index_state.py` (manifiestos, fingerprints,
+diffs y actualizaciones de nodos) y `trinaxai_index_storage.py` (publicación y
+recuperación durable). Las funciones históricas siguen disponibles a través de
+`index.py`, sin migración obligatoria para scripts o tests.
 
 - **Recolección de archivos** — Poda agresiva de directorios que omite `node_modules`, `.git`, `venv`, etc.
-- **Chunking con conciencia AST** — `CodeSplitter` para más de 15 lenguajes, `SentenceSplitter` para prosa
+- **Chunking con conciencia AST** — `CodeSplitter` para 16 lenguajes de código y `SentenceSplitter` como fallback de texto para formatos adicionales
 - **Modo incremental** — Fingerprint BLAKE2b-256 más versiones de extractor/chunker/embedding
 - **Colecciones multi-source** — Cada raíz sincronizada tiene `source_id` estable; varias raíces pueden repetir ruta relativa
 - **Publicación recuperable** — Índice y manifest se preparan juntos, publican con journal/marker y revierten un commit interrumpido
@@ -79,7 +97,18 @@ Los componentes TypeScript construidos con Tailwind CSS y framer-motion incluyen
 
 | Componente | Propósito |
 |---|---|
-| `ChatInterface` | Interfaz principal de chat con streaming, markdown, voz y slash commands |
+| `ChatInterface` | Frontera estable que delega estado y renderizado en módulos de chat enfocados |
+| `ChatInterfaceView` | Layout y composición visual del chat |
+| `useChatController` | Estado del chat, preferencias, voz y composición de UI |
+| `useChatSend` | Envío de mensajes, comandos slash y enrutamiento |
+| `useChatMessageActions` | Edición, regeneración y continuación de mensajes |
+| `useChatTurn` | Enrutamiento del turno, contexto, investigación y continuaciones |
+| `useChatDocuments` | Extracción, jobs de indexación y contexto de documentos adjuntos |
+| `useChatAttachments` | Arrastrar/pegar, preview, descarga y ciclo de vida de adjuntos |
+| `useChatVoice` | Reconocimiento, voz local y respuestas habladas |
+| `AgentInterface` | Composición de Agent; controlador, vista y voz están separados |
+| `useAgentController` | Ejecución del agente, aprobaciones, historial y acciones de mensajes |
+| `AgentInterfaceView` | Renderizado del historial, controles, conversación y compositor |
 | `ChatSidebar` | Historial, carpetas, búsqueda y flujos de exportación |
 | `Settings` | Controles de modelos locales, indexación, prompts, memoria y estadísticas |
 | `KnowledgeBrowser` | Explora chunks indexados por colección→archivo→chunk |
@@ -167,8 +196,8 @@ index.py arranca
 |---|---|
 | **Red** | FastAPI/Ollama en loopback; solo el gateway PWA mira a LAN |
 | **Identidad gateway** | Peer/método/ruta con HMAC fresca; backend ignora forwarding ordinario |
-| **Identidad de dispositivo** | Pairing de un uso; bearer revocable con scopes conservado en `localStorage` entre reinicios |
-| **Endpoints protegidos** | Loopback directo, scope de dispositivo o supercredencial admin; una credencial inválida falla cerrado |
+| **Identidad de dispositivo** | Pairing de un uso; bearer revocable con scopes guardado en una cookie `HttpOnly; SameSite=Strict`; solo los valores legacy se migran desde el almacenamiento web |
+| **Endpoints protegidos** | Operaciones de bajo riesgo usan credenciales de dispositivo/admin; administrar el host exige loopback original verificado; credenciales inválidas fallan cerrado |
 | **Fachada Ollama** | Allowlist método/ruta, autorización, token bucket monotónico y lock de inferencia |
 | **Agente** | Raíces registradas, paths/symlinks, bubblewrap Linux sin red y fallo cerrado sin aislamiento |
 | **TLS** | Los servicios administrados pueden usar certificados locales; `TRINAXAI_TLS_VERIFY` controla verificaciones salientes concretas |
@@ -183,7 +212,8 @@ index.py arranca
 storage/
 ├── docstore.json          # Almacén de documentos de LlamaIndex
 ├── index_store.json       # Metadatos de índice de LlamaIndex
-├── *_vector_store.json    # Almacenes vectoriales/namespaces persistidos
+├── vectors.sqlite3        # Instantánea vectorial transaccional embebida
+├── *_vector_store.json    # Archivos vectoriales antiguos, solo para migración
 ├── graph_store.json       # Almacén de grafo de LlamaIndex
 ├── manifest.json          # Fuente/ruta→fingerprints de contenido + pipeline
 ├── .index-generation.json # Marker durable de la generación activa
@@ -206,6 +236,8 @@ storage/
 - **Chunking AST** — respeta los límites de funciones/clases en el código
 - **Búsqueda híbrida** — la fusión de vector + BM25 captura tanto coincidencias semánticas como exactas
 - **Enrutamiento automático heurístico** — sin llamada al LLM, instantáneo y gratuito
+- **Enrutamiento por capacidad** — las consultas públicas usan búsqueda web, el historial de proyectos propios usa RAG, las solicitudes complejas con varias fuentes usan investigación profunda y las creaciones ejecutables usan Agent
+- **Puerta de aclaración del Agent** — una creación web incompleta pregunta por negocio, secciones, estilo visual y tecnología antes de modificar el workspace
 - **Colecciones** — concepto de primera clase en todo el stack
 - **PWA en lugar de Electron** — más ligera, compatible con móviles, sin cadena de herramientas nativa
 - **Índice incremental transaccional** — fingerprints de contenido/pipeline,
@@ -228,21 +260,25 @@ Esta sección ayuda a los contribuidores a encontrar los archivos correctos para
 | Qué cambiar | Dónde |
 |---|---|
 | Lógica del endpoint de chat | `app/routes/chat.py` + `app/services/rag_service.py` |
-| Recuperación RAG + síntesis | `app/services/rag_service.py` (`run_rag`, `build_engine`, `prepare_query`) |
-| Streaming SSE | `app/services/rag_service.py` `generate_stream()` + `chat-pwa/src/lib/api.ts` |
+| Recuperación RAG + síntesis | `app/services/rag_service.py` (`run_rag`, `prepare_query`) + `app/services/rag_generation.py` |
+| Streaming SSE | `app/services/rag_streaming.py` + `chat-pwa/src/lib/api_streams.ts` (`api.ts` conserva la fachada pública) |
 | Plantilla de prompt | `app/generation/prompts.py` (`GROUNDED_QA_TEMPLATE`) |
 | Enrutamiento automático de modelos | `config.py` `route_model()` |
-| UI del chat en frontend | `chat-pwa/src/components/ChatInterface.tsx` |
+| Frontera de chat en frontend | `chat-pwa/src/components/ChatInterface.tsx` + `chat-pwa/src/components/chat/ChatInterfaceView.tsx` |
+| Estado y envío del chat | `chat-pwa/src/hooks/useChatController.ts` + `chat-pwa/src/hooks/useChatSend.ts` |
+| Acciones de mensajes | `chat-pwa/src/hooks/useChatMessageActions.ts` |
+| UI y ejecución de Agent | `chat-pwa/src/components/agent/AgentInterfaceView.tsx` + `chat-pwa/src/hooks/useAgentController.ts` |
+| Voz y contratos de Agent | `chat-pwa/src/hooks/useAgentVoice.ts` + `chat-pwa/src/components/agent/agentTypes.ts` |
 | Hook de streaming en frontend | `chat-pwa/src/hooks/useStreamChat.ts` |
 
 ### Indexación / Pipeline RAG
 
 | Qué cambiar | Dónde |
 |---|---|
-| Indexación de documentos | `index.py` (punto de entrada), `config.py` (configuración de chunking) |
-| Estrategia de chunking | `index.py` — `CodeSplitter` para código, `SentenceSplitter` para prosa |
+| Indexación de documentos | `index.py` (punto de entrada), `trinaxai_index_documents.py` (descubrimiento/extracción), `config.py` (configuración de chunking) |
+| Estrategia de chunking | `index.py` + `trinaxai_index_documents.py` — `CodeSplitter` para código, `SentenceSplitter` para prosa |
 | Modelo de embeddings | `config.py` `make_embed()` |
-| Indexación incremental | `index.py` lógica del manifiesto + `config.py` `MANIFEST_PATH` |
+| Indexación incremental | `trinaxai_index_state.py` lógica de manifiestos/fingerprints + `config.py` `MANIFEST_PATH` |
 | Publicación/recuperación transaccional | `trinaxai_index_storage.py` |
 | Subida de índice (carpeta del navegador) | `app/routes/system.py` + `app/services/system_service.py` |
 | Vigilante de archivos | `app/services/watcher_service.py` + `app/routes/watcher.py` |
@@ -292,22 +328,22 @@ Esta sección ayuda a los contribuidores a encontrar los archivos correctos para
 ### Backend (Python)
 
 ```bash
-# Todas las pruebas del backend
+### Todas las pruebas del backend
 .venv/bin/python -m pytest -q
 
-# Archivos de prueba específicos
+### Archivos de prueba específicos
 .venv/bin/python -m pytest tests/test_security_endpoints.py -v
 .venv/bin/python -m pytest tests/test_rag_api_reset_and_sources.py -v
 
-# Métricas deterministas y evaluación golden contra API/resultados guardados
+### Métricas deterministas y evaluación golden contra API/resultados guardados
 .venv/bin/python -m pytest tests/test_rag_metrics.py -v
 .venv/bin/python scripts/evaluate_rag.py --api-url https://localhost:3333 \
   --token "$TRINAXAI_ADMIN_TOKEN" --output rag-eval-report.json
 
-# Lint
+### Lint
 .venv/bin/python -m ruff check .
 
-# Verificación de tipos (mejor esfuerzo, no estricto)
+### Verificación de tipos (mejor esfuerzo, no estricto)
 .venv/bin/python -m py_compile rag_api.py config.py index.py
 ```
 
@@ -366,22 +402,22 @@ Estas áreas requieren cuidado extra al modificarlas:
    configurado explícitamente y con la clave HMAC compartida; firmas obsoletas,
    repetidas, malformadas o de otra ruta fallan cerrado. Pertenecer a la red no
    concede privilegios por sí solo.
-3. Loopback directo tiene privilegio del operador local. Admin obtiene todos los
-   scopes. Un token emparejado obtiene solo los scopes registrados.
-4. Cada ruta exige `chat`, `read_private`, `index`, `system`, `agent` o `web`. Una
-   credencial enviada pero inválida nunca se ignora.
-5. El fallback legacy de LAN privada se limita a control de sistema, debe estar
-   explícitamente activo y solo aplica sin token admin. El resto devuelve `403`.
-6. `agent_yolo` nunca activa autoaprobación HTTP remota; las herramientas
-   peligrosas remotas siempre esperan una decisión de aprobación.
+3. Loopback directo tiene privilegio del operador local. Los tokens de dispositivo
+   solo pueden incluir `chat`, `read_private` y `web`; scopes elevados antiguos se ignoran.
+4. Las rutas `system`, `index`, `agent` o `agent_yolo` exigen procedencia loopback
+   original verificada. Un token admin no puede evitar esa comprobación.
+5. `TRINAXAI_ALLOW_LAN_SYSTEM` se conserva solo por compatibilidad de configuración
+   y no concede autoridad. Solicitudes inválidas o sin permiso devuelven `403`.
+6. `agent_yolo` HTTP sigue limitado a loopback y las herramientas peligrosas
+   conservan aprobación y sandbox.
 
 **Valores por defecto:**
 - `TRINAXAI_ADMIN_TOKEN` — vacío (no configurado). El acceso desde localhost funciona automáticamente.
-- El pairing concede `chat,read_private` salvo que el host solicite más scopes.
-  El token en claro se entrega una vez y queda en `localStorage` de la PWA hasta
-  autorrevocación, revocación del host o borrado remoto.
-- `TRINAXAI_ALLOW_LAN_SYSTEM` — `0`; el fallback legacy de control permanece
-  apagado. Prefiere pairing y conserva la supercredencial admin en el host.
+- El pairing concede `chat,read_private` y opcionalmente puede añadir `web`.
+  El token nuevo queda solo en una cookie `HttpOnly; SameSite=Strict` con alcance
+  `/api/rag`; los valores legacy se leen únicamente durante la migración explícita
+  de `/v1/pairing/me` y después se eliminan.
+- `TRINAXAI_ALLOW_LAN_SYSTEM` — obsoleta e ignorada para autorización.
 
 **Probar el modelo de seguridad:**
 ```bash
@@ -398,9 +434,9 @@ Estos principios guían todas las decisiones de diseño y contribución:
 2. **Privacidad por defecto** — Los datos de chat, código indexado y documentos se almacenan localmente por defecto. No hay cuentas integradas; las métricas de uso locales se guardan en el host.
 3. **Sin nube obligatoria** — Ollama se ejecuta localmente. Opcional: los usuarios pueden apuntar a una instancia remota de Ollama en su propia infraestructura.
 4. **Confirmaciones para acciones peligrosas** — El reseteo de fábrica, eliminación de colecciones y apagado del sistema requieren cabeceras de confirmación explícitas o prompts interactivos.
-5. **Seguridad por defecto** — Los backends usan loopback, las capabilities LAN
-   requieren pairing con scopes, el fallback legacy queda apagado y CORS es una
-   defensa adicional del navegador, no identidad.
+5. **Seguridad por defecto** — Los backends usan loopback, las lecturas LAN
+   requieren pairing con scopes, administrar el host exige loopback original
+   verificado y CORS es una defensa adicional del navegador, no identidad.
 6. **Compatibilidad hacia atrás** — `rag_api.py` es una fachada delgada; el código nuevo usa `app.main`, routers y servicios directamente.
 7. **Multiplataforma con evidencia** — Linux está probado en CI en Ubuntu. Windows y macOS tienen instaladores más validación de sintaxis/humo en CI, pero la validación completa de extremo a extremo debe permanecer explícita.
 8. **Accesible** — Soporte bilingüe español e inglés. La PWA funciona en móvil. La CLI funciona sobre SSH.
@@ -416,6 +452,7 @@ Estos principios guían todas las decisiones de diseño y contribución:
 - [Referencia de configuración](CONFIGURATION.es.md) — Variables, perfiles y seguridad
 - [Referencia de CLI](CLI_REFERENCE.es.md) — Comandos, flags y TOML
 - [Guía de Desarrollo](DEVELOPER_GUIDE.es.md) — Configuración local, convenciones y depuración
+- [Solución de problemas](TROUBLESHOOTING.es.md) — Acciones de recuperación y diagnóstico seguro
 - [Documentación de la PWA](../chat-pwa/README.es.md) — Ejecución y desarrollo del frontend
 - [Política de Seguridad](SECURITY.es.md) — Modelo de amenazas y reporte
 - [Guía de Contribución](CONTRIBUTING.es.md) — Proceso de PR y directrices

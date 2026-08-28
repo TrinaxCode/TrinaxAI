@@ -10,6 +10,7 @@ function sameOrigin(path: string): string {
 
 export const APP_CONFIG = {
   repoUrl: import.meta.env.VITE_TRINAXAI_REPO_URL || 'https://github.com/TrinaxCode/TrinaxAI',
+  websiteUrl: 'https://www.trinaxai.app/',
   docsUrl: import.meta.env.VITE_TRINAXAI_DOCS_URL || 'https://github.com/TrinaxCode/TrinaxAI#readme',
   defaultIndexDir: import.meta.env.VITE_TRINAXAI_INDEX_DIR || '',
   ragBase: isDev

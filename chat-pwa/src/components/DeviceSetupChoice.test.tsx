@@ -1,4 +1,5 @@
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import DeviceSetupChoice from './DeviceSetupChoice';
 
@@ -12,5 +13,21 @@ describe('DeviceSetupChoice', () => {
     expect(screen.getByRole('heading', { name: 'deviceSetupRestoreTitle' })).toBeInTheDocument();
     expect(screen.getByTestId('pairing-card')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /deviceSetupNew/ })).not.toBeInTheDocument();
+  });
+
+  it('uses the shared back icon and restores focus when returning to the choice', async () => {
+    const user = userEvent.setup();
+    render(<DeviceSetupChoice onNewDevice={vi.fn()} />);
+
+    const existing = screen.getByRole('button', { name: /deviceSetupExisting/ });
+    await user.click(existing);
+    const back = screen.getByRole('button', { name: 'back' });
+
+    expect(back).toHaveClass('min-h-11', 'min-w-11');
+    expect(back.querySelector('svg')).toBeInTheDocument();
+    expect(back).toHaveFocus();
+
+    await user.keyboard('{Enter}');
+    expect(screen.getByRole('button', { name: /deviceSetupExisting/ })).toHaveFocus();
   });
 });

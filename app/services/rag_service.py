@@ -3,14 +3,53 @@
 from __future__ import annotations
 
 import asyncio
-import math
 import re
 import threading
 import time
 import urllib.request
+from typing import Callable
 
-from app.generation.spec import TaskSpec
-from trinaxai_errors import classify_error
+from app.security.admin_auth import authorize_scope
+from trinaxai_errors import classify_error as _classify_error_impl
+
+from .rag_generation import AsyncTextResponse as _AsyncTextResponse_impl
+from .rag_generation import TextResponse as _TextResponse
+from .rag_generation import (
+    ThinkingLLM as _ThinkingLLM,
+)
+from .rag_generation import async_text_response as _async_text_response_impl
+from .rag_generation import (
+    estimate_tokens as _estimate_tokens,
+)
+from .rag_generation import (
+    fix_prompt as _fix_prompt,
+)
+from .rag_generation import (
+    freeform_generate as _freeform_generate,
+)
+from .rag_generation import freeform_generate_async as _freeform_generate_async_impl
+from .rag_generation import (
+    normalize_finish_reason as _generation_normalize_finish_reason,
+)
+from .rag_generation import (
+    ollama_async_chat_stream as _generation_ollama_async_chat_stream,
+)
+from .rag_generation import (
+    response_finish_reason as _response_finish_reason,
+)
+from .rag_generation import structurally_incomplete as _structurally_incomplete_impl
+from .rag_generation import (
+    wanted_deliverables as _wanted_deliverables,
+)
+
+# Keep legacy helpers available to tests and callers that patch this facade.
+_AsyncTextResponse = _AsyncTextResponse_impl
+_async_text_response = _async_text_response_impl
+_freeform_generate_async = _freeform_generate_async_impl
+_structurally_incomplete = _structurally_incomplete_impl
+classify_error = _classify_error_impl
+_normalize_finish_reason = _generation_normalize_finish_reason
+_ollama_async_chat_stream = _generation_ollama_async_chat_stream
 
 # ruff: noqa: F405
 from .shared_runtime import (
@@ -25,8 +64,7 @@ from .shared_runtime import (
     StreamingResponse,
     _cache_get,
     _cache_set,
-    _inference_process_lock,
-    _model_slots,
+    _public_rel_path,
     _read_collections_unlocked,
     _record_usage,
     _retriever_for_collections,
@@ -46,10 +84,38 @@ from .shared_runtime import (
     validate_output,
     wants_creator_bio,
 )
+from .shared_runtime import (
+    _inference_process_lock as _runtime_inference_process_lock,
+)
+from .shared_runtime import (
+    _model_slots as _runtime_model_slots,
+)
+
+_inference_process_lock = _runtime_inference_process_lock
+_model_slots = _runtime_model_slots
 
 EMPTY_COLLECTION_MSG = "The selected collection contains no indexed documents."
 NO_RELEVANT_RESULTS_MSG = "No relevant information was found in the selected collection."
-RAG_MIN_SCORE = config._env_float("TRINAXAI_RAG_MIN_SCORE", 0.02, minimum=0.0, maximum=1.0)
+# QueryFusionRetriever's reciprocal-rank score is rank-based, not a semantic
+# probability; 0.015 keeps useful lower-ranked hits without accepting the
+# lowest near-zero candidates as evidence.
+RAG_MIN_SCORE = config._env_float("TRINAXAI_RAG_MIN_SCORE", 0.015, minimum=0.0, maximum=1.0)
+_ABSTENTION_MESSAGES = frozenset({NO_INDEX_MSG, EMPTY_COLLECTION_MSG, NO_RELEVANT_RESULTS_MSG})
+_ABSTENTION_MARKERS = (
+    "no se encontró",
+    "no encontre",
+    "no hay evidencia",
+    "no aparece en",
+    "no puedo determinar",
+    "i don't know",
+    "i do not know",
+    "unable to answer",
+    "do not have access",
+    "not found in",
+    "no evidence",
+    "cannot determine",
+    "cannot provide",
+)
 _CATALOG_QUERY_PATTERNS = (
     r"\b(?:qué|que)\s+(?:proyectos?|archivos?|ficheros?|documentos?|colecciones?)\b.*\bindexad",
     r"\b(?:what|which)\s+(?:projects?|files?|documents?|collections?)\b.*\bindex",
@@ -57,6 +123,21 @@ _CATALOG_QUERY_PATTERNS = (
     r"\b(?:list|show)\s+(?:my\s+)?(?:indexed\s+)?(?:projects?|files?|documents?|collections?)\b",
     r"\b(?:qué|que)\s+tienes\s+indexad",
 )
+
+
+def _is_rag_abstention(content: str, *, rag_requested: bool) -> bool:
+    """Expose deterministic failures and explicit model refusals to ground."""
+    if not rag_requested:
+        return False
+    if content in _ABSTENTION_MESSAGES:
+        return True
+    normalized = re.sub(r"\s+", " ", str(content or "").casefold()).strip()
+    return any(marker in normalized for marker in _ABSTENTION_MARKERS)
+
+
+def _thinking_preference(value: bool | None) -> bool:
+    """Resolve an explicit request preference against the server fallback."""
+    return config.TRINAXAI_THINKING_MODE if value is None else bool(value)
 
 
 def _knowledge_collection_state(collections: list[str] | None) -> str:
@@ -99,7 +180,8 @@ def _cancel_ollama_model(model: str | None) -> None:
             headers={"Content-Type": "application/json"},
             method="POST",
         )
-        with urllib.request.urlopen(request, timeout=2):  # nosec B310 - configured Ollama URL
+        # The configured Ollama URL is validated before this request.
+        with urllib.request.urlopen(request, timeout=2):  # nosec B310
             pass
     except Exception:
         LOG.debug("Could not cancel Ollama model %s", model, exc_info=True)
@@ -126,13 +208,10 @@ def detect_project(text: str) -> str | None:
         pl = str(proj).strip().casefold()
         if len(pl) < 3:
             continue
-        # Match complete names or substantial words only; substring matches
-        # tagged unrelated turns such as "Curso python" as a project.
+        # Require the complete name for multi-word projects; matching one
+        # generic component (for example "documents" in "test-documents")
+        # would silently narrow retrieval to the wrong project.
         hit = bool(re.search(rf"(?<!\w){re.escape(pl)}(?!\w)", t))
-        hit = hit or any(
-            len(word) >= 5 and re.search(rf"(?<!\w){re.escape(word)}(?!\w)", t)
-            for word in re.findall(r"[\wáéíóúüñ]+", pl)
-        )
         if hit and len(pl) > best_len:
             best, best_len = proj, len(pl)
     return best
@@ -154,8 +233,8 @@ def _catalog_answer(collections: list[str] | None, *, spanish: bool) -> str:
         collection = str(metadata.get("collection_id") or config.DEFAULT_COLLECTION_ID)
         if selected and collection not in selected:
             continue
-        rel_path = str(metadata.get("rel_path") or metadata.get("file_path") or "").strip()
-        if rel_path:
+        rel_path = _public_rel_path(metadata)
+        if rel_path != "(unknown)":
             files.setdefault(collection, set()).add(rel_path)
         project = str(metadata.get("project") or "").strip()
         if project:
@@ -377,6 +456,39 @@ def prepare_query(messages: list[dict]) -> tuple[str, str]:
     return retrieval_q, synth_q
 
 
+def _prepare_rag_context(
+    messages: list[dict],
+    *,
+    model_override: str | None = None,
+    retrieval_mode: str = "auto",
+):
+    """Build the request context shared by sync and async RAG pipelines."""
+    messages = _with_persistent_memory(messages)
+    chat = _chat_messages(messages)
+    user_messages = [m for m in chat if m.get("role") == "user"]
+    current = user_messages[-1].get("content", "") if user_messages else (chat[-1].get("content", "") if chat else "")
+    # Keep recent context for anaphoric creator questions such as "¿cuáles son sus enlaces?".
+    creator_requested = wants_creator_bio("\n".join(str(message.get("content", "")) for message in chat[-6:]))
+
+    retrieval_q, synth_q = prepare_query(messages)
+    project = detect_project(retrieval_q)
+    lang = _language_instruction(current)
+    has_index = state.fusion_retriever is not None
+    prompt_tokens = _estimate_tokens(synth_q) + _estimate_tokens(lang)
+    spec = build_task_spec(
+        messages,
+        model_override=model_override,
+        has_index=has_index,
+        estimated_prompt_tokens=prompt_tokens,
+        retrieval_mode=retrieval_mode,
+    )
+    try:
+        LOG.info("TaskSpec: %s", spec.describe())
+    except Exception:
+        LOG.debug("Best-effort operation failed", exc_info=True)
+    return messages, chat, current, creator_requested, retrieval_q, synth_q, project, lang, has_index, spec
+
+
 def _cached_retrieve(
     retrieval_q: str,
     current: str,
@@ -421,35 +533,33 @@ def _cached_retrieve(
         if project_nodes:
             nodes = project_nodes
 
+    exact_terms = tuple(
+        term.casefold()
+        for term in re.findall(r"(?<!\w)[\w][\w-]{7,}(?!\w)", current or "")
+        if "_" in term or any(char.isdigit() for char in term)
+    )
+
+    def exact_match_count(node) -> int:
+        if not exact_terms:
+            return 0
+        content = (node.get_content() if hasattr(node, "get_content") else str(node)).casefold()
+        return sum(term in content for term in exact_terms)
+
+    if exact_terms:
+        exact_nodes = [node for node in nodes if exact_match_count(node)]
+        if exact_nodes:
+            nodes = exact_nodes
+
     # Reranking: reordena por relevancia REAL a la pregunta (no al texto+historial).
     if state.reranker is not None and nodes:
         nodes = state.reranker.postprocess_nodes(nodes, query_bundle=QueryBundle(current))
     else:
-        nodes = nodes[: config.SIMILARITY_TOP_K]
+        nodes = sorted(nodes, key=exact_match_count, reverse=True)[: config.SIMILARITY_TOP_K]
 
     nodes = list(nodes)
     if config.RETRIEVAL_CACHE_SECONDS > 0:
         _cache_set(state.retrieval_cache, state.retrieval_cache_lock, cache_key, nodes)
     return list(nodes)
-
-
-def _estimate_tokens(text: str) -> int:
-    """Conservative multilingual/code token estimate.
-
-    Ollama/LlamaIndex do not expose tokenizer counts uniformly for every model
-    and streaming path. Counting word runs plus punctuation is materially less
-    wrong for Spanish and source code than the old ``len(text) / 4`` rule. API
-    responses label these values as estimates so they are never mistaken for
-    provider-billed exact counts.
-    """
-    pieces = re.findall(r"[\w]+|[^\w\s]", text or "", flags=re.UNICODE)
-    total = 0
-    for piece in pieces:
-        if piece.isalnum() or "_" in piece:
-            total += max(1, math.ceil(len(piece) / 4))
-        else:
-            total += 1
-    return total
 
 
 def _usage_payload(messages: list[dict], content: str, nodes=()) -> dict:
@@ -464,102 +574,6 @@ def _usage_payload(messages: list[dict], content: str, nodes=()) -> dict:
     }
 
 
-class _TextResponse:
-    """Minimal stand-in for a LlamaIndex response for the non-RAG path.
-
-    Exposes the same surface the callers use: ``.response_gen`` (token stream)
-    and ``str(response)`` (full text), plus an empty ``source_nodes`` so the
-    sources payload stays empty when generation is ungrounded.
-    """
-
-    def __init__(self, text: str | None = None, gen=None):
-        self._text = text
-        self._gen = gen
-        self.source_nodes: list = []
-
-    @property
-    def response_gen(self):
-        if self._gen is not None:
-            return self._gen
-        return iter([self._text or ""])
-
-    @property
-    def response(self) -> str:
-        return str(self)
-
-    def __str__(self) -> str:
-        if self._text is None:
-            self._text = "".join(self._gen or [])
-        return self._text or ""
-
-
-def _freeform_generate(
-    llm,
-    prompt: str,
-    stream: bool,
-    cancel_event: threading.Event | None = None,
-):
-    """Generate without RAG grounding. Returns a ``_TextResponse``.
-
-    Always drives Ollama via ``stream_complete`` under the hood — even when the
-    caller wants the full text — because httpx applies its read timeout PER
-    CHUNK for streaming responses, not to the whole generation. On CPU a large
-    creative output can take many minutes; a single blocking ``complete()``
-    would hit the total request timeout, whereas streaming only times out if the
-    model stalls between tokens.
-    """
-
-    def _token_stream():
-        chunks = llm.stream_complete(prompt)
-        try:
-            for chunk in chunks:
-                if cancel_event is not None and cancel_event.is_set():
-                    break
-                delta = getattr(chunk, "delta", None)
-                yield delta if delta is not None else str(chunk)
-        finally:
-            close = getattr(chunks, "close", None)
-            if close is not None:
-                close()
-
-    if stream:
-        return _TextResponse(gen=_token_stream())
-    # "Blocking" call: still stream internally, just accumulate before returning.
-    return _TextResponse(text="".join(_token_stream()))
-
-
-def _wanted_deliverables(text: str) -> tuple[str, ...]:
-    t = (text or "").lower()
-    hits = []
-    if "test" in t or "prueba" in t:
-        hits.append("tests")
-    if "benchmark" in t:
-        hits.append("benchmark")
-    if "faq" in t:
-        hits.append("faq")
-    if "chat" in t:
-        hits.append("chat")
-    if "responsive" in t or "adaptable" in t:
-        hits.append("responsive")
-    if "animaci" in t or "animation" in t:
-        hits.append("animation")
-    return tuple(hits)
-
-
-def _fix_prompt(regime: Regime, original: str, answer: str, findings: str) -> str:
-    """Targeted single-pass correction prompt."""
-    return (
-        "Your previous answer to the user's request has issues that must be "
-        "fixed. Keep everything that was correct; change ONLY what is needed to "
-        "resolve the problems below. Return the COMPLETE corrected result "
-        "(full code/files), not a diff and not a description of the changes.\n\n"
-        f"USER REQUEST:\n{original}\n\n"
-        f"PROBLEMS TO FIX:\n{findings}\n\n"
-        f"PREVIOUS ANSWER:\n{answer}\n\n"
-        "Corrected answer:"
-    )
-
-
 def run_rag(
     messages: list[dict],
     stream: bool,
@@ -570,6 +584,8 @@ def run_rag(
     aggressive_quant: bool | None = None,
     retrieval_mode: str = "auto",
     cancel_event: threading.Event | None = None,
+    thinking: bool = True,
+    on_thinking: Callable[[str], None] | None = None,
 ):
     """Clasifica la tarea, elige régimen/parametros y sintetiza.
 
@@ -577,32 +593,22 @@ def run_rag(
     generación libre (sin RAG, plantilla y parámetros por tarea) para código y
     diseño. Devuelve (response, source_nodes, model, project) — interfaz intacta.
     """
-    messages = _with_persistent_memory(messages)
-    chat = _chat_messages(messages)
-    user_messages = [m for m in chat if m.get("role") == "user"]
-    current = user_messages[-1].get("content", "") if user_messages else (chat[-1].get("content", "") if chat else "")
-    # Creator questions often continue with anaphoric turns such as "¿cuáles
-    # son sus enlaces?". Keep a short recent window so verified creator facts
-    # remain available instead of forcing the model to guess URLs.
-    creator_requested = wants_creator_bio("\n".join(str(message.get("content", "")) for message in chat[-6:]))
-
-    retrieval_q, synth_q = prepare_query(messages)
-    project = detect_project(retrieval_q)
-    lang = _language_instruction(current)
-
-    has_index = state.fusion_retriever is not None
-    prompt_tokens = _estimate_tokens(synth_q) + _estimate_tokens(lang)
-    spec = build_task_spec(
+    (
+        messages,
+        chat,
+        current,
+        creator_requested,
+        retrieval_q,
+        synth_q,
+        project,
+        lang,
+        has_index,
+        spec,
+    ) = _prepare_rag_context(
         messages,
         model_override=model_override,
-        has_index=has_index,
-        estimated_prompt_tokens=prompt_tokens,
         retrieval_mode=retrieval_mode,
     )
-    try:
-        LOG.info("TaskSpec: %s", spec.describe())
-    except Exception:
-        LOG.debug("Best-effort operation failed", exc_info=True)
 
     # ── Grounded path (RAG): unchanged contract, tuned template ──
     if spec.use_rag:
@@ -612,7 +618,7 @@ def run_rag(
             return response, [], spec.model, project
         nodes = _cached_retrieve(retrieval_q, current, collections, project)
         _hide_private_node_metadata(nodes)
-        if retrieval_mode == "knowledge" and not _retrieval_is_relevant(nodes):
+        if not nodes or not _retrieval_is_relevant(nodes):
             nodes = []
             response = _TextResponse(text=NO_RELEVANT_RESULTS_MSG)
             _safe_record_usage("rag", spec.model, project, collections, chat, nodes)
@@ -621,8 +627,11 @@ def run_rag(
             spec.model,
             keep_alive=keep_alive,
             aggressive_quant=aggressive_quant,
+            thinking=bool(thinking and getattr(spec, "thinking", False)),
             **spec.llm_kwargs(),
         )
+        tracker = _ThinkingLLM(llm, on_thinking)
+        llm = tracker
         synth_q_full = f"{lang}\n\n{synth_q}"
         synth = get_response_synthesizer(
             llm=llm,
@@ -631,6 +640,7 @@ def run_rag(
             streaming=stream or cancel_event is not None,
         )
         response = synth.synthesize(synth_q_full, nodes=nodes)
+        response._finish_tracker = tracker
         _safe_record_usage("rag", spec.model, project, collections, chat, nodes)
         return response, nodes, spec.model, project
 
@@ -639,6 +649,7 @@ def run_rag(
         spec.model,
         keep_alive=keep_alive,
         aggressive_quant=aggressive_quant,
+        thinking=bool(thinking and getattr(spec, "thinking", False)),
         **spec.llm_kwargs(),
     )
     prompt = build_generation_prompt(
@@ -675,6 +686,7 @@ def run_rag(
                 spec.model,
                 keep_alive=keep_alive,
                 aggressive_quant=aggressive_quant,
+                thinking=bool(thinking and getattr(spec, "thinking", False)),
                 **spec.llm_kwargs(),
             )
             fixed = _freeform_generate(
@@ -693,7 +705,13 @@ def run_rag(
         _safe_record_usage("gen", spec.model, project, collections, chat, [])
         return _TextResponse(text=text), [], spec.model, project
 
-    response = _freeform_generate(llm, prompt, stream=stream, cancel_event=cancel_event)
+    response = _freeform_generate(
+        llm,
+        prompt,
+        stream=stream,
+        cancel_event=cancel_event,
+        on_thinking=on_thinking,
+    )
     _safe_record_usage("gen", spec.model, project, collections, chat, [])
     return response, [], spec.model, project
 
@@ -726,7 +744,7 @@ def sources_payload(source_nodes) -> list[dict]:
     out = []
     seen = set()
     for n in source_nodes:
-        rel = n.metadata.get("rel_path", "?")
+        rel = _public_rel_path(n.metadata)
         page = n.metadata.get("page_label") or n.metadata.get("page") or n.metadata.get("page_number")
         key = (n.metadata.get("collection_id", config.DEFAULT_COLLECTION_ID), rel, page)
         if key in seen:
@@ -757,6 +775,7 @@ def _run_rag_nonstream(req: ChatRequest, cancel_event: threading.Event | None = 
         aggressive_quant=req.aggressive_quant,
         retrieval_mode=req.mode,
         cancel_event=cancel_event,
+        thinking=_thinking_preference(req.think),
     )
     if cancel_event is not None and not isinstance(response, _TextResponse):
         tokens = []
@@ -770,146 +789,59 @@ def _run_rag_nonstream(req: ChatRequest, cancel_event: threading.Event | None = 
             close = getattr(generator, "close", None)
             if close is not None:
                 close()
-        response = _TextResponse(text="".join(tokens))
+        response = _TextResponse(
+            text="".join(tokens),
+            finish_reason=_response_finish_reason(response, cancelled=cancel_event.is_set()),
+        )
+    elif cancel_event is not None and cancel_event.is_set() and isinstance(response, _TextResponse):
+        response.finish_reason = "cancelled"
     return response, nodes, model, project
 
 
-def _sse(obj: dict) -> str:
-    return f"data: {json.dumps(obj, ensure_ascii=False, separators=(',', ':'))}\n\n"
+from .rag_streaming import (
+    _acquire_model_slot_async as _acquire_model_slot_async_impl,
+)
+from .rag_streaming import (
+    _async_inference_process_lock as _async_inference_process_lock_impl,
+)
+from .rag_streaming import (
+    _async_response_tokens as _async_response_tokens_impl,
+)
+from .rag_streaming import (
+    _cancel_async_task as _cancel_async_task_impl,
+)
+from .rag_streaming import (
+    _completion_metadata,
+    _sse,
+    _sse_done,
+    async_generate_stream,
+)
+from .rag_streaming import (
+    _run_rag_stream_async as _run_rag_stream_async_impl,
+)
+from .rag_streaming import (
+    _sse_error as _sse_error_impl,
+)
+from .rag_streaming import (
+    _stream_quality_payload as _stream_quality_payload_impl,
+)
+from .rag_streaming import (
+    _wait_for_disconnect as _wait_for_disconnect_impl,
+)
+from .rag_streaming import (
+    generate_stream as _generate_stream_impl,
+)
 
-
-def _sse_done() -> str:
-    return "data: [DONE]\n\n"
-
-
-def _sse_error(exc: Exception) -> str:
-    info = classify_error(exc, status_code=503)
-    LOG.error(
-        "streaming RAG failure category=%s code=%s exception_type=%s",
-        info.category.value,
-        info.code,
-        type(exc).__name__,
-    )
-    error = info.to_client_dict()
-    error["recovery"] = f"{error['recovery']} Please retry."
-    return _sse({"trinaxai_error": error})
-
-
-def generate_stream(
-    messages: list[dict],
-    collections: list[str] | None = None,
-    *,
-    model: str | None = None,
-    keep_alive: str | int | None = None,
-    aggressive_quant: bool | None = None,
-    retrieval_mode: str = "auto",
-    request_id: str | None = None,
-):
-    started = time.perf_counter()
-    completed = False
-    selected_model = model
-    _model_slots.acquire()
-    try:
-        with _inference_process_lock():
-            # Resolve the plan up front so the UI preview shows the right model and
-            # so we only require an index for tasks that actually need retrieval.
-            preview_retrieval_q, _ = prepare_query(messages)
-            preview_project = detect_project(preview_retrieval_q)
-            preview_spec = build_task_spec(
-                messages,
-                model_override=model,
-                has_index=state.fusion_retriever is not None,
-                retrieval_mode=retrieval_mode,
-            )
-            if preview_spec.use_rag and state.fusion_retriever is None:
-                yield _sse({"choices": [{"delta": {"content": NO_INDEX_MSG}}]})
-                yield _sse_done()
-                completed = True
-                return
-            preview_model = preview_spec.model
-            yield _sse(
-                {
-                    "trinaxai": {
-                        "model": preview_model,
-                        "project": preview_project,
-                        "phase": "retrieving" if preview_spec.use_rag else "generating",
-                        "mode": preview_spec.retrieval_mode,
-                        "rag_used": preview_spec.use_rag,
-                        "collections": list(collections or []),
-                        "request_id": request_id,
-                    }
-                }
-            )
-            response, nodes, selected_model, project = run_rag(
-                messages,
-                stream=True,
-                collections=collections,
-                model_override=model,
-                keep_alive=keep_alive,
-                aggressive_quant=aggressive_quant,
-                retrieval_mode=retrieval_mode,
-            )
-            if selected_model != preview_model or project != preview_project:
-                yield _sse({"trinaxai": {"model": selected_model, "project": project}})
-            completion_parts: list[str] = []
-            for token in response.response_gen:
-                completion_parts.append(token)
-                yield _sse({"choices": [{"delta": {"content": token}}]})
-            yield _sse(
-                {
-                    "trinaxai_sources": sources_payload(nodes),
-                    "trinaxai_retrieval": {
-                        "mode": preview_spec.retrieval_mode,
-                        "rag_used": preview_spec.use_rag,
-                        "result_count": len(nodes),
-                        "collections": list(collections or []),
-                    },
-                },
-            )
-            yield _sse(
-                {
-                    "trinaxai_usage": _usage_payload(messages, "".join(completion_parts), nodes),
-                    "trinaxai_timing": {
-                        "total_ms": round((time.perf_counter() - started) * 1000, 1),
-                    },
-                    "trinaxai_quality": _stream_quality_payload(
-                        preview_spec,
-                        messages,
-                        "".join(completion_parts),
-                    ),
-                }
-            )
-            completed = True
-    except Exception as e:
-        yield _sse_error(e)
-    finally:
-        if not completed:
-            _cancel_ollama_model(selected_model)
-        _model_slots.release()
-    yield _sse_done()
-
-
-def _stream_quality_payload(spec: TaskSpec, messages: list[dict], content: str) -> dict:
-    """Report post-stream heuristics without pretending they are compilation."""
-    if not spec.validate:
-        return {"checked": False, "kind": "heuristic"}
-    current = next(
-        (str(message.get("content") or "") for message in reversed(messages) if message.get("role") == "user"),
-        "",
-    )
-    result = validate_output(
-        content,
-        regime=spec.regime.value,
-        deliverables=_wanted_deliverables(current),
-        require_responsive="responsive" in current.lower() or spec.regime is Regime.CREATIVE,
-    )
-    return {
-        "checked": True,
-        "kind": "heuristic",
-        "ok": result.ok,
-        "errors": result.errors,
-        "missing": result.missing,
-    }
+# Keep the old module as a patchable compatibility facade for tests and callers.
+_acquire_model_slot_async = _acquire_model_slot_async_impl
+_async_inference_process_lock = _async_inference_process_lock_impl
+_async_response_tokens = _async_response_tokens_impl
+_cancel_async_task = _cancel_async_task_impl
+generate_stream = _generate_stream_impl
+_run_rag_stream_async = _run_rag_stream_async_impl
+_sse_error = _sse_error_impl
+_stream_quality_payload = _stream_quality_payload_impl
+_wait_for_disconnect = _wait_for_disconnect_impl
 
 
 async def chat(req: ChatRequest, request: Request):
@@ -918,22 +850,35 @@ async def chat(req: ChatRequest, request: Request):
     Endpoint principal de chat, compatible con la API de OpenAI. Enruta el
     modelo, decide si usar RAG y responde en streaming (SSE) o en un único JSON.
     """
+    if req.mode == "knowledge":
+        authorize_scope(request, "read_private")
     enforce_rate_limit(request, bucket="chat")
     request_id = getattr(request.state, "request_id", f"legacy-{int(time.time())}")
+    _preview_spec = build_task_spec(
+        req.messages,
+        model_override=req.model,
+        has_index=state.fusion_retriever is not None,
+        retrieval_mode=req.mode,
+    )
+    if req.mode != "knowledge" and _preview_spec.use_rag:
+        authorize_scope(request, "read_private")
     collection_state = _knowledge_collection_state(req.collections) if req.mode == "knowledge" else "ready"
 
     if collection_state == "empty":
         payload = {
             "mode": "knowledge",
             "rag_used": True,
+            "abstained": True,
             "result_count": 0,
             "collections": list(req.collections or [config.DEFAULT_COLLECTION_ID]),
+            "error_code": "collection_empty",
         }
         if req.stream:
 
             async def empty_stream():
                 yield _sse({"trinaxai": payload})
                 yield _sse({"choices": [{"delta": {"content": EMPTY_COLLECTION_MSG}}]})
+                yield _sse({"trinaxai_finish": _completion_metadata("stop", EMPTY_COLLECTION_MSG)})
                 yield _sse({"trinaxai_sources": [], "trinaxai_retrieval": payload})
                 yield _sse_done()
 
@@ -952,7 +897,7 @@ async def chat(req: ChatRequest, request: Request):
 
     if req.stream:
         return StreamingResponse(
-            generate_stream(
+            async_generate_stream(
                 req.messages,
                 req.collections,
                 model=req.model,
@@ -960,6 +905,8 @@ async def chat(req: ChatRequest, request: Request):
                 aggressive_quant=req.aggressive_quant,
                 retrieval_mode=req.mode,
                 request_id=request_id,
+                thinking=_thinking_preference(req.think),
+                request=request,
             ),
             media_type="text/event-stream",
             headers={
@@ -968,20 +915,15 @@ async def chat(req: ChatRequest, request: Request):
             },
         )
     # Only block on a missing index when the task actually needs retrieval.
-    _preview_spec = build_task_spec(
-        req.messages,
-        model_override=req.model,
-        has_index=state.fusion_retriever is not None,
-        retrieval_mode=req.mode,
-    )
     usage_nodes = []
+    finish_reason = "stop"
     if _preview_spec.use_rag and state.fusion_retriever is None:
         content, sources, model, project = NO_INDEX_MSG, [], config.LLM_MODEL, None
     else:
         cancel_event = threading.Event()
         task = asyncio.create_task(run_in_threadpool(_run_rag_nonstream, req, cancel_event))
         while not task.done():
-            if await request.is_disconnected():
+            if state.lifecycle_stopping.is_set() or await request.is_disconnected():
                 cancel_event.set()
                 _cancel_ollama_model(_preview_spec.model)
                 try:
@@ -995,6 +937,8 @@ async def chat(req: ChatRequest, request: Request):
         response, nodes, model, project = await task
         usage_nodes = nodes
         content, sources = str(response), sources_payload(nodes)
+        finish_reason = _response_finish_reason(response)
+    abstained = _is_rag_abstention(content, rag_requested=_preview_spec.use_rag)
     return {
         "id": f"chatcmpl-{request_id}",
         "object": "chat.completion",
@@ -1004,7 +948,7 @@ async def chat(req: ChatRequest, request: Request):
             {
                 "index": 0,
                 "message": {"role": "assistant", "content": content},
-                "finish_reason": "stop",
+                "finish_reason": finish_reason,
             }
         ],
         "trinaxai": {
@@ -1013,9 +957,11 @@ async def chat(req: ChatRequest, request: Request):
             "sources": sources,
             "mode": _preview_spec.retrieval_mode,
             "rag_used": _preview_spec.use_rag and state.fusion_retriever is not None,
+            "abstained": abstained,
             "result_count": len(sources),
             "collections": list(req.collections or []),
             "request_id": request_id,
+            "completion": _completion_metadata(finish_reason, content),
         },
         "usage": _usage_payload(req.messages, content, usage_nodes),
     }

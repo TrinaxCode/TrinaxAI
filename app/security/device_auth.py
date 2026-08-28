@@ -24,7 +24,8 @@ from trinaxai_core import exclusive_process_lock
 
 SCHEMA_VERSION = 1
 DEVICE_TOKEN_HEADER = "X-TrinaxAI-Device-Token"
-ALL_DEVICE_SCOPES = frozenset({"chat", "read_private", "index", "system", "agent", "agent_yolo", "web"})
+ALL_DEVICE_SCOPES = frozenset({"chat", "read_private", "web"})
+RETIRED_DEVICE_SCOPES = frozenset({"system", "index", "agent", "agent_yolo"})
 DEFAULT_DEVICE_SCOPES = ("chat", "read_private")
 _CODE_ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ"
 _CODE_LENGTH = 8
@@ -168,9 +169,6 @@ def validate_scopes(scopes: Iterable[str] | None) -> tuple[str, ...]:
     requested = tuple(dict.fromkeys(str(scope).strip() for scope in source))
     if not requested or any(scope not in ALL_DEVICE_SCOPES for scope in requested):
         raise ValueError("Unknown or empty device scope set.")
-    # Automatic execution is never useful without the ordinary agent scope.
-    if "agent_yolo" in requested and "agent" not in requested:
-        raise ValueError("agent_yolo requires the agent scope.")
     return requested
 
 
@@ -266,7 +264,7 @@ def public_device(device: dict[str, Any]) -> dict[str, Any]:
     return {
         "id": str(device.get("id") or ""),
         "name": str(device.get("name") or ""),
-        "scopes": list(device.get("scopes") or []),
+        "scopes": [scope for scope in device.get("scopes") or [] if scope in ALL_DEVICE_SCOPES],
         "created_at": float(device.get("created_at") or 0),
         "last_seen_at": device.get("last_seen_at"),
         "expires_at": device.get("expires_at"),
@@ -281,6 +279,8 @@ def authenticate_device_token(
     now: float | None = None,
 ) -> dict[str, Any] | None:
     """Return the matching active device if its token grants ``required_scope``."""
+    if required_scope in RETIRED_DEVICE_SCOPES:
+        return None
     if required_scope not in ALL_DEVICE_SCOPES:
         raise ValueError(f"Unknown device scope: {required_scope}")
     match = _TOKEN_RE.fullmatch(str(token).strip())
@@ -355,6 +355,7 @@ __all__ = [
     "ALL_DEVICE_SCOPES",
     "DEFAULT_DEVICE_SCOPES",
     "DEVICE_TOKEN_HEADER",
+    "RETIRED_DEVICE_SCOPES",
     "DeviceRegistryError",
     "authenticate_device_token",
     "claim_pairing_code",

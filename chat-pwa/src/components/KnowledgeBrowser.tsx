@@ -1,14 +1,17 @@
 import { useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import { motion } from 'framer-motion';
-import { MdArrowBack, MdSearch, MdFolder, MdDescription, MdContentCopy, MdCheck, MdClose, MdFolderOpen, MdDelete, MdDeleteSweep, MdChevronRight } from 'react-icons/md';
+import { MdSearch, MdFolder, MdDescription, MdContentCopy, MdCheck, MdClose, MdFolderOpen, MdDelete, MdDeleteSweep, MdChevronRight } from 'react-icons/md';
 import { useTheme } from '../theme/ThemeContext';
 import { useI18n } from '../i18n/I18nContext';
 import { useToast } from './Toast';
 import { escapeRegExp } from '../utils/str';
 import { getCollections, getCollectionSources, getFileChunks, deleteCollectionSources, deleteSource, userFacingError, type Collection, type CollectionSourceRow, type FileChunk } from '../lib/api';
+import BackButton from './BackButton';
+import ConfirmModal from './ConfirmModal';
 
 interface Props {
   onBack: () => void;
+  canManageSystem?: boolean;
   /** Optional: open straight to a specific (collection, file) pair. */
   initialCollection?: string;
   initialFile?: string;
@@ -30,43 +33,60 @@ function formatBytes(n: number): string {
   return `${(n / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-export default function KnowledgeBrowser({ onBack, initialCollection, initialFile }: Props) {
+export default function KnowledgeBrowser({ onBack, canManageSystem = false, initialCollection, initialFile }: Props) {
   const { isDark } = useTheme();
   const { t } = useI18n();
   const toast = useToast();
   const [collections, setCollections] = useState<Collection[]>([]);
+  const [loadingCollections, setLoadingCollections] = useState(false);
+  const [collectionsError, setCollectionsError] = useState<string | null>(null);
   const [activeCollectionId, setActiveCollectionId] = useState<string>(initialCollection || 'default');
   const [sources, setSources] = useState<CollectionSourceRow[]>([]);
   const [loadingSources, setLoadingSources] = useState(false);
+  const [sourcesError, setSourcesError] = useState<string | null>(null);
   const [fileQuery, setFileQuery] = useState('');
   const [activeFile, setActiveFile] = useState<string | null>(initialFile || null);
   const [activeSourceId, setActiveSourceId] = useState<string | null>(null);
   const [chunks, setChunks] = useState<FileChunk[]>([]);
   const [chunkTotal, setChunkTotal] = useState(0);
   const [loadingChunks, setLoadingChunks] = useState(false);
+  const [chunksError, setChunksError] = useState<string | null>(null);
+  const [chunkRetry, setChunkRetry] = useState(0);
   const [chunkQuery, setChunkQuery] = useState('');
   const [copiedChunkId, setCopiedChunkId] = useState<string | null>(null);
   const [deletingFile, setDeletingFile] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<{ file: string; name: string; sourceId: string | null } | null>(null);
   // Mobile: which panel is visible ('collections' | 'files' | 'chunks')
-  const [mobileView, setMobileView] = useState<'collections' | 'files' | 'chunks'>('collections');
+  const [mobileView, setMobileView] = useState<'collections' | 'files' | 'chunks'>(initialFile ? 'chunks' : 'collections');
+  const collectionsRequestRef = useRef(0);
   const sourcesRequestRef = useRef(0);
   const chunksRequestRef = useRef(0);
+
+  const loadCollections = useCallback((signal?: AbortSignal) => {
+    const requestId = ++collectionsRequestRef.current;
+    setLoadingCollections(true);
+    setCollectionsError(null);
+    getCollections(signal)
+      .then((items) => {
+        if (requestId !== collectionsRequestRef.current || signal?.aborted) return;
+        setCollections(items);
+        setActiveCollectionId((current) => items.length && !items.some((x) => x.id === current) ? items[0].id : current);
+      })
+      .catch((err) => {
+        if (requestId !== collectionsRequestRef.current || signal?.aborted) return;
+        setCollectionsError(userFacingError(err, 'external_service_unavailable'));
+      })
+      .finally(() => {
+        if (requestId === collectionsRequestRef.current && !signal?.aborted) setLoadingCollections(false);
+      });
+  }, []);
 
   // Load collections on mount
   useEffect(() => {
     const c = new AbortController();
-    getCollections(c.signal)
-      .then((items) => {
-        const next = items.length ? items : [{ id: 'default', name: t('generalCollection'), created_at: Date.now() / 1000, updated_at: Date.now() / 1000 }];
-        setCollections(next);
-        if (!next.some((x) => x.id === activeCollectionId)) {
-          setActiveCollectionId(next[0].id);
-        }
-      })
-      .catch(() => undefined);
+    loadCollections(c.signal);
     return () => c.abort();
-  }, [t]);
+  }, [loadCollections]);
 
   // Consume any pending open-in-browser target on first render.
   useEffect(() => {
@@ -87,6 +107,7 @@ export default function KnowledgeBrowser({ onBack, initialCollection, initialFil
         setActiveFile(file);
         setActiveSourceId(sourceId);
         setFileQuery(file.split('/').pop() || file);
+        setMobileView('chunks');
       }
     }
   }, []);
@@ -97,15 +118,15 @@ export default function KnowledgeBrowser({ onBack, initialCollection, initialFil
     const requestId = ++sourcesRequestRef.current;
     const c = new AbortController();
     setLoadingSources(true);
-    setSources([]);
+    setSourcesError(null);
     getCollectionSources(activeCollectionId, c.signal)
       .then((res) => {
         if (requestId !== sourcesRequestRef.current || c.signal.aborted) return;
         setSources(res.sources || []);
       })
-      .catch(() => {
+      .catch((err) => {
         if (requestId !== sourcesRequestRef.current || c.signal.aborted) return;
-        setSources([]);
+        setSourcesError(userFacingError(err, 'external_service_unavailable'));
       })
       .finally(() => {
         if (requestId === sourcesRequestRef.current) setLoadingSources(false);
@@ -120,16 +141,16 @@ export default function KnowledgeBrowser({ onBack, initialCollection, initialFil
       setChunks([]);
       setChunkTotal(0);
       setLoadingChunks(false);
+      setChunksError(null);
       return;
     }
     const c = new AbortController();
     setLoadingChunks(true);
-    setChunks([]);
-    setChunkTotal(0);
+    setChunksError(null);
     const q = chunkQuery.trim();
     // Server-side search when the user has typed a query; otherwise fetch all.
     const opts: Parameters<typeof getFileChunks>[2] = {
-      limit: 500,
+      limit: 100,
       sourceId: activeSourceId,
       signal: c.signal,
     };
@@ -144,17 +165,16 @@ export default function KnowledgeBrowser({ onBack, initialCollection, initialFil
           setChunks(nextChunks);
           setChunkTotal(typeof res.total === 'number' ? res.total : nextChunks.length);
         })
-        .catch(() => {
+        .catch((err) => {
           if (requestId !== chunksRequestRef.current || c.signal.aborted) return;
-          setChunks([]);
-          setChunkTotal(0);
+          setChunksError(userFacingError(err, 'external_service_unavailable'));
         })
         .finally(() => {
           if (requestId === chunksRequestRef.current) setLoadingChunks(false);
         });
     }, delay);
     return () => { c.abort(); window.clearTimeout(id); };
-  }, [activeCollectionId, activeFile, activeSourceId, chunkQuery]);
+  }, [activeCollectionId, activeFile, activeSourceId, chunkQuery, chunkRetry]);
 
   const filteredSources = useMemo(() => {
     const q = fileQuery.trim().toLowerCase();
@@ -162,7 +182,7 @@ export default function KnowledgeBrowser({ onBack, initialCollection, initialFil
     return sources.filter((s) => s.file.toLowerCase().includes(q));
   }, [sources, fileQuery]);
 
-  const filteredChunks = useMemo(() => chunks, [chunks]);
+  const filteredChunks = useMemo(() => chunks.slice(0, 100), [chunks]);
 
   const copyChunk = useCallback(async (text: string, id: string) => {
     try {
@@ -176,12 +196,22 @@ export default function KnowledgeBrowser({ onBack, initialCollection, initialFil
 
   const refreshSources = useCallback(() => {
     if (!activeCollectionId) return;
+    const requestId = ++sourcesRequestRef.current;
     const c = new AbortController();
     setLoadingSources(true);
+    setSourcesError(null);
     getCollectionSources(activeCollectionId, c.signal)
-      .then((res) => setSources(res.sources || []))
-      .catch(() => setSources([]))
-      .finally(() => setLoadingSources(false));
+      .then((res) => {
+        if (requestId !== sourcesRequestRef.current || c.signal.aborted) return;
+        setSources(res.sources || []);
+      })
+      .catch((err) => {
+        if (requestId !== sourcesRequestRef.current || c.signal.aborted) return;
+        setSourcesError(userFacingError(err, 'external_service_unavailable'));
+      })
+      .finally(() => {
+        if (requestId === sourcesRequestRef.current && !c.signal.aborted) setLoadingSources(false);
+      });
     return () => c.abort();
   }, [activeCollectionId]);
 
@@ -236,21 +266,32 @@ export default function KnowledgeBrowser({ onBack, initialCollection, initialFil
     ? 'bg-white/[0.03] border-white/[0.06] text-white/80'
     : 'bg-white border-gray-200 text-gray-800';
 
+  const renderStatus = (loading: boolean, error: string | null, retry: () => void) => (
+    <>
+      {loading && <p aria-live="polite" className={`px-3 py-2 text-xs ${muted}`}>{t('loading')}</p>}
+      {error && (
+        <div aria-live="polite" className="px-3 py-2 text-xs">
+          <p className={muted}>{error}</p>
+          <button type="button" onClick={retry} className="mt-1 text-[#006bbd] underline underline-offset-2">{t('retry')}</button>
+        </div>
+      )}
+    </>
+  );
+
   // Shared file list renderer (used by both desktop and mobile)
   const renderFileList = (compact: boolean) => (
     <div className="flex-1 overflow-y-auto">
-      {loadingSources ? (
-        <p className={`px-3 py-4 text-xs ${muted}`}>{t('loading')}</p>
-      ) : filteredSources.length === 0 ? (
+      {renderStatus(loadingSources, sourcesError, refreshSources)}
+      {!loadingSources && !sourcesError && filteredSources.length === 0 ? (
         <div className="flex flex-col items-center justify-center gap-2 px-4 py-8 text-center">
           <MdFolderOpen size={32} className={`opacity-25 ${isDark ? 'text-white' : 'text-gray-900'}`} />
           <p className={`text-xs ${muted}`}>{sources.length === 0 ? t('noIndexedFiles') : t('noMatches')}</p>
         </div>
-      ) : (
+      ) : filteredSources.length > 0 && (
         filteredSources.map((s) => (
           <div
             key={sourceIdentity(s.file, s.source_id)}
-            className={`group flex items-center border-b ${border}`}
+            className={`browser-file-row group flex items-center border-b ${border}`}
           >
             <button
               onClick={() => {
@@ -259,6 +300,7 @@ export default function KnowledgeBrowser({ onBack, initialCollection, initialFil
                 if (compact) setMobileView('chunks');
               }}
               className={`flex-1 min-w-0 text-left px-3 py-2 ${activeFile === s.file && activeSourceId === (s.source_id || null) ? selected : `${muted} ${hover}`}`}
+              aria-selected={activeFile === s.file && activeSourceId === (s.source_id || null)}
             >
               <div className="flex items-center gap-2 min-w-0">
                 <MdDescription size={14} className="shrink-0 opacity-70" />
@@ -266,17 +308,17 @@ export default function KnowledgeBrowser({ onBack, initialCollection, initialFil
               </div>
               <div className={`mt-1 text-[10px] ${muted} flex items-center gap-2`}>
                 <span>{s.chunks} {t('chunksUnit')}</span>
-                <span>·</span>
+                <span>|</span>
                 <span>{formatBytes(s.size)}</span>
                 {s.source_id && (
                   <>
-                    <span>·</span>
+                    <span>|</span>
                     <span className="truncate" title={s.source_id}>{s.source_id}</span>
                   </>
                 )}
               </div>
             </button>
-            <button
+            {canManageSystem && <button
               onClick={(e) => {
                 e.stopPropagation();
                 setConfirmDelete({
@@ -293,7 +335,7 @@ export default function KnowledgeBrowser({ onBack, initialCollection, initialFil
               title={t('delete')}
             >
               <MdDelete size={14} />
-            </button>
+            </button>}
           </div>
         ))
       )}
@@ -326,19 +368,19 @@ export default function KnowledgeBrowser({ onBack, initialCollection, initialFil
                 value={chunkQuery}
                 onChange={(e) => setChunkQuery(e.target.value)}
                 placeholder={t('searchChunks')}
-                className={`min-w-0 flex-1 bg-transparent text-xs outline-none ${placeholder} ${isDark ? 'text-white/80' : 'text-gray-800'}`}
+                aria-label={t('searchChunks')}
+                className={`min-w-0 flex-1 rounded bg-transparent text-xs ${placeholder} focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4aa7ed] ${isDark ? 'text-white/80' : 'text-gray-800'}`}
               />
             </div>
           </div>
           <div className="flex-1 overflow-y-auto px-3 sm:px-4 py-3 space-y-3">
-            {loadingChunks ? (
-              <p className={`text-xs ${muted}`}>{t('loadingChunks')}</p>
-            ) : filteredChunks.length === 0 ? (
+            {renderStatus(loadingChunks, chunksError, () => setChunkRetry((value) => value + 1))}
+            {!loadingChunks && !chunksError && filteredChunks.length === 0 ? (
               <div className="flex flex-col items-center justify-center gap-2 py-8 text-center">
                 <MdSearch size={28} className={`opacity-25 ${isDark ? 'text-white' : 'text-gray-900'}`} />
                 <p className={`text-xs ${muted}`}>{chunks.length === 0 ? t('noChunks') : t('noMatches')}</p>
               </div>
-            ) : (
+            ) : filteredChunks.length > 0 && (
               filteredChunks.map((chunk, idx) => (
                 <motion.div
                   key={chunk.id}
@@ -348,7 +390,7 @@ export default function KnowledgeBrowser({ onBack, initialCollection, initialFil
                   className={`rounded-xl border ${border} p-3 ${panelBg}`}
                 >
                   <div className="flex items-center justify-between gap-2 mb-2">
-                    <span className={`text-[10px] font-mono ${muted}`}>#{idx + 1}{chunk.metadata?.page ? ` · p.${chunk.metadata.page}` : ''}</span>
+                    <span className={`text-[10px] font-mono ${muted}`}>#{idx + 1}{chunk.metadata?.page ? ` | ${t('pageAbbrev')}${chunk.metadata.page}` : ''}</span>
                     <button
                       onClick={() => copyChunk(chunk.text, chunk.id)}
                       className={`p-1 rounded ${muted} ${hover}`}
@@ -371,25 +413,26 @@ export default function KnowledgeBrowser({ onBack, initialCollection, initialFil
   );
 
   return (
-    <div className={`h-full flex flex-col min-w-0 ${bg}`}>
+    <div className={`browser-page h-full flex flex-col min-w-0 ${bg}`}>
       {/* Header */}
-      <div className={`shrink-0 flex items-center gap-3 px-4 pt-[env(safe-area-inset-top,0px)] pb-3 border-b ${border}`}>
-        <button onClick={onBack} aria-label={t('back')} className={`p-2 -ml-2 ${isDark ? 'text-white/60 hover:text-white' : 'text-gray-500 hover:text-gray-800'}`}>
-          <MdArrowBack size={20} />
-        </button>
+      <div className={`page-header shrink-0 flex items-center gap-3 px-4 pt-[env(safe-area-inset-top,0px)] pb-3 border-b ${border}`}>
+        <BackButton onClick={onBack} label={t('back')} isDark={isDark} className="-ml-2" />
         <h1 className="text-sm font-medium">{t('knowledgeBrowser')}</h1>
       </div>
 
       {/* ── Desktop: 3-column layout (sm+) ── */}
       <div className="hidden sm:flex flex-1 min-h-0">
         {/* Collections column */}
-        <aside className={`w-44 sm:w-52 shrink-0 border-r ${border} overflow-y-auto`}>
+        <aside className={`browser-panel w-44 sm:w-52 shrink-0 border-r ${border} overflow-y-auto`}>
           <div className={`px-3 py-2 text-[10px] uppercase tracking-widest ${muted}`}>{t('collectionsLabel')}</div>
+          {renderStatus(loadingCollections, collectionsError, () => loadCollections())}
+          {!loadingCollections && !collectionsError && collections.length === 0 && <p className={`px-3 py-4 text-xs ${muted}`}>{t('noCollections')}</p>}
           {collections.map((col) => (
             <button
               key={col.id}
               onClick={() => { setActiveCollectionId(col.id); setActiveFile(null); setActiveSourceId(null); }}
               className={`w-full text-left flex items-center gap-2 px-3 py-2 text-sm ${col.id === activeCollectionId ? selected : `${muted} ${hover}`}`}
+              aria-selected={col.id === activeCollectionId}
             >
               <MdFolder size={14} className="shrink-0 opacity-70" />
               <span className="truncate">{col.name}</span>
@@ -398,7 +441,7 @@ export default function KnowledgeBrowser({ onBack, initialCollection, initialFil
         </aside>
 
         {/* Files column */}
-        <div className={`w-56 sm:w-72 shrink-0 border-r ${border} flex flex-col min-h-0`}>
+        <div className={`browser-panel w-56 sm:w-72 shrink-0 border-r ${border} flex flex-col min-h-0`}>
           <div className={`px-3 py-2 flex items-center gap-2 border-b ${border} ${panelBg}`}>
             <MdSearch size={14} className={muted} />
             <input
@@ -408,14 +451,14 @@ export default function KnowledgeBrowser({ onBack, initialCollection, initialFil
               aria-label={t('searchFiles')}
               name="knowledge-file-search"
               autoComplete="off"
-              className={`min-w-0 flex-1 bg-transparent text-sm outline-none ${placeholder} ${isDark ? 'text-white/80' : 'text-gray-800'}`}
+              className={`min-w-0 flex-1 rounded bg-transparent text-sm ${placeholder} focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4aa7ed] ${isDark ? 'text-white/80' : 'text-gray-800'}`}
             />
             {fileQuery && (
               <button onClick={() => setFileQuery('')} className={`p-0.5 rounded ${muted} ${hover}`} aria-label={t('clearFilter')}>
                 <MdClose size={14} />
               </button>
             )}
-            {sources.length > 0 && (
+            {canManageSystem && sources.length > 0 && (
               <button
                 onClick={() => {
                   if (confirm(t('deleteAllSourcesConfirm'))) {
@@ -445,11 +488,14 @@ export default function KnowledgeBrowser({ onBack, initialCollection, initialFil
           <div className="flex-1 flex flex-col min-h-0">
             <div className={`px-3 py-2 text-[10px] uppercase tracking-widest ${muted} shrink-0`}>{t('collectionsLabel')}</div>
             <div className="flex-1 overflow-y-auto">
+              {renderStatus(loadingCollections, collectionsError, () => loadCollections())}
+              {!loadingCollections && !collectionsError && collections.length === 0 && <p className={`px-3 py-4 text-xs ${muted}`}>{t('noCollections')}</p>}
               {collections.map((col) => (
                 <button
                   key={col.id}
                   onClick={() => { setActiveCollectionId(col.id); setActiveFile(null); setActiveSourceId(null); setMobileView('files'); }}
                   className={`w-full flex items-center justify-between gap-2 px-4 py-3 border-b ${border} ${col.id === activeCollectionId ? selected : `${muted} ${hover}`}`}
+                  aria-selected={col.id === activeCollectionId}
                 >
                   <div className="flex items-center gap-2 min-w-0">
                     <MdFolder size={16} className="shrink-0 opacity-70" />
@@ -466,17 +512,16 @@ export default function KnowledgeBrowser({ onBack, initialCollection, initialFil
         {mobileView === 'files' && (
           <div className="flex-1 flex flex-col min-h-0">
             <div className={`shrink-0 flex items-center gap-2 px-2 py-2 border-b ${border} ${panelBg}`}>
-              <button
+              <BackButton
                 onClick={() => { setMobileView('collections'); setActiveFile(null); setActiveSourceId(null); }}
-                className={`p-1.5 rounded-lg ${muted} ${hover}`}
-                aria-label={t('back')}
-              >
-                <MdArrowBack size={18} />
-              </button>
+                label={t('back')}
+                isDark={isDark}
+                className="-ml-2"
+              />
               <span className={`text-xs font-medium truncate ${isDark ? 'text-white/80' : 'text-gray-800'}`}>
                 {collections.find((c) => c.id === activeCollectionId)?.name || activeCollectionId}
               </span>
-              {sources.length > 0 && (
+              {canManageSystem && sources.length > 0 && (
                 <button
                   onClick={() => {
                     if (confirm(t('deleteAllSourcesConfirm'))) {
@@ -500,7 +545,7 @@ export default function KnowledgeBrowser({ onBack, initialCollection, initialFil
                 aria-label={t('searchFiles')}
                 name="knowledge-mobile-file-search"
                 autoComplete="off"
-                className={`min-w-0 flex-1 bg-transparent text-sm outline-none ${placeholder} ${isDark ? 'text-white/80' : 'text-gray-800'}`}
+                className={`min-w-0 flex-1 rounded bg-transparent text-sm ${placeholder} focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4aa7ed] ${isDark ? 'text-white/80' : 'text-gray-800'}`}
               />
               {fileQuery && (
                 <button onClick={() => setFileQuery('')} className={`p-0.5 rounded ${muted} ${hover}`} aria-label={t('clearFilter')}>
@@ -516,13 +561,12 @@ export default function KnowledgeBrowser({ onBack, initialCollection, initialFil
         {mobileView === 'chunks' && (
           <div className="flex-1 flex flex-col min-h-0 min-w-0">
             <div className={`shrink-0 flex items-center gap-2 px-2 py-2 border-b ${border} ${panelBg}`}>
-              <button
+              <BackButton
                 onClick={() => { setMobileView('files'); }}
-                className={`p-1.5 rounded-lg ${muted} ${hover}`}
-                aria-label={t('back')}
-              >
-                <MdArrowBack size={18} />
-              </button>
+                label={t('back')}
+                isDark={isDark}
+                className="-ml-2"
+              />
               <span className={`text-xs font-mono font-medium truncate ${isDark ? 'text-white/80' : 'text-gray-800'}`}>
                 {activeFile?.split('/').pop() || activeFile}
               </span>
@@ -532,7 +576,7 @@ export default function KnowledgeBrowser({ onBack, initialCollection, initialFil
         )}
 
         {/* Mobile bottom tab bar */}
-        <div className={`shrink-0 flex border-t ${border} ${panelBg}`} style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}>
+        <div role="tablist" className={`shrink-0 flex border-t ${border} ${panelBg}`} style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}>
           {(['collections', 'files', 'chunks'] as const).map((view) => {
             const icons = { collections: <MdFolder size={18} />, files: <MdDescription size={18} />, chunks: <MdSearch size={18} /> };
             const labels = { collections: t('collectionsLabel'), files: t('sources'), chunks: t('chunksUnit') };
@@ -540,8 +584,11 @@ export default function KnowledgeBrowser({ onBack, initialCollection, initialFil
             return (
               <button
                 key={view}
+                role="tab"
                 onClick={() => { if (!disabled) setMobileView(view); }}
                 disabled={disabled}
+                aria-label={labels[view]}
+                aria-selected={mobileView === view}
                 className={`flex-1 flex flex-col items-center justify-center gap-0.5 py-2 text-[10px] font-medium transition-colors ${
                   mobileView === view
                     ? 'text-[#006bbd]'
@@ -556,33 +603,19 @@ export default function KnowledgeBrowser({ onBack, initialCollection, initialFil
         </div>
       </div>
 
-      {/* Confirm delete dialog */}
-      {confirmDelete && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm" onClick={() => setConfirmDelete(null)}>
-          <div
-            className={`w-full max-w-sm max-h-[calc(100dvh_-_2rem)] overflow-y-auto rounded-2xl border p-5 shadow-2xl ${isDark ? 'bg-gray-900 border-white/[0.08]' : 'bg-white border-gray-200'}`}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <p className={`text-sm font-medium mb-1 ${isDark ? 'text-white' : 'text-gray-900'}`}>{t('deleteSourceConfirm')}</p>
-            <p className={`text-xs mb-4 ${muted}`}>{confirmDelete.name}</p>
-            <div className="flex gap-2 justify-end">
-              <button
-                onClick={() => setConfirmDelete(null)}
-                className={`px-4 py-2 rounded-lg text-xs font-medium ${isDark ? 'bg-white/[0.06] text-white/70 hover:bg-white/[0.1]' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
-              >
-                {t('cancel')}
-              </button>
-              <button
-                onClick={() => handleDeleteFile(confirmDelete.file, confirmDelete.sourceId)}
-                disabled={deletingFile === sourceIdentity(confirmDelete.file, confirmDelete.sourceId)}
-                className="px-4 py-2 rounded-lg text-xs font-medium bg-red-500/20 text-red-400 hover:bg-red-500/30 disabled:opacity-40"
-              >
-                {deletingFile === sourceIdentity(confirmDelete.file, confirmDelete.sourceId) ? t('deleting') : t('delete')}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <ConfirmModal
+        open={Boolean(canManageSystem && confirmDelete)}
+        title={t('deleteSourceConfirm')}
+        message={confirmDelete?.name || ''}
+        confirmLabel={deletingFile ? t('deleting') : t('delete')}
+        cancelLabel={t('cancel')}
+        danger
+        confirmDisabled={Boolean(deletingFile)}
+        onCancel={() => setConfirmDelete(null)}
+        onConfirm={() => {
+          if (confirmDelete) void handleDeleteFile(confirmDelete.file, confirmDelete.sourceId);
+        }}
+      />
     </div>
   );
 }

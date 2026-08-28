@@ -14,10 +14,10 @@ const DEFAULT_TITLES = new Set(['New Chat', 'Nuevo Chat']);
 
 function defaultNewChatTitle(): string {
   try {
-    return localStorage.getItem('tc-lang') === 'en' ? 'New Chat' : 'Nuevo Chat';
-  } catch {
-    return 'Nuevo Chat';
-  }
+    const stored = localStorage.getItem('tc-lang');
+    if (stored === 'en' || stored === 'es') return stored === 'en' ? 'New Chat' : 'Nuevo Chat';
+    return navigator.language?.slice(0, 2).toLowerCase() === 'es' ? 'Nuevo Chat' : 'New Chat';
+  } catch { return 'New Chat'; }
 }
 
 function isDefaultTitle(title: string): boolean {
@@ -43,9 +43,11 @@ function isRestoreInProgress(): boolean {
 
 function imageOmittedText(): string {
   try {
-    return localStorage.getItem('tc-lang') === 'en' ? IMAGE_OMITTED_EN : IMAGE_OMITTED_ES;
+    const stored = localStorage.getItem('tc-lang');
+    if (stored === 'en' || stored === 'es') return stored === 'en' ? IMAGE_OMITTED_EN : IMAGE_OMITTED_ES;
+    return navigator.language?.slice(0, 2).toLowerCase() === 'es' ? IMAGE_OMITTED_ES : IMAGE_OMITTED_EN;
   } catch {
-    return IMAGE_OMITTED_ES;
+    return IMAGE_OMITTED_EN;
   }
 }
 
@@ -88,6 +90,23 @@ function loadSessions(): ChatSession[] {
     } catch { /* both corrupted */ }
   }
   return [];
+}
+
+function mergeInMemorySessions(persisted: ChatSession[], inMemory: ChatSession[]): ChatSession[] {
+  const deleted = loadDeletedSessions();
+  const byId = new Map(persisted.map((session) => [session.id, session]));
+  for (const session of inMemory) {
+    const deletedAt = deleted[session.id] ?? 0;
+    if (deletedAt && deletedAt >= (session.updatedAt ?? 0)) {
+      byId.delete(session.id);
+      continue;
+    }
+    const existing = byId.get(session.id);
+    if (!existing || (session.updatedAt ?? 0) >= (existing.updatedAt ?? 0)) {
+      byId.set(session.id, session);
+    }
+  }
+  return [...byId.values()].sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
 }
 
 function loadFolders(): ChatFolder[] {
@@ -227,9 +246,9 @@ export function useChatHistory() {
     if (raw === lastSyncRawRef.current) return;
     lastSyncRawRef.current = raw;
     const list = loadSessions();
-    // A shared-state refresh must not erase the in-memory-only temporary chat.
-    const temporarySessions = latestSessionsRef.current.filter((session) => session.temporary);
-    const next = [...temporarySessions, ...list];
+    // Keep unsaved edits and in-memory temporary chats while accepting newer
+    // persisted sessions from the shared-state refresh.
+    const next = mergeInMemorySessions(list, latestSessionsRef.current);
     latestSessionsRef.current = next;
     setSessions(next);
     // Keep the current chat if it still exists; otherwise fall back to a fresh

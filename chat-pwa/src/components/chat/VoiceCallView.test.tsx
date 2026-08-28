@@ -17,6 +17,7 @@ describe('VoiceCallView palette', () => {
     expect(container.innerHTML).toContain('from-[#4ea3e0]');
 
     const endCall = screen.getByRole('button');
+    expect(endCall).toHaveFocus();
     expect(endCall).toHaveClass('bg-red-500');
     expect(endCall).toHaveClass('hover:bg-red-600');
   });

@@ -14,10 +14,30 @@ def test_workspace_action_routes_to_agent() -> None:
     assert d.mode == "agent"
 
 
+def test_hybrid_evidence_routes_to_agent_and_education_stays_chat() -> None:
+    assert decide_mode("compara mis documentos con información web reciente").reason == "hybrid_evidence"
+    assert decide_mode("explícame cómo editar un archivo").mode == "chat"
+
+
 def test_explicit_web_search_routes_to_web() -> None:
     d = decide_mode("busca en internet el precio del bitcoin")
     assert d.mode == "web"
     assert d.web_search is True
+
+
+def test_public_lookup_routes_to_web_and_personal_history_to_rag() -> None:
+    d = decide_mode("busca quién es TrinaxCode")
+    assert d.mode == "web"
+    assert d.reason == "direct_lookup"
+    assert d.web_search is True
+    assert decide_mode("busca cuándo fue el último partido del Real Madrid").mode == "web"
+    assert decide_mode("dime qué programas Python he hecho").mode == "rag"
+    assert decide_mode("qué proyectos hice").mode == "rag"
+    assert decide_mode("busca cuándo hice el proyecto Tal").mode == "rag"
+
+
+def test_direct_lookup_in_local_documents_stays_local() -> None:
+    assert decide_mode("busca en mis documentos el contrato").mode == "rag"
 
 
 def test_current_info_routes_to_web() -> None:
@@ -37,6 +57,20 @@ def test_local_grounding_routes_to_rag() -> None:
     assert d.mode == "rag"
 
 
+def test_web_creation_routes_to_agent_but_explanation_stays_chat() -> None:
+    assert decide_mode("crea una página web para mi negocio").mode == "agent"
+    assert decide_mode("quiero crear una página web para mi negocio").mode == "agent"
+    assert decide_mode("diseña un sitio web").mode == "agent"
+    assert decide_mode("explícame cómo diseñar una página web").mode == "chat"
+
+
+def test_complex_research_routes_to_deep_research() -> None:
+    d = decide_mode("haz una investigación compleja sobre este tema")
+    assert d.mode == "deep_research"
+    assert d.web_search is True
+    assert d.depth == 3
+
+
 def test_plain_prompt_routes_to_chat() -> None:
     d = decide_mode("hola, cómo estás")
     assert d.mode == "chat"
@@ -46,6 +80,12 @@ def test_manual_web_mode_biases_to_web() -> None:
     d = decide_mode("quién ganó el partido", RouteContext(web_mode=True))
     assert d.mode == "web"
     assert d.web_search is True
+
+
+def test_local_grounding_stays_rag_when_web_mode_is_enabled() -> None:
+    d = decide_mode("qué dice mi proyecto sobre la configuración", RouteContext(web_mode=True))
+    assert d.mode == "rag"
+    assert d.web_search is False
 
 
 def test_manual_research_and_web_becomes_deep_web() -> None:

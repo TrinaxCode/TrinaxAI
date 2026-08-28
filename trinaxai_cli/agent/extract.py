@@ -16,7 +16,8 @@ from __future__ import annotations
 import zipfile
 from html.parser import HTMLParser
 from pathlib import Path
-from xml.etree import ElementTree
+
+from defusedxml import ElementTree
 
 # Extensions handled here rather than as raw UTF-8 text. Kept in sync with the
 # document types TrinaxAI's indexer supports.

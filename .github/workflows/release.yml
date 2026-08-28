@@ -8,6 +8,7 @@ on:
 permissions:
   contents: write
   packages: write
+  id-token: write
 
 jobs:
   verify:
@@ -17,18 +18,171 @@ jobs:
       contents: read
       pull-requests: read
 
-  publish:
-    name: Publish GitHub release
+  manager:
+    name: Build desktop manager (${{ matrix.os }})
     needs: verify
-    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-2025
+            artifact: TrinaxAI-Manager-Windows
+          - os: macos-14
+            artifact: TrinaxAI-Manager-macOS
+          - os: ubuntu-24.04
+            artifact: TrinaxAI-Manager-Linux
+    runs-on: ${{ matrix.os }}
+    env:
+      WINDOWS_SIGNING_CERTIFICATE_BASE64: ${{ secrets.WINDOWS_SIGNING_CERTIFICATE_BASE64 }}
+      WINDOWS_SIGNING_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_SIGNING_CERTIFICATE_PASSWORD }}
+      MACOS_SIGNING_CERTIFICATE_BASE64: ${{ secrets.MACOS_SIGNING_CERTIFICATE_BASE64 }}
+      MACOS_SIGNING_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_SIGNING_CERTIFICATE_PASSWORD }}
+      MACOS_SIGNING_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
     steps:
       - name: Checkout tagged source
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Setup Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12.11"
+      - name: Require Windows signing credentials
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:WINDOWS_SIGNING_CERTIFICATE_BASE64) -or
+              [string]::IsNullOrWhiteSpace($env:WINDOWS_SIGNING_CERTIFICATE_PASSWORD)) {
+            throw "Windows release signing credentials are required"
+          }
+      - name: Require macOS signing credentials
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -euo pipefail
+          for value in \
+            "$MACOS_SIGNING_CERTIFICATE_BASE64" \
+            "$MACOS_SIGNING_CERTIFICATE_PASSWORD" \
+            "$MACOS_SIGNING_IDENTITY" \
+            "$APPLE_ID" \
+            "$APPLE_TEAM_ID" \
+            "$APPLE_APP_PASSWORD"; do
+            if [[ -z "$value" ]]; then
+              echo "macOS release signing and notarization credentials are required" >&2
+              exit 1
+            fi
+          done
+      - if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y python3-tk
+      - name: Build Manager
+        shell: bash
+        run: |
+          python -m pip install --disable-pip-version-check --no-cache-dir \
+            "pip==26.2.1" \
+            "setuptools==83.0.0" \
+            "wheel==0.45.1" \
+            "altgraph==0.17.5" \
+            "pyinstaller-hooks-contrib==2026.7" \
+            "pyinstaller==6.22.2"
+          python scripts/build_manager.py --build-only
+      - name: Sign Windows Manager
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $certificate = Join-Path $env:RUNNER_TEMP "trinaxai-manager.pfx"
+          [IO.File]::WriteAllBytes($certificate, [Convert]::FromBase64String($env:WINDOWS_SIGNING_CERTIFICATE_BASE64))
+          $signTool = Get-ChildItem -Path "${env:ProgramFiles(x86)}\Windows Kits\10\bin" -Filter signtool.exe -Recurse -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -match "\\x64\\signtool\.exe$" } |
+            Sort-Object FullName |
+            Select-Object -Last 1
+          if (-not $signTool) { throw "Windows SDK signtool.exe was not found" }
+          & $signTool.FullName sign /fd SHA256 /f $certificate /p $env:WINDOWS_SIGNING_CERTIFICATE_PASSWORD /tr "http://timestamp.digicert.com" /td SHA256 "dist\TrinaxAI-Manager.exe"
+          if ($LASTEXITCODE -ne 0) { throw "Authenticode signing failed" }
+          & $signTool.FullName verify /pa /all "dist\TrinaxAI-Manager.exe"
+          if ($LASTEXITCODE -ne 0) { throw "Authenticode verification failed" }
+      - name: Sign macOS Manager
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -euo pipefail
+          certificate="$RUNNER_TEMP/trinaxai-manager.p12"
+          keychain="$RUNNER_TEMP/trinaxai-manager.keychain-db"
+          keychain_password="$(python -c 'import secrets; print(secrets.token_urlsafe(24))')"
+          printf '%s' "$MACOS_SIGNING_CERTIFICATE_BASE64" | python -c 'import base64, sys; sys.stdout.buffer.write(base64.b64decode(sys.stdin.buffer.read()))' > "$certificate"
+          security create-keychain -p "$keychain_password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$keychain_password" "$keychain"
+          security import "$certificate" -k "$keychain" -P "$MACOS_SIGNING_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$keychain_password" "$keychain"
+          security list-keychains -d user -s "$keychain"
+          codesign --force --deep --options runtime --timestamp --sign "$MACOS_SIGNING_IDENTITY" "dist/TrinaxAI-Manager.app"
+          codesign --verify --deep --strict --verbose=2 "dist/TrinaxAI-Manager.app"
+      - if: runner.os == 'Windows'
+        shell: pwsh
+        run: python scripts/build_manager.py --package-only --output manager-release
+      - if: runner.os == 'macOS'
+        run: python scripts/build_manager.py --package-only --output manager-release
+      - name: Notarize macOS Manager
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcrun notarytool submit manager-release/TrinaxAI-Manager-macOS.dmg \
+            --apple-id "$APPLE_ID" \
+            --team-id "$APPLE_TEAM_ID" \
+            --password "$APPLE_APP_PASSWORD" \
+            --wait
+          xcrun stapler staple manager-release/TrinaxAI-Manager-macOS.dmg
+          xcrun stapler validate manager-release/TrinaxAI-Manager-macOS.dmg
+      - if: runner.os == 'Linux'
+        run: python scripts/build_manager.py --package-only --output manager-release
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: ${{ matrix.artifact }}
+          path: manager-release/*
+          if-no-files-found: error
+
+  publish:
+    name: Publish GitHub release
+    needs: [verify, manager]
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout tagged source
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
 
       - name: Setup Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
-          python-version: "3.12"
+          python-version: "3.12.11"
+      - name: Setup Node
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: "22.14.0"
+
+      - name: Require release signing credentials
+        env:
+          RELEASE_SIGNING_KEY_BASE64: ${{ secrets.RELEASE_SIGNING_KEY_BASE64 }}
+          RELEASE_SIGNING_KEY_PASSPHRASE: ${{ secrets.RELEASE_SIGNING_KEY_PASSPHRASE }}
+          RELEASE_SIGNING_KEY_FINGERPRINT: ${{ secrets.RELEASE_SIGNING_KEY_FINGERPRINT }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "$RELEASE_SIGNING_KEY_BASE64" || -z "$RELEASE_SIGNING_KEY_PASSPHRASE" || -z "$RELEASE_SIGNING_KEY_FINGERPRINT" ]]; then
+            echo "Release signing credentials are required for stable releases" >&2
+            exit 1
+          fi
+
+      - name: Install pinned Python build tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check --no-cache-dir \
+            "pip==26.2.1" \
+            "setuptools==83.0.0" \
+            "wheel==0.45.1"
 
       - name: Verify package versions
         shell: bash
@@ -38,11 +192,19 @@ jobs:
           python_version="$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')"
           frontend_version="$(node -p 'require("./chat-pwa/package.json").version')"
           lock_version="$(node -p 'require("./chat-pwa/package-lock.json").version')"
+          source_update_version="$(sed -n 's/^RELEASE_VERSION = "\([^"]*\)"$/\1/p' scripts/source_update.py)"
+          manager_version="$(sed -n 's/^RELEASE_VERSION = "\([^"]*\)"$/\1/p' trinaxai_manager.py)"
+          shell_version="$(sed -n 's/.*TRINAXAI_RELEASE_VERSION:-\([^}]*\)}.*/\1/p' install.sh)"
+          powershell_version="$(sed -n 's/.*else { "\([^"]*\)" }.*/\1/p' install.ps1 | head -1)"
           cli_version="$(sed -n 's/^VERSION = "\([^"]*\)"$/\1/p' trinaxai_cli/app.py)"
           test "$expected" = "$python_version"
           test "$expected" = "$frontend_version"
           test "$expected" = "$lock_version"
           test "$expected" = "$cli_version"
+          test "$expected" = "$source_update_version"
+          test "$expected" = "$manager_version"
+          test "$expected" = "$shell_version"
+          test "$expected" = "$powershell_version"
 
       - name: Build release assets
         shell: bash
@@ -52,10 +214,57 @@ jobs:
           mkdir -p release
           git archive --format=tar --prefix="TrinaxAI-${version}/" "${GITHUB_SHA}" \
             | gzip -n > "release/TrinaxAI-${version}.tar.gz"
-          python -m pip wheel . --no-deps --wheel-dir release
+          git archive --format=zip --prefix="TrinaxAI-${version}/" "${GITHUB_SHA}" \
+            -o "release/TrinaxAI-${version}.zip"
+          python -m pip wheel . --no-deps --no-build-isolation --wheel-dir release
           cp install.sh "release/TrinaxAI-${version}-installer.sh"
           cp install.ps1 "release/TrinaxAI-${version}-installer.ps1"
+
+      - name: Collect desktop Manager assets
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          pattern: TrinaxAI-Manager-*
+          path: release
+          merge-multiple: true
+
+      - name: Sign and verify release assets
+        env:
+          RELEASE_SIGNING_KEY_BASE64: ${{ secrets.RELEASE_SIGNING_KEY_BASE64 }}
+          RELEASE_SIGNING_KEY_PASSPHRASE: ${{ secrets.RELEASE_SIGNING_KEY_PASSPHRASE }}
+          RELEASE_SIGNING_KEY_FINGERPRINT: ${{ secrets.RELEASE_SIGNING_KEY_FINGERPRINT }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          export GNUPGHOME="$RUNNER_TEMP/gnupg"
+          install -d -m 700 "$GNUPGHOME"
+          printf '%s' "$RELEASE_SIGNING_KEY_BASE64" | base64 --decode | gpg --batch --import
+          signing_key="$(gpg --batch --list-secret-keys --with-colons | awk -F: '$1 == "sec" { print $5; exit }')"
+          if [[ -z "$signing_key" ]]; then
+            echo "No release signing key was imported" >&2
+            exit 1
+          fi
+          actual_fingerprint="$(gpg --batch --with-colons --fingerprint "$signing_key" | awk -F: '$1 == "fpr" { print $10; exit }')"
+          expected_fingerprint="${RELEASE_SIGNING_KEY_FINGERPRINT// /}"
+          if [[ "${actual_fingerprint^^}" != "${expected_fingerprint^^}" ]]; then
+            echo "Imported release signing key does not match the configured fingerprint" >&2
+            exit 1
+          fi
+          gpg --batch --armor --export "$signing_key" > release/TrinaxAI-release-signing-key.asc
+          printf '%s\n' "$actual_fingerprint" > release/TrinaxAI-release-signing-key.fingerprint
           (cd release && sha256sum TrinaxAI-* trinaxai-*.whl > SHA256SUMS)
+          shopt -s nullglob
+          assets=(release/TrinaxAI-* release/trinaxai-*.whl release/SHA256SUMS)
+          if (( ${#assets[@]} == 0 )); then
+            echo "No release assets were available for signing" >&2
+            exit 1
+          fi
+          for asset in "${assets[@]}"; do
+            printf '%s' "$RELEASE_SIGNING_KEY_PASSPHRASE" |
+              gpg --detach-sign --batch --yes --pinentry-mode loopback --passphrase-fd 0 \
+                --local-user "$signing_key" --armor \
+                --output "${asset}.asc" "$asset"
+            gpg --batch --verify "${asset}.asc" "$asset" >/dev/null
+          done
 
       - name: Publish simple release with assets
         env:
@@ -74,19 +283,67 @@ jobs:
               --generate-notes
           fi
 
+      - name: Verify published release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          assets="$(gh release view "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" --json assets --jq '.assets[].name')"
+          for expected in \
+            "TrinaxAI-${GITHUB_REF_NAME#v}.tar.gz" \
+            "TrinaxAI-${GITHUB_REF_NAME#v}.zip" \
+            "TrinaxAI-${GITHUB_REF_NAME#v}-installer.sh" \
+            "TrinaxAI-${GITHUB_REF_NAME#v}-installer.ps1" \
+            "TrinaxAI-Manager-Windows.exe" \
+            "TrinaxAI-Manager-Windows.zip" \
+            "TrinaxAI-Manager-macOS.dmg" \
+            "TrinaxAI-Manager-macOS.zip" \
+            "TrinaxAI-Manager-Linux.deb" \
+            "TrinaxAI-Manager-Linux.tar.gz" \
+            "SHA256SUMS" \
+            "TrinaxAI-release-signing-key.asc" \
+            "TrinaxAI-release-signing-key.fingerprint" \
+            "TrinaxAI-${GITHUB_REF_NAME#v}.tar.gz.asc" \
+            "TrinaxAI-${GITHUB_REF_NAME#v}.zip.asc" \
+            "trinaxai-${GITHUB_REF_NAME#v}-py3-none-any.whl.asc" \
+            "TrinaxAI-${GITHUB_REF_NAME#v}-installer.sh.asc" \
+            "TrinaxAI-${GITHUB_REF_NAME#v}-installer.ps1.asc" \
+            "TrinaxAI-Manager-Windows.exe.asc" \
+            "TrinaxAI-Manager-Windows.zip.asc" \
+            "TrinaxAI-Manager-macOS.dmg.asc" \
+            "TrinaxAI-Manager-macOS.zip.asc" \
+            "TrinaxAI-Manager-Linux.deb.asc" \
+            "TrinaxAI-Manager-Linux.tar.gz.asc" \
+            "TrinaxAI-release-signing-key.asc.asc" \
+            "TrinaxAI-release-signing-key.fingerprint.asc" \
+            "SHA256SUMS.asc"; do
+            if [[ $'\n'"$assets"$'\n' != *$'\n'"$expected"$'\n'* ]]; then
+              echo "Missing published release asset: $expected" >&2
+              exit 1
+            fi
+            curl --fail --silent --show-error --location --retry 3 --output /dev/null \
+              "https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}/${expected}"
+          done
+
       - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v4
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Setup Docker Buildx
-        uses: docker/setup-buildx-action@v4
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@fb28c2b6339dcd94da6e4cbcbc5e888961f6f8c3 # v3.9.0
+        with:
+          cosign-release: v2.5.3
 
       - name: Generate container metadata
         id: container
-        uses: docker/metadata-action@v6
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6
         with:
           images: ghcr.io/${{ github.repository }}
           tags: |
@@ -95,7 +352,7 @@ jobs:
             type=semver,pattern={{major}}
 
       - name: Publish backend container
-        uses: docker/build-push-action@v7
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
         with:
           context: .
           push: true
@@ -103,3 +360,18 @@ jobs:
           labels: ${{ steps.container.outputs.labels }}
           sbom: true
           provenance: mode=max
+
+      - name: Sign and verify container images
+        env:
+          COSIGN_EXPERIMENTAL: "1"
+        shell: bash
+        run: |
+          set -euo pipefail
+          while IFS= read -r image; do
+            [[ -n "$image" ]] || continue
+            cosign sign --yes "$image"
+            cosign verify \
+              --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+              --certificate-identity-regexp "^https://github.com/${GITHUB_REPOSITORY}/.github/workflows/.*@refs/tags/${GITHUB_REF_NAME}$" \
+              "$image" >/dev/null
+          done <<< '${{ steps.container.outputs.tags }}'

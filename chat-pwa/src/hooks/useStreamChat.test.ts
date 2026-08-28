@@ -1,5 +1,6 @@
 import { act, renderHook } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
+import { I18nProvider } from '../i18n/I18nContext';
 
 import {
   FIRST_TOKEN_TIMEOUT_MS,
@@ -30,7 +31,7 @@ describe('firstTokenTimeoutMs', () => {
 describe('non-streaming response reveal', () => {
   it('buffers a complete research answer instead of displaying it at once', async () => {
     const answer = 'Respuesta investigada '.repeat(18).trim();
-    const { result } = renderHook(() => useStreamChat());
+    const { result } = renderHook(() => useStreamChat(), { wrapper: I18nProvider });
     let reveal!: Promise<string>;
 
     act(() => {

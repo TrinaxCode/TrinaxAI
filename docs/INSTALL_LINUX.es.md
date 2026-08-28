@@ -1,19 +1,21 @@
 # TrinaxAI en Linux
 
+[English](INSTALL_LINUX.md)
+
 Guía para instalar, configurar, iniciar y dejar listo TrinaxAI en Linux. Aplica para Ubuntu, Debian, Fedora, Arch, openSUSE y distribuciones similares.
 
 ## Estado de soporte
 
-Linux es la plataforma principal validada por CI. El CI actual valida tests backend, tests/build frontend, smoke tests de CLI, public-readiness y sintaxis shell en Ubuntu. La validacion end-to-end del instalador en todas las distribuciones listadas sigue pendiente.
+Linux es la plataforma principal validada por CI. El CI actual valida tests backend, tests/build frontend, smoke tests de CLI, public-readiness y sintaxis shell en Ubuntu. La validación end-to-end del instalador en todas las distribuciones listadas sigue pendiente.
 
-## Que queda funcionando
+## Qué queda funcionando
 
-Al terminar deberias tener:
+Al terminar deberías tener:
 
 - Ollama corriendo localmente en `http://localhost:11434`.
-- API RAG de TrinaxAI en `http://localhost:3333`.
+- API RAG de TrinaxAI en `https://localhost:3333` cuando existe el certificado administrado (HTTP es el fallback).
 - PWA de TrinaxAI en `https://localhost:3334`.
-- Modelos base descargados si eliges esa opcion.
+- Modelos base descargados si eliges esa opción.
 - Entorno Python `.venv` instalado.
 - Dependencias del frontend instaladas.
 - `.env` generado con el perfil de tu equipo.
@@ -21,28 +23,45 @@ Al terminar deberias tener:
 
 ## Requisitos
 
-| Recurso | Minimo | Recomendado |
+| Recurso | Mínimo | Recomendado |
 |---|---:|---:|
-| RAM | 8 GB | 16 GB o mas |
+| RAM | 8 GB | 16 GB o más |
 | Disco libre | 5 GB | 10-25 GB |
 | Python | 3.10 | 3.12 |
 | Node.js | 22 | 24 LTS |
-| Git | Si | Si |
-| Ollama | Si | Ultima version |
+| Ollama | Sí | Última versión |
 
-Si usas NVIDIA, instala los drivers antes de descargar modelos grandes. TrinaxAI tambien funciona solo con CPU, pero las respuestas seran mas lentas.
+Si usas NVIDIA, instala los drivers antes de descargar modelos grandes. TrinaxAI también funciona solo con CPU, pero las respuestas serán más lentas.
 
-## Instalacion guiada recomendada
+## Instalación gráfica recomendada
+
+1. [Descarga el paquete del Gestor de TrinaxAI para Linux](https://github.com/TrinaxCode/TrinaxAI/releases/download/v1.2.0/TrinaxAI-Manager-Linux.deb).
+2. Abre el paquete descargado con el instalador de software de tu sistema.
+3. Abre el **Gestor de TrinaxAI**, pulsa **Instalar** y espera a que termine el proceso.
+3. Pulsa **Instalar** y espera a que termine el proceso.
+
+El Gestor descarga y configura TrinaxAI directamente. No necesitas Git ni comandos de terminal. Una ventana de progreso del sistema puede pedir tu contraseña para instalar los paquetes necesarios; mantenla abierta hasta que termine. Usa el mismo Gestor después para **Actualizar** o **Desinstalar**. Si tu distribución no admite `.deb`, usa el `TrinaxAI-Manager-Linux.tar.gz` portátil de la página del release.
+
+## Alternativa avanzada por terminal
 
 Desde una terminal:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/TrinaxCode/TrinaxAI/main/install.sh | bash
+installer="$(mktemp)"
+trap 'rm -f "$installer"' EXIT
+curl --fail --location --output "$installer" "https://github.com/TrinaxCode/TrinaxAI/releases/download/v1.2.0/TrinaxAI-1.2.0-installer.sh"
+bash -n "$installer"
+less "$installer"
+bash "$installer"
 ```
 
-Una instalacion nueva se guarda en `$XDG_DATA_HOME/trinaxai` (normalmente `~/.local/share/trinaxai`), manteniendo compatibilidad con instalaciones anteriores en `~/trinaxai`. Puedes elegir otra ruta con `bash -s -- --install-dir /ruta`. El instalador detecta tu RAM, crea `.env`, instala dependencias y prepara la PWA.
+Una instalación nueva se guarda en `$XDG_DATA_HOME/trinaxai` (normalmente `~/.local/share/trinaxai`), manteniendo compatibilidad con instalaciones anteriores en `~/trinaxai`. Para elegir otra ruta, sustituye el último comando del bloque anterior por el siguiente. El instalador detecta tu RAM, crea `.env`, instala dependencias y prepara la PWA.
 
-Despues puedes administrarla desde cualquier carpeta:
+```bash
+bash "$installer" --install-dir "/ruta/a/trinaxai"
+```
+
+Después puedes administrarla desde cualquier carpeta:
 
 ```bash
 trinaxai doctor
@@ -50,7 +69,7 @@ trinaxai update
 trinaxai uninstall
 ```
 
-`trinaxai uninstall -y` usa opciones seguras y conserva indices y modelos salvo que pidas eliminarlos.
+`trinaxai uninstall -y` usa opciones seguras y conserva índices y modelos salvo que pidas eliminarlos.
 
 Si ya clonaste el repositorio:
 
@@ -60,14 +79,14 @@ chmod +x install.sh
 ./install.sh
 ```
 
-El perfil se elige automaticamente. En modo interactivo, elige `Normal` salvo que sepas que quieres un perfil manual:
+El perfil se elige automáticamente según CPU, RAM, GPU y VRAM. En modo interactivo, elige `Normal` salvo que sepas que quieres un perfil manual:
 
 - `8gb`: equipos con poca memoria.
-- `16gb`: perfil equilibrado.
-- `max`: mas RAM/CPU, modelos mas grandes.
-- `ultra`: 32 GB+ y hardware potente.
+- `16gb`: equipos equilibrados.
+- `32gb`: más RAM o una GPU capaz.
+- `64gb`: memoria abundante o una GPU potente.
 
-## Instalacion manual
+## Instalación manual
 
 Usa estos pasos si prefieres revisar cada parte.
 
@@ -77,31 +96,32 @@ Ubuntu/Debian:
 
 ```bash
 sudo apt-get update
-sudo apt-get install -y python3 python3-pip python3-venv curl git unzip nodejs npm
+sudo apt-get install -y python3 python3-pip python3-venv curl unzip nodejs npm
 ```
 
 Fedora:
 
 ```bash
-sudo dnf install -y python3 python3-pip curl git unzip nodejs npm
+sudo dnf install -y python3 python3-pip curl unzip nodejs npm
 ```
 
 Arch:
 
 ```bash
-sudo pacman -Sy --needed python python-pip curl git unzip nodejs npm
+sudo pacman -Sy --needed python python-pip curl unzip nodejs npm
 ```
 
 openSUSE:
 
 ```bash
-sudo zypper install python3 python3-pip curl git unzip nodejs npm
+sudo zypper install python3 python3-pip curl unzip nodejs npm
 ```
 
-### 2. Clonar el proyecto
+### 2. Descargar el proyecto
 
 ```bash
-git clone https://github.com/TrinaxCode/TrinaxAI.git ~/trinaxai
+mkdir -p ~/trinaxai
+curl -fsSL https://github.com/TrinaxCode/TrinaxAI/releases/download/v1.2.0/TrinaxAI-1.2.0.tar.gz | tar -xz --strip-components=1 -C ~/trinaxai
 cd ~/trinaxai
 ```
 
@@ -111,14 +131,14 @@ cd ~/trinaxai
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
-python -m pip install -r requirements.txt
+python -m pip install --require-hashes -r requirements.lock
 ```
 
 ### 4. Instalar la PWA
 
 ```bash
 cd chat-pwa
-npm install
+npm ci
 npm run build
 cd ..
 ```
@@ -150,12 +170,15 @@ Valores recomendados para empezar:
 TRINAXAI_PROFILE=16gb
 TRINAXAI_HOST=127.0.0.1
 TRINAXAI_PORT=3333
-TRINAXAI_INDEX_DIR=~/Documents
+TRINAXAI_INDEX_DIR=./local_sources
+# Valor de compatibilidad obsoleto; la administración del host siempre es solo localhost.
 TRINAXAI_ALLOW_LAN_SYSTEM=0
 TRINAXAI_CORS_ORIGINS=https://localhost:3334,http://localhost:3334,https://127.0.0.1:3334,http://127.0.0.1:3334
 OLLAMA_BASE_URL=http://localhost:11434
 OLLAMA_HOST=127.0.0.1
-VITE_TRINAXAI_RAG_TARGET=http://localhost:3333
+TRINAXAI_RAG_HTTPS=1
+TRINAXAI_RAG_TARGET=https://127.0.0.1:3333
+VITE_TRINAXAI_RAG_TARGET=https://127.0.0.1:3333
 ```
 
 Si cambias de red o quieres conectar un teléfono en el mismo Wi-Fi, deja que TrinaxAI renueve la dirección local y el certificado HTTPS:
@@ -176,10 +199,10 @@ ollama pull qwen3.5:4b
 ollama pull qwen3-embedding:0.6b
 ```
 
-Para `8gb`, `max` y `ultra`, usa la flota vigente de la
-[tabla de modelos y perfiles](../README.es.md#-modelos-y-perfiles). El instalador
-descarga el conjunto de texto/RAG. Vision se descarga al analizar la primera
-imagen; los pulls manuales solo hacen falta en setups personalizados.
+Para `8gb`, `32gb` y `64gb`, usa la flota vigente de la
+[tabla de modelos y perfiles](../README.es.md#modelos-y-perfiles-de-hardware). El instalador
+descarga el conjunto de texto/RAG. La visión se descarga al analizar la primera
+imagen; los pulls manuales solo hacen falta en configuraciones personalizadas.
 
 ## Indexar tus archivos
 
@@ -191,7 +214,7 @@ source .venv/bin/activate
 python index.py
 ```
 
-Tambien puedes indexar desde la PWA: abre `https://localhost:3334`, ve a configuracion, elige una carpeta y asignala a una coleccion.
+También puedes indexar desde la PWA: abre `https://localhost:3334`, ve a configuración, elige una carpeta y asígnala a una colección.
 
 Los archivos importados desde navegador se copian a `local_sources/collections/`. El navegador no entrega la ruta absoluta original por seguridad.
 
@@ -210,19 +233,25 @@ Alternativa directa:
 .venv/bin/python service_manager.py start --base-dir "$PWD"
 ```
 
+El gateway escucha en loopback por defecto. Para un acceso LAN intencional,
+establece `TRINAXAI_PWA_HOST=0.0.0.0` en `.env`, reinicia TrinaxAI y vincula el
+navegador remoto antes de usarlo.
+
 Abrir:
 
 ```text
 https://localhost:3334
 ```
 
-Desde telefono o tablet en la misma WiFi:
+Desde teléfono o tablet en la misma WiFi:
 
 ```text
 https://TU-IP-LAN:3334
 ```
 
-Acepta la advertencia del certificado si aparece. Es un certificado local/autofirmado.
+Si el navegador informa que el certificado no es confiable, instala la CA pública
+que muestra `trinaxai network` y confía en ella en ese dispositivo. No omitas la
+advertencia en una conexión LAN; consulta [pairing LAN y confianza HTTPS](NETWORK_PAIRING.es.md).
 
 ## Apagar, reiniciar y revisar estado
 
@@ -238,6 +267,8 @@ Apagar todo:
 .venv/bin/python service_manager.py stop-all --base-dir "$PWD"
 ```
 
+Esto deja solo la página de recuperación por loopback en `https://localhost:3334`; el acceso LAN permanece cerrado hasta iniciar TrinaxAI allí.
+
 Ver estado:
 
 ```bash
@@ -252,11 +283,11 @@ Supervisor en primer plano:
 
 ## Autoarranque
 
-El instalador lo habilita automaticamente. El supervisor siempre intenta mantener la PWA disponible; si apagaste la IA con `./shutdown_ai.sh` o desde la PWA, el siguiente arranque no levanta Ollama/RAG hasta que vuelvas a encender la IA.
+El instalador lo habilita automáticamente. El supervisor siempre intenta mantener la PWA disponible; si apagaste la IA con `./shutdown_ai.sh` o desde la PWA, el siguiente arranque no levanta Ollama/RAG hasta que vuelvas a encender la IA.
 
-### Opcion segura por usuario
+### Opción segura por usuario
 
-Esta opcion crea un servicio systemd de usuario y no requiere escribir en `/etc`:
+Esta opción crea un servicio systemd de usuario y no requiere escribir en `/etc`:
 
 ```bash
 cd ~/trinaxai
@@ -269,11 +300,11 @@ Desactivar:
 .venv/bin/python service_manager.py disable-autostart --base-dir "$PWD"
 ```
 
-### Opcion avanzada con systemd de sistema
+### Opción avanzada con systemd de sistema
 
-`setup_trinaxai.sh` es solo para Linux. Crea unidades systemd en `/etc/systemd/system`, configura Ollama y agrega una regla sudoers para permitir iniciar/apagar desde la PWA sin pedir contrasena.
+`setup_trinaxai.sh` es solo para Linux. Crea unidades systemd en `/etc/systemd/system`, configura Ollama y agrega una regla sudoers para permitir iniciar/apagar desde la PWA sin pedir contraseña.
 
-Ejecutalo solo si entiendes ese cambio de permisos:
+Ejecútalo solo si entiendes ese cambio de permisos:
 
 ```bash
 cd ~/trinaxai
@@ -302,11 +333,11 @@ cd ~/trinaxai
 .venv/bin/python test_system.py --verbose
 ```
 
-Tambien puedes revisar manualmente:
+También puedes revisar manualmente:
 
 ```bash
 curl http://localhost:11434/api/tags
-curl http://localhost:3333/health
+curl -k https://localhost:3333/health
 ```
 
 La PWA debe abrir en:
@@ -323,7 +354,7 @@ https://localhost:3334
 4. Usa modo RAG para preguntas sobre tus archivos indexados.
 5. Crea colecciones para separar proyectos o temas.
 6. Adjunta archivos temporales si no quieres indexarlos.
-7. Usa frases como `recuerda que...` para guardar memoria local explicita.
+7. Usa frases como `recuerda que...` para guardar memoria local explícita.
 
 ## Backend opcional con Docker
 
@@ -351,13 +382,13 @@ Después inicia solo el gateway PWA del host y la API en Docker:
 ```bash
 export TRINAXAI_DOCKER_UID="$(id -u)"
 export TRINAXAI_DOCKER_GID="$(id -g)"
-export TRINAXAI_DOCKER_IMAGE=ghcr.io/trinaxcode/trinaxai:1.1.0
+export TRINAXAI_DOCKER_IMAGE=ghcr.io/trinaxcode/trinaxai:1.2.0
 docker compose pull
 docker compose up --no-build -d
 .venv/bin/python service_manager.py start-frontend --base-dir "$PWD"
 ```
 
-El registro también publica las etiquetas `1.1`, `1` y `latest`. Fija `1.1.0`
+El registro también publica las etiquetas `1.2`, `1` y `latest`. Fija `1.2.0`
 para un despliegue reproducible. Para construir el checkout actual, omite
 `TRINAXAI_DOCKER_IMAGE` y ejecuta `docker compose up --build -d`.
 
@@ -407,25 +438,13 @@ cd ~/trinaxai
 ./update.sh
 ```
 
-El actualizador pregunta si quieres crear backup, descargar codigo nuevo, actualizar modelos, cambiar autoarranque, reiniciar servicios y correr la auditoria. Las dependencias Python/npm y el build de la PWA siguen siendo automaticos.
+El actualizador pregunta si quieres crear backup, descargar código nuevo, actualizar modelos, cambiar autoarranque, reiniciar servicios y correr la auditoría. Las dependencias Python/npm y el build de la PWA siguen siendo automáticos.
 
 El instalador activa un timer que comprueba GitHub semanalmente y registra si
 hay una actualización en `logs/auto-update.log`. Es solo comprobación: no
 descarga/ejecuta un updater ni modifica servicios. Revisa el release etiquetado
 y ejecuta manualmente el actualizador local guiado. Desactívalo con
 `python scripts/auto_update.py disable`.
-
-Si actualizas manualmente:
-
-```bash
-git pull
-source .venv/bin/activate
-python -m pip install --require-hashes -r requirements.lock
-cd chat-pwa
-npm ci
-npm run build
-cd ..
-```
 
 ## Copias de seguridad
 
@@ -435,10 +454,10 @@ Crear backup:
 ./backup.sh create
 ```
 
-El archive se publica con modo `0600` y contiene `.env`, chats, adjuntos,
-fuentes e índices privados. Cifra toda copia off-host. Restore valida rutas y
-tipos, extrae a staging y revierte un reemplazo fallido; aun así prueba la
-restauración antes de actualizar.
+El archivo se publica con modo `0600` y contiene `.env`, chats, adjuntos,
+fuentes e índices privados. Cifra toda copia fuera del host. La restauración
+valida rutas y tipos, extrae a staging y revierte un reemplazo fallido; aun así
+pruébala antes de actualizar.
 
 Respaldar manualmente lo importante:
 
@@ -452,9 +471,9 @@ Respaldar manualmente lo importante:
 ./uninstall.sh
 ```
 
-El desinstalador pregunta que archivos runtime quieres quitar. Los datos RAG y modelos de Ollama se conservan salvo que elijas borrarlos.
+El desinstalador pregunta qué archivos runtime quieres quitar. Los datos RAG y modelos de Ollama se conservan salvo que elijas borrarlos.
 
-Para dejar preseleccionada la opcion de quitar modelos de Ollama:
+Para dejar preseleccionada la opción de quitar modelos de Ollama:
 
 ```bash
 ./uninstall.sh --remove-models
@@ -468,18 +487,20 @@ Para dejar preseleccionada la opcion de quitar modelos de Ollama:
 | 3333 | RAG API | Backend FastAPI |
 | 3334 | PWA | Interfaz web |
 
-Si usaras telefono/tablet, permite `3333` y `3334` solo en tu red privada. No expongas estos puertos a internet.
+Si usas teléfono o tablet, permite solo el gateway PWA en `3334` dentro de tu
+red privada. Mantén FastAPI `3333` y Ollama `11434` en loopback; no los expongas
+a la LAN ni a Internet.
 
-Ollama no trae autenticacion integrada. Si `OLLAMA_HOST=0.0.0.0`, otros dispositivos de tu LAN podrian usar tus modelos. Para acceso remoto, usa VPN como Tailscale o WireGuard.
+Ollama no trae autenticación integrada. Si `OLLAMA_HOST=0.0.0.0`, otros dispositivos de tu LAN podrían usar tus modelos. Para acceso remoto, usa una VPN como Tailscale o WireGuard.
 
 ## Problemas comunes
 
-| Problema | Solucion |
+| Problema | Solución |
 |---|---|
 | `python3 -m venv` falla | Instala `python3-venv`. |
 | PWA no abre | Ejecuta `cd chat-pwa && npm run dev`. |
 | API no responde | Ejecuta `./startup_ai.sh` y revisa `logs/rag_api.log`. |
 | Modelo no encontrado | Ejecuta `ollama pull nombre-del-modelo`. |
-| Telefono no conecta | Agrega tu IP LAN a `TRINAXAI_CORS_ORIGINS` y revisa firewall. |
-| Certificado no confiable | Acepta la advertencia para uso local. |
-| Respuestas lentas | Usa modelos mas pequenos o un perfil menor con `TRINAXAI_PROFILE=8gb ./install.sh`. |
+| El teléfono no conecta | Ejecuta `trinaxai network refresh`, abre la URL `https://HOST-LAN-IP:3334` que muestra y permite solo el gateway en el firewall de red privada. |
+| Certificado no confiable | Instala/confía en la CA pública que muestra `trinaxai network`; no omitas TLS en una LAN. Consulta [pairing LAN y confianza HTTPS](NETWORK_PAIRING.es.md). |
+| Respuestas lentas | Usa la matriz de modelos/perfiles del README raíz, reduce la concurrencia o elige `8gb`/un modelo instalado más pequeño. |

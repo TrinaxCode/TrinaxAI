@@ -12,6 +12,7 @@ from __future__ import annotations
 import logging
 import os
 import tempfile
+import threading
 from typing import Any
 
 import config
@@ -20,6 +21,8 @@ LOG = logging.getLogger("trinaxai.voice_service")
 
 # Lazy model cache / caché perezosa de modelos
 _stt_model: Any | None = None
+# ponytail: one process-wide lock; use per-model locks only if multiple STT models are loaded.
+_stt_model_lock = threading.Lock()
 
 
 def stt_available() -> bool:
@@ -37,20 +40,23 @@ def _load_stt() -> Any:
     global _stt_model
     if _stt_model is not None:
         return _stt_model
-    from faster_whisper import WhisperModel
+    with _stt_model_lock:
+        if _stt_model is not None:
+            return _stt_model
+        from faster_whisper import WhisperModel
 
-    model_name = config.VOICE_STT_MODEL
-    device = os.getenv("TRINAXAI_VOICE_DEVICE", "auto").strip() or "auto"
-    compute_type = os.getenv("TRINAXAI_VOICE_COMPUTE_TYPE", "default").strip() or "default"
-    download_root = os.path.join(config.PERSIST_DIR, "whisper")
-    _stt_model = WhisperModel(
-        model_name,
-        device=device,
-        compute_type=compute_type,
-        download_root=download_root,
-    )
-    LOG.info("faster-whisper STT loaded: %s (%s/%s)", model_name, device, compute_type)
-    return _stt_model
+        model_name = config.VOICE_STT_MODEL
+        device = os.getenv("TRINAXAI_VOICE_DEVICE", "auto").strip() or "auto"
+        compute_type = os.getenv("TRINAXAI_VOICE_COMPUTE_TYPE", "default").strip() or "default"
+        download_root = os.path.join(config.PERSIST_DIR, "whisper")
+        _stt_model = WhisperModel(
+            model_name,
+            device=device,
+            compute_type=compute_type,
+            download_root=download_root,
+        )
+        LOG.info("faster-whisper STT loaded: %s (%s/%s)", model_name, device, compute_type)
+        return _stt_model
 
 
 def _suffix_from_filename(filename: str | None) -> str:
@@ -159,7 +165,7 @@ def _pick_pyttsx3_voice(engine: Any, lang: str) -> str | None:
     for v in voices:
         voice_id = getattr(v, "id", "").lower()
         voice_languages = getattr(v, "languages", []) or []
-        voice_languages = [str(l).lower() for l in voice_languages]
+        voice_languages = [str(language).lower() for language in voice_languages]
         if base in voice_id or base in voice_languages:
             return v.id
     return None

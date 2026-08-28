@@ -42,7 +42,7 @@ describe('ChatMarkdown', () => {
       }]}
     />);
 
-    expect(screen.getByRole('link', { name: '[1]' })).toHaveAttribute('href', 'https://example.com/official');
+    expect(screen.getByRole('link', { name: 'Official source' })).toHaveAttribute('href', 'https://example.com/official');
     expect(screen.queryByRole('link', { name: '[2]' })).not.toBeInTheDocument();
     expect(screen.getByText(/La cita \[2\]/)).toBeInTheDocument();
   });

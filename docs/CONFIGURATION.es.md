@@ -1,12 +1,14 @@
 # Referencia de configuración de TrinaxAI
 
+[English](CONFIGURATION.md)
+
 TrinaxAI lee configuración de variables de entorno y del archivo `.env` de la raíz. Copia la plantilla y cambia solo lo necesario:
 
 ```bash
 cp .env.example .env
 ```
 
-No confirmes `.env`, certificados ni tokens. Los valores de esta guía son los predeterminados de la rama actual; [`.env.example`](../.env.example) es la plantilla ejecutable.
+No confirmes `.env`, certificados ni tokens. Los valores de esta guía son los predeterminados de la rama actual; [`.env.example`](../.env.example) es la plantilla ejecutable. Si un cambio de configuración provoca un fallo, empieza por la [guía de solución de problemas y recuperación](TROUBLESHOOTING.es.md) antes de cambiar más variables.
 El [inventario canónico de variables de entorno](ENVIRONMENT_VARIABLES.es.md)
 reúne todas las variables `TRINAXAI_*` y `VITE_TRINAXAI_*` admitidas.
 
@@ -22,15 +24,16 @@ reúne todas las variables `TRINAXAI_*` y `VITE_TRINAXAI_*` admitidas.
 
 | Variable | Predeterminado | Valores / efecto |
 |---|---:|---|
-| `TRINAXAI_PROFILE` | `16gb` | Instaladores: `8gb`, `16gb`, `max`, `ultra`; `4gb` es alias runtime de recursos bajos. |
+| `TRINAXAI_PROFILE` | autodetectado | `8gb`, `16gb`, `32gb`, `64gb`; se deriva de CPU/RAM/GPU y puede sobrescribirse. |
 | `TRINAXAI_PERFORMANCE_MODE` | `fast` | `fast`, `balanced`, `quality`; cambia recuperación y chunking. |
+| `TRINAXAI_THINKING_MODE` | `1` | Valor predeterminado del backend cuando un cliente no envía `think`; `0` desactiva el razonamiento. |
 | `TRINAXAI_NUM_CTX` | según perfil | Ventana de contexto del LLM. |
 | `TRINAXAI_NUM_THREAD` | `8` | Hilos CPU por solicitud. |
 | `TRINAXAI_KEEP_ALIVE` | según perfil/modo | Tiempo que el modelo de chat permanece cargado (`0s`, `15m`, etc.). |
 | `TRINAXAI_TIMEOUT` | `300` | Timeout de solicitudes a Ollama, en segundos. |
 | `TRINAXAI_AGGRESSIVE_QUANT` | `0` | Activa el perfil de cuantización agresivo. |
 
-Elige el perfil por RAM disponible, no por RAM total. Si hay cierres por memoria, reduce contexto, workers y tamaño del modelo antes de tocar el índice.
+El backend detecta modelo/núcleos de CPU, RAM, GPU y VRAM, y guarda la instantánea en `storage/hardware_profile.json`. Deja `TRINAXAI_PROFILE` sin definir para usar el perfil automático. La recomendación de modelos también usa la VRAM: una GPU dedicada recibe modelos que caben en ella y una GPU débil con mucha RAM mantiene un modelo orientado a CPU/RAM.
 
 ## Modelos y Ollama
 
@@ -61,11 +64,40 @@ inmediato y persiste tras reiniciar. Al desactivarla, el administrador central
 no crea `AudioContext` ni carga o reproduce audio de señales. STT y las
 respuestas habladas se controlan por separado.
 
+**Configuración → General → Modo de razonamiento** está permitido por defecto,
+pero se activa de forma adaptativa solo en tareas analíticas o complejas. Los
+saludos y preguntas simples omiten esa fase para responder directamente. Cuando
+el proveedor de Ollama la expone, se muestra por separado en un disclosure
+accesible y se guarda junto con su duración en el historial sincronizado. Los
+modelos sin ese canal responden normalmente y no muestran un panel vacío. La
+preferencia `tc-thinking-mode` usa la sincronización existente del estado de la
+PWA; no es un secreto de entorno.
+La duración se mide desde el primer delta de razonamiento del proveedor hasta
+el primer token de la respuesta final, o hasta el fin del stream si no llega
+ningún token final.
+
+## Respuestas largas y estado del stream
+
+Cada proveedor de chat informa `stop`, `length`, `cancelled` o `error` en los
+metadatos de finalización. Una respuesta `length`, o un bloque de código
+Markdown sin cerrar, queda como pendiente y no como completa; la PWA puede
+continuarla hasta `TRINAXAI_MAX_CONTINUATIONS` turnos automáticos (predeterminado
+`2`). Al alcanzar el límite conserva la acción visible **Continuar**. Usa
+`TRINAXAI_MAX_CONTINUATIONS=0` para exigir continuación manual.
+
+`TRINAXAI_GEN_NUM_CTX_MAX` (predeterminado `16384`) es el techo duro del contexto
+de generación. `TRINAXAI_GEN_NUM_CTX` y `TRINAXAI_GEN_NUM_PREDICT` son ajustes de
+calibración; las reservas imposibles se rechazan en vez de desbordar en silencio
+la ventana del modelo. El timeout del backend aplica a un bloqueo de lectura de
+Ollama, no al tiempo total de un stream largo. La PWA usa un margen amplio para
+el primer token y Search Mode permite hasta 15 minutos para dependencias,
+recuperación y síntesis.
+
 ## Embeddings, recuperación e indexación
 
 | Variable | Predeterminado | Propósito |
 |---|---:|---|
-| `TRINAXAI_EMBED_PRESET` | según perfil | `balanced` (0.6B), `quality` (4B), `max` (8B), `lite` (`nomic-embed-text`) o `fast` (`all-minilm`). |
+| `TRINAXAI_EMBED_PRESET` | según perfil | `balanced` (0.6B), `quality` (4B), `lite` (`nomic-embed-text`) o `fast` (`all-minilm`). Los valores legacy `max` migran a `quality`. |
 | `TRINAXAI_EMBED` | según preset | Modelo de embeddings. |
 | `TRINAXAI_EMBED_DIMS` | según preset | Dimensiones; cambiarlo exige reconstruir el índice. |
 | `TRINAXAI_EMBED_WORKERS` | según perfil | Solicitudes de embedding concurrentes. |
@@ -78,17 +110,20 @@ respuestas habladas se controlan por separado.
 | `TRINAXAI_FUSION_CANDIDATES` | según perfil | Candidatos por recuperador antes de fusionar. |
 | `TRINAXAI_RETRIEVER_CACHE_MAX_COMBINATIONS` | `32` | Límite LRU de combinaciones activas de colecciones. |
 | `TRINAXAI_RERANK` | `0` | Activa reranking; requiere `requirements-rerank.txt`. |
-| `TRINAXAI_INDEX_DIR` | padre del repo | Carpeta que usa `index.py`. |
+| `TRINAXAI_PERSIST_DIR` | `storage/` | Carpeta del índice persistido y del estado de ejecución; útil para instancias aisladas o desechables. |
+| `TRINAXAI_INDEX_DIR` | `local_sources/` del repositorio | Carpeta que usa `index.py`; déjala vacía para usar esa carpeta local. |
 | `TRINAXAI_INDEX_APPEND` | `0` | Si es `1`, no elimina del índice archivos ausentes. |
 | `TRINAXAI_INDEX_BATCH_SIZE` | `100` | Archivos procesados por lote. |
 | `TRINAXAI_SOURCE_ID` | derivado de la raíz | Identidad estable de una raíz sincronizada independiente. |
-| `TRINAXAI_INDEX_LOCK_TIMEOUT` | `3600` | Espera del writer lock cross-process. |
+| `TRINAXAI_INDEX_LOCK_TIMEOUT` | `60` | Segundos de espera del writer lock entre procesos. |
 | `TRINAXAI_INDEX_TIMEOUT` | `3600` | Timeout del proceso indexador lanzado por la CLI. |
 | `TRINAXAI_WATCH_INDEX_TIMEOUT` | `1800` | Timeout de cada indexador encolado por el watcher. |
 | `TRINAXAI_WATCH_RELOAD_TIMEOUT` | `30` | Espera del watcher para que el backend recargue engines tras un indexado exitoso. |
 | `TRINAXAI_WATCH_OUTPUT_MAX_BYTES` | `16384` | Cola máxima de stdout/stderr conservada por job del watcher. |
 
-Cambiar embeddings, dimensiones o chunking exige reindexar. El manifest usa hash
+Cambiar embeddings, dimensiones o chunking exige reindexar. Recargar el índice
+solo actualiza en memoria una generación publicada; no reconstruye vectores. Haz
+backup de `storage/` antes. El manifest usa hash
 de contenido y versión de pipeline; cada raíz tiene `source_id`, así que
 sincronizar una segunda raíz en la colección no elimina la primera. Índice y
 manifest se publican como generación con journal y rollback tras interrupción.
@@ -99,13 +134,13 @@ manifest se publican como generación con journal y rollback tras interrupción.
 |---|---:|---|
 | `TRINAXAI_WEB_SEARCH_PROVIDER` | `auto` | `auto`, `duckduckgo`, `brave`, `searxng` o `disabled`. |
 | `TRINAXAI_BRAVE_SEARCH_API_KEY` | vacío | Credencial de Brave Search; permanece solo en el backend. |
-| `TRINAXAI_SEARXNG_URL` | vacío | URL de una instancia SearXNG propia con salida JSON habilitada. |
+| `TRINAXAI_SEARXNG_URL` | vacío | URL de SearXNG con salida JSON habilitada; se aceptan endpoints HTTP(S) públicos o el endpoint local documentado `http://127.0.0.1:8080`. |
 | `TRINAXAI_WEB_SEARCH_TIMEOUT` | `15` | Tiempo máximo por búsqueda saliente. |
 | `TRINAXAI_WEB_SEARCH_MAX_RESULTS` | `6` | Fuentes web entregadas al modelo, entre 1 y 10. |
 
-En `auto`, TrinaxAI prefiere Brave si hay una clave, luego SearXNG si hay una URL y finalmente DuckDuckGo sin credenciales. La consulta sale de la máquina únicamente cuando el botón del mundo está activo o el usuario pide explícitamente buscar en Internet.
+En `auto`, TrinaxAI prefiere Brave si hay una clave, luego SearXNG si hay una URL y finalmente DuckDuckGo sin credenciales. La consulta sale de la máquina únicamente cuando el botón del mundo está activo o el usuario pide explícitamente buscar en Internet. SearXNG puede usar el endpoint local documentado `http://127.0.0.1:8080` (o otro endpoint HTTP loopback validado en el puerto `8080`); esta excepción solo aplica al proveedor SearXNG configurado. La lectura general de páginas web sigue bloqueando credenciales y destinos privados, revalidando redirecciones y aplicando límites de bytes, texto y tiempo.
 
-Los mismos proveedores se administran en **PWA → Configuración → Búsqueda web**. Los valores se guardan únicamente en el backend, en `storage/web_search_settings.json` con permisos `0600`; la API solo devuelve estados de disponibilidad y nunca las claves. La precedencia es: variables de entorno, configuración administrada y valores predeterminados. Un campo de clave vacío conserva la existente; eliminar credencial y restablecer son acciones explícitas. Las URLs de SearXNG introducidas en la PWA deben ser HTTP(S) públicas, sin credenciales ni destinos privados.
+Los mismos proveedores se administran en **PWA → Configuración → Búsqueda web**. Los valores se guardan únicamente en el backend, en `storage/web_search_settings.json` con permisos `0600`; la API solo devuelve estados de disponibilidad y nunca las claves. La precedencia es: variables de entorno, configuración administrada y valores predeterminados. Un campo de clave vacío conserva la existente; eliminar credencial y restablecer son acciones explícitas. Las URLs de SearXNG introducidas en la PWA deben ser HTTP(S) públicas o el endpoint loopback local documentado en `127.0.0.1:8080`, sin credenciales; ese loopback es la única excepción para destinos privados.
 
 ## Límites de archivos y extracción
 
@@ -115,7 +150,7 @@ Los mismos proveedores se administran en **PWA → Configuración → Búsqueda 
 | `TRINAXAI_DOCUMENT_MAX_FILE_BYTES` | 512 MiB |
 | `TRINAXAI_UPLOAD_MAX_FILES` | `2500` |
 | `TRINAXAI_UPLOAD_MAX_BYTES` | 2 GiB |
-| `TRINAXAI_DOC_EXTRACT_MAX_BYTES` | 512 MiB |
+| `TRINAXAI_DOC_EXTRACT_MAX_BYTES` | 128 MiB |
 | `TRINAXAI_DOC_EXTRACT_MAX_CHARS` | `120000` |
 | `TRINAXAI_CHAT_ATTACHMENT_MAX_BYTES` | 512 MiB |
 | `TRINAXAI_CHAT_ATTACHMENTS_MAX_BYTES` | 4 GiB |
@@ -129,7 +164,7 @@ guardarse; la conexión HTTP no permanece abierta durante extracción y
 embeddings. PDFs, chunks y embeddings se procesan en lotes acotados. La PWA
 muestra etapa persistida, tiempo, actividad reciente, páginas, chunks y lotes;
 si una etapa no tiene denominador exacto se muestra como indeterminada. Los
-timeouts `TRINAXAI_INDEX_STAGE_TIMEOUT` y `TRINAXAI_INDEX_TOTAL_TIMEOUT` son
+timeouts `TRINAXAI_INDEX_STAGE_TIMEOUT` y `TRINAXAI_INDEX_TIMEOUT` son
 configurables. Cancelar o fallar descarta generaciones no publicadas y limpia
 temporales; los trabajos elegibles se pueden reintentar.
 
@@ -148,8 +183,8 @@ conversación y permite reintentar; nunca inventa un resultado silencioso.
 | `TRINAXAI_RAG_HTTPS` | `1` | HTTPS para la API administrada. |
 | `TRINAXAI_CA_FILE` | autodetectado | Bundle CA explícito para HTTPS verificado desde la CLI; también detecta raíces mkcert/autofirmadas locales. |
 | `TRINAXAI_CORS_ORIGINS` | orígenes PWA locales | Lista separada por comas; evita `*`. |
-| `TRINAXAI_ALLOW_LAN_SYSTEM` | `0` | Fallback legacy solo para sistema y sin token admin; prefiere pairing. |
-| `TRINAXAI_ADMIN_TOKEN` | vacío | Supercredencial administradora; consérvala en el host. |
+| `TRINAXAI_ALLOW_LAN_SYSTEM` | `0` | Variable legacy obsoleta; no concede administración del host por LAN. |
+| `TRINAXAI_ADMIN_TOKEN` | vacío | Credencial para operaciones protegidas; no evita el requisito loopback para administrar el host. |
 | `TRINAXAI_DEVICE_REGISTRY` | `storage/device_pairing.json` | Registro atómico modo `0600` con dispositivos/scopes y hashes con clave. |
 | `TRINAXAI_DEVICE_SECRET_FILE` | `storage/.device_secret` | Clave modo `0600` para hashear códigos y tokens. |
 | `TRINAXAI_DEVICE_TOKEN` | vacío | Bearer de una CLI emparejada; se envía como `X-TrinaxAI-Device-Token`. |
@@ -160,16 +195,21 @@ conversación y permite reintentar; nunca inventa un resultado silencioso.
 | `TRINAXAI_TLS_VERIFY` | `0` | Validación TLS de conexiones salientes del backend. |
 
 CORS no es autenticación. FastAPI y Ollama administrados quedan en loopback; el
-gateway PWA es la frontera LAN. Bloquea 3333/11434 y usa VPN. Estado PWA,
-adjuntos, fuentes, memoria, colecciones, índice/sistema y agente exigen auth,
-incluidas sus lecturas.
+gateway PWA es la frontera LAN. Bloquea 3333/11434 y usa VPN. Las lecturas
+privadas remotas exigen `read_private` o una credencial admin; índice, Agente y
+administración del host exigen procedencia loopback verificada.
 
 Ejecuta `trinaxai pair start` en el host para emitir un código de un uso. Por
-defecto concede `chat,read_private`; eleva a `index`, `system` o `agent` solo si
-el dispositivo lo necesita. `trinaxai pair list` muestra el inventario y
-`trinaxai pair revoke ID` invalida un equipo. La PWA guarda el bearer en
-`localStorage` como identidad persistente del dispositivo; pairing administra
-capabilities de dispositivo, no cuentas.
+defecto concede `chat,read_private` y solo admite añadir `web`. Indexación,
+Agente y administración del host requieren loopback aunque exista token. `trinaxai pair list` muestra el inventario y
+`trinaxai pair revoke ID` invalida un equipo. Un claim nuevo de la PWA recibe el
+bearer únicamente en una cookie `HttpOnly; SameSite=Strict` con alcance
+`/api/rag`; el JSON del claim contiene metadatos del dispositivo, no un bearer.
+La PWA no persiste tokens nuevos en el almacenamiento del navegador. Un bearer
+legacy almacenado solo se lee para la migración explícita de
+`GET /v1/pairing/me` y se elimina después de una respuesta exitosa; la CLI sigue
+siendo compatible mediante la cabecera `X-TrinaxAI-Device-Token`. Pairing
+administra capabilities de dispositivo, no cuentas.
 
 ## PWA y proxy
 

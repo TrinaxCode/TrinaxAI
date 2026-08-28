@@ -1,12 +1,14 @@
 # TrinaxAI Configuration Reference
 
+[Versión en español](CONFIGURATION.es.md)
+
 TrinaxAI reads environment variables and the repository-root `.env` file. Start with:
 
 ```bash
 cp .env.example .env
 ```
 
-Never commit `.env`, certificates, or tokens. [`.env.example`](../.env.example) is the executable template and source of current example values.
+Never commit `.env`, certificates, or tokens. [`.env.example`](../.env.example) is the executable template and source of current example values. If a setting change causes a failure, start with the [troubleshooting and recovery guide](TROUBLESHOOTING.md) before changing more variables.
 The [environment variable inventory](ENVIRONMENT_VARIABLES.md) is the single
 canonical list of every supported `TRINAXAI_*` and `VITE_TRINAXAI_*` setting.
 
@@ -22,7 +24,8 @@ canonical list of every supported `TRINAXAI_*` and `VITE_TRINAXAI_*` setting.
 
 | Group | Variables |
 |---|---|
-| Hardware | `TRINAXAI_PROFILE` (`8gb`, `16gb`, `max`, `ultra` installers; `4gb` is a low-resource runtime alias), `TRINAXAI_PERFORMANCE_MODE` (`fast`, `balanced`, `quality`) |
+| Hardware | `TRINAXAI_PROFILE` (`8gb`, `16gb`, `32gb`, `64gb`; auto-detected from CPU/RAM/GPU), `TRINAXAI_PERFORMANCE_MODE` (`fast`, `balanced`, `quality`) |
+| Thinking | `TRINAXAI_THINKING_MODE` (backend fallback when a client omits `think`) |
 | Models | `TRINAXAI_MODEL_GENERAL`, `TRINAXAI_MODEL_CODE`, `TRINAXAI_MODEL_DEEP`, `TRINAXAI_MODEL_FAST`, `TRINAXAI_AUTO_ROUTE` |
 | Ollama | `OLLAMA_BASE_URL`, `TRINAXAI_NUM_CTX`, `TRINAXAI_NUM_THREAD`, `TRINAXAI_KEEP_ALIVE`, `TRINAXAI_TIMEOUT` |
 | Embeddings | `TRINAXAI_EMBED_PRESET`, `TRINAXAI_EMBED`, `TRINAXAI_EMBED_DIMS`, `TRINAXAI_EMBED_WORKERS`, `TRINAXAI_EMBED_BATCH`, `TRINAXAI_EMBED_KEEP_ALIVE` |
@@ -35,8 +38,9 @@ canonical list of every supported `TRINAXAI_*` and `VITE_TRINAXAI_*` setting.
 
 ## Important operational rules
 
-- Choose profiles by available memory, not installed memory. Reduce model size, context, and embedding concurrency if the OS starts swapping.
-- Changing the embedding model/dimensions or chunking strategy requires a full reindex. Back up `storage/` first.
+- The backend detects CPU model/cores, RAM, GPU vendor/VRAM, and persists the result in `storage/hardware_profile.json`. Leave `TRINAXAI_PROFILE` unset for automatic selection; use it only as an explicit override.
+- Model recommendations also consider GPU VRAM: dedicated GPU memory gets GPU-fit models, while large-RAM/weak-GPU systems stay CPU/RAM-oriented.
+- Changing the embedding model/dimensions or chunking strategy requires a full reindex. Back up `storage/` first. A plain index reload only refreshes a published generation in memory; it does not rebuild vectors.
 - Each synchronized root receives a stable `source_id`. Normal sync only deletes
   missing files from that root; another root in the collection remains intact.
   `TRINAXAI_INDEX_APPEND=1` keeps missing entries even in the selected root.
@@ -49,20 +53,24 @@ canonical list of every supported `TRINAXAI_*` and `VITE_TRINAXAI_*` setting.
   HMAC secret. `/api/ollama` is a narrow method/path facade, not a generic proxy;
   remote use requires the configured credential and joins the cross-process
   inference lock.
-- Protected non-loopback requests require either a paired-device token with the
-  exact route scope or the administrator super-credential. Pairing defaults to
-  `chat,read_private`; app state, attachments, sources, memory, collections,
-  indexing/system and agent routes remain protected, including reads.
+- Protected non-loopback reads require a paired-device token with the exact
+  `chat`, `read_private`, or `web` scope, or an administrator credential. Host
+  mutations, indexing, Agent routes, model/device management, and lifecycle
+  controls require verified original loopback regardless of credentials.
 - Generate a single-use code with `trinaxai pair start`, inspect devices with
-  `trinaxai pair list`, and revoke them from the host. The PWA stores the bearer
-  in `localStorage` as persistent device identity; `storage/device_pairing.json` and
-  `storage/.device_secret` must remain mode `0600`. Pairing is device capability
-  management, not a multi-user account system.
+  `trinaxai pair list`, and revoke them from the host. A new PWA claim receives
+  the device bearer only in an `HttpOnly; SameSite=Strict` cookie scoped to
+  `/api/rag`; the claim JSON contains device metadata, not a bearer. The PWA
+  does not persist new device tokens in browser storage. A legacy stored bearer
+  is read only for the explicit `GET /v1/pairing/me` migration, then removed
+  after a successful response; the CLI remains compatible through its
+  `X-TrinaxAI-Device-Token` header. Pairing is device capability management,
+  not a multi-user account system.
 - File tools remain under registered agent roots. Linux terminal calls require
   networkless bubblewrap; unsupported hosts fail closed unless the operator
   explicitly opts into full user-level host access.
 - Web search is opt-in. `TRINAXAI_WEB_SEARCH_PROVIDER=auto` prefers a configured Brave key (`TRINAXAI_BRAVE_SEARCH_API_KEY`), then a SearXNG URL (`TRINAXAI_SEARXNG_URL`), and otherwise uses DuckDuckGo without credentials. Tune `TRINAXAI_WEB_SEARCH_TIMEOUT` and `TRINAXAI_WEB_SEARCH_MAX_RESULTS` when needed.
-- The same providers can be managed under **PWA → Settings → Web search**. Managed values are stored only by the backend in `storage/web_search_settings.json` with mode `0600`; GET responses expose readiness booleans, never API keys. Precedence is environment variables, then managed settings, then defaults. Empty key fields preserve an existing key; deletion and reset are explicit actions. SearXNG URLs entered in the PWA must resolve to public HTTP(S) endpoints and cannot contain credentials.
+- The same providers can be managed under **PWA → Settings → Web search**. Managed values are stored only by the backend in `storage/web_search_settings.json` with mode `0600`; GET responses expose readiness booleans, never API keys. Precedence is environment variables, then managed settings, then defaults. Empty key fields preserve an existing key; deletion and reset are explicit actions. SearXNG URLs entered in the PWA must resolve to public HTTP(S) endpoints or the documented local loopback endpoint `http://127.0.0.1:8080`, and cannot contain credentials.
 
 ## PWA sounds
 
@@ -70,6 +78,34 @@ canonical list of every supported `TRINAXAI_*` and `VITE_TRINAXAI_*` setting.
 choice is stored locally, applies immediately, and survives restarts. When it is
 off, the centralized audio manager neither creates an `AudioContext` nor loads
 or plays cue audio. Speech recognition and spoken answers remain independent.
+
+**Settings → General → Thinking mode** is allowed by default, but activates
+adaptively only for analytical or complex tasks. Greetings and simple questions
+skip that phase and answer directly. When Ollama exposes provider-supported
+reasoning, TrinaxAI sends it separately from the final answer, shows it in an
+accessible disclosure, and stores the message's reasoning and duration in
+synced chat history. Models that do not expose a thinking channel continue as
+normal and do not show an empty panel. The `tc-thinking-mode` preference is
+shared through the existing PWA app-state sync; it is not an environment secret.
+The reported duration runs from the first provider thinking delta to the first
+final-answer token, or to stream end when no final token arrives.
+
+## Long answers and stream state
+
+Every chat provider reports `stop`, `length`, `cancelled`, or `error` through
+the completion metadata. A `length` result, or an unclosed Markdown code fence,
+is shown as pending instead of complete; the PWA can continue it and will make
+at most `TRINAXAI_MAX_CONTINUATIONS` automatic turns (default `2`). The visible
+**Continue** action remains available when that ceiling is reached. Set
+`TRINAXAI_MAX_CONTINUATIONS=0` to require manual continuation.
+
+`TRINAXAI_GEN_NUM_CTX_MAX` (default `16384`) is the hard generation-context
+ceiling. `TRINAXAI_GEN_NUM_CTX` and `TRINAXAI_GEN_NUM_PREDICT` are calibration
+knobs; impossible prompt/output reservations are rejected instead of silently
+overflowing the model window. The backend timeout applies to an Ollama read
+stall, not to the total time needed for a long stream. The PWA uses a generous
+first-token guard, while Search Mode allows up to 15 minutes for dependency,
+retrieval, and synthesis work.
 
 ## Auto-router and default model
 
@@ -80,6 +116,82 @@ model remains authoritative, while unavailable or tool-incompatible choices
 fall back to an installed capable model. For the normal `16gb` CPU profile,
 `qwen3.5:4b` is the general, code, and deep default; `qwen3.5:2b` is the fast
 route. The checked-in benchmark records the measured latency tradeoff.
+
+## Embeddings, retrieval, and indexing
+
+| Variable | Default | Effect |
+|---|---:|---|
+| `TRINAXAI_EMBED_PRESET` | profile-derived | Selects the `balanced`, `quality`, `lite`, or `fast` embedding preset. Legacy `max` values migrate to `quality`. |
+| `TRINAXAI_EMBED` / `TRINAXAI_EMBED_DIMS` | preset-derived | Embedding model and vector dimension; changing either requires a full reindex. |
+| `TRINAXAI_EMBED_WORKERS` / `TRINAXAI_EMBED_BATCH` | profile-derived | Concurrency and batch size for embedding requests. Lower them when memory is tight. |
+| `TRINAXAI_EMBED_KEEP_ALIVE` | profile-derived | How long Ollama keeps the embedder loaded between batches. |
+| `TRINAXAI_CHUNK_SIZE` / `TRINAXAI_CHUNK_OVERLAP` | mode-derived | Prose chunk size and overlap. |
+| `TRINAXAI_CODE_CHUNK_LINES` | `60` | Target lines for code chunks. AST boundaries remain authoritative when available. |
+| `TRINAXAI_SIMILARITY_TOP_K` / `TRINAXAI_FUSION_CANDIDATES` | profile-derived | Final results and candidate pool for hybrid retrieval. |
+| `TRINAXAI_RERANK` | `0` | Enables the optional cross-encoder; install `requirements-rerank.txt` first. |
+| `TRINAXAI_PERSIST_DIR` | `storage/` | Directory for the persisted index and runtime state. Useful for isolated or disposable backend instances. |
+| `TRINAXAI_INDEX_DIR` | repository `local_sources/` | Root scanned by `index.py`; browser imports use managed `local_sources/` roots. |
+| `TRINAXAI_INDEX_APPEND` | `0` | Keeps entries for files missing from the selected root when set to `1`. |
+
+Each synchronized root has a stable `source_id`. Reindexing one root does not
+remove a same-named path from another root in the collection. The index is
+published as a complete generation; interrupted or failed jobs do not replace a
+working generation.
+
+## Web search
+
+| Variable | Default | Effect |
+|---|---:|---|
+| `TRINAXAI_WEB_SEARCH_PROVIDER` | `auto` | `auto`, `duckduckgo`, `brave`, `searxng`, or `disabled`. |
+| `TRINAXAI_BRAVE_SEARCH_API_KEY` | empty | Brave credential; it stays in the backend and is never returned to the browser. |
+| `TRINAXAI_SEARXNG_URL` | empty | SearXNG endpoint with JSON search enabled; public HTTP(S) endpoints or the documented local `http://127.0.0.1:8080` loopback endpoint are accepted. |
+| `TRINAXAI_WEB_SEARCH_TIMEOUT` | `15` | Search timeout in seconds. |
+| `TRINAXAI_WEB_SEARCH_MAX_RESULTS` | `6` | Maximum results, from 1 to 10. |
+
+In `auto`, Brave wins when a key exists, then SearXNG when a URL exists, and
+DuckDuckGo is the no-key fallback. Search is explicit: local chat and local RAG
+do not send queries to the Internet. SearXNG may use the documented local
+`http://127.0.0.1:8080` endpoint (or another validated HTTP loopback endpoint on
+port `8080`); this exception applies only to the configured SearXNG provider.
+General web page reads still reject credentials and private destinations,
+validate redirects, and enforce byte, text, and time limits.
+
+## Files and extraction limits
+
+| Setting | Default |
+|---|---:|
+| Normal indexed file | 3 MiB (`TRINAXAI_MAX_FILE_BYTES`) |
+| Large document container | 512 MiB (`TRINAXAI_DOCUMENT_MAX_FILE_BYTES`) |
+| Browser upload batch | 2 GiB / 2,500 files |
+| Temporary document extraction | 128 MiB / 120,000 characters |
+| Host-backed chat attachment | 512 MiB per file / 4 GiB total / 1,000 files |
+| OCR | Disabled (`TRINAXAI_OCR=0`) |
+
+Large uploads are validated and staged before a background job is returned.
+`TRINAXAI_INDEX_STAGE_TIMEOUT` limits silence in one stage and
+`TRINAXAI_INDEX_TIMEOUT` limits the whole index job. Cancelled or failed jobs
+discard unpublished data and may be retried when their staged source remains.
+
+## Network, PWA proxy, agent, and voice
+
+- Keep `TRINAXAI_HOST=127.0.0.1`, `TRINAXAI_UNSAFE_BIND_BACKEND=0`, and
+  Ollama on loopback. Expose the gateway on port `3334`; do not open `3333` or
+  `11434` to the LAN. CORS is not authentication.
+- `TRINAXAI_RAG_TARGET` and `TRINAXAI_OLLAMA_TARGET` are server-side gateway
+  targets. `VITE_TRINAXAI_*` values are build-time browser bases, so rebuild
+  after changing them. `/api/ollama` is a fixed allowlist, not a generic proxy.
+- `TRINAXAI_AGENT_WORKSPACE_ROOTS` limits HTTP workspaces. File tools reject
+  symlink/path escapes, Linux terminal tools require networkless bubblewrap,
+  and `TRINAXAI_AGENT_ALLOW_UNSANDBOXED_COMMANDS=1` is an explicit high-risk
+  escape hatch.
+- `TRINAXAI_VOICE_STT_MODEL`, `TRINAXAI_VOICE_DEVICE`,
+  `TRINAXAI_VOICE_COMPUTE_TYPE`, `TRINAXAI_VOICE_TTS_ENGINE`, and the audio/text
+  limits configure the optional local voice backend. The browser Web Speech API
+  remains the preferred path when available.
+
+Use `trinaxai pair start` for a device token. It grants `chat,read_private` by
+default and can add only `web`; indexing, Agent, lifecycle, and host
+administration still require verified loopback.
 
 ## Common values
 
@@ -93,7 +205,7 @@ route. The checked-in benchmark records the measured latency tradeoff.
 | Host-backed chat attachment limit | 512 MiB per file; 4 GiB retained total |
 | Temporary extracted text | 120,000 characters |
 | Backend / Ollama bind | loopback-only |
-| Protected LAN use | requires a matching paired-device scope or admin token |
+| Protected LAN reads | matching `chat`, `read_private`, or `web` device scope, or admin token; host administration remains loopback-only |
 
 ## Large-file processing and recoverable failures
 
@@ -103,7 +215,7 @@ embeddings are processed in bounded batches. The UI reports persisted stage,
 elapsed time, recent activity, pages, chunks, and batches; stages without an
 exact denominator are explicitly indeterminate. Stage and total timeouts are
 configurable with `TRINAXAI_INDEX_STAGE_TIMEOUT` and
-`TRINAXAI_INDEX_TOTAL_TIMEOUT`. Cancellation and failures discard unpublished
+`TRINAXAI_INDEX_TIMEOUT`. Cancellation and failures discard unpublished
 index generations and temporary files; eligible jobs can be retried.
 
 Search Mode failures (provider disabled/blocked, timeout, or ungrounded result)

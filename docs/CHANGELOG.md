@@ -1,9 +1,66 @@
 # Changelog
 
+[Versión en español](CHANGELOG.es.md)
+
 All notable changes to TrinaxAI are documented here. This project follows the
 [Keep a Changelog](https://keepachangelog.com/) format.
 
 ## [Unreleased]
+
+### Changed
+
+- Split the frontend API into domain modules behind a stable `api.ts` facade.
+- Split Agent rendering, execution, voice and shared contracts into focused
+  modules while preserving the existing public behavior and tests.
+- Kept RAG generation, streaming, runtime, indexing and chat responsibilities
+  behind small compatibility facades instead of growing release entry points.
+
+### Documentation
+
+- Added a bilingual troubleshooting and recovery guide that maps common errors
+  to safe next actions, including the PWA's **Open indexing** flow for empty
+  collections.
+- Aligned README, API, CLI, configuration, PWA, support, and in-app Docs with
+  current profiles, HTTPS trust, recoverable jobs, and the reserved MCP command.
+
+## [1.2.0] — 2026-08-17
+
+### Added
+
+- Added a collapsible thinking trace with elapsed time, explicit completion
+  metadata, and bounded automatic continuation for length-limited answers.
+- Added autonomous chat-mode routing across web search, deep research, local
+  knowledge and Agent tools, while preserving explicit user overrides.
+- Added retained chat attachments with mobile PDF fallbacks, Office downloads,
+  and localhost-only native application opening.
+- Added a loopback recovery page for a stopped installation, a desktop service
+  manager, hardware-aware model profiles, and lifecycle installer dry-runs.
+
+### Changed
+
+- Host administration is now fail-closed and localhost-only. Paired LAN devices
+  are limited to chat, private-read and web scopes, and the PWA renders controls
+  from the effective capability reported by the server.
+- The Windows installer now writes the same canonical `8gb`, `16gb`, `32gb`, and
+  `64gb` profiles as the backend, while migrating legacy `max`/`ultra` values.
+- `trinaxai network` now prints the public CA/certificate path needed to trust a
+  LAN browser, with a bilingual Android/iOS pairing and HTTPS guide.
+- English and Spanish setup, security, API, CLI and testing guides now describe
+  the current installers, recovery flow, model selection and LAN boundaries.
+- Expanded the documentation hub and configuration/API references, aligned the
+  in-app PWA Docs with the repository, and replaced its placeholder architecture
+  image with an accessible overview.
+
+### Fixed
+
+- Long chat, RAG, research and Agent responses now terminate with an explicit
+  complete, length, cancelled or error state instead of silently appearing
+  complete after truncation.
+- Improved responsive PWA navigation, keyboard/focus behavior, accessible
+  labels, offline handling and attachment actions across desktop, tablet and
+  phone viewports.
+- Release publication now builds all native Manager packages before creating the
+  GitHub release, includes them in `SHA256SUMS`, and verifies their download URLs.
 
 ## [1.1.0] — 2026-08-05
 
@@ -79,7 +136,7 @@ All notable changes to TrinaxAI are documented here. This project follows the
 ### Changed
 
 - Hardware profiles now scale official Qwen3 embeddings from 0.6B/1024d on
-  8/16 GB systems to 4B/2560d on `max` and 8B/4096d on `ultra`.
+  memory-constrained systems to 4B/2560d on 32/64 GB systems.
 - Docker Compose can start with safe defaults when no `.env` file exists.
 
 ### Fixed
@@ -104,7 +161,7 @@ All notable changes to TrinaxAI are documented here. This project follows the
 
 ### Changed
 
-- Automatic model profiles cover low-memory through 64+ GB systems and use
+- Automatic model profiles cover memory-constrained through 64+ GB systems and use
   multilingual `qwen3-embedding:0.6b` embeddings by default.
 - The PWA includes refreshed install icons, a clearer Call Mode and accessible
   reduced-motion behavior.
@@ -133,6 +190,7 @@ All notable changes to TrinaxAI are documented here. This project follows the
 - CI checks Python and frontend dependencies, static high-severity findings,
   committed secrets, package builds, browser flows and public-release readiness.
 
+[1.2.0]: https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.2.0
 [1.1.0]: https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.1.0
 [1.0.2]: https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.0.2
 [1.0.1]: https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.0.1

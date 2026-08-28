@@ -1,9 +1,75 @@
 # Registro de cambios
 
+[English](CHANGELOG.md)
+
 Todos los cambios importantes de TrinaxAI se documentan aquí. El proyecto sigue
 el formato de [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Sin publicar]
+
+### Cambiado
+
+- Se separó la API del frontend por dominios detrás de una fachada estable
+  `api.ts`.
+- Se separaron el renderizado, ejecución, voz y contratos compartidos de Agent
+  en módulos enfocados, conservando el comportamiento y las pruebas existentes.
+- La generación, el streaming, el runtime, la indexación y el chat de RAG
+  permanecen detrás de fachadas de compatibilidad pequeñas, sin seguir
+  creciendo los puntos de entrada.
+
+### Documentación
+
+- Se añadió una guía bilingüe de solución de problemas y recuperación que mapea
+  fallos comunes a acciones seguras, incluido el flujo **Abrir indexación** de la
+  PWA para colecciones vacías.
+- Se alinearon README, API, CLI, configuración, PWA, soporte y Docs integrada con
+  los perfiles actuales, la confianza HTTPS, los jobs recuperables y el comando
+  MCP reservado.
+
+## [1.2.0] — 2026-08-17
+
+### Añadido
+
+- Se añadió una traza de razonamiento desplegable con tiempo transcurrido,
+  metadatos explícitos de finalización y continuación automática acotada para
+  respuestas que alcanzan su límite de longitud.
+- Se añadió selección autónoma entre búsqueda web, investigación profunda,
+  conocimiento local y herramientas del Agente, conservando las preferencias
+  explícitas del usuario.
+- Se añadieron adjuntos de chat persistentes, alternativas para PDF en móvil,
+  descarga de archivos Office y apertura con la aplicación nativa solo desde
+  localhost.
+- Se añadieron una página de recuperación loopback para instalaciones apagadas,
+  un gestor de servicios de escritorio, perfiles según hardware y dry-runs del
+  ciclo de vida de los instaladores.
+
+### Cambiado
+
+- La administración del equipo ahora falla cerrada y se limita a localhost. Los
+  dispositivos LAN vinculados solo reciben scopes de chat, lectura privada y
+  web; la PWA muestra controles según la capacidad efectiva informada por el
+  servidor.
+- El instalador de Windows ahora escribe los mismos perfiles canónicos `8gb`,
+  `16gb`, `32gb` y `64gb` que el backend, y migra los valores legacy `max`/`ultra`.
+- `trinaxai network` muestra ahora la ruta de la CA/certificado público que debe
+  confiar un navegador LAN, con una guía bilingüe de pairing HTTPS para Android/iOS.
+- Las guías en español e inglés de instalación, seguridad, API, CLI y pruebas
+  describen los instaladores, recuperación, selección de modelos y límites LAN
+  actuales.
+- Se ampliaron el índice de documentación y las referencias de configuración/API,
+  se alineó la Docs integrada de la PWA con el repositorio y se sustituyó su
+  imagen de arquitectura pendiente por una vista accesible.
+
+### Corregido
+
+- Las respuestas largas de chat, RAG, investigación y Agente terminan con un
+  estado explícito completo, por longitud, cancelado o con error, sin presentar
+  silenciosamente una respuesta truncada como completa.
+- Se mejoraron la navegación adaptable de la PWA, teclado y foco, etiquetas
+  accesibles, funcionamiento sin conexión y acciones de adjuntos en escritorio,
+  tableta y teléfono.
+- La publicación de releases ahora compila todos los Gestores nativos antes de
+  crear el release de GitHub, los incluye en `SHA256SUMS` y verifica sus URLs de descarga.
 
 ## [1.1.0] — 2026-08-05
 
@@ -83,7 +149,7 @@ el formato de [Keep a Changelog](https://keepachangelog.com/).
 ### Cambiado
 
 - Los perfiles escalan embeddings Qwen3 oficiales desde 0.6B/1024d en equipos
-  de 8/16 GB hasta 4B/2560d en `max` y 8B/4096d en `ultra`.
+  de poca memoria hasta 4B/2560d en equipos de 32/64 GB.
 - Docker Compose puede iniciar con valores seguros aunque no exista `.env`.
 
 ### Corregido
@@ -137,6 +203,7 @@ el formato de [Keep a Changelog](https://keepachangelog.com/).
 - CI revisa dependencias Python/frontend, hallazgos estáticos de severidad alta,
   secretos, paquetes, flujos del navegador y preparación para release pública.
 
+[1.2.0]: https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.2.0
 [1.1.0]: https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.1.0
 [1.0.2]: https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.0.2
 [1.0.1]: https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.0.1

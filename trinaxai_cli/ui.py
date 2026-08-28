@@ -94,9 +94,7 @@ def _want_color(no_color: bool) -> bool:
         return False
     if os.environ.get("NO_COLOR"):
         return False
-    if os.environ.get("TRINAXAI_NO_COLOR"):
-        return False
-    return True
+    return not os.environ.get("TRINAXAI_NO_COLOR")
 
 
 def get_console(no_color: bool = False, language: str | None = None) -> "Console":
@@ -152,6 +150,7 @@ class Console:
             action,
             exc_info=(type(exc), exc, exc.__traceback__),
         )
+        action = translate(action, self.language)
         if type(exc).__name__ == "TrinaxAPIError":
             self.error(f"{action}: {exc}")
             return
@@ -230,6 +229,7 @@ class Console:
     # --------------------------------------------------------------- spinner
     @contextmanager
     def spinner(self, text: str) -> Iterator[None]:
+        text = translate(text, self.language)
         progress: Any = None
         if _RICH and _rich_progress_cls is not None:
             try:
@@ -262,6 +262,7 @@ class Console:
     @contextmanager
     def thinking(self, text: str = "TrinaxAI is thinking...") -> Iterator[Callable[[], None]]:
         """Show a transient status that callers can stop on the first token."""
+        text = translate(text, self.language)
         stopped = False
         status: Any = None
 
@@ -397,6 +398,9 @@ class Console:
         rows: Sequence[Sequence[Any]],
         title: str | None = None,
     ) -> None:
+        columns = [str(translate(column, self.language)) for column in columns]
+        title = translate(title, self.language) if title else title
+        rows = [[translate(cell, self.language) if isinstance(cell, str) else cell for cell in row] for row in rows]
         if _RICH and _rich_table_cls is not None:
             try:
                 t = _rich_table_cls(title=title or "", show_header=True, header_style="bold")
@@ -426,6 +430,7 @@ class Console:
 
     # ----------------------------------------------------------------- panel
     def panel(self, text: str, title: str | None = None) -> None:
+        title = translate(title, self.language) if title else title
         if _RICH and _rich_panel_cls is not None:
             try:
                 p = _rich_panel_cls.fit(text, title=title or "")
@@ -444,6 +449,7 @@ class Console:
 
     # --------------------------------------------------------------- markdown
     def markdown(self, text: str) -> None:
+        text = translate(text, self.language)
         if _RICH and _rich_markdown_cls is not None:
             try:
                 md = _rich_markdown_cls(text)

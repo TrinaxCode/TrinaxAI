@@ -459,6 +459,40 @@ _GENERAL_TOPIC = (
     "movie",
 )
 
+_WORD_BOUNDARY_SIGNALS = frozenset(
+    {
+        "api",
+        "sql",
+        "rest",
+        "jwt",
+        "ui",
+        "ux",
+        "css",
+        "html",
+        "node",
+        "vue",
+        "react",
+        "git",
+        "npm",
+        "vite",
+        "bug",
+        "hash",
+        "graph",
+        "query",
+        "server",
+        "python",
+        "javascript",
+        "typescript",
+        "import",
+        "script",
+        "archivo",
+        "error",
+        "function",
+        "funcion",
+        "función",
+    }
+)
+
 # Reuse of the legacy broad code net so nothing that used to route to coder is lost.
 _CODE_BROAD = (
     _FRONTEND
@@ -529,7 +563,11 @@ def strip_attachment_context(text: str) -> str:
 
 
 def _count_any(text: str, needles) -> int:
-    return sum(1 for n in needles if n in text)
+    return sum(
+        1
+        for n in needles
+        if (re.search(rf"(?<!\w){re.escape(n)}(?!\w)", text) is not None if n in _WORD_BOUNDARY_SIGNALS else n in text)
+    )
 
 
 def _looks_like_index_lookup(text: str) -> bool:

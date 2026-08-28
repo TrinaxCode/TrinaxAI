@@ -254,15 +254,17 @@ def test_memory_list_compatibility_shapes(payload, expected) -> None:
     assert client.list_memories() == expected
 
 
-def test_memory_list_rejects_malformed_payload_and_context_defaults() -> None:
+def test_memory_list_and_context_reject_malformed_payloads() -> None:
     client = _client()
     client._get = MagicMock(return_value={"items": ["private"]})
     with pytest.raises(TrinaxAPIError) as raised:
         client.list_memories()
     assert raised.value.payload == {"items": ["private"]}
     client._post = MagicMock(side_effect=[{"memories": "bad"}, "bad"])
-    assert client.memory_context("query") == []
-    assert client.memory_context("query") == []
+    with pytest.raises(TrinaxAPIError):
+        client.memory_context("query")
+    with pytest.raises(TrinaxAPIError):
+        client.memory_context("query")
 
 
 def test_research_only_sends_requested_optional_values() -> None:

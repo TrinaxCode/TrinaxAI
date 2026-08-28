@@ -1,6 +1,6 @@
 import type { TranslationKey } from '../../i18n/translations';
 
-export type ActivityKind = 'thinking' | 'image' | 'web';
+export type ActivityKind = 'thinking' | 'working' | 'image' | 'web';
 
 const ACTIVITY_KEYS = {
   thinking: [
@@ -16,6 +16,21 @@ const ACTIVITY_KEYS = {
     'activityThinkingSolve',
     'activityThinkingExplore',
     'activityThinkingReason',
+    'activityThinkingRefine',
+    'activityThinkingCheck',
+    'activityThinkingBuild',
+    'activityThinkingShape',
+  ],
+  working: [
+    'activityThinkingPrepare',
+    'activityThinkingConnect',
+    'activityThinkingWork',
+    'activityThinkingCompose',
+    'activityThinkingOrganize',
+    'activityThinkingReview',
+    'activityThinkingFocus',
+    'activityThinkingSolve',
+    'activityThinkingExplore',
     'activityThinkingRefine',
     'activityThinkingCheck',
     'activityThinkingBuild',

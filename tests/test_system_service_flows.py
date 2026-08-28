@@ -481,3 +481,265 @@ def test_dispatcher_does_not_spawn_behind_an_external_index_lock(tmp_path, monke
     assert not started
     assert isolated_jobs[job["id"]]["phase"] == "blocked"
     assert "PID 123" in isolated_jobs[job["id"]]["error"]
+
+
+def test_system_helpers_cover_invalid_restore_eta_and_stale_runs(tmp_path, monkeypatch, isolated_jobs) -> None:
+    jobs_path = tmp_path / "jobs.json"
+    monkeypatch.setattr(system_service.config, "INDEX_JOBS_PATH", str(jobs_path))
+
+    jobs_path.write_text("not-json", encoding="utf-8")
+    system_service._restore_index_jobs()
+    jobs_path.write_text("[]", encoding="utf-8")
+    system_service._restore_index_jobs()
+
+    job = system_service._new_index_job("job", str(tmp_path), "docs", "Docs")
+    job["run_token"] = "current"
+    assert system_service._job_run_is_current(job["id"], "current") is True
+    assert system_service._job_run_is_current(job["id"], "stale") is False
+    system_service._release_index_slot(job["id"], "stale")
+
+    job.update(
+        status="indexing",
+        started_at=system_service.time.time() - 1,
+        estimated_total_seconds=20,
+        progress=40,
+    )
+    assert system_service._job_public(job)["eta_seconds"] is not None
+    assert system_service._progress_changes({"phase": "chunking"})["progress_exact"] is False
+
+
+def test_run_index_job_reports_total_and_stage_timeouts(monkeypatch, isolated_jobs) -> None:
+    class Process:
+        stdout = iter(())
+
+        def __init__(self) -> None:
+            self.terminated = False
+
+        def poll(self):
+            return None
+
+        def terminate(self):
+            self.terminated = True
+
+        def wait(self, timeout=None):
+            return 0
+
+    total_process, stage_process = Process(), Process()
+    processes = [total_process, stage_process]
+    monkeypatch.setattr(system_service.subprocess, "Popen", lambda *_args, **_kwargs: processes.pop(0))
+    monkeypatch.setattr(system_service, "build_engine", lambda: False)
+    monkeypatch.setattr(system_service, "_persist_index_jobs_locked", lambda: None)
+
+    for job_id in ("total", "stage"):
+        isolated_jobs[job_id] = {
+            "id": job_id,
+            "status": "saving",
+            "phase": "saving",
+            "progress": 30,
+            "cancel_requested": False,
+            "output": "",
+        }
+
+    monkeypatch.setattr(system_service.config, "INDEX_TOTAL_TIMEOUT", 0)
+    monkeypatch.setattr(system_service.config, "INDEX_STAGE_TIMEOUT", 999)
+    ticks = iter((0.0, 1.0))
+    monkeypatch.setattr(system_service.time, "monotonic", lambda: next(ticks))
+    system_service._run_index_job("total", "/tmp/docs", embed_model="test-embed")
+    assert isolated_jobs["total"]["phase"] == "timeout"
+    assert total_process.terminated is True
+
+    monkeypatch.setattr(system_service.config, "INDEX_TOTAL_TIMEOUT", 999)
+    monkeypatch.setattr(system_service.config, "INDEX_STAGE_TIMEOUT", 0)
+    ticks = iter((0.0, 1.0))
+    monkeypatch.setattr(system_service.time, "monotonic", lambda: next(ticks))
+    system_service._run_index_job("stage", "/tmp/docs")
+    assert isolated_jobs["stage"]["phase"] == "timeout"
+    assert stage_process.terminated is True
+
+
+def test_run_index_job_handles_queue_empty_stale_token_and_wait_timeout(monkeypatch, isolated_jobs) -> None:
+    class EmptyQueue:
+        def put(self, _value):
+            return None
+
+        def get(self, timeout=None):
+            raise system_service.queue.Empty
+
+    class NoopThread:
+        def __init__(self, **_kwargs):
+            pass
+
+        def start(self):
+            return None
+
+    class Process:
+        stdout = iter(("progress\n",))
+
+        def __init__(self, *, timeout=False) -> None:
+            self.timeout = timeout
+            self.terminated = False
+            self.killed = False
+
+        def poll(self):
+            return 0
+
+        def terminate(self):
+            self.terminated = True
+
+        def kill(self):
+            self.killed = True
+
+        def wait(self, timeout=None):
+            if self.timeout and timeout is not None:
+                raise system_service.subprocess.TimeoutExpired("index", timeout)
+            return 0
+
+    empty = Process(timeout=True)
+    stale = Process()
+    waited = Process(timeout=True)
+    processes = [empty, stale, waited]
+    monkeypatch.setattr(system_service.queue, "Queue", EmptyQueue)
+    monkeypatch.setattr(system_service.threading, "Thread", NoopThread)
+    monkeypatch.setattr(system_service.subprocess, "Popen", lambda *_args, **_kwargs: processes.pop(0))
+    monkeypatch.setattr(system_service, "build_engine", lambda: False)
+    monkeypatch.setattr(system_service, "_persist_index_jobs_locked", lambda: None)
+    monkeypatch.setattr(system_service.time, "monotonic", lambda: 0.0)
+
+    for job_id in ("empty", "stale", "waited"):
+        isolated_jobs[job_id] = {
+            "id": job_id,
+            "status": "saving",
+            "phase": "saving",
+            "progress": 30,
+            "cancel_requested": False,
+            "output": "",
+        }
+
+    system_service._run_index_job("empty", "/tmp/docs")
+    assert empty.killed is True
+
+    class LineQueue(EmptyQueue):
+        def get(self, timeout=None):
+            return "progress\n"
+
+    monkeypatch.setattr(system_service, "_job_run_is_current", lambda *_args: False)
+    monkeypatch.setattr(system_service.queue, "Queue", LineQueue)
+    system_service._run_index_job("stale", "/tmp/docs", run_token="stale-token")
+    assert stale.terminated is True
+
+    monkeypatch.undo()
+    monkeypatch.setattr(system_service.queue, "Queue", EmptyQueue)
+    monkeypatch.setattr(system_service.threading, "Thread", NoopThread)
+    monkeypatch.setattr(system_service.subprocess, "Popen", lambda *_args, **_kwargs: waited)
+    monkeypatch.setattr(system_service, "build_engine", lambda: False)
+    monkeypatch.setattr(system_service.time, "monotonic", lambda: 0.0)
+    system_service._run_index_job("waited", "/tmp/docs")
+    assert waited.killed is True
+
+
+def test_system_runtime_shutdown_spawn_upload_and_endpoint_error_edges(tmp_path, monkeypatch, isolated_jobs) -> None:
+    written = []
+    monkeypatch.setattr(system_service.config, "PERSIST_DIR", str(tmp_path))
+    monkeypatch.setattr(system_service, "_read_usage_summary_unlocked", lambda: {"index_runs": 2})
+    monkeypatch.setattr(system_service, "_write_usage_summary_unlocked", lambda value: written.append(value))
+    system_service._record_index_run()
+    assert written[-1]["index_runs"] == 3
+    real_makedirs = system_service.os.makedirs
+    monkeypatch.setattr(system_service.os, "makedirs", lambda *_args, **_kwargs: (_ for _ in ()).throw(OSError()))
+    system_service._record_index_run()
+    monkeypatch.setattr(system_service.os, "makedirs", real_makedirs)
+
+    class Process:
+        pid = 123
+
+        def poll(self):
+            return None
+
+        def terminate(self):
+            return None
+
+    monkeypatch.setattr(system_service, "_watch_stop_sync", lambda: (_ for _ in ()).throw(RuntimeError()))
+    monkeypatch.setattr(system_service, "_process_alive", lambda _process: True)
+    monkeypatch.setattr(system_service.os, "getpgid", lambda _pid: 456)
+    killed = []
+    monkeypatch.setattr(system_service.os, "killpg", lambda pgid, signal: killed.append((pgid, signal)))
+    monkeypatch.setattr(system_service, "_persist_index_jobs_locked", lambda: None)
+    isolated_jobs["shutdown"] = {"process": Process(), "cancel_requested": False}
+    was_stopping = state.lifecycle_stopping.is_set()
+    try:
+        system_service.shutdown_runtime()
+    finally:
+        if not was_stopping:
+            state.lifecycle_stopping.clear()
+    assert killed == [(456, 15)]
+
+    class StartupInfo:
+        dwFlags = 0
+        wShowWindow = 0
+
+    calls = []
+    monkeypatch.setattr(system_service.sys, "platform", "win32")
+    monkeypatch.setattr(system_service.subprocess, "STARTUPINFO", StartupInfo, raising=False)
+    monkeypatch.setattr(system_service.subprocess, "STARTF_USESHOWWINDOW", 1, raising=False)
+    monkeypatch.setattr(system_service.subprocess, "SW_HIDE", 0, raising=False)
+    monkeypatch.setattr(system_service.subprocess, "Popen", lambda command, **kwargs: calls.append((command, kwargs)))
+    system_service._spawn_service_manager("manager.py", "stop-all")
+    assert calls[0][1]["startupinfo"].dwFlags == 1
+
+    monkeypatch.setattr(system_service.sys, "platform", "linux")
+    monkeypatch.setattr(system_service.config, "LOCAL_SOURCES_DIR", str(tmp_path))
+    monkeypatch.setattr(system_service, "_ensure_collection", lambda _cid: {"id": "docs", "name": "Docs"})
+    monkeypatch.setattr(system_service, "_dispatch_next_index_job", lambda: None)
+    monkeypatch.setattr(system_service.config, "max_file_bytes", lambda _path: 1)
+    monkeypatch.setattr(system_service.os, "remove", lambda _path: (_ for _ in ()).throw(OSError()))
+    monkeypatch.setattr(system_service, "_authorize_system", lambda _request: None)
+    import asyncio
+
+    upload_result = asyncio.run(
+        system_service.system_index_upload(
+            object(),
+            label="import",
+            collection_id="docs",
+            embed_model="",
+            aggressive_quant=False,
+            watch_id="",
+            files=[UploadFile(filename="x.txt", file=BytesIO(b"xx"))],
+        )
+    )
+    assert upload_result["saved"] == 1
+
+    with state.index_jobs_lock:
+        isolated_jobs["public"] = {"id": "public", "status": "completed", "progress": 100}
+        isolated_jobs["cancel"] = {"id": "cancel", "status": "saving", "progress": 10, "process": None}
+    assert asyncio.run(system_service.system_index_job(object(), "public"))["id"] == "public"
+    with pytest.raises(HTTPException) as missing_cancel:
+        asyncio.run(system_service.system_cancel_index_job(object(), "missing-cancel"))
+    assert missing_cancel.value.status_code == 404
+
+    class Hanging:
+        def __init__(self):
+            self.calls = 0
+
+        def poll(self):
+            return None
+
+        def terminate(self):
+            return None
+
+        def kill(self):
+            self.killed = True
+
+        def wait(self, timeout=None):
+            self.calls += 1
+            if timeout and self.calls == 1:
+                raise system_service.subprocess.TimeoutExpired("index", timeout)
+            return 0
+
+    isolated_jobs["cancel"]["process"] = Hanging()
+    monkeypatch.setattr(system_service, "_release_index_slot", lambda *_args: None)
+    cancelled = asyncio.run(system_service.system_cancel_index_job(object(), "cancel"))
+    assert cancelled["job"]["status"] == "cancelled"
+
+    with pytest.raises(HTTPException) as missing_retry:
+        asyncio.run(system_service.system_retry_index_job(object(), "missing-retry"))
+    assert missing_retry.value.status_code == 404

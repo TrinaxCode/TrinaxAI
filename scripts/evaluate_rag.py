@@ -39,6 +39,7 @@ def _api_results(golden: dict[str, Any], base_url: str, token: str, timeout: flo
             results[str(case["id"])] = {
                 "answer": answer,
                 "sources": metadata.get("sources") or [],
+                "abstained": metadata.get("abstained"),
                 "latency_ms": round((time.perf_counter() - started) * 1000, 2),
             }
     return results
@@ -73,7 +74,11 @@ def main() -> int:
     golden = load_golden_set(args.golden)
     if args.results:
         loaded = json.loads(Path(args.results).read_text(encoding="utf-8"))
-        results = loaded.get("results", loaded) if isinstance(loaded, dict) else {}
+        if not isinstance(loaded, dict):
+            raise ValueError("--results must contain a JSON object keyed by golden case id")
+        results = loaded.get("results", loaded)
+        if not isinstance(results, dict):
+            raise ValueError("--results must contain a JSON object keyed by golden case id")
     else:
         results = _api_results(golden, args.api_url, args.token, args.timeout)
     report = evaluate_results(golden, results)
@@ -95,4 +100,8 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    try:
+        raise SystemExit(main())
+    except (OSError, ValueError, httpx.HTTPError) as exc:
+        sys.stderr.write(f"RAG evaluation failed: {exc}\n")
+        raise SystemExit(2) from exc

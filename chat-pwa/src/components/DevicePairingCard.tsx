@@ -38,8 +38,15 @@ function formatPairingCode(value: string): string {
   return compact.length > 4 ? `${compact.slice(0, 4)}-${compact.slice(4)}` : compact;
 }
 
-export default function DevicePairingCard({ isDark }: { isDark: boolean }) {
+const MANAGED_DEVICE_RETRY_DELAY_MS = 30_000;
+const MANAGED_DEVICE_MAX_RETRY_DELAY_MS = 5 * 60_000;
+
+export default function DevicePairingCard({
+  isDark,
+  canManageSystem = false,
+}: { isDark: boolean; canManageSystem?: boolean }) {
   const { t } = useI18n();
+  const isLocalAuthority = canManageSystem;
   const [code, setCode] = useState(() => formatPairingCode(pairingCodeFromLocation()));
   const [name, setName] = useState(() => {
     try {
@@ -60,26 +67,60 @@ export default function DevicePairingCard({ isDark }: { isDark: boolean }) {
   const [pendingRevokeId, setPendingRevokeId] = useState<string | null>(null);
   const [canManageDevices, setCanManageDevices] = useState(false);
 
-  const loadManagedDevices = async () => {
+  const loadManagedDevices = async (): Promise<boolean> => {
     try {
       setManagedDevices(await listPairedDevices());
       setCanManageDevices(true);
+      return true;
     } catch {
       setManagedDevices([]);
       setCanManageDevices(false);
+      return false;
     }
   };
 
   useEffect(() => {
     let active = true;
+    clearPairingCodeFromLocation();
     if (!isLocalHostBrowser()) {
       void getCurrentPairedDevice()
         .then((value) => { if (active) setDevice(value); })
         .catch(() => { if (active) setDevice(null); });
     }
-    void loadManagedDevices();
-    return () => { active = false; };
-  }, []);
+    let retryDelay = MANAGED_DEVICE_RETRY_DELAY_MS;
+    let retryTimer: number | undefined;
+    let requestInFlight = false;
+    const refresh = async () => {
+      if (!active || document.hidden || requestInFlight) return;
+      requestInFlight = true;
+      const succeeded = await loadManagedDevices();
+      requestInFlight = false;
+      retryDelay = succeeded
+        ? MANAGED_DEVICE_RETRY_DELAY_MS
+        : Math.min(MANAGED_DEVICE_MAX_RETRY_DELAY_MS, retryDelay * 2);
+      if (active && isLocalAuthority && !document.hidden) {
+        retryTimer = window.setTimeout(() => { void refresh(); }, retryDelay);
+      }
+    };
+    const onWake = () => {
+      window.clearTimeout(retryTimer);
+      retryTimer = undefined;
+      if (document.hidden) return;
+      retryDelay = MANAGED_DEVICE_RETRY_DELAY_MS;
+      void refresh();
+    };
+    void refresh();
+    window.addEventListener('focus', onWake);
+    window.addEventListener('online', onWake);
+    document.addEventListener('visibilitychange', onWake);
+    return () => {
+      active = false;
+      window.clearTimeout(retryTimer);
+      window.removeEventListener('focus', onWake);
+      window.removeEventListener('online', onWake);
+      document.removeEventListener('visibilitychange', onWake);
+    };
+  }, [isLocalAuthority]);
 
   const pair = async () => {
     if (!code.trim() || !name.trim()) return;
@@ -150,9 +191,7 @@ export default function DevicePairingCard({ isDark }: { isDark: boolean }) {
           <p className={`text-[10px] break-words ${muted}`}>
             {t('deviceScopes')}: {device.scopes.join(', ')}
           </p>
-          {!device.scopes.includes('system') && (
-            <p className={`text-[10px] leading-relaxed ${muted}`}>{t('deviceSystemScopeHint')}</p>
-          )}
+          <p className={`text-[10px] leading-relaxed ${muted}`}>{t('deviceSystemScopeHint')}</p>
           <button
             type="button"
             disabled={busy}
@@ -170,38 +209,43 @@ export default function DevicePairingCard({ isDark }: { isDark: boolean }) {
               type="button"
               disabled={generating}
               onClick={() => { void generate(); }}
-              className="inline-flex items-center rounded-lg border border-[#006bbd]/40 px-3 py-2 text-xs font-medium text-[#4aa7ed] hover:bg-[#006bbd]/10 disabled:opacity-50"
+              className={`inline-flex items-center rounded-lg border border-[#006bbd]/40 px-3 py-2 text-xs font-medium hover:bg-[#006bbd]/10 disabled:opacity-50 ${isDark ? 'text-[#4aa7ed]' : 'text-[#006bbd]'}`}
             >
               {generating ? t('loading') : t('devicePairingGenerate')}
             </button>
           )}
-          <div className="grid gap-2 sm:grid-cols-2">
-            <input
-              aria-label={t('devicePairingCode')}
-              inputMode="text"
-              autoCapitalize="characters"
-              autoComplete="one-time-code"
-              value={code}
-              onChange={(event) => setCode(formatPairingCode(event.target.value))}
-              placeholder={t('devicePairingCode')}
-              className={`rounded-lg border bg-transparent px-3 py-2 text-sm font-mono outline-none ${border} ${text}`}
-            />
-            <input
-              aria-label={t('deviceName')}
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-              placeholder={t('deviceName')}
-              className={`rounded-lg border bg-transparent px-3 py-2 text-sm outline-none ${border} ${text}`}
-            />
-          </div>
-          <button
-            type="button"
-            disabled={busy || !code.trim() || !name.trim()}
-            onClick={() => { void pair(); }}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-[#006bbd] px-3 py-2 text-xs font-medium text-white hover:bg-[#005ca3] disabled:opacity-50"
-          >
-            <MdLink size={15} aria-hidden="true" /> {busy ? t('loading') : t('devicePair')}
-          </button>
+          {!isLocalAuthority && <>
+            <div className="grid gap-2 sm:grid-cols-2">
+              <input
+                aria-label={t('devicePairingCode')}
+                name="pairing-code"
+                inputMode="text"
+                autoCapitalize="characters"
+                autoComplete="one-time-code"
+                value={code}
+                onChange={(event) => setCode(formatPairingCode(event.target.value))}
+                placeholder={t('devicePairingCode')}
+                className={`rounded-lg border bg-transparent px-3 py-2 text-sm font-mono outline-none ${border} ${text}`}
+              />
+              <input
+                aria-label={t('deviceName')}
+                name="device-name"
+                autoComplete="name"
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+                placeholder={t('deviceName')}
+                className={`rounded-lg border bg-transparent px-3 py-2 text-sm outline-none ${border} ${text}`}
+              />
+            </div>
+            <button
+              type="button"
+              disabled={busy || !code.trim() || !name.trim()}
+              onClick={() => { void pair(); }}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-[#006bbd] px-3 py-2 text-xs font-medium text-white hover:bg-[#005ca3] disabled:opacity-50"
+            >
+              <MdLink size={15} aria-hidden="true" /> {busy ? t('loading') : t('devicePair')}
+            </button>
+          </>}
         </div>
       )}
       {managedDevices.filter((item) => item.revoked_at === null).length > 0 && (

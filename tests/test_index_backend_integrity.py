@@ -131,7 +131,9 @@ def test_targeted_source_delete_preserves_peer_nodes_and_manifest(tmp_path, monk
 
     class FakePersistedStorage:
         def persist(self, persist_dir: str) -> None:
-            Path(persist_dir).mkdir(parents=True, exist_ok=True)
+            target = Path(persist_dir)
+            target.mkdir(parents=True, exist_ok=True)
+            (target / "docstore.json").write_text("{}", encoding="utf-8")
 
     class FakeIndex:
         def __init__(self) -> None:
@@ -225,7 +227,9 @@ def test_legacy_delete_without_source_id_keeps_all_sources_behavior(tmp_path, mo
 
     class FakeStorage:
         def persist(self, persist_dir: str) -> None:
-            Path(persist_dir).mkdir(parents=True, exist_ok=True)
+            target = Path(persist_dir)
+            target.mkdir(parents=True, exist_ok=True)
+            (target / "docstore.json").write_text("{}", encoding="utf-8")
 
     class FakeIndex:
         docstore = _Docstore(docs)

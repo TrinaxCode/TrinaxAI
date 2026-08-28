@@ -8,7 +8,7 @@ from app.services import health_service, shared_runtime
 
 
 def test_api_responses_have_correlation_timing_and_security_headers() -> None:
-    with TestClient(create_app()) as client:
+    with TestClient(create_app(), base_url="https://testserver") as client:
         response = client.get("/health", headers={"X-Request-ID": "audit-123"})
 
     assert response.headers["x-request-id"] == "audit-123"
@@ -17,6 +17,7 @@ def test_api_responses_have_correlation_timing_and_security_headers() -> None:
     assert response.headers["referrer-policy"] == "no-referrer"
     assert response.headers["x-frame-options"] == "DENY"
     assert "frame-ancestors 'none'" in response.headers["content-security-policy"]
+    assert response.headers["strict-transport-security"] == "max-age=31536000"
 
 
 def test_invalid_correlation_id_is_replaced() -> None:
@@ -41,9 +42,12 @@ def test_readiness_fails_when_ollama_is_unavailable(monkeypatch) -> None:
 
 def test_private_state_is_never_browser_cached() -> None:
     with TestClient(create_app()) as client:
-        response = client.get("/app-state")
+        responses = [
+            client.get("/app-state"),
+            client.get("/v1/settings/web-search"),
+        ]
 
-    assert response.headers["cache-control"] == "no-store"
+    assert all(response.headers["cache-control"] == "no-store" for response in responses)
 
 
 def test_unhandled_failures_are_logged_but_not_exposed(monkeypatch) -> None:

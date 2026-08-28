@@ -2,7 +2,6 @@ import { useState, useEffect, useLayoutEffect, useCallback, useMemo, lazy, Suspe
 import { AnimatePresence, motion } from 'framer-motion';
 import { useTheme } from './theme/ThemeContext';
 import { useI18n } from './i18n/I18nContext';
-import Intro from './components/Intro';
 import Background from './components/Background';
 import ErrorBoundary from './components/ErrorBoundary';
 import ChatSidebar from './components/ChatSidebar';
@@ -28,12 +27,13 @@ const DeviceSetupChoice = lazy(() => import('./components/DeviceSetupChoice'));
 const Docs = lazy(() => import('./components/Docs'));
 const KnowledgeBrowser = lazy(() => import('./components/KnowledgeBrowser'));
 // Markdown, math rendering, voice and attachment support make the chat view
-// the heaviest route. Loading it behind the intro keeps first paint responsive.
+// the heaviest route, so it remains lazy-loaded until the shell is ready.
 const ChatInterface = lazy(() => import('./components/ChatInterface'));
 const AgentInterface = lazy(() => import('./components/AgentInterface'));
 const PermissionNotice = lazy(() => import('./components/PermissionNotice'));
 
 type NavigateTarget = 'settings' | 'indexing' | 'browser' | 'memory' | 'docs' | 'agent';
+type InstallationState = 'checking' | 'new' | 'existing' | 'unknown';
 
 function hasCompletedOnboarding(): boolean {
   try { return localStorage.getItem('tc-onboarding-complete') === 'true'; } catch { return false; }
@@ -41,26 +41,23 @@ function hasCompletedOnboarding(): boolean {
 
 export default function App() {
   const initialRoute = useMemo(() => parseAppRoute(window.location.hash), []);
-  const [showIntro, setShowIntro] = useState(true);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [showDeviceSetup, setShowDeviceSetup] = useState(false);
-  const [blockedFeature, setBlockedFeature] = useState<'rag' | null>(null);
+  const [blockedFeature, setBlockedFeature] = useState<'rag' | 'web' | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [page, setPage] = useState<AppPage>(initialRoute.page);
   const [settingsSection, setSettingsSection] = useState<SettingsSection>(initialRoute.settingsSection ?? 'general');
   const [routeChatId, setRouteChatId] = useState<string | undefined>(initialRoute.chatId);
   const [pendingAgentRequest, setPendingAgentRequest] = useState<AgentHandoff | null>(null);
   const [sharedReady, setSharedReady] = useState(false);
-  const [existingInstallation, setExistingInstallation] = useState(false);
+  const [installationState, setInstallationState] = useState<InstallationState>('checking');
+  const [canManageSystem, setCanManageSystem] = useState(false);
   const { isDark } = useTheme();
   const { t } = useI18n();
   const resizeTimerRef = useRef<number>(0);
   const prevPageRef = useRef<AppPage>('chat');
   const lastChatIdRef = useRef<string | undefined>(initialRoute.chatId);
   const [chatAnimKey, setChatAnimKey] = useState(0);
-  // Mount the heavy chat UI behind the still-opaque splash (see the effect
-  // below) so its first-mount cost is paid before the intro fades out.
-  const [preMount, setPreMount] = useState(false);
 
   const applyRoute = useCallback((route: AppRoute) => {
     setPage(route.page);
@@ -154,8 +151,18 @@ export default function App() {
   useEffect(() => {
     void fetch('/api/network', { cache: 'no-store' })
       .then((response) => response.ok ? response.json() : null)
-      .then((status) => setExistingInstallation(status?.existingInstallation === true))
-      .catch(() => undefined);
+      .then(async (status) => {
+        if (status) {
+          setCanManageSystem(status.capabilities?.manageSystem === true);
+          setInstallationState(status.existingInstallation === true ? 'existing' : 'new');
+          return;
+        }
+        const health = await fetch('/api/rag/health', { cache: 'no-store' });
+        const payload = health.ok ? await health.json() : null;
+        setCanManageSystem(payload?.capabilities?.manage_system === true);
+        setInstallationState('unknown');
+      })
+      .catch(() => { setCanManageSystem(false); setInstallationState('unknown'); });
     // Local state is immediately usable. Remote/LAN state syncs in the
     // background so an unavailable RAG service never delays PWA startup.
     setSharedReady(true);
@@ -167,29 +174,41 @@ export default function App() {
     };
   }, []);
 
-  // Handle intro completion → check if onboarding needed
   useEffect(() => {
-    if (!showIntro && sharedReady) {
-      if (!hasCompletedOnboarding()) {
-        setShowDeviceSetup(true);
-      }
+    if (!sharedReady || installationState === 'checking') return;
+    if (hasCompletedOnboarding()) return;
+    if (installationState === 'new') {
+      setShowDeviceSetup(false);
+      setShowOnboarding(true);
+    } else {
+      setShowOnboarding(false);
+      setShowDeviceSetup(true);
     }
-  }, [showIntro, sharedReady]);
+  }, [installationState, sharedReady]);
 
   useEffect(() => onSharedStateUpdated(() => {
     if (hasCompletedOnboarding()) {
       setShowOnboarding(false);
       setShowDeviceSetup(false);
-    } else {
+    } else if (installationState !== 'checking') {
       navigate({ page: 'chat', chatId: lastChatIdRef.current }, true);
       setSidebarOpen(false);
-      setShowIntro(false);
-      setShowOnboarding(true);
+      if (installationState === 'new') {
+        setShowDeviceSetup(false);
+        setShowOnboarding(true);
+      } else {
+        setShowOnboarding(false);
+        setShowDeviceSetup(true);
+      }
     }
-  }), [navigate]);
+  }), [installationState, navigate]);
 
   useEffect(() => {
-    const onPaired = () => { void syncSharedStateOnce(3000, true); };
+    const onPaired = () => {
+      setShowDeviceSetup(false);
+      setShowOnboarding(false);
+      void syncSharedStateOnce(3000, true);
+    };
     window.addEventListener('trinaxai-device-paired', onPaired);
     return () => window.removeEventListener('trinaxai-device-paired', onPaired);
   }, []);
@@ -199,8 +218,8 @@ export default function App() {
       await wipeRevokedDeviceData();
       navigate({ page: 'chat' }, true);
       setSidebarOpen(false);
-      setShowIntro(false);
       setShowOnboarding(false);
+      setInstallationState('existing');
       setShowDeviceSetup(true);
       // Remount from a pristine origin so mounted history/theme hooks cannot
       // write stale in-memory state back after the wipe.
@@ -214,28 +233,6 @@ export default function App() {
     setShowOnboarding(false);
     void syncSharedStateOnce(2500, true);
   }, []);
-
-  const handleIntroFinish = useCallback(() => {
-    setShowIntro(false);
-  }, []);
-
-  // Mount the heavy chat UI behind the opaque splash so its ~0.2s first-mount
-  // cost is paid while the intro covers the screen — not on the reveal frame,
-  // where it showed as a freeze. We wait for the splash's first paint (a double
-  // rAF) so the splash still appears instantly, then mount during the logo's
-  // early fade-up-from-opacity-0, the least perceptible moment (the title and
-  // loading-line animations are still on their delays and so aren't janked).
-  // Gated on sharedReady so we never mount before local state is usable; the
-  // onboarding wizard, when shown, covers this naturally.
-  useEffect(() => {
-    if (!showIntro) { setPreMount(true); return undefined; }
-    if (!sharedReady) return undefined;
-    let raf2 = 0;
-    const raf1 = window.requestAnimationFrame(() => {
-      raf2 = window.requestAnimationFrame(() => setPreMount(true));
-    });
-    return () => { window.cancelAnimationFrame(raf1); window.cancelAnimationFrame(raf2); };
-  }, [showIntro, sharedReady]);
 
   const {
     sessions,
@@ -252,19 +249,10 @@ export default function App() {
     deleteFolder,
   } = useChatHistory();
 
-  // Pre-warm the chat session WHILE the intro is still animating, so it already
-  // exists the moment the splash fades out. We intentionally do NOT gate on
-  // `!showIntro` here: doing so forced session-create + the heavy ChatInterface
-  // mount to happen in a single synchronous pass right after the animation,
-  // which froze the main thread for a beat before everything popped in.
-  // Creating it during the ~2.6s intro window means the post-intro render is a
-  // single non-blocking pass (and this layout effect is a no-op by then, since
-  // a session already exists — so it also can't reintroduce the freeze).
-  // The onboarding gate still holds: `showOnboarding` only flips true after the
-  // intro, and a blank default session is never persisted, so this is harmless
-  // for first-time users.
+  // Create the first chat as soon as local state and installation checks are
+  // ready. ChatInterface supplies its own short entrance animation.
   useLayoutEffect(() => {
-    if (!sharedReady || showOnboarding || showDeviceSetup) return;
+    if (!sharedReady || installationState === 'checking' || showOnboarding || showDeviceSetup) return;
     if (routeChatId) {
       const requested = sessions.find((session) => session.id === routeChatId);
       if (requested && activeId !== requested.id) {
@@ -287,6 +275,7 @@ export default function App() {
     selectSession,
     sessions,
     sharedReady,
+    installationState,
     showOnboarding,
     showDeviceSetup,
     t,
@@ -319,6 +308,8 @@ export default function App() {
   const handleMessagesChange = useCallback((messages: ChatMessage[]) => {
     updateSession(messages);
   }, [updateSession]);
+
+  const handleWebSearchBlocked = useCallback(() => setBlockedFeature('web'), []);
 
   const handleMenuToggle = useCallback(() => setSidebarOpen((v) => !v), []);
 
@@ -372,11 +363,11 @@ export default function App() {
 
   const protectedFeature = page === 'browser' && !deviceSessionHasScope('read_private')
     ? 'knowledge'
-    : page === 'agent' && !deviceSessionHasScope('agent')
+    : page === 'agent' && !canManageSystem && !deviceSessionHasScope('agent')
       ? 'agent'
-      : page === 'settings' && settingsSection === 'indexing' && !deviceSessionHasScope('index')
+      : page === 'settings' && settingsSection === 'indexing' && !canManageSystem && !deviceSessionHasScope('index')
         ? 'index'
-      : page === 'settings' && settingsSection === 'memory' && !deviceSessionHasScope('read_private')
+        : page === 'settings' && settingsSection === 'memory' && !deviceSessionHasScope('read_private')
         ? 'memory'
         : page === 'settings' && settingsSection === 'stats' && !deviceSessionHasScope('read_private')
           ? 'stats'
@@ -394,17 +385,11 @@ export default function App() {
       >
         {t('skipToContent')}
       </a>
-      {/* Keep the single shared canvas running behind the opaque intro so its
-          first visible frame is already in motion when the splash fades out. */}
+      {/* Keep the shared canvas mounted behind the app shell. */}
       <Background isDark={isDark} />
 
-      {/* Intro Splash */}
-      <AnimatePresence>
-        {showIntro && <Intro onFinish={handleIntroFinish} />}
-      </AnimatePresence>
-
-      {!showIntro && preMount && sharedReady && !showOnboarding && !showDeviceSetup && (
-        <NetworkNotice canManageSystem={deviceSessionHasScope('system')} />
+      {sharedReady && installationState !== 'checking' && !showOnboarding && !showDeviceSetup && (
+        <NetworkNotice canManageSystem={canManageSystem} />
       )}
 
       {/* Onboarding Wizard (first time only) */}
@@ -412,14 +397,14 @@ export default function App() {
         <Suspense fallback={null}>
           <OnboardingWizard
             onComplete={handleOnboardingComplete}
-            canConfigureSystem={deviceSessionHasScope('system') && deviceSessionHasScope('index')}
+            canConfigureSystem={canManageSystem}
           />
         </Suspense>
       )}
       {showDeviceSetup && !showOnboarding && (
         <Suspense fallback={null}>
           <DeviceSetupChoice
-            preferExisting={existingInstallation}
+            preferExisting={false}
             onNewDevice={() => { setShowDeviceSetup(false); setShowOnboarding(true); }}
           />
         </Suspense>
@@ -427,20 +412,18 @@ export default function App() {
       {blockedFeature && (
         <div className="fixed inset-0 z-[70]">
           <Suspense fallback={null}>
-            <PermissionNotice feature={blockedFeature} onBack={() => { setEngine('ollama'); setBlockedFeature(null); }} />
+            <PermissionNotice feature={blockedFeature} remoteWebSearch={blockedFeature === 'web'} onBack={() => { setEngine('ollama'); setBlockedFeature(null); }} />
           </Suspense>
         </div>
       )}
 
-      {/* Main App — gated on `preMount` (not `!showIntro`) so the heavy tree
-          mounts behind the opaque splash and its fade-in completes before the
-          intro lifts. The intro is z-50 opaque; this is z-10, safely covered. */}
-      {preMount && sharedReady && !showOnboarding && !showDeviceSetup && (
+      {/* Main app enters as soon as local state and first-run gates are ready. */}
+      {sharedReady && installationState !== 'checking' && !showOnboarding && !showDeviceSetup && (
         <motion.div
-          className="relative z-10 h-full w-full min-h-0 flex"
+          className="relative z-10 flex h-full w-full min-h-0"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
-          transition={{ duration: 0.5 }}
+          transition={{ duration: 0.35, ease: 'easeOut' }}
         >
           {/* Sidebar */}
           <ErrorBoundary>
@@ -498,6 +481,7 @@ export default function App() {
                     onMenuToggle={handleMenuToggle}
                     onNavigate={handleNavigate}
                     onAgentHandoff={handleAgentHandoff}
+                    onWebSearchBlocked={handleWebSearchBlocked}
                     folderContext={folderContext}
                   />
                 </Suspense>
@@ -508,7 +492,7 @@ export default function App() {
                 {!sidebarOpen && (
                   <button
                     onClick={() => setSidebarOpen(true)}
-                    className={`fixed right-3 z-20 p-2.5 rounded-xl
+                    className={`fixed right-3 z-20 min-h-11 min-w-11 rounded-xl p-2.5
                                border transition-colors ${
                                  isDark
                                    ? 'bg-black/60 border-white/[0.08] text-white/60 hover:text-white hover:border-white/[0.15]'
@@ -526,12 +510,13 @@ export default function App() {
                   isDark ? 'text-white/30' : 'text-gray-400'
                 }`}>
                 <img
-                  src="/logo-of-app.webp"
+                  src="/logo.webp"
                   alt="TrinaxAI"
-                  className="w-16 h-16 opacity-30"
-                  width={64}
-                  height={64}
-                />
+                   className="w-16 h-16 opacity-30"
+                   width={64}
+                   height={64}
+                   draggable={false}
+                 />
                 <p className="text-sm tracking-wide text-center">
                   {t('selectOrCreateChat')}
                 </p>
@@ -568,7 +553,7 @@ export default function App() {
                       onOpenDocs={() => navigate({ page: 'docs' })}
                       initialSection={settingsSection}
                       onSectionChange={setSettingsSection}
-                      canManageSystem={deviceSessionHasScope('system')}
+                      canManageSystem={canManageSystem}
                     />
                   </Suspense>
                 ) : page === 'docs' ? (
@@ -577,7 +562,7 @@ export default function App() {
                   </Suspense>
                 ) : page === 'browser' ? (
                   <Suspense fallback={<div className="h-full flex items-center justify-center text-black/20 dark:text-white/20 text-sm">{t('loading')}</div>}>
-                    <KnowledgeBrowser onBack={handleBackToChat} />
+                    <KnowledgeBrowser onBack={handleBackToChat} canManageSystem={canManageSystem} />
                   </Suspense>
                 ) : page === 'agent' ? (
                   <Suspense fallback={<div className="h-full flex items-center justify-center text-black/20 dark:text-white/20 text-sm">{t('loading')}</div>}>

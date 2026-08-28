@@ -17,7 +17,7 @@ from app.generation import validate as generation_validate
 from app.routes import pairing
 from app.schemas import AppStateRequest, IndexImportDeleteRequest
 from app.schemas.api import WebSearchConnectionTest
-from app.security import admin_auth, device_auth
+from app.security import admin_auth, device_auth, rate_limit
 from app.services import (
     agent_service,
     app_state_service,
@@ -159,6 +159,24 @@ def test_app_state_validation_and_atomic_write_edges(monkeypatch, tmp_path: Path
     assert exc.value.status_code == 413
 
 
+def test_rate_limiter_prunes_stale_clients_and_evicts_oldest(monkeypatch) -> None:
+    monkeypatch.setattr(rate_limit.state, "rate_limit_clients", {})
+    monkeypatch.setattr(rate_limit.state, "rate_limit_last_prune", 0.0)
+    monkeypatch.setattr(rate_limit, "_RATE_LIMIT_MAX_CLIENTS", 1)
+    monkeypatch.setattr(rate_limit, "_RATE_LIMIT_WINDOW", 10.0)
+    monkeypatch.setattr(rate_limit.time, "monotonic", lambda: 100.0)
+
+    rate_limit.state.rate_limit_clients["stale"] = (1.0, 0.0)
+    assert rate_limit._check_rate_limit("fresh") is True
+    assert "stale" not in rate_limit.state.rate_limit_clients
+
+    rate_limit.state.rate_limit_clients.clear()
+    rate_limit.state.rate_limit_clients["oldest"] = (1.0, 99.0)
+    assert rate_limit._check_rate_limit("new") is True
+    assert "oldest" not in rate_limit.state.rate_limit_clients
+    assert "new" in rate_limit.get_rate_limit_state()
+
+
 def test_output_validation_catches_language_specific_incomplete_results() -> None:
     assert generation_validate._check_python("def broken(:")
     assert generation_validate._check_python("def incomplete():\n    ...")
@@ -203,8 +221,18 @@ async def test_app_state_delete_success_and_directory_sync_failure(monkeypatch, 
 
     path = tmp_path / "state.json"
     monkeypatch.setattr(app_state_service, "APP_STATE_PATH", str(path))
+
+    original_open = app_state_service.os.open
+
+    def fail_directory_fsync(candidate, *args, **kwargs):
+        if candidate == str(path.parent):
+            raise OSError("unsupported")
+        return original_open(candidate, *args, **kwargs)
+
     monkeypatch.setattr(
-        app_state_service.os, "open", lambda *_args, **_kwargs: (_ for _ in ()).throw(OSError("unsupported"))
+        app_state_service.os,
+        "open",
+        fail_directory_fsync,
     )
     app_state_service._write_app_state_document({"revision": 1, "values": {"tc-mode": "offline"}})
     assert json.loads(path.read_text(encoding="utf-8"))["revision"] == 1
@@ -810,6 +838,20 @@ def test_public_schema_validators_reject_unsafe_shapes() -> None:
             messages=[{"role": "assistant", "content": "x"}]
         )
     with pytest.raises(ValidationError):
+        __import__("app.schemas.api", fromlist=["AgentRequest"]).AgentRequest(
+            messages=[{"role": "user", "content": "x" * 100_001}]
+        )
+    with pytest.raises(ValidationError):
+        __import__("app.schemas.api", fromlist=["AgentRequest"]).AgentRequest(
+            messages=[{"role": "user", "content": "x"}] * 101,
+            web_search=False,
+        )
+    with pytest.raises(ValidationError):
+        __import__("app.schemas.api", fromlist=["ResearchRequest"]).ResearchRequest(
+            query="x",
+            collections=[str(index) for index in range(51)],
+        )
+    with pytest.raises(ValidationError):
         __import__("app.schemas.api", fromlist=["MemoryUpdateRequest"]).MemoryUpdateRequest()
 
 
@@ -985,21 +1027,21 @@ def test_cli_dispatcher_converts_import_and_return_errors(monkeypatch) -> None:
     assert cli_app._dispatch("empty", SimpleNamespace(), None, ui, None) == 3
 
 
-def test_cli_main_builds_client_and_dispatches_without_leaking_resources(monkeypatch, tmp_path: Path) -> None:
-    client = MagicMock()
-    client.close = MagicMock()
+def test_cli_main_dispatches_local_commands_without_opening_http_client(monkeypatch, tmp_path: Path) -> None:
+    client_factory = MagicMock()
     monkeypatch.setattr(cli_app, "get_console", lambda **_kwargs: MagicMock())
     monkeypatch.setattr(
-        cli_app, "_dispatch", lambda name, args, passed, ui, config: name == "version" and passed is client
+        cli_app,
+        "_dispatch",
+        lambda name, args, passed, ui, config: 0 if name == "version" and passed is None else 1,
     )
-    monkeypatch.setattr("trinaxai_cli.client.TrinaxAPIClient", lambda **_kwargs: client)
-    assert cli_app.main(["--api-url", "https://localhost:3333", "version"]) == 1
-    client.close.assert_called_once()
+    monkeypatch.setattr("trinaxai_cli.client.TrinaxAPIClient", client_factory)
+    assert cli_app.main(["--api-url", "https://localhost:3333", "version"]) == 0
+    client_factory.assert_not_called()
     ca = tmp_path / "ca.pem"
     ca.write_text("ca", encoding="utf-8")
-    client.close.reset_mock()
-    assert cli_app.main(["--ca-file", str(ca), "version"]) == 1
-    client.close.assert_called_once()
+    assert cli_app.main(["--ca-file", str(ca), "version"]) == 0
+    client_factory.assert_not_called()
 
 
 def test_lifecycle_platform_and_process_failures_are_safe(monkeypatch, tmp_path: Path) -> None:

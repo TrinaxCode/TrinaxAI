@@ -7,6 +7,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from defusedxml.common import DefusedXmlException
 
 from trinaxai_cli.agent import extract
 
@@ -120,4 +121,16 @@ def test_epub_rejects_excessive_expanded_text(tmp_path: Path, monkeypatch) -> No
         archive.writestr("two.xhtml", "<p>5678</p>")
 
     with pytest.raises(ValueError, match="safe extraction limit"):
+        extract._extract_epub(path)
+
+
+def test_epub_rejects_xml_entities(tmp_path: Path) -> None:
+    path = tmp_path / "entities.epub"
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr(
+            "chapter.xhtml",
+            '<!DOCTYPE html [<!ENTITY payload "expanded">]><html><body>&payload;</body></html>',
+        )
+
+    with pytest.raises(DefusedXmlException):
         extract._extract_epub(path)

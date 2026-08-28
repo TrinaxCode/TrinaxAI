@@ -98,6 +98,35 @@ APP_STATE_PATH = os.path.join(config.PERSIST_DIR, "app_state.json")
 
 CHAT_ATTACHMENTS_DIR = os.path.join(config.PERSIST_DIR, "chat_attachments")
 
+PRIVATE_DIRECTORY_MODE = 0o700
+PRIVATE_FILE_MODE = 0o600
+
+
+def _ensure_private_directory(path: str) -> None:
+    os.makedirs(path, mode=PRIVATE_DIRECTORY_MODE, exist_ok=True)
+    try:
+        os.chmod(path, PRIVATE_DIRECTORY_MODE)
+    except OSError:
+        # Windows and filesystems without chmod support enforce permissions
+        # through their native ACLs instead.
+        pass
+
+
+def _ensure_private_file(path: str) -> None:
+    try:
+        os.chmod(path, PRIVATE_FILE_MODE)
+    except OSError:
+        # Windows and filesystems without chmod support enforce permissions
+        # through their native ACLs instead.
+        pass
+
+
+def _open_private_file(path: str, flags: int) -> int:
+    descriptor = os.open(path, flags | getattr(os, "O_BINARY", 0), PRIVATE_FILE_MODE)
+    _ensure_private_file(path)
+    return descriptor
+
+
 APP_STATE_MAX_BYTES = config._env_int("TRINAXAI_APP_STATE_MAX_BYTES", 6 * 1024 * 1024, minimum=1024)
 
 _DELIVERABLE_KEYWORDS = (
@@ -155,6 +184,19 @@ _SAFE_INLINE_ATTACHMENT_TYPES = {
     "image/png",
     "image/webp",
     "text/plain",
+}
+
+_SAFE_ATTACHMENT_TYPES = _SAFE_INLINE_ATTACHMENT_TYPES | {
+    "application/msword",
+    "application/vnd.ms-excel",
+    "application/vnd.ms-powerpoint",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/vnd.oasis.opendocument.presentation",
+    "application/vnd.oasis.opendocument.spreadsheet",
+    "application/vnd.oasis.opendocument.text",
+    "application/rtf",
 }
 
 _MULTILINGUAL_500 = {

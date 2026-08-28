@@ -47,7 +47,7 @@ The primary attack surface is:
 | **RAG API** (`app/`) | Medium | Managed launch is loopback-only. The local gateway signs the original peer with a short-lived HMAC assertion; ordinary forwarding headers are ignored. Private state, sources, memory, attachments, agent and administration require authorization. |
 | **PWA gateway** (`chat-pwa/vite.config.ts`) | Medium | LAN-facing HTTPS boundary. It validates paired-device/admin credentials, strips client-supplied identity headers, signs the peer for FastAPI, applies security headers, and exposes only an allowlisted Ollama facade. Vite remains a project gateway, not a generic reverse proxy. |
 | **Agent** (`trinaxai_cli/agent/`) | High | File tools resolve symlinks inside registered workspace roots. Linux shell commands use networkless bubblewrap; command execution fails closed when supported isolation is unavailable. Dangerous tools require approval; HTTP auto-approval is disabled and cannot be enabled remotely. |
-| **CLI** (`trinaxai_cli/`) | Low | Local terminal tool with verified TLS by default. `--insecure`, `--yolo`, and unsandboxed command execution are explicit high-risk opt-ins. |
+| **CLI** (`trinaxai_cli/`) | Limited | Local terminal tool with verified TLS by default. `--insecure`, `--yolo`, and unsandboxed command execution are explicit high-risk opt-ins. |
 | **Lifecycle/backups** | Medium | Privileged lifecycle calls use an exact, root-owned wrapper rather than repository-editable scripts. Backups use private modes, validate archive entry types/paths, restore through staging, and roll back failed replacement. Backups contain sensitive data and should still be encrypted at rest. |
 | **Ollama** | High if exposed | Ollama has no built-in authentication. Managed launch binds it to `127.0.0.1`; never expose port 11434 or a generic Ollama proxy. |
 | **Uploads/web fetch** | Medium | Imports use managed roots, sanitized paths, quotas, and protected endpoints. Web page reads are bounded, resolve/connect to validated public IPs, reject private/link-local destinations and revalidate redirects. Parsers still process untrusted formats, so keep limits conservative. |
@@ -75,10 +75,13 @@ TrinaxAI's threat model assumes:
   Only explicitly public health/resource routes remain available without a
   credential.
 - **Stolen device token:** A device token is a bearer capability limited to its
-  recorded scopes. The PWA keeps the clear token in `localStorage` as persistent
-  device identity, FastAPI stores only a keyed hash, and host/admin operators can
-  revoke it immediately. Pair only devices you control and revoke a lost device
-  with `trinaxai pair revoke`.
+  recorded scopes. A new PWA claim keeps it only in an `HttpOnly; SameSite=Strict`
+  cookie scoped to `/api/rag`; the browser never receives a new bearer in JSON or
+  persists it in browser storage. FastAPI stores only a keyed hash, and
+  host/admin operators can revoke it immediately. Existing legacy storage is
+  consumed only by the explicit `/v1/pairing/me` migration and cleared after a
+  successful response. Pair only devices you control and revoke a lost device
+  with `trinaxai pair revoke`; the CLI remains header-based.
 - **Forged proxy identity:** Client-supplied TrinaxAI/forwarding headers are stripped
   by the gateway. FastAPI accepts a fresh, single-use HMAC signature only from
   loopback or an explicitly configured private runtime peer; network membership
@@ -94,13 +97,12 @@ TrinaxAI's threat model assumes:
 ## Security Best Practices for Deployers
 
 1. **Keep FastAPI and Ollama on loopback.** Leave `TRINAXAI_UNSAFE_BIND_BACKEND=0`; publish only the authenticated PWA gateway.
-2. **Pair devices with least privilege.** `trinaxai pair start` grants only
-   `chat,read_private` by default. Add `index`, `system`, or `agent` only for a
-   concrete need; review `trinaxai pair list` and revoke devices that are lost
-   or no longer used. Remote HTTP yolo remains prohibited regardless of scope.
-3. **Keep `TRINAXAI_ADMIN_TOKEN` host-side** as a strong recovery and
-   administration super-credential. Do not copy it to an ordinary browser when
-   a scoped token is enough.
+2. **Pair devices with least privilege.** `trinaxai pair start` grants
+   `chat,read_private` by default and may add only `web`. Review
+   `trinaxai pair list` and revoke devices that are lost or no longer used.
+3. **Administer only from `https://localhost:3334`.** Indexing, Agent, model and
+   device management, lifecycle actions, and factory reset require verified
+   loopback even when an admin credential or retired device scope is supplied.
 4. **Keep credential secrets private.** Never share `storage/.proxy_secret` or
    `storage/.device_secret`; preserve mode `0600` on those files and on
    `storage/device_pairing.json`.

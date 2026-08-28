@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import MemoryPanel from './MemoryPanel';
@@ -7,6 +7,8 @@ import {
   getMemorySummary,
   listMemories,
   updateMemory,
+  type MemoryEntry,
+  type MemorySummary,
 } from '../lib/api';
 
 const toast = vi.fn();
@@ -56,7 +58,7 @@ describe('MemoryPanel', () => {
 
   it('loads memory state and creates a tagged persistent memory', async () => {
     const user = userEvent.setup();
-    render(<MemoryPanel />);
+    render(<MemoryPanel canManageSystem />);
 
     await waitFor(() => expect(listMemories).toHaveBeenCalled());
     await user.type(screen.getByPlaceholderText('memoryTextPlaceholder'), 'Prefiero Python');
@@ -81,5 +83,40 @@ describe('MemoryPanel', () => {
     await waitFor(() => {
       expect(toast).toHaveBeenCalledWith('memory backend unavailable', 'error');
     });
+  });
+
+  it('does not let an older refresh overwrite a newer memory list', async () => {
+    vi.mocked(listMemories).mockReset();
+    vi.mocked(getMemorySummary).mockReset();
+    let resolveInitialList!: (value: MemoryEntry[]) => void;
+    let resolveInitialSummary!: (value: MemorySummary) => void;
+    const freshMemory: MemoryEntry = {
+      id: 'memory-fresh',
+      text: 'fresh memory',
+      tags: [],
+      created_at: 2,
+      kind: 'note',
+      provenance: 'manual',
+    };
+    vi.mocked(listMemories)
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveInitialList = resolve; }))
+      .mockResolvedValueOnce([freshMemory]);
+    vi.mocked(getMemorySummary)
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveInitialSummary = resolve; }))
+      .mockResolvedValueOnce({ summary: 'fresh summary', count: 1, updated_at: 2 });
+
+    const user = userEvent.setup();
+    render(<MemoryPanel canManageSystem />);
+    await waitFor(() => expect(listMemories).toHaveBeenCalledOnce());
+    await user.type(screen.getByPlaceholderText('memoryTextPlaceholder'), 'new memory');
+    await user.click(screen.getByRole('button', { name: /add/i }));
+    await waitFor(() => expect(listMemories).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.getByText('fresh memory')).toBeInTheDocument());
+
+    await act(async () => {
+      resolveInitialList([]);
+      resolveInitialSummary({ summary: '', count: 0, updated_at: 0 });
+    });
+    expect(screen.getByText('fresh memory')).toBeInTheDocument();
   });
 });

@@ -23,7 +23,7 @@ class Regime(str, Enum):
       "answer only from context" restriction.
     - REASONING:   maths, science, proofs, probability, logic and algorithm
       design/analysis. Rigorous step-by-step work, generous output budget, a
-      low (but non-zero) temperature and the strongest available model. This is
+      minimal (but non-zero) temperature and the strongest available model. This is
       the regime that stops academic/analytical prompts being answered by the
       small *coder* model with a "produce production code" prompt.
     - EXPLAIN:     documentation/explanation prose. Medium temperature.
@@ -54,6 +54,10 @@ class TaskSpec:
     top_k: int | None = None
     repeat_penalty: float | None = None
     stop: tuple[str, ...] | None = None
+    # Hidden provider reasoning is reserved for demanding turns. Simple chat
+    # should go straight to the answer instead of spending the whole budget
+    # thinking before producing visible text.
+    thinking: bool = False
 
     # Pipeline behaviour
     retrieval_mode: str = "auto"
@@ -80,6 +84,6 @@ class TaskSpec:
             f"regime={self.regime.value} score={self.score} cats=[{cats}] "
             f"model={self.model} ctx={self.num_ctx} predict={self.num_predict} "
             f"temp={self.temperature} retrieval={self.retrieval_mode} "
-            f"rag={int(self.use_rag)} "
+            f"rag={int(self.use_rag)} think={int(self.thinking)} "
             f"validate={int(self.validate)} fix={self.max_fix_passes}"
         )

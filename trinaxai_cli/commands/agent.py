@@ -18,7 +18,7 @@ from types import SimpleNamespace
 from typing import Any
 
 import config as runtime_config
-from trinaxai_cli.agent import AgentEngine, Tool
+from trinaxai_cli.agent import DEFAULT_TOOLS, AgentEngine, Tool, format_tool_failure
 from trinaxai_cli.commands import _system
 from trinaxai_cli.session import Session
 
@@ -27,6 +27,133 @@ _DANGER_HINT = {
     "edit_file": "will modify a file",
     "run_command": "will run a shell command",
 }
+
+
+def _research_tool_text(result: Any) -> str:
+    """Keep API research evidence compact enough for the agent context."""
+    if not isinstance(result, dict):
+        return str(result or "No result returned.")
+    answer = str(result.get("answer") or "").strip()
+    lines = [answer] if answer else []
+    for index, source in enumerate(result.get("sources") or [], start=1):
+        if not isinstance(source, dict):
+            continue
+        label = source.get("title") or source.get("file") or source.get("url") or "source"
+        location = source.get("url") or source.get("file") or ""
+        page = f" p. {source['page']}" if source.get("page") else ""
+        lines.append(f"[{index}] {label}{page}\n{location}".strip())
+    return "\n\n".join(lines) or "No evidence returned."
+
+
+def build_api_tools(client: Any, collections: list[str] | None = None) -> tuple[Tool, ...]:
+    """Add web/RAG/memory tools backed by the already-running TrinaxAI API."""
+    default_collections = list(collections or [])
+
+    def search_knowledge(_workspace_root: Path, query: str = "", collection_id: str = "", **_kwargs: Any) -> str:
+        q = query.strip()
+        if not q:
+            return format_tool_failure("search_knowledge", "The query must not be empty.")
+        scope = [collection_id.strip()] if collection_id.strip() else default_collections
+        try:
+            return _research_tool_text(client.research(q, collections=scope, depth=1, web_search=False))
+        except Exception as exc:  # noqa: BLE001 - return a model-readable degraded tool result
+            return format_tool_failure("search_knowledge", exc)
+
+    def web_search(_workspace_root: Path, query: str = "", **_kwargs: Any) -> str:
+        q = query.strip()
+        if not q:
+            return format_tool_failure("web_search", "The query must not be empty.", external=True)
+        try:
+            result = client.research(q, depth=1, web_search=True, search_query=q)
+            return _research_tool_text(result)
+        except Exception as exc:  # noqa: BLE001 - return a model-readable degraded tool result
+            return format_tool_failure("web_search", exc, external=True)
+
+    def deep_research(_workspace_root: Path, query: str = "", **_kwargs: Any) -> str:
+        q = query.strip()
+        if not q:
+            return format_tool_failure("deep_research", "The query must not be empty.", external=True)
+        try:
+            result = client.research(q, depth=3, web_search=True, search_query=q)
+            return _research_tool_text(result)
+        except Exception as exc:  # noqa: BLE001 - return a model-readable degraded tool result
+            return format_tool_failure("deep_research", exc, external=True)
+
+    def search_memory(_workspace_root: Path, query: str = "", **_kwargs: Any) -> str:
+        q = query.strip()
+        if not q:
+            return format_tool_failure("search_memory", "The query must not be empty.")
+        try:
+            memories = client.memory_context(q)
+            return _research_tool_text({"answer": str(memories)})
+        except Exception as exc:  # noqa: BLE001 - return a model-readable degraded tool result
+            return format_tool_failure("search_memory", exc)
+
+    def list_collections(_workspace_root: Path, **_kwargs: Any) -> str:
+        try:
+            return _research_tool_text({"answer": str(client.list_collections())})
+        except Exception as exc:  # noqa: BLE001 - return a model-readable degraded tool result
+            return format_tool_failure("list_collections", exc)
+
+    api_tools = (
+        Tool(
+            name="search_knowledge",
+            description="Search the user's indexed RAG documents for relevant passages.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "What to find in indexed documents."},
+                    "collection_id": {"type": "string", "description": "Optional collection identifier."},
+                },
+                "required": ["query"],
+            },
+            handler=search_knowledge,
+            dangerous=False,
+        ),
+        Tool(
+            name="web_search",
+            description="Search the public web for current or public facts and source URLs.",
+            parameters={
+                "type": "object",
+                "properties": {"query": {"type": "string", "description": "The public web query."}},
+                "required": ["query"],
+            },
+            handler=web_search,
+            dangerous=False,
+            external=True,
+        ),
+        Tool(
+            name="deep_research",
+            description="Run multi-pass web research for comparisons, detailed reports, or several sources.",
+            parameters={
+                "type": "object",
+                "properties": {"query": {"type": "string", "description": "The research question."}},
+                "required": ["query"],
+            },
+            handler=deep_research,
+            dangerous=False,
+            external=True,
+        ),
+        Tool(
+            name="search_memory",
+            description="Search saved user memories for personal context relevant to the request.",
+            parameters={
+                "type": "object",
+                "properties": {"query": {"type": "string", "description": "The personal context to find."}},
+                "required": ["query"],
+            },
+            handler=search_memory,
+            dangerous=False,
+        ),
+        Tool(
+            name="list_collections",
+            description="List indexed RAG collections when a collection scope is unclear.",
+            parameters={"type": "object", "properties": {}},
+            handler=list_collections,
+            dangerous=False,
+        ),
+    )
+    return (*DEFAULT_TOOLS, *api_tools)
 
 
 def _new_session_name() -> str:
@@ -71,13 +198,13 @@ def _preview_dangerous(ui: Any, tool: Tool, args: dict[str, Any]) -> None:
     """Show what a dangerous action will do before asking to confirm."""
     if tool.name == "write_file":
         content = str(args.get("content", ""))
-        ui.print(f"  → write {args.get('path', '?')} ({len(content)} chars)")
+        ui.print(f"  - write {args.get('path', '?')} ({len(content)} chars)")
         ui.code("\n".join(content.splitlines()[:20]) or "(empty)")
     elif tool.name == "edit_file":
-        ui.print(f"  → edit {args.get('path', '?')}")
+        ui.print(f"  - edit {args.get('path', '?')}")
         ui.code(f"- {str(args.get('old', ''))[:400]}\n+ {str(args.get('new', ''))[:400]}", "diff")
     elif tool.name == "run_command":
-        ui.print("  → run command:")
+        ui.print("  - run command:")
         ui.code(str(args.get("command", "")), "bash")
 
 
@@ -91,8 +218,6 @@ def _make_callbacks(ui: Any, yolo: bool) -> dict[str, Any]:
         ui.print(f"    {first[:160]}")
 
     def on_confirm(tool: Tool, args: dict[str, Any]) -> bool:
-        if yolo:
-            return True
         _preview_dangerous(ui, tool, args)
         hint = _DANGER_HINT.get(tool.name, "will run a side-effecting action")
         return ui.confirm(f"Allow {tool.name}? ({hint})", default=False)
@@ -152,6 +277,7 @@ def build_agent_engine(
     num_ctx: int | None = None,
     config: Any = None,
     callbacks: dict[str, Any] | None = None,
+    tools: tuple[Tool, ...] | None = None,
 ) -> AgentEngine:
     """Construct an :class:`AgentEngine` for the REPL or the subcommand.
 
@@ -172,6 +298,7 @@ def build_agent_engine(
         ollama_url=ollama_url,
         max_steps=max_steps,
         num_ctx=resolved_ctx,
+        tools=tools if tools is not None else DEFAULT_TOOLS,
         **cbs,
     )
 
@@ -244,21 +371,32 @@ def run(args: Any, client: Any, ui: Any, config: Any) -> int:
         ui.clear()
         ui.set_title("TrinaxAI Agent")
         ui.banner()
+        is_es = getattr(ui, "language", "en") == "es"
         ui.panel(
             "\n".join(
                 [
-                    "TrinaxAI Agent — local-first coding agent.",
+                    "Agente de TrinaxAI - agente de código local-first."
+                    if is_es
+                    else "TrinaxAI Agent - local-first coding agent.",
                     "",
                     f"Workspace: {engine.workspace_root}",
-                    f"Model: {engine.model}" + ("  (yolo: auto-approve)" if yolo else ""),
+                    f"Modelo: {engine.model}" + ("  (yolo: aprobación automática)" if yolo else "")
+                    if is_es
+                    else f"Model: {engine.model}" + ("  (yolo: auto-approve)" if yolo else ""),
                     "",
-                    "Describe a task and the agent will read, write and run code to do it.",
-                    "Dangerous actions ask for confirmation unless you passed --yolo.",
+                    "Describe una tarea y el agente leerá, escribirá y ejecutará código para resolverla."
+                    if is_es
+                    else "Describe a task and the agent will read, write and run code to do it.",
+                    "Las acciones peligrosas piden confirmación salvo que uses --yolo."
+                    if is_es
+                    else "Dangerous actions ask for confirmation unless you passed --yolo.",
                     "",
-                    "Commands:  /exit  quit   ·   /clear  reset conversation",
+                    "Comandos:  /exit  salir   |   /clear  borrar conversación"
+                    if is_es
+                    else "Commands:  /exit  quit   |   /clear  reset conversation",
                 ]
             ),
-            title="TrinaxAI Agent",
+            title="Agente de TrinaxAI" if is_es else "TrinaxAI Agent",
         )
         while True:
             try:
@@ -286,4 +424,3 @@ def run(args: Any, client: Any, ui: Any, config: Any) -> int:
                 ui.failure("Agent task", exc)
                 ui.info("Is TrinaxAI running? Start it with: trinaxai start")
                 continue
-    return 0

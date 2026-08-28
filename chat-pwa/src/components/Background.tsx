@@ -7,7 +7,7 @@ interface BackgroundProps {
 }
 
 const MAX_CANVAS_PIXELS = 2_100_000;
-const LOW_POWER_CANVAS_PIXELS = 1_050_000;
+const REDUCED_POWER_CANVAS_PIXELS = 1_050_000;
 
 const Background = memo(function Background({ isDark, active = true }: BackgroundProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -32,12 +32,12 @@ const Background = memo(function Background({ isDark, active = true }: Backgroun
     const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)');
     const connection = (navigator as Navigator & { connection?: { saveData?: boolean } }).connection;
     const deviceMemory = (navigator as Navigator & { deviceMemory?: number }).deviceMemory;
-    const lowPowerDevice = Boolean(
+    const reducedPowerDevice = Boolean(
       connection?.saveData
       || (typeof deviceMemory === 'number' && deviceMemory <= 2)
       || navigator.hardwareConcurrency <= 2
     );
-    const frameInterval = 1000 / (lowPowerDevice ? 15 : 24);
+    const frameInterval = 1000 / (reducedPowerDevice ? 15 : 24);
     const shouldAnimate = () => active && !reducedMotion?.matches && !connection?.saveData;
     const layers: [number, number, number, number, number, number, number, number][] = [
       [0.62, 80, 0.005, 0.0003, 0.16, 0, 107, 189],
@@ -50,7 +50,7 @@ const Background = memo(function Background({ isDark, active = true }: Backgroun
     function resize() {
       width = window.innerWidth;
       height = window.innerHeight;
-      const pixelBudget = lowPowerDevice ? LOW_POWER_CANVAS_PIXELS : MAX_CANVAS_PIXELS;
+      const pixelBudget = reducedPowerDevice ? REDUCED_POWER_CANVAS_PIXELS : MAX_CANVAS_PIXELS;
       const budgetDpr = Math.sqrt(pixelBudget / Math.max(1, width * height));
       const dpr = Math.max(0.5, Math.min(window.devicePixelRatio || 1, 1.5, budgetDpr));
       backgroundCanvas.width = Math.max(1, Math.round(width * dpr));

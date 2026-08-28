@@ -71,22 +71,32 @@ test('sound preference applies immediately and survives reload', async ({ page }
   await expect(page.getByRole('switch', { name: 'Sound effects' })).toHaveAttribute('aria-checked', 'true');
 });
 
-test('fixed identity questions answer locally without contacting Ollama', async ({ page }) => {
+test('identity questions are answered by the model', async ({ page }) => {
   let chatRequests = 0;
+  await page.route('**/api/ollama/api/tags', (route) => route.fulfill({
+    json: { models: [{ name: 'qwen3.5:4b', model: 'qwen3.5:4b', size: 1 }] },
+  }));
   await page.route('**/api/ollama/api/chat', (route) => {
     chatRequests += 1;
-    return route.abort();
+    const request = route.request().postDataJSON() as { messages?: Array<{ content?: string }> };
+    const prompt = request.messages?.at(-1)?.content || '';
+    const content = prompt.includes('created') ? 'model creator answer' : 'model identity answer';
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/x-ndjson',
+      body: `${JSON.stringify({ message: { content }, done: true })}\n`,
+    });
   });
   await page.goto('/');
-  await expect(page.locator('.animate-intro-logo')).toHaveCount(0, { timeout: 10_000 });
 
   const composer = page.getByRole('textbox', { name: /Type a message/ });
+  await expect(composer).toBeVisible();
   await composer.fill('who are you');
   await page.getByRole('button', { name: 'Send' }).click();
-  await expect(page.getByText(/I’m TrinaxAI, a general-purpose local-first AI assistant/)).toBeVisible();
+  await expect(page.locator('#tc-main-content').getByText('model identity answer', { exact: true })).toBeVisible();
 
   await composer.fill('who created you');
   await page.getByRole('button', { name: 'Send' }).click();
-  await expect(page.getByText(/TrinaxAI was created by TrinaxCode/)).toBeVisible();
-  expect(chatRequests).toBe(0);
+  await expect(page.locator('#tc-main-content').getByText('model creator answer', { exact: true })).toBeVisible();
+  expect(chatRequests).toBe(2);
 });

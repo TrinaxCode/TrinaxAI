@@ -5,6 +5,7 @@ __pycache__/
 *.egg
 build/
 dist/
+manager-release/
 .venv/
 venv/
 .pytest_cache/
@@ -17,8 +18,10 @@ coverage.json
 htmlcov/
 
 # Node / PWA
+/node_modules/
 chat-pwa/node_modules/
 chat-pwa/dist/
+chat-pwa/.e2e-dist-*/
 chat-pwa/server-dist/
 chat-pwa/.vite/
 chat-pwa/coverage/
@@ -35,6 +38,7 @@ AUDIT_DEEPSEEK_V4_PRO.md
 CODEX_FIX_REPORT.md
 CODEX_SEARCH_MODE_FIX_REPORT.md
 REFACTOR_AND_CLEANUP_REPORT.md
+tarea[0-9]*.md
 chat-pwa/.eslintcache
 npm-debug.log*
 yarn-debug.log*

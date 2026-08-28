@@ -65,6 +65,24 @@ def test_research_serialize_and_source_manifest_trimming(tmp_path: Path, monkeyp
     assert payload["id"] == "node-1" and payload["score"] == 0.1235
     assert "secret" not in payload["metadata"]
 
+    legacy = SimpleNamespace(
+        node_id="legacy",
+        metadata={"file_path": r"C:\private\secret.md"},
+        get_content=lambda: "legacy content",
+    )
+    legacy_payload = shared_runtime._research_serialize_node(legacy)
+    assert legacy_payload["metadata"] == {}
+    assert shared_runtime._public_rel_path(legacy.metadata) == "secret.md"
+    assert shared_runtime._public_rel_path({"rel_path": r"C:\private\legacy.md"}) == "legacy.md"
+    legacy_rel_payload = shared_runtime._research_serialize_node(
+        SimpleNamespace(
+            node_id="legacy-rel",
+            metadata={"rel_path": r"C:\private\legacy.md"},
+            get_content=lambda: "x",
+        )
+    )
+    assert legacy_rel_payload["metadata"]["rel_path"] == "legacy.md"
+
     manifest = tmp_path / "manifest.json"
     manifest.write_text(
         json.dumps(

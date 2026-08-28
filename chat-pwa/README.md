@@ -1,8 +1,8 @@
 # TrinaxAI Chat PWA
 
-TrinaxAI 1.1.0 frontend built with React 19, TypeScript, and Vite 6 under AGPL-3.0-or-later. It provides direct Ollama chat, cited RAG, optional web search, deep research, a tool-using agent, image analysis, documents, local voice, memory, and installable PWA behavior.
+TrinaxAI 1.2.0 frontend built with React 19, TypeScript, and Vite 6 under AGPL-3.0-or-later. It provides direct Ollama chat, cited RAG, optional web search, deep research, a tool-using agent, image analysis, documents, local voice, memory, and installable PWA behavior.
 
-[Versión en español](README.es.md) · [Project documentation](../docs/README.md) · [API reference](../docs/API_REFERENCE.md)
+[Versión en español](README.es.md) · [Project documentation](../docs/README.md) · [API reference](../docs/API_REFERENCE.md) · [Troubleshooting](../docs/TROUBLESHOOTING.md)
 
 ## Runtime model
 
@@ -30,19 +30,24 @@ npm install
 npm run dev
 ```
 
-Open `https://localhost:3334` when local certificates exist; the gateway falls back to HTTP when none are available. A browser warning is expected for a self-signed certificate.
+Open `https://localhost:3334` when local certificates exist; without them the gateway falls back to HTTP only on loopback. A non-loopback host fails closed unless `TRINAXAI_ALLOW_INSECURE_HTTP=1` is explicitly set for a trusted test network. For LAN access, install the public CA shown by `trinaxai network` on each device; do not bypass certificate verification. See the [LAN pairing and HTTPS trust guide](../docs/NETWORK_PAIRING.md).
 
 ## Scripts
 
 | Command | Result |
 |---|---|
-| `npm run dev` | Vite development server on `0.0.0.0:3334` with HMR. |
-| `npm run build` | TypeScript check followed by a production build in `dist/`. |
+| `npm run dev` | Vite development server on `127.0.0.1:3334` with HMR. Set `TRINAXAI_PWA_HOST=0.0.0.0` only for an intentional HTTPS LAN test. |
+| `npm run build` | TypeScript check, Vite production build in `dist/`, and the production gateway bundle. |
 | `npm run serve` | Serve `dist/` on port 3334 using the production Node gateway. |
 | `npm run preview` | Compatibility alias for `npm run serve`. |
-| `npm test` | Run the Vitest suite once. |
-| `npm run lint` | Type-check without building. |
+| `npm test` | Run Vitest and the production gateway integration tests. |
+| `npm run check:bundle` | Check the generated frontend bundle budget. |
+| `npm run lint` | Run ESLint. |
 | `npx tsc --noEmit` | Type-check without building. |
+
+The dev server binds to loopback by default. For an intentional LAN test, set
+`TRINAXAI_PWA_HOST=0.0.0.0`, use HTTPS, and pair every remote browser; never
+expose the development server or backend ports to the public Internet.
 
 ## Source map
 
@@ -51,7 +56,9 @@ src/
 ├── main.tsx                 providers and service-worker registration
 ├── App.tsx                  page state, navigation, onboarding, chat history
 ├── components/
-│   ├── ChatInterface.tsx    composer, rendering, files, voice, research
+│   ├── ChatInterface.tsx    stable chat component boundary
+│   ├── chat/ChatInterfaceView.tsx chat rendering and layout
+│   ├── agent/                Agent view and shared contracts
 │   ├── ChatSidebar.tsx      sessions, folders, search and export
 │   ├── Settings.tsx         models, index, prompts, memory and statistics
 │   ├── KnowledgeBrowser.tsx indexed sources and chunks
@@ -59,9 +66,19 @@ src/
 │   └── PwaUpdater.tsx       update notification
 ├── hooks/
 │   ├── useChatHistory.ts    session/folder persistence
+│   ├── useChatTurn.ts       turn routing and context assembly
+│   ├── useChatDocuments.ts  document extraction and indexing jobs
+│   ├── useChatAttachments.ts image/file attachment lifecycle
+│   ├── useChatVoice.ts      speech and spoken response lifecycle
+│   ├── useChatController.ts chat state and UI composition
+│   ├── useChatSend.ts       message sending and route dispatch
+│   ├── useChatMessageActions.ts edit, regenerate and continuation actions
+│   ├── useAgentController.ts Agent execution, approvals and history
+│   ├── useAgentVoice.ts     Agent dictation lifecycle
 │   └── useStreamChat.ts     stream lifecycle and cancellation
 ├── lib/
-│   ├── api.ts               backend/Ollama client and stream parsers
+│   ├── api.ts               stable public API facade
+│   ├── api_*.ts             HTTP domains, model calls, streams and documents
 │   ├── config.ts            same-origin URL resolution
 │   ├── sharedState.ts       host-backed cross-device state synchronization
 │   ├── chatAttachments.ts   IndexedDB attachment storage
@@ -81,7 +98,7 @@ src/
 
 ### RAG
 
-`streamRag()` posts OpenAI-shaped messages to `/api/rag/v1/chat/completions`. It parses Server-Sent Events, including `trinaxai` metadata and `trinaxai_sources` citations. Active collection IDs are included with the request.
+`streamRag()` posts OpenAI-shaped messages to `/api/rag/v1/chat/completions`. It parses Server-Sent Events, including `trinaxai` metadata and `trinaxai_sources` citations. Active collection IDs are included with the request. If the selected collection is empty or missing, the PWA offers **Open indexing**; index a source from **Settings → Indexing**, wait for `completed`, and retry.
 
 ### Web search, research, and agent
 
@@ -100,17 +117,18 @@ src/
 
 Voice controls in `ChatInterface` prefer browser speech capabilities where available and fall back to:
 
-- `GET /v1/voice/capabilities`
-- `POST /v1/voice/stt` for local Whisper transcription
-- `POST /v1/voice/tts` for a locally available TTS backend
+- `GET /api/rag/v1/voice/capabilities`
+- `POST /api/rag/v1/voice/stt` for local Whisper transcription
+- `POST /api/rag/v1/voice/tts` for a locally available TTS backend
 
 Voice availability varies by OS, browser permissions, installed Python extras, and local audio support. See the API response instead of assuming a particular TTS engine exists.
 
 ## Pairing a browser
 
-A LAN browser may use Ollama chat without pairing, but it cannot read private
-data or use RAG, memory, files, indexing, the agent, or system controls until it
-claims a short, single-use code.
+A LAN browser must pair before it can use Ollama chat or private APIs. A short,
+single-use code can grant `chat`, `read_private`, and `web`; private reads
+include authorized RAG, synchronized history, memory context, and host-backed
+files.
 
 1. In the host PWA, open **Settings → Paired device → Generate pairing code**.
 2. On the other device, open `https://HOST-LAN-IP:3334`, choose the existing
@@ -118,15 +136,21 @@ claims a short, single-use code.
 3. Return to the host PWA to review or revoke the device. Install the PWA from
    the browser menu if desired.
 
-The host PWA requests `chat,read_private,index,system,agent` so the paired
-browser can use the complete interface. For a least-privilege device, generate
-the code with `trinaxai pair start --scopes ...`; the CLI default is
-`chat,read_private`.
+Before opening the LAN URL, trust the public certificate shown by `trinaxai
+network`. The host installer can trust itself, but phones and tablets need a
+separate user-trusted CA/profile. Follow the [LAN pairing and HTTPS trust guide](../docs/NETWORK_PAIRING.md).
 
-The PWA keeps the bearer in `localStorage`, attaches it as
-`X-TrinaxAI-Device-Token`, shows the active device/scopes, and can revoke itself.
-This preserves the device identity across browser/PWA restarts; revocation or a
-remote wipe removes it locally. The host can review or revoke any device with
+Pairing never grants `index`, `system`, `agent`, or `agent_yolo`. Index and
+memory/configuration mutations, Agent workspace access, model management,
+lifecycle actions, factory reset, and management of other devices require
+opening `https://localhost:3334` on the host. Admin credentials and old device
+tokens containing retired scopes do not override this boundary. The CLI pairing
+default is `chat,read_private`.
+
+The PWA keeps new device credentials in an `HttpOnly; SameSite=Strict` cookie
+scoped to `/api/rag`, shows the active device/scopes, and can revoke itself. A
+legacy browser-stored bearer is sent only during the explicit `/v1/pairing/me`
+migration, then removed. The host can review or revoke any device with
 `trinaxai pair list` and `trinaxai pair revoke ID`. Pairing identifies a device,
 not a user account.
 
@@ -168,6 +192,12 @@ The frontend deliberately uses several storage layers:
 
 Offline support means the application shell and previously cached read-only responses can load. New AI responses, indexing, voice fallback, and uncached knowledge operations still require the local services to be reachable.
 
+## In-app documentation
+
+Open **Settings → Documentation** to read the bilingual guide without leaving the PWA. It covers the product overview, installation, configuration, models, indexing, Agent workspaces, Internet and research, files and collections, security, API basics, PWA installation, troubleshooting, and contributing.
+
+The in-app guide is intentionally task-oriented and safe to read from a phone. When an error offers **Open indexing**, **Retry**, **Start AI**, or **Open settings**, use that action first. The repository references remain authoritative for complete contracts and exact defaults: use the [troubleshooting guide](../docs/TROUBLESHOOTING.md), [API reference](../docs/API_REFERENCE.md), [configuration reference](../docs/CONFIGURATION.md), and [documentation hub](../docs/README.md) when integrating or operating the backend.
+
 ## Environment and certificates
 
 Frontend URL resolution lives in `src/lib/config.ts`. See the full [configuration reference](../docs/CONFIGURATION.md).
@@ -180,7 +210,7 @@ Frontend URL resolution lives in `src/lib/config.ts`. See the full [configuratio
 | `VITE_TRINAXAI_VISION_MODEL` | Fast vision model. |
 | `VITE_TRINAXAI_KEEP_ALIVE` | Direct-chat keep-alive default (optional; defaults to `10m` in the client). |
 
-The gateway loads `chat-pwa/certs/trinaxai-local.pfx` first, or `chat-pwa/certs/localhost-key.pem` plus `chat-pwa/certs/localhost.pem`. Certificate files are local secrets/artifacts and must not be committed. If the host changes LAN networks or receives a new IP, run `trinaxai network refresh` before using the PWA from another device.
+The gateway loads `chat-pwa/certs/trinaxai-local.pfx` first, or `chat-pwa/certs/localhost-key.pem` plus `chat-pwa/certs/localhost.pem`. Certificate files are local secrets/artifacts and must not be committed. Without those files, HTTP is allowed only on loopback; a non-loopback host fails closed unless `TRINAXAI_ALLOW_INSECURE_HTTP=1` is explicitly set for a trusted test network. If the host changes LAN networks or receives a new IP, run `trinaxai network refresh` before using the PWA from another device.
 
 ## System-control boundary
 
@@ -189,9 +219,9 @@ client-supplied proxy-identity headers and attaches a fresh HMAC-signed original
 peer to `/api/rag`. FastAPI only accepts that identity from loopback.
 `/api/ollama` has a fixed method/path allowlist, its own bounded rate window,
 and a cross-process inference lock. Chat/generation require `chat`; model pull
-and deletion require the stronger `system` capability. Private FastAPI reads as well as
-mutations require authorization. `/api/system/*` applies the same remote
-credential/capability boundary before invoking fixed lifecycle actions.
+and deletion require a real loopback peer. Private FastAPI reads require
+authorization, while host mutations require verified loopback provenance.
+`/api/system/*` is also loopback-only before invoking fixed lifecycle actions.
 
 Do not expose the gateway directly to the public Internet. Use a VPN or an
 authenticated TLS terminator, and keep both FastAPI and Ollama bound to loopback.
@@ -212,15 +242,15 @@ make test
 make readiness
 ```
 
-When changing UI text, add matching Spanish and English keys in `src/i18n/translations.ts`. When changing a response shape, update `src/lib/api.ts`, its parser tests, and the repository API reference together.
+When changing UI text, add matching Spanish and English keys in `src/i18n/translations.ts`. When changing a response shape, update the relevant `src/lib/api_*.ts` domain (and the `api.ts` facade if its public export changes), its parser tests, and the repository API reference together.
 
 ## Troubleshooting
 
 - **Backend appears offline:** open `/api/rag/health` through the PWA origin, then check `trinaxai doctor`.
 - **Ollama appears offline:** check `ollama list` and `/api/ollama/api/tags` through the PWA origin.
 - **Old UI after a build:** use the update prompt or unregister the service worker and clear site data in browser development tools.
-- **LAN device cannot use a protected feature:** pair it from the host and grant
-  the exact scope. Grant `system` only to a device that should control services;
-  do not distribute the admin token as a convenience workaround.
+- **LAN device cannot use a protected feature:** pair it from the host for
+  `chat`, `read_private`, or `web`. Perform indexing, Agent, model, device, and
+  system administration from `https://localhost:3334` on the host.
 - **Microphone fails:** verify browser permission and secure context, then inspect `/api/rag/v1/voice/capabilities`.
 - **HTTPS becomes HTTP:** generate/install local certificates; the gateway only enables HTTPS when certificate files exist.

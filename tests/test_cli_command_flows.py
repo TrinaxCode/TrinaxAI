@@ -103,6 +103,49 @@ def test_research_validates_and_renders_results(ui) -> None:
     assert research.run(SimpleNamespace(query="topic", collections=[], depth=1), client, ui, None) == 1
 
 
+def test_research_can_persist_a_public_exportable_session(monkeypatch, ui) -> None:
+    client = MagicMock()
+    client.research.return_value = {
+        "passes": 2,
+        "model": "general",
+        "answer": "answer",
+        "sources": [{"title": "Guide", "url": "https://example.test"}],
+        "api_key": "must-not-be-persisted",
+    }
+    rows: list[tuple[str, str, dict]] = []
+
+    class CapturingSession:
+        def __init__(self, name: str) -> None:
+            assert name == "research"
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def append(self, role: str, content: str, meta: dict) -> None:
+            rows.append((role, content, meta))
+
+    monkeypatch.setattr(research, "Session", CapturingSession)
+    assert (
+        research.run(SimpleNamespace(query="topic", collections=[], depth=2, session="research"), client, ui, None) == 0
+    )
+
+    assert rows == [
+        ("user", "topic", {"mode": "deep_research"}),
+        (
+            "assistant",
+            "answer",
+            {
+                "mode": "deep_research",
+                "research": {"passes": 2, "sources": [{"title": "Guide", "url": "https://example.test"}]},
+            },
+        ),
+    ]
+    assert any("https://example.test" in str(call.args[0]) for call in ui.info.call_args_list)
+
+
 @pytest.mark.parametrize("action", ["start", "stop", "status"])
 def test_watch_actions_report_state(action, ui) -> None:
     client = MagicMock()

@@ -47,10 +47,16 @@ def load_golden_set(path: str | Path) -> dict[str, Any]:
         if case_id in seen:
             raise ValueError(f"duplicate case id: {case_id}")
         seen.add(case_id)
-        expected = case.get("expected_sources") or []
+        expected = case.get("expected_sources", [])
         if not isinstance(expected, list) or not all(isinstance(item, str) for item in expected):
             raise ValueError(f"case {case_id} expected_sources must be a string array")
-        if bool(case.get("should_answer", True)) and not expected:
+        should_answer = case.get("should_answer", True)
+        if not isinstance(should_answer, bool):
+            raise ValueError(f"case {case_id} should_answer must be a boolean")
+        answer_contains = case.get("answer_contains", [])
+        if not isinstance(answer_contains, list) or not all(isinstance(item, str) for item in answer_contains):
+            raise ValueError(f"case {case_id} answer_contains must be a string array")
+        if should_answer and not expected:
             raise ValueError(f"answerable case {case_id} requires at least one expected source")
     return payload
 
@@ -69,9 +75,12 @@ def _looks_abstained(answer: str) -> bool:
         "no puedo determinar",
         "i don't know",
         "i do not know",
+        "unable to answer",
+        "do not have access",
         "not found in",
         "no evidence",
         "cannot determine",
+        "cannot provide",
     )
     return not text or any(marker in text for marker in markers)
 
@@ -124,6 +133,20 @@ def evaluate_results(
     if not k_values or any(k <= 0 for k in k_values):
         raise ValueError("k_values must contain positive integers")
     cases = golden.get("cases") or []
+    expected_ids = {str(case["id"]) for case in cases}
+    result_ids = {str(case_id) for case_id in results}
+    missing = sorted(expected_ids - result_ids)
+    unexpected = sorted(result_ids - expected_ids)
+    if missing or unexpected:
+        details = []
+        if missing:
+            details.append(f"missing: {', '.join(missing)}")
+        if unexpected:
+            details.append(f"unexpected: {', '.join(unexpected)}")
+        raise ValueError("results must contain exactly one entry per golden case (" + "; ".join(details) + ")")
+    invalid = sorted(str(case_id) for case_id, result in results.items() if not isinstance(result, dict))
+    if invalid:
+        raise ValueError(f"result entries must be JSON objects (invalid: {', '.join(invalid)})")
     evaluated = [_evaluate_case(case, results.get(str(case["id"]), {}), k_values) for case in cases]
     metric_names = [f"recall_at_{k}" for k in k_values] + [
         "reciprocal_rank",
@@ -142,12 +165,6 @@ def evaluate_results(
         and float(result["latency_ms"]) >= 0
     )
 
-    def percentile(fraction: float) -> float | None:
-        if not latencies:
-            return None
-        rank = max(0, math.ceil(fraction * len(latencies)) - 1)
-        return round(latencies[rank], 2)
-
     report = {
         "schema_version": 1,
         "dataset": golden.get("name") or "unnamed",
@@ -158,8 +175,15 @@ def evaluate_results(
     if latencies:
         report["performance"] = {
             "samples": len(latencies),
-            "latency_ms_p50": percentile(0.50),
-            "latency_ms_p95": percentile(0.95),
+            "latency_ms_p50": _percentile(latencies, 0.50),
+            "latency_ms_p95": _percentile(latencies, 0.95),
             "latency_ms_max": round(latencies[-1], 2),
         }
     return report
+
+
+def _percentile(latencies: list[float], fraction: float) -> float | None:
+    if not latencies:
+        return None
+    rank = max(0, math.ceil(fraction * len(latencies)) - 1)
+    return round(latencies[rank], 2)

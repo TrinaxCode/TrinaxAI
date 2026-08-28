@@ -52,7 +52,7 @@ def test_text_pdf_160_pages_finishes_with_page_progress(tmp_path, capsys) -> Non
 def test_corrupt_and_empty_pdf_fail_at_extraction(tmp_path) -> None:
     corrupt = tmp_path / "corrupt.pdf"
     corrupt.write_bytes(b"%PDF-not-a-real-document")
-    with pytest.raises(Exception):
+    with pytest.raises(Exception):  # noqa: B017 - parser implementations expose different failure types
         index._load_pdf_documents(str(corrupt))
 
     empty = tmp_path / "scanned.pdf"
@@ -228,9 +228,13 @@ async def test_cancel_stops_process_and_retry_requeues(tmp_path, monkeypatch) ->
     monkeypatch.setattr(system_service, "_persist_index_jobs_locked", lambda: None)
     monkeypatch.setattr(system_service.threading, "Thread", Thread)
     monkeypatch.setattr(system_service, "_external_indexer_pid", lambda: None)
-    with state.index_jobs_lock:
+    with state.index_dispatch_lock, state.index_jobs_lock:
         previous = state.index_jobs
+        previous_active = state.index_active_job_id
         state.index_jobs = {job["id"]: job}
+        state.index_active_job_id = None
+    previous_stopping = state.lifecycle_stopping.is_set()
+    state.lifecycle_stopping.clear()
     try:
         cancelled = await system_service.system_cancel_index_job(object(), job["id"])
         assert process.terminated is True
@@ -239,5 +243,10 @@ async def test_cancel_stops_process_and_retry_requeues(tmp_path, monkeypatch) ->
         assert retried["job"]["status"] == "indexing"
         assert retried["job"]["error"] == ""
     finally:
-        with state.index_jobs_lock:
+        with state.index_dispatch_lock, state.index_jobs_lock:
             state.index_jobs = previous
+            state.index_active_job_id = previous_active
+        if previous_stopping:
+            state.lifecycle_stopping.set()
+        else:
+            state.lifecycle_stopping.clear()

@@ -8,7 +8,9 @@ param(
   [switch]$NoStart,
   [switch]$LanSystem,
   [string]$InstallDir = "",
-  [ValidateSet("8gb", "16gb", "max", "ultra")]
+  [string]$SourceUrl = "",
+  [string]$SourceSha256 = "",
+  [ValidateSet("8gb", "16gb", "32gb", "64gb", "max", "ultra")]
   [string]$Profile = "",
   [ValidateSet("en", "es")]
   [string]$Language = ""
@@ -24,6 +26,10 @@ Run in PowerShell:
 $ErrorActionPreference = "Stop"
 if ([string]::IsNullOrWhiteSpace($Language)) { $Language = if ($env:TRINAXAI_LANG -match '^es') { 'es' } elseif ((Get-Culture).Name -match '^es') { 'es' } else { 'en' } }
 function T($English, $Spanish) { if ($Language -eq 'es') { return $Spanish }; return $English }
+$ReleaseVersion = if ($env:TRINAXAI_RELEASE_VERSION) { $env:TRINAXAI_RELEASE_VERSION } else { "1.2.0" }
+if ($ReleaseVersion -notmatch '^[0-9]+\.[0-9]+\.[0-9]+$') { throw "Invalid TrinaxAI release version: $ReleaseVersion" }
+$DefaultSourceArchiveName = "TrinaxAI-$ReleaseVersion.zip"
+$DefaultSourceArchiveUrl = "https://github.com/TrinaxCode/TrinaxAI/releases/download/v$ReleaseVersion/$DefaultSourceArchiveName"
 
 function Write-Step($Text) { Write-Host "`n=== $Text ===`n" -ForegroundColor Blue }
 function Write-Ok($Text) { Write-Host "  [OK] $Text" -ForegroundColor Green }
@@ -121,9 +127,11 @@ function Normalize-Profile($Value, $Fallback) {
     "16gb" { return "16gb" }
     "medium" { return "16gb" }
     "normal" { return "16gb" }
-    "max" { return "max" }
-    "high" { return "max" }
-    "ultra" { return "ultra" }
+    "32gb" { return "32gb" }
+    "max" { return "32gb" }
+    "high" { return "32gb" }
+    "64gb" { return "64gb" }
+    "ultra" { return "64gb" }
     default { return $Fallback }
   }
 }
@@ -171,13 +179,119 @@ function Invoke-DownloadFile($Url, $OutFile) {
     New-Item -ItemType Directory -Force -Path $Parent | Out-Null
   }
   try {
-    Invoke-WebRequest -Uri $Url -OutFile $OutFile -UseBasicParsing
+    Invoke-WebRequest -Uri $Url -OutFile $OutFile -UseBasicParsing -TimeoutSec 120
     return $true
   } catch {
     Write-Warn "Download failed: $Url"
     Write-Warn $_.Exception.Message
     return $false
   }
+}
+function Invoke-NativeChecked([string]$FilePath, [string[]]$Arguments, [string]$Label) {
+  & $FilePath @Arguments
+  $ExitCode = $LASTEXITCODE
+  if ($ExitCode -ne 0) { throw "$Label failed with exit code $ExitCode." }
+}
+function Get-ValidatedRemoteArchiveUrl([string]$Url) {
+  $Parsed = $null
+  if (-not [Uri]::TryCreate($Url, [UriKind]::Absolute, [ref]$Parsed)) {
+    throw "Source archive URL is not absolute: $Url"
+  }
+  if ($Parsed.Scheme -ne "https" -or $Parsed.UserInfo -or $Parsed.Query -or $Parsed.Fragment) {
+    throw "Source archive URL must be a plain HTTPS URL without credentials or query data."
+  }
+  return $Parsed.AbsoluteUri
+}
+function Get-SourceChecksum([string]$ManifestUrl, [string]$ArchiveName) {
+  $Manifest = Join-Path $env:TEMP ("trinaxai-checksums-" + [guid]::NewGuid().ToString("N"))
+  try {
+    if (-not (Invoke-DownloadFile $ManifestUrl $Manifest)) { throw "Could not download release checksums." }
+    $Line = Get-Content -LiteralPath $Manifest | Where-Object { $_ -match "\s$([regex]::Escape($ArchiveName))$" } | Select-Object -First 1
+    if (-not $Line -or $Line -notmatch '^\s*([0-9a-fA-F]{64})\s+') { throw "Release checksum is missing for $ArchiveName." }
+    return $Matches[1].ToLowerInvariant()
+  } finally {
+    Remove-Item -LiteralPath $Manifest -Force -ErrorAction SilentlyContinue
+  }
+}
+function Test-ZipArchiveEntries([string]$ArchivePath) {
+  Add-Type -AssemblyName System.IO.Compression.FileSystem
+  $Zip = [IO.Compression.ZipFile]::OpenRead($ArchivePath)
+  $Root = $null
+  $TotalBytes = 0L
+  try {
+    foreach ($Entry in $Zip.Entries) {
+      $Name = $Entry.FullName.Replace('\', '/')
+      if ([string]::IsNullOrWhiteSpace($Name) -or $Name.StartsWith('/') -or $Name -match '^[A-Za-z]:' -or $Name -match '(^|/)\.\.(/|$)' -or $Name -match '[\x00-\x1F]') {
+        throw "Unsafe ZIP archive entry: $Name"
+      }
+      $Parts = $Name.Split('/') | Where-Object { $_ }
+      if ($Parts.Count -eq 0) { continue }
+      if (-not $Root) { $Root = $Parts[0] }
+      if ($Parts[0] -ne $Root) { throw "ZIP archive contains multiple roots." }
+      if (-not $Name.EndsWith('/')) {
+        $TotalBytes += [int64]$Entry.Length
+        if ($TotalBytes -gt 2GB) { throw "ZIP archive is too large." }
+      }
+    }
+    if (-not $Root -or -not ($Zip.Entries | Where-Object { $_.FullName -eq "$Root/pyproject.toml" })) {
+      throw "ZIP archive does not contain a TrinaxAI source root."
+    }
+    return $Root
+  } finally {
+    $Zip.Dispose()
+  }
+}
+function Install-RemoteRepository([string]$Target) {
+  $TempRoot = Join-Path $env:TEMP ("trinaxai-" + [guid]::NewGuid().ToString("N"))
+  $Archive = Join-Path $TempRoot $DefaultSourceArchiveName
+  $RequestedSourceUrl = $DefaultSourceArchiveUrl
+  if ($env:TRINAXAI_SOURCE_URL) { $RequestedSourceUrl = $env:TRINAXAI_SOURCE_URL }
+  if ($SourceUrl) { $RequestedSourceUrl = $SourceUrl }
+  $SourceArchiveUrl = Get-ValidatedRemoteArchiveUrl $RequestedSourceUrl
+  $ExpectedChecksum = if ($SourceSha256) { $SourceSha256 } elseif ($env:TRINAXAI_SOURCE_SHA256) { $env:TRINAXAI_SOURCE_SHA256 } else { $null }
+  if (-not $ExpectedChecksum -and $RequestedSourceUrl -ne $DefaultSourceArchiveUrl) {
+    throw "TRINAXAI_SOURCE_URL or -SourceUrl requires a matching SHA-256 checksum."
+  }
+  if (-not $ExpectedChecksum) {
+    $ExpectedChecksum = Get-SourceChecksum "https://github.com/TrinaxCode/TrinaxAI/releases/download/v$ReleaseVersion/SHA256SUMS" $DefaultSourceArchiveName
+  }
+  if ($ExpectedChecksum -notmatch '^[0-9a-fA-F]{64}$') { throw "Source archive checksum must be a SHA-256 digest." }
+  try {
+    New-Item -ItemType Directory -Force -Path $TempRoot | Out-Null
+    if (-not (Invoke-DownloadFile $SourceArchiveUrl $Archive)) { throw "Could not download TrinaxAI source archive." }
+    $ActualChecksum = (Get-FileHash -Algorithm SHA256 -LiteralPath $Archive).Hash.ToLowerInvariant()
+    if ($ActualChecksum -ne $ExpectedChecksum.ToLowerInvariant()) { throw "Source archive checksum mismatch." }
+    $Root = Test-ZipArchiveEntries $Archive
+    $Extracted = Join-Path $TempRoot "extracted"
+    Expand-Archive -LiteralPath $Archive -DestinationPath $Extracted -Force
+    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $Target) | Out-Null
+    Move-Item -LiteralPath (Join-Path $Extracted $Root) -Destination $Target
+    "Managed by the TrinaxAI installer." | Set-Content -Encoding UTF8 (Join-Path $Target ".trinaxai-managed")
+  } finally {
+    Remove-Item -LiteralPath $TempRoot -Recurse -Force -ErrorAction SilentlyContinue
+  }
+}
+function Merge-EnvFileDefaults([string]$Path, [string[]]$Defaults) {
+  $Existing = @()
+  if (Test-Path -LiteralPath $Path -PathType Leaf) {
+    $Item = Get-Item -LiteralPath $Path
+    if (($Item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { throw "Refusing to follow a symbolic-link .env file." }
+    $Existing = @(Get-Content -LiteralPath $Path)
+  }
+  $Keys = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+  foreach ($Line in $Existing) {
+    if ($Line -match '^\s*([A-Za-z_][A-Za-z0-9_]*)=') { [void]$Keys.Add($Matches[1]) }
+  }
+  $Merged = [Collections.Generic.List[string]]::new()
+  $Existing | ForEach-Object { [void]$Merged.Add($_) }
+  foreach ($Default in $Defaults) {
+    if ($Default -match '^\s*([A-Za-z_][A-Za-z0-9_]*)=') {
+      if ($Keys.Add($Matches[1])) { [void]$Merged.Add($Default) }
+    } else {
+      [void]$Merged.Add($Default)
+    }
+  }
+  $Merged | Set-Content -Encoding UTF8 -LiteralPath $Path
 }
 function Test-OllamaInstallerSignature($InstallerPath) {
   try {
@@ -200,6 +314,7 @@ function Install-OllamaOfficial {
   if (Get-OllamaCommand) { return $true }
 
   $TempDir = Join-Path $env:TEMP "trinaxai-install"
+  Write-Host (T "The official Ollama installer will open automatically." "Se ha abierto el instalador oficial de Ollama.")
   Write-Host "  Installing Ollama with the official PowerShell installer..."
   try {
     $PowerShellExe = (Get-Command powershell.exe -ErrorAction SilentlyContinue).Source
@@ -452,8 +567,8 @@ if ($LocalRepo -and $InstallDirWasProvided) {
   $LocalRepoIsTarget = ([IO.Path]::GetFullPath($LocalRepo) -eq [IO.Path]::GetFullPath($InstallDir))
 }
 
-# Support the true one-command flow:
-#   irm https://raw.githubusercontent.com/TrinaxCode/TrinaxAI/main/install.ps1 | iex
+# Support the remote flow after downloading the script to a local file:
+#   $p = Join-Path $env:TEMP "TrinaxAI-1.2.0-installer.ps1"; Invoke-WebRequest -Uri "https://github.com/TrinaxCode/TrinaxAI/releases/download/v1.2.0/TrinaxAI-1.2.0-installer.ps1" -OutFile $p; Get-Content $p; & $p
 if (
   -not $LocalRepo -or
   -not (Test-Path (Join-Path $LocalRepo "pyproject.toml")) -or
@@ -465,15 +580,7 @@ if (
   }
   if (-not (Test-Path (Join-Path $Repo "pyproject.toml"))) {
     Write-Step "0/6 Download TrinaxAI"
-    $TempRoot = Join-Path $env:TEMP ("trinaxai-" + [guid]::NewGuid().ToString("N"))
-    $Archive = Join-Path $TempRoot "trinaxai.zip"
-    New-Item -ItemType Directory -Force -Path $TempRoot | Out-Null
-    Invoke-WebRequest -Uri "https://github.com/TrinaxCode/TrinaxAI/archive/refs/heads/main.zip" -OutFile $Archive -UseBasicParsing
-    Expand-Archive -LiteralPath $Archive -DestinationPath $TempRoot -Force
-    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $Repo) | Out-Null
-    Move-Item -LiteralPath (Join-Path $TempRoot "TrinaxAI-main") -Destination $Repo
-    Remove-Item -LiteralPath $TempRoot -Recurse -Force
-    "Managed by the TrinaxAI installer." | Set-Content -Encoding UTF8 (Join-Path $Repo ".trinaxai-managed")
+    Install-RemoteRepository -Target $Repo
   }
   $Forward = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", (Join-Path $Repo "install.ps1"), "-InstallDir", $Repo)
   if ($Interactive) { $Forward += "-Interactive" }
@@ -483,7 +590,8 @@ if (
   if ($NoAutostart) { $Forward += "-NoAutostart" }
   if ($NoAutoUpdate) { $Forward += "-NoAutoUpdate" }
   if ($NoStart) { $Forward += "-NoStart" }
-  if ($LanSystem) { $Forward += "-LanSystem" }
+  if ($SourceUrl) { $Forward += @("-SourceUrl", $SourceUrl) }
+  if ($SourceSha256) { $Forward += @("-SourceSha256", $SourceSha256) }
   if ($Profile) { $Forward += @("-Profile", $Profile) }
   if ($Language) { $Forward += @("-Language", $Language) }
   $PowerShellHost = try { (Get-Process -Id $PID).Path } catch { "powershell.exe" }
@@ -495,7 +603,7 @@ $Repo = $LocalRepo
 Set-Location $Repo
 
 $RamGb = [math]::Round((Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory / 1GB)
-$AutoProfile = if ($RamGb -ge 64) { "ultra" } elseif ($RamGb -ge 32) { "max" } elseif ($RamGb -le 8) { "8gb" } else { "16gb" }
+$AutoProfile = if ($RamGb -ge 64) { "64gb" } elseif ($RamGb -ge 32) { "32gb" } elseif ($RamGb -le 8) { "8gb" } else { "16gb" }
 if (-not $Profile) { $Profile = if ($env:TRINAXAI_PROFILE) { $env:TRINAXAI_PROFILE } else { $AutoProfile } }
 $Profile = Normalize-Profile $Profile $AutoProfile
 
@@ -506,17 +614,20 @@ Write-Host ""
 $Mode = ""
 if (-not $NonInteractive) { $Mode = Read-Host (T "Setup mode: Normal recommended or Advanced manual? [N/a]" "Modo de configuración: ¿Normal recomendado o Avanzado manual? [N/a]") }
 if ((-not $NonInteractive) -and $Mode -match "^[Aa]") {
-  Write-Host (T "  1) medium  Balanced default (about 16GB RAM)" "  1) medium  Equilibrado (aprox. 16 GB de RAM)")
-  Write-Host (T "  2) high    Stronger CPU / more RAM" "  2) high    CPU más potente / más RAM")
-  Write-Host (T "  3) ultra   64GB+ RAM + powerful GPU" "  3) ultra   64 GB+ de RAM + GPU potente")
-  Write-Host (T "  4) low     Low memory (about 8GB RAM)" "  4) low     Poca memoria (aprox. 8 GB de RAM)")
+  Write-Host (T "  1) 16gb    Balanced default (about 16GB RAM)" "  1) 16gb    Equilibrado (aprox. 16 GB de RAM)")
+  Write-Host (T "  2) 32gb    More RAM or a capable GPU" "  2) 32gb    Más RAM o una GPU capaz")
+  Write-Host (T "  3) 64gb    64GB+ RAM or powerful GPU" "  3) 64gb    64 GB+ de RAM o GPU potente")
+  Write-Host (T "  4) 8gb     Low memory (about 8GB RAM)" "  4) 8gb     Poca memoria (aprox. 8 GB de RAM)")
   $Choice = Read-Host (T "Choose profile [default: $Profile]" "Elige el perfil [por defecto: $Profile]")
   switch ($Choice) {
     "1" { $Profile = "16gb" }
     "medium" { $Profile = "16gb" }
-    "2" { $Profile = "max" }
-    "high" { $Profile = "max" }
-    "3" { $Profile = "ultra" }
+    "2" { $Profile = "32gb" }
+    "32gb" { $Profile = "32gb" }
+    "high" { $Profile = "32gb" }
+    "3" { $Profile = "64gb" }
+    "64gb" { $Profile = "64gb" }
+    "ultra" { $Profile = "64gb" }
     "4" { $Profile = "8gb" }
     "low" { $Profile = "8gb" }
   }
@@ -545,25 +656,25 @@ if ($Profile -eq "8gb") {
   $EmbedBatch = "1"
   $EmbedKeepAlive = "0s"
   $VisionModel = "qwen3.5:2b"
-} elseif ($Profile -eq "max") {
+} elseif ($Profile -eq "32gb") {
   $ModelGeneral = "qwen3.5:9b"
   $ModelCode = "qwen3.5:9b"
   $ModelDeep = "qwen3.5:9b"
-  $ModelFast = "qwen3.5:2b"
+  $ModelFast = "qwen3.5:4b"
   $VisionModel = "qwen3.5:9b"
   $EmbedPreset = "quality"
   $EmbedModel = "qwen3-embedding:4b"
   $EmbedDims = "2560"
   $EmbedKeepAlive = "30m"
-} elseif ($Profile -eq "ultra") {
+} elseif ($Profile -eq "64gb") {
   $ModelGeneral = "qwen3.5:35b"
   $ModelCode = "qwen3-coder:30b"
   $ModelDeep = "qwen3.5:35b"
   $ModelFast = "qwen3.5:4b"
   $VisionModel = "qwen3.5:35b"
-  $EmbedPreset = "max"
-  $EmbedModel = "qwen3-embedding:8b"
-  $EmbedDims = "4096"
+   $EmbedPreset = "quality"
+   $EmbedModel = "qwen3-embedding:4b"
+   $EmbedDims = "2560"
   $EmbedBatch = "16"
   $EmbedKeepAlive = "30m"
 }
@@ -590,37 +701,7 @@ $LanIp = (Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
   Where-Object { $_.IPAddress -match "^(192\.168|10\.|172\.(1[6-9]|2[0-9]|3[0-1]))" } |
   Select-Object -First 1 -ExpandProperty IPAddress)
 
-$EnableLanSystem = if ($env:TRINAXAI_ALLOW_LAN_SYSTEM) {
-  [int]$env:TRINAXAI_ALLOW_LAN_SYSTEM
-} elseif ($LanSystem) {
-  1
-} else {
-  0
-}
-$AdminToken = $env:TRINAXAI_ADMIN_TOKEN
-
-if ($EnableLanSystem -ne 1) {
-  Write-Host ""
-  Write-Host "Security option: LAN system control" -ForegroundColor Yellow
-  Write-Host "This allows devices on your local network to call sensitive system endpoints"
-  Write-Host "(shutdown, startup, reload, indexing, file watchers, collection management)."
-  Write-Host "Only enable this if you trust your local network and use a strong admin token."
-  if ($NonInteractive) {
-    Write-Host "  Default: disabled. Use -LanSystem to enable non-interactively." -ForegroundColor Cyan
-  }
-  if (Read-YesNo "Enable LAN system control?" $false) { $EnableLanSystem = 1 } else { $EnableLanSystem = 0 }
-}
-
-if ($EnableLanSystem -eq 1 -and [string]::IsNullOrWhiteSpace($AdminToken)) {
-  $TokenBytes = New-Object byte[] 32
-  [Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($TokenBytes)
-  $AdminToken = [BitConverter]::ToString($TokenBytes) -replace '-','' | ForEach-Object { $_.ToLower() }
-  if ([string]::IsNullOrWhiteSpace($AdminToken)) {
-    Write-Host "Could not generate admin token. Ensure .NET cryptography is available." -ForegroundColor Red
-    exit 1
-  }
-  Write-Ok "Admin token generated and saved to .env"
-}
+$EnableLanSystem = 0
 
 $Cors = "https://localhost:3334,http://localhost:3334,https://127.0.0.1:3334,http://127.0.0.1:3334,https://localhost:3335,http://localhost:3335,https://127.0.0.1:3335,http://127.0.0.1:3335"
 $Cors += ",https://$($env:COMPUTERNAME).local:3334,http://$($env:COMPUTERNAME).local:3334,https://$($env:COMPUTERNAME).local:3335,http://$($env:COMPUTERNAME).local:3335"
@@ -655,23 +736,22 @@ $EnvLines = @(
   "TRINAXAI_EMBED_KEEP_ALIVE=$EmbedKeepAlive",
   "VITE_TRINAXAI_VISION_MODEL=$VisionModel",
   "TRINAXAI_RERANK=0",
-  "TRINAXAI_ALLOW_LAN_SYSTEM=$EnableLanSystem",
-  "TRINAXAI_ADMIN_TOKEN=$AdminToken",
   "TRINAXAI_CORS_ORIGINS=$Cors",
-  "TRINAXAI_INDEX_DIR=`"$($env:USERPROFILE)\Documents`""
+  "TRINAXAI_INDEX_DIR=`"$Repo\local_sources`""
 )
-if ($Profile -eq "ultra") {
+if ($Profile -eq "64gb") {
   $EnvLines += @(
     "TRINAXAI_NUM_CTX=16384",
     "TRINAXAI_EMBED_WORKERS=6"
   )
-} elseif ($Profile -eq "max") {
+} elseif ($Profile -eq "32gb") {
   $EnvLines += @(
     "TRINAXAI_NUM_CTX=8192",
     "TRINAXAI_EMBED_WORKERS=4"
   )
 }
-$EnvLines | Set-Content -Encoding UTF8 ".env"
+Merge-EnvFileDefaults -Path ".env" -Defaults $EnvLines
+Set-EnvFileValue ".env" "TRINAXAI_ALLOW_LAN_SYSTEM" "0"
 Write-Ok ".env written with profile=$Profile"
 
 Write-Step "2/6 Dependencies"
@@ -703,7 +783,6 @@ if ($null -eq $PythonCommand) {
   $PythonExe = Invoke-Python -PythonCommand $PythonCommand -PythonArgs @("-c", "import sys; print(sys.executable)")
   Write-Ok "Python found: $($PythonExe | Select-Object -First 1)"
 }
-Require-Command "git" "Git.Git" "Git" "https://git-scm.com/download/win"
 Require-Command "node" "OpenJS.NodeJS.LTS" "Node.js" "https://nodejs.org"
 $NodeMajor = [int](& node -p "process.versions.node.split('.')[0]")
 if ($NodeMajor -lt 22) {
@@ -735,7 +814,11 @@ if (-not (Test-Path ".venv\Scripts\python.exe")) {
 }
 & ".\.venv\Scripts\python.exe" -m pip install --upgrade pip
 $RequirementsFile = if (Test-Path "requirements.lock") { "requirements.lock" } else { "requirements.txt" }
-& ".\.venv\Scripts\python.exe" -m pip install -r $RequirementsFile
+if ($RequirementsFile -eq "requirements.lock") {
+  & ".\.venv\Scripts\python.exe" -m pip install --require-hashes -r $RequirementsFile
+} else {
+  & ".\.venv\Scripts\python.exe" -m pip install -r $RequirementsFile
+}
 & ".\.venv\Scripts\python.exe" -m pip install -e .
 $VenvScripts = Join-Path $Repo ".venv\Scripts"
 Add-UserPath $VenvScripts
@@ -746,9 +829,12 @@ Write-Ok "CLI path configured for this user: $VenvScripts"
 Write-Step "4/6 PWA frontend"
 if ((Test-Cmd npm) -and (Test-Path "chat-pwa")) {
   Push-Location "chat-pwa"
-  npm install
-  npm run build
-  Pop-Location
+  try {
+    Invoke-NativeChecked "npm" @("ci") "npm ci"
+    Invoke-NativeChecked "npm" @("run", "build") "npm run build"
+  } finally {
+    Pop-Location
+  }
   Write-Ok "PWA ready"
 }
 
@@ -815,12 +901,6 @@ Write-Host "Updates:" -ForegroundColor Cyan
 Write-Host "  Automatic check every week"
 if ($LanIp) { Write-Host "  https://$($LanIp):3334" }
 Write-Host ""
-if ($EnableLanSystem -eq 1) {
-  Write-Host "  LAN system control: enabled" -ForegroundColor Yellow
-  Write-Host "  Admin token: saved in .env (TRINAXAI_ADMIN_TOKEN)" -ForegroundColor Yellow
-} else {
-  Write-Host "  LAN system control: disabled by default" -ForegroundColor Yellow
-  Write-Host "  To enable later: set TRINAXAI_ALLOW_LAN_SYSTEM=1 and TRINAXAI_ADMIN_TOKEN in .env" -ForegroundColor Yellow
-}
+Write-Host "  Sensitive system administration remains localhost-only." -ForegroundColor Yellow
 Write-Host ""
 Write-Ok "TrinaxAI setup finished"

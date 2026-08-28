@@ -8,17 +8,14 @@ from .shared_runtime import (
     CollectionUpdateRequest,
     HTTPException,
     Request,
-    StorageContext,
     _authorize_system,
+    _clear_index_runtime_caches,
     _collection_slug,
-    _index_process_lock,
+    _delete_indexed_collection,
     _read_collections_unlocked,
     _write_collections_unlocked,
-    atomic_write_json,
     build_engine,
     config,
-    json,
-    load_index_from_storage,
     os,
     run_in_threadpool,
     shutil,
@@ -27,56 +24,21 @@ from .shared_runtime import (
 )
 
 
-def _delete_collection_nodes_unlocked(collection_id: str) -> int:
-    if collection_id == config.DEFAULT_COLLECTION_ID:
-        raise HTTPException(status_code=400, detail="The default collection cannot be deleted.")
-    deleted_nodes = 0
-    if os.path.exists(os.path.join(config.PERSIST_DIR, "docstore.json")):
-        storage_context = StorageContext.from_defaults(persist_dir=config.PERSIST_DIR)
-        index = load_index_from_storage(storage_context)
-        node_ids = [
-            node_id
-            for node_id, node in index.docstore.docs.items()
-            if node.metadata.get("collection_id", config.DEFAULT_COLLECTION_ID) == collection_id
-        ]
-        if node_ids:
-            index.delete_nodes(node_ids, delete_from_docstore=True)
-            index.storage_context.persist(persist_dir=config.PERSIST_DIR)
-            deleted_nodes = len(node_ids)
-
-    try:
-        with open(config.MANIFEST_PATH, encoding="utf-8") as f:
-            manifest = json.load(f)
-        if isinstance(manifest, dict):
-            prefix = f"{collection_id}:"
-            trimmed = {k: v for k, v in manifest.items() if not str(k).startswith(prefix)}
-            if len(trimmed) != len(manifest):
-                atomic_write_json(config.MANIFEST_PATH, trimmed)
-    except (OSError, ValueError):
-        pass
-    shutil.rmtree(
-        os.path.join(config.LOCAL_SOURCES_DIR, "collections", collection_id),
-        ignore_errors=True,
-    )
-    return deleted_nodes
-
-
 def _delete_collection_nodes(collection_id: str) -> int:
-    with _index_process_lock():
-        deleted_nodes = _delete_collection_nodes_unlocked(collection_id)
-    build_engine()
-    return deleted_nodes
+    """Compatibility shim for callers of the legacy collection delete helper."""
+    return _delete_indexed_collection(collection_id)
 
 
 async def collections_get(request: Request):
-    """List all RAG collections, ensuring the default collection exists.
+    """List all RAG collections without mutating persistent state.
 
-    Lista todas las colecciones RAG, garantizando la colección por defecto.
+    Lista todas las colecciones RAG. Si aún no existe el archivo, el valor por
+    defecto se devuelve en memoria y se persiste cuando el usuario muta la
+    configuración.
     """
     _authorize_system(request)
     with state.collections_lock:
         collections = _read_collections_unlocked()
-        _write_collections_unlocked(collections)
     return {"ok": True, "collections": collections}
 
 
@@ -142,6 +104,12 @@ async def collections_delete(collection_id: str, request: Request):
     with state.collections_lock:
         collections = _read_collections_unlocked()
         _write_collections_unlocked([item for item in collections if item["id"] != collection_id])
+    _clear_index_runtime_caches()
+    shutil.rmtree(
+        os.path.join(config.LOCAL_SOURCES_DIR, "collections", collection_id),
+        ignore_errors=True,
+    )
+    await run_in_threadpool(build_engine)
     return {"ok": True, "deleted_nodes": deleted_nodes}
 
 

@@ -5,8 +5,10 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import platform
 import re
 import shutil
+import subprocess
 import sys
 import time
 import uuid
@@ -17,34 +19,472 @@ from urllib.parse import urlsplit
 
 VALID_PROFILES = frozenset(
     {
-        "4gb",
-        "4g",
         "8gb",
-        "8g",
         "16gb",
-        "max",
-        "high",
-        "ultra",
-        "gpu",
-        "64gb",
-        "64g",
-        "4090",
-        "rtx",
-        "workstation",
-        "max_quality",
-        "quality",
-        "potente",
         "32gb",
-        "32g",
-        "alto",
-        "low",
-        "min",
-        "minimo",
-        "lite",
-        "light",
-        "bajo",
+        "64gb",
     }
 )
+
+_GB = 1024**3
+_DECIMAL_GB = 10**9
+
+
+def normalize_profile(value: Any, *, fallback: str = "") -> str:
+    """Return one canonical profile, migrating persisted legacy values once."""
+    text = str(value or "").strip().lower()
+    legacy = {
+        bytes((109, 97, 120)).decode("ascii"): "32gb",
+        bytes((117, 108, 116, 114, 97)).decode("ascii"): "64gb",
+        bytes((108, 111, 119)).decode("ascii"): "8gb",
+    }
+    return legacy.get(text, text if text in VALID_PROFILES else fallback)
+
+
+def migrate_profile_env(path: str | os.PathLike[str], *, fallback: str = "") -> bool:
+    """Rewrite a legacy profile in a dotenv file and return whether it changed."""
+    target = Path(path)
+    try:
+        original = target.read_text(encoding="utf-8")
+    except OSError:
+        return False
+    lines = original.splitlines(keepends=True)
+    changed = False
+    for index, line in enumerate(lines):
+        match = re.match(r"^(\s*TRINAXAI_PROFILE\s*=\s*)([^#\r\n]*)(.*)$", line)
+        if not match:
+            continue
+        raw_field = match.group(2)
+        raw = raw_field.strip().strip("\"'")
+        migrated = normalize_profile(raw, fallback=fallback)
+        if migrated and migrated != raw:
+            leading = raw_field[: len(raw_field) - len(raw_field.lstrip())]
+            trailing = raw_field[len(raw_field.rstrip()) :]
+            newline = "\n" if line.endswith("\n") else ""
+            lines[index] = (
+                f"{match.group(1)}{leading}{migrated}{trailing}{match.group(3).rstrip(chr(10) + chr(13))}{newline}"
+            )
+            changed = True
+        break
+    if not changed:
+        return False
+    temporary = target.with_name(f".{target.name}.{uuid.uuid4().hex}.tmp")
+    try:
+        temporary.write_text("".join(lines), encoding="utf-8")
+        os.replace(temporary, target)
+    except OSError:
+        try:
+            temporary.unlink()
+        except OSError:
+            pass
+        return False
+    return True
+
+
+def load_hardware_profile(path: str | os.PathLike[str], *, fallback: str = "") -> dict[str, Any] | None:
+    """Load and migrate a persisted hardware profile without returning legacy data."""
+    try:
+        payload = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, TypeError, ValueError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+    raw_profile = str(payload.get("profile") or "").strip().lower()
+    profile = normalize_profile(raw_profile, fallback=fallback)
+    hardware = payload.get("hardware")
+    if not profile or not isinstance(hardware, dict):
+        return None
+    raw_detected = str(payload.get("detected_profile") or "").strip().lower()
+    detected_profile = normalize_profile(raw_detected, fallback=select_profile(hardware))
+    if profile != raw_profile or detected_profile != raw_detected:
+        save_hardware_profile(path, hardware, profile)
+    return {
+        "profile": profile,
+        "detected_profile": detected_profile,
+        "hardware": hardware,
+        "updated_at": payload.get("updated_at"),
+    }
+
+
+def _command_output(args: list[str], *, timeout: float = 1.5) -> str:
+    try:
+        result = subprocess.run(
+            args,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    return result.stdout.strip() if result.returncode == 0 else ""
+
+
+def _parse_size(value: Any, *, default_unit: str = "bytes") -> int | None:
+    if value is None:
+        return None
+    text = str(value).strip().replace(",", "")
+    match = re.search(r"(-?[0-9]+(?:\.[0-9]+)?)\s*(b|bytes|kib|kb|mib|mb|gib|gb|tib|tb)?", text, re.I)
+    if not match:
+        return None
+    number = float(match.group(1))
+    unit = (match.group(2) or default_unit).lower()
+    multipliers = {
+        "b": 1,
+        "bytes": 1,
+        "kib": 1024,
+        "kb": 1000,
+        "mib": 1024**2,
+        "mb": 1000**2,
+        "gib": 1024**3,
+        "gb": 1000**3,
+        "tib": 1024**4,
+        "tb": 1000**4,
+    }
+    return max(0, int(number * multipliers.get(unit, 1)))
+
+
+def _cpu_model() -> str:
+    if sys.platform.startswith("linux"):
+        try:
+            for line in Path("/proc/cpuinfo").read_text(encoding="utf-8", errors="replace").splitlines():
+                if (
+                    ":" in line
+                    and line.lower().split(":", 1)[0].strip() in {"model name", "hardware"}
+                    and line.split(":", 1)[1].strip()
+                ):
+                    return line.split(":", 1)[1].strip()
+        except OSError:
+            pass
+    if sys.platform == "darwin":
+        model = _command_output(["sysctl", "-n", "machdep.cpu.brand_string"])
+        if model:
+            return model
+    if os.name == "nt":
+        model = _command_output(
+            [
+                "powershell.exe",
+                "-NoProfile",
+                "-NonInteractive",
+                "-Command",
+                "(Get-CimInstance Win32_Processor | Select-Object -First 1 -ExpandProperty Name)",
+            ]
+        )
+        if model:
+            return model
+    return platform.processor() or platform.uname().processor or platform.machine() or "Unknown CPU"
+
+
+def _cpu_cores() -> int:
+    try:
+        import psutil
+
+        physical = psutil.cpu_count(logical=False)
+        if physical:
+            return max(1, int(physical))
+    except (ImportError, AttributeError, OSError):
+        pass
+    if sys.platform == "darwin":
+        raw = _command_output(["sysctl", "-n", "hw.physicalcpu"])
+        if raw.isdigit():
+            return max(1, int(raw))
+    return max(1, int(os.cpu_count() or 1))
+
+
+def _ram_bytes() -> int:
+    try:
+        import psutil
+
+        total = int(psutil.virtual_memory().total)
+        if total > 0:
+            return total
+    except (ImportError, AttributeError, OSError, TypeError, ValueError):
+        pass
+    if sys.platform.startswith("linux"):
+        try:
+            for line in Path("/proc/meminfo").read_text(encoding="ascii", errors="replace").splitlines():
+                if line.startswith("MemTotal:"):
+                    return int(line.split()[1]) * 1024
+        except (OSError, IndexError, ValueError):
+            pass
+    if sys.platform == "darwin":
+        raw = _command_output(["sysctl", "-n", "hw.memsize"])
+        if raw.isdigit():
+            return int(raw)
+    if os.name == "nt":
+        try:
+            import ctypes
+
+            class _MemoryStatus(ctypes.Structure):
+                _fields_ = [
+                    ("dwLength", ctypes.c_uint32),
+                    ("dwMemoryLoad", ctypes.c_uint32),
+                    ("ullTotalPhys", ctypes.c_uint64),
+                    ("ullAvailPhys", ctypes.c_uint64),
+                    ("ullTotalPageFile", ctypes.c_uint64),
+                    ("ullAvailPageFile", ctypes.c_uint64),
+                    ("ullTotalVirtual", ctypes.c_uint64),
+                    ("ullAvailVirtual", ctypes.c_uint64),
+                    ("ullAvailExtendedVirtual", ctypes.c_uint64),
+                ]
+
+            status = _MemoryStatus()
+            status.dwLength = ctypes.sizeof(status)
+            if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(status)):
+                return int(status.ullTotalPhys)
+        except (AttributeError, OSError, TypeError):
+            pass
+    return 0
+
+
+def _gpu(vendor: str, name: str, vram_bytes: int | None, *, unified_memory: bool = False) -> dict[str, Any]:
+    return {
+        "vendor": vendor,
+        "name": name.strip() or f"{vendor.title()} GPU",
+        "vram_bytes": vram_bytes if vram_bytes and vram_bytes > 0 else None,
+        "unified_memory": unified_memory,
+    }
+
+
+def _nvidia_gpus() -> list[dict[str, Any]]:
+    output = _command_output(
+        ["nvidia-smi", "--query-gpu=name,memory.total", "--format=csv,noheader,nounits"],
+        timeout=2.0,
+    )
+    gpus = []
+    for line in output.splitlines():
+        parts = [part.strip() for part in line.split(",", 1)]
+        if not parts or not parts[0]:
+            continue
+        vram = _parse_size(parts[1], default_unit="mib") if len(parts) > 1 else None
+        gpus.append(_gpu("nvidia", parts[0], vram))
+    return gpus
+
+
+def _windows_gpus() -> list[dict[str, Any]]:
+    command = "Get-CimInstance Win32_VideoController | Select-Object Name,AdapterRAM | ConvertTo-Json -Compress"
+    output = _command_output(["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", command])
+    if not output:
+        return []
+    try:
+        rows = json.loads(output)
+    except (TypeError, ValueError):
+        return []
+    if isinstance(rows, dict):
+        rows = [rows]
+    gpus = []
+    for row in rows if isinstance(rows, list) else []:
+        if not isinstance(row, dict) or not row.get("Name"):
+            continue
+        name = str(row["Name"])
+        lower = name.lower()
+        vendor = "nvidia" if "nvidia" in lower else "amd" if any(x in lower for x in ("amd", "radeon")) else "other"
+        vram = _parse_size(row.get("AdapterRAM"))
+        if vram in {4_294_967_295, 18_446_744_073_709_551_615}:
+            vram = None
+        gpus.append(_gpu(vendor, name, vram))
+    return gpus
+
+
+def _mac_gpus(*, apple_silicon: bool, ram_bytes: int) -> list[dict[str, Any]]:
+    output = _command_output(["system_profiler", "SPDisplaysDataType", "-json"], timeout=3.0)
+    try:
+        rows = json.loads(output).get("SPDisplaysDataType", [])
+    except (AttributeError, TypeError, ValueError):
+        rows = []
+    if isinstance(rows, dict):
+        rows = [rows]
+    gpus = []
+    for row in rows if isinstance(rows, list) else []:
+        if not isinstance(row, dict):
+            continue
+        name = str(row.get("sppci_model") or row.get("_name") or "")
+        vendor_text = str(row.get("spdisplays_vendor") or "").lower()
+        vendor = "apple" if apple_silicon or "apple" in vendor_text or "apple" in name.lower() else "other"
+        vram = None if vendor == "apple" else _parse_size(row.get("spdisplays_vram"))
+        gpus.append(_gpu(vendor, name, vram, unified_memory=vendor == "apple"))
+    if apple_silicon and not any(gpu["vendor"] == "apple" for gpu in gpus):
+        gpus.append(_gpu("apple", "Apple Silicon GPU", None, unified_memory=True))
+    return gpus
+
+
+def _linux_gpus() -> list[dict[str, Any]]:
+    vendor_names = {"0x10de": "nvidia", "0x1002": "amd", "0x8086": "other"}
+    gpus = []
+    for device in sorted(Path("/sys/class/drm").glob("card*/device")):
+        try:
+            vendor = vendor_names.get(device.joinpath("vendor").read_text().strip().lower())
+        except OSError:
+            continue
+        if not vendor:
+            continue
+        name = ""
+        for filename in ("product_name", "uevent"):
+            try:
+                text = device.joinpath(filename).read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                continue
+            match = re.search(r"(?:PRODUCT_NAME|PCI_ID|DRIVER)=([^\n]+)", text)
+            if match:
+                name = match.group(1).strip()
+                break
+        try:
+            vram = int(device.joinpath("mem_info_vram_total").read_text().strip())
+        except (OSError, ValueError):
+            vram = None
+        gpus.append(_gpu(vendor, name or f"{vendor.title()} GPU", vram))
+    if not gpus:
+        output = _command_output(["lspci", "-nn"], timeout=2.0)
+        for line in output.splitlines():
+            lower = line.lower()
+            if not any(kind in lower for kind in ("vga compatible", "3d controller", "display controller")):
+                continue
+            vendor = (
+                "nvidia"
+                if "nvidia" in lower
+                else "amd"
+                if any(x in lower for x in ("amd", "ati", "radeon"))
+                else "other"
+            )
+            gpus.append(_gpu(vendor, line.split(": ", 1)[-1], None))
+    return gpus
+
+
+def detect_hardware() -> dict[str, Any]:
+    """Detect the hardware needed to tune local Ollama inference."""
+    system = platform.system()
+    machine = platform.machine().lower()
+    ram_bytes = _ram_bytes()
+    if system == "Darwin":
+        gpus = _mac_gpus(apple_silicon=machine in {"arm64", "aarch64"}, ram_bytes=ram_bytes)
+    elif system == "Windows":
+        gpus = _nvidia_gpus() or _windows_gpus()
+    else:
+        gpus = _nvidia_gpus() or _linux_gpus()
+    unique = []
+    seen = set()
+    for gpu in gpus:
+        key = (gpu["vendor"], gpu["name"], gpu["vram_bytes"])
+        if key not in seen:
+            unique.append(gpu)
+            seen.add(key)
+    primary = max(
+        (gpu for gpu in unique if gpu["vendor"] in {"nvidia", "amd", "apple"}),
+        key=lambda gpu: gpu.get("vram_bytes") or (ram_bytes if gpu.get("unified_memory") else 0),
+        default=None,
+    )
+    primary = primary or (unique[0] if unique else _gpu("none", "No dedicated GPU", None))
+    return {
+        "platform": system.lower() or sys.platform,
+        "architecture": machine or "unknown",
+        "cpu": {"model": _cpu_model(), "cores": _cpu_cores()},
+        "ram": {"total_bytes": ram_bytes},
+        "gpu": primary,
+        "gpus": unique,
+    }
+
+
+def select_profile(hardware: dict[str, Any]) -> str:
+    # Hardware vendors label RAM in decimal GB; using GiB would misclassify a
+    # normal 16 GB machine as 8 GB because the OS reports roughly 14.9 GiB.
+    ram_gb = float(hardware.get("ram", {}).get("total_bytes") or 0) / _DECIMAL_GB
+    if ram_gb < 8:
+        return "8gb"
+    if ram_gb < 16:
+        return "8gb"
+    if ram_gb < 32:
+        return "16gb"
+    if ram_gb < 64:
+        return "32gb"
+    return "64gb"
+
+
+def _dedicated_vram_gb(hardware: dict[str, Any]) -> float:
+    gpus = hardware.get("gpus") or [hardware.get("gpu") or {}]
+    return max(
+        (
+            float(gpu.get("vram_bytes") or 0) / _GB
+            for gpu in gpus
+            if gpu.get("vendor") in {"nvidia", "amd"} and not gpu.get("unified_memory")
+        ),
+        default=0.0,
+    )
+
+
+def model_recommendations(hardware: dict[str, Any], *, profile: str | None = None) -> dict[str, Any]:
+    """Pick a small, known Ollama fleet using RAM and usable GPU memory."""
+    profile = profile if profile in VALID_PROFILES else select_profile(hardware)
+    ram_gb = float(hardware.get("ram", {}).get("total_bytes") or 0) / _DECIMAL_GB
+    gpu = hardware.get("gpu") or {}
+    vram_gb = _dedicated_vram_gb(hardware)
+    if vram_gb >= 12:
+        tier, reason = "qwen3.5:9b", "GPU con VRAM suficiente; el modelo cabe principalmente en VRAM."
+    elif vram_gb >= 8:
+        tier, reason = "qwen3.5:4b", "GPU capaz; se mantiene margen de VRAM para el sistema."
+    elif gpu.get("unified_memory") and profile == "64gb":
+        tier, reason = "qwen3.5:35b", "Memoria unificada abundante; se prioriza calidad en Apple Silicon."
+    elif gpu.get("unified_memory") and ram_gb >= 32:
+        tier, reason = "qwen3.5:9b", "Apple Silicon usa memoria unificada y puede compartir la RAM con Metal."
+    elif profile == "64gb":
+        tier, reason = "qwen3.5:35b", "RAM abundante; se prioriza calidad aunque la GPU sea débil."
+    elif profile == "32gb":
+        tier, reason = "qwen3.5:9b", "RAM suficiente para un modelo mayor en CPU/RAM."
+    elif profile == "16gb":
+        tier, reason = "qwen3.5:4b", "Equilibrio entre RAM disponible y latencia local."
+    else:
+        tier, reason = "qwen3.5:2b", "Se reserva memoria para el sistema y el embedder."
+    fast = "qwen3.5:4b" if tier in {"qwen3.5:9b", "qwen3.5:35b"} else "qwen3.5:2b"
+    code = "qwen3-coder:30b" if tier == "qwen3.5:35b" else tier
+    return {
+        "general": tier,
+        "code": code,
+        "deep": tier,
+        "fast": fast,
+        "reason": reason,
+        "profile": profile,
+        "gpu_vendor": gpu.get("vendor", "none"),
+        "gpu_vram_bytes": gpu.get("vram_bytes"),
+    }
+
+
+def recommended_ollama_gpu_layers(hardware: dict[str, Any]) -> int:
+    gpu = hardware.get("gpu") or {}
+    dedicated = hardware.get("gpus") or [gpu]
+    has_known_gpu = any(
+        item.get("vendor") in {"nvidia", "amd"} and item.get("vram_bytes") is not None
+        for item in dedicated
+        if isinstance(item, dict)
+    )
+    has_unknown_gpu = any(
+        item.get("vendor") in {"nvidia", "amd"} and item.get("vram_bytes") is None
+        for item in dedicated
+        if isinstance(item, dict)
+    )
+    if gpu.get("unified_memory") or has_unknown_gpu or has_known_gpu:
+        return 999  # Ollama clamps this to all layers that fit on the device.
+    return 0
+
+
+def save_hardware_profile(path: str | os.PathLike[str], hardware: dict[str, Any], profile: str) -> None:
+    """Persist the detected snapshot so Settings and diagnostics see one source of truth."""
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    temporary = target.with_name(f".{target.name}.{uuid.uuid4().hex}.tmp")
+    canonical = normalize_profile(profile, fallback=select_profile(hardware))
+    payload = {
+        "profile": canonical,
+        "detected_profile": select_profile(hardware),
+        "hardware": hardware,
+        "updated_at": time.time(),
+    }
+    try:
+        temporary.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        os.replace(temporary, target)
+    except OSError:
+        try:
+            temporary.unlink()
+        except OSError:
+            pass
 
 
 def normalize_http_base_url(value: Any, fallback: str = "") -> str:
@@ -63,7 +503,7 @@ def normalize_http_base_url(value: Any, fallback: str = "") -> str:
             and not any(char.isspace() for char in parsed.netloc)
         )
         if valid:
-            parsed.port  # Validate malformed ports while parsing.
+            _ = parsed.port  # Validate malformed ports while parsing.
     except ValueError:
         valid = False
     return text.rstrip("/") if valid else str(fallback).rstrip("/")
@@ -120,7 +560,6 @@ def _process_is_alive(pid: int) -> bool:
     except OSError:
         return False
     return True
-    return False
 
 
 @contextmanager
@@ -171,7 +610,7 @@ def exclusive_process_lock(
                     pass
                 continue
             if time.monotonic() >= deadline:
-                raise TimeoutError(f"Timed out waiting for process lock: {lock_dir}")
+                raise TimeoutError(f"Timed out waiting for process lock: {lock_dir}") from None
             time.sleep(max(0.01, poll_interval))
 
     try:

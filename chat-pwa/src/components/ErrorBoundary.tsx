@@ -1,19 +1,13 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react';
 import { motion } from 'framer-motion';
+import { translations, type Lang } from '../i18n/translations';
 
-const ES = {
-  title: 'No pudimos mostrar esta sección',
-  detail: 'Tus datos están seguros y el resto de TrinaxAI sigue disponible. Recarga para intentarlo de nuevo.',
-  reload: 'Recargar',
-};
-const EN = {
-  title: 'We could not display this section',
-  detail: 'Your data is safe and the rest of TrinaxAI remains available. Reload to try again.',
-  reload: 'Reload',
-};
-
-function lang(): 'es' | 'en' {
-  try { return localStorage.getItem('tc-lang') === 'en' ? 'en' : 'es'; } catch { return 'es'; }
+function lang(): Lang {
+  try {
+    const stored = localStorage.getItem('tc-lang');
+    if (stored === 'en' || stored === 'es') return stored;
+    return navigator.language?.slice(0, 2).toLowerCase() === 'es' ? 'es' : 'en';
+  } catch { return 'en'; }
 }
 
 interface Props { children: ReactNode; }
@@ -28,7 +22,7 @@ export default class ErrorBoundary extends Component<Props, State> {
   render() {
     if (this.state.hasError) {
       const isDark = document.documentElement.classList.contains('dark');
-      const strings = lang() === 'en' ? EN : ES;
+      const strings = translations[lang()];
       return (
         <motion.div
           initial={{ opacity: 0, scale: 0.96 }}
@@ -36,13 +30,13 @@ export default class ErrorBoundary extends Component<Props, State> {
           transition={{ duration: 0.3 }}
           className={`h-full flex flex-col items-center justify-center gap-4 px-6 text-center transition-colors duration-300 ${isDark ? 'bg-black' : 'bg-white'}`}
         >
-          <p className={`text-sm ${isDark ? 'text-white/50' : 'text-gray-500'}`}>{strings.title}</p>
-          <p className={`max-w-md text-xs ${isDark ? 'text-white/30' : 'text-gray-400'}`}>{strings.detail}</p>
+          <p className={`text-sm ${isDark ? 'text-white/50' : 'text-gray-500'}`}>{strings.errorBoundaryTitle}</p>
+          <p className={`max-w-md text-xs ${isDark ? 'text-white/30' : 'text-gray-400'}`}>{strings.errorBoundaryDetail}</p>
           <button
             onClick={() => { this.setState({ hasError: false, error: null }); window.location.reload(); }}
             className="px-4 py-2 rounded-xl bg-[#006bbd]/20 text-[#006bbd] text-sm hover:bg-[#006bbd]/30 transition-colors"
           >
-            {strings.reload}
+            {strings.errorBoundaryReload}
           </button>
         </motion.div>
       );

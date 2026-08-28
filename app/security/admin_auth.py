@@ -14,6 +14,7 @@ import secrets
 import threading
 import time
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from fastapi import HTTPException, Request
 
@@ -60,10 +61,21 @@ SAFE_DEFAULT_ORIGINS = (
     "http://127.0.0.1:3335",
     "http://localhost:5173",
 )
+SAFE_DEFAULT_ORIGIN_REGEX = r"https?://(?:localhost|127\.0\.0\.1|\[::1\]):(?:3334|3335)"
 
 ADMIN_TOKEN: str = os.getenv("TRINAXAI_ADMIN_TOKEN", "")
 
+DEVICE_TOKEN_COOKIE = "trinaxai-device-token"
+DEVICE_TOKEN_COOKIE_PATH = "/api/rag"
+
+# Retained only so old configuration readers do not break.  This value no
+# longer grants authority: host administration is always loopback-only.
 ALLOW_LAN_SYSTEM: bool = os.getenv("TRINAXAI_ALLOW_LAN_SYSTEM", "0").strip().lower() not in {"0", "false", "no", "off"}
+
+# These capabilities can mutate or execute against the host. Keep the
+# restriction here so every legacy caller of ``authorize_system`` shares the
+# same loopback boundary.
+LOCAL_ONLY_SCOPES = frozenset({"system", "index", "agent", "agent_yolo"})
 
 
 def _is_lan_client(host: str) -> bool:
@@ -276,7 +288,25 @@ def _client_host(request: Request) -> str:
     return client
 
 
-def _validate_browser_origin(request: Request) -> None:
+def _device_token(request: Request) -> str:
+    """Read the CLI header first, then the browser-only HttpOnly cookie."""
+    header = request.headers.get(DEVICE_TOKEN_HEADER, "")
+    header = header.strip() if isinstance(header, str) else ""
+    if header:
+        return header
+    cookie = request.cookies.get(DEVICE_TOKEN_COOKIE, "")
+    return cookie.strip() if isinstance(cookie, str) else ""
+
+
+def _is_local_browser_origin(origin: str) -> bool:
+    try:
+        parsed = urlsplit(origin)
+        return parsed.scheme in {"http", "https"} and parsed.hostname is not None and _is_local_client(parsed.hostname)
+    except ValueError:
+        return False
+
+
+def _validate_browser_origin(request: Request, *, require_local: bool = False) -> None:
     origin = request.headers.get("Origin", "").strip()
     if not origin:
         return
@@ -287,10 +317,12 @@ def _validate_browser_origin(request: Request) -> None:
     }
     pattern = os.getenv(
         "TRINAXAI_CORS_ORIGIN_REGEX",
-        r"https?://(localhost|127\.0\.0\.1|10\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+|172\.(1[6-9]|2\d|3[0-1])\.\d+\.\d+):(3334|3335)",
+        SAFE_DEFAULT_ORIGIN_REGEX,
     )
     if origin not in allowed and not re.fullmatch(pattern, origin):
         raise HTTPException(status_code=403, detail="Untrusted browser origin.")
+    if require_local and not _is_local_browser_origin(origin):
+        raise HTTPException(status_code=403, detail="Host administration requires a loopback browser origin.")
 
 
 def required_scopes_for_request(request: Request) -> tuple[str, ...]:
@@ -318,8 +350,19 @@ def required_scopes_for_request(request: Request) -> tuple[str, ...]:
         return ("index",) if method == "DELETE" else ("read_private",)
     if path == "/app-state" and method == "DELETE":
         return ("system",)
-    if path.startswith(("/app-state", "/attachments", "/v1/memory", "/v1/stats")):
+    if path.startswith("/attachments"):
+        if method == "DELETE" or path.endswith("/open"):
+            return ("system",)
         return ("read_private",)
+    if path.startswith("/v1/memory"):
+        read_only_memory = method == "GET" or (method == "POST" and path.endswith("/context"))
+        return ("read_private",) if read_only_memory else ("system",)
+    if path.startswith(("/app-state", "/v1/stats")):
+        return ("read_private",)
+    if path.startswith("/v1/settings/web-search"):
+        return ("system",)
+    if path.startswith("/v1/settings"):
+        return ("system",)
     if path.startswith("/v1/usage"):
         return ("chat",)
     if path.startswith(("/v1/chat", "/v1/research", "/v1/voice", "/documents")):
@@ -338,27 +381,39 @@ def authorize_scope(
     required_scope: str,
     *,
     allow_local: bool = True,
-    allow_legacy_lan_system: bool = False,
 ) -> None:
     """Authorize one device scope, an administrator, or a safe local peer."""
     client_ip = _client_host(request)
     admin_token = request.headers.get("X-Admin-Token", "")
-    device_token = request.headers.get(DEVICE_TOKEN_HEADER, "")
+    device_token = _device_token(request)
 
-    _validate_browser_origin(request)
+    _validate_browser_origin(request, require_local=required_scope in LOCAL_ONLY_SCOPES)
+    valid_admin = False
     if admin_token:
         if _valid_admin_token(request):
-            request.state.trinaxai_identity = {"kind": "admin", "scopes": ["*"]}
-            return
-        raise HTTPException(status_code=403, detail="Invalid admin token.")
+            valid_admin = True
+        else:
+            raise HTTPException(status_code=403, detail="Invalid admin token.")
+    if required_scope in LOCAL_ONLY_SCOPES:
+        if not _is_local_client(client_ip):
+            raise HTTPException(
+                status_code=403,
+                detail="This operation is available only from the TrinaxAI localhost host.",
+            )
+        request.state.trinaxai_identity = {
+            "kind": "admin" if valid_admin else "local",
+            "scopes": ["*"],
+        }
+        return
+    if valid_admin:
+        request.state.trinaxai_identity = {"kind": "admin", "scopes": ["*"]}
+        return
     if device_token:
         device = authenticate_device_token(device_token, required_scope)
         if device is not None:
             request.state.trinaxai_identity = {"kind": "device", **device}
             return
-        # Web search is a low-risk scope available to any browser on the
-        # owner's LAN.  A device token that lacks the "web" scope should
-        # not block LAN access; fall through to the network checks below.
+        # A device token without the requested web scope must not gain access.
         if required_scope != "web":
             raise HTTPException(
                 status_code=403,
@@ -366,21 +421,6 @@ def authorize_scope(
             )
     if allow_local and _is_local_client(client_ip):
         request.state.trinaxai_identity = {"kind": "local", "scopes": ["*"]}
-        return
-    # Web-only research contains no private TrinaxAI data and is available to
-    # browsers on the owner's LAN. The research service separately prevents
-    # this scope from including the local knowledge index.
-    if required_scope == "web" and _is_lan_client(client_ip):
-        request.state.trinaxai_identity = {"kind": "lan", "scopes": ["web"]}
-        return
-    if (
-        allow_legacy_lan_system
-        and required_scope == "system"
-        and not ADMIN_TOKEN
-        and ALLOW_LAN_SYSTEM
-        and _is_lan_client(client_ip)
-    ):
-        request.state.trinaxai_identity = {"kind": "legacy_lan", "scopes": ["system"]}
         return
     if ADMIN_TOKEN:
         detail = f"Remote access requires X-Admin-Token or a paired device with the {required_scope} scope."
@@ -406,11 +446,11 @@ def authorize_lan_or_scope(request: Request, scope: str) -> None:
     data. Supplied credentials are still validated so an invalid/revoked token
     cannot silently fall back to anonymous LAN access.
     """
-    if request.headers.get("X-Admin-Token") or request.headers.get(DEVICE_TOKEN_HEADER):
+    if request.headers.get("X-Admin-Token") or _device_token(request):
         authorize_scope(request, scope)
         return
     client_ip = _client_host(request)
-    _validate_browser_origin(request)
+    _validate_browser_origin(request, require_local=scope in LOCAL_ONLY_SCOPES)
     if not _is_lan_client(client_ip):
         raise HTTPException(
             status_code=403,
@@ -431,20 +471,10 @@ def require_lan_or_scope(scope: str):
 def authorize_system(request: Request) -> None:
     """Compatibility authorization using the request's least privilege.
 
-    When ADMIN_TOKEN is set:
-      - Requests with the correct X-Admin-Token header are allowed.
-      - Localhost remains usable without a token.
-      - Every non-local request must provide the token, even when LAN system
-        access is enabled.
-
-    When ADMIN_TOKEN is NOT set:
-      - Localhost requests are always allowed.
-      - LAN access is allowed only when TRINAXAI_ALLOW_LAN_SYSTEM is enabled.
+    Administrative scopes are authorized only for the verified original
+    loopback peer.  Remote credentials can grant only explicitly remote-safe
+    scopes such as chat, web search, and private reads.
     """
     required = required_scopes_for_request(request)
     for scope in required:
-        authorize_scope(
-            request,
-            scope,
-            allow_legacy_lan_system=scope == "system",
-        )
+        authorize_scope(request, scope)

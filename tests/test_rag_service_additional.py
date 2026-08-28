@@ -5,10 +5,29 @@ from types import SimpleNamespace
 
 import pytest
 from fastapi import HTTPException
+from starlette.requests import Request
 
 import config
 from app.schemas import ChatRequest
 from app.services import rag_service
+
+
+def _local_request() -> Request:
+    request = Request(
+        {
+            "type": "http",
+            "method": "POST",
+            "path": "/v1/chat/completions",
+            "raw_path": b"/v1/chat/completions",
+            "query_string": b"",
+            "scheme": "https",
+            "server": ("localhost", 3333),
+            "client": ("127.0.0.1", 50000),
+            "headers": [],
+        }
+    )
+    request.state.request_id = "request-1"
+    return request
 
 
 def test_knowledge_collection_state_distinguishes_missing_empty_and_ready(monkeypatch) -> None:
@@ -59,8 +78,9 @@ def test_cancel_ollama_is_best_effort(monkeypatch) -> None:
 
 
 def test_project_detection_and_catalog_answer_use_metadata(monkeypatch) -> None:
-    monkeypatch.setattr(rag_service.state, "known_projects", ["AI", "Aurora Platform"])
+    monkeypatch.setattr(rag_service.state, "known_projects", ["AI", "Aurora Platform", "test-documents"])
     assert rag_service.detect_project("Explain Aurora Platform") == "Aurora Platform"
+    assert rag_service.detect_project("What is in my indexed documents?") is None
     assert rag_service.detect_project("Explain an unrelated topic") is None
 
     docs = {
@@ -79,13 +99,18 @@ def test_project_detection_and_catalog_answer_use_metadata(monkeypatch) -> None:
             }
         ),
         "other": SimpleNamespace(metadata={"collection_id": "other", "rel_path": "secret.md"}),
+        "legacy": SimpleNamespace(
+            metadata={"collection_id": "docs", "file_path": "/home/private/legacy.md"},
+        ),
     }
     monkeypatch.setattr(rag_service.state, "index_docstore", SimpleNamespace(docs=docs))
 
     answer = rag_service._catalog_answer(["docs"], spanish=False)
     assert "Projects: Aurora" in answer
-    assert "- docs: 1 file(s)" in answer
+    assert "- docs: 2 file(s)" in answer
     assert "secret.md" not in answer
+    assert "legacy.md" in answer
+    assert "/home/private/legacy.md" not in answer
 
     monkeypatch.setattr(rag_service.state, "index_docstore", SimpleNamespace(docs={}))
     assert rag_service._catalog_answer(["docs"], spanish=True) == rag_service.EMPTY_COLLECTION_MSG
@@ -130,6 +155,29 @@ def test_cached_retrieval_filters_project_reranks_and_caches(monkeypatch) -> Non
     assert rag_service.state.retrieval_cache
 
 
+def test_cached_retrieval_prioritizes_exact_identifiers(monkeypatch) -> None:
+    noise = SimpleNamespace(metadata={}, score=0.9, get_content=lambda: "unrelated text")
+    exact = SimpleNamespace(
+        metadata={},
+        score=0.1,
+        get_content=lambda: "marker TRINAXAI_RAG_ROUND2_MARKER_84721",
+    )
+    retriever = SimpleNamespace(retrieve=lambda _query: [noise, exact])
+    monkeypatch.setattr(rag_service, "_retriever_for_collections", lambda _collections: retriever)
+    monkeypatch.setattr(rag_service.state, "reranker", None)
+    monkeypatch.setattr(config, "RETRIEVAL_CACHE_SECONDS", 0)
+    monkeypatch.setattr(config, "SIMILARITY_TOP_K", 2)
+
+    nodes = rag_service._cached_retrieve(
+        "What is TRINAXAI_RAG_ROUND2_MARKER_84721?",
+        "What is TRINAXAI_RAG_ROUND2_MARKER_84721?",
+        None,
+        None,
+    )
+
+    assert nodes == [exact]
+
+
 def test_text_response_deliverables_relevance_and_sources_are_stable() -> None:
     response = rag_service._TextResponse(gen=iter(["one", "two"]))
     assert response.response == "onetwo"
@@ -170,12 +218,16 @@ def test_text_response_deliverables_relevance_and_sources_are_stable() -> None:
         }
     ]
 
+    node.metadata["rel_path"] = r"C:\private\secret.md"
+    legacy_sources = rag_service.sources_payload([node])
+    assert legacy_sources[0]["file"] == "secret.md"
+
 
 @pytest.mark.asyncio
 async def test_empty_knowledge_collection_returns_complete_stream_and_json(monkeypatch) -> None:
     monkeypatch.setattr(rag_service, "enforce_rate_limit", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(rag_service, "_knowledge_collection_state", lambda _collections: "empty")
-    request = SimpleNamespace(state=SimpleNamespace(request_id="request-1"))
+    request = _local_request()
 
     stream = await rag_service.chat(
         ChatRequest(
@@ -203,3 +255,4 @@ async def test_empty_knowledge_collection_returns_complete_stream_and_json(monke
     )
     assert result["choices"][0]["message"]["content"] == rag_service.EMPTY_COLLECTION_MSG
     assert result["trinaxai"]["result_count"] == 0
+    assert result["trinaxai"]["abstained"] is True

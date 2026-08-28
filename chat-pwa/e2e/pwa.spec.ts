@@ -25,7 +25,6 @@ test('configures web search without exposing provider secrets', async ({ page })
     json: { ok: true, provider: 'duckduckgo', result_count: 1 },
   }));
   await page.goto('/#/settings/web-search');
-  await expect(page.locator('.animate-intro-logo')).toHaveCount(0, { timeout: 10_000 });
   await expect(page.getByLabel('Preferred search engine')).toHaveValue('duckduckgo');
   await expect(page.locator('input[type="password"]')).toHaveCount(0);
   await page.getByRole('button', { name: 'Test connection' }).click();

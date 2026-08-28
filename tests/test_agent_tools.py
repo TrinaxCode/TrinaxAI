@@ -39,6 +39,21 @@ def test_glob_is_root_only_unless_recursive_pattern_is_explicit(tmp_path: Path) 
     assert "src/nested.py" in _glob(tmp_path, "**/*.py").replace("\\", "/")
 
 
+def test_directory_tools_do_not_disclose_symlink_entries(tmp_path: Path) -> None:
+    outside = tmp_path.parent / f"{tmp_path.name}-outside"
+    outside.mkdir()
+    (outside / "secret.txt").write_text("secret", encoding="utf-8")
+    try:
+        (tmp_path / "linked.txt").symlink_to(outside / "secret.txt")
+        (tmp_path / "linked-dir").symlink_to(outside, target_is_directory=True)
+    except OSError:
+        pytest.skip("symlinks are unavailable")
+
+    assert "linked.txt" not in _list_dir(tmp_path)
+    assert "linked.txt" not in _glob(tmp_path, "**/*.txt")
+    assert "secret.txt" not in _glob(tmp_path, "linked-dir/*.txt")
+
+
 def test_grep_marks_bounded_results(tmp_path: Path) -> None:
     for index in range(110):
         (tmp_path / f"file-{index}.txt").write_text("needle\n", encoding="utf-8")
@@ -73,6 +88,10 @@ def test_tool_sandbox_file_edges_and_safe_messages(tmp_path: Path) -> None:
     assert "no matches" in _grep(tmp_path, "absent")
     with pytest.raises(SandboxError):
         _glob(tmp_path, "../*.py")
+
+    (tmp_path / "hola_mundo.py").write_text("print('hola')\n", encoding="utf-8")
+    assert "print('hola')" in _read_file(tmp_path, f"{tmp_path.name}/hola_mundo.py")
+    assert "hola_mundo.py" in _list_dir(tmp_path, f"{tmp_path.name}/")
 
     safe = format_tool_failure("search/tool", "api_key=secret", external=False)
     assert is_degraded_tool_result(safe)

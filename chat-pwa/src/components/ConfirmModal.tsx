@@ -11,6 +11,7 @@ interface ConfirmModalProps {
   confirmLabel?: string;
   cancelLabel?: string;
   danger?: boolean;
+  confirmDisabled?: boolean;
   showCancel?: boolean;
   children?: React.ReactNode;
   onConfirm: () => void;
@@ -19,7 +20,7 @@ interface ConfirmModalProps {
 
 export default function ConfirmModal({
   open, title, message, confirmLabel, cancelLabel,
-  danger = false, showCancel = true, children, onConfirm, onCancel,
+  danger = false, confirmDisabled = false, showCancel = true, children, onConfirm, onCancel,
 }: ConfirmModalProps) {
   const { isDark } = useTheme();
   const { t } = useI18n();
@@ -34,11 +35,6 @@ export default function ConfirmModal({
 
   // Focus trap: cycle focus within modal on Tab / Shift+Tab.
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
-    if (e.key === 'Escape') {
-      e.preventDefault();
-      onCancel();
-      return;
-    }
     if (e.key !== 'Tab') return;
     const focusable = dialogRef.current?.querySelectorAll<HTMLElement>(
       'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
@@ -57,7 +53,7 @@ export default function ConfirmModal({
         first.focus();
       }
     }
-  }, [onCancel]);
+  }, []);
 
   // Keep the background out of both pointer and accessibility navigation while
   // the portal is open, then return focus to the control that launched it.
@@ -67,6 +63,12 @@ export default function ConfirmModal({
       ? document.activeElement
       : null;
     const timer = window.setTimeout(() => (showCancel ? cancelRef.current : confirmRef.current)?.focus(), 50);
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      onCancel();
+    };
+    document.addEventListener('keydown', handleEscape);
     const portalRoot = dialogRef.current?.closest('[data-confirm-modal-root]');
     const siblings = Array.from(document.body.children)
       .filter((element): element is HTMLElement => element instanceof HTMLElement && element !== portalRoot)
@@ -81,6 +83,7 @@ export default function ConfirmModal({
     });
     return () => {
       window.clearTimeout(timer);
+      document.removeEventListener('keydown', handleEscape);
       siblings.forEach(({ element, inert, ariaHidden }) => {
         element.inert = inert;
         if (ariaHidden === null) element.removeAttribute('aria-hidden');
@@ -88,7 +91,7 @@ export default function ConfirmModal({
       });
       window.requestAnimationFrame(() => previousFocusRef.current?.focus());
     };
-  }, [open]);
+  }, [open, onCancel, showCancel]);
 
   if (typeof document === 'undefined') return null;
 
@@ -135,7 +138,8 @@ export default function ConfirmModal({
               <button
                 ref={confirmRef}
                 onClick={onConfirm}
-                className={`${showCancel ? 'flex-1' : 'w-full'} py-2.5 rounded-xl text-sm font-medium transition-[background-color,color,transform] active:scale-95 ${
+                disabled={confirmDisabled}
+                className={`${showCancel ? 'flex-1' : 'w-full'} py-2.5 rounded-xl text-sm font-medium transition-[background-color,color,transform] active:scale-95 disabled:opacity-40 ${
                   danger
                     ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30'
                     : 'bg-[#006bbd] text-white hover:bg-[#0059a0]'

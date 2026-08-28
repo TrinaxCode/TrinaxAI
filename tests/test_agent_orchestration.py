@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import queue
 from contextlib import contextmanager
 from types import SimpleNamespace
 from unittest.mock import MagicMock
@@ -54,6 +55,40 @@ def test_optional_agent_tools_return_grounded_results_and_degrade_cleanly(monkey
     assert "https://example.test/source" in research
 
 
+def test_agent_tool_list_uses_live_scopes_and_services(monkeypatch) -> None:
+    private_web = SimpleNamespace(state=SimpleNamespace(trinaxai_identity={"scopes": ["agent"]}))
+    request = AgentRequest(messages=[{"role": "user", "content": "compare sources"}])
+    monkeypatch.setattr(agent_service.state, "fusion_retriever", MagicMock())
+    monkeypatch.setattr(agent_service.config, "WEB_SEARCH_PROVIDER", "auto")
+
+    restricted = agent_service._agent_tools(
+        available_names=agent_service._available_agent_tool_names(request, private_web),
+    )
+    restricted_names = {tool.name for tool in restricted}
+    assert "read_file" in restricted_names
+    assert {"search_memory", "search_knowledge", "web_search", "deep_research"}.isdisjoint(restricted_names)
+
+    # Legacy LAN credentials with the retired host-only agent scope must not
+    # make the HTTP agent reachable; the route authorizer rejects them first.
+    assert agent_service._available_agent_tool_names(request, private_web) == {
+        tool.name for tool in agent_service.DEFAULT_TOOLS
+    }
+
+    full = SimpleNamespace(state=SimpleNamespace(trinaxai_identity={"scopes": ["agent", "read_private", "web"]}))
+    available = agent_service._agent_tools(
+        available_names=agent_service._available_agent_tool_names(request, full),
+    )
+    assert {"search_memory", "search_knowledge", "list_collections", "web_search", "deep_research"}.issubset(
+        {tool.name for tool in available}
+    )
+
+    monkeypatch.setattr(agent_service.config, "WEB_SEARCH_PROVIDER", "disabled")
+    disabled_web = agent_service._agent_tools(
+        available_names=agent_service._available_agent_tool_names(request, full),
+    )
+    assert {"web_search", "deep_research"}.isdisjoint({tool.name for tool in disabled_web})
+
+
 def test_agent_worker_emits_tool_activity_tokens_and_completion(monkeypatch, tmp_path) -> None:
     session_id, session = agent_service._register_session()
     tool = Tool(
@@ -89,8 +124,38 @@ def test_agent_worker_emits_tool_activity_tokens_and_completion(monkeypatch, tmp
             break
         events.append(event)
     assert [event["type"] for event in events] == ["tool_start", "tool_result", "token", "done"]
+    assert events[-1]["finish_reason"] == "stop"
+    assert events[-1]["completion_status"] == "complete"
     assert session["steps"] == 1
     agent_service._drop_session(session_id)
+
+
+def test_terminal_done_survives_a_full_session_queue(monkeypatch) -> None:
+    monkeypatch.setattr(agent_service, "_AGENT_QUEUE_MAXSIZE", 4)
+    session_id, session = agent_service._register_session()
+    try:
+        for index in range(session["queue"].maxsize):
+            assert agent_service._queue_event(session, {"type": "token", "content": str(index)})
+
+        assert agent_service._queue_event(
+            session,
+            {"type": "done", "answer": "complete", "finish_reason": "stop", "completion_status": "complete"},
+            terminal=True,
+        )
+
+        events = []
+        while True:
+            try:
+                event = session["queue"].get_nowait()
+            except queue.Empty:
+                break
+            if event is not None:
+                events.append(event)
+        assert events == [
+            {"type": "done", "answer": "complete", "finish_reason": "stop", "completion_status": "complete"}
+        ]
+    finally:
+        agent_service._drop_session(session_id)
 
 
 def test_agent_event_stream_runs_worker_and_cleans_session(monkeypatch, tmp_path) -> None:

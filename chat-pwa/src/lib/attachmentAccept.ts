@@ -4,6 +4,25 @@
  * document filter contains no image types, so that action opens Files.
  */
 export const IMAGE_FILE_ACCEPT = 'image/*';
+export const MAX_ATTACHMENTS_PER_TYPE = 3;
+
+export function appendAttachmentSelection<T>(current: T[], selected: T[], limit = MAX_ATTACHMENTS_PER_TYPE): T[] {
+  return [...current, ...selected].slice(0, Math.max(0, limit));
+}
+
+export function filesFromDataTransfer(data: DataTransfer | null): File[] {
+  if (!data) return [];
+  const files = Array.from(data.files);
+  if (files.length) return files;
+  return Array.from(data.items)
+    .filter((item) => item.kind === 'file')
+    .map((item) => item.getAsFile())
+    .filter((file): file is File => Boolean(file));
+}
+
+export function imageFilesFrom(files: File[]): File[] {
+  return files.filter((file) => file.type.toLowerCase().startsWith('image/'));
+}
 
 export const DOCUMENT_FILE_ACCEPT = [
   '.pdf', '.doc', '.docx', '.ppt', '.pptx', '.xls', '.xlsx',

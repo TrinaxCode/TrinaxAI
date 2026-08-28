@@ -40,7 +40,7 @@ BANNER_ART_NARROW = r"""
   |_||_| |_|_||_\__,_/_\_\__,_|_|  \___/|_||_|
 """.strip("\n")
 
-TAGLINE = "Local-first AI in your terminal · chat · search · research · agent"
+TAGLINE = "Local-first AI in your terminal | chat | search | research | agent"
 
 # Shared brand palette. TrinaxAI speaks in blue everywhere; the user gets a
 # contrasting accent so the two are never confused in the transcript.
@@ -78,6 +78,11 @@ def clear_terminal() -> None:
     if not _is_tty():
         return
     try:
+        if os.name == "nt":
+            # Legacy cmd.exe renders ESC as "←" instead of interpreting ANSI.
+            # Use its native clear operation rather than leaking escape bytes.
+            os.system("cls")  # noqa: S605 - fixed command, no user input
+            return
         # 2J clears the viewport, H homes the cursor and 3J clears scrollback.
         sys.stdout.write("\033[2J\033[H\033[3J")
         sys.stdout.flush()
@@ -140,6 +145,11 @@ def set_terminal_title(title: str = "TrinaxAI") -> None:
     if os.environ.get("NO_COLOR") or os.environ.get("TRINAXAI_NO_COLOR"):
         return
     try:
+        if os.name == "nt":
+            import ctypes
+
+            ctypes.windll.kernel32.SetConsoleTitleW(str(title))
+            return
         sys.stdout.write(f"\033]0;{title}\007")
         sys.stdout.flush()
     except Exception:

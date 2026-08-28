@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import queue
 import threading
 import time
 import unittest
@@ -94,6 +95,8 @@ class AgentServiceHelperTests(unittest.TestCase):
 
     def test_slow_model_inference_is_not_reported_as_a_stall(self) -> None:
         session_id, session = self.svc._register_session()
+        engine = MagicMock()
+        session["engine"] = engine
         session["last_activity"] = time.monotonic() - 10
         session["inference_active"] = True
 
@@ -113,6 +116,9 @@ class AgentServiceHelperTests(unittest.TestCase):
             self.assertIn('"type":"start"', next(stream))
             self.assertIn('"type":"status"', next(stream))
             stream.close()
+        self.assertTrue(session["cancelled"].is_set())
+        engine.cancel.assert_called_once_with()
+        self.assertNotIn(session_id, self.svc._SESSIONS)
 
     def test_resolve_workspace_rejects_existing_directory_outside_allowlist(self) -> None:
         from fastapi import HTTPException
@@ -165,6 +171,39 @@ class AgentServiceHelperTests(unittest.TestCase):
         out = self.svc._safe_args({"content": "x" * 5000, "path": "a.txt"})
         self.assertTrue(out["content"].endswith("…(truncated)"))
         self.assertEqual(out["path"], "a.txt")
+
+    def test_agent_session_queue_is_bounded(self) -> None:
+        with patch.object(self.svc, "_AGENT_QUEUE_MAXSIZE", 4):
+            session_id, session = self.svc._register_session()
+        self.assertEqual(session["queue"].maxsize, 4)
+        self.svc._drop_session(session_id)
+
+    def test_queue_backpressure_cancels_session_and_keeps_terminal_error(self) -> None:
+        with (
+            patch.object(self.svc, "_AGENT_QUEUE_MAXSIZE", 4),
+            patch.object(self.svc, "_AGENT_QUEUE_PUT_TIMEOUT_SECONDS", 0.01),
+        ):
+            session_id, session = self.svc._register_session()
+        session["engine"] = MagicMock()
+        for index in range(session["queue"].maxsize):
+            self.assertTrue(self.svc._queue_event(session, {"type": "token", "content": str(index)}))
+
+        self.assertFalse(self.svc._queue_event(session, {"type": "token", "content": "overflow"}))
+        self.assertTrue(session["cancelled"].is_set())
+        self.assertTrue(session["closed"])
+        session["engine"].cancel.assert_called_once_with()
+        self.assertNotIn(session_id, self.svc._SESSIONS)
+
+        events = []
+        while True:
+            try:
+                event = session["queue"].get_nowait()
+            except queue.Empty:
+                break
+            if event is not None:
+                events.append(event)
+        self.assertEqual([event["type"] for event in events if event["type"] == "error"], ["error"])
+        self.assertEqual(events[-1]["completion_status"], "error")
 
     def test_agent_tools_expose_all_capabilities_for_model_choice(self) -> None:
         names = [tool.name for tool in self.svc._agent_tools()]
@@ -411,6 +450,59 @@ class AgentApprovalFlowTests(unittest.TestCase):
         self.assertEqual(results, [False])
         # Allow the daemon queue thread to settle.
         time.sleep(0.01)
+
+    def test_approval_registry_is_safe_when_session_drops_during_cleanup(self) -> None:
+        session_id, session = self.svc._register_session()
+
+        class PausingValues(dict):
+            values_started = threading.Event()
+            resume_values = threading.Event()
+
+            def values(self):
+                iterator = iter(super().values())
+
+                def paused_values():
+                    first = next(iterator)
+                    yield first
+                    self.values_started.set()
+                    self.resume_values.wait(timeout=3)
+                    yield from iterator
+
+                return paused_values()
+
+        approvals = PausingValues()
+        session["approvals"] = approvals
+
+        class _Tool:
+            name = "write_file"
+
+        results: list[bool] = []
+
+        def waiter() -> None:
+            results.append(self.svc._wait_for_approval(session, _Tool(), {"path": "a.txt"}))
+
+        approval_thread = threading.Thread(target=waiter)
+        approval_thread.start()
+        self.assertEqual(session["queue"].get(timeout=3)["type"], "approval_request")
+        errors: list[BaseException] = []
+
+        def dropper() -> None:
+            try:
+                self.svc._drop_session(session_id)
+            except BaseException as exc:  # pragma: no cover - only records a regression failure
+                errors.append(exc)
+
+        drop_thread = threading.Thread(target=dropper)
+        drop_thread.start()
+        self.assertTrue(approvals.values_started.wait(timeout=3))
+        approvals.resume_values.set()
+        drop_thread.join(timeout=3)
+        approval_thread.join(timeout=3)
+
+        self.assertFalse(drop_thread.is_alive())
+        self.assertFalse(approval_thread.is_alive())
+        self.assertEqual(errors, [])
+        self.assertEqual(results, [False])
 
     def test_drop_session_cancels_active_engine_response(self) -> None:
         session_id, session = self.svc._register_session()

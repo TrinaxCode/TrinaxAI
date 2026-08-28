@@ -55,8 +55,7 @@ def run(args: Any, client: Any, ui: Any, config: Any) -> int:
     env["TRINAXAI_INDEX_DIR"] = str(folder_path)
     env["TRINAXAI_COLLECTION_ID"] = collection
     env["TRINAXAI_COLLECTION_NAME"] = collection
-    if append:
-        env["TRINAXAI_INDEX_APPEND"] = "1"
+    env["TRINAXAI_INDEX_APPEND"] = "1" if append else "0"
 
     ui.info(f"Indexing {folder_path} into collection '{collection}' (append={append})...")
     try:

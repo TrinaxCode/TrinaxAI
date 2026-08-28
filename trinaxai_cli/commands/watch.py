@@ -14,7 +14,7 @@ def run(args: Any, client: Any, ui: Any, config: Any) -> int:
             res = client.watch_start(paths=paths, collection=collection)
             ui.success(res.get("status", "ok"))
             for p in res.get("watching", []):
-                ui.info(f"  • {p}")
+                ui.info(f"  - {p}")
             return 0
         if action == "stop":
             res = client.watch_stop()
@@ -23,9 +23,9 @@ def run(args: Any, client: Any, ui: Any, config: Any) -> int:
         if action == "status":
             res = client.watch_status()
             if res.get("running"):
-                ui.success(f"Watching {len(res.get('watching', []))} path(s) — {res.get('events_seen', 0)} events")
+                ui.success(f"Watching {len(res.get('watching', []))} path(s) - {res.get('events_seen', 0)} events")
                 for p in res.get("watching", []):
-                    ui.info(f"  • {p}")
+                    ui.info(f"  - {p}")
             else:
                 ui.warn("Watcher is not running.")
             job = res.get("job") if isinstance(res.get("job"), dict) else {}
@@ -35,9 +35,9 @@ def run(args: Any, client: Any, ui: Any, config: Any) -> int:
                 active_root = str(job.get("active_root") or "")
                 detail = f"Indexer: {job_status}"
                 if pending:
-                    detail += f" · {pending} event(s) queued"
+                    detail += f" | {pending} event(s) queued"
                 if active_root:
-                    detail += f" · {active_root}"
+                    detail += f" | {active_root}"
                 ui.info(detail)
             if job.get("last_error"):
                 ui.error(f"Last watcher error: {job['last_error']}")

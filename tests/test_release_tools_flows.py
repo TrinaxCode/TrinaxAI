@@ -27,6 +27,7 @@ def test_public_readiness_scans_repository_contracts(monkeypatch, tmp_path: Path
                 "backups/",
                 "local_sources/",
                 "logs/",
+                "tarea[0-9]*.md",
             ]
         ),
         encoding="utf-8",
@@ -34,6 +35,8 @@ def test_public_readiness_scans_repository_contracts(monkeypatch, tmp_path: Path
     source = tmp_path / "src" / "module.py"
     source.parent.mkdir()
     source.write_text("/home/trinaxcode\nadmin_token = 'real-looking-token'\n", encoding="utf-8")
+    task_prompt = tmp_path / "tarea1.md"
+    task_prompt.write_text("Work in /home/trinaxcode/project", encoding="utf-8")
     ignored = tmp_path / "node_modules" / "ignored.ts"
     ignored.parent.mkdir()
     ignored.write_text("192.168.1.23", encoding="utf-8")
@@ -44,6 +47,7 @@ def test_public_readiness_scans_repository_contracts(monkeypatch, tmp_path: Path
     assert source in files and ignored not in files
     assert public_readiness.check_required_files() == ["missing required file: README.md"]
     assert any("local hardcode" in error for error in public_readiness.check_hardcodes(files))
+    assert not any("tarea1.md" in error for error in public_readiness.check_hardcodes(files))
     assert any("token" in error for error in public_readiness.check_secrets(files))
     assert public_readiness.check_local_artifacts()
     assert public_readiness.check_never_commit_files() == []
@@ -74,6 +78,8 @@ def test_public_readiness_i18n_tracked_files_and_main(monkeypatch, tmp_path: Pat
         "check_i18n",
         "check_never_commit_files",
         "check_tracked_never_commit_files",
+        "check_release_contract",
+        "check_required_gates",
     )
     for name in checks:
         monkeypatch.setattr(public_readiness, name, lambda: [])
@@ -93,6 +99,17 @@ def test_public_readiness_git_failure_and_missing_ignore_are_safe(monkeypatch, t
     assert public_readiness.git_tracked_files() == []
     assert public_readiness.check_local_artifacts()
     assert public_readiness.check_never_commit_files()
+
+
+def test_release_runtime_uses_locked_frontend_install_and_non_root_container() -> None:
+    root = Path(public_readiness.__file__).resolve().parents[1]
+    dockerfile = (root / "Dockerfile").read_text(encoding="utf-8")
+    assert "COPY config.py index.py rag_api.py recovery_server.py service_manager.py" in dockerfile
+    assert "USER trinaxai" in dockerfile
+    for name in ("install.sh", "install.ps1", "update.sh", "update.ps1"):
+        text = (root / name).read_text(encoding="utf-8")
+        assert "npm ci" in text
+        assert "npm install" not in text
 
 
 def test_auto_update_linux_cron_and_windows_scheduler(monkeypatch, tmp_path: Path) -> None:

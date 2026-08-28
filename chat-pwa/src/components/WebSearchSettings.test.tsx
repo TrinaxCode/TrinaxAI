@@ -16,10 +16,11 @@ vi.mock('../i18n/I18nContext', async () => {
   const actual = await vi.importActual<typeof import('../i18n/I18nContext')>('../i18n/I18nContext');
   return { ...actual, useI18n: () => ({ lang: 'en', t: (key: string) => ({
     webSearchPreferredProvider: 'Preferred search engine',
+    webSearchBraveApiKey: 'Brave Search API key',
     webSearchSettingsTitle: 'Web search',
     save: 'Save',
     webSearchTestButton: 'Test connection',
-    webSearchSystemPermission: 'The system permission is required.',
+    webSearchSystemPermission: 'Perform this action from localhost on the host.',
     webSearchResetButton: 'Reset',
     webSearchConnectionSuccess: 'Connection successful: {provider}',
   } as Record<string, string>)[key] || key }) };
@@ -59,9 +60,9 @@ describe('WebSearchSettings', () => {
     expect(await screen.findByText('Connection successful: duckduckgo')).toBeInTheDocument();
   });
 
-  it('blocks the form without system scope', () => {
+  it('blocks the form without host capability', () => {
     render(<WebSearchSettings canManageSystem={false} />);
-    expect(screen.getByRole('alert')).toHaveTextContent('system permission');
+    expect(screen.getByRole('alert')).toHaveTextContent('localhost');
   });
 
   it('aborts the connection test when saving changed credentials fails', async () => {
@@ -72,6 +73,15 @@ describe('WebSearchSettings', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Test connection' }));
     expect(await screen.findByText('Save failed')).toBeInTheDocument();
     expect(test).not.toHaveBeenCalled();
+  });
+
+  it('normalizes a disabled backend provider without breaking reactivation', async () => {
+    get.mockResolvedValue({ ...state, enabled: false, preferred_provider: 'disabled', active_provider: 'duckduckgo' });
+    render(<WebSearchSettings canManageSystem />);
+    const select = await screen.findByLabelText('Preferred search engine');
+    expect(select).toHaveValue('duckduckgo');
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(save).toHaveBeenCalledWith(expect.objectContaining({ enabled: false, preferred_provider: 'duckduckgo' })));
   });
 
   it('locks only fields managed by the environment', async () => {

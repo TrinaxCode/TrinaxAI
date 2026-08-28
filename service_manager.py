@@ -16,6 +16,7 @@ import os
 import platform
 import plistlib
 import shutil
+import socket
 import subprocess
 import sys
 import time
@@ -76,6 +77,7 @@ SYSTEMD_SERVICE_ALIASES = {
     "ollama": ["ollama.service"],
     "rag_api": ["rag_api.service", "ai-rag.service"],
     "trinaxai-frontend": ["trinaxai-frontend.service"],
+    "trinaxai-supervisor": ["trinaxai.service"],
 }
 SERVICE_DISPLAY_NAMES = {
     "ollama": "Ollama",
@@ -193,6 +195,11 @@ class _SystemdBackend(_Backend):
 
 # ── macOS: launchctl + direct fallback ─────────────────────────────
 _LAUNCHCTL = shutil.which("launchctl") or "/bin/launchctl"
+LAUNCHCTL_LABELS = {"trinaxai-supervisor": "com.trinaxcode.trinaxai"}
+
+
+def _launchctl_label(name: str) -> str:
+    return LAUNCHCTL_LABELS.get(name, f"com.trinaxai.{name}")
 
 
 class _LaunchctlBackend(_Backend):
@@ -205,7 +212,7 @@ class _LaunchctlBackend(_Backend):
         env: dict[str, str] | None = None,
         log_file: str | None = None,
     ) -> ProcessState:
-        label = f"com.trinaxai.{name}"
+        label = _launchctl_label(name)
         plist = Path.home() / f"Library/LaunchAgents/{label}.plist"
         if plist.exists():
             try:
@@ -223,7 +230,7 @@ class _LaunchctlBackend(_Backend):
         return _start_direct(name, command=command, cwd=cwd, env=env, log_file=log_file)
 
     def stop(self, name: str) -> ProcessState:
-        label = f"com.trinaxai.{name}"
+        label = _launchctl_label(name)
         plist = Path.home() / f"Library/LaunchAgents/{label}.plist"
         if plist.exists():
             subprocess.run(
@@ -235,7 +242,7 @@ class _LaunchctlBackend(_Backend):
         return _stop_by_name(name)
 
     def status(self, name: str) -> ProcessState:
-        label = f"com.trinaxai.{name}"
+        label = _launchctl_label(name)
         plist = Path.home() / f"Library/LaunchAgents/{label}.plist"
         if plist.exists():
             r = subprocess.run([_LAUNCHCTL, "list", label], timeout=5, capture_output=True, text=True)
@@ -450,7 +457,9 @@ AI_SERVICES = ["ollama", "rag_api"]
 AI_SHUTDOWN_ORDER = ["ollama", "rag_api"]
 FRONTEND_SERVICE = "trinaxai-frontend"
 SUPERVISOR_SERVICE = "trinaxai-supervisor"
-FULL_SHUTDOWN_ORDER = [SUPERVISOR_SERVICE, *SHUTDOWN_ORDER]
+# Stop in-process work and API/model owners before killing the browser gateway,
+# so the HTTP response that initiated stop-all has time to leave the host.
+FULL_SHUTDOWN_ORDER = [SUPERVISOR_SERVICE, "rag_api", "ollama", FRONTEND_SERVICE]
 PROCESS_PATTERNS = {
     "ollama": ["ollama serve", "ollama"],
     "rag_api": ["uvicorn app.main:app", "uvicorn rag_api:app", "rag_api.py", "rag_api"],
@@ -572,7 +581,8 @@ def _wait_for_http(url: str, timeout_seconds: float = 20.0) -> bool:
         context = ssl._create_unverified_context()  # nosec B323
     while time.time() < deadline:
         try:
-            with urllib.request.urlopen(  # nosec B310 - scheme and loopback validated above
+            # The URL scheme and loopback host were validated above.
+            with urllib.request.urlopen(  # nosec B310
                 url, timeout=2, context=context
             ) as response:
                 if 200 <= int(response.status) < 500:
@@ -636,7 +646,7 @@ def _service_specs(base_dir: str) -> dict[str, dict]:
             os.path.abspath(os.path.join(base_dir, "chat-pwa", "node_modules", "vite", "bin", "vite.js")),
             mode,
             "--host",
-            "0.0.0.0",  # nosec B104 - intentional browser-facing LAN gateway
+            service_env.get("TRINAXAI_PWA_HOST", "127.0.0.1"),
             "--port",
             "3334",
         ]
@@ -680,12 +690,42 @@ def _read_ai_enabled(base_dir: str) -> bool:
         return True
 
 
-def _write_ai_enabled(base_dir: str, enabled: bool) -> None:
+def _read_service_state(base_dir: str) -> dict:
+    try:
+        data = json.loads(_state_path(base_dir).read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def _system_state(base_dir: str) -> str:
+    return str(_read_service_state(base_dir).get("system_state") or "running")
+
+
+def _ollama_owned(base_dir: str) -> bool:
+    # Legacy installations have no ownership bit. Preserve their historical
+    # behavior, while every newly observed external instance is recorded false.
+    state = _read_service_state(base_dir)
+    return bool(state.get("ollama_owned", True))
+
+
+def _ollama_owned_for_stop_all(base_dir: str) -> bool:
+    """Only stop Ollama when this installation explicitly owns it."""
+    return _read_service_state(base_dir).get("ollama_owned") is True
+
+
+def _write_service_state(base_dir: str, **changes: object) -> None:
     path = _state_path(base_dir)
     path.parent.mkdir(parents=True, exist_ok=True)
+    data = _read_service_state(base_dir)
+    data.update(changes)
     tmp = path.with_suffix(".json.tmp")
-    tmp.write_text(json.dumps({"ai_enabled": enabled}, indent=2), encoding="utf-8")
+    tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
     tmp.replace(path)
+
+
+def _write_ai_enabled(base_dir: str, enabled: bool) -> None:
+    _write_service_state(base_dir, ai_enabled=enabled)
 
 
 def _try_privileged_wrapper(base_dir: str, action: str) -> list[ProcessState] | None:
@@ -699,7 +739,7 @@ def _try_privileged_wrapper(base_dir: str, action: str) -> list[ProcessState] | 
     ):
         return None
 
-    if action not in {"stop-ai", "start-ai", "reload-network"}:
+    if action not in {"stop-ai", "start-ai", "stop-all", "start-all", "reload-network"}:
         return None
     wrapper = PRIVILEGED_LIFECYCLE_WRAPPER
     if not wrapper.is_file() or not os.access(wrapper, os.X_OK):
@@ -719,7 +759,14 @@ def _try_privileged_wrapper(base_dir: str, action: str) -> list[ProcessState] | 
         detail = (result.stderr or result.stdout or "privileged wrapper failed").strip()
         return [ProcessState(action, False, detail=detail)]
     if action != "reload-network":
-        _write_ai_enabled(base_dir, action != "stop-ai")
+        enabled = action in {"start-ai", "start-all"}
+        _write_service_state(
+            base_dir,
+            ai_enabled=enabled,
+            system_state="running"
+            if action == "start-all"
+            else ("stopped_by_user" if action == "stop-all" else _system_state(base_dir)),
+        )
     return [ProcessState(action, action != "stop-ai", detail=(result.stdout or "ok").strip())]
 
 
@@ -761,9 +808,133 @@ def _set_ai_systemd_enabled(enabled: bool, *, stop_now: bool = False) -> list[st
     return details
 
 
+def _recovery_pid(base_dir: str) -> int | None:
+    try:
+        pid = int((Path(base_dir) / "storage" / "recovery.pid").read_text(encoding="ascii").strip())
+        if pid <= 0:
+            return None
+        try:
+            os.kill(pid, 0)
+        except OSError:
+            (Path(base_dir) / "storage" / "recovery.pid").unlink(missing_ok=True)
+            return None
+        return pid
+    except (OSError, ValueError):
+        return None
+
+
+def _stop_recovery(base_dir: str) -> ProcessState:
+    pid = _recovery_pid(base_dir)
+    if not pid or pid == os.getpid():
+        return ProcessState("recovery", False, detail="not running")
+    try:
+        if sys.platform == "win32":
+            subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"], capture_output=True, timeout=10)
+        else:
+            os.kill(pid, 15)
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline and _recovery_pid(base_dir) == pid:
+            time.sleep(0.1)
+        return ProcessState("recovery", False, pid=pid, detail="stopped")
+    except (OSError, subprocess.TimeoutExpired):
+        return ProcessState("recovery", False, pid=pid, detail="already stopped")
+
+
+def _start_recovery(base_dir: str) -> ProcessState:
+    if _recovery_pid(base_dir):
+        return ProcessState("recovery", True, pid=_recovery_pid(base_dir), detail="already running")
+    os.makedirs(os.path.join(base_dir, "logs"), exist_ok=True)
+    command = [sys.executable, os.path.join(base_dir, "recovery_server.py"), "--base-dir", base_dir]
+    kwargs: dict[str, object] = {
+        "cwd": base_dir,
+        "stdin": subprocess.DEVNULL,
+        "stdout": open(os.path.join(base_dir, "logs", "recovery.log"), "a", encoding="utf-8"),
+        "stderr": subprocess.STDOUT,
+    }
+    if sys.platform == "win32":
+        kwargs["creationflags"] = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0) | getattr(
+            subprocess, "DETACHED_PROCESS", 0
+        )
+    else:
+        kwargs["start_new_session"] = True
+    try:
+        proc = subprocess.Popen(command, **kwargs)
+        return ProcessState("recovery", True, pid=proc.pid, detail="loopback recovery launch requested")
+    except OSError as exc:
+        return ProcessState("recovery", False, detail=f"recovery failed: {exc}")
+
+
+def _start_supervisor(base_dir: str) -> None:
+    command = [sys.executable, os.path.join(base_dir, "service_manager.py"), "watch", "--base-dir", base_dir]
+    kwargs: dict[str, object] = {
+        "cwd": base_dir,
+        "stdin": subprocess.DEVNULL,
+        "stdout": subprocess.DEVNULL,
+        "stderr": subprocess.DEVNULL,
+    }
+    if sys.platform == "win32":
+        kwargs["creationflags"] = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0) | getattr(
+            subprocess, "DETACHED_PROCESS", 0
+        )
+    else:
+        kwargs["start_new_session"] = True
+    subprocess.Popen(command, **kwargs)
+
+
+def _wait_port_free(host: str = "127.0.0.1", port: int | None = None, timeout: float = 10.0) -> bool:
+    if port is None:
+        try:
+            port = int(_service_env(os.getcwd()).get("TRINAXAI_PWA_PORT", "3334"))
+        except ValueError:
+            port = 3334
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        probe.settimeout(0.2)
+        try:
+            if probe.connect_ex((host, port)) != 0:
+                return True
+        finally:
+            probe.close()
+        time.sleep(0.1)
+    return False
+
+
+def _wait_service_stopped(name: str, timeout: float = 5.0) -> bool:
+    """Confirm a backend with a status API actually exited."""
+    if not hasattr(_backend, "status"):
+        return True
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            if not _backend.status(name).running:
+                return True
+        except Exception:
+            return False
+        time.sleep(0.1)
+    return False
+
+
+def _recover_failed_start(base_dir: str, results: list[ProcessState]) -> list[ProcessState]:
+    cleanup: list[ProcessState] = []
+    for item in reversed(results):
+        if item.name == "ollama" and not _ollama_owned_for_stop_all(base_dir):
+            continue
+        if "already running" in item.detail:
+            continue
+        cleanup.append(_backend.stop(item.name))
+    if _wait_port_free():
+        cleanup.append(_start_recovery(base_dir))
+    else:
+        cleanup.append(ProcessState("recovery", False, detail="gateway port remains occupied"))
+    return cleanup
+
+
 def _start_named(base_dir: str, name: str) -> ProcessState:
     current = _backend.status(name)
     if current.running:
+        if name == "ollama" and "ollama_owned" not in _read_service_state(base_dir):
+            _write_service_state(base_dir, ollama_owned=False)
         return ProcessState(
             name=name,
             running=True,
@@ -779,6 +950,8 @@ def _start_named(base_dir: str, name: str) -> ProcessState:
         env=svc.get("env"),
         log_file=svc.get("log_file"),
     )
+    if name == "ollama" and state.running:
+        _write_service_state(base_dir, ollama_owned=True)
     if name == "rag_api" and state.running:
         url = _rag_health_url(base_dir, svc.get("env") or {})
         if _wait_for_http(url, timeout_seconds=20):
@@ -801,6 +974,12 @@ def _start_named(base_dir: str, name: str) -> ProcessState:
             pid=current.pid or state.pid,
             detail=f"{state.detail}; health not ready yet. See logs/rag_api.log ({url})",
         )
+    if name == FRONTEND_SERVICE and state.running:
+        scheme = "https" if _rag_uses_https(base_dir, svc.get("env") or {}) else "http"
+        url = f"{scheme}://127.0.0.1:{(svc.get('env') or {}).get('TRINAXAI_PWA_PORT', '3334')}/"
+        if _wait_for_http(url, timeout_seconds=20):
+            return ProcessState(name=name, running=True, pid=state.pid, detail=f"{state.detail}; health ok ({url})")
+        return ProcessState(name=name, running=False, pid=state.pid, detail=f"frontend not ready: {url}")
     return state
 
 
@@ -810,20 +989,29 @@ def _stop_named(name: str) -> ProcessState:
 
 def start_all(base_dir: str, lan_ip: str = "localhost") -> list[ProcessState]:
     """Start the full TrinaxAI stack in dependency order."""
-    elevated = _try_privileged_wrapper(base_dir, "start-ai")
+    print("[lifecycle] startup requested")
+    elevated = _try_privileged_wrapper(base_dir, "start-all")
     if elevated is not None:
         return elevated
     results: list[ProcessState] = []
-    _write_ai_enabled(base_dir, True)
+    _write_service_state(base_dir, ai_enabled=True, system_state="starting")
     _set_ai_systemd_enabled(True)
+    _stop_recovery(base_dir)
     os.makedirs(os.path.join(base_dir, "logs"), exist_ok=True)
 
     for name in STARTUP_ORDER:
         state = _start_named(base_dir, name)
         results.append(state)
-        if name == "ollama":
-            # Give Ollama a moment to bind its port.
-            time.sleep(2)
+    healthy = all(item.running for item in results)
+    if not healthy:
+        results.extend(_recover_failed_start(base_dir, results))
+        _write_service_state(base_dir, system_state="error")
+        print("[lifecycle] startup failed")
+        return results
+    _write_service_state(base_dir, system_state="running")
+    print("[lifecycle] system running")
+    if os.getenv("TRINAXAI_START_SUPERVISOR") == "1":
+        _start_supervisor(base_dir)
     return results
 
 
@@ -853,9 +1041,9 @@ def stop_ai(base_dir: str) -> list[ProcessState]:
     elevated = _try_privileged_wrapper(base_dir, "stop-ai")
     if elevated is not None:
         return elevated
-    _write_ai_enabled(base_dir, False)
+    _write_service_state(base_dir, ai_enabled=False)
     _set_ai_systemd_enabled(False)
-    results = [_stop_named(name) for name in AI_SHUTDOWN_ORDER]
+    results = [_stop_named(name) for name in AI_SHUTDOWN_ORDER if name != "ollama" or _ollama_owned(base_dir)]
     return results
 
 
@@ -864,15 +1052,15 @@ def start_ai(base_dir: str) -> list[ProcessState]:
     elevated = _try_privileged_wrapper(base_dir, "start-ai")
     if elevated is not None:
         return elevated
-    _write_ai_enabled(base_dir, True)
+    _write_service_state(base_dir, ai_enabled=True, system_state="starting")
     _set_ai_systemd_enabled(True)
+    _stop_recovery(base_dir)
     os.makedirs(os.path.join(base_dir, "logs"), exist_ok=True)
     results: list[ProcessState] = []
     for name in AI_SERVICES:
         results.append(_start_named(base_dir, name))
-        if name == "ollama":
-            time.sleep(2)
     results.extend(start_frontend(base_dir))
+    _write_service_state(base_dir, system_state="running" if all(item.running for item in results) else "error")
     return results
 
 
@@ -886,9 +1074,37 @@ def stop_all() -> list[ProcessState]:
 
 def stop_all_for_base(base_dir: str) -> list[ProcessState]:
     """Stop everything and keep AI disabled for the next boot."""
-    _write_ai_enabled(base_dir, False)
+    print("[lifecycle] shutdown requested by local user")
+    try:
+        delay = min(2.0, max(0.0, float(os.getenv("TRINAXAI_STOP_ALL_DELAY", "0"))))
+    except ValueError:
+        delay = 0.0
+    if delay:
+        time.sleep(delay)
+    _write_service_state(base_dir, ai_enabled=False, system_state="stopping")
+    elevated = _try_privileged_wrapper(base_dir, "stop-all")
     _set_ai_systemd_enabled(False)
-    return stop_all()
+    os.makedirs(os.path.join(base_dir, "logs"), exist_ok=True)
+    results = list(elevated or [])
+    if elevated is None:
+        for name in FULL_SHUTDOWN_ORDER:
+            if name == "ollama" and not _ollama_owned_for_stop_all(base_dir):
+                continue
+            results.append(_backend.stop(name))
+    else:
+        # The wrapper owns root system units; this user-level unit still needs
+        # to be stopped separately so it cannot rebuild the stack.
+        results.append(_backend.stop(SUPERVISOR_SERVICE))
+    service_names = [name for name in FULL_SHUTDOWN_ORDER if name != "ollama" or _ollama_owned_for_stop_all(base_dir)]
+    remaining = [name for name in service_names if not _wait_service_stopped(name)]
+    if remaining or not _wait_port_free():
+        results.append(ProcessState("recovery", False, detail="port 3334 is still occupied"))
+        _write_service_state(base_dir, system_state="error")
+        return results
+    _write_service_state(base_dir, system_state="stopped_by_user")
+    results.append(_start_recovery(base_dir))
+    print("[lifecycle] recovery server requested on loopback")
+    return results
 
 
 def _quote_cmd_arg(value: str) -> str:
@@ -925,7 +1141,7 @@ def enable_autostart(base_dir: str) -> ProcessState:
             "Type=simple\n"
             f"WorkingDirectory={_systemd_path(base_dir)}\n"
             f"ExecStart={_systemd_quote(python)} {_systemd_quote(Path(base_dir) / 'service_manager.py')} watch --base-dir {_systemd_quote(base_dir)}\n"
-            "Restart=always\n"
+            "Restart=on-failure\n"
             "RestartSec=10\n\n"
             "[Install]\n"
             "WantedBy=default.target\n",
@@ -962,7 +1178,7 @@ def enable_autostart(base_dir: str) -> ProcessState:
                 base_dir,
             ],
             "RunAtLoad": True,
-            "KeepAlive": True,
+            "KeepAlive": {"SuccessfulExit": False},
             "WorkingDirectory": base_dir,
             "StandardOutPath": str(Path(base_dir) / "logs" / "supervisor.log"),
             "StandardErrorPath": str(Path(base_dir) / "logs" / "supervisor.err.log"),
@@ -1060,6 +1276,12 @@ def watch(base_dir: str, interval: int = 15) -> None:
     print(f"TrinaxAI supervisor watching services every {interval}s")
     while True:
         _reap_zombie_children()
+        if _system_state(base_dir) == "stopped_by_user":
+            if not _recovery_pid(base_dir):
+                recovery = _start_recovery(base_dir)
+                print(f"recovery: {recovery.detail}")
+            time.sleep(max(5, interval))
+            return
         wanted = [FRONTEND_SERVICE]
         if _read_ai_enabled(base_dir):
             wanted = STARTUP_ORDER
@@ -1070,7 +1292,7 @@ def watch(base_dir: str, interval: int = 15) -> None:
             restarted = _start_named(base_dir, name)
             print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] restarted {name}: {restarted.detail}")
             if name == "ollama":
-                time.sleep(2)
+                continue
         time.sleep(max(5, interval))
 
 
@@ -1084,6 +1306,7 @@ def main(argv: list[str] | None = None) -> int:
             "start",
             "start-ai",
             "start-frontend",
+            "start-all",
             "reload-network",
             "stop",
             "stop-ai",
@@ -1099,7 +1322,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--json", action="store_true", help="Emit machine-readable status output")
     args = parser.parse_args(argv)
 
-    if args.action == "start":
+    if args.action in {"start", "start-all"}:
         items = start_all(args.base_dir)
         for item in items:
             print(f"{item.name}: {item.detail}")
@@ -1119,10 +1342,7 @@ def main(argv: list[str] | None = None) -> int:
         for item in items:
             print(f"{item.name}: {item.detail}")
         return 0 if all(item.running for item in items[-len(STARTUP_ORDER) :]) else 1
-    elif args.action == "stop":
-        for item in stop_ai(args.base_dir):
-            print(f"{item.name}: {item.detail}")
-    elif args.action == "stop-ai":
+    elif args.action == "stop" or args.action == "stop-ai":
         for item in stop_ai(args.base_dir):
             print(f"{item.name}: {item.detail}")
     elif args.action == "stop-all":

@@ -14,16 +14,22 @@ import {
   deviceTokenHasScope,
   isAllowedOllamaProxyRequest,
   isAuthorizedScopedProxyPeer,
+  isAuthorizedSystemProxyPeer,
   isLoopbackAddress,
   isPrivateLanAddress,
   normalizeAddress,
   needsInferenceLock,
   requiredOllamaProxyScope,
+  requiredRagProxyScope,
+  deviceTokenFromCookie,
 } from './server-dist/vite-security.js';
 
 const appDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(appDir, '..');
-const distDir = path.join(appDir, 'dist');
+const configuredDist = process.env.TRINAXAI_PWA_DIST;
+const distDir = configuredDist
+  ? path.resolve(appDir, configuredDist)
+  : path.join(appDir, 'dist');
 const certDir = path.join(appDir, 'certs');
 const localCaPath = path.join(certDir, 'localhost.pem');
 const localCaCandidates = [
@@ -56,7 +62,7 @@ const localCa = localCaCandidates.reduce((loaded, candidate) => {
 }, undefined) || (() => {
   try { return readBounded(localCaPath, 16 * 1024 * 1024); } catch { return undefined; }
 })();
-const host = process.env.TRINAXAI_PWA_HOST || '0.0.0.0';
+const host = process.env.TRINAXAI_PWA_HOST || '127.0.0.1';
 const port = Number(process.env.TRINAXAI_PWA_PORT || process.env.PORT || 3334);
 const proxyIdentityHeaders = [
   'x-trinaxai-proxy',
@@ -196,9 +202,11 @@ async function proxyRequest(req, res, url, prefix) {
     }
     const scope = requiredOllamaProxyScope(browserPath);
     const admin = String(req.headers['x-admin-token'] || '');
-    const device = String(req.headers['x-trinaxai-device-token'] || '');
-    const authorized = (scope === 'chat' && isPrivateLanAddress(peer))
-      || isAuthorizedScopedProxyPeer(
+    const device = String(req.headers['x-trinaxai-device-token'] || '')
+      || deviceTokenFromCookie(req.headers.cookie);
+    const authorized = scope === 'system'
+      ? isAuthorizedSystemProxyPeer(peer)
+      : isAuthorizedScopedProxyPeer(
         peer,
         admin,
         process.env.TRINAXAI_ADMIN_TOKEN || '',
@@ -214,9 +222,28 @@ async function proxyRequest(req, res, url, prefix) {
       sendError(res, 429, 'proxy_rate_limited');
       return;
     }
-  } else if (!isLoopbackAddress(peer) && !proxySecret()) {
-    sendError(res, 503, 'proxy_identity_unavailable');
-    return;
+  } else {
+    if (!isLoopbackAddress(peer) && !proxySecret()) {
+      sendError(res, 503, 'proxy_identity_unavailable');
+      return;
+    }
+    const requiredScope = requiredRagProxyScope(browserPath, req.method || 'GET');
+    const admin = String(req.headers['x-admin-token'] || '');
+    const device = String(req.headers['x-trinaxai-device-token'] || '')
+      || deviceTokenFromCookie(req.headers.cookie);
+    const authorized = requiredScope === 'system'
+      ? isAuthorizedSystemProxyPeer(peer)
+      : isAuthorizedScopedProxyPeer(
+        peer,
+        admin,
+        process.env.TRINAXAI_ADMIN_TOKEN || '',
+        device,
+        pairedDeviceGrants(device, requiredScope),
+      );
+    if (requiredScope && !authorized) {
+      sendError(res, 403, 'proxy_scope_required');
+      return;
+    }
   }
 
   let target;
@@ -247,6 +274,7 @@ async function proxyRequest(req, res, url, prefix) {
 
   const upstreamPath = `${target.pathname.replace(/\/$/, '')}${browserPath.slice(prefix.length) || '/'}${url.search}`;
   const headers = { ...req.headers, host: target.host };
+  headers['x-forwarded-proto'] = req.socket.encrypted ? 'https' : 'http';
   for (const header of proxyIdentityHeaders) delete headers[header];
   if (ollama) {
     delete headers['x-admin-token'];
@@ -322,26 +350,16 @@ function localPython() {
 
 function systemAuthorized(req) {
   const peer = normalizeAddress(req.socket.remoteAddress || 'unknown');
-  const admin = String(req.headers['x-admin-token'] || '');
-  const device = String(req.headers['x-trinaxai-device-token'] || '');
   const origin = String(req.headers.origin || '');
   const trustedOrigin = !origin || (() => {
     try {
       const parsed = new URL(origin);
-      return parsed.port === String(port) && isPrivateLanAddress(parsed.hostname);
+      return parsed.port === String(port) && isLoopbackAddress(parsed.hostname);
     } catch {
       return false;
     }
   })();
-  return trustedOrigin && (
-    isAuthorizedScopedProxyPeer(
-      peer,
-      admin,
-      process.env.TRINAXAI_ADMIN_TOKEN || '',
-      device,
-      pairedDeviceGrants(device, 'system'),
-    )
-  );
+  return trustedOrigin && isAuthorizedSystemProxyPeer(peer);
 }
 
 function lanAddresses() {
@@ -413,7 +431,10 @@ function networkInfo(req, res) {
     sendError(res, 405, 'method_not_allowed');
     return;
   }
-  sendJson(res, 200, networkStatus());
+  sendJson(res, 200, {
+    ...networkStatus(),
+    capabilities: { manageSystem: isAuthorizedSystemProxyPeer(req.socket.remoteAddress || 'unknown') },
+  });
 }
 
 function systemControl(req, res, pathname) {
@@ -498,7 +519,9 @@ function staticFile(url) {
   if (candidate !== distDir && !candidate.startsWith(`${distDir}${path.sep}`)) return null;
   try {
     if (fs.statSync(candidate).isFile()) return candidate;
-  } catch {}
+  } catch {
+    // Missing files fall through to the SPA fallback below.
+  }
   if (path.extname(pathname)) return null;
   return path.join(distDir, 'index.html');
 }
@@ -560,27 +583,36 @@ if (!fs.existsSync(distDir)) {
   const key = path.join(certDir, 'localhost-key.pem');
   const cert = path.join(certDir, 'localhost.pem');
   const tlsEnabled = process.env.CI !== 'true' && (fs.existsSync(pfx) || (fs.existsSync(key) && fs.existsSync(cert)));
-  const tlsOptions = () => (fs.existsSync(pfx)
-    ? { pfx: fs.readFileSync(pfx), passphrase: process.env.TRINAXAI_CERT_PASSPHRASE || 'trinaxai-local' }
-    : { key: fs.readFileSync(key), cert: fs.readFileSync(cert) });
-  const server = tlsEnabled ? https.createServer(tlsOptions(), requestHandler) : http.createServer(requestHandler);
-  if (tlsEnabled) {
-    // A network refresh renews the certificate in place; adopting it here keeps
-    // the new LAN address trusted without requiring a privileged restart.
-    let reloadTimer;
-    fs.watch(certDir, () => {
-      clearTimeout(reloadTimer);
-      reloadTimer = setTimeout(() => {
-        try {
-          server.setSecureContext(tlsOptions());
-          console.log('TrinaxAI PWA reloaded the local HTTPS certificate.');
-        } catch (error) {
-          console.error(`TrinaxAI PWA kept the previous certificate: ${error.message}`);
-        }
-      }, 500).unref();
-    }).unref();
+  const insecureHttpAllowed = process.env.TRINAXAI_ALLOW_INSECURE_HTTP === '1';
+  if (!tlsEnabled && !isLoopbackAddress(host) && !insecureHttpAllowed) {
+    console.error(
+      'Refusing insecure HTTP on a non-loopback PWA host. Generate local TLS certificates or set '
+        + 'TRINAXAI_ALLOW_INSECURE_HTTP=1 only for an explicitly trusted test network.',
+    );
+    process.exitCode = 1;
+  } else {
+    const tlsOptions = () => (fs.existsSync(pfx)
+      ? { pfx: fs.readFileSync(pfx), passphrase: process.env.TRINAXAI_CERT_PASSPHRASE || 'trinaxai-local' }
+      : { key: fs.readFileSync(key), cert: fs.readFileSync(cert) });
+    const server = tlsEnabled ? https.createServer(tlsOptions(), requestHandler) : http.createServer(requestHandler);
+    if (tlsEnabled) {
+      // A network refresh renews the certificate in place; adopting it here keeps
+      // the new LAN address trusted without requiring a privileged restart.
+      let reloadTimer;
+      fs.watch(certDir, () => {
+        clearTimeout(reloadTimer);
+        reloadTimer = setTimeout(() => {
+          try {
+            server.setSecureContext(tlsOptions());
+            console.log('TrinaxAI PWA reloaded the local HTTPS certificate.');
+          } catch (error) {
+            console.error(`TrinaxAI PWA kept the previous certificate: ${error.message}`);
+          }
+        }, 500).unref();
+      }).unref();
+    }
+    server.listen(port, host, () => {
+      console.log(`TrinaxAI PWA listening on ${tlsEnabled ? 'https' : 'http'}://${host}:${port}`);
+    });
   }
-  server.listen(port, host, () => {
-    console.log(`TrinaxAI PWA listening on ${tlsEnabled ? 'https' : 'http'}://${host}:${port}`);
-  });
 }

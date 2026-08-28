@@ -11,6 +11,7 @@ interface NetworkInfo {
   urls: string[];
   needsRefresh: boolean;
   refreshCommand: string;
+  capabilities?: { manageSystem?: boolean };
 }
 
 const DISMISSED_KEY = 'tc-network-notice-dismissed';
@@ -37,6 +38,8 @@ export default function NetworkNotice({ canManageSystem }: { canManageSystem: bo
     }
   }, []);
 
+  const handleOffline = useCallback(() => setOffline(true), []);
+
   // Dismissal is keyed by the detected addresses so a later network change asks again.
   const signature = offline ? 'offline' : (info?.urls || []).join('|');
   const dismiss = () => {
@@ -52,8 +55,12 @@ export default function NetworkNotice({ canManageSystem }: { canManageSystem: bo
     } catch { /* Storage is unavailable; the notice stays visible. */ }
     void check();
     window.addEventListener('online', check);
-    return () => window.removeEventListener('online', check);
-  }, [check]);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', check);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, [check, handleOffline]);
 
   const copyCommand = async () => {
     try {
@@ -120,7 +127,7 @@ export default function NetworkNotice({ canManageSystem }: { canManageSystem: bo
               <a href={readyUrl} className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-[#006bbd] px-3 py-2 text-xs font-semibold text-white">
                 <MdOpenInNew size={16} /> {t('networkOpenNewLink')}
               </a>
-            ) : canManageSystem && !offline ? (
+            ) : (info?.capabilities?.manageSystem ?? canManageSystem) && !offline ? (
               <button type="button" onClick={refreshNetwork} disabled={refreshing} className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-[#006bbd] px-3 py-2 text-xs font-semibold text-white disabled:opacity-50">
                 <MdRefresh className={refreshing ? 'animate-spin' : ''} size={16} />
                 {refreshing ? t('networkRefreshing') : t('networkPrepare')}

@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import NetworkNotice from './NetworkNotice';
@@ -36,6 +36,16 @@ describe('NetworkNotice', () => {
     render(<NetworkNotice canManageSystem />);
     await waitFor(() => expect(fetch).toHaveBeenCalledWith('/api/network', expect.objectContaining({ cache: 'no-store' })));
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  });
+
+  it('shows the offline notice when the network drops after a healthy check', async () => {
+    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({ ...network, needsRefresh: false }), { status: 200 }));
+    render(<NetworkNotice canManageSystem />);
+    await waitFor(() => expect(fetch).toHaveBeenCalled());
+
+    fireEvent(window, new Event('offline'));
+
+    expect(await screen.findByText('networkOfflineTitle')).toBeInTheDocument();
   });
 
   it('refreshes a changed network and presents the stable link', async () => {

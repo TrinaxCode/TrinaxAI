@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import config
 from app.generation import build_task_spec, classify, complexity_score, validate_output
-from app.generation.prompts import CREATOR_BIO, IDENTITY_SHORT, wants_creator_bio
+from app.generation.prompts import CREATOR_BIO, GROUNDED_QA_TEMPLATE, IDENTITY_SHORT, wants_creator_bio
 from app.generation.spec import Regime
 
 
@@ -92,6 +92,7 @@ def test_model_mode_never_reenables_retrieval():
 def test_everyday_topic_is_explain_not_grounded():
     # The old pipeline forced these through grounded-QA ("only from context").
     assert classify("dame una receta saludable de pollo").regime is Regime.EXPLAIN
+    assert classify("¿Cuál es la capital de Francia?").regime is Regime.EXPLAIN
 
 
 def test_identity_and_creator_profile_use_official_links():
@@ -101,6 +102,11 @@ def test_identity_and_creator_profile_use_official_links():
     assert "wa.me" not in CREATOR_BIO
     assert wants_creator_bio("¿Quién es tu creador?")
     assert wants_creator_bio("compárteme sus redes")
+
+
+def test_grounded_prompt_abstains_without_context_evidence():
+    prompt = str(GROUNDED_QA_TEMPLATE)
+    assert "do not supply an unsupported answer from general knowledge" in prompt
 
 
 def test_debugging_routes_to_code():
@@ -215,9 +221,17 @@ def test_long_prompt_grows_window_instead_of_truncating_output():
 # ── Complexity scoring ────────────────────────────────────────────────────
 
 
-def test_trivial_prompt_scores_low():
+def test_trivial_prompt_scores_minimal():
     c = classify("hola")
     assert complexity_score("hola", c).total <= 25
+
+
+def test_thinking_is_adaptive_instead_of_global():
+    assert _spec("hola bro").thinking is False
+    assert _spec("¿Qué es una API?").thinking is False
+    assert _spec("¿Qué es una integral?").thinking is False
+    assert _spec("Demuestra que 3^(2n)-1 es divisible entre 8 y calcula la integral de x^2 e^x").thinking is True
+    assert _spec("Implementa una caché LRU + TTL en Python con O(1), tests y benchmark").thinking is True
 
 
 def test_lru_and_landing_reach_complex_mode():

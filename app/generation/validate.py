@@ -148,13 +148,13 @@ def _check_js_ts(code: str) -> list[str]:
 
 def _check_html(code: str, require_responsive: bool) -> list[str]:
     errors = []
-    low = code.lower()
-    if "<html" in low and "</html>" not in low:
+    lowered = code.lower()
+    if "<html" in lowered and "</html>" not in lowered:
         errors.append("HTML: <html> not closed.")
-    if "<body" in low and "</body>" not in low:
+    if "<body" in lowered and "</body>" not in lowered:
         errors.append("HTML: <body> not closed.")
     if require_responsive:
-        if "viewport" not in low:
+        if "viewport" not in lowered:
             errors.append("HTML: missing responsive <meta viewport>.")
         style_blocks = re.findall(r"<style[^>]*>(.*?)</style>", code, flags=re.I | re.S)
         if style_blocks and not any(_has_responsive_css(style) for style in style_blocks):
@@ -171,7 +171,7 @@ def _check_css(code: str, require_responsive: bool) -> list[str]:
 
 
 def _has_responsive_css(code: str) -> bool:
-    low = code.lower()
+    lowered = code.lower()
     signals = (
         "@media",
         "@container",
@@ -189,8 +189,8 @@ def _has_responsive_css(code: str) -> bool:
         "dvw",
         "cqw",
     )
-    return any(signal in low for signal in signals) or bool(
-        re.search(r"\b(?:width|flex-basis)\s*:\s*\d+(?:\.\d+)?%", low)
+    return any(signal in lowered for signal in signals) or bool(
+        re.search(r"\b(?:width|flex-basis)\s*:\s*\d+(?:\.\d+)?%", lowered)
     )
 
 
@@ -225,7 +225,7 @@ def validate_output(
     if regime in ("code_gen", "creative") and not blocks:
         errors.append("No code block produced for a generation task.")
 
-    low = text.lower()
+    lowered = text.lower()
     missing = []
     _DELIVERABLE_MARKERS = {
         "tests": ("def test", "test(", "it(", "describe(", "assert", "pytest", "unittest"),
@@ -241,7 +241,7 @@ def validate_output(
     for want in deliverables:
         key = want.lower().strip()
         markers = _DELIVERABLE_MARKERS.get(key)
-        if markers and not any(m in low for m in markers):
+        if markers and not any(m in lowered for m in markers):
             missing.append(want)
 
     ok = not errors and not missing

@@ -6,7 +6,6 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Iterator
 
-from trinaxai_cli import prompts
 from trinaxai_cli.commands import ask, chat
 from trinaxai_cli.config import CLIConfig
 from trinaxai_cli.ui import SlashCommandCompleter
@@ -37,6 +36,36 @@ def test_bare_slash_prints_the_command_menu() -> None:
     assert "/research" in ui.output
 
 
+def test_cli_thinking_toggle_is_explicit_and_persistable() -> None:
+    from trinaxai_cli.commands import chat_slash
+
+    ui = FakeUI()
+    config = SimpleNamespace(thinking_enabled=True)
+    state = chat.ChatState(thinking=True)
+
+    handled, exit_code = chat_slash.handle_slash("/thinking off", [], object(), ui, config, state)
+    assert handled is True
+    assert exit_code is None
+    assert state.thinking is False
+    assert config.thinking_enabled is False
+
+    chat_slash.handle_slash("/thinking on", [], object(), ui, config, state)
+    assert state.thinking is True
+    assert config.thinking_enabled is True
+
+
+def test_prepare_local_image_uses_the_existing_ollama_message_shape(tmp_path: Path) -> None:
+    image = tmp_path / "photo.png"
+    image.write_bytes(b"\x89PNG\r\n\x1a\nsmall-image")
+
+    attachment = chat.prepare_local_file(image, "What is visible?")
+
+    assert attachment["kind"] == "image"
+    assert attachment["name"] == "photo.png"
+    assert attachment["message"]["content"] == "What is visible?"
+    assert attachment["message"]["images"]
+
+
 class FakeResponse:
     status_code = 200
 
@@ -51,14 +80,6 @@ class FakeResponse:
 
     def iter_lines(self) -> Iterator[str]:
         yield from self.lines
-
-
-def test_cli_identity_answers_are_complete_and_deterministic() -> None:
-    identity = prompts.canonical_identity_answer([{"role": "user", "content": "quien eres"}])
-    creator = prompts.canonical_identity_answer([{"role": "user", "content": "quien te creo"}])
-    assert identity and "TrinaxAI" in identity and "github.com/TrinaxCode/TrinaxAI" in identity
-    assert creator and "Full Stack Web Developer" in creator and "Tuxtla Gutiérrez" in creator
-    assert "wa.me" not in creator
 
 
 class FakeClient:
@@ -190,7 +211,7 @@ def test_general_chat_streams_and_stops_thinking_on_first_token(monkeypatch) -> 
     }
     monkeypatch.setattr(chat._system, "env_value", lambda key: values.get(key, ""))
 
-    answer = chat._stream_from_ollama(client, ui, [{"role": "user", "content": "hola"}])
+    answer = chat._stream_from_ollama(client, ui, [{"role": "user", "content": "salúdame brevemente"}])
 
     assert answer == "¡Hola!"
     assert ui.thinking_started == 1
@@ -375,11 +396,16 @@ def test_slash_registry_dispatches_inline_prompt_and_rejects_unknown() -> None:
 
 def test_cd_changes_session_workspace_and_resets_agent(tmp_path: Path) -> None:
     (tmp_path / "subdir").mkdir()
-    state = chat.ChatState(workspace=str(tmp_path), agent_engine=object())
+    state = chat.ChatState(
+        workspace=str(tmp_path),
+        agent_engine=object(),
+        agent_messages=[{"role": "user", "content": "old workspace context"}],
+    )
     ui = FakeUI()
 
     assert chat._handle_cd("cd subdir", state, ui) is True
 
     assert state.workspace == str((tmp_path / "subdir").resolve())
     assert state.agent_engine is None
+    assert state.agent_messages == []
     assert ui.successes[-1].endswith(str((tmp_path / "subdir").resolve()))

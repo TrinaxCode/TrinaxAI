@@ -263,6 +263,19 @@ def test_service_manager_cli_dispatches_every_public_action(monkeypatch, tmp_pat
     assert sm.main(["disable-autostart", *base]) == 0
 
 
+def test_status_text_uses_stable_display_name_for_rag_api(monkeypatch, tmp_path: Path, capsys) -> None:
+    monkeypatch.setattr(
+        sm,
+        "status_all",
+        lambda: [sm.ProcessState("rag_api", True, pid=3, detail="ready")],
+    )
+
+    assert sm.main(["status", "--base-dir", str(tmp_path)]) == 0
+    output = capsys.readouterr().out
+    assert "TrinaxAI RAG API: running" in output
+    assert "rag_api: running" not in output
+
+
 def test_direct_backend_and_windows_process_paths(monkeypatch, tmp_path: Path) -> None:
     class StartupInfo:
         dwFlags = 0
@@ -433,3 +446,162 @@ def test_windows_executable_and_systemd_status_edges(monkeypatch, tmp_path: Path
     )
     monkeypatch.setattr(sm, "_pgrep_status", lambda name: sm.ProcessState(name, False))
     assert backend.status("rag_api").running is False
+
+
+def test_recovery_supervisor_and_port_edges(monkeypatch, tmp_path: Path) -> None:
+    storage = tmp_path / "storage"
+    storage.mkdir()
+    pid_file = storage / "recovery.pid"
+    pid_file.write_text("0", encoding="ascii")
+    assert sm._recovery_pid(str(tmp_path)) is None
+    pid_file.write_text("123", encoding="ascii")
+    monkeypatch.setattr(sm.os, "kill", lambda *_args: (_ for _ in ()).throw(OSError()))
+    assert sm._recovery_pid(str(tmp_path)) is None
+    assert not pid_file.exists()
+
+    pid_file.write_text("123", encoding="ascii")
+    monkeypatch.setattr(sm.os, "kill", lambda *_args: None)
+    assert sm._recovery_pid(str(tmp_path)) == 123
+    monkeypatch.setattr(sm, "_recovery_pid", lambda _base: sm.os.getpid())
+    assert sm._stop_recovery(str(tmp_path)).detail == "not running"
+
+    recovery_values = iter((123, None))
+    monkeypatch.setattr(sm, "_recovery_pid", lambda _base: next(recovery_values))
+    killed = []
+    monkeypatch.setattr(sm.os, "kill", lambda pid, signal: killed.append((pid, signal)))
+    monkeypatch.setattr(sm.time, "monotonic", lambda: 0.0)
+    assert sm._stop_recovery(str(tmp_path)).detail == "stopped"
+    assert killed == [(123, 15)]
+
+    monkeypatch.setattr(sm, "_recovery_pid", lambda _base: 123)
+    monkeypatch.setattr(sm.os, "kill", lambda *_args: (_ for _ in ()).throw(OSError()))
+    assert sm._stop_recovery(str(tmp_path)).detail == "already stopped"
+
+    monkeypatch.setattr(sm, "_recovery_pid", lambda _base: 77)
+    assert sm._start_recovery(str(tmp_path)).detail == "already running"
+    monkeypatch.setattr(sm, "_recovery_pid", lambda _base: None)
+    monkeypatch.setattr(sm.subprocess, "Popen", lambda *_args, **_kwargs: SimpleNamespace(pid=77))
+    started = sm._start_recovery(str(tmp_path))
+    assert started.running and started.pid == 77
+    monkeypatch.setattr(sm.subprocess, "Popen", lambda *_args, **_kwargs: (_ for _ in ()).throw(OSError("denied")))
+    assert sm._start_recovery(str(tmp_path)).running is False
+
+    calls = []
+
+    class StartupInfo:
+        pass
+
+    monkeypatch.setattr(sm.sys, "platform", "win32")
+    monkeypatch.setattr(sm.subprocess, "CREATE_NEW_PROCESS_GROUP", 1, raising=False)
+    monkeypatch.setattr(sm.subprocess, "DETACHED_PROCESS", 2, raising=False)
+    monkeypatch.setattr(sm.subprocess, "Popen", lambda command, **kwargs: calls.append((command, kwargs)))
+    sm._start_supervisor(str(tmp_path))
+    assert calls[-1][1]["creationflags"] == 3
+
+    class Probe:
+        def settimeout(self, _value):
+            return None
+
+        def connect_ex(self, _address):
+            return 1
+
+        def close(self):
+            return None
+
+    monkeypatch.setattr(sm.socket, "socket", lambda *_args: Probe())
+    assert sm._wait_port_free(timeout=1) is True
+
+
+def test_service_manager_platform_failure_edges(monkeypatch, tmp_path: Path) -> None:
+    base = sm._Backend()
+    with pytest.raises(NotImplementedError):
+        base.start("x", command=["x"])
+    with pytest.raises(NotImplementedError):
+        base.stop("x")
+    with pytest.raises(NotImplementedError):
+        base.status("x")
+
+    monkeypatch.setattr(sm.sys, "platform", "linux")
+    assert sm._windows_no_window_kwargs() == {}
+
+    backend = sm._SystemdBackend()
+    monkeypatch.setattr(sm, "_run_systemctl", lambda *_args, **_kwargs: (_ for _ in ()).throw(FileNotFoundError()))
+    monkeypatch.setattr(sm, "_start_direct", lambda name, **_kwargs: sm.ProcessState(name, True, pid=3))
+    assert backend.start("rag_api", command=["python"]).pid == 3
+    monkeypatch.setattr(sm, "_stop_by_name", lambda name: sm.ProcessState(name, False, detail="fallback"))
+    assert backend.stop("rag_api").detail == "fallback"
+
+    monkeypatch.setattr(sm.Path, "home", lambda: tmp_path)
+    plist = tmp_path / "Library" / "LaunchAgents" / "com.trinaxai.rag_api.plist"
+    plist.parent.mkdir(parents=True)
+    plist.write_text("", encoding="utf-8")
+    launch = sm._LaunchctlBackend()
+    real_pgrep_status = sm._pgrep_status
+    monkeypatch.setattr(
+        sm.subprocess, "run", lambda *_args, **_kwargs: (_ for _ in ()).throw(subprocess.CalledProcessError(1, "load"))
+    )
+    monkeypatch.setattr(sm, "_start_direct", lambda name, **_kwargs: sm.ProcessState(name, True, pid=4))
+    assert launch.start("rag_api", command=["python"]).pid == 4
+    monkeypatch.setattr(sm, "_pgrep_status", lambda name: sm.ProcessState(name, False))
+    monkeypatch.setattr(sm.subprocess, "run", lambda *_args, **_kwargs: _completed(1))
+    assert launch.status("rag_api").running is False
+
+    monkeypatch.setattr(sm.sys, "platform", "linux")
+    monkeypatch.setattr(sm, "_pgrep_status", real_pgrep_status)
+    monkeypatch.setattr(sm.subprocess, "run", lambda *_args, **_kwargs: _completed(0, stdout="321\n"))
+    assert sm._pgrep_status("rag_api").pid == 321
+    monkeypatch.setattr(sm.shutil, "which", lambda name: "/usr/bin/killall" if name == "killall" else None)
+    monkeypatch.setattr(sm.subprocess, "run", lambda *_args, **_kwargs: (_ for _ in ()).throw(FileNotFoundError()))
+    assert sm._stop_by_name("rag_api").running is False
+
+    monkeypatch.setattr(sm.sys, "platform", "win32")
+    sm._reap_zombie_children()
+    monkeypatch.setattr(sm.sys, "platform", "linux")
+    monkeypatch.setattr(sm.shutil, "which", lambda name: "/usr/bin/sudo" if name == "sudo" else None)
+    wrapper = tmp_path / "wrapper"
+    wrapper.write_text("", encoding="utf-8")
+    wrapper.chmod(0o700)
+    monkeypatch.setattr(sm, "PRIVILEGED_LIFECYCLE_WRAPPER", wrapper)
+    monkeypatch.setattr(sm.os, "geteuid", lambda: 1000, raising=False)
+    monkeypatch.setattr(sm.os, "access", lambda *_args: True)
+    monkeypatch.setattr(sm.subprocess, "run", lambda *_args, **_kwargs: _completed(1, stderr="denied"))
+    assert sm._try_privileged_wrapper(str(tmp_path), "stop-ai")[0].detail == "denied"
+    monkeypatch.setattr(
+        sm.subprocess, "run", lambda *_args, **_kwargs: (_ for _ in ()).throw(subprocess.TimeoutExpired("sudo", 1))
+    )
+    assert "failed" in sm._try_privileged_wrapper(str(tmp_path), "start-ai")[0].detail
+    monkeypatch.setattr(
+        sm.shutil,
+        "which",
+        lambda name: "/usr/bin/tool" if name in {"sudo", "systemctl"} else None,
+    )
+    monkeypatch.setattr(
+        sm, "_run_systemctl", lambda *_args, **_kwargs: (_ for _ in ()).throw(subprocess.TimeoutExpired("systemctl", 1))
+    )
+    assert "skipped" in sm._systemd_set_enabled("rag_api", True)
+
+
+def test_public_lifecycle_remaining_branches_and_text_status(monkeypatch, tmp_path: Path, capsys) -> None:
+    failed = [sm.ProcessState("x", False, detail="failed")]
+    monkeypatch.setattr(sm, "_try_privileged_wrapper", lambda *_args: failed)
+    assert sm.start_all(str(tmp_path)) is failed
+    assert sm.stop_ai(str(tmp_path)) is failed
+
+    monkeypatch.setattr(sm, "_try_privileged_wrapper", lambda *_args: None)
+    monkeypatch.setattr(sm, "_set_ai_systemd_enabled", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr(sm, "_wait_port_free", lambda: False)
+    monkeypatch.setattr(sm, "_backend", SimpleNamespace(stop=lambda name: sm.ProcessState(name, False)))
+    result = sm.stop_all_for_base(str(tmp_path))
+    assert result[-1].name == "recovery"
+
+    monkeypatch.setattr(sm, "_backend", SimpleNamespace(status=lambda name: sm.ProcessState(name, False)))
+    monkeypatch.setattr(sm, "_read_ai_enabled", lambda _base: True)
+    monkeypatch.setattr(sm, "_reap_zombie_children", lambda: None)
+    monkeypatch.setattr(sm, "_start_named", lambda _base, name: sm.ProcessState(name, True, detail="started"))
+    monkeypatch.setattr(sm.time, "sleep", lambda _seconds: (_ for _ in ()).throw(StopIteration()))
+    with pytest.raises(StopIteration):
+        sm.watch(str(tmp_path), interval=5)
+
+    monkeypatch.setattr(sm, "status_all", lambda: [sm.ProcessState("rag_api", False, detail="down")])
+    assert sm.main(["status", "--base-dir", str(tmp_path)]) == 0
+    assert "stopped" in capsys.readouterr().out

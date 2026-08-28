@@ -84,11 +84,18 @@ case "${1:-}" in
     systemctl stop ai-rag.service ollama.service
     systemctl disable ai-rag.service ollama.service >/dev/null
     ;;
+  start-all)
+    systemctl enable ollama.service ai-rag.service trinaxai-frontend.service >/dev/null
+    systemctl start ollama.service ai-rag.service trinaxai-frontend.service
+    ;;
+  stop-all)
+    systemctl disable --now ai-rag.service ollama.service trinaxai-frontend.service >/dev/null
+    ;;
   reload-network)
     systemctl restart ai-rag.service trinaxai-frontend.service
     ;;
   *)
-    echo "usage: trinaxai-lifecycle {start-ai|stop-ai|reload-network}" >&2
+    echo "usage: trinaxai-lifecycle {start-ai|stop-ai|start-all|stop-all|reload-network}" >&2
     exit 2
     ;;
 esac
@@ -97,7 +104,7 @@ install -o root -g root -m 0755 "$wrapper_tmp" "$LIFECYCLE_WRAPPER"
 rm -f "$wrapper_tmp"
 cat >/etc/sudoers.d/trinaxai <<EOF
 # Exact root-owned lifecycle wrapper only; repository files are never sudoable.
-$OWNER ALL=(root) NOPASSWD: $LIFECYCLE_WRAPPER start-ai, $LIFECYCLE_WRAPPER stop-ai, $LIFECYCLE_WRAPPER reload-network
+$OWNER ALL=(root) NOPASSWD: $LIFECYCLE_WRAPPER start-ai, $LIFECYCLE_WRAPPER stop-ai, $LIFECYCLE_WRAPPER start-all, $LIFECYCLE_WRAPPER stop-all, $LIFECYCLE_WRAPPER reload-network
 EOF
 chmod 0440 /etc/sudoers.d/trinaxai
 if ! visudo -cf /etc/sudoers.d/trinaxai >/dev/null; then

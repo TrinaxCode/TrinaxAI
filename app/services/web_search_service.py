@@ -42,6 +42,8 @@ _PAGE_FETCH_MAX_REDIRECTS = 3
 _PAGE_FETCH_TIMEOUT_SECONDS = 5.0
 _PAGE_FETCH_MAX_RESULTS = 8
 _PAGE_FETCH_DEFAULT_RESULTS = 3
+_SEARXNG_LOCAL_PORT = 8080
+_SEARXNG_LOCAL_HOSTNAMES = frozenset({"localhost"})
 _PAGE_HEADERS = {
     "Accept": "text/html,application/xhtml+xml,text/plain;q=0.8",
     "Accept-Encoding": "identity",
@@ -54,6 +56,8 @@ _WEB_INTENT_PATTERNS = (
     r"\b(?:internet|web|en\s+línea|online)\b.{0,35}\b(?:busca|buscar|investiga|consulta|verifica)\b",
     r"\b(?:search|look\s+up|research|check|verify)\b.{0,35}\b(?:the\s+)?(?:internet|web|online)\b",
     r"\b(?:internet|web|online)\b.{0,35}\b(?:search|look\s+up|research|check|verify)\b",
+    r"^\s*(?:busca|búscame|buscame)\b.{0,35}\b(?:quién|quien)\b",
+    r"\b(?:search|look\s+up|research|check|verify)\b.{0,35}\bwho\b",
     r"^\s*/web\b",
 )
 
@@ -143,6 +147,29 @@ def _is_public_address(address: str) -> bool:
     )
 
 
+def _is_loopback_address(address: str) -> bool:
+    """Return whether an IP is a loopback address."""
+    try:
+        ip = ipaddress.ip_address(address.split("%", 1)[0])
+    except ValueError:
+        return False
+    if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped is not None:
+        ip = ip.ipv4_mapped
+    return ip.is_loopback
+
+
+def _is_loopback_hostname(hostname: str) -> bool:
+    if hostname in _SEARXNG_LOCAL_HOSTNAMES or hostname.endswith(".localhost"):
+        return True
+    try:
+        ip = ipaddress.ip_address(hostname)
+    except ValueError:
+        return False
+    if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped is not None:
+        ip = ip.ipv4_mapped
+    return ip.is_loopback
+
+
 def _validated_target(url: str) -> tuple[str, str, int, str, list[str]]:
     """Normalize a URL and return hostname/port/request-target/public IPs."""
     try:
@@ -181,6 +208,55 @@ def _validated_target(url: str) -> tuple[str, str, int, str, list[str]]:
     return scheme, hostname, port, path, addresses
 
 
+def _validated_provider_url(url: str) -> str:
+    """Validate a configured search-provider endpoint before making a request.
+
+    SearXNG's documented local endpoint is the sole private-target exception;
+    general result-page reads continue to use ``_validated_target``.
+    """
+    try:
+        parsed = urlsplit(str(url or "").strip())
+        port = parsed.port
+    except ValueError as exc:
+        raise PageFetchError("invalid provider URL") from exc
+    scheme = parsed.scheme.casefold()
+    if scheme not in {"http", "https"} or not parsed.hostname:
+        raise PageFetchError("only public http/https provider URLs are allowed")
+    if parsed.username is not None or parsed.password is not None or parsed.query or parsed.fragment:
+        raise PageFetchError("provider URLs cannot contain credentials, queries, or fragments")
+    try:
+        hostname = parsed.hostname.rstrip(".").encode("idna").decode("ascii").casefold()
+    except (UnicodeError, ValueError) as exc:
+        raise PageFetchError("invalid provider hostname") from exc
+    local_endpoint = _is_loopback_hostname(hostname)
+    if local_endpoint:
+        port = port or 80
+        if scheme != "http" or port != _SEARXNG_LOCAL_PORT:
+            raise PageFetchError("local SearXNG providers must use HTTP port 8080")
+    else:
+        expected_port = 443 if scheme == "https" else 80
+        port = port or expected_port
+        if port != expected_port:
+            raise PageFetchError("non-web provider ports are blocked")
+    try:
+        rows = socket.getaddrinfo(hostname, port, type=socket.SOCK_STREAM)
+    except OSError as exc:
+        raise PageFetchError("provider DNS resolution failed") from exc
+    addresses = list(dict.fromkeys(str(row[4][0]).split("%", 1)[0] for row in rows))
+    if not addresses:
+        raise PageFetchError("provider DNS resolution returned no addresses")
+    if local_endpoint:
+        # Keep a configured local alias pinned to the validated loopback answer
+        # so a later DNS lookup cannot turn this provider request into SSRF.
+        if any(not _is_loopback_address(address) for address in addresses):
+            raise PageFetchError("local/private provider targets are blocked")
+        hostname = addresses[0]
+    elif any(not _is_public_address(address) for address in addresses):
+        raise PageFetchError("local/private provider targets are blocked")
+    path = parsed.path.rstrip("/")
+    return f"{scheme}://{_host_header(hostname, port, scheme)}{path}"
+
+
 def _host_header(hostname: str, port: int, scheme: str) -> str:
     host = f"[{hostname}]" if ":" in hostname else hostname
     default_port = 443 if scheme == "https" else 80
@@ -196,7 +272,7 @@ def _open_pinned_response(
     deadline: float,
 ) -> tuple[http.client.HTTPResponse, socket.socket]:
     """Connect to a prevalidated address and return a started HTTP response."""
-    last_error: OSError | ssl.SSLError | None = None
+    last_error: BaseException | None = None
     for address in addresses:
         raw_socket: socket.socket | None = None
         try:
@@ -561,13 +637,19 @@ def _search_brave(query: str, limit: int) -> list[dict[str, str]]:
 def _search_searxng(query: str, limit: int) -> list[dict[str, str]]:
     if not config.WEB_SEARCH_SEARXNG_URL:
         raise WebSearchError("SearXNG requires TRINAXAI_SEARXNG_URL.")
+    try:
+        base_url = _validated_provider_url(config.WEB_SEARCH_SEARXNG_URL)
+    except PageFetchError as exc:
+        raise WebSearchError("SearXNG URL is invalid or not public.") from exc
     response = httpx.get(
-        f"{config.WEB_SEARCH_SEARXNG_URL.rstrip('/')}/search",
+        f"{base_url}/search",
         params={"q": query, "format": "json", "safesearch": 1},
         headers={"Accept": "application/json"},
         timeout=config.WEB_SEARCH_TIMEOUT,
-        follow_redirects=True,
+        follow_redirects=False,
     )
+    if 300 <= response.status_code < 400:
+        raise WebSearchError("SearXNG returned an unexpected redirect.")
     response.raise_for_status()
     results = []
     for row in response.json().get("results") or []:

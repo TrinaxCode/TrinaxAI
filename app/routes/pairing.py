@@ -5,12 +5,16 @@ from __future__ import annotations
 import threading
 import time
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 
 from app.security.admin_auth import (
+    DEVICE_TOKEN_COOKIE,
+    DEVICE_TOKEN_COOKIE_PATH,
     _client_host,
+    _device_token,
     _is_lan_client,
+    _is_local_client,
     authorize_scope,
 )
 from app.security.device_auth import (
@@ -42,6 +46,43 @@ class PairingClaimRequest(BaseModel):
     device_name: str = Field(min_length=1, max_length=80)
 
 
+def _cookie_secure(request: Request) -> bool:
+    if request.url.scheme.lower() == "https":
+        return True
+    return (
+        request.headers.get("X-TrinaxAI-Proxy") == "v1"
+        and request.headers.get("X-Forwarded-Proto", "").split(",", 1)[0].strip().lower() == "https"
+    )
+
+
+def _set_device_cookie(response: Response, request: Request, token: str, expires_at: object = None) -> None:
+    max_age = None
+    if expires_at is not None:
+        try:
+            max_age = max(0, int(float(expires_at) - time.time()))
+        except (TypeError, ValueError):
+            max_age = None
+    response.set_cookie(
+        key=DEVICE_TOKEN_COOKIE,
+        value=token,
+        max_age=max_age,
+        path=DEVICE_TOKEN_COOKIE_PATH,
+        secure=_cookie_secure(request),
+        httponly=True,
+        samesite="strict",
+    )
+
+
+def _clear_device_cookie(response: Response, request: Request) -> None:
+    response.delete_cookie(
+        key=DEVICE_TOKEN_COOKIE,
+        path=DEVICE_TOKEN_COOKIE_PATH,
+        secure=_cookie_secure(request),
+        httponly=True,
+        samesite="strict",
+    )
+
+
 def _enforce_claim_rate_limit(request: Request) -> None:
     key = _client_host(request)
     now = time.monotonic()
@@ -68,7 +109,9 @@ def _enforce_claim_rate_limit(request: Request) -> None:
 
 @router.post("/start")
 async def pairing_start(req: PairingStartRequest, request: Request):
-    """Create a one-time code. Only the real local peer or admin may do so."""
+    """Create a one-time code from the verified localhost host only."""
+    if not _is_local_client(_client_host(request)):
+        raise HTTPException(status_code=403, detail="Only the localhost host can generate pairing codes.")
     authorize_scope(request, "system")
     try:
         result = create_pairing_code(
@@ -84,8 +127,9 @@ async def pairing_start(req: PairingStartRequest, request: Request):
 
 
 @router.post("/claim")
-async def pairing_claim(req: PairingClaimRequest, request: Request):
-    """Consume a short code from a LAN/VPN peer and return its token once."""
+async def pairing_claim(req: PairingClaimRequest, request: Request, response: Response = None):
+    """Consume a short code and deliver the device credential in an HttpOnly cookie."""
+    response = response or Response()
     client_ip = _client_host(request)
     if not _is_lan_client(client_ip):
         raise HTTPException(status_code=403, detail="Device pairing is only available on the local network or VPN.")
@@ -96,7 +140,8 @@ async def pairing_claim(req: PairingClaimRequest, request: Request):
         raise HTTPException(status_code=403, detail="The pairing code is invalid or expired.") from exc
     except DeviceRegistryError as exc:
         raise HTTPException(status_code=503, detail="Pairing storage is unavailable. Try again shortly.") from exc
-    return {"ok": True, **result}
+    _set_device_cookie(response, request, result["token"], result["device"].get("expires_at"))
+    return {"ok": True, "device": result["device"]}
 
 
 @router.get("/devices")
@@ -121,21 +166,28 @@ async def pairing_revoke(device_id: str, request: Request):
 
 
 @router.get("/me")
-async def pairing_me(request: Request):
-    token = request.headers.get(DEVICE_TOKEN_HEADER, "")
+async def pairing_me(request: Request, response: Response = None):
+    response = response or Response()
+    token = _device_token(request)
     device = device_for_token(token) if token else None
     if device is None:
         raise HTTPException(status_code=403, detail="A valid device credential is required.")
+    _client_host(request)
+    if request.headers.get(DEVICE_TOKEN_HEADER, "").strip():
+        _set_device_cookie(response, request, token, device.get("expires_at"))
     return {"ok": True, "device": device}
 
 
 @router.delete("/me")
-async def pairing_revoke_me(request: Request):
-    token = request.headers.get(DEVICE_TOKEN_HEADER, "")
+async def pairing_revoke_me(request: Request, response: Response = None):
+    response = response or Response()
+    token = _device_token(request)
     device = device_for_token(token) if token else None
     if device is None:
         raise HTTPException(status_code=403, detail="A valid device credential is required.")
+    _client_host(request)
     revoked = revoke_device(device["id"])
+    _clear_device_cookie(response, request)
     return {"ok": True, "device": revoked}
 
 

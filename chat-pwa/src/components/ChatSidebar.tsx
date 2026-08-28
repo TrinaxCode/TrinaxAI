@@ -1,6 +1,5 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import { MdChat, MdDelete, MdClose, MdAdd, MdSettings, MdSearch, MdFolder, MdCreateNewFolder, MdVisibilityOff, MdExpandMore } from 'react-icons/md';
-import { FaGithub } from 'react-icons/fa';
 import { useI18n } from '../i18n/I18nContext';
 import { useTheme } from '../theme/ThemeContext';
 import { useState, useRef, useCallback } from 'react';
@@ -88,11 +87,10 @@ export default function ChatSidebar({
 
   const sidebarBg = isDark
     ? 'bg-black/65 border-white/[0.06]'
-    : 'bg-white border-gray-200 shadow-xl';
+    : 'bg-white border-gray-200';
   const headerBorder = isDark ? 'border-white/[0.06]' : 'border-gray-200';
   const textMuted = isDark ? 'text-white/50' : 'text-gray-500';
   const hoverBg = isDark ? 'hover:bg-white/[0.06]' : 'hover:bg-gray-100';
-  const footerBorder = isDark ? 'border-white/[0.06]' : 'border-gray-200';
   const emptyText = isDark ? 'text-white/30' : 'text-gray-400';
   const activeBg = isDark ? 'bg-[#006bbd]/15 text-white' : 'bg-[#006bbd]/10 text-gray-900';
   const inactiveText = isDark ? 'text-white/50 hover:text-white/80' : 'text-gray-500 hover:text-gray-800';
@@ -115,30 +113,25 @@ export default function ChatSidebar({
       className="group"
     >
       <div
-        onClick={() => { onSelect(session.id); }}
-        onKeyDown={(event) => {
-          // Keep the row keyboard-operable without turning it into a button:
-          // it contains its own move/delete buttons, which cannot be nested.
-          if (event.target !== event.currentTarget) return;
-          if (event.key === 'Enter' || event.key === ' ') {
-            event.preventDefault();
-            onSelect(session.id);
-          }
-        }}
-        role="button"
-        tabIndex={0}
-        aria-current={session.id === activeId ? 'page' : undefined}
-        className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-left text-sm transition-colors cursor-pointer ${session.id === activeId ? activeBg : `${inactiveText} ${hoverBg}`}`}
+        className={`w-full flex items-center gap-2.5 rounded-xl text-left text-sm transition-colors ${session.id === activeId ? activeBg : `${inactiveText} ${hoverBg}`}`}
       >
-        <MdChat size={16} className="shrink-0 opacity-60" />
-        <div className="min-w-0 flex-1">
-          <span className="block truncate text-sm">{session.title}</span>
-          {session.messages.length > 0 && <span className={`block truncate text-[11px] mt-0.5 ${isDark ? 'text-white/30' : 'text-gray-400'}`}>{session.messages[session.messages.length - 1].content.replace(/\n/g, ' ').slice(0, 60)}</span>}
-        </div>
-        <div className="relative shrink-0">
+        <button
+          type="button"
+          onClick={() => onSelect(session.id)}
+          aria-label={session.title}
+          aria-current={session.id === activeId ? 'page' : undefined}
+          className="flex min-w-0 flex-1 items-center gap-2.5 px-3 py-2.5 text-left text-sm"
+        >
+          <MdChat size={16} className="shrink-0 opacity-60" />
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-sm">{session.title}</span>
+            {session.messages.length > 0 && <span className={`block truncate text-[11px] mt-0.5 ${isDark ? 'text-white/30' : 'text-gray-400'}`}>{session.messages[session.messages.length - 1].content.replace(/\n/g, ' ').slice(0, 60)}</span>}
+          </span>
+        </button>
+        <div className="relative flex shrink-0 items-center gap-0">
           <button
             onClick={(event) => { event.stopPropagation(); setFolderMenuId((current) => current === session.id ? null : session.id); }}
-            className={`rounded-md p-1 opacity-0 transition-[background-color,color,opacity] group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 ${isDark ? 'text-white/35 hover:bg-white/[0.08] hover:text-white' : 'text-gray-400 hover:bg-gray-100 hover:text-gray-700'}`}
+            className={`grid h-8 w-8 min-h-0 min-w-0 place-items-center rounded-md p-1 opacity-0 transition-[background-color,color,opacity] group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 ${isDark ? 'text-white/35 hover:bg-white/[0.08] hover:text-white' : 'text-gray-400 hover:bg-gray-100 hover:text-gray-700'}`}
             aria-label={t('moveChatToFolder')}
             title={t('moveChatToFolder')}
           >
@@ -156,8 +149,8 @@ export default function ChatSidebar({
               </motion.div>
             )}
           </AnimatePresence>
+          <button onClick={(e) => { e.stopPropagation(); setDeleteId(session.id); }} className="grid h-8 w-8 place-items-center rounded-md p-1 dark:text-white/20 text-gray-400 hover:text-red-500 dark:hover:text-red-400 hover:bg-red-400/10 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 transition-[background-color,color,opacity]" aria-label={`${t('delete')} ${session.title}`}><MdDelete size={14} /></button>
         </div>
-        <button onClick={(e) => { e.stopPropagation(); setDeleteId(session.id); }} className="p-1 rounded-md dark:text-white/20 text-gray-400 hover:text-red-500 dark:hover:text-red-400 hover:bg-red-400/10 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 transition-[background-color,color,opacity]" aria-label={`${t('delete')} ${session.title}`}><MdDelete size={14} /></button>
       </div>
     </motion.div>
   );
@@ -168,7 +161,7 @@ export default function ChatSidebar({
       <AnimatePresence>
         {isOpen && (
           <motion.div
-            className="fixed inset-0 z-[55] bg-black/30"
+            className="sidebar-backdrop fixed inset-0 z-[55] bg-black/30"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -184,7 +177,7 @@ export default function ChatSidebar({
       <motion.aside
         aria-hidden={!isOpen}
         inert={!isOpen}
-        className={`sidebar-surface fixed left-0 top-0 z-[60] h-dvh w-[85vw] max-w-[300px] sm:w-72 ${sidebarBg} border-r flex flex-col`}
+        className={`sidebar-surface fixed left-0 top-0 z-[60] h-dvh w-[calc(100vw-1.5rem)] max-w-[280px] sm:w-[280px] ${sidebarBg} border-r shadow-none flex flex-col`}
         style={{
           paddingBottom: 'env(safe-area-inset-bottom, 0px)',
           contain: 'layout paint',
@@ -195,16 +188,26 @@ export default function ChatSidebar({
         animate={isOpen ? 'open' : 'closed'}
       >
         {/* Header with logo */}
-        <div className={`px-4 pt-[env(safe-area-inset-top,0px)] pb-3 border-b ${headerBorder}`}>
-          <div className="sidebar-history-header flex items-center justify-between">
-            <div className="flex min-w-0 items-center gap-2">
-              <span className={`truncate text-sm font-medium tracking-wide ${isDark ? 'text-white/70' : 'text-gray-600'}`}>{t('history')}</span>
+        <div className={`px-1 pt-[env(safe-area-inset-top,0px)] pb-1 border-b ${headerBorder}`}>
+          <div className="sidebar-history-header flex items-center">
+            <div className="sidebar-history-logo ml-0 flex shrink-0 items-center justify-center rounded-full p-1">
+              <img
+                src="/logo-for-ai-transparent.webp"
+                alt="TrinaxAI"
+                className="h-full w-full rounded-full object-contain"
+                width={40}
+                height={40}
+                draggable={false}
+              />
             </div>
-            <div className="flex items-center gap-1">
+            <span className={`ml-1 text-sm font-semibold ${isDark ? 'text-white/80' : 'text-gray-700'}`}>
+              {t('history')}
+            </span>
+            <div className="ml-auto flex shrink-0 items-center gap-0">
             {onBrowser && (
               <button
                 onClick={onBrowser}
-                className={`p-2 rounded-lg ${isDark ? 'text-white/40 hover:text-white/80' : 'text-gray-400 hover:text-gray-700'} ${hoverBg} transition-colors`}
+                className={`grid min-h-10 min-w-10 place-items-center rounded-lg p-2 ${isDark ? 'text-white/40 hover:text-white/80' : 'text-gray-400 hover:text-gray-700'} ${hoverBg} transition-colors`}
                 aria-label={t('knowledgeBrowser')}
               >
                 <MdFolder size={18} />
@@ -212,14 +215,14 @@ export default function ChatSidebar({
             )}
             <button
               onClick={onSettings}
-              className={`p-2 rounded-lg ${isDark ? 'text-white/40 hover:text-white/80' : 'text-gray-400 hover:text-gray-700'} ${hoverBg} transition-colors`}
+              className={`grid min-h-10 min-w-10 place-items-center rounded-lg p-2 ${isDark ? 'text-white/40 hover:text-white/80' : 'text-gray-400 hover:text-gray-700'} ${hoverBg} transition-colors`}
               aria-label={t('settings')}
             >
               <MdSettings size={18} />
             </button>
             <button
               onClick={onToggle}
-              className={`p-2 rounded-lg ${isDark ? 'text-white/40 hover:text-white/80' : 'text-gray-400 hover:text-gray-700'} ${hoverBg} transition-colors`}
+              className={`grid min-h-10 min-w-10 place-items-center rounded-lg p-2 ${isDark ? 'text-white/40 hover:text-white/80' : 'text-gray-400 hover:text-gray-700'} ${hoverBg} transition-colors`}
               aria-label={t('closeMenu')}
             >
               <MdClose size={20} />
@@ -232,7 +235,7 @@ export default function ChatSidebar({
           className={`mx-3 mt-3 mb-2 flex items-center gap-2 rounded-xl border px-3 py-2 transition-[background-color,border-color,box-shadow] duration-300 focus-within:animate-border-glow ${isDark ? 'bg-white/[0.03] border-white/[0.06] focus-within:border-[#006bbd]/40' : 'bg-gray-50 border-gray-200 focus-within:border-[#006bbd]/40'}`}
         >
           <MdSearch size={16} className={isDark ? 'text-white/30' : 'text-gray-400'} />
-          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t('searchChats')} aria-label={t('searchChats')} className={`min-w-0 flex-1 bg-transparent text-sm outline-none ${isDark ? 'text-white/70 placeholder-white/25' : 'text-gray-700 placeholder-gray-400'}`} />
+          <input data-group-focus value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t('searchChats')} aria-label={t('searchChats')} className={`min-w-0 flex-1 bg-transparent text-sm outline-none ${isDark ? 'text-white/70 placeholder-white/25' : 'text-gray-700 placeholder-gray-400'}`} />
           {query && <button onClick={() => setQuery('')} className="p-0.5" aria-label={t('clearSearch')}><MdClose size={16} /></button>}
         </div>
 
@@ -250,8 +253,9 @@ export default function ChatSidebar({
         </div>
 
         {/* Session List */}
-        <div className="flex-1 overflow-y-auto px-2 py-3 space-y-1">
-          {(isSearching ? [{ id: 'general', name: t('generalFolder'), items: looseSessions }, ...folders.map((folder) => ({ id: folder.id, name: folder.name, items: filteredSessions.filter((session) => session.folderId === folder.id) }))] : [...folders.filter((folder) => selectedFolderIds.includes(folder.id)).map((folder) => ({ id: folder.id, name: folder.name, items: filteredSessions.filter((session) => session.folderId === folder.id) })), { id: 'general', name: t('generalFolder'), items: looseSessions }]).map((group) => {
+        <div className="relative min-h-0 flex-1">
+          <div className="h-full overflow-y-auto px-2 py-3 space-y-1">
+            {(isSearching ? [{ id: 'general', name: t('generalFolder'), items: looseSessions }, ...folders.map((folder) => ({ id: folder.id, name: folder.name, items: filteredSessions.filter((session) => session.folderId === folder.id) }))] : [...folders.filter((folder) => selectedFolderIds.includes(folder.id)).map((folder) => ({ id: folder.id, name: folder.name, items: filteredSessions.filter((session) => session.folderId === folder.id) })), { id: 'general', name: t('generalFolder'), items: looseSessions }]).map((group) => {
             const isCollapsed = collapsedFolders.has(group.id);
             return (
             <motion.div key={group.id} layout="position" transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }} className="mb-3">
@@ -277,20 +281,21 @@ export default function ChatSidebar({
               </AnimatePresence>
             </motion.div>
             );
-          })}
+            })}
 
-          {filteredSessions.length === 0 && (
-            <p className={`text-center ${emptyText} text-xs py-8 px-4`}>
-              {query.trim() ? t('noChatResults') : t('noChats')}
-            </p>
-          )}
+            {filteredSessions.length === 0 && (
+              <p className={`text-center ${emptyText} text-xs py-8 px-4`}>
+                {query.trim() ? t('noChatResults') : t('noChats')}
+              </p>
+            )}
+          </div>
         </div>
 
         {/* New and temporary chats */}
         <div className="mx-3 my-2 flex items-center gap-2">
           <button
             onClick={() => onCreate(engine)}
-            className="flex flex-1 items-center justify-center gap-2 px-3 py-2 rounded-xl
+            className="flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl px-3 py-2
                        border border-[#006bbd]/30 text-[#006bbd] text-sm font-medium
                        hover:bg-[#006bbd]/10 transition-colors"
           >
@@ -299,7 +304,7 @@ export default function ChatSidebar({
           </button>
           <button
             onClick={() => onCreateTemporary(engine)}
-            className={`flex shrink-0 items-center justify-center rounded-xl border p-2 transition-colors ${isDark ? 'border-white/[0.12] text-white/60 hover:bg-white/[0.08] hover:text-white' : 'border-gray-200 text-gray-500 hover:bg-gray-100 hover:text-gray-800'}`}
+             className={`flex h-11 min-h-11 min-w-11 shrink-0 items-center justify-center rounded-xl border p-2 transition-colors ${isDark ? 'border-white/[0.12] text-white/60 hover:bg-white/[0.08] hover:text-white' : 'border-gray-200 text-gray-500 hover:bg-gray-100 hover:text-gray-800'}`}
             aria-label={t('temporaryChat')}
             title={t('temporaryChat')}
           >
@@ -307,20 +312,6 @@ export default function ChatSidebar({
           </button>
         </div>
 
-        {/* GitHub Footer */}
-        <div className={`shrink-0 px-4 py-3 border-t ${footerBorder}`}>
-          <motion.a
-            href="https://github.com/TrinaxCode"
-            target="_blank"
-            rel="noopener noreferrer"
-            className={`flex w-full items-center justify-center gap-2 px-3 py-2 rounded-xl text-center ${textMuted} hover:text-[#006bbd] ${hoverBg} transition-colors text-sm`}
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.98 }}
-          >
-            <FaGithub size={16} />
-            <span className="font-medium">TrinaxCode</span>
-          </motion.a>
-        </div>
       </motion.aside>
 
       <ConfirmModal

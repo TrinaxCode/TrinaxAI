@@ -92,6 +92,13 @@ def _resolve_in_workspace(workspace_root: Path, rel: str) -> Path:
         raise SandboxError("empty path")
     candidate = Path(raw)
     if not candidate.is_absolute():
+        # Models and clients sometimes echo the workspace name even though the
+        # tool contract already makes paths relative to it ("TrinaxAI/foo.py").
+        # Treat that single redundant prefix as the root itself, not as a
+        # child directory. This also handles Windows' case-insensitive names.
+        parts = candidate.parts
+        if parts and parts[0].casefold() == root.name.casefold():
+            candidate = Path(*parts[1:]) or Path(".")
         candidate = root / candidate
     # ``resolve`` collapses ``..`` and follows symlinks so we compare real paths.
     resolved = candidate.resolve()
@@ -139,9 +146,9 @@ def _external_failure_reason(detail: object) -> tuple[str, str]:
         reason, message = "no_internet", "I couldn't access the internet right now."
     elif status is not None and status >= 500:
         reason, message = "api_unavailable", "The external API is temporarily unavailable."
-    elif any(term in text for term in ("connection refused", "connect error", "provider offline", "offline")):
-        reason, message = "provider_offline", "The external provider appears to be offline or unreachable."
-    elif isinstance(detail, (urllib.error.URLError, ConnectionError)):
+    elif any(
+        term in text for term in ("connection refused", "connect error", "provider offline", "offline")
+    ) or isinstance(detail, (urllib.error.URLError, ConnectionError)):
         reason, message = "provider_offline", "The external provider appears to be offline or unreachable."
     else:
         reason, message = "api_unavailable", "The external API is temporarily unavailable."
@@ -435,7 +442,9 @@ def _list_dir(workspace_root: Path, path: str = ".", **_: Any) -> str:
         if scope_error:
             return scope_error
     try:
-        children = [child for child in target.iterdir() if child.name not in _SKIP_DIRS]
+        # Do not even disclose symlink entries: their targets may live outside
+        # the workspace, and read/write tools deliberately reject those paths.
+        children = [child for child in target.iterdir() if child.name not in _SKIP_DIRS and not child.is_symlink()]
     except OSError as exc:
         return f"error: cannot list directory: {exc}"
     children.sort(key=lambda p: (p.is_file(), p.name.lower()))
@@ -463,7 +472,16 @@ def _glob(workspace_root: Path, pattern: str, **_: Any) -> str:
         try:
             candidates = root.glob(normalized)
             for full in candidates:
-                if full.is_file() and not any(part in _SKIP_DIRS for part in full.relative_to(root).parts):
+                try:
+                    resolved = full.resolve()
+                except OSError:
+                    continue
+                if (
+                    full.is_file()
+                    and not full.is_symlink()
+                    and (resolved == root or root in resolved.parents)
+                    and not any(part in _SKIP_DIRS for part in full.relative_to(root).parts)
+                ):
                     matches.append(str(full.relative_to(root)))
                     if len(matches) > MAX_GLOB_MATCHES:
                         break
@@ -472,11 +490,13 @@ def _glob(workspace_root: Path, pattern: str, **_: Any) -> str:
     else:
         for dirpath, dirnames, filenames in os.walk(root):
             current = Path(dirpath)
-            dirnames[:] = [d for d in dirnames if d not in _SKIP_DIRS]
+            dirnames[:] = [d for d in dirnames if d not in _SKIP_DIRS and not (current / d).is_symlink()]
             if _depth(current, root) >= MAX_RECURSIVE_DEPTH:
                 dirnames[:] = []
             for name in filenames:
                 full = current / name
+                if full.is_symlink():
+                    continue
                 rel = str(full.relative_to(root))
                 if fnmatch.fnmatch(rel, normalized):
                     matches.append(rel)
@@ -514,6 +534,8 @@ def _grep(workspace_root: Path, pattern: str, path: str = ".", **_: Any) -> str:
                 )
     for file in files:
         try:
+            if file.is_symlink():
+                continue
             if file.stat().st_size > MAX_FILE_BYTES:
                 continue
             for lineno, line in enumerate(file.read_text(encoding="utf-8", errors="replace").splitlines(), start=1):
@@ -582,6 +604,7 @@ def _bubblewrap_argv(workspace_root: Path, command: str) -> list[str] | None:
             "/bin",
         )
     )
+    # These temporary paths are private inside the bubblewrap namespace.
     argv.extend(
         (
             "--proc",
@@ -589,11 +612,11 @@ def _bubblewrap_argv(workspace_root: Path, command: str) -> list[str] | None:
             "--dev",
             "/dev",
             "--tmpfs",
-            "/tmp",  # nosec B108 - private tmpfs inside the bubblewrap namespace
+            "/tmp",  # nosec B108
             "--dir",
             "/home",
             "--dir",
-            "/tmp/trinaxai-home",  # nosec B108 - private directory inside that tmpfs
+            "/tmp/trinaxai-home",  # nosec B108
             "--bind",
             str(root),
             str(root),
@@ -601,10 +624,10 @@ def _bubblewrap_argv(workspace_root: Path, command: str) -> list[str] | None:
             str(root),
             "--setenv",
             "HOME",
-            "/tmp/trinaxai-home",  # nosec B108 - sandbox-only HOME
+            "/tmp/trinaxai-home",  # nosec B108
             "--setenv",
             "TMPDIR",
-            "/tmp",  # nosec B108 - sandbox-only TMPDIR
+            "/tmp",  # nosec B108
             "--setenv",
             "PATH",
             path_value,
@@ -652,7 +675,7 @@ def _run_process(argv: list[str], *, cwd: Path) -> tuple[int, str, str]:
         else:
             proc.kill()
         stdout, stderr = proc.communicate()
-        raise subprocess.TimeoutExpired(argv, RUN_TIMEOUT_SECONDS, output=stdout, stderr=stderr)
+        raise subprocess.TimeoutExpired(argv, RUN_TIMEOUT_SECONDS, output=stdout, stderr=stderr) from None
     return proc.returncode, stdout or "", stderr or ""
 
 

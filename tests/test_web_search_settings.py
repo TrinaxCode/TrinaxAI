@@ -104,7 +104,7 @@ def test_connection_uses_selected_provider(monkeypatch, tmp_path):
         response = client.post("/v1/settings/web-search/test", json={"provider": "duckduckgo"})
     assert response.json() == {"ok": True, "provider": "duckduckgo", "result_count": 1}
     assert observed == {"query": "Python programming language", "limit": 1, "provider": "duckduckgo"}
-    assert settings.config.WEB_SEARCH_PROVIDER == original
+    assert original == settings.config.WEB_SEARCH_PROVIDER
 
 
 def test_concurrent_updates_are_serialized(monkeypatch, tmp_path):

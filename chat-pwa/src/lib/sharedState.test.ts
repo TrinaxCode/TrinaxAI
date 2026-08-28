@@ -31,8 +31,10 @@ describe('versioned shared state synchronization', () => {
     vi.unstubAllGlobals();
   });
 
-  it('authenticates reads and sends a versioned operation instead of a snapshot', async () => {
+  it('syncs supported state keys without treating every tc-* value as shared state', async () => {
     localStorage.setItem('tc-theme', 'dark');
+    localStorage.setItem('tc-models-vision-quality', 'balanced');
+    localStorage.setItem('tc-private-extension-state', 'must stay local');
     const fetchMock = vi.fn().mockImplementation((_url: string, init: RequestInit = {}) => {
       if (init.method === 'PUT') {
         return Promise.resolve(mockResponse({
@@ -41,7 +43,12 @@ describe('versioned shared state synchronization', () => {
         }));
       }
       return Promise.resolve(mockResponse({
-        body: { ok: true, schema_version: 2, revision: 0, values: {} },
+        body: {
+          ok: true,
+          schema_version: 2,
+          revision: 0,
+          values: { 'tc-private-remote-state': 'must stay remote' },
+        },
         etag: '"trinaxai-app-state-v2-0"',
       }));
     });
@@ -59,8 +66,78 @@ describe('versioned shared state synchronization', () => {
     expect(JSON.parse(fetchMock.mock.calls[1][1]?.body as string)).toMatchObject({
       schema_version: 2,
       base_revision: 0,
-      operations: [{ op: 'set', key: 'tc-theme', value: 'dark' }],
+      operations: [
+        { op: 'set', key: 'tc-models-vision-quality', value: 'balanced' },
+        { op: 'set', key: 'tc-theme', value: 'dark' },
+      ],
     });
+    expect(JSON.stringify(fetchMock.mock.calls[1][1]?.body)).not.toContain('tc-private-extension-state');
+    expect(localStorage.getItem('tc-private-remote-state')).toBeNull();
+
+    sessionStorage.setItem('tc-session-only', 'secret');
+    await syncSharedStateOnce(1000, true);
+    expect(fetchMock.mock.calls.filter((call) => call[1]?.method === 'PUT')).toHaveLength(1);
+  });
+
+  it('detects local set/delete changes between syncs without patching Storage.prototype', async () => {
+    const originalSetItem = Storage.prototype.setItem;
+    const originalRemoveItem = Storage.prototype.removeItem;
+    let readCount = 0;
+    let writeCount = 0;
+    const fetchMock = vi.fn().mockImplementation((_url: string, init: RequestInit = {}) => {
+      if (init.method === 'PUT') {
+        writeCount += 1;
+        return Promise.resolve(mockResponse({
+          body: { ok: true, schema_version: 2, revision: writeCount, applied: true },
+          etag: `"trinaxai-app-state-v2-${writeCount}"`,
+        }));
+      }
+      readCount += 1;
+      return Promise.resolve(readCount === 1
+        ? mockResponse({ body: { ok: true, schema_version: 2, revision: 0, values: {} } })
+        : mockResponse({ status: 304 }));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await syncSharedStateOnce(1000, true);
+    sessionStorage.setItem('tc-theme', 'session-only');
+    localStorage.setItem('tc-theme', 'dark');
+    await syncSharedStateOnce(1000, true);
+    localStorage.removeItem('tc-theme');
+    await syncSharedStateOnce(1000, true);
+
+    const puts = fetchMock.mock.calls.filter((call) => call[1]?.method === 'PUT');
+    expect(puts).toHaveLength(2);
+    expect(JSON.parse(puts[0][1]?.body as string).operations).toEqual([
+      { op: 'set', key: 'tc-theme', value: 'dark' },
+    ]);
+    expect(JSON.parse(puts[1][1]?.body as string).operations).toEqual([
+      { op: 'delete', key: 'tc-theme' },
+    ]);
+    expect(sessionStorage.getItem('tc-theme')).toBe('session-only');
+    expect(Storage.prototype.setItem).toBe(originalSetItem);
+    expect(Storage.prototype.removeItem).toBe(originalRemoveItem);
+  });
+
+  it('migrates legacy local preferences while removing timestamp metadata', async () => {
+    localStorage.setItem('tc-user-name', 'Ada');
+    localStorage.setItem('tc-sync-meta', JSON.stringify({ 'tc-user-name': { updatedAt: 1, hash: 'old' } }));
+    const fetchMock = vi.fn().mockImplementation((_url: string, init: RequestInit = {}) => init.method === 'PUT'
+      ? Promise.resolve(mockResponse({
+        body: { ok: true, schema_version: 2, revision: 1, applied: true },
+        etag: '"trinaxai-app-state-v2-1"',
+      }))
+      : Promise.resolve(mockResponse({
+        body: { ok: true, schema_version: 2, revision: 0, values: {} },
+        etag: '"trinaxai-app-state-v2-0"',
+      })));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await syncSharedStateOnce(1000, true);
+
+    expect(localStorage.getItem('tc-sync-meta')).toBeNull();
+    const operations = JSON.parse(fetchMock.mock.calls.find((call) => call[1]?.method === 'PUT')?.[1]?.body as string).operations;
+    expect(operations).toContainEqual({ op: 'set', key: 'tc-user-name', value: 'Ada' });
   });
 
   it('propagates a local removal as a delete operation', async () => {
@@ -145,7 +222,7 @@ describe('versioned shared state synchronization', () => {
       getCount += 1;
       if (getCount === 1) {
         return Promise.resolve(mockResponse({
-          body: { ok: true, schema_version: 2, revision: 1, values: { 'tc-obsolete': 'old' } },
+          body: { ok: true, schema_version: 2, revision: 1, values: { 'tc-keep-alive': 'old' } },
           etag: '"trinaxai-app-state-v2-1"',
         }));
       }
@@ -157,10 +234,10 @@ describe('versioned shared state synchronization', () => {
     vi.stubGlobal('fetch', fetchMock);
 
     await syncSharedStateOnce(1000, true);
-    expect(localStorage.getItem('tc-obsolete')).toBe('old');
+    expect(localStorage.getItem('tc-keep-alive')).toBe('old');
     await syncSharedStateOnce(1000, true);
 
-    expect(localStorage.getItem('tc-obsolete')).toBeNull();
+    expect(localStorage.getItem('tc-keep-alive')).toBeNull();
     expect(fetchMock.mock.calls.every((call) => call[1]?.method !== 'PUT')).toBe(true);
   });
 

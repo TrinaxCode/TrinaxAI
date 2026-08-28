@@ -41,14 +41,14 @@ export function findBuiltin(name: string, lang: 'es' | 'en'): BuiltinCommand | u
 }
 
 export const QUICK_CHIP_POOL: QuickChipDef[] = [
-  { labelKey: 'quickChipIdeas', icon: '💡', kind: 'prompt', promptKey: 'quickChipIdeasPrompt' },
-  { labelKey: 'quickChipWrite', icon: '✍️', kind: 'prompt', promptKey: 'quickChipWritePrompt' },
-  { labelKey: 'quickChipPlan', icon: '🗓️', kind: 'prompt', promptKey: 'quickChipPlanPrompt' },
-  { labelKey: 'quickChipLearn', icon: '📚', kind: 'prompt', promptKey: 'quickChipLearnPrompt' },
-  { labelKey: 'quickChipSummarizeText', icon: '📝', kind: 'prompt', promptKey: 'quickChipSummarizeTextPrompt' },
-  { labelKey: 'quickChipTranslateText', icon: '🌐', kind: 'prompt', promptKey: 'quickChipTranslateTextPrompt' },
-  { labelKey: 'quickChipCompare', icon: '⚖️', kind: 'prompt', promptKey: 'quickChipComparePrompt' },
-  { labelKey: 'quickChipOrganize', icon: '✅', kind: 'prompt', promptKey: 'quickChipOrganizePrompt' },
-  { labelKey: 'quickChipTrip', icon: '🧳', kind: 'prompt', promptKey: 'quickChipTripPrompt' },
-  { labelKey: 'quickChipDecision', icon: '🎯', kind: 'prompt', promptKey: 'quickChipDecisionPrompt' },
+  { labelKey: 'quickChipIdeas', icon: '', kind: 'prompt', promptKey: 'quickChipIdeasPrompt' },
+  { labelKey: 'quickChipWrite', icon: '', kind: 'prompt', promptKey: 'quickChipWritePrompt' },
+  { labelKey: 'quickChipPlan', icon: '', kind: 'prompt', promptKey: 'quickChipPlanPrompt' },
+  { labelKey: 'quickChipLearn', icon: '', kind: 'prompt', promptKey: 'quickChipLearnPrompt' },
+  { labelKey: 'quickChipSummarizeText', icon: '', kind: 'prompt', promptKey: 'quickChipSummarizeTextPrompt' },
+  { labelKey: 'quickChipTranslateText', icon: '', kind: 'prompt', promptKey: 'quickChipTranslateTextPrompt' },
+  { labelKey: 'quickChipCompare', icon: '', kind: 'prompt', promptKey: 'quickChipComparePrompt' },
+  { labelKey: 'quickChipOrganize', icon: '', kind: 'prompt', promptKey: 'quickChipOrganizePrompt' },
+  { labelKey: 'quickChipTrip', icon: '', kind: 'prompt', promptKey: 'quickChipTripPrompt' },
+  { labelKey: 'quickChipDecision', icon: '', kind: 'prompt', promptKey: 'quickChipDecisionPrompt' },
 ];

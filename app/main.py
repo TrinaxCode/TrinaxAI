@@ -12,6 +12,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.datastructures import MutableHeaders
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.errors import (
@@ -20,18 +21,19 @@ from app.errors import (
     validation_exception_handler,
 )
 from app.routes import ROUTERS
-from app.security.admin_auth import SAFE_DEFAULT_ORIGINS
+from app.security.admin_auth import SAFE_DEFAULT_ORIGIN_REGEX, SAFE_DEFAULT_ORIGINS
 from app.services import shared_runtime as runtime
+from app.services import system_service as lifecycle_runtime
 
 LOG = logging.getLogger("trinaxai.app")
 _REQUEST_ID_RE = re.compile(r"^[A-Za-z0-9._-]{1,128}$")
 _PRIVATE_CACHE_PREFIXES = (
     "/app-state",
     "/attachments",
-    "/v1/memory",
-    "/v1/sources",
-    "/v1/agent",
-    "/v1/pairing",
+    "/collections",
+    "/documents/",
+    "/system/",
+    "/v1/",
 )
 
 
@@ -77,6 +79,51 @@ async def _security_and_observability(request: Request, call_next):
     return response
 
 
+class _SecurityObservabilityMiddleware:
+    """ASGI-native equivalent that preserves streaming response semantics."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope.get("type") != "http":
+            await self.app(scope, receive, send)
+            return
+
+        scope.setdefault("state", {})
+        request = Request(scope, receive)
+        request_id = _request_id(request)
+        request.state.request_id = request_id
+        started = time.perf_counter()
+
+        async def send_with_headers(message):
+            if message.get("type") == "http.response.start":
+                headers = MutableHeaders(scope=message)
+                headers["X-Request-ID"] = request_id
+                headers["Server-Timing"] = f"app;dur={(time.perf_counter() - started) * 1000:.1f}"
+                headers["X-Content-Type-Options"] = "nosniff"
+                headers["Referrer-Policy"] = "no-referrer"
+                headers["X-Frame-Options"] = "DENY"
+                headers["Content-Security-Policy"] = "default-src 'none'; frame-ancestors 'none'; base-uri 'none'"
+                headers["Permissions-Policy"] = "camera=(), geolocation=(), payment=(), usb=()"
+                if request.url.scheme == "https":
+                    headers["Strict-Transport-Security"] = "max-age=31536000"
+                if request.url.path.startswith(_PRIVATE_CACHE_PREFIXES):
+                    headers["Cache-Control"] = "no-store"
+                LOG.info(
+                    "request id=%s method=%s path=%s status=%s duration_ms=%.1f peer=%s",
+                    request_id,
+                    request.method,
+                    request.url.path,
+                    message.get("status"),
+                    (time.perf_counter() - started) * 1000,
+                    request.client.host if request.client else "unknown",
+                )
+            await send(message)
+
+        await self.app(scope, receive, send_with_headers)
+
+
 def _cors_origins() -> list[str]:
     configured = os.getenv("TRINAXAI_CORS_ORIGINS", ",".join(SAFE_DEFAULT_ORIGINS)).strip()
     if configured == "*":
@@ -91,18 +138,21 @@ def _cors_origins() -> list[str]:
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     runtime.initialize_runtime()
-    yield
+    try:
+        yield
+    finally:
+        lifecycle_runtime.shutdown_runtime()
 
 
 def create_app() -> FastAPI:
     application = FastAPI(title="TrinaxAI RAG API", lifespan=lifespan)
-    application.middleware("http")(_security_and_observability)
+    application.add_middleware(_SecurityObservabilityMiddleware)
     application.add_middleware(
         CORSMiddleware,
         allow_origins=_cors_origins(),
         allow_origin_regex=os.getenv(
             "TRINAXAI_CORS_ORIGIN_REGEX",
-            r"https?://(localhost|127\.0\.0\.1|10\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+|172\.(1[6-9]|2\d|3[0-1])\.\d+\.\d+):(3334|3335)",
+            SAFE_DEFAULT_ORIGIN_REGEX,
         ),
         allow_credentials=False,
         allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],

@@ -3,8 +3,9 @@ import { apiErrorFromPayload } from './api';
 import {
   DEVICE_TOKEN_STORAGE_KEY,
   clearRevokedDeviceSession,
+  clearLegacyDeviceToken,
+  deviceSessionHasScope,
   isLocalHostBrowser,
-  setDeviceSessionToken,
   setDeviceSessionScopes,
   systemRequestHeaders,
 } from './authHeaders';
@@ -25,7 +26,8 @@ export type PairingCode = {
   scopes: string[];
 };
 
-function currentToken(): string {
+/** Read a pre-cookie bearer only for the explicit /me compatibility path. */
+function legacyDeviceToken(): string {
   try {
     return (localStorage.getItem(DEVICE_TOKEN_STORAGE_KEY)
       || sessionStorage.getItem(DEVICE_TOKEN_STORAGE_KEY))?.trim() || '';
@@ -33,28 +35,75 @@ function currentToken(): string {
   catch { return ''; }
 }
 
+function hasDeviceCredential(): boolean {
+  return Boolean(legacyDeviceToken())
+    || deviceSessionHasScope('chat')
+    || deviceSessionHasScope('read_private')
+    || deviceSessionHasScope('web');
+}
+
+function pairingFetch(input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> {
+  return fetch(input, { ...init, credentials: 'include' });
+}
+
 let revocationMonitorStarted = false;
 let revocationMonitorCleanup: (() => void) | null = null;
+const REVOCATION_RETRY_DELAY_MS = 30_000;
+const REVOCATION_MAX_RETRY_DELAY_MS = 5 * 60_000;
 
-/** Check frequently enough that revoking an online phone feels immediate. */
+/** Check on lifecycle events and retry slowly while the paired app is open. */
 export function startDeviceRevocationMonitor(): () => void {
   if (revocationMonitorStarted) return revocationMonitorCleanup ?? (() => undefined);
   revocationMonitorStarted = true;
+  let retryDelay = REVOCATION_RETRY_DELAY_MS;
+  let retryTimer: number | undefined;
+  let requestInFlight = false;
+  let active = true;
+
+  const scheduleRetry = () => {
+    window.clearTimeout(retryTimer);
+    retryTimer = undefined;
+    if (active && !document.hidden && navigator.onLine !== false && hasDeviceCredential() && !isLocalHostBrowser()) {
+      retryTimer = window.setTimeout(check, retryDelay);
+    }
+  };
+
   const check = () => {
     // The localhost origin is the privileged host UI, not a paired device.
     // Never send a stale device credential to its own pairing endpoint.
-    if (!isLocalHostBrowser() && !document.hidden && currentToken()) {
-      void getCurrentPairedDevice().catch(() => undefined);
-    }
+    if (!active || isLocalHostBrowser() || document.hidden || navigator.onLine === false || !hasDeviceCredential() || requestInFlight) return;
+    requestInFlight = true;
+    void getCurrentPairedDevice()
+      .then(() => { retryDelay = REVOCATION_RETRY_DELAY_MS; })
+      .catch(() => {
+        retryDelay = Math.min(REVOCATION_MAX_RETRY_DELAY_MS, retryDelay * 2);
+      })
+      .finally(() => {
+        requestInFlight = false;
+        scheduleRetry();
+      });
   };
+
+  const onWake = () => {
+    window.clearTimeout(retryTimer);
+    retryTimer = undefined;
+    if (document.hidden) return;
+    retryDelay = REVOCATION_RETRY_DELAY_MS;
+    check();
+  };
+
   check();
-  const interval = window.setInterval(check, 2000);
-  document.addEventListener('visibilitychange', check);
-  window.addEventListener('online', check);
+  document.addEventListener('visibilitychange', onWake);
+  window.addEventListener('focus', onWake);
+  window.addEventListener('online', onWake);
+  window.addEventListener('trinaxai-device-auth-changed', onWake);
   revocationMonitorCleanup = () => {
-    window.clearInterval(interval);
-    document.removeEventListener('visibilitychange', check);
-    window.removeEventListener('online', check);
+    active = false;
+    window.clearTimeout(retryTimer);
+    document.removeEventListener('visibilitychange', onWake);
+    window.removeEventListener('focus', onWake);
+    window.removeEventListener('online', onWake);
+    window.removeEventListener('trinaxai-device-auth-changed', onWake);
     revocationMonitorStarted = false;
     revocationMonitorCleanup = null;
   };
@@ -63,10 +112,10 @@ export function startDeviceRevocationMonitor(): () => void {
 
 /** Generate a one-time code from the local host PWA. */
 export async function createPairingCode(): Promise<PairingCode> {
-  const response = await fetch(`${APP_CONFIG.ragBase}/v1/pairing/start`, {
+  const response = await pairingFetch(`${APP_CONFIG.ragBase}/v1/pairing/start`, {
     method: 'POST',
     headers: systemRequestHeaders({ 'Content-Type': 'application/json' }),
-    body: JSON.stringify({ scopes: ['chat', 'read_private', 'index', 'system', 'agent'], ttl_seconds: 300 }),
+    body: JSON.stringify({ scopes: ['chat', 'read_private', 'web'], ttl_seconds: 300 }),
   });
   const payload = await responseJson(response);
   if (typeof payload.code !== 'string') throw new Error('Pairing code was not generated.');
@@ -79,7 +128,7 @@ export async function createPairingCode(): Promise<PairingCode> {
 
 /** The local host can inventory and revoke every authorized device. */
 export async function listPairedDevices(): Promise<PairedDevice[]> {
-  const response = await fetch(`${APP_CONFIG.ragBase}/v1/pairing/devices`, {
+  const response = await pairingFetch(`${APP_CONFIG.ragBase}/v1/pairing/devices`, {
     headers: systemRequestHeaders(),
   });
   const payload = await responseJson(response);
@@ -87,7 +136,7 @@ export async function listPairedDevices(): Promise<PairedDevice[]> {
 }
 
 export async function revokePairedDevice(deviceId: string): Promise<void> {
-  const response = await fetch(`${APP_CONFIG.ragBase}/v1/pairing/devices/${encodeURIComponent(deviceId)}`, {
+  const response = await pairingFetch(`${APP_CONFIG.ragBase}/v1/pairing/devices/${encodeURIComponent(deviceId)}`, {
     method: 'DELETE',
     headers: systemRequestHeaders(),
   });
@@ -101,50 +150,50 @@ async function responseJson(response: Response): Promise<Record<string, unknown>
 }
 
 export async function claimDevice(code: string, deviceName: string): Promise<PairedDevice> {
-  const response = await fetch(`${APP_CONFIG.ragBase}/v1/pairing/claim`, {
+  const response = await pairingFetch(`${APP_CONFIG.ragBase}/v1/pairing/claim`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ code, device_name: deviceName }),
   });
   const payload = await responseJson(response);
-  const token = typeof payload.token === 'string' ? payload.token : '';
-  if (!token || !payload.device) throw new Error('Pairing response did not include a device token.');
-  try {
-    if (localStorage.getItem(DEVICE_TOKEN_STORAGE_KEY) !== token) setDeviceSessionToken(token);
-  } catch { /* storage unavailable */ }
+  if (!payload.device) throw new Error('Pairing response did not include device metadata.');
   const device = payload.device as PairedDevice;
+  clearLegacyDeviceToken();
   setDeviceSessionScopes(device.scopes);
+  window.dispatchEvent(new Event('trinaxai-device-auth-changed'));
   return device;
 }
 
 export async function getCurrentPairedDevice(): Promise<PairedDevice | null> {
-  const token = currentToken();
-  if (!token) return null;
-  const response = await fetch(`${APP_CONFIG.ragBase}/v1/pairing/me`, {
-    headers: { 'X-TrinaxAI-Device-Token': token },
+  const token = legacyDeviceToken();
+  const hadSession = hasDeviceCredential();
+  const response = await pairingFetch(`${APP_CONFIG.ragBase}/v1/pairing/me`, {
+    headers: token ? { 'X-TrinaxAI-Device-Token': token } : undefined,
   });
   if (response.status === 403) {
-    clearRevokedDeviceSession();
+    clearRevokedDeviceSession(Boolean(token) || hadSession);
     return null;
   }
   const payload = await responseJson(response);
   const device = payload.device as PairedDevice;
-  // Transparently migrate devices paired by older builds from session-only
-  // storage to the persistent per-device identity required for later wipe.
-  try {
-    if (localStorage.getItem(DEVICE_TOKEN_STORAGE_KEY) !== token) setDeviceSessionToken(token);
-  } catch { /* storage unavailable */ }
+  // Transparently migrate a legacy header into the HttpOnly cookie set by /me.
+  if (token) clearLegacyDeviceToken();
   setDeviceSessionScopes(device.scopes);
+  window.dispatchEvent(new Event('trinaxai-device-auth-changed'));
   return device;
 }
 
 export async function revokeCurrentPairedDevice(): Promise<void> {
-  const token = currentToken();
-  if (!token) return;
-  const response = await fetch(`${APP_CONFIG.ragBase}/v1/pairing/me`, {
+  const token = legacyDeviceToken();
+  const hadSession = hasDeviceCredential();
+  const response = await pairingFetch(`${APP_CONFIG.ragBase}/v1/pairing/me`, {
     method: 'DELETE',
-    headers: { 'X-TrinaxAI-Device-Token': token },
+    headers: token ? { 'X-TrinaxAI-Device-Token': token } : undefined,
   });
+  if (response.status === 403) {
+    clearRevokedDeviceSession(Boolean(token) || hadSession);
+    throw apiErrorFromPayload(response.status, await response.json().catch(() => ({})));
+  }
   await responseJson(response);
-  clearRevokedDeviceSession();
+  clearRevokedDeviceSession(true);
 }

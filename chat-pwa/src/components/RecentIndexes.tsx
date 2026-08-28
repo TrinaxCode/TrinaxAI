@@ -180,21 +180,23 @@ export default function RecentIndexes() {
               <div className={`text-xs font-mono truncate ${isDark ? 'text-white/80' : 'text-gray-800'}`}>{it.label}</div>
               <div className={`text-[10px] ${muted}`}>
                 {new Date(it.indexedAt).toLocaleString()}
-                {it.saved != null ? ` · ${it.saved} ${t('filesUnit')}` : ''}
-                {it.collectionName ? ` · ${it.collectionName}` : ''}
+                {it.saved != null ? ` | ${it.saved} ${t('filesUnit')}` : ''}
+                {it.collectionName ? ` | ${it.collectionName}` : ''}
               </div>
             </div>
             <button
+              type="button"
               onClick={() => reindex(it)}
-              className={`shrink-0 p-1.5 rounded-lg ${isDark ? 'text-white/45 hover:text-white hover:bg-white/[0.06]' : 'text-gray-500 hover:text-gray-800 hover:bg-gray-100'}`}
+              className={`shrink-0 min-h-9 min-w-9 inline-flex items-center justify-center rounded-lg ${isDark ? 'text-white/45 hover:text-white hover:bg-white/[0.06]' : 'text-gray-500 hover:text-gray-800 hover:bg-gray-100'}`}
               aria-label={t('recentReindex')}
               title={t('recentReindexTitle')}
             >
               <MdRefresh size={14} />
             </button>
             <button
+              type="button"
               onClick={() => setDeleteKey(recentKey(it))}
-              className={`shrink-0 p-1.5 rounded-lg ${isDark ? 'text-white/25 hover:text-red-400 hover:bg-white/[0.05]' : 'text-gray-300 hover:text-red-500 hover:bg-gray-100'}`}
+              className={`shrink-0 min-h-9 min-w-9 inline-flex items-center justify-center rounded-lg ${isDark ? 'text-white/25 hover:text-red-400 hover:bg-white/[0.05]' : 'text-gray-300 hover:text-red-500 hover:bg-gray-100'}`}
               aria-label={t('removeFromHistory')}
               title={t('removeFromHistory')}
             >

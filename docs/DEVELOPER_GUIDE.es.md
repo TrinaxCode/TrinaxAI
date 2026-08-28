@@ -1,5 +1,13 @@
 # Guía del Desarrollador de TrinaxAI
 
+[English](DEVELOPER_GUIDE.md)
+
+Usa el [hub documental](README.es.md) para elegir la referencia correcta.
+Cuando cambie un comportamiento visible para el usuario, actualiza la guía en
+inglés, su equivalente `.es.md`, la sección correspondiente de Docs integrada y
+`CHANGELOG.es.md`. Para fallos visibles, mantén alineado el mapa de acciones con
+[Solución de problemas](TROUBLESHOOTING.es.md).
+
 ## Configuración
 
 ```bash
@@ -42,8 +50,8 @@ cp .env.example .env
 │
 ├── chat-pwa/              # Frontend PWA en React
 │   ├── src/components/    # Componentes de UI en React
-│   ├── src/lib/           # Capa de API, config, estado compartido, perfil de usuario
-│   ├── src/hooks/         # useChatHistory y useStreamChat
+│   ├── src/lib/           # dominios/fachada de API, config, estado y perfil
+│   ├── src/hooks/         # controladores de chat/Agent y ciclo de streaming
 │   ├── src/i18n/          # Traducciones español/inglés
 │   └── vite.config.ts     # Config de build, plugin PWA, proxy de API
 │
@@ -120,7 +128,9 @@ cp .env.example .env
 
 3. Añade o actualiza el contrato Pydantic en `app/schemas/`.
 4. Añade una prueba de contrato y actualiza `docs/API_REFERENCE.es.md`.
-5. Si la PWA lo necesita, añade la función fetch en `chat-pwa/src/lib/api.ts`.
+5. Si la PWA lo necesita, añade la función fetch en el dominio
+   `chat-pwa/src/lib/api_*.ts` correspondiente; actualiza `api.ts` solo si
+   cambia su superficie de exportación pública.
 
 ---
 
@@ -145,7 +155,8 @@ Verifica: Ollama en ejecución, embeddings funcionando, consulta RAG operativa.
 ```bash
 python scripts/public_readiness.py
 ```
-Comprueba: archivos requeridos, rutas hardcodeadas, cobertura de i18n, compilación de Python.
+Comprueba: archivos requeridos, higiene de rutas públicas y secretos, cobertura
+de i18n, pruebas/compilación Python, tipos frontend y build de producción de la PWA.
 
 ### CI
 `.github/workflows/ci.yml` se ejecuta en push/PR:
@@ -157,13 +168,17 @@ Comprueba: archivos requeridos, rutas hardcodeadas, cobertura de i18n, compilaci
 
 ## Consejos de Depuración
 
+Empieza por la [guía de solución de problemas y recuperación](TROUBLESHOOTING.es.md).
+Explica cuándo reintentar, encender IA, abrir indexación, recargar un índice
+publicado o hacer una reindexación completa.
+
 ### La API RAG no arranca
 ```bash
 # Verificar el puerto
 lsof -i :3333
 
 # Ejecutar directamente con salida detallada
-python -c "import uvicorn; uvicorn.run('rag_api:app', host='0.0.0.0', port=3333, reload=True)"
+python -c "import uvicorn; uvicorn.run('rag_api:app', host='127.0.0.1', port=3333, reload=True)"
 ```
 
 ### Ollama no responde
@@ -182,12 +197,22 @@ npx vite --host 0.0.0.0 --port 3334
 # Revisa la consola para errores, problemas de CORS o de certificados
 ```
 
+Usa `--host 127.0.0.1` para depuración local. Conserva `0.0.0.0` solo para
+probar un dispositivo en una red privada confiable y nunca expongas el servidor
+de desarrollo ni los puertos del backend a Internet.
+
 ### Problemas de indexación
+
+Prefiere la acción **Reintentar** de la PWA o `trinaxai index RUTA`. Lo siguiente
+es un reset destructivo solo para desarrollo: haz backup de `storage/`, detén
+los servicios y confirma que realmente necesitas reconstruir todo antes de
+ejecutarlo.
+
 ```bash
-# Re-indexación completa (opción nuclear)
+# Re-indexación completa (reset destructivo de desarrollo)
 rm -rf storage/docstore.json storage/index_store.json storage/manifest.json
 python index.py
-curl -k -X POST http://localhost:3333/system/reload
+curl --cacert RUTA_A_CA_PUBLICA.pem -X POST https://localhost:3333/system/reload
 ```
 
 ---
@@ -234,6 +259,10 @@ Las páginas con carga diferida (`React.lazy`) se cargan bajo demanda: `Settings
 ## Tareas Comunes
 
 ### Resetear todo
+
+Esto elimina índices locales y la build de la interfaz. Haz backup de `storage/`
+y `.env` antes; usa el respaldo guiado si los datos importan.
+
 ```bash
 ./shutdown_ai.sh
 rm -rf storage/ chat-pwa/dist/
@@ -243,13 +272,29 @@ python index.py
 
 ### Actualizar dependencias
 ```bash
-./update.sh  # backup, git pull, pip install, npm ci, rebuild PWA
+./update.sh  # backup, archive update, pip install, npm ci, rebuild PWA
 ```
 
 ### Añadir un nuevo idioma
 1. Crea la entrada del nuevo locale en `chat-pwa/src/i18n/translations.ts`
 2. Actualiza `I18nContext.tsx` para incluir el nuevo idioma
 3. Añade la opción de idioma en `OnboardingWizard.tsx`
+
+### Actualizar la documentación
+
+Mantén alineadas estas capas:
+
+1. El README raíz para la vista general y el inicio rápido.
+2. `docs/` para referencias técnicas y operativas completas.
+3. `chat-pwa/README.es.md` para ejecución y desarrollo del frontend.
+4. `chat-pwa/src/components/Docs.tsx` para una guía integrada, breve y bilingüe.
+5. `docs/TROUBLESHOOTING.es.md` y `.md` para decisiones de recuperación y datos de soporte.
+
+Comprueba los comandos en `trinaxai_cli/app.py`, las rutas en `app/routes/` y
+`/openapi.json`, las variables en `.env.example`, los scripts en
+`chat-pwa/package.json` y las acciones visibles en
+`chat-pwa/src/lib/api_errors.ts`. Nunca incluyas tokens reales, rutas privadas
+ni archivos generados de `storage/` en ejemplos.
 
 ### Conectar VSCode (Continue.dev)
 ```bash
@@ -269,5 +314,8 @@ git diff --check  # verifica que no haya espacios en blanco al final
 
 Usa un tag semántico como `v1.0.0` y mantenlo igual a las versiones de
 `pyproject.toml`, `chat-pwa/package.json`, `chat-pwa/package-lock.json` y
-`trinaxai_cli/app.py`. El workflow del tag repite los gates y publica el archivo
-fuente, instaladores shell y PowerShell, checksums y procedencia.
+`trinaxai_cli/app.py`. Para compilar el Gestor localmente en un runner nativo,
+ejecuta `python scripts/build_manager.py --output manager-release`; produce el
+paquete nativo de la plataforma y un formato portátil. El workflow del tag
+repite los gates y publica el archivo fuente, instaladores shell y PowerShell,
+paquetes del Gestor, checksums y procedencia.

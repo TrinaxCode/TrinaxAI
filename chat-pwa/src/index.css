@@ -59,7 +59,6 @@
   }
 
   img,
-  video,
   canvas,
   svg,
   table,
@@ -194,21 +193,20 @@
 
 @layer components {
   :root {
-    --sidebar-history-logo-size: 3rem;
-    --agent-avatar-color: #ffffff;
+    --agent-avatar-color: #168de2;
   }
 
   html.light {
-    --agent-avatar-color: #6b7280;
+    --agent-avatar-color: #168de2;
   }
 
   .sidebar-history-header {
-    min-height: calc(var(--sidebar-history-logo-size) + 0.75rem);
+    min-height: 3rem;
   }
 
   .sidebar-history-logo {
-    width: var(--sidebar-history-logo-size);
-    height: var(--sidebar-history-logo-size);
+    width: 3rem;
+    height: 3rem;
   }
 
   .agent-empty-avatar {
@@ -251,6 +249,12 @@
   .app-shell {
     height: var(--app-height, 100dvh);
     min-height: 0;
+    isolation: isolate;
+    background: #ffffff;
+  }
+
+  html.dark .app-shell {
+    background: #020406;
   }
 
   /* Prevent iOS rubber-banding on fixed containers */
@@ -277,7 +281,7 @@
     overflow-x: hidden;
   }
 
-  /* Hardware-accelerate animations to avoid jank on low-end devices */
+  /* Hardware-accelerate animations to avoid jank on entry-level devices */
   .gpu-accelerated {
     transform: translateZ(0);
     will-change: transform, opacity;
@@ -315,6 +319,148 @@
     padding-left: env(safe-area-inset-left, 0px);
     padding-right: env(safe-area-inset-right, 0px);
   }
+}
+
+/* Shared visual language: short compositor-only entrances keep every route
+   feeling connected. */
+@keyframes page-item-enter {
+  from { opacity: 0; transform: translate3d(0, 10px, 0); }
+  to { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+
+.page-header,
+.chat-header {
+  position: relative;
+  isolation: isolate;
+  box-shadow: 0 1px 0 rgba(148, 163, 184, 0.08), 0 10px 32px rgba(15, 23, 42, 0.04);
+}
+
+html.dark .page-header,
+html.dark .chat-header {
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.06), 0 14px 38px rgba(0, 0, 0, 0.24);
+}
+
+.settings-page .page-header,
+.docs-page .page-header {
+  box-shadow: none;
+}
+
+html.dark .settings-page .page-header,
+html.dark .docs-page .page-header {
+  box-shadow: none;
+}
+
+.page-header button,
+.chat-header button,
+.composer-surface button {
+  will-change: transform;
+}
+
+.page-header > *,
+.chat-header > * {
+  position: relative;
+  z-index: 1;
+}
+
+.page-header button:hover,
+.chat-header button:hover,
+.composer-surface button:hover {
+  transform: translateY(-1px);
+}
+
+.page-header button:active,
+.chat-header button:active,
+.composer-surface button:active {
+  transform: translateY(0) scale(0.96);
+}
+
+.settings-page .settings-scroll > section > div,
+.settings-page .settings-scroll > div > section > div,
+.settings-page .settings-scroll > div > div,
+.docs-page .docs-content > div > *,
+.agent-page .agent-empty-state {
+  animation: page-item-enter 0.55s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.settings-page .settings-scroll > section:nth-child(2) > div,
+.settings-page .settings-scroll > div > section:nth-child(2) > div { animation-delay: 70ms; }
+.settings-page .settings-scroll > section:nth-child(3) > div,
+.settings-page .settings-scroll > div > section:nth-child(3) > div { animation-delay: 140ms; }
+.settings-page .settings-scroll > section:nth-child(4) > div,
+.settings-page .settings-scroll > div > section:nth-child(4) > div { animation-delay: 210ms; }
+
+.settings-page section > div,
+.docs-page .docs-content > div > div,
+.browser-page .browser-panel,
+.agent-page .agent-empty-state {
+  transition: border-color 0.35s ease, background-color 0.35s ease, box-shadow 0.35s ease, transform 0.35s ease;
+}
+
+.settings-page section > div:hover,
+.docs-page .docs-content > div > div:hover,
+.browser-page .browser-panel:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.06);
+}
+
+html.dark .settings-page section > div:hover,
+html.dark .docs-page .docs-content > div > div:hover,
+html.dark .browser-page .browser-panel:hover {
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.22);
+}
+
+.empty-chat {
+  position: relative;
+  isolation: isolate;
+}
+
+.empty-chat::before {
+  display: none;
+}
+
+.empty-chat-copy {
+  text-wrap: balance;
+}
+
+.composer-shell {
+  animation: page-item-enter 0.55s cubic-bezier(0.16, 1, 0.3, 1) 120ms both;
+}
+
+@keyframes chat-interface-enter {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.chat-interface-enter {
+  animation: chat-interface-enter 0.42s ease-out both;
+  will-change: opacity;
+}
+
+.composer-surface {
+  position: relative;
+  box-shadow: 0 8px 28px rgba(15, 23, 42, 0.05);
+}
+
+html.dark .composer-surface {
+  box-shadow: 0 10px 34px rgba(0, 0, 0, 0.26);
+}
+
+.sidebar-surface {
+  box-shadow: 18px 0 52px rgba(15, 23, 42, 0.12) !important;
+}
+
+html.dark .sidebar-surface {
+  box-shadow: 20px 0 60px rgba(0, 0, 0, 0.42) !important;
+}
+
+.browser-page aside button,
+.browser-page .browser-file-row {
+  transition: background-color 0.28s ease, color 0.28s ease, transform 0.28s ease;
+}
+
+.browser-page aside button:hover,
+.browser-page .browser-file-row:hover {
+  transform: translateX(2px);
 }
 
 /* ============================================
@@ -370,7 +516,7 @@ html.light .animate-brand {
 }
 
 .animate-glow {
-  box-shadow: 0 0 20px rgba(0, 107, 189, 0.24), 0 0 36px rgba(0, 107, 189, 0.08);
+  animation: glow-pulse 3.6s ease-in-out infinite;
 }
 
 /* Subtle shimmer sweep */
@@ -414,48 +560,6 @@ html.light .animate-brand {
 
 .animate-fade-up {
   animation: fade-up 0.4s ease-out forwards;
-}
-
-/* ============================================
-   Intro / welcome splash — pure-CSS entrance.
-   Runs on the COMPOSITOR (opacity/transform only), so it stays smooth even
-   while the heavy chat UI mounts on the main thread behind the opaque splash.
-   Do NOT reintroduce width/layout-animating properties here (the old loading
-   line animated `width`, which forces layout every frame and stutters).
-   ============================================ */
-@keyframes intro-logo {
-  from { opacity: 0; transform: scale(0.6); }
-  to   { opacity: 1; transform: scale(1); }
-}
-.animate-intro-logo {
-  animation: intro-logo 1s cubic-bezier(0.16, 1, 0.3, 1) both;
-}
-
-@keyframes intro-title {
-  from { opacity: 0; transform: translateY(16px); }
-  to   { opacity: 1; transform: translateY(0); }
-}
-.animate-intro-title {
-  animation: intro-title 0.8s cubic-bezier(0.16, 1, 0.3, 1) 0.35s both;
-}
-
-/* Loading line grows via scaleX (compositor) instead of width (layout). */
-@keyframes intro-line {
-  from { transform: scaleX(0); }
-  to   { transform: scaleX(1); }
-}
-.animate-intro-line {
-  transform: scaleX(0);
-  animation: intro-line 1.4s ease-in-out 0.6s both;
-}
-
-/* Splash fade-out — toggled by adding the class when the intro ends. */
-@keyframes intro-fade-out {
-  from { opacity: 1; }
-  to   { opacity: 0; }
-}
-.animate-intro-out {
-  animation: intro-fade-out 0.4s ease-in-out both;
 }
 
 /* Scale in bounce */
@@ -669,12 +773,11 @@ html.light .prose code:not(pre code) {
 
 /* ============================================
    Theme Switch — Circular Reveal Animation
-   (View Transition API)
    ============================================ */
 
 ::view-transition-old(root),
 ::view-transition-new(root) {
-  /* Disable the default cross-fade so only the circular clip animates */
+  /* Disable the default cross-fade so only the circular reveal animates. */
   animation: none;
   mix-blend-mode: normal;
 }
@@ -685,7 +788,8 @@ html.light .prose code:not(pre code) {
 
 ::view-transition-new(root) {
   z-index: 1;
-  animation: theme-reveal 0.4s ease-out both;
+  will-change: clip-path;
+  animation: theme-reveal 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 @keyframes theme-reveal {
@@ -719,6 +823,19 @@ html.light .prose code:not(pre code) {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+  }
+
+  .empty-chat::before,
+  .animate-float,
+  .animate-glow,
+  .composer-shell,
+  .chat-interface-enter,
+  .settings-page .settings-scroll > section > div,
+  .settings-page .settings-scroll > div > section > div,
+  .settings-page .settings-scroll > div > div,
+  .docs-page .docs-content > div > *,
+  .agent-page .agent-empty-state {
+    animation: none !important;
   }
 }
 

@@ -7,18 +7,19 @@ from .shared_runtime import (
     LOG,
     HTTPException,
     Request,
-    StorageContext,
     _authorize_system,
     _cache_get,
     _cache_set,
+    _clear_index_runtime_caches,
+    _delete_indexed_collection,
     _delete_indexed_rel_paths,
-    _index_process_lock,
+    _manifest_without_prefix,
+    _public_rel_path,
+    _read_manifest_unlocked,
     _research_serialize_node,
     atomic_write_json,
     build_engine,
     config,
-    json,
-    load_index_from_storage,
     run_in_threadpool,
     state,
 )
@@ -63,7 +64,7 @@ def sources_list(collection: str | None = None, request: Request = None):
         return {"collection": target, "sources": []}
     for _nid, node in _research_iter_nodes(target):
         meta = getattr(node, "metadata", {}) or {}
-        rel = meta.get("rel_path") or meta.get("file_path") or "(unknown)"
+        rel = _public_rel_path(meta)
         source_id = str(meta.get("source_id") or "").strip() or None
         text = node.get_content() if hasattr(node, "get_content") else str(node)
         size = len(text.encode("utf-8"))
@@ -123,14 +124,15 @@ def sources_chunks(
         cache_key,
         config.SOURCES_CACHE_SECONDS,
     )
+    chunks: list[dict]
     if cached is not None:
         chunks = list(cached)
     else:
-        chunks: list[dict] = []
+        chunks = []
         if state.fusion_retriever is not None:
             for _nid, node in _research_iter_nodes(collection):
                 meta = getattr(node, "metadata", {}) or {}
-                rel = meta.get("rel_path") or meta.get("file_path") or ""
+                rel = _public_rel_path(meta)
                 if rel != rel_path:
                     continue
                 if target_source_id is not None and str(meta.get("source_id") or "") != target_source_id:
@@ -178,14 +180,8 @@ async def sources_delete(
     except Exception as exc:
         LOG.exception("Failed to delete source %s in %s", rel_path, collection)
         raise HTTPException(status_code=500, detail="Failed to delete source.") from exc
-    # Clear caches so the browser / CLI picks up the change immediately.
-    with state.sources_cache_lock:
-        state.sources_cache.pop(("sources:list", collection), None)
-        for cache_key in list(state.sources_cache):
-            if cache_key[:3] == ("sources:chunks", collection, rel_path):
-                state.sources_cache.pop(cache_key, None)
-    with state.retrieval_cache_lock:
-        state.retrieval_cache.clear()
+    # The publisher has committed the index and manifest before caches move.
+    _clear_index_runtime_caches()
     await run_in_threadpool(build_engine)
     return {
         "deleted": deleted,
@@ -203,48 +199,27 @@ async def sources_delete_collection(collection: str, request: Request):
     ``DELETE /collections/{id}`` if you want to remove the collection too.
     """
     _authorize_system(request)
-    if collection == config.DEFAULT_COLLECTION_ID:
-        raise HTTPException(status_code=400, detail="Cannot bulk-delete the default collection sources.")
     try:
         deleted = await run_in_threadpool(_delete_collection_sources_sync, collection)
     except Exception as exc:
         LOG.exception("Failed to bulk-delete sources in %s", collection)
         raise HTTPException(status_code=500, detail="Failed to delete sources.") from exc
-    with state.sources_cache_lock:
-        state.sources_cache.clear()
-    with state.retrieval_cache_lock:
-        state.retrieval_cache.clear()
+    # The publisher has committed the index and manifest before caches move.
+    _clear_index_runtime_caches()
     await run_in_threadpool(build_engine)
     return {"deleted": deleted, "collection": collection}
 
 
 def _delete_collection_sources_sync(collection: str) -> int:
-    with _index_process_lock():
-        storage_context = StorageContext.from_defaults(persist_dir=config.PERSIST_DIR)
-        index = load_index_from_storage(storage_context)
-        node_ids = [
-            node_id
-            for node_id, node in index.docstore.docs.items()
-            if (getattr(node, "metadata", {}) or {}).get("collection_id", config.DEFAULT_COLLECTION_ID) == collection
-        ]
-        if node_ids:
-            index.delete_nodes(node_ids, delete_from_docstore=True)
-            index.storage_context.persist(persist_dir=config.PERSIST_DIR)
-        _trim_manifest_prefix(f"{collection}:")
-        return len(node_ids)
+    return _delete_indexed_collection(collection)
 
 
 def _trim_manifest_prefix(prefix: str) -> None:
-    """Remove all manifest keys that start with *prefix*."""
-    try:
-        with open(config.MANIFEST_PATH, encoding="utf-8") as f:
-            manifest = json.load(f)
-        if isinstance(manifest, dict):
-            trimmed = {k: v for k, v in manifest.items() if not str(k).startswith(prefix)}
-            if len(trimmed) != len(manifest):
-                atomic_write_json(config.MANIFEST_PATH, trimmed)
-    except (OSError, ValueError):
-        pass
+    """Compatibility helper for callers that only need manifest cleanup."""
+    manifest = _read_manifest_unlocked()
+    trimmed, changed = _manifest_without_prefix(manifest, prefix)
+    if changed:
+        atomic_write_json(config.MANIFEST_PATH, trimmed)
 
 
 __all__ = [name for name in globals() if not name.startswith("__")]

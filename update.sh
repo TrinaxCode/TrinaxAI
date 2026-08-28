@@ -3,16 +3,82 @@
 set -euo pipefail
 
 LANGUAGE="${TRINAXAI_LANG:-${LANG:-en}}"
+LANGUAGE_EXPLICIT="${TRINAXAI_LANG:-}"
 LANGUAGE_LOWER="$(printf '%s' "$LANGUAGE" | tr '[:upper:]' '[:lower:]')"
 case "$LANGUAGE_LOWER" in es*|*_es*) LANGUAGE=es ;; *) LANGUAGE=en ;; esac
+for language_arg in "$@"; do
+  case "$language_arg" in
+    --language=*|--lang=*) LANGUAGE_EXPLICIT="${language_arg#*=}"; LANGUAGE_LOWER="$(printf '%s' "$LANGUAGE_EXPLICIT" | tr '[:upper:]' '[:lower:]')"; case "$LANGUAGE_LOWER" in es*) LANGUAGE=es ;; *) LANGUAGE=en ;; esac ;;
+  esac
+done
+ARG_NONINTERACTIVE=0
+for argument in "$@"; do
+  case "$argument" in --non-interactive|--yes|-y|--dry-run|--scheduled) ARG_NONINTERACTIVE=1;; esac
+done
+if [ -z "$LANGUAGE_EXPLICIT" ] && [ "${TRINAXAI_NONINTERACTIVE:-0}" != "1" ] && [ "$ARG_NONINTERACTIVE" != "1" ] && [ "${TRINAXAI_DRY_RUN:-0}" != "1" ] && [ -r /dev/tty ]; then
+  read -r -p "Select language / Selecciona idioma [en/es, default: $LANGUAGE]: " language_reply </dev/tty || language_reply=""
+  case "$(printf '%s' "$language_reply" | tr '[:upper:]' '[:lower:]')" in es*) LANGUAGE=es ;; en*) LANGUAGE=en ;; esac
+  LANGUAGE_EXPLICIT=prompt
+fi
 
 GREEN='\033[0;32m'; BLUE='\033[0;34m'
 YELLOW='\033[1;33m'; CYAN='\033[0;36m'; NC='\033[0m'; BOLD='\033[1m'
 
-print_step() { echo -e "\n${BLUE}${BOLD}┌─ $1${NC}"; }
-print_ok()   { echo -e "  ${GREEN}✓${NC} $1"; }
-print_warn() { echo -e "  ${YELLOW}⚠${NC} $1"; }
-print_info() { echo -e "  ${CYAN}›${NC} $1"; }
+if [ "$LANGUAGE" = "es" ]; then
+  tr_text_es() {
+    case "$1" in
+      'TrinaxAI - Smart Update') echo 'Actualización inteligente de TrinaxAI' ;;
+      'Source Code') echo 'Código fuente' ;;
+      'Backup') echo 'Copia de seguridad' ;;
+      'Python Dependencies') echo 'Dependencias de Python' ;;
+      'Web App') echo 'Aplicación web' ;;
+      'Ollama Models') echo 'Modelos de Ollama' ;;
+      'Autostart and Audit') echo 'Inicio automático y auditoría' ;;
+      'Restart') echo 'Reinicio' ;;
+      'Would download the latest source package from GitHub') echo 'Se descargaría el paquete fuente más reciente desde GitHub' ;;
+      'Would create a backup of runtime configuration and data') echo 'Se crearía una copia de la configuración y los datos de ejecución' ;;
+      'Would refresh pip, requirements, and the editable CLI') echo 'Se actualizarían pip, requirements y la CLI editable' ;;
+      'Would run npm ci and npm run build') echo 'Se ejecutarían npm ci y npm run build' ;;
+      'Would check Ollama and pull configured models if requested') echo 'Se comprobaría Ollama y se descargarían los modelos configurados si se solicita' ;;
+      'Would change autostart and run readiness checks') echo 'Se cambiaría el inicio automático y se ejecutarían comprobaciones de preparación' ;;
+      'Would restart TrinaxAI if requested') echo 'Se reiniciaría TrinaxAI si se solicita' ;;
+      'Links to enter') echo 'Enlaces de acceso' ;;
+      'LAN / Red local') echo 'LAN' ;;
+      'RAG health') echo 'Salud de RAG' ;;
+      'DRY-RUN: nothing will be downloaded, installed, or changed.') echo 'SIMULACIÓN: no se descargará, instalará ni modificará nada.' ;;
+      'Dry-run finished; no changes were made') echo 'Simulación terminada; no se hicieron cambios' ;;
+      'Scheduled maintenance is check-only; no remote code will be executed.') echo 'El mantenimiento programado solo comprueba; no ejecutará código remoto.' ;;
+      'Downloading the latest TrinaxAI source package from GitHub…') echo 'Descargando el paquete fuente más reciente de TrinaxAI desde GitHub...' ;;
+      'Source package updated') echo 'Paquete fuente actualizado' ;;
+      'Weekly automatic maintenance') echo 'Mantenimiento automático semanal' ;;
+      'Your data and settings stay untouched') echo 'Tus datos y configuración permanecen intactos' ;;
+      'Create a backup before updating?') echo '¿Crear una copia de seguridad antes de actualizar?' ;;
+      'Download the latest TrinaxAI version?') echo '¿Descargar la última versión de TrinaxAI?' ;;
+      'Remove Ollama application before continuing?') echo '¿Eliminar la aplicación Ollama antes de continuar?' ;;
+      'Install Ollama again with the official installer after removal?') echo '¿Instalar Ollama de nuevo con el instalador oficial después de eliminarlo?' ;;
+      'Repair/reinstall Ollama with the official installer?') echo '¿Reparar o reinstalar Ollama con el instalador oficial?' ;;
+      'Download/update configured Ollama models too?') echo '¿Descargar o actualizar también los modelos configurados de Ollama?' ;;
+      'Remove configured Ollama models before model update?') echo '¿Eliminar los modelos configurados de Ollama antes de actualizarlos?' ;;
+      'Change boot auto-start setting?') echo '¿Cambiar la configuración de inicio automático?' ;;
+      'Enable TrinaxAI when your computer starts?') echo '¿Activar TrinaxAI al iniciar el equipo?' ;;
+      'Restart TrinaxAI after the update?') echo '¿Reiniciar TrinaxAI después de actualizar?' ;;
+      'Run public readiness audit after updating?') echo '¿Ejecutar la auditoría pública de preparación después de actualizar?' ;;
+      'Python environment refreshed') echo 'Entorno Python actualizado' ;;
+      'PWA dependencies installed and production build created') echo 'Dependencias PWA instaladas y compilación de producción creada' ;;
+      'Update complete. Restart later with ./startup_ai.sh or trinaxai restart.') echo 'Actualización terminada. Reinicia después con ./startup_ai.sh o trinaxai restart.' ;;
+      'Settings, indexes, models, and personal data were preserved.') echo 'Se conservaron la configuración, los índices, los modelos y los datos personales.' ;;
+      *) echo "$1" ;;
+    esac
+  }
+else
+  tr_text_en() { case "$1" in 'LAN / Red local') echo 'LAN' ;; *) echo "$1" ;; esac; }
+fi
+if [ "$LANGUAGE" = "es" ]; then tr_text() { tr_text_es "$@"; }; else tr_text() { tr_text_en "$@"; }; fi
+
+print_step() { echo -e "\n${BLUE}${BOLD}=== $(tr_text "$1") ===${NC}"; }
+print_ok()   { echo -e "  ${GREEN}[OK]${NC} $(tr_text "$1")"; }
+print_warn() { echo -e "  ${YELLOW}[!]${NC} $(tr_text "$1")"; }
+print_info() { echo -e "  ${CYAN}[i]${NC} $(tr_text "$1")"; }
 
 usage() {
   if [ "$LANGUAGE" = "es" ]; then
@@ -23,7 +89,7 @@ Uso:
   ./update.sh                    Actualización guiada (pregunta opciones)
   ./update.sh --non-interactive  Actualización automática para CI/scripts
   ./update.sh --no-backup        Omitir backup previo
-  ./update.sh --no-pull          Omitir pull de Git
+  ./update.sh --no-pull          Omitir descarga del código
   ./update.sh --models           Descargar/actualizar modelos Ollama configurados
   ./update.sh --no-models        No descargar modelos Ollama
   ./update.sh --remove-models-first Eliminar modelos configurados antes de actualizar
@@ -31,6 +97,7 @@ Uso:
   ./update.sh --remove-ollama    Eliminar Ollama antes de continuar
   ./update.sh --restart          Reiniciar TrinaxAI después de actualizar
   ./update.sh --no-restart       No reiniciar después de actualizar
+  ./update.sh --dry-run         Simular la actualización sin modificar nada
   ./update.sh --enable-autostart Activar arranque automático
   ./update.sh --disable-autostart Desactivar arranque automático
   ./update.sh --no-audit         Omitir readiness audit
@@ -40,7 +107,7 @@ Uso:
 Las tareas obligatorias siguen siendo automáticas: actualizar dependencias Python,
 reinstalar la CLI editable, instalar npm y construir la PWA.
 
-TRINAXAI_LANG=es selecciona este idioma; `en` mantiene la salida inglesa.
+TRINAXAI_LANG=es selecciona este idioma; en mantiene la salida inglesa.
 EOF
   else
     cat <<EOF
@@ -50,7 +117,7 @@ Usage:
   ./update.sh                    Guided update (asks optional choices)
   ./update.sh --non-interactive  Automatic update for CI/scripts
   ./update.sh --no-backup        Skip pre-update backup
-  ./update.sh --no-pull          Skip Git pull
+  ./update.sh --no-pull          Skip the source download
   ./update.sh --models           Pull/update configured Ollama models
   ./update.sh --no-models        Do not pull Ollama models
   ./update.sh --remove-models-first Remove configured models before updating them
@@ -58,6 +125,7 @@ Usage:
   ./update.sh --remove-ollama    Remove Ollama before continuing
   ./update.sh --restart          Restart TrinaxAI after update
   ./update.sh --no-restart       Do not restart after update
+  ./update.sh --dry-run         Simulate the update without changing anything
   ./update.sh --enable-autostart Enable boot autostart after update
   ./update.sh --disable-autostart Disable boot autostart after update
   ./update.sh --no-audit         Skip public readiness audit
@@ -65,15 +133,15 @@ Usage:
   ./update.sh --help             Show this help
 
 Required update work stays automatic: dependency refresh, editable CLI reinstall,
-npm install, and the production PWA build.
+npm ci, and the production PWA build.
 
-TRINAXAI_LANG=es selects Spanish output; `en` keeps English output.
+TRINAXAI_LANG=es selects Spanish output; en keeps English output.
 EOF
   fi
-  exit 0
+  exit "${1:-0}"
 }
 
-INTERACTIVE="${TRINAXAI_INTERACTIVE:-1}"
+INTERACTIVE="${TRINAXAI_INTERACTIVE:-0}"
 NONINTERACTIVE="${TRINAXAI_NONINTERACTIVE:-0}"
 if [ "$NONINTERACTIVE" = "1" ]; then
   INTERACTIVE=0
@@ -82,6 +150,7 @@ fi
 CREATE_BACKUP="${TRINAXAI_UPDATE_BACKUP:-1}"
 PULL_CODE="${TRINAXAI_UPDATE_PULL:-1}"
 RUN_AUDIT="${TRINAXAI_UPDATE_AUDIT:-1}"
+DRY_RUN="${TRINAXAI_DRY_RUN:-0}"
 SCHEDULED=0
 
 PULL_MODELS="${TRINAXAI_UPDATE_MODELS:-0}"
@@ -97,21 +166,14 @@ RESTART_SET=0
 [ -n "${TRINAXAI_UPDATE_RESTART+x}" ] && RESTART_SET=1
 
 AUTOSTART_ACTION=""
-PRE_UPDATE_COMMIT=""
-PWA_DIST_BACKUP=""
 ROLLBACK_ACTIVE=0
 
 rollback_failed_update() {
   local status=$?
   trap - ERR INT TERM
-  if [ "$ROLLBACK_ACTIVE" = "1" ] && [ -n "$PRE_UPDATE_COMMIT" ] && [ -d .git ]; then
+  if [ "$ROLLBACK_ACTIVE" = "1" ]; then
     print_warn "Update failed; restoring the previously working source tree."
-    git reset --hard "$PRE_UPDATE_COMMIT" >/dev/null 2>&1 || true
-    if [ -n "$PWA_DIST_BACKUP" ] && [ -d "$PWA_DIST_BACKUP" ]; then
-      rm -rf -- "$ROOT/chat-pwa/dist"
-      mv -- "$PWA_DIST_BACKUP" "$ROOT/chat-pwa/dist" 2>/dev/null || true
-      PWA_DIST_BACKUP=""
-    fi
+    "${PYTHON_CMD[@]}" "$ROOT/scripts/source_update.py" rollback --root "$ROOT" || true
   fi
   exit "$status"
 }
@@ -132,6 +194,7 @@ while [ "$#" -gt 0 ]; do
     --remove-ollama) REMOVE_OLLAMA=1;;
     --restart) RESTART_AFTER=1; RESTART_SET=1;;
     --no-restart) RESTART_AFTER=0; RESTART_SET=1;;
+    --dry-run) DRY_RUN=1; INTERACTIVE=0; NONINTERACTIVE=1;;
     --enable-autostart) AUTOSTART_ACTION="enable";;
     --disable-autostart) AUTOSTART_ACTION="disable";;
     --keep-autostart) AUTOSTART_ACTION="keep";;
@@ -141,10 +204,29 @@ while [ "$#" -gt 0 ]; do
       PULL_CODE=0; PULL_MODELS=0; PULL_MODELS_SET=1
       RESTART_AFTER=0; RESTART_SET=1; RUN_AUDIT=0
       ;;
-    *) echo "Unknown option: $1" >&2; usage;;
+    --language|--lang)
+      shift
+      [ "$#" -gt 0 ] || { echo "--language requires a value" >&2; exit 2; }
+      LANGUAGE_EXPLICIT="${1:-}"; LANGUAGE_LOWER="$(printf '%s' "$LANGUAGE_EXPLICIT" | tr '[:upper:]' '[:lower:]')"
+      case "$LANGUAGE_LOWER" in es*|*_es*) LANGUAGE=es ;; *) LANGUAGE=en ;; esac
+      ;;
+    --language=*|--lang=*)
+      LANGUAGE_EXPLICIT="${1#*=}"
+      [ -n "$LANGUAGE_EXPLICIT" ] || { echo "--language requires a value" >&2; exit 2; }
+      LANGUAGE_LOWER="$(printf '%s' "$LANGUAGE_EXPLICIT" | tr '[:upper:]' '[:lower:]')"
+      case "$LANGUAGE_LOWER" in es*|*_es*) LANGUAGE=es ;; *) LANGUAGE=en ;; esac
+      ;;
+    *) echo "$(tr_text "Unknown option: $1")" >&2; usage 2;;
   esac
   shift
 done
+
+if [ -z "$LANGUAGE_EXPLICIT" ] && [ "$INTERACTIVE" = "1" ] && [ -r /dev/tty ]; then
+  language_reply=""
+  read -r -p "Select language / Selecciona idioma [en/es, default: $LANGUAGE]: " language_reply </dev/tty || language_reply=""
+  case "$(printf '%s' "$language_reply" | tr '[:upper:]' '[:lower:]')" in es|es-es|es_*) LANGUAGE=es ;; en|en-us|en_*) LANGUAGE=en ;; esac
+fi
+if [ "$LANGUAGE" = "es" ]; then tr_text() { tr_text_es "$@"; }; else tr_text() { tr_text_en "$@"; }; fi
 
 ask() {
   local prompt="$1" reply=""
@@ -157,7 +239,7 @@ ask() {
   elif [ -t 0 ]; then
     read -r -p "[?] $prompt " reply || reply=""
   else
-    echo "[!] No interactive terminal; using default answer for: $prompt" >&2
+    echo "[!] $(tr_text "No interactive terminal; using default answer for: $prompt")" >&2
   fi
   echo "$reply"
 }
@@ -180,6 +262,31 @@ ask_yes_no() {
 
 ROOT="${TRINAXAI_UPDATE_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
 cd "$ROOT"
+
+if [ "$DRY_RUN" = "1" ]; then
+  echo -e "${YELLOW}${BOLD}$(tr_text 'DRY-RUN: nothing will be downloaded, installed, or changed.')${NC}"
+  print_step "Source Code"
+  print_info "Would download the latest source package from GitHub"
+  print_step "Backup"
+  print_info "Would create a backup of runtime configuration and data"
+  print_step "Python Dependencies"
+  print_info "Would refresh pip, requirements, and the editable CLI"
+  print_step "Web App"
+  print_info "Would run npm ci and npm run build"
+  print_step "Ollama Models"
+  print_info "Would check Ollama and pull configured models if requested"
+  print_step "Autostart and Audit"
+  print_info "Would change autostart and run readiness checks"
+  print_step "Restart"
+  print_info "Would restart TrinaxAI if requested"
+  echo ""
+  echo -e "${BOLD}${CYAN}$(tr_text 'Links to enter')${NC}"
+  echo "  Localhost:       https://localhost:3334"
+  echo "  $(tr_text 'LAN / Red local'): https://[YOUR-LAN-IP]:3334"
+  echo "  $(tr_text 'RAG health'):      https://localhost:3333/health"
+  print_ok "Dry-run finished; no changes were made"
+  exit 0
+fi
 
 is_windows() {
   case "$(uname -s 2>/dev/null || echo unknown)" in
@@ -207,6 +314,7 @@ if is_windows && [ -f "$ROOT/update.ps1" ] && command -v powershell.exe >/dev/nu
     disable) PS_ARGS+=("-DisableAutostart");;
   esac
   [ "$RUN_AUDIT" = "0" ] && PS_ARGS+=("-NoAudit")
+  [ -z "$LANGUAGE_EXPLICIT" ] || PS_ARGS+=("-Language" "$LANGUAGE")
   exec powershell.exe "${PS_ARGS[@]}"
 fi
 
@@ -233,6 +341,11 @@ if [ "$SCHEDULED" = "1" ]; then
   exec "${PYTHON_CMD[@]}" scripts/auto_update.py run --base-dir "$ROOT"
 fi
 
+if [ -f "$ROOT/.trinaxai-update-backup" ]; then
+  print_warn "An interrupted source update was found; restoring it before continuing."
+  "${PYTHON_CMD[@]}" "$ROOT/scripts/source_update.py" rollback --root "$ROOT"
+fi
+
 NPM_CMD=()
 if is_windows && command -v npm.cmd >/dev/null 2>&1; then
   NPM_CMD=(npm.cmd)
@@ -249,7 +362,7 @@ env_value() {
 add_unique_model() {
   local model="$1"
   [ -n "$model" ] || return 0
-  case " ${MODELS[*]} " in
+  case " ${MODELS[*]-} " in
     *" $model "*) ;;
     *) MODELS+=("$model");;
   esac
@@ -295,7 +408,6 @@ remove_configured_models() {
       ollama rm "$model" 2>/dev/null || true
     done
   fi
-  [ -n "${HOME:-}" ] && rm -rf -- "$HOME/.ollama/models" 2>/dev/null || true
 }
 
 remove_ollama_app() {
@@ -311,7 +423,13 @@ remove_ollama_app() {
   elif command -v pacman >/dev/null 2>&1; then
     sudo pacman -Rns --noconfirm ollama 2>/dev/null || true
   fi
-  [ -n "${HOME:-}" ] && rm -rf -- "$HOME/.ollama" 2>/dev/null || true
+  if [ "${HOME:-}" = "/" ] || [ -z "${HOME:-}" ]; then
+    echo "[!] HOME is unsafe or unset; Ollama data was not removed."
+  elif [ -L "$HOME/.ollama" ]; then
+    echo "[!] Ollama data path is a symbolic link; it was not removed."
+  else
+    rm -rf -- "$HOME/.ollama" 2>/dev/null || true
+  fi
 }
 
 run_service_manager() {
@@ -324,50 +442,15 @@ run_service_manager() {
 }
 
 sync_repository() {
-  local remote="https://github.com/TrinaxCode/TrinaxAI.git" dirty=0 managed=0
-  [ -f .trinaxai-managed ] && managed=1
-  command -v git >/dev/null 2>&1 || {
-    print_warn "Git is unavailable; source code update skipped."
-    return 1
-  }
-  print_info "Fetching the latest TrinaxAI source from GitHub…"
-  if [ ! -d .git ]; then
-    print_warn "Archive installations are not overwritten in place. Re-run the installer for a reviewed upgrade."
-    return 1
-  fi
-  if [ "$managed" = "1" ] && ! grep -Fqx '.trinaxai-managed' .git/info/exclude 2>/dev/null; then
-    printf '%s\n' '.trinaxai-managed' >> .git/info/exclude
-  fi
-  if git remote get-url origin >/dev/null 2>&1; then
-    git remote set-url origin "$remote"
-  else
-    git remote add origin "$remote"
-  fi
-  if [ -n "$(git status --porcelain --untracked-files=normal)" ]; then dirty=1; fi
-  if [ "$dirty" = "1" ]; then
-    print_warn "Local changes detected; update stopped to protect them. Commit or stash them explicitly first."
-    return 1
-  fi
-  PRE_UPDATE_COMMIT="$(git rev-parse HEAD)"
-  if [ -d "$ROOT/chat-pwa/dist" ]; then
-    PWA_DIST_BACKUP="$(mktemp -d "${TMPDIR:-/tmp}/trinaxai-dist.XXXXXX")/dist"
-    cp -a "$ROOT/chat-pwa/dist" "$PWA_DIST_BACKUP"
-  fi
+  print_info "Downloading the latest TrinaxAI source package from GitHub…"
+  "${PYTHON_CMD[@]}" "$ROOT/scripts/source_update.py" update --root "$ROOT"
   ROLLBACK_ACTIVE=1
-  git fetch --prune origin main
-  if git merge --ff-only origin/main; then
-    print_ok "Repository synchronized with origin/main"
-  else
-    print_warn "The local branch diverged from origin/main; update stopped safely."
-    return 1
-  fi
+  print_ok "Source package updated"
 }
 
 export PYTHONDONTWRITEBYTECODE=1
 
-echo -e "\n${BLUE}${BOLD}╔══════════════════════════════════════════╗${NC}"
-echo -e "${BLUE}${BOLD}║          TrinaxAI · Smart Update          ║${NC}"
-echo -e "${BLUE}${BOLD}╚══════════════════════════════════════════╝${NC}"
+echo -e "\n${BLUE}${BOLD}=== $(tr_text 'TrinaxAI - Smart Update') ===${NC}"
 if [ "$SCHEDULED" = "1" ]; then print_info "Weekly automatic maintenance"; else print_info "Your data and settings stay untouched"; fi
 
 if [ "$CREATE_BACKUP" = "1" ]; then
@@ -379,7 +462,7 @@ if [ "$CREATE_BACKUP" = "1" ]; then
 fi
 
 if [ "$PULL_CODE" = "1" ]; then
-  if ask_yes_no "Pull latest code from Git?" y; then
+  if ask_yes_no "Download the latest TrinaxAI version?" y; then
     PULL_CODE=1
   else
     PULL_CODE=0
@@ -466,21 +549,26 @@ fi
 print_step "Python Dependencies"
 "${PYTHON_CMD[@]}" -m pip install --upgrade pip
 if [ -f requirements.lock ]; then
-  "${PYTHON_CMD[@]}" -m pip install -r requirements.lock
+  "${PYTHON_CMD[@]}" -m pip install --require-hashes -r requirements.lock
 else
   "${PYTHON_CMD[@]}" -m pip install -r requirements.txt
 fi
 "${PYTHON_CMD[@]}" -m pip install -e .
 print_ok "Python environment refreshed"
 
+if [ -f "$ROOT/scripts/generate_continue_config.py" ]; then
+  "${PYTHON_CMD[@]}" "$ROOT/scripts/generate_continue_config.py" --root "$ROOT" --install-user-config
+  print_ok "Continue configuration regenerated"
+fi
+
 if [ -d "chat-pwa" ] && [ "${#NPM_CMD[@]}" -gt 0 ]; then
   print_step "Web App"
-  if ! (cd chat-pwa && { [ ! -f package-lock.json ] || "${NPM_CMD[@]}" ci; } && { [ -f package-lock.json ] || "${NPM_CMD[@]}" install; } && "${NPM_CMD[@]}" run build); then
+  if ! (cd chat-pwa && "${NPM_CMD[@]}" ci && "${NPM_CMD[@]}" run build); then
     if is_windows; then
       cat >&2 <<'EOF'
 [!] PWA build failed on Windows.
     If the error is "spawn EPERM" and the project is under C:\Windows\System32,
-    run this script from an elevated Git Bash/PowerShell or move the repo to a
+    run this script from an elevated Bash/PowerShell window or move the app to a
     normal user directory such as C:\Users\<you>\TrinaxAI.
 EOF
     fi
@@ -527,8 +615,6 @@ fi
 
 echo -e "\n${GREEN}${BOLD}✓ TrinaxAI is up to date${NC}"
 print_info "Settings, indexes, models, and personal data were preserved."
+"${PYTHON_CMD[@]}" "$ROOT/scripts/source_update.py" finish --root "$ROOT"
 ROLLBACK_ACTIVE=0
-if [ -n "$PWA_DIST_BACKUP" ]; then
-  rm -rf -- "$(dirname "$PWA_DIST_BACKUP")"
-fi
 trap - ERR INT TERM

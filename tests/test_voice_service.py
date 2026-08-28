@@ -9,7 +9,9 @@ import builtins
 import io
 import os
 import sys
+import threading
 import types
+from concurrent.futures import ThreadPoolExecutor
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -109,6 +111,34 @@ class TestVoiceService:
                 "download_root": str(tmp_path / "whisper"),
             }
         ]
+
+    def test_load_stt_is_singleton_under_concurrency(self, monkeypatch):
+        first_started = threading.Event()
+        release_first = threading.Event()
+        second_started = threading.Event()
+        calls: list[object] = []
+
+        class WhisperModel:
+            def __init__(self, *_args, **_kwargs):
+                calls.append(self)
+                if len(calls) == 1:
+                    first_started.set()
+                    assert release_first.wait(timeout=2)
+                else:
+                    second_started.set()
+
+        monkeypatch.setitem(sys.modules, "faster_whisper", types.SimpleNamespace(WhisperModel=WhisperModel))
+        monkeypatch.setattr(voice_service, "_stt_model", None)
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            futures = [pool.submit(voice_service._load_stt) for _ in range(2)]
+            assert first_started.wait(timeout=2)
+            assert not second_started.wait(timeout=0.2)
+            release_first.set()
+            models = [future.result() for future in futures]
+
+        assert len(calls) == 1
+        assert models[0] is models[1]
 
     @patch.object(voice_service, "stt_available", return_value=True)
     @patch.object(voice_service, "_load_stt")
@@ -284,6 +314,19 @@ class TestVoiceRoutes:
         )
         assert response.status_code in (200, 400, 501)
 
+    def test_stt_returns_transcription(self, client, monkeypatch):
+        import app.routes.voice as voice_routes
+
+        monkeypatch.setattr(voice_routes, "transcribe_bytes", lambda *_args: "hola")
+        response = client.post(
+            "/v1/voice/stt",
+            data={"lang": "es"},
+            files={"file": ("test.wav", b"RIFFaudio", "audio/wav")},
+        )
+
+        assert response.status_code == 200
+        assert response.json() == {"text": "hola"}
+
     def test_tts(self, client):
         response = client.post(
             "/v1/voice/tts",
@@ -318,3 +361,29 @@ class TestVoiceRoutes:
         assert tts.status_code == 501
         assert tts.json()["detail"]["recovery"]
         assert "/private" not in tts.text
+
+        monkeypatch.setattr(
+            voice_routes,
+            "transcribe_bytes",
+            lambda *_args: (_ for _ in ()).throw(ValueError("bad audio")),
+        )
+        stt_value_error = client.post(
+            "/v1/voice/stt",
+            data={"lang": "en"},
+            files={"file": ("test.wav", b"RIFFaudio", "audio/wav")},
+        )
+        assert stt_value_error.status_code == 400
+
+        monkeypatch.setattr(voice_routes, "transcribe_bytes", lambda *_args: "recognized")
+        stt_success = client.post(
+            "/v1/voice/stt",
+            data={"lang": "en"},
+            files={"file": ("test.wav", b"RIFFaudio", "audio/wav")},
+        )
+        assert stt_success.status_code == 200
+        assert stt_success.json() == {"text": "recognized"}
+
+        monkeypatch.setattr(voice_routes, "synthesize", lambda *_args: (b"audio", "audio/wav"))
+        tts_success = client.post("/v1/voice/tts", json={"text": "hello", "lang": "en"})
+        assert tts_success.status_code == 200
+        assert tts_success.content == b"audio"

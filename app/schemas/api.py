@@ -13,6 +13,9 @@ class ChatRequest(BaseModel):
     model: str | None = None
     messages: list[dict] = Field(min_length=1, max_length=100)
     stream: bool = False
+    # None means "use the server default". PWA/CLI clients send an explicit
+    # value so their local toggle is never silently ignored.
+    think: bool | None = None
     collections: list[str] | None = Field(default=None, max_length=50)
     keep_alive: str | int | None = None
     aggressive_quant: bool | None = None
@@ -110,13 +113,16 @@ class ResearchRequest(BaseModel):
     query: str = Field(min_length=1, max_length=10_000)
     search_query: str | None = Field(default=None, max_length=2_000)
     context: str | None = Field(default=None, max_length=12_000)
-    collections: list[str] | None = None
-    depth: int = 2
+    collections: list[str] | None = Field(default=None, max_length=50)
+    depth: int = Field(default=2, ge=1, le=3)
+    stream: bool = False
     web_search: bool | None = None
     include_local: bool = False
     model: str | None = None
     keep_alive: str | int | None = None
     aggressive_quant: bool | None = None
+    # None uses the backend default; clients with a thinking toggle send it explicitly.
+    think: bool | None = None
 
 
 class WebSearchSettingsUpdate(BaseModel):
@@ -160,6 +166,7 @@ class AgentRequest(BaseModel):
     @field_validator("messages")
     @classmethod
     def validate_messages(cls, messages: list[dict]) -> list[dict]:
+        total_chars = 0
         has_user = False
         for message in messages:
             if not isinstance(message, dict):
@@ -170,9 +177,14 @@ class AgentRequest(BaseModel):
                 raise ValueError("Message role must be system, user, or assistant.")
             if not isinstance(content, str):
                 raise ValueError("Message content must be text.")
+            if len(content) > 100_000:
+                raise ValueError("A single message is too large (maximum 100,000 characters).")
+            total_chars += len(content)
             has_user = has_user or role == "user"
         if not has_user:
             raise ValueError("At least one user message is required.")
+        if total_chars > 200_000:
+            raise ValueError("Conversation is too large (maximum 200,000 characters).")
         return messages
 
 

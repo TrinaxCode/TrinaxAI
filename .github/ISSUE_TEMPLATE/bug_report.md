@@ -6,6 +6,8 @@ labels: ['bug']
 assignees: []
 ---
 
+[Versión en español](bug_report.es.md)
+
 **Describe the bug**
 A clear and concise description of what the bug is.
 
@@ -28,7 +30,7 @@ If applicable, paste terminal output or screenshots.
 - Node version: [e.g. 20.11]
 - Ollama version: [e.g. 0.11.0]
 - RAM: [e.g. 16 GB]
-- Profile: [16gb / max]
+- Profile: [8gb / 16gb / 32gb / 64gb]
 
 **Additional context**
 Add any other context about the problem here.

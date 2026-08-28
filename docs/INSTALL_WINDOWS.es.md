@@ -1,52 +1,66 @@
 # TrinaxAI en Windows
 
+[English](INSTALL_WINDOWS.md)
+
 Guía para instalar, configurar, iniciar y dejar listo TrinaxAI en Windows 10/11 con PowerShell.
 
 ## Estado de soporte
 
-El instalador de Windows esta disponible y el CI ahora valida smoke tests Python, smoke tests de CLI y sintaxis PowerShell en Windows. La validacion end-to-end del instalador en una maquina Windows real sigue pendiente.
+El instalador de Windows está disponible y el CI valida smoke tests de Python/CLI, sintaxis y dry-runs de PowerShell y la compilación del Gestor en Windows. La instalación completa con descargas reales de dependencias/modelos y el primer inicio todavía requiere el smoke test en máquina descrito en [TESTING.es.md](../TESTING.es.md).
 
-## Que queda funcionando
+## Qué queda funcionando
 
-Al terminar deberias tener:
+Al terminar deberías tener:
 
 - Ollama instalado y respondiendo en `http://localhost:11434`.
-- API RAG en `http://localhost:3333`.
+- API RAG en `https://localhost:3333` cuando existe el certificado administrado (HTTP es el fallback).
 - PWA en `https://localhost:3334`.
 - Entorno Python `.venv`.
 - Dependencias de la PWA.
-- Modelos base descargados si eliges esa opcion.
+- Modelos base descargados si eliges esa opción.
 - `.env` generado.
 - Autoarranque opcional desde la carpeta Startup de Windows: la PWA vuelve al iniciar el equipo y la IA respeta si quedo encendida o apagada.
 
 ## Requisitos
 
-| Recurso | Minimo | Recomendado |
+| Recurso | Mínimo | Recomendado |
 |---|---:|---:|
 | Windows | 10/11 | 11 |
-| RAM | 8 GB | 16 GB o mas |
+| RAM | 8 GB | 16 GB o más |
 | Disco libre | 5 GB | 10-25 GB |
 | Python | 3.10 | 3.12 |
 | Node.js | 22 | 24 LTS |
-| Git | Si | Si |
-| Ollama | Si | Ultima version |
+| Ollama | Sí | Última versión |
 | PowerShell | 5+ | PowerShell 7 |
 
-Instala Python marcando la opcion `Add python.exe to PATH`.
+## Instalación gráfica recomendada
 
-## Instalacion guiada recomendada
+1. [Descarga el Gestor de TrinaxAI para Windows](https://github.com/TrinaxCode/TrinaxAI/releases/download/v1.2.0/TrinaxAI-Manager-Windows.exe).
+2. Abre el ejecutable.
+3. Pulsa **Instalar** y espera a que indique que el proceso está en curso.
 
-Abre PowerShell y ejecuta el instalador guiado de un comando. La ruta predeterminada es `%LOCALAPPDATA%\TrinaxAI`:
+El Gestor descarga y configura TrinaxAI directamente. No necesitas Git, comandos de PowerShell ni tener Python instalado previamente. Si Windows solicita permisos de administrador, acéptalos para configurar los componentes y reglas de firewall necesarios. Usa el mismo Gestor después para **Actualizar** o **Desinstalar**. También hay un ZIP portátil en la página del release.
+
+Si SmartScreen informa que el editor es desconocido, verifica el archivo y
+`SHA256SUMS` con las [notas de firma del release](RELEASE_SIGNING.es.md) antes
+de decidir si continúas. No desactives SmartScreen globalmente.
+
+## Alternativa avanzada por PowerShell
+
+Abre PowerShell y descarga, revisa y ejecuta el instalador guiado. La ruta predeterminada es `%LOCALAPPDATA%\TrinaxAI`:
 
 ```powershell
-irm https://raw.githubusercontent.com/TrinaxCode/TrinaxAI/main/install.ps1 | iex
+$installer = Join-Path $env:TEMP "TrinaxAI-1.2.0-installer.ps1"
+Invoke-WebRequest -Uri "https://github.com/TrinaxCode/TrinaxAI/releases/download/v1.2.0/TrinaxAI-1.2.0-installer.ps1" -OutFile $installer
+Get-Content -Path $installer
+& $installer
 ```
 
 El instalador:
 
 - Detecta RAM y elige perfil.
 - Crea `.env`.
-- Instala dependencias automaticamente. Ollama usa `winget` primero y luego el instalador oficial silencioso si hace falta.
+- Instala dependencias automáticamente. Ollama prueba primero el instalador oficial, verifica el fallback firmado `OllamaSetup.exe` si hace falta y deja `winget` como último recurso.
 - Crea `.venv`.
 - Instala paquetes Python.
 - Instala y compila la PWA.
@@ -54,9 +68,9 @@ El instalador:
 - Pregunta si quieres habilitar inicio con Windows.
 - Pregunta si quieres iniciar los servicios ahora.
 
-Las dependencias necesarias se instalan automaticamente. Las opciones como modelos, control LAN, inicio con Windows e inicio de servicios se preguntan por defecto. Usa `-NonInteractive` para instalaciones automatizadas. El instalador no deberia mandarte al navegador para descargar Ollama manualmente.
+Las dependencias necesarias se instalan automáticamente. Las opciones como modelos, inicio con Windows e inicio de servicios se preguntan por defecto. La configuración legacy de sistema por LAN se acepta por compatibilidad, pero nunca concede administración remota del host. Usa `-NonInteractive` para instalaciones automatizadas. Si las rutas automáticas no terminan, se abre la ventana del `OllamaSetup.exe` oficial firmado; pulsa **Install**, espera y vuelve a ejecutar el instalador si PowerShell aún no encuentra `ollama.exe`.
 
-Despues administra TrinaxAI desde cualquier carpeta:
+Después administra TrinaxAI desde cualquier carpeta:
 
 ```powershell
 trinaxai doctor
@@ -64,7 +78,7 @@ trinaxai update
 trinaxai uninstall
 ```
 
-`trinaxai uninstall -y` aplica opciones seguras. Los indices y modelos se conservan salvo que pidas eliminarlos.
+`trinaxai uninstall -y` aplica opciones seguras. Los índices y modelos se conservan salvo que pidas eliminarlos.
 
 ## Instalar dependencias manualmente
 
@@ -72,7 +86,6 @@ Puedes instalar con `winget`:
 
 ```powershell
 winget install --id Python.Python.3.12 --silent
-winget install --id Git.Git --silent
 winget install --id OpenJS.NodeJS.LTS --silent
 winget install --id Ollama.Ollama --silent
 ```
@@ -80,28 +93,29 @@ winget install --id Ollama.Ollama --silent
 O descarga manualmente:
 
 - Python: `https://python.org`
-- Git: `https://git-scm.com`
 - Node.js LTS: `https://nodejs.org`
 - Ollama: `https://ollama.com/download/windows`
 
-Cierra y vuelve a abrir PowerShell despues de instalar para refrescar `PATH`.
+Cierra y vuelve a abrir PowerShell después de instalar para refrescar `PATH`.
 
 Verifica:
 
 ```powershell
 python --version
-git --version
 node --version
 npm --version
 ollama --version
 ```
 
-## Instalacion manual
+## Instalación manual
 
-### 1. Clonar el proyecto
+### 1. Descargar el proyecto
 
 ```powershell
-git clone https://github.com/TrinaxCode/TrinaxAI.git $env:USERPROFILE\trinaxai
+$zip = "$env:TEMP\trinaxai.zip"
+irm https://github.com/TrinaxCode/TrinaxAI/releases/download/v1.2.0/TrinaxAI-1.2.0.zip -OutFile $zip
+Expand-Archive $zip $env:TEMP -Force
+Move-Item "$env:TEMP\TrinaxAI-1.2.0" "$env:USERPROFILE\trinaxai"
 cd $env:USERPROFILE\trinaxai
 ```
 
@@ -110,14 +124,14 @@ cd $env:USERPROFILE\trinaxai
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install --upgrade pip
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe -m pip install --require-hashes -r requirements.lock
 ```
 
 ### 3. Instalar la PWA
 
 ```powershell
 cd chat-pwa
-npm install
+npm ci
 npm run build
 cd ..
 ```
@@ -148,7 +162,7 @@ Valores recomendados:
 TRINAXAI_PROFILE=16gb
 TRINAXAI_HOST=127.0.0.1
 TRINAXAI_PORT=3333
-TRINAXAI_INDEX_DIR=~/Documents
+TRINAXAI_INDEX_DIR=./local_sources
 TRINAXAI_ALLOW_LAN_SYSTEM=0
 TRINAXAI_CORS_ORIGINS=https://localhost:3334,http://localhost:3334,https://127.0.0.1:3334,http://127.0.0.1:3334
 OLLAMA_BASE_URL=http://localhost:11434
@@ -177,8 +191,8 @@ ollama pull qwen3-embedding:0.6b
 ```
 
 Para los demás perfiles, consulta la
-[tabla vigente de modelos y perfiles](../README.es.md#-modelos-y-perfiles). El
-instalador selecciona y descarga automáticamente la flota de texto/RAG. Vision
+[tabla vigente de modelos y perfiles](../README.es.md#modelos-y-perfiles-de-hardware). El
+instalador selecciona y descarga automáticamente la flota de texto/RAG. La visión
 se descarga al analizar la primera imagen.
 
 ## Indexar tus archivos
@@ -188,7 +202,7 @@ cd $env:USERPROFILE\trinaxai
 .\.venv\Scripts\python.exe index.py
 ```
 
-Tambien puedes abrir la PWA, ir a configuracion, elegir una carpeta y asignarla a una coleccion. TrinaxAI copiara los archivos a `local_sources\collections\` antes de indexarlos.
+También puedes abrir la PWA, ir a configuración, elegir una carpeta y asignarla a una colección. TrinaxAI copiará los archivos a `local_sources\collections\` antes de indexarlos.
 
 ## Iniciar TrinaxAI
 
@@ -197,19 +211,25 @@ cd $env:USERPROFILE\trinaxai
 .\.venv\Scripts\python.exe service_manager.py start --base-dir "$PWD"
 ```
 
+El gateway escucha en loopback por defecto. Para un acceso LAN intencional,
+establece `TRINAXAI_PWA_HOST=0.0.0.0` en `.env`, reinicia TrinaxAI y vincula el
+navegador remoto antes de usarlo.
+
 Abrir:
 
 ```text
 https://localhost:3334
 ```
 
-Desde telefono o tablet en la misma WiFi:
+Desde teléfono o tablet en la misma WiFi:
 
 ```text
 https://TU-IP-LAN:3334
 ```
 
-Acepta la advertencia del certificado local si aparece.
+Si el navegador informa que el certificado no es confiable, instala la CA pública
+que muestra `trinaxai network` y confía en ella en ese dispositivo. No omitas la
+advertencia en una conexión LAN; consulta [pairing LAN y confianza HTTPS](NETWORK_PAIRING.es.md).
 
 ## Apagar, reiniciar y revisar estado
 
@@ -225,6 +245,8 @@ Apagar todo:
 .\.venv\Scripts\python.exe service_manager.py stop-all --base-dir "$PWD"
 ```
 
+Esto deja solo la página de recuperación por loopback en `https://localhost:3334`; el acceso LAN permanece cerrado hasta iniciar TrinaxAI allí.
+
 Ver estado:
 
 ```powershell
@@ -239,7 +261,7 @@ Supervisor manual:
 
 ## Autoarranque en Windows
 
-El instalador lo habilita automaticamente. El supervisor siempre intenta mantener la PWA disponible; si apagaste la IA desde la PWA o con `service_manager.py stop-ai`, el siguiente arranque no levanta Ollama/RAG hasta que vuelvas a encender la IA.
+El instalador lo habilita automáticamente. El supervisor siempre intenta mantener la PWA disponible; si apagaste la IA desde la PWA o con `service_manager.py stop-ai`, el siguiente arranque no levanta Ollama/RAG hasta que vuelvas a encender la IA.
 
 Habilitar:
 
@@ -256,7 +278,7 @@ Deshabilitar:
 .\.venv\Scripts\python.exe service_manager.py disable-autostart --base-dir "$PWD"
 ```
 
-Tambien puedes revisar la carpeta Startup:
+También puedes revisar la carpeta Startup:
 
 ```powershell
 explorer "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup"
@@ -273,13 +295,13 @@ Pruebas manuales:
 
 ```powershell
 Invoke-RestMethod http://localhost:11434/api/tags
-Invoke-RestMethod http://localhost:3333/health
+Invoke-RestMethod https://localhost:3333/health
 ```
 
 Si tu PowerShell no soporta `-SkipCertificateCheck`, abre en navegador:
 
 ```text
-http://localhost:3333/health
+https://localhost:3333/health
 ```
 
 ## Uso diario
@@ -288,7 +310,7 @@ http://localhost:3333/health
 2. Usa Ollama para chat general.
 3. Usa RAG para consultar archivos indexados.
 4. Usa colecciones para separar proyectos.
-5. Instala la PWA desde Chrome o Edge con el icono de instalacion de la barra de direcciones.
+5. Instala la PWA desde Chrome o Edge con el icono de instalación de la barra de direcciones.
 
 ## Actualizar
 
@@ -299,7 +321,7 @@ cd $env:USERPROFILE\trinaxai
 powershell -ExecutionPolicy Bypass -File .\update.ps1
 ```
 
-El actualizador pregunta si quieres crear backup, descargar codigo nuevo, actualizar modelos, cambiar autoarranque, reiniciar servicios y correr la auditoria. Las dependencias Python/npm y el build de la PWA siguen siendo automaticos.
+El actualizador pregunta si quieres crear backup, descargar código nuevo, actualizar modelos, cambiar autoarranque, reiniciar servicios y correr la auditoría. Las dependencias Python/npm y el build de la PWA siguen siendo automáticos.
 
 El instalador crea la tarea semanal `TrinaxAI Weekly Update`. Aunque conserva
 el nombre histórico, solo comprueba: registra disponibilidad en
@@ -314,16 +336,16 @@ Respaldar manualmente:
 - `storage\`
 - `local_sources\`
 
-Si tienes Git Bash:
+Si tienes Bash:
 
 ```bash
 ./backup.sh create
 ```
 
-El archive contiene `.env`, chats, adjuntos, fuentes e índices. El script lo
-deja privado (`0600` donde esté soportado); cifra copias off-host. Restore valida
-rutas/tipos, usa staging y revierte un reemplazo fallido. Pruébalo antes de
-actualizar.
+El archivo contiene `.env`, chats, adjuntos, fuentes e índices. El script lo
+deja privado (`0600` donde esté soportado); cifra copias fuera del host. La
+restauración valida rutas/tipos, usa staging y revierte un reemplazo fallido.
+Pruébala antes de actualizar.
 
 ## Desinstalar
 
@@ -334,7 +356,7 @@ cd $env:USERPROFILE\trinaxai
 powershell -ExecutionPolicy Bypass -File .\uninstall.ps1
 ```
 
-Pregunta que archivos runtime quieres quitar. Los datos RAG y modelos de Ollama se conservan salvo que elijas borrarlos.
+Pregunta qué archivos runtime quieres quitar. Los datos RAG y modelos de Ollama se conservan salvo que elijas borrarlos.
 
 ## Firewall y red local
 
@@ -344,27 +366,36 @@ Pregunta que archivos runtime quieres quitar. Los datos RAG y modelos de Ollama 
 | 3333 | RAG API | Backend |
 | 3334 | PWA | Interfaz web |
 
-Para abrir desde telefono/tablet, Windows Defender Firewall debe permitir Node/Python en red privada. No permitas estos puertos en redes publicas.
+Para abrirla desde un teléfono o tablet, permite el gateway PWA en el puerto
+`3334` solo en redes privadas. Mantén FastAPI `3333` y Ollama `11434` en
+loopback y no los permitas en redes públicas.
 
 ## Problemas comunes
 
-| Problema | Solucion |
+| Problema | Solución |
 |---|---|
 | `python` no se reconoce | Reinstala Python marcando `Add python.exe to PATH`. |
 | `npm` no se reconoce | Instala Node.js LTS y abre una terminal nueva. |
-| `ollama` no se reconoce | Vuelve a correr `install.ps1`; refresca PATH e instala Ollama con el instalador oficial silencioso si `winget` falla. |
+| `ollama` no se reconoce | Vuelve a ejecutar `install.ps1`; refresca PATH y abre el instalador oficial firmado si las rutas automáticas fallan. |
 | Error de permisos PowerShell | Ejecuta con `-ExecutionPolicy Bypass`. |
-| PWA no abre desde telefono | Ejecuta PowerShell como administrador y vuelve a correr `install.ps1` para agregar reglas de firewall en red privada para TCP 3333/3334. Verifica tambien que sea la misma WiFi. |
-| API HTTPS muestra certificado no valido | Es normal con certificado local; acepta la advertencia. |
+| La PWA no abre desde el teléfono | Ejecuta `trinaxai network refresh`, abre la URL `https://HOST-LAN-IP:3334` que muestra y permite el gateway en el firewall de red privada. |
+| API HTTPS muestra certificado no valido | Instala/confía en la CA pública que muestra `trinaxai network`; no omitas TLS en una LAN. Consulta [pairing LAN y confianza HTTPS](NETWORK_PAIRING.es.md). |
 | Out of memory | Usa el perfil `8gb`. Sus roles de texto usan `qwen3.5:2b` y `qwen3-embedding:0.6b`; reduce el contexto si es necesario. |
 
 ## Nota sobre WSL
 
-Puedes ejecutar TrinaxAI dentro de WSL2 usando la guia Linux, pero para usuarios de Windows el camino mas directo es PowerShell + `install.ps1`. Si usas WSL2, ten en cuenta que la red, firewall y acceso a archivos funcionan diferente entre Windows y Linux.
+Puedes ejecutar TrinaxAI dentro de WSL2 usando la guía Linux, pero para usuarios
+de Windows el camino más directo es PowerShell + `install.ps1`. Si usas WSL2,
+ten en cuenta que la red, el firewall y el acceso a archivos funcionan de forma
+diferente entre Windows y Linux.
 
 ## Seguridad
 
-No expongas `3333`, `3334` ni `11434` a internet. Para acceso remoto usa VPN. Si necesitas bloquear acciones de sistema fuera de localhost:
+Mantén FastAPI `3333` y Ollama `11434` en loopback; expón solo el gateway PWA
+en `3334` dentro de una red privada confiable. No expongas estos puertos a
+Internet. Para acceso remoto usa VPN. La administración del sistema siempre
+queda solo en localhost; la variable legacy se acepta para `.env` antiguos,
+pero nunca concede autoridad por LAN:
 
 ```text
 TRINAXAI_ALLOW_LAN_SYSTEM=0

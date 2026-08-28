@@ -8,6 +8,21 @@ const OLLAMA_PROXY_ALLOWLIST = new Map<string, ReadonlySet<string>>([
   ['/api/ollama/api/pull', new Set(['POST'])],
   ['/api/ollama/api/delete', new Set(['DELETE'])],
 ]);
+const REMOTE_DEVICE_SCOPES = new Set(['chat', 'read_private', 'web']);
+export const DEVICE_TOKEN_COOKIE = 'trinaxai-device-token';
+
+/** Extract the exact device cookie without exposing any other cookie values. */
+export function deviceTokenFromCookie(header: string | undefined): string {
+  if (!header) return '';
+  for (const part of header.split(';')) {
+    const separator = part.indexOf('=');
+    if (separator < 0 || part.slice(0, separator).trim() !== DEVICE_TOKEN_COOKIE) continue;
+    const value = part.slice(separator + 1).trim();
+    if (!value) return '';
+    try { return decodeURIComponent(value); } catch { return ''; }
+  }
+  return '';
+}
 
 export function normalizeAddress(host: string): string {
   return host.replace(/^::ffff:/, '');
@@ -44,6 +59,27 @@ export function requiredOllamaProxyScope(pathname: string): 'chat' | 'system' {
     : 'chat';
 }
 
+/** Map RAG API areas to the scope required by a remote paired device. */
+export function requiredRagProxyScope(pathname: string, method = 'GET'): string | null {
+  const verb = method.toUpperCase();
+  if (pathname === '/api/rag/health' || pathname === '/api/rag/resources') return null;
+  if (pathname === '/api/rag/v1/pairing/claim' || pathname === '/api/rag/v1/pairing/me') return null;
+  if (pathname === '/api/rag/v1/pairing/start' || pathname === '/api/rag/v1/pairing/devices') return 'system';
+  if (pathname.startsWith('/api/rag/v1/pairing/devices/')) return 'system';
+  if (pathname.startsWith('/api/rag/v1/agent')) return 'system';
+  if (pathname.startsWith('/api/rag/system/index') || pathname.startsWith('/api/rag/v1/watch/')) return 'system';
+  if (pathname.startsWith('/api/rag/system/')) return 'system';
+  if (pathname.startsWith('/api/rag/collections')) return verb === 'GET' ? 'read_private' : 'system';
+  if (pathname.startsWith('/api/rag/v1/sources')) return verb === 'DELETE' ? 'system' : 'read_private';
+  if (pathname.startsWith('/api/rag/attachments')) return verb === 'DELETE' || pathname.endsWith('/open') ? 'system' : 'read_private';
+  if (pathname.startsWith('/api/rag/v1/memory')) return verb === 'GET' || (verb === 'POST' && pathname.endsWith('/context')) ? 'read_private' : 'system';
+  if (pathname === '/api/rag/app-state' || pathname.startsWith('/api/rag/v1/stats')) return verb === 'DELETE' ? 'system' : 'read_private';
+  if (pathname.startsWith('/api/rag/v1/settings/web-search')) return 'system';
+  if (pathname.startsWith('/api/rag/v1/settings')) return 'system';
+  if (pathname.startsWith('/api/rag/v1/usage') || pathname.startsWith('/api/rag/v1/chat') || pathname.startsWith('/api/rag/v1/research') || pathname.startsWith('/api/rag/v1/voice') || pathname.startsWith('/api/rag/documents')) return 'chat';
+  return 'system';
+}
+
 export function needsInferenceLock(pathname: string): boolean {
   return pathname !== '/api/ollama/api/tags';
 }
@@ -70,6 +106,7 @@ export function deviceTokenHasScope(
   secretHex: string,
   nowSeconds = Date.now() / 1000,
 ): boolean {
+  if (!REMOTE_DEVICE_SCOPES.has(requiredScope)) return false;
   const match = /^txd_([0-9a-f]{24})_([A-Za-z0-9_-]{40,})$/.exec(token.trim());
   if (!match || !/^[0-9a-fA-F]{64,}$/.test(secretHex)) return false;
   if (!registry || typeof registry !== 'object') return false;
@@ -122,17 +159,6 @@ export function isAuthorizedScopedProxyPeer(
   return isLoopbackAddress(peer);
 }
 
-export function isAuthorizedSystemProxyPeer(
-  peer: string,
-  suppliedToken: string,
-  configuredToken: string,
-  allowLanWithoutToken: boolean,
-): boolean {
-  if (suppliedToken) {
-    return Boolean(configuredToken && constantTimeTokenEqual(suppliedToken, configuredToken));
-  }
-  if (isLoopbackAddress(peer)) return true;
-  // Once a credential exists it is mandatory for every remote peer.  The LAN
-  // fallback is retained only for explicit legacy installations without one.
-  return !configuredToken && allowLanWithoutToken && isPrivateLanAddress(peer);
+export function isAuthorizedSystemProxyPeer(peer: string): boolean {
+  return isLoopbackAddress(peer);
 }

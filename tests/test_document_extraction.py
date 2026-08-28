@@ -84,6 +84,38 @@ def test_extracts_docx_text_and_removes_temporary_file() -> None:
     assert "Production checklist" in text
 
 
+def test_rejects_archives_that_expand_past_the_parser_budget(monkeypatch) -> None:
+    data = BytesIO()
+    with ZipFile(data, "w", ZIP_DEFLATED) as archive:
+        archive.writestr("word/document.xml", "1234")
+    monkeypatch.setattr(document_service, "_ARCHIVE_MAX_UNCOMPRESSED_BYTES", 3)
+
+    with pytest.raises(HTTPException) as raised:
+        document_service._extract_document_text("plan.docx", data.getvalue())
+
+    assert raised.value.status_code == 413
+
+
+def test_rejects_invalid_office_archive() -> None:
+    with pytest.raises(HTTPException) as raised:
+        document_service._extract_document_text("broken.docx", b"not a zip")
+
+    assert raised.value.status_code == 422
+
+
+def test_rejects_office_archive_with_too_many_members(monkeypatch) -> None:
+    data = BytesIO()
+    with ZipFile(data, "w", ZIP_DEFLATED) as archive:
+        archive.writestr("one", "1")
+        archive.writestr("two", "2")
+    monkeypatch.setattr(document_service, "_ARCHIVE_MAX_MEMBERS", 1)
+
+    with pytest.raises(HTTPException) as raised:
+        document_service._extract_document_text("plan.docx", data.getvalue())
+
+    assert raised.value.status_code == 413
+
+
 def test_extracts_pdf_pages_and_optional_ocr_fallback(monkeypatch) -> None:
     pages = [
         SimpleNamespace(extract_text=lambda: "First page"),
