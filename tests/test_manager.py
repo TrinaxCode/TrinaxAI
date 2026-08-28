@@ -234,7 +234,9 @@ def test_user_documentation_leads_with_manager_and_in_app_docs_drop_git_clone():
     root = Path(__file__).parents[1]
     for name, terminal_marker in (("README.md", 'installer="$(mktemp)"'), ("README.es.md", 'installer="$(mktemp)"')):
         text = (root / name).read_text(encoding="utf-8")
-        assert text.index("TrinaxAI Manager" if name == "README.md" else "Gestor de TrinaxAI") < text.index(terminal_marker)
+        assert text.index("TrinaxAI Manager" if name == "README.md" else "Gestor de TrinaxAI") < text.index(
+            terminal_marker
+        )
         assert "no terminal commands" in text.lower() or "no necesitas git ni comandos" in text.lower()
     in_app_docs = (root / "chat-pwa/src/components/Docs.tsx").read_text(encoding="utf-8")
     assert "git clone" not in in_app_docs.lower()

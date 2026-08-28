@@ -242,9 +242,7 @@ def _extract_archive(archive: Path, destination: Path) -> str:
         with zipfile.ZipFile(archive) as bundle:
             root = _validate_archive(bundle)
             for member in bundle.infolist():
-                target = destination.joinpath(
-                    *PurePosixPath(member.filename.replace("\\", "/")).parts
-                )
+                target = destination.joinpath(*PurePosixPath(member.filename.replace("\\", "/")).parts)
                 if member.is_dir():
                     target.mkdir(parents=True, exist_ok=True)
                     continue
@@ -280,9 +278,12 @@ def _download_archive(archive: Path) -> None:
         raise RuntimeError("The download URL must use HTTPS.")
     try:
         # ARCHIVE_URL is restricted to HTTPS in production; file URLs are test-only.
-        with urllib.request.urlopen(  # nosec B310
-            ARCHIVE_URL, timeout=DOWNLOAD_TIMEOUT
-        ) as response, archive.open("wb") as output:
+        with (
+            urllib.request.urlopen(  # nosec B310
+                ARCHIVE_URL, timeout=DOWNLOAD_TIMEOUT
+            ) as response,
+            archive.open("wb") as output,
+        ):
             total = 0
             while True:
                 chunk = response.read(1024 * 1024)
