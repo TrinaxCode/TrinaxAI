@@ -557,6 +557,7 @@ def test_service_manager_platform_failure_edges(monkeypatch, tmp_path: Path) -> 
     monkeypatch.setattr(sm.sys, "platform", "win32")
     sm._reap_zombie_children()
     monkeypatch.setattr(sm.sys, "platform", "linux")
+    monkeypatch.setattr(sm.platform, "system", lambda: "Linux")
     monkeypatch.setattr(sm.shutil, "which", lambda name: "/usr/bin/sudo" if name == "sudo" else None)
     wrapper = tmp_path / "wrapper"
     wrapper.write_text("", encoding="utf-8")

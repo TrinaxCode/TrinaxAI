@@ -6,6 +6,7 @@ param(
   [switch]$NoAutostart,
   [switch]$NoAutoUpdate,
   [switch]$NoStart,
+  [switch]$DryRun,
   [switch]$LanSystem,
   [string]$InstallDir = "",
   [string]$SourceUrl = "",
@@ -561,7 +562,23 @@ Write-Host " Privacy: 100% local. Nothing leaves your machine." -ForegroundColor
 $ScriptPath = $MyInvocation.MyCommand.Path
 $LocalRepo = if ($ScriptPath) { Split-Path -Parent $ScriptPath } else { "" }
 $InstallDirWasProvided = -not [string]::IsNullOrWhiteSpace($InstallDir)
-if (-not $InstallDir) { $InstallDir = Join-Path $env:LOCALAPPDATA "TrinaxAI" }
+$LocalAppData = $env:LOCALAPPDATA
+if (-not $LocalAppData) { $LocalAppData = [Environment]::GetFolderPath("LocalApplicationData") }
+if (-not $LocalAppData) { $LocalAppData = [IO.Path]::GetTempPath() }
+if (-not $InstallDir) { $InstallDir = Join-Path $LocalAppData "TrinaxAI" }
+
+if ($DryRun) {
+  Write-Host (T "DRY-RUN: nothing will be downloaded, installed, or changed." "SIMULACIÓN: no se descargará, instalará ni modificará nada.") -ForegroundColor Yellow
+  Write-Host (T "Would use installation directory:" "Se usaría el directorio de instalación:") $InstallDir
+  Write-Host ""
+  Write-Host (T "Links to enter" "Enlaces de acceso") -ForegroundColor Cyan
+  Write-Host "  Localhost:       https://localhost:3334"
+  Write-Host "  LAN:             https://[YOUR-LAN-IP]:3334"
+  Write-Host (T "  RAG health:      https://localhost:3333/health" "  Salud de RAG:    https://localhost:3333/health")
+  Write-Ok (T "Dry-run finished; no changes were made" "Simulación terminada; no se hicieron cambios")
+  exit 0
+}
+
 $LocalRepoIsTarget = $false
 if ($LocalRepo -and $InstallDirWasProvided) {
   $LocalRepoIsTarget = ([IO.Path]::GetFullPath($LocalRepo) -eq [IO.Path]::GetFullPath($InstallDir))

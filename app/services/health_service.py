@@ -123,8 +123,8 @@ async def resources(request: Request | None = None):
         }
     except Exception:
         try:
-            pages = os.sysconf("SC_PHYS_PAGES")
-            page_size = os.sysconf("SC_PAGE_SIZE")
+            pages = os.sysconf("SC_PHYS_PAGES")  # type: ignore[attr-defined]
+            page_size = os.sysconf("SC_PAGE_SIZE")  # type: ignore[attr-defined]
             total = int(pages * page_size)
             ram = {"total": total, "available": None, "used": None, "percent": None}
         except Exception:

@@ -167,7 +167,7 @@ describe('voice API routes', () => {
     const speech = speakBackend({ text: 'Hola', lang: 'es-MX' });
     await Promise.resolve();
     stopBackendSpeech();
-    resolveResponse(new Response(new Blob(['audio'], { type: 'audio/mpeg' }), { status: 200 }));
+    resolveResponse(new Response('audio', { status: 200, headers: { 'Content-Type': 'audio/mpeg' } }));
 
     try {
       expect(requestSignal?.aborted).toBe(true);
@@ -200,7 +200,7 @@ describe('voice API routes', () => {
       createObjectURL: vi.fn(() => 'blob:voice'),
       revokeObjectURL: vi.fn(),
     });
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(new Blob(['audio'], { type: 'audio/mpeg' }), { status: 200 }));
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('audio', { status: 200, headers: { 'Content-Type': 'audio/mpeg' } }));
 
     const speech = speakBackend({ text: 'Hola', lang: 'es-MX' });
     for (let attempt = 0; attempt < 4 && !resolvePlay; attempt += 1) await Promise.resolve();

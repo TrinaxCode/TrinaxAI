@@ -90,7 +90,7 @@ def _terminate_process_tree(process, *, grace_seconds: float = 2.0) -> None:
         return
     try:
         if os.name == "posix" and hasattr(os, "killpg") and hasattr(signal, "SIGTERM"):
-            os.killpg(os.getpgid(process.pid), signal.SIGTERM)
+            os.killpg(os.getpgid(process.pid), signal.SIGTERM)  # type: ignore[attr-defined]
         elif os.name == "nt":
             taskkill = os.path.join(
                 os.environ.get("SystemRoot", r"C:\Windows"),
@@ -115,7 +115,7 @@ def _terminate_process_tree(process, *, grace_seconds: float = 2.0) -> None:
         pass
     try:
         if os.name == "posix" and hasattr(os, "killpg") and hasattr(signal, "SIGKILL"):
-            os.killpg(os.getpgid(process.pid), signal.SIGKILL)
+            os.killpg(os.getpgid(process.pid), signal.SIGKILL)  # type: ignore[attr-defined]
         elif os.name == "nt":
             taskkill = os.path.join(os.environ.get("SystemRoot", r"C:\Windows"), "System32", "taskkill.exe")
             subprocess.run(  # noqa: S603 - fixed Windows system binary and argv

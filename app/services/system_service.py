@@ -607,7 +607,7 @@ def shutdown_runtime() -> None:
             if process is not None and _process_alive(process):
                 try:
                     if os.name == "posix":
-                        os.killpg(os.getpgid(process.pid), 15)
+                        os.killpg(os.getpgid(process.pid), 15)  # type: ignore[attr-defined]
                     else:
                         process.terminate()
                 except (OSError, ProcessLookupError):

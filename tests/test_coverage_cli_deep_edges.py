@@ -325,7 +325,10 @@ def test_tool_glob_grep_and_process_sandbox_edges(monkeypatch: pytest.MonkeyPatc
     original_is_symlink = Path.is_symlink
     monkeypatch.setattr(Path, "is_symlink", lambda path: False if str(path) == "/bin" else original_is_symlink(path))
     argv = _bubblewrap_argv(tmp_path, "echo ok")
-    assert argv and "--setenv" in argv and argv[-1] == "echo ok"
+    if Path("/proc/self/ns/user").exists():
+        assert argv and "--setenv" in argv and argv[-1] == "echo ok"
+    else:
+        assert argv is None
 
     class Process:
         pid = 42
