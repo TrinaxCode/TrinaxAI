@@ -24,7 +24,7 @@ prompt-toolkit>=3.0.48
 psutil>=6.0
 rich>=13.0
 watchdog>=6.0
-nltk>=3.10.0
+nltk>=3.10.2
 
 # Voice (STT/TTS) is optional and not included here to keep the base install light.
 # For voice support install: `pip install trinaxai[voice]`

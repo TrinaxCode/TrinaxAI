@@ -59,7 +59,7 @@ server = [
   "tree-sitter-language-pack>=0.9",
   "psutil>=6.0",
   "watchdog>=6.0",
-  "nltk>=3.10.0",
+  "nltk>=3.10.2",
 ]
 voice = [
   "faster-whisper>=1.2.1",
