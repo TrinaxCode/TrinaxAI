@@ -1136,6 +1136,7 @@ def test_console_rich_and_branding_fallbacks(monkeypatch, capsys) -> None:
     assert len(branding.banner_lines()) > 0
     monkeypatch.setattr(branding, "_is_tty", lambda: True)
     monkeypatch.delenv("NO_COLOR", raising=False)
+    monkeypatch.setattr(branding.os, "name", "posix")
     branding.set_terminal_title("TrinaxAI")
     branding.reset_terminal_title()
     assert "\x1b]0;TrinaxAI" in capsys.readouterr().out

@@ -49,6 +49,7 @@ def test_core_persistence_and_parsing_error_edges(monkeypatch, tmp_path: Path):
 
 def test_core_platform_fallbacks_and_memory_parsers(monkeypatch):
     monkeypatch.setattr(core.sys, "platform", "linux")
+    monkeypatch.setattr(core.os, "name", "posix")
     monkeypatch.setattr(core.Path, "read_text", lambda *_args, **_kwargs: (_ for _ in ()).throw(OSError("cpu")))
     monkeypatch.setattr(core.platform, "processor", lambda: "")
     monkeypatch.setattr(core.platform, "uname", lambda: SimpleNamespace(processor=""))

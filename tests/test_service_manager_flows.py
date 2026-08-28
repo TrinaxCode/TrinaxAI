@@ -449,6 +449,7 @@ def test_windows_executable_and_systemd_status_edges(monkeypatch, tmp_path: Path
 
 
 def test_recovery_supervisor_and_port_edges(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(sm.sys, "platform", "linux")
     storage = tmp_path / "storage"
     storage.mkdir()
     pid_file = storage / "recovery.pid"

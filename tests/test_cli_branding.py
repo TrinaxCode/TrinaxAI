@@ -42,6 +42,7 @@ def test_set_terminal_title_is_noop_without_tty(monkeypatch, capsys) -> None:
 
 def test_clear_terminal_erases_viewport_and_scrollback_on_tty(monkeypatch, capsys) -> None:
     monkeypatch.setattr(branding.sys.stdout, "isatty", lambda: True, raising=False)
+    monkeypatch.setattr(branding.os, "name", "posix")
     branding.clear_terminal()
     out = capsys.readouterr().out
     assert "\033[2J" in out

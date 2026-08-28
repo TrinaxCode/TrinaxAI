@@ -131,6 +131,7 @@ async def test_attachment_upload_download_delete_and_validation(tmp_path: Path, 
     def popen(*_args, **_kwargs):
         return None
 
+    monkeypatch.setattr(attachment_service.sys, "platform", "linux")
     monkeypatch.setattr(attachment_service.subprocess, "Popen", popen)
     opened = await attachment_service.attachment_open(attachment_id, object())
     assert opened["opened"] == attachment_id

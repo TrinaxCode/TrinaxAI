@@ -364,7 +364,12 @@ def test_tool_glob_grep_and_process_sandbox_edges(monkeypatch: pytest.MonkeyPatc
     monkeypatch.setattr(tools_module.os, "name", "posix")
     process = TimeoutProcess()
     monkeypatch.setattr(tools_module.subprocess, "Popen", lambda *_args, **_kwargs: process)
-    monkeypatch.setattr(tools_module.os, "killpg", lambda *_args: (_ for _ in ()).throw(ProcessLookupError))
+    monkeypatch.setattr(
+        tools_module.os,
+        "killpg",
+        lambda *_args: (_ for _ in ()).throw(ProcessLookupError),
+        raising=False,
+    )
     with pytest.raises(tools_module.subprocess.TimeoutExpired):
         _run_process(["sleep", "1"], cwd=tmp_path)
 
@@ -1324,6 +1329,7 @@ def test_doctor_helpers_and_degraded_paths(
     monkeypatch.setattr(builtins, "open", lambda *_args, **_kwargs: ProcStream())
     assert doctor._process_command(123) == "python app.py"
     monkeypatch.setattr(builtins, "open", lambda *_args, **_kwargs: (_ for _ in ()).throw(OSError("proc")))
+    monkeypatch.setattr(doctor.os, "name", "posix")
     monkeypatch.setattr(
         doctor.subprocess, "run", lambda *_args, **_kwargs: SimpleNamespace(returncode=0, stdout="python app.py\n")
     )

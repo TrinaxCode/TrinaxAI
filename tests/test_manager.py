@@ -17,10 +17,12 @@ def test_download_source_installs_managed_archive(tmp_path: Path, monkeypatch):
     source.mkdir()
     (source / "pyproject.toml").write_text("[project]\n", encoding="utf-8")
     (source / "install.sh").write_text("#!/bin/sh", encoding="utf-8")
+    (source / "install.ps1").write_text("Write-Host install", encoding="utf-8")
     archive = tmp_path / "release.zip"
     with zipfile.ZipFile(archive, "w") as bundle:
         bundle.write(source / "pyproject.toml", "TrinaxAI-main/pyproject.toml")
         bundle.write(source / "install.sh", "TrinaxAI-main/install.sh")
+        bundle.write(source / "install.ps1", "TrinaxAI-main/install.ps1")
     monkeypatch.setattr(trinaxai_manager, "ARCHIVE_URL", archive.as_uri())
 
     target = tmp_path / "installed"
