@@ -661,9 +661,9 @@ def test_system_runtime_shutdown_spawn_upload_and_endpoint_error_edges(tmp_path,
     monkeypatch.setattr(system_service, "_watch_stop_sync", lambda: (_ for _ in ()).throw(RuntimeError()))
     monkeypatch.setattr(system_service, "_process_alive", lambda _process: True)
     monkeypatch.setattr(system_service.os, "name", "posix")
-    monkeypatch.setattr(system_service.os, "getpgid", lambda _pid: 456)
+    monkeypatch.setattr(system_service.os, "getpgid", lambda _pid: 456, raising=False)
     killed = []
-    monkeypatch.setattr(system_service.os, "killpg", lambda pgid, signal: killed.append((pgid, signal)))
+    monkeypatch.setattr(system_service.os, "killpg", lambda pgid, signal: killed.append((pgid, signal)), raising=False)
     monkeypatch.setattr(system_service, "_persist_index_jobs_locked", lambda: None)
     isolated_jobs["shutdown"] = {"process": Process(), "cancel_requested": False}
     was_stopping = state.lifecycle_stopping.is_set()

@@ -667,7 +667,7 @@ def _run_process(argv: list[str], *, cwd: Path) -> tuple[int, str, str]:
     try:
         stdout, stderr = proc.communicate(timeout=RUN_TIMEOUT_SECONDS)
     except subprocess.TimeoutExpired:
-        if os.name == "posix" and hasattr(os, "killpg"):
+        if os.name == "posix" and hasattr(os, "killpg") and hasattr(signal, "SIGKILL"):
             try:
                 os.killpg(proc.pid, signal.SIGKILL)
             except ProcessLookupError:
