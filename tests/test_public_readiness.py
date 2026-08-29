@@ -51,7 +51,7 @@ def test_release_workflow_security_contract_catches_regressions():
     assert any("PyInstaller" in error for error in public_readiness.check_release_workflow_security(floating_tool))
 
 
-def test_required_gates_run_repository_commands_with_diagnostics(monkeypatch, capsys):
+def test_required_gates_run_repository_commands_without_logging_output(monkeypatch, capsys):
     calls = []
 
     def run(command, **kwargs):
@@ -68,16 +68,16 @@ def test_required_gates_run_repository_commands_with_diagnostics(monkeypatch, ca
     assert calls[1][0][1:] == ["run", "typecheck"]
     assert calls[2][0][1:] == ["run", "test:coverage"]
     assert calls[3][0][1:] == ["run", "build"]
-    assert "gate output" in capsys.readouterr().out
+    assert "gate output" not in capsys.readouterr().out
 
 
-def test_required_gate_failure_is_reported_without_hiding_output(monkeypatch, capsys):
+def test_required_gate_failure_is_reported_without_leaking_output(monkeypatch, capsys):
     responses = iter(
         [
-            SimpleNamespace(returncode=0, stdout="coverage ok", stderr=""),
-            SimpleNamespace(returncode=2, stdout="typecheck output", stderr="typecheck failed"),
-            SimpleNamespace(returncode=0, stdout="frontend coverage ok", stderr=""),
-            SimpleNamespace(returncode=0, stdout="build ok", stderr=""),
+            SimpleNamespace(returncode=0, stdout="coverage secret output", stderr=""),
+            SimpleNamespace(returncode=2, stdout="private typecheck output", stderr="private typecheck failure"),
+            SimpleNamespace(returncode=0, stdout="frontend coverage secret", stderr=""),
+            SimpleNamespace(returncode=0, stdout="private build output", stderr=""),
         ]
     )
     monkeypatch.setattr(public_readiness.subprocess, "run", lambda *_args, **_kwargs: next(responses))
@@ -86,5 +86,5 @@ def test_required_gate_failure_is_reported_without_hiding_output(monkeypatch, ca
 
     assert errors == ["TypeScript typecheck failed with exit code 2"]
     output = capsys.readouterr().out
-    assert "typecheck output" in output
-    assert "typecheck failed" in output
+    assert "private typecheck output" not in output
+    assert "private typecheck failure" not in output

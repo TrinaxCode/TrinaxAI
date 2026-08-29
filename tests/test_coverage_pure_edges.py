@@ -288,5 +288,8 @@ def test_schema_and_pairing_validation_edges() -> None:
     assert MemoryUpdateRequest(text="fact", tags=None).tags is None
 
     response = Response()
-    pairing._set_device_cookie(response, _request(), "token", "not-a-number")
-    assert f"{pairing.DEVICE_TOKEN_COOKIE}=token" in response.headers["set-cookie"]
+    token = "txd_" + "a" * 24 + "_" + "b" * 40
+    pairing._set_device_cookie(response, _request(), token, "not-a-number")
+    assert f"{pairing.DEVICE_TOKEN_COOKIE}={token}" in response.headers["set-cookie"]
+    with pytest.raises(ValueError, match="Invalid device credential"):
+        pairing._set_device_cookie(Response(), _request(), "token")

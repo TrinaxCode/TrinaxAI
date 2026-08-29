@@ -35,6 +35,13 @@ def _tls_files(base_dir: Path) -> tuple[Path, Path] | None:
     return None
 
 
+def _tls_context(key: Path, cert: Path) -> ssl.SSLContext:
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    context.minimum_version = ssl.TLSVersion.TLSv1_2
+    context.load_cert_chain(str(cert), str(key))
+    return context
+
+
 def _page(token: str, *, error: str = "", effective_url: str = "http://localhost:3334/") -> bytes:
     message = f'<p class="error">{html.escape(error)}</p>' if error else ""
     return f"""<!doctype html>
@@ -177,10 +184,9 @@ def run(base_dir: str) -> int:
         pass
     tls = _tls_files(root)
     if tls:
-        first, second = tls
+        key, cert = tls
         try:
-            context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-            context.load_cert_chain(str(second), str(first))
+            context = _tls_context(key, cert)
             for server in servers:
                 server.socket = context.wrap_socket(server.socket, server_side=True)
                 server.tls_enabled = True

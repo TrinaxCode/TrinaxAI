@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -30,8 +31,14 @@ def test_network_origins_include_stable_hostname_and_current_address(monkeypatch
     monkeypatch.setattr(network.socket, "gethostname", lambda: "Trinax-Host")
     origins = network.cors_origins(["192.168.0.18"])
     urls = network.pwa_urls(["192.168.0.18"])
-    assert "https://Trinax-Host.local:3334" in origins
-    assert "https://192.168.0.18:3334" in origins
+    origin_values = set(origins.split(","))
+    expected_origins = {
+        f"{scheme}://{host}:{port}"
+        for host in ("localhost", "Trinax-Host", "192.168.0.18")
+        for scheme in ("https", "http")
+        for port in (3334, 3335)
+    }
+    assert origin_values & expected_origins == expected_origins
     assert urls == ["https://192.168.0.18:3334", "https://Trinax-Host.local:3334"]
 
 
@@ -98,7 +105,7 @@ def test_refresh_command_updates_https_and_restarts(monkeypatch, tmp_path: Path)
     result = network_command.run(SimpleNamespace(network_command="refresh", yes=True, no_restart=False), None, ui, None)
     assert result == 0
     assert ("reload-network", 180) in calls
-    assert "https://trinax.local:3334" in ui.messages
+    assert ui.messages.count("https://trinax.local:3334") == 1
 
 
 def test_lan_addresses_prefers_the_routed_private_address(monkeypatch) -> None:
@@ -150,6 +157,9 @@ def test_refresh_certificate_writes_all_runtime_formats(tmp_path: Path, monkeypa
     assert (cert_dir / "localhost.pem").read_text(encoding="utf-8") == "certificate"
     assert (cert_dir / "trinaxai-local.crt").is_file()
     assert (cert_dir / "trinaxai-local.pfx").is_file() is (system == "Windows")
+    if os.name != "nt":
+        assert (cert_dir / "localhost.pem").stat().st_mode & 0o777 == 0o600
+        assert (cert_dir / "trinaxai-local.crt").stat().st_mode & 0o777 == 0o600
 
 
 def test_refresh_certificate_falls_back_to_openssl(tmp_path: Path, monkeypatch) -> None:

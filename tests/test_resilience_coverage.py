@@ -133,8 +133,9 @@ async def test_pairing_inventory_and_device_routes_handle_missing_and_storage_er
     assert exc.value.status_code == 403
     monkeypatch.setattr(pairing, "device_for_token", lambda _token: {"id": "one"})
     monkeypatch.setattr(pairing, "revoke_device", lambda _device: {"id": "one", "revoked_at": 1})
-    assert (await pairing.pairing_me(_request(headers={pairing.DEVICE_TOKEN_HEADER: "token"})))["device"]["id"] == "one"
-    assert (await pairing.pairing_revoke_me(_request(headers={pairing.DEVICE_TOKEN_HEADER: "token"})))["device"][
+    token = "txd_" + "a" * 24 + "_" + "b" * 40
+    assert (await pairing.pairing_me(_request(headers={pairing.DEVICE_TOKEN_HEADER: token})))["device"]["id"] == "one"
+    assert (await pairing.pairing_revoke_me(_request(headers={pairing.DEVICE_TOKEN_HEADER: token})))["device"][
         "revoked_at"
     ] == 1
 

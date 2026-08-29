@@ -26,6 +26,7 @@ from app.security.device_auth import (
     device_for_token,
     list_devices,
     revoke_device,
+    validate_device_token,
 )
 
 router = APIRouter(prefix="/v1/pairing", tags=["pairing"])
@@ -56,6 +57,9 @@ def _cookie_secure(request: Request) -> bool:
 
 
 def _set_device_cookie(response: Response, request: Request, token: str, expires_at: object = None) -> None:
+    safe_token = validate_device_token(token)
+    if safe_token is None:
+        raise ValueError("Invalid device credential.")
     max_age = None
     if expires_at is not None:
         try:
@@ -64,7 +68,7 @@ def _set_device_cookie(response: Response, request: Request, token: str, expires
             max_age = None
     response.set_cookie(
         key=DEVICE_TOKEN_COOKIE,
-        value=token,
+        value=safe_token,
         max_age=max_age,
         path=DEVICE_TOKEN_COOKIE_PATH,
         secure=_cookie_secure(request),

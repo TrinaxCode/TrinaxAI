@@ -143,7 +143,7 @@ def test_research_can_persist_a_public_exportable_session(monkeypatch, ui) -> No
             },
         ),
     ]
-    assert any("https://example.test" in str(call.args[0]) for call in ui.info.call_args_list)
+    assert ui.info.call_args_list[-1].args[0] == "  - https://example.test"
 
 
 @pytest.mark.parametrize("action", ["start", "stop", "status"])

@@ -179,6 +179,12 @@ def sanitize_device_name(name: str) -> str:
     return cleaned
 
 
+def validate_device_token(token: str) -> str | None:
+    """Return a normalized token only when it matches the issued format."""
+    value = token.strip() if isinstance(token, str) else ""
+    return value if _TOKEN_RE.fullmatch(value) else None
+
+
 def _prune_codes(registry: dict[str, Any], now: float) -> bool:
     codes = registry["pairing_codes"]
     expired = [key for key, value in codes.items() if float(value.get("expires_at") or 0) <= now]
@@ -283,7 +289,10 @@ def authenticate_device_token(
         return None
     if required_scope not in ALL_DEVICE_SCOPES:
         raise ValueError(f"Unknown device scope: {required_scope}")
-    match = _TOKEN_RE.fullmatch(str(token).strip())
+    normalized = validate_device_token(token)
+    if normalized is None:
+        return None
+    match = _TOKEN_RE.fullmatch(normalized)
     if not match:
         return None
     device_id = match.group(1)
@@ -297,7 +306,7 @@ def authenticate_device_token(
             if not isinstance(device, dict):
                 return None
             expected = str(device.get("token_hash") or "")
-            actual = _keyed_hash(secret, "device-token", token)
+            actual = _keyed_hash(secret, "device-token", normalized)
             if not expected or not hmac.compare_digest(actual, expected):
                 return None
             if device.get("revoked_at") is not None:
@@ -365,4 +374,5 @@ __all__ = [
     "normalize_pairing_code",
     "revoke_device",
     "validate_scopes",
+    "validate_device_token",
 ]

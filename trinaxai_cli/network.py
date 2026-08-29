@@ -178,7 +178,7 @@ def refresh_certificate(root: Path, addresses: list[str]) -> None:
                 raise RuntimeError((result.stderr or "PFX generation failed").strip())
 
         os.chmod(key, 0o600)
-        os.chmod(cert, 0o644)
+        os.chmod(cert, 0o600)
         os.replace(key, cert_dir / "localhost-key.pem")
         os.replace(cert, cert_dir / "localhost.pem")
         shutil.copy2(cert_dir / "localhost.pem", cert_dir / "trinaxai-local.crt")

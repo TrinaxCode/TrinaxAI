@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import os
 import re
-import shlex
 import subprocess
 import sys
 from fnmatch import fnmatch
@@ -229,11 +228,10 @@ def required_gate_commands() -> tuple[tuple[str, tuple[str, ...], Path], ...]:
 
 
 def check_required_gates() -> list[str]:
-    """Run release gates and retain stdout/stderr so failures are actionable."""
+    """Run release gates without logging command output."""
     errors: list[str] = []
     for label, command, cwd in required_gate_commands():
-        rendered = shlex.join(command)
-        print(f"[gate] {label}: {rendered} (cwd={cwd})")
+        print(f"[gate] {label}: running")
         try:
             result = subprocess.run(
                 list(command),
@@ -248,12 +246,6 @@ def check_required_gates() -> list[str]:
             errors.append(message)
             continue
 
-        stdout = (getattr(result, "stdout", "") or "").rstrip()
-        stderr = (getattr(result, "stderr", "") or "").rstrip()
-        if stdout:
-            print(f"[gate] {label} stdout:\n{stdout}")
-        if stderr:
-            print(f"[gate] {label} stderr:\n{stderr}")
         if result.returncode:
             message = f"{label} failed with exit code {result.returncode}"
             print(f"[gate] {message}")
@@ -598,7 +590,9 @@ def main() -> int:
     errors.extend(check_i18n())
     errors.extend(check_documentation_pairs())
     errors.extend(check_pwa_locales())
-    errors.extend(check_secrets(files))
+    secret_errors = check_secrets(files)
+    if secret_errors:
+        errors.append(f"secret scan found {len(secret_errors)} potential issue(s)")
     errors.extend(check_never_commit_files())
     errors.extend(check_tracked_never_commit_files())
     errors.extend(check_release_contract())

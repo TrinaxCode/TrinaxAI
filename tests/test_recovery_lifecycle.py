@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import ssl
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -13,6 +14,21 @@ def test_recovery_accepts_only_loopback_addresses() -> None:
     assert recovery_server._is_loopback("::1")
     assert not recovery_server._is_loopback("192.168.1.10")
     assert not recovery_server._is_loopback("0.0.0.0")
+
+
+def test_recovery_tls_context_rejects_legacy_protocols(monkeypatch, tmp_path: Path) -> None:
+    class Context:
+        minimum_version = None
+
+        def load_cert_chain(self, cert: str, key: str) -> None:
+            assert cert == str(tmp_path / "cert.pem")
+            assert key == str(tmp_path / "key.pem")
+
+    context = Context()
+    monkeypatch.setattr(recovery_server.ssl, "SSLContext", lambda _protocol: context)
+
+    assert recovery_server._tls_context(tmp_path / "key.pem", tmp_path / "cert.pem") is context
+    assert context.minimum_version is ssl.TLSVersion.TLSv1_2
 
 
 def test_stop_all_persists_manual_stop_and_starts_recovery(monkeypatch, tmp_path: Path) -> None:
