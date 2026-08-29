@@ -273,9 +273,9 @@ runtime.
 | `TRINAXAI_UPDATE_REPAIR_OLLAMA` | `0` | Reinstalls or repairs Ollama during update. |
 | `TRINAXAI_UPDATE_RESTART` | auto/prompted | Restarts services after update when enabled. |
 | `TRINAXAI_UPDATE_AUDIT` | `1` | Runs the post-update readiness audit. |
-| `TRINAXAI_RELEASE_VERSION` | `1.2.0` | **Installer:** pinned GitHub release version used for source downloads. |
-| `TRINAXAI_SOURCE_URL` | official GitHub archive | **Install source:** HTTPS archive URL used when installing from a source checkout. |
-| `TRINAXAI_SOURCE_SHA256` | release manifest | **Installer:** SHA-256 for a custom source archive URL; required with `TRINAXAI_SOURCE_URL`. |
+| `TRINAXAI_RELEASE_VERSION` | unset | **Installer:** optional semantic GitHub release version; when set, source downloads use that signed release instead of `main`. |
+| `TRINAXAI_SOURCE_URL` | GitHub `main` archive | **Install source:** HTTPS archive URL used for a custom source package. |
+| `TRINAXAI_SOURCE_SHA256` | unset | **Installer:** SHA-256 for a custom source archive URL; required with `TRINAXAI_SOURCE_URL`. |
 | `TRINAXAI_UPDATE_ROOT` | script directory | **Internal:** installation root passed to the automatic updater. |
 | `TRINAXAI_PRIVILEGED_WRAPPER` | unset | **Internal:** prevents recursion when a sudoers lifecycle wrapper invokes the manager. |
 

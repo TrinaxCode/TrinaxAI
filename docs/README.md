@@ -21,11 +21,17 @@ For the product overview, screenshots and benchmarks, see the official website: 
 
 ## Start here
 
-For a normal installation, download [TrinaxAI Manager for v1.2.0](https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.2.0), open it, and select **Install**. The same application provides **Update** and **Uninstall**. Git and terminal commands are not required.
+For a normal installation, run the URL-based installer for your platform. Git is not required:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/TrinaxCode/TrinaxAI/main/install.sh | bash
+```
+
+On Windows PowerShell use `irm https://raw.githubusercontent.com/TrinaxCode/TrinaxAI/main/install.ps1 | iex`.
 
 | Need | Document |
 |---|---|
-| Install, update, or uninstall with the graphical Manager | [Main README](../README.md#quick-start) |
+| Install, update, or uninstall from a terminal | [Main README](../README.md#quick-start) |
 | Understand components and data flows | [Architecture](ARCHITECTURE.md) |
 | Configure models, networking, RAG, and the PWA | [Configuration reference](CONFIGURATION.md) |
 | Look up any environment variable | [Environment variable inventory](ENVIRONMENT_VARIABLES.md) |

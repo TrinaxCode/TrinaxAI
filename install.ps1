@@ -20,17 +20,21 @@ param(
 <# 
 TrinaxAI - Windows one-command installer
 Run in PowerShell:
-  powershell -ExecutionPolicy Bypass -File .\install.ps1
-  powershell -ExecutionPolicy Bypass -File .\install.ps1 -NonInteractive
+  irm https://raw.githubusercontent.com/TrinaxCode/TrinaxAI/main/install.ps1 | iex
 #>
 
 $ErrorActionPreference = "Stop"
 if ([string]::IsNullOrWhiteSpace($Language)) { $Language = if ($env:TRINAXAI_LANG -match '^es') { 'es' } elseif ((Get-Culture).Name -match '^es') { 'es' } else { 'en' } }
 function T($English, $Spanish) { if ($Language -eq 'es') { return $Spanish }; return $English }
-$ReleaseVersion = if ($env:TRINAXAI_RELEASE_VERSION) { $env:TRINAXAI_RELEASE_VERSION } else { "1.2.0" }
-if ($ReleaseVersion -notmatch '^[0-9]+\.[0-9]+\.[0-9]+$') { throw "Invalid TrinaxAI release version: $ReleaseVersion" }
-$DefaultSourceArchiveName = "TrinaxAI-$ReleaseVersion.zip"
-$DefaultSourceArchiveUrl = "https://github.com/TrinaxCode/TrinaxAI/releases/download/v$ReleaseVersion/$DefaultSourceArchiveName"
+$ReleaseVersion = if (-not [string]::IsNullOrWhiteSpace($env:TRINAXAI_RELEASE_VERSION)) { $env:TRINAXAI_RELEASE_VERSION } else { "" }
+if ($ReleaseVersion -and $ReleaseVersion -notmatch '^[0-9]+\.[0-9]+\.[0-9]+$') { throw "Invalid TrinaxAI release version: $ReleaseVersion" }
+if ($ReleaseVersion) {
+  $DefaultSourceArchiveName = "TrinaxAI-$ReleaseVersion.zip"
+  $DefaultSourceArchiveUrl = "https://github.com/TrinaxCode/TrinaxAI/releases/download/v$ReleaseVersion/$DefaultSourceArchiveName"
+} else {
+  $DefaultSourceArchiveName = "TrinaxAI-main.zip"
+  $DefaultSourceArchiveUrl = "https://github.com/TrinaxCode/TrinaxAI/archive/refs/heads/main.zip"
+}
 
 function Write-Step($Text) { Write-Host "`n=== $Text ===`n" -ForegroundColor Blue }
 function Write-Ok($Text) { Write-Host "  [OK] $Text" -ForegroundColor Green }
@@ -253,15 +257,17 @@ function Install-RemoteRepository([string]$Target) {
   if (-not $ExpectedChecksum -and $RequestedSourceUrl -ne $DefaultSourceArchiveUrl) {
     throw "TRINAXAI_SOURCE_URL or -SourceUrl requires a matching SHA-256 checksum."
   }
-  if (-not $ExpectedChecksum) {
+  if (-not $ExpectedChecksum -and $ReleaseVersion) {
     $ExpectedChecksum = Get-SourceChecksum "https://github.com/TrinaxCode/TrinaxAI/releases/download/v$ReleaseVersion/SHA256SUMS" $DefaultSourceArchiveName
   }
-  if ($ExpectedChecksum -notmatch '^[0-9a-fA-F]{64}$') { throw "Source archive checksum must be a SHA-256 digest." }
+  if ($ExpectedChecksum -and $ExpectedChecksum -notmatch '^[0-9a-fA-F]{64}$') { throw "Source archive checksum must be a SHA-256 digest." }
   try {
     New-Item -ItemType Directory -Force -Path $TempRoot | Out-Null
     if (-not (Invoke-DownloadFile $SourceArchiveUrl $Archive)) { throw "Could not download TrinaxAI source archive." }
-    $ActualChecksum = (Get-FileHash -Algorithm SHA256 -LiteralPath $Archive).Hash.ToLowerInvariant()
-    if ($ActualChecksum -ne $ExpectedChecksum.ToLowerInvariant()) { throw "Source archive checksum mismatch." }
+    if ($ExpectedChecksum) {
+      $ActualChecksum = (Get-FileHash -Algorithm SHA256 -LiteralPath $Archive).Hash.ToLowerInvariant()
+      if ($ActualChecksum -ne $ExpectedChecksum.ToLowerInvariant()) { throw "Source archive checksum mismatch." }
+    }
     $Root = Test-ZipArchiveEntries $Archive
     $Extracted = Join-Path $TempRoot "extracted"
     Expand-Archive -LiteralPath $Archive -DestinationPath $Extracted -Force
@@ -404,14 +410,7 @@ function Add-UserPath($PathToAdd) {
   }
 }
 function Get-OpenSslCommand {
-  $ProgramFilesX86 = ${env:ProgramFiles(x86)}
-  $Candidates = @(
-    "openssl",
-    (Join-Path $env:ProgramFiles "Git\usr\bin\openssl.exe")
-  )
-  if ($ProgramFilesX86) {
-    $Candidates += (Join-Path $ProgramFilesX86 "Git\usr\bin\openssl.exe")
-  }
+  $Candidates = @("openssl")
   foreach ($Candidate in $Candidates) {
     if ($Candidate -and (Test-Cmd $Candidate)) { return $Candidate }
   }

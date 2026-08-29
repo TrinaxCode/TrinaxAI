@@ -21,11 +21,17 @@ Para la vista general del producto, las capturas y los benchmarks, consulta la w
 
 ## Empieza aquí
 
-Para una instalación normal, descarga el [Gestor de TrinaxAI de v1.2.0](https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.2.0), ábrelo y pulsa **Instalar**. La misma aplicación permite **Actualizar** y **Desinstalar**. No necesitas Git ni comandos de terminal.
+Para una instalación normal, ejecuta el instalador basado en URL de tu plataforma. No necesitas Git:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/TrinaxCode/TrinaxAI/main/install.sh | bash
+```
+
+En Windows PowerShell usa `irm https://raw.githubusercontent.com/TrinaxCode/TrinaxAI/main/install.ps1 | iex`.
 
 | Necesidad | Documento |
 |---|---|
-| Instalar, actualizar o desinstalar con el Gestor gráfico | [README principal](../README.es.md#inicio-rápido) |
+| Instalar, actualizar o desinstalar desde una terminal | [README principal](../README.es.md#inicio-rápido) |
 | Entender los componentes y flujos | [Arquitectura](ARCHITECTURE.es.md) |
 | Configurar modelos, red, RAG y PWA | [Referencia de configuración](CONFIGURATION.es.md) |
 | Consultar cualquier variable de entorno | [Inventario de variables](ENVIRONMENT_VARIABLES.es.md) |

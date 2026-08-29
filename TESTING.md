@@ -1,20 +1,29 @@
-# Installer Testing
+<h1 align="center">
+  <a href="https://www.trinaxai.app/"><img src="chat-pwa/public/logo.webp" alt="TrinaxAI" width="64" valign="middle"></a>
+  <a href="https://www.trinaxai.app/">TrinaxAI</a> · 🧪 Installer Testing
+</h1>
 
-[Español](TESTING.es.md)
+<p align="center">
+  <a href="https://github.com/TrinaxCode/TrinaxAI"><img src="https://img.shields.io/github/stars/TrinaxCode/TrinaxAI?style=flat&amp;label=%E2%98%85&amp;color=006bbd" alt="GitHub stars"></a>
+  <a href="https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.2.0"><img src="https://img.shields.io/badge/version-1.2.0-006bbd" alt="Latest release: 1.2.0"></a>
+  <a href="https://github.com/TrinaxCode/TrinaxAI/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/TrinaxCode/TrinaxAI/ci.yml?branch=main&amp;label=CI" alt="CI status"></a>
+  <a href="https://github.com/TrinaxCode/TrinaxAI/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0--or--later-006bbd" alt="License: AGPL-3.0-or-later"></a>
+  <img src="https://img.shields.io/badge/macOS%20%7C%20Windows%20%7C%20Linux-4493F8?style=flat-square" alt="Supported platforms: macOS, Windows, and Linux">
+</p>
 
-These checks are deliberately split into Manager tests, script simulation, and real-machine tests. Dry-run never downloads the source package or Ollama, installs packages, starts services, changes PATH, edits launch agents, or removes files.
+<p align="center"><sub><strong>English</strong> · <a href="TESTING.es.md">Español</a></sub></p>
+<p align="center"><sub><a href="https://www.trinaxai.app/">Website</a> · <a href="docs/README.md">Documentation</a> · <a href="README.md">Home</a> · <a href="docs/CHANGELOG.md">Changelog</a></sub></p>
 
-## Graphical Manager smoke test
+These checks cover the URL-based lifecycle scripts, CLI behavior, and real-machine tests. Dry-run never downloads the source package or Ollama, installs packages, starts services, changes PATH, edits launch agents, or removes files.
 
-Test the normal user journey first:
+## URL installer smoke test
 
-1. Download the Manager package for the target operating system from the [TrinaxAI 1.2.0 release](https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.2.0).
-   Use the `.exe` on Windows, `.dmg` on macOS, or `.deb` on Debian/Ubuntu. Portable ZIP/TAR.GZ fallbacks are published alongside them.
-2. Open it and select **Install**. Confirm that no command needs to be copied or typed.
-3. Reopen it and test **Update**, then **Uninstall**.
-4. Confirm that Git is not installed or requested and that the detected profile is one of `8gb`, `16gb`, `32gb`, or `64gb`.
+Test the normal user journey on a clean machine:
 
-The command-line checks below validate the advanced fallback scripts; they are not the normal installation instructions.
+1. Run `curl -fsSL https://raw.githubusercontent.com/TrinaxCode/TrinaxAI/main/install.sh | bash` on Linux/macOS or `irm https://raw.githubusercontent.com/TrinaxCode/TrinaxAI/main/install.ps1 | iex` on Windows PowerShell.
+2. Confirm that the source archive is downloaded directly and Git is neither installed nor requested.
+3. Open `https://localhost:3334`, then run `trinaxai update` and `trinaxai uninstall`.
+4. Confirm that the detected profile is one of `8gb`, `16gb`, `32gb`, or `64gb`.
 
 ## Local Dry-Run
 
@@ -91,7 +100,7 @@ If automatic Ollama installation fails, the official `OllamaSetup.exe` is opened
 
 ## GitHub Actions
 
-`.github/workflows/test-installers.yml` runs syntax and dry-run checks on `ubuntu-latest`, `macos-latest`, and `windows-latest`, and builds/packages the Windows Manager smoke artifact. It does not install Ollama or attempt to emulate another operating system. The release workflow builds all three native packages plus portable fallbacks on their native runners and verifies every published download URL.
+`.github/workflows/test-installers.yml` runs syntax and dry-run checks on `ubuntu-latest`, `macos-latest`, and `windows-latest`. It does not install Ollama or attempt to emulate another operating system. The release workflow publishes source archives and URL installers and verifies every published download URL.
 
 ## RAG quality evaluation
 

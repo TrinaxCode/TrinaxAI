@@ -312,8 +312,5 @@ git diff --check  # verify no trailing whitespace
 
 Use a semantic tag such as `v1.0.0` and keep it equal to the versions in
 `pyproject.toml`, `chat-pwa/package.json`, `chat-pwa/package-lock.json`, and
-`trinaxai_cli/app.py`. To build the Manager locally on a native runner, run
-`python scripts/build_manager.py --output manager-release`; it produces the
-platform-native package plus a portable fallback. The tag workflow reruns the
-release gates and publishes the source archive, shell and PowerShell installers,
-Manager packages, checksums, and provenance.
+`trinaxai_cli/app.py`. The tag workflow reruns the release gates and publishes
+the source archives, shell and PowerShell installers, checksums, and provenance.

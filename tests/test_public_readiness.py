@@ -47,8 +47,8 @@ def test_release_workflow_security_contract_catches_regressions():
     unsigned = workflow.replace("gpg --batch --verify", "gpg --batch --inspect", 1)
     assert any("gpg --batch --verify" in error for error in public_readiness.check_release_workflow_security(unsigned))
 
-    floating_tool = workflow.replace('"pyinstaller==6.22.2"', '"pyinstaller"', 1)
-    assert any("PyInstaller" in error for error in public_readiness.check_release_workflow_security(floating_tool))
+    floating_tool = workflow.replace('"wheel==0.45.1"', '"wheel"', 1)
+    assert any("wheel" in error for error in public_readiness.check_release_workflow_security(floating_tool))
 
 
 def test_required_gates_run_repository_commands_without_logging_output(monkeypatch, capsys):

@@ -48,8 +48,6 @@ REQUIRED_FILES = [
     "docs/README.md",
     "docs/API_REFERENCE.md",
     "docs/CONFIGURATION.md",
-    "trinaxai_manager.py",
-    "scripts/build_manager.py",
     "chat-pwa/package.json",
     "chat-pwa/public/manifest.en.webmanifest",
     "chat-pwa/public/manifest.es.webmanifest",
@@ -127,11 +125,6 @@ FILES_NEVER_COMMIT = {
 FILES_NEVER_COMMIT_EXCEPTIONS = {
     ".env.example",
 }
-RELEASE_MANAGER_ASSETS = (
-    "TrinaxAI-Manager-Windows.exe",
-    "TrinaxAI-Manager-macOS.dmg",
-    "TrinaxAI-Manager-Linux.deb",
-)
 RELEASE_ACTION_REF = re.compile(r"^\s*(?:-\s*)?uses:\s*([^@\s]+)@([^\s#]+)")
 EXACT_BUILD_VERSION = re.compile(r"\"\d+\.\d+\.\d+\"")
 
@@ -162,15 +155,11 @@ def check_release_workflow_security(workflow: str) -> list[str]:
     node_versions = re.findall(r"node-version:\s*([^\s#]+)", workflow)
     if not node_versions or any(not EXACT_BUILD_VERSION.fullmatch(value) for value in node_versions):
         errors.append("release workflow must use an exact Node toolchain version")
-    if not re.search(r"['\"]pyinstaller==\d+\.\d+\.\d+['\"]", workflow):
-        errors.append("release workflow must pin PyInstaller")
-    for tool in ("pip", "setuptools", "wheel", "altgraph", "pyinstaller-hooks-contrib"):
+    for tool in ("pip", "setuptools", "wheel"):
         if not re.search(rf"['\"]{tool}==\d+(?:\.\d+){{1,2}}['\"]", workflow):
             errors.append(f"release workflow must pin {tool}")
 
     required_markers = (
-        "name: Require Windows signing credentials",
-        "name: Require macOS signing credentials",
         "name: Require release signing credentials",
         "gpg --batch --verify",
         "--detach-sign",
@@ -502,12 +491,6 @@ def check_release_contract() -> list[str]:
         "scripts/source_update.py": _single_match(
             ROOT / "scripts/source_update.py", r'^RELEASE_VERSION\s*=\s*"([^"]+)"$'
         ),
-        "trinaxai_manager.py": _single_match(ROOT / "trinaxai_manager.py", r'^RELEASE_VERSION\s*=\s*"([^"]+)"$'),
-        "install.sh": _single_match(ROOT / "install.sh", r"TRINAXAI_RELEASE_VERSION:-([^}]+)\}"),
-        "install.ps1": _single_match(
-            ROOT / "install.ps1",
-            r'\$ReleaseVersion\s*=.*?else\s*\{\s*"([^"]+)"\s*\}',
-        ),
     }
     missing = [name for name, version in version_sources.items() if version is None]
     if missing:
@@ -529,12 +512,12 @@ def check_release_contract() -> list[str]:
             continue
         if f"version-{version}" not in text.lower():
             errors.append(f"{readme_name} does not advertise version {version}")
-        for asset in RELEASE_MANAGER_ASSETS:
-            expected_link = f"releases/download/v{version}/{asset}"
-            if expected_link not in text:
-                errors.append(f"{readme_name} does not link the versioned Manager asset {asset}")
-        if "/releases/latest/download/TrinaxAI-Manager-" in text:
-            errors.append(f"{readme_name} uses an unpinned latest Manager asset URL")
+        if "TrinaxAI-Manager" in text or "trinaxai_manager" in text:
+            errors.append(f"{readme_name} still advertises the removed desktop Manager")
+        if "raw.githubusercontent.com/TrinaxCode/TrinaxAI/main/install.sh" not in text:
+            errors.append(f"{readme_name} is missing the Unix one-command installer")
+        if "raw.githubusercontent.com/TrinaxCode/TrinaxAI/main/install.ps1" not in text:
+            errors.append(f"{readme_name} is missing the Windows one-command installer")
 
     workflow_path = ROOT / ".github/workflows/release.yml"
     try:
@@ -542,11 +525,8 @@ def check_release_contract() -> list[str]:
     except OSError:
         errors.append("missing release workflow")
     else:
-        if "download-artifact" not in workflow:
-            errors.append("release workflow does not collect all Manager artifacts before publishing")
-        for asset in RELEASE_MANAGER_ASSETS:
-            if asset not in workflow:
-                errors.append(f"release workflow does not produce {asset}")
+        if any(marker in workflow for marker in ("trinaxai_manager", "build_manager", "TrinaxAI-Manager")):
+            errors.append("release workflow still contains the removed desktop Manager")
         if "Verify published release assets" not in workflow:
             errors.append("release workflow does not verify published release assets")
         errors.extend(check_release_workflow_security(workflow))

@@ -41,31 +41,25 @@ Si TrinaxAI te resulta útil, considera [dar una estrella al repositorio](https:
 
 ## Inicio rápido
 
-La instalación normal es: **descargar -> abrir -> pulsar Instalar -> listo**. No necesitas Git ni comandos de terminal.
+La instalación normal es un comando y no necesita Git.
 
-### Instalación gráfica
+Linux o macOS:
 
-1. Descarga el Gestor para tu sistema:
-   - [Instalador de Windows (.exe)](https://github.com/TrinaxCode/TrinaxAI/releases/download/v1.2.0/TrinaxAI-Manager-Windows.exe)
-   - [Instalador de macOS (.dmg)](https://github.com/TrinaxCode/TrinaxAI/releases/download/v1.2.0/TrinaxAI-Manager-macOS.dmg)
-   - [Paquete de Linux (.deb)](https://github.com/TrinaxCode/TrinaxAI/releases/download/v1.2.0/TrinaxAI-Manager-Linux.deb)
-   - [Descargas portátiles](https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.2.0): ZIP para Windows/macOS o TAR.GZ para Linux
-2. Extrae la descarga y abre **Gestor de TrinaxAI**.
-3. Pulsa **Instalar**. El Gestor descarga TrinaxAI, detecta tu hardware, instala los componentes necesarios e inicia la aplicación.
+```bash
+curl -fsSL https://raw.githubusercontent.com/TrinaxCode/TrinaxAI/main/install.sh | bash
+```
 
-Si el sistema solicita tu contraseña o permisos de administrador, acéptalos y mantén abierta la ventana de progreso. Nunca tendrás que copiar ni escribir un comando.
+Windows PowerShell:
 
-SmartScreen de Windows o Gatekeeper de macOS pueden mostrar un aviso si el
-release aún no está firmado. Verifica el archivo descargado y su checksum antes
-de abrirlo; consulta las [notas de firma del release](docs/RELEASE_SIGNING.es.md).
+```powershell
+irm https://raw.githubusercontent.com/TrinaxCode/TrinaxAI/main/install.ps1 | iex
+```
 
-Después usa el mismo Gestor y pulsa **Actualizar** o **Desinstalar**. La desinstalación conserva los índices personales, archivos importados y modelos de Ollama de forma predeterminada.
-
-Al terminar, abre `https://localhost:3334`. El primer inicio te guía para elegir idioma, tema y modelo.
+El instalador descarga directamente el archivo fuente de TrinaxAI desde GitHub, instala las herramientas necesarias, detecta tu hardware, configura Ollama, compila la PWA e inicia la aplicación local. Al terminar, abre `https://localhost:3334`.
 
 ## Instalación avanzada y automatización
 
-Los métodos por comandos siguientes son alternativas opcionales para administradores, desarrolladores y entornos automatizados. Los usuarios normales deben usar el Gestor de TrinaxAI descrito arriba.
+Los comandos siguientes son variantes opcionales para revisar el script o automatizar la instalación basada en URL.
 
 ### Alternativa por terminal: Linux y macOS
 
@@ -74,7 +68,7 @@ Descarga el script, revísalo y después ejecútalo:
 ```bash
 installer="$(mktemp)"
 trap 'rm -f "$installer"' EXIT
-curl --fail --location --output "$installer" "https://github.com/TrinaxCode/TrinaxAI/releases/download/v1.2.0/TrinaxAI-1.2.0-installer.sh"
+curl --fail --location --output "$installer" "https://raw.githubusercontent.com/TrinaxCode/TrinaxAI/main/install.sh"
 bash -n "$installer"
 less "$installer"
 bash "$installer"
@@ -85,13 +79,13 @@ bash "$installer"
 Descarga, revisa y ejecuta el instalador guiado desde PowerShell:
 
 ```powershell
-$installer = Join-Path $env:TEMP "TrinaxAI-1.2.0-installer.ps1"
-Invoke-WebRequest -Uri "https://github.com/TrinaxCode/TrinaxAI/releases/download/v1.2.0/TrinaxAI-1.2.0-installer.ps1" -OutFile $installer
+$installer = Join-Path $env:TEMP "TrinaxAI-installer.ps1"
+Invoke-WebRequest -Uri "https://raw.githubusercontent.com/TrinaxCode/TrinaxAI/main/install.ps1" -OutFile $installer
 Get-Content -Path $installer
 & $installer
 ```
 
-Descarga el ZIP de código desde GitHub en `%LOCALAPPDATA%\TrinaxAI`.
+Descarga el archivo fuente de GitHub en `%LOCALAPPDATA%\TrinaxAI`.
 
 El instalador de Windows descarga las dependencias automáticamente. Primero usa el instalador oficial de Ollama, verifica el fallback firmado `OllamaSetup.exe` si hace falta y deja `winget` como último recurso.
 
@@ -135,7 +129,7 @@ Guías en inglés: [Linux](docs/INSTALL_LINUX.md), [macOS](docs/INSTALL_MACOS.md
 
 ### Actualizar y desinstalar
 
-Abre **Gestor de TrinaxAI** y selecciona **Actualizar** o **Desinstalar**. No necesitas terminal ni Git. Los scripts siguientes continúan disponibles para automatización y uso avanzado.
+Desde cualquier terminal, administra la instalación con la CLI incluida. No necesitas Git:
 
 ```bash
 ./update.sh      # Actualización guiada; conserva datos y pregunta por backup, modelos y reinicio
@@ -449,7 +443,7 @@ La nueva dirección detecta la instalación existente; vincúlala una vez para r
 
 ## Desarrollo
 
-Esta sección es solo para contribuidores que trabajan con el código fuente. No forma parte de la instalación normal; los usuarios deben usar el Gestor de TrinaxAI.
+Esta sección es solo para contribuidores que trabajan con el código fuente. No forma parte de la instalación normal; los usuarios deben usar el instalador de un comando.
 
 ```bash
 git clone https://github.com/TrinaxCode/TrinaxAI.git

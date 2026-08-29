@@ -1,42 +1,43 @@
-# Release Signing
+<h1 align="center">
+  <a href="https://www.trinaxai.app/"><img src="../chat-pwa/public/logo.webp" alt="TrinaxAI" width="64" valign="middle"></a>
+  <a href="https://www.trinaxai.app/">TrinaxAI</a> · ✍️ Release Signing
+</h1>
 
-[Versión en español](RELEASE_SIGNING.es.md)
+<p align="center">
+  <a href="https://github.com/TrinaxCode/TrinaxAI"><img src="https://img.shields.io/github/stars/TrinaxCode/TrinaxAI?style=flat&amp;label=%E2%98%85&amp;color=006bbd" alt="GitHub stars"></a>
+  <a href="https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.2.0"><img src="https://img.shields.io/badge/version-1.2.0-006bbd" alt="Latest release: 1.2.0"></a>
+  <a href="https://github.com/TrinaxCode/TrinaxAI/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/TrinaxCode/TrinaxAI/ci.yml?branch=main&amp;label=CI" alt="CI status"></a>
+  <a href="https://github.com/TrinaxCode/TrinaxAI/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0--or--later-006bbd" alt="License: AGPL-3.0-or-later"></a>
+  <img src="https://img.shields.io/badge/macOS%20%7C%20Windows%20%7C%20Linux-4493F8?style=flat-square" alt="Supported platforms: macOS, Windows, and Linux">
+</p>
 
-The release workflow builds the Linux, Windows, and macOS Managers on native
-runners before publishing the release. Stable publication is fail-closed: every
-downloadable asset must have a verified detached signature before upload.
+<p align="center"><sub><strong>English</strong> · <a href="RELEASE_SIGNING.es.md">Español</a></sub></p>
+<p align="center"><sub><a href="https://www.trinaxai.app/">Website</a> · <a href="README.md">Documentation</a> · <a href="../README.md">Home</a> · <a href="CHANGELOG.md">Changelog</a></sub></p>
+
+The release workflow publishes source archives, shell and PowerShell installers,
+and a Python wheel. Stable publication is fail-closed: every downloadable asset
+must have a verified detached signature before upload.
 
 ## GitHub Actions secrets
 
-Configure all of these repository or organization secrets before creating a
-stable tag:
+Configure these repository or organization secrets before creating a stable tag:
 
 | Secret | Used for |
 | --- | --- |
-| `WINDOWS_SIGNING_CERTIFICATE_BASE64` | Base64-encoded Authenticode `.pfx` certificate |
-| `WINDOWS_SIGNING_CERTIFICATE_PASSWORD` | Password for the Windows certificate |
-| `MACOS_SIGNING_CERTIFICATE_BASE64` | Base64-encoded Apple Developer `.p12` certificate |
-| `MACOS_SIGNING_CERTIFICATE_PASSWORD` | Password for the Apple certificate |
-| `MACOS_SIGNING_IDENTITY` | Exact `codesign` identity |
-| `APPLE_ID` | Apple Developer account for notarization |
-| `APPLE_TEAM_ID` | Apple Developer team identifier |
-| `APPLE_APP_PASSWORD` | App-specific password for `notarytool` |
 | `RELEASE_SIGNING_KEY_BASE64` | Base64-encoded armored GPG private key for release assets |
 | `RELEASE_SIGNING_KEY_PASSPHRASE` | Passphrase for the GPG release key |
 | `RELEASE_SIGNING_KEY_FINGERPRINT` | Full, space-free fingerprint of the public release key; the workflow fails if the imported key differs |
 
-Windows signing uses SHA-256 Authenticode with a public timestamp service. macOS
-signing uses a hardened runtime, then notarizes and staples the DMG. The release
-job also signs source archives, installers, wheels, Manager packages and portable archives, and
-`SHA256SUMS` with GPG and verifies each signature before publication. Container
-images are signed and verified with keyless Sigstore signing.
+The release job signs source archives, installers, the wheel, and `SHA256SUMS`
+with GPG and verifies each signature before publication. Container images are
+signed and verified with keyless Sigstore signing.
 
 If any required signing secret is absent or invalid, the workflow fails before
 publishing. Never print secrets or store certificates or private keys in the
 repository.
 
 After publishing, the workflow verifies every expected download URL and required
-`.asc` asset; all Manager packages and portable archives are included in `SHA256SUMS`.
+`.asc` asset; all source and installer assets are included in `SHA256SUMS`.
 
 ## Verify a download
 

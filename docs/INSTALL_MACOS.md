@@ -35,17 +35,13 @@ When done, you should have:
 
 Apple Silicon uses Metal automatically through Ollama when the model supports it.
 
-## Recommended graphical install
+## Recommended one-command install
 
-1. [Download TrinaxAI Manager for macOS](https://github.com/TrinaxCode/TrinaxAI/releases/download/v1.2.0/TrinaxAI-Manager-macOS.dmg).
-2. Open the disk image, drag **TrinaxAI Manager** to Applications, and open it.
-3. Select **Install** and wait for the process to finish.
+```bash
+curl -fsSL https://raw.githubusercontent.com/TrinaxCode/TrinaxAI/main/install.sh | bash
+```
 
-The Manager downloads and configures TrinaxAI directly. You do not need Git or terminal commands. macOS may request your password or confirmation to open the downloaded application; approve it and leave the progress window open. Use the same Manager later for **Update** or **Uninstall**. A portable ZIP is also available on the release page.
-
-If Gatekeeper reports an unknown developer, verify the asset and `SHA256SUMS`
-from the [release signing notes](RELEASE_SIGNING.md) before choosing whether to
-continue. Do not disable Gatekeeper globally.
+The installer downloads the source archive directly from GitHub. It does not need Git, detects your hardware, installs the required dependencies, configures Ollama, builds the PWA, and starts TrinaxAI. Approve the password prompt when macOS asks to install a dependency.
 
 ## Advanced: install base tools manually
 
@@ -83,7 +79,7 @@ If you don't have it yet, use the guided one-command installer. New installs liv
 ```bash
 installer="$(mktemp)"
 trap 'rm -f "$installer"' EXIT
-curl --fail --location --output "$installer" "https://github.com/TrinaxCode/TrinaxAI/releases/download/v1.2.0/TrinaxAI-1.2.0-installer.sh"
+curl --fail --location --output "$installer" "https://raw.githubusercontent.com/TrinaxCode/TrinaxAI/main/install.sh"
 bash -n "$installer"
 less "$installer"
 bash "$installer"
@@ -109,7 +105,7 @@ The uninstaller removes the TrinaxAI launcher and, when requested, its local tru
 
 ```bash
 mkdir -p ~/trinaxai
-curl -fsSL https://github.com/TrinaxCode/TrinaxAI/releases/download/v1.2.0/TrinaxAI-1.2.0.tar.gz | tar -xz --strip-components=1 -C ~/trinaxai
+curl -fsSL https://github.com/TrinaxCode/TrinaxAI/archive/refs/heads/main.tar.gz | tar -xz --strip-components=1 -C ~/trinaxai
 cd ~/trinaxai
 ```
 

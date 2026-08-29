@@ -204,8 +204,20 @@ def test_installers_support_client_first_install_locations() -> None:
     assert "XDG_DATA_HOME" in posix
     assert "Application Support" in posix
     assert "[string]$InstallDir" in windows
+    assert "archive/refs/heads/main.tar.gz" in posix
+    assert "archive/refs/heads/main.zip" in windows
     assert "releases/download/v$ReleaseVersion/$DefaultSourceArchiveName" in windows
+    assert "raw.githubusercontent.com/TrinaxCode/TrinaxAI/main/install.sh" in posix
+    assert "raw.githubusercontent.com/TrinaxCode/TrinaxAI/main/install.ps1" in windows
+    assert "Git\\usr\\bin\\openssl.exe" not in windows
     assert "TRINAXAI_HOME=" in windows
+
+
+def test_desktop_manager_is_removed_from_the_product() -> None:
+    assert not (ROOT / "trinaxai_manager.py").exists()
+    assert not (ROOT / "scripts" / "build_manager.py").exists()
+    assert not (ROOT / "tests" / "test_manager.py").exists()
+    assert not (ROOT / ".github" / "workflows" / "build-manager.yml").exists()
 
 
 def test_installers_never_advertise_or_forward_lan_host_administration() -> None:

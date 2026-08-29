@@ -6,7 +6,7 @@ Guía para instalar, configurar, iniciar y dejar listo TrinaxAI en Windows 10/11
 
 ## Estado de soporte
 
-El instalador de Windows está disponible y el CI valida smoke tests de Python/CLI, sintaxis y dry-runs de PowerShell y la compilación del Gestor en Windows. La instalación completa con descargas reales de dependencias/modelos y el primer inicio todavía requiere el smoke test en máquina descrito en [TESTING.es.md](../TESTING.es.md).
+El instalador de Windows está disponible y el CI valida smoke tests de Python/CLI, sintaxis, dry-runs de PowerShell y el flujo de descarga de código por URL. La instalación completa con descargas reales de dependencias/modelos y el primer inicio todavía requiere el smoke test en máquina descrito en [TESTING.es.md](../TESTING.es.md).
 
 ## Qué queda funcionando
 
@@ -33,25 +33,23 @@ Al terminar deberías tener:
 | Ollama | Sí | Última versión |
 | PowerShell | 5+ | PowerShell 7 |
 
-## Instalación gráfica recomendada
+## Instalación recomendada con un comando
 
-1. [Descarga el Gestor de TrinaxAI para Windows](https://github.com/TrinaxCode/TrinaxAI/releases/download/v1.2.0/TrinaxAI-Manager-Windows.exe).
-2. Abre el ejecutable.
-3. Pulsa **Instalar** y espera a que indique que el proceso está en curso.
+Abre PowerShell y ejecuta:
 
-El Gestor descarga y configura TrinaxAI directamente. No necesitas Git, comandos de PowerShell ni tener Python instalado previamente. Si Windows solicita permisos de administrador, acéptalos para configurar los componentes y reglas de firewall necesarios. Usa el mismo Gestor después para **Actualizar** o **Desinstalar**. También hay un ZIP portátil en la página del release.
+```powershell
+irm https://raw.githubusercontent.com/TrinaxCode/TrinaxAI/main/install.ps1 | iex
+```
 
-Si SmartScreen informa que el editor es desconocido, verifica el archivo y
-`SHA256SUMS` con las [notas de firma del release](RELEASE_SIGNING.es.md) antes
-de decidir si continúas. No desactives SmartScreen globalmente.
+El instalador descarga directamente el ZIP fuente desde GitHub. No necesita Git, Python ni Node.js previamente; instala las dependencias necesarias, configura Ollama, compila la PWA e inicia TrinaxAI. Acepta los permisos de administrador cuando Windows los solicite.
 
-## Alternativa avanzada por PowerShell
+## Instalación opcional revisada por PowerShell
 
 Abre PowerShell y descarga, revisa y ejecuta el instalador guiado. La ruta predeterminada es `%LOCALAPPDATA%\TrinaxAI`:
 
 ```powershell
-$installer = Join-Path $env:TEMP "TrinaxAI-1.2.0-installer.ps1"
-Invoke-WebRequest -Uri "https://github.com/TrinaxCode/TrinaxAI/releases/download/v1.2.0/TrinaxAI-1.2.0-installer.ps1" -OutFile $installer
+$installer = Join-Path $env:TEMP "TrinaxAI-installer.ps1"
+Invoke-WebRequest -Uri "https://raw.githubusercontent.com/TrinaxCode/TrinaxAI/main/install.ps1" -OutFile $installer
 Get-Content -Path $installer
 & $installer
 ```
@@ -113,9 +111,9 @@ ollama --version
 
 ```powershell
 $zip = "$env:TEMP\trinaxai.zip"
-irm https://github.com/TrinaxCode/TrinaxAI/releases/download/v1.2.0/TrinaxAI-1.2.0.zip -OutFile $zip
+irm https://github.com/TrinaxCode/TrinaxAI/archive/refs/heads/main.zip -OutFile $zip
 Expand-Archive $zip $env:TEMP -Force
-Move-Item "$env:TEMP\TrinaxAI-1.2.0" "$env:USERPROFILE\trinaxai"
+Move-Item "$env:TEMP\TrinaxAI-main" "$env:USERPROFILE\trinaxai"
 cd $env:USERPROFILE\trinaxai
 ```
 

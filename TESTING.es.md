@@ -4,17 +4,18 @@
 
 Estas comprobaciones se dividen entre pruebas del Gestor, simulaciones de scripts y pruebas en máquinas reales. El modo dry-run nunca descarga el paquete de código ni Ollama, instala paquetes, inicia servicios, modifica `PATH`, edita launch agents ni elimina archivos.
 
-## Prueba rápida del Gestor gráfico
+Estas comprobaciones cubren los scripts del ciclo de vida basados en URL, el comportamiento de la CLI y pruebas en máquinas reales. El modo dry-run nunca descarga el paquete de código ni Ollama, instala paquetes, inicia servicios, modifica `PATH`, edita launch agents ni elimina archivos.
 
-Prueba primero el recorrido normal del usuario:
+## Prueba rápida del instalador por URL
 
-1. Descarga el paquete del Gestor para el sistema objetivo desde el [release de TrinaxAI 1.2.0](https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.2.0).
-   Usa el `.exe` en Windows, `.dmg` en macOS o `.deb` en Debian/Ubuntu. Los ZIP/TAR.GZ portátiles se publican junto con ellos.
-2. Ábrelo y pulsa **Instalar**. Confirma que no sea necesario copiar ni escribir comandos.
-3. Vuelve a abrirlo y prueba **Actualizar** y después **Desinstalar**.
-4. Confirma que Git no se instale ni se solicite y que el perfil detectado sea `8gb`, `16gb`, `32gb` o `64gb`.
+Prueba el recorrido normal en una máquina limpia:
 
-Las comprobaciones por comandos siguientes validan los scripts alternativos avanzados; no son las instrucciones normales de instalación.
+1. Ejecuta `curl -fsSL https://raw.githubusercontent.com/TrinaxCode/TrinaxAI/main/install.sh | bash` en Linux/macOS o `irm https://raw.githubusercontent.com/TrinaxCode/TrinaxAI/main/install.ps1 | iex` en Windows PowerShell.
+2. Confirma que el archivo fuente se descarga directamente y que Git no se instala ni se solicita.
+3. Abre `https://localhost:3334` y después ejecuta `trinaxai update` y `trinaxai uninstall`.
+4. Confirma que el perfil detectado sea uno de `8gb`, `16gb`, `32gb` o `64gb`.
+
+Las comprobaciones por comandos siguientes validan variantes avanzadas del mismo flujo.
 
 ## Simulación local
 
@@ -91,7 +92,7 @@ Si falla la instalación automática de Ollama, se abre el instalador oficial `O
 
 ## GitHub Actions
 
-`.github/workflows/test-installers.yml` ejecuta comprobaciones de sintaxis y dry-run en `ubuntu-latest`, `macos-latest` y `windows-latest`, y compila/empaqueta el artefacto smoke del Gestor de Windows. No instala Ollama ni intenta emular otro sistema operativo. El workflow de release compila los tres paquetes nativos y los formatos portátiles en sus runners nativos y verifica cada URL publicada.
+`.github/workflows/test-installers.yml` ejecuta comprobaciones de sintaxis y dry-run en `ubuntu-latest`, `macos-latest` y `windows-latest`. No instala Ollama ni intenta emular otro sistema operativo. El workflow de release publica archivos fuente e instaladores por URL y verifica cada URL publicada.
 
 ## Evaluación de calidad RAG
 

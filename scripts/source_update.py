@@ -19,7 +19,8 @@ from urllib.parse import urlsplit
 
 RELEASE_VERSION = "1.2.0"
 ARCHIVE_NAME = f"TrinaxAI-{RELEASE_VERSION}.tar.gz"
-ARCHIVE_URL = f"https://github.com/TrinaxCode/TrinaxAI/releases/download/v{RELEASE_VERSION}/{ARCHIVE_NAME}"
+RELEASE_ARCHIVE_URL = f"https://github.com/TrinaxCode/TrinaxAI/releases/download/v{RELEASE_VERSION}/{ARCHIVE_NAME}"
+ARCHIVE_URL = "https://github.com/TrinaxCode/TrinaxAI/archive/refs/heads/main.tar.gz"
 CHECKSUM_URL = f"https://github.com/TrinaxCode/TrinaxAI/releases/download/v{RELEASE_VERSION}/SHA256SUMS"
 DOWNLOAD_TIMEOUT = 120
 MAX_ARCHIVE_BYTES = 512 * 1024 * 1024
@@ -263,8 +264,10 @@ def _expected_checksum(url: str, checksum: str | None) -> str | None:
             raise RuntimeError("The archive checksum must be a 64-character SHA-256 digest.")
         return value
     parsed = urlsplit(url)
-    if parsed.scheme == "https" and url == ARCHIVE_URL:
+    if parsed.scheme == "https" and url == RELEASE_ARCHIVE_URL:
         return _release_checksum()
+    if parsed.scheme == "https" and url == ARCHIVE_URL:
+        return None
     if parsed.scheme == "https":
         raise RuntimeError("Custom HTTPS update URLs require --sha256.")
     return None

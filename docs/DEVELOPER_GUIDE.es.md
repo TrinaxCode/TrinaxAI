@@ -314,8 +314,5 @@ git diff --check  # verifica que no haya espacios en blanco al final
 
 Usa un tag semántico como `v1.0.0` y mantenlo igual a las versiones de
 `pyproject.toml`, `chat-pwa/package.json`, `chat-pwa/package-lock.json` y
-`trinaxai_cli/app.py`. Para compilar el Gestor localmente en un runner nativo,
-ejecuta `python scripts/build_manager.py --output manager-release`; produce el
-paquete nativo de la plataforma y un formato portátil. El workflow del tag
-repite los gates y publica el archivo fuente, instaladores shell y PowerShell,
-paquetes del Gestor, checksums y procedencia.
+`trinaxai_cli/app.py`. El workflow del tag repite los gates y publica los
+archivos fuente, instaladores shell y PowerShell, checksums y procedencia.

@@ -50,8 +50,8 @@ const sections: DocSection[] = [
   },
   {
     id: 'install', labelEs: 'Instalación', labelEn: 'Installation',
-    summaryEs: 'Instala mediante TrinaxAI Manager y consulta la guía de tu sistema.',
-    summaryEn: 'Install with TrinaxAI Manager and follow the guide for your system.',
+    summaryEs: 'Instala con un comando desde la URL y consulta la guía de tu sistema.',
+    summaryEn: 'Install with one URL command and follow the guide for your system.',
     links: [
       { file: 'INSTALL_LINUX.md', labelEs: 'Linux', labelEn: 'Linux' },
       { file: 'INSTALL_MACOS.md', labelEs: 'macOS', labelEn: 'macOS' },

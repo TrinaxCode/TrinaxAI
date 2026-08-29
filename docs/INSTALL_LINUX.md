@@ -27,18 +27,18 @@ When done, you should have:
 | Free disk | 5 GB | 10-25 GB |
 | Python | 3.10 | 3.12 |
 | Node.js | 22 | 24 LTS |
-| Git | Only for manual clone install | For development |
+| Git | Not required | Development only |
 | Ollama | Yes | Latest version |
 
 If you use NVIDIA, install the drivers before downloading large models. TrinaxAI also works CPU-only, but responses will be slower.
 
-## Recommended graphical install
+## Recommended one-command install
 
-1. [Download the TrinaxAI Manager package for Linux](https://github.com/TrinaxCode/TrinaxAI/releases/download/v1.2.0/TrinaxAI-Manager-Linux.deb).
-2. Open the downloaded package with your system's software installer.
-3. Open **TrinaxAI Manager**, select **Install**, and wait for the process to finish.
+```bash
+curl -fsSL https://raw.githubusercontent.com/TrinaxCode/TrinaxAI/main/install.sh | bash
+```
 
-The Manager downloads and configures TrinaxAI directly. You do not need Git or terminal commands. A system progress window may ask for your password to install required packages; keep it open until it finishes. Use the same Manager later for **Update** or **Uninstall**. If your distribution does not support `.deb`, use the portable `TrinaxAI-Manager-Linux.tar.gz` from the release page.
+The installer downloads the source archive directly from GitHub. It does not need Git, detects your hardware, installs the required dependencies, configures Ollama, builds the PWA, and starts TrinaxAI. Approve the password prompt when your distribution asks to install system packages.
 
 ## Recommended guided install
 
@@ -47,7 +47,7 @@ From a terminal:
 ```bash
 installer="$(mktemp)"
 trap 'rm -f "$installer"' EXIT
-curl --fail --location --output "$installer" "https://github.com/TrinaxCode/TrinaxAI/releases/download/v1.2.0/TrinaxAI-1.2.0-installer.sh"
+curl --fail --location --output "$installer" "https://raw.githubusercontent.com/TrinaxCode/TrinaxAI/main/install.sh"
 bash -n "$installer"
 less "$installer"
 bash "$installer"
@@ -98,31 +98,31 @@ Ubuntu/Debian:
 
 ```bash
 sudo apt-get update
-sudo apt-get install -y python3 python3-pip python3-venv curl git unzip nodejs npm
+sudo apt-get install -y python3 python3-pip python3-venv curl unzip nodejs npm
 ```
 
 Fedora:
 
 ```bash
-sudo dnf install -y python3 python3-pip curl git unzip nodejs npm
+sudo dnf install -y python3 python3-pip curl unzip nodejs npm
 ```
 
 Arch:
 
 ```bash
-sudo pacman -Sy --needed python python-pip curl git unzip nodejs npm
+sudo pacman -Sy --needed python python-pip curl unzip nodejs npm
 ```
 
 openSUSE:
 
 ```bash
-sudo zypper install python3 python3-pip curl git unzip nodejs npm
+sudo zypper install python3 python3-pip curl unzip nodejs npm
 ```
 
 ### 2. Clone the project
 
 ```bash
-git clone https://github.com/TrinaxCode/TrinaxAI.git ~/trinaxai
+curl -fsSL https://github.com/TrinaxCode/TrinaxAI/archive/refs/heads/main.tar.gz | tar -xz --strip-components=1 -C ~/trinaxai
 cd ~/trinaxai
 ```
 

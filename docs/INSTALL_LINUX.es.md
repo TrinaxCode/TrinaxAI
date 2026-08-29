@@ -33,14 +33,13 @@ Al terminar deberías tener:
 
 Si usas NVIDIA, instala los drivers antes de descargar modelos grandes. TrinaxAI también funciona solo con CPU, pero las respuestas serán más lentas.
 
-## Instalación gráfica recomendada
+## Instalación recomendada con un comando
 
-1. [Descarga el paquete del Gestor de TrinaxAI para Linux](https://github.com/TrinaxCode/TrinaxAI/releases/download/v1.2.0/TrinaxAI-Manager-Linux.deb).
-2. Abre el paquete descargado con el instalador de software de tu sistema.
-3. Abre el **Gestor de TrinaxAI**, pulsa **Instalar** y espera a que termine el proceso.
-3. Pulsa **Instalar** y espera a que termine el proceso.
+```bash
+curl -fsSL https://raw.githubusercontent.com/TrinaxCode/TrinaxAI/main/install.sh | bash
+```
 
-El Gestor descarga y configura TrinaxAI directamente. No necesitas Git ni comandos de terminal. Una ventana de progreso del sistema puede pedir tu contraseña para instalar los paquetes necesarios; mantenla abierta hasta que termine. Usa el mismo Gestor después para **Actualizar** o **Desinstalar**. Si tu distribución no admite `.deb`, usa el `TrinaxAI-Manager-Linux.tar.gz` portátil de la página del release.
+El instalador descarga directamente el archivo fuente desde GitHub. No necesita Git, detecta tu hardware, instala las dependencias necesarias, configura Ollama, compila la PWA e inicia TrinaxAI. Acepta la solicitud de contraseña cuando tu distribución la pida para instalar paquetes del sistema.
 
 ## Alternativa avanzada por terminal
 
@@ -49,7 +48,7 @@ Desde una terminal:
 ```bash
 installer="$(mktemp)"
 trap 'rm -f "$installer"' EXIT
-curl --fail --location --output "$installer" "https://github.com/TrinaxCode/TrinaxAI/releases/download/v1.2.0/TrinaxAI-1.2.0-installer.sh"
+curl --fail --location --output "$installer" "https://raw.githubusercontent.com/TrinaxCode/TrinaxAI/main/install.sh"
 bash -n "$installer"
 less "$installer"
 bash "$installer"
@@ -121,7 +120,7 @@ sudo zypper install python3 python3-pip curl unzip nodejs npm
 
 ```bash
 mkdir -p ~/trinaxai
-curl -fsSL https://github.com/TrinaxCode/TrinaxAI/releases/download/v1.2.0/TrinaxAI-1.2.0.tar.gz | tar -xz --strip-components=1 -C ~/trinaxai
+curl -fsSL https://github.com/TrinaxCode/TrinaxAI/archive/refs/heads/main.tar.gz | tar -xz --strip-components=1 -C ~/trinaxai
 cd ~/trinaxai
 ```
 

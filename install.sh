@@ -1,10 +1,14 @@
 #!/usr/bin/env bash
 # TrinaxAI — One-Command Installer (Linux/macOS/Windows Bash)
-# Download, inspect, then run:
-#   curl --fail --location --output /tmp/TrinaxAI-1.2.0-installer.sh https://github.com/TrinaxCode/TrinaxAI/releases/download/v1.2.0/TrinaxAI-1.2.0-installer.sh
-#   bash -n /tmp/TrinaxAI-1.2.0-installer.sh && less /tmp/TrinaxAI-1.2.0-installer.sh && bash /tmp/TrinaxAI-1.2.0-installer.sh
+# Linux/macOS one-command install:
+#   curl -fsSL https://raw.githubusercontent.com/TrinaxCode/TrinaxAI/main/install.sh | bash
 
 set -euo pipefail
+
+SCRIPT_DIR=""
+if [ -n "${BASH_SOURCE[0]:-}" ] && [ -f "${BASH_SOURCE[0]}" ]; then
+  SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+fi
 
 LANGUAGE="${TRINAXAI_LANG:-${LANG:-en}}"
 LANGUAGE_EXPLICIT="${TRINAXAI_LANG:-}"
@@ -745,8 +749,8 @@ if [ -z "$INSTALL_DIR" ]; then
 fi
 validate_install_dir
 
-if [ "$OS" = "windows" ] && [ -f "install.ps1" ] && command -v powershell.exe >/dev/null 2>&1; then
-  PS_ARGS=("-ExecutionPolicy" "Bypass" "-File" "$(pwd -W 2>/dev/null || pwd)/install.ps1")
+if [ "$OS" = "windows" ] && [ -n "$SCRIPT_DIR" ] && [ -f "$SCRIPT_DIR/install.ps1" ] && command -v powershell.exe >/dev/null 2>&1; then
+  PS_ARGS=("-ExecutionPolicy" "Bypass" "-File" "$(cygpath -w "$SCRIPT_DIR/install.ps1" 2>/dev/null || printf '%s' "$SCRIPT_DIR/install.ps1")")
   [ "$INTERACTIVE" = "1" ] && PS_ARGS+=("-Interactive")
   [ "$NONINTERACTIVE" = "1" ] && PS_ARGS+=("-NonInteractive")
   [ "$INSTALL_MODELS" = "1" ] || PS_ARGS+=("-NoModels")
@@ -770,7 +774,7 @@ echo ""
 # Download the source package when running from a piped script.
 REPO_DIR="$INSTALL_DIR"
 MANAGED_INSTALL=0
-if [ ! -f "rag_api.py" ]; then
+if [ -z "$SCRIPT_DIR" ] || [ ! -f "$SCRIPT_DIR/rag_api.py" ] || [ ! -f "$SCRIPT_DIR/pyproject.toml" ]; then
   print_header "0/6 Downloading TrinaxAI"
   if [ -d "$REPO_DIR" ]; then
     if [ ! -f "$REPO_DIR/rag_api.py" ] || [ ! -f "$REPO_DIR/pyproject.toml" ]; then
@@ -784,15 +788,21 @@ if [ ! -f "rag_api.py" ]; then
     mkdir -p "$(dirname "$REPO_DIR")"
     temp_dir="$(mktemp -d "${TMPDIR:-/tmp}/trinaxai.XXXXXX")"
     trap 'rm -rf -- "$temp_dir"' EXIT
-    release_version="${TRINAXAI_RELEASE_VERSION:-1.2.0}"
-    if [[ ! "$release_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    release_version="${TRINAXAI_RELEASE_VERSION:-}"
+    if [ -n "$release_version" ] && [[ ! "$release_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
       print_err "TRINAXAI_RELEASE_VERSION must be a semantic version."
       exit 2
     fi
-    source_archive_name="TrinaxAI-${release_version}.tar.gz"
-    default_source_archive_url="https://github.com/TrinaxCode/TrinaxAI/releases/download/v${release_version}/${source_archive_name}"
+    if [ -n "$release_version" ]; then
+      source_archive_name="TrinaxAI-${release_version}.tar.gz"
+      default_source_archive_url="https://github.com/TrinaxCode/TrinaxAI/releases/download/v${release_version}/${source_archive_name}"
+    else
+      source_archive_name="TrinaxAI-main.tar.gz"
+      default_source_archive_url="https://github.com/TrinaxCode/TrinaxAI/archive/refs/heads/main.tar.gz"
+    fi
     source_url_override="${TRINAXAI_SOURCE_URL:-}"
     source_archive_url="${source_url_override:-$default_source_archive_url}"
+    source_checksum=""
     case "$source_archive_url" in
       https://*) ;;
       *) print_err "Source package URL must use HTTPS."; exit 2 ;;
@@ -805,26 +815,30 @@ if [ ! -f "rag_api.py" ]; then
         print_err "TRINAXAI_SOURCE_URL requires TRINAXAI_SOURCE_SHA256."
         exit 2
       fi
-    else
+    elif [ -n "$release_version" ]; then
       source_checksum="$(curl -fsSL --retry 3 --connect-timeout 15 --max-time 60 \
         "https://github.com/TrinaxCode/TrinaxAI/releases/download/v${release_version}/SHA256SUMS" \
         | awk -v asset="$source_archive_name" '$2 == asset || $2 == "*" asset { print $1; exit }')"
     fi
-    if [[ ! "$source_checksum" =~ ^[0-9a-fA-F]{64}$ ]]; then
-      print_err "Could not obtain a valid SHA-256 for the source package."
-      exit 2
-    fi
-    if command -v sha256sum >/dev/null 2>&1; then
-      source_archive_digest="$(sha256sum "$temp_dir/trinaxai.tar.gz" | awk '{print $1}')"
-    elif command -v shasum >/dev/null 2>&1; then
-      source_archive_digest="$(shasum -a 256 "$temp_dir/trinaxai.tar.gz" | awk '{print $1}')"
-    else
-      print_err "sha256sum or shasum is required to verify the source package."
-      exit 2
-    fi
-    if [ "${source_archive_digest,,}" != "${source_checksum,,}" ]; then
-      print_err "The source package failed SHA-256 verification."
-      exit 2
+    if [ -n "$source_checksum" ]; then
+      if [[ ! "$source_checksum" =~ ^[0-9a-fA-F]{64}$ ]]; then
+        print_err "Could not obtain a valid SHA-256 for the source package."
+        exit 2
+      fi
+      if command -v sha256sum >/dev/null 2>&1; then
+        source_archive_digest="$(sha256sum "$temp_dir/trinaxai.tar.gz" | awk '{print $1}')"
+      elif command -v shasum >/dev/null 2>&1; then
+        source_archive_digest="$(shasum -a 256 "$temp_dir/trinaxai.tar.gz" | awk '{print $1}')"
+      else
+        print_err "sha256sum or shasum is required to verify the source package."
+        exit 2
+      fi
+      source_archive_digest="$(printf '%s' "$source_archive_digest" | tr '[:upper:]' '[:lower:]')"
+      source_checksum="$(printf '%s' "$source_checksum" | tr '[:upper:]' '[:lower:]')"
+      if [ "$source_archive_digest" != "$source_checksum" ]; then
+        print_err "The source package failed SHA-256 verification."
+        exit 2
+      fi
     fi
     extract_source_archive "$temp_dir/trinaxai.tar.gz" "$temp_dir/extracted"
     mv "$temp_dir/extracted/$SOURCE_ARCHIVE_ROOT" "$REPO_DIR"
@@ -835,7 +849,7 @@ if [ ! -f "rag_api.py" ]; then
     print_ok "Repository ready at $REPO_DIR"
   fi
 else
-  REPO_DIR="$(cd "$(dirname "$0")" && pwd)"
+  REPO_DIR="$SCRIPT_DIR"
 fi
 
 SCRIPT_DIR="$REPO_DIR"

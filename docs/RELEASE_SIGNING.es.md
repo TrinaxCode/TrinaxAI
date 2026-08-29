@@ -2,32 +2,25 @@
 
 [English](RELEASE_SIGNING.md)
 
-El workflow de release compila los Gestores de Linux, Windows y macOS en runners
-nativos antes de publicar el release. La publicación estable falla cerrada:
-cada archivo descargable debe tener una firma separada verificada antes de subirlo.
+<p align="center"><sub><a href="RELEASE_SIGNING.md">English</a> · <strong>Español</strong></sub></p>
+<p align="center"><sub><a href="https://www.trinaxai.app/">Sitio web</a> · <a href="README.es.md">Documentación</a> · <a href="../README.es.md">Inicio</a> · <a href="CHANGELOG.es.md">Cambios</a></sub></p>
+
+El workflow de release publica archivos fuente, instaladores shell y PowerShell
+y un wheel de Python. La publicación estable falla cerrada: cada archivo
+descargable debe tener una firma separada verificada antes de subirlo.
 
 ## Secretos De GitHub Actions
 
-Configura todos estos secretos del repositorio u organización antes de crear un
-tag estable:
+Configura estos secretos del repositorio u organización antes de crear un tag
+estable:
 
 | Secreto | Uso |
 | --- | --- |
-| `WINDOWS_SIGNING_CERTIFICATE_BASE64` | Certificado Authenticode `.pfx` codificado en Base64 |
-| `WINDOWS_SIGNING_CERTIFICATE_PASSWORD` | Contraseña del certificado de Windows |
-| `MACOS_SIGNING_CERTIFICATE_BASE64` | Certificado Apple Developer `.p12` codificado en Base64 |
-| `MACOS_SIGNING_CERTIFICATE_PASSWORD` | Contraseña del certificado de Apple |
-| `MACOS_SIGNING_IDENTITY` | Identidad exacta de `codesign` |
-| `APPLE_ID` | Cuenta Apple Developer para notarización |
-| `APPLE_TEAM_ID` | Identificador del equipo Apple Developer |
-| `APPLE_APP_PASSWORD` | Contraseña específica para `notarytool` |
 | `RELEASE_SIGNING_KEY_BASE64` | Clave privada GPG de release codificada en Base64 |
 | `RELEASE_SIGNING_KEY_PASSPHRASE` | Contraseña de la clave GPG del release |
 | `RELEASE_SIGNING_KEY_FINGERPRINT` | Huella completa, sin espacios, de la clave pública de release; el workflow falla si la clave importada no coincide |
 
-Windows usa Authenticode SHA-256 con un servicio público de timestamp. macOS usa
-runtime endurecido, notariza y estampa el DMG. El job también firma con GPG
-los archivos fuente, instaladores, wheels, paquetes y archivos portátiles de los Gestores y `SHA256SUMS`, y
+El job firma con GPG los archivos fuente, instaladores, wheels y `SHA256SUMS`, y
 verifica cada firma antes de publicar. Las imágenes de contenedor usan firma y
 verificación Sigstore sin clave.
 
@@ -36,7 +29,7 @@ publicar. Nunca imprimas secretos ni guardes certificados o claves privadas en e
 repositorio.
 
 Después de publicar, el workflow verifica cada URL esperada y el `.asc` requerido;
-todos los paquetes y archivos portátiles de los Gestores están incluidos en `SHA256SUMS`.
+todos los archivos fuente e instaladores están incluidos en `SHA256SUMS`.
 
 ## Verificar una descarga
 

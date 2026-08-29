@@ -246,9 +246,9 @@ cambiarlas. Los destinos sin `VITE_*` se leen al ejecutar el gateway.
 | `TRINAXAI_UPDATE_REPAIR_OLLAMA` | `0` | Reinstala o repara Ollama durante la actualización. |
 | `TRINAXAI_UPDATE_RESTART` | auto/preguntado | Reinicia servicios después de actualizar. |
 | `TRINAXAI_UPDATE_AUDIT` | `1` | Ejecuta el readiness audit posterior. |
-| `TRINAXAI_RELEASE_VERSION` | `1.2.0` | **Instalador:** versión fijada del release de GitHub para descargar el código. |
-| `TRINAXAI_SOURCE_URL` | archivo oficial de GitHub | **Origen de instalación:** URL HTTPS del archivo usado al instalar desde un checkout de código fuente. |
-| `TRINAXAI_SOURCE_SHA256` | manifiesto del release | **Instalador:** SHA-256 de un archivo personalizado; obligatorio junto con `TRINAXAI_SOURCE_URL`. |
+| `TRINAXAI_RELEASE_VERSION` | sin definir | **Instalador:** versión semántica opcional del release de GitHub; al definirla, descarga ese release firmado en vez de `main`. |
+| `TRINAXAI_SOURCE_URL` | archivo `main` de GitHub | **Origen de instalación:** URL HTTPS de un paquete fuente personalizado. |
+| `TRINAXAI_SOURCE_SHA256` | sin definir | **Instalador:** SHA-256 del archivo fuente personalizado; obligatorio junto con `TRINAXAI_SOURCE_URL`. |
 | `TRINAXAI_UPDATE_ROOT` | directorio del script | **Interna:** raíz pasada al actualizador automático. |
 | `TRINAXAI_PRIVILEGED_WRAPPER` | no definido | **Interna:** evita recursión desde wrapper sudoers. |
 
