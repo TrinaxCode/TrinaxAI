@@ -198,7 +198,7 @@ index.py starts
 |---|---|
 | **Network** | FastAPI and Ollama loopback by default; PWA gateway is the only LAN-facing service |
 | **Gateway identity** | Client peer/method/path signed with fresh HMAC; backend ignores ordinary forwarding headers |
-| **Device identity** | Single-use pairing; scoped, revocable bearer kept in an `HttpOnly; SameSite=Strict` cookie; only legacy values are migrated from browser storage |
+| **Device identity** | Single-use pairing; scoped, revocable bearer kept in an `HttpOnly; SameSite=Strict` cookie; legacy CLI values remain header-only |
 | **Protected endpoints** | Low-risk operations use matching device/admin credentials; host administration requires verified original loopback; invalid credentials fail closed |
 | **Ollama facade** | Explicit method/path allowlist, peer authorization, monotonic token bucket and shared inference lock |
 | **Agent** | Registered workspace roots; path/symlink enforcement; networkless Linux bubblewrap; fail closed without isolation |
@@ -419,8 +419,8 @@ These areas require extra care when modifying:
 - `TRINAXAI_ADMIN_TOKEN` — empty (not set). Localhost access works automatically.
 - Device pairing grants `chat,read_private` by default and may add only `web`.
   New clear tokens are held only in an `HttpOnly; SameSite=Strict` cookie scoped
-  to `/api/rag`; legacy browser values are read only during the explicit
-  `/v1/pairing/me` migration and then removed.
+  to `/api/rag`; legacy CLI values remain in the device-token header and are
+  never copied into a response cookie.
 - `TRINAXAI_ALLOW_LAN_SYSTEM` — deprecated and ignored for authorization.
 
 **Testing the security model:**

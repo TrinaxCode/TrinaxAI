@@ -184,6 +184,9 @@ def test_remote_pairing_claim_and_revocation_endpoint(pairing_store: Path, monke
         token = cookie.split(";", 1)[0].split("=", 1)[1]
         cookie_header = f"{DEVICE_TOKEN_COOKIE}={token}"
         assert remote.get("/v1/pairing/me", headers={"Cookie": cookie_header}).status_code == 200
+        legacy = remote.get("/v1/pairing/me", headers={DEVICE_TOKEN_HEADER: token})
+        assert legacy.status_code == 200
+        assert "set-cookie" not in legacy.headers
         revoked = remote.delete("/v1/pairing/me", headers={"Cookie": cookie_header})
         assert revoked.status_code == 200
         assert f"Path={DEVICE_TOKEN_COOKIE_PATH}" in revoked.headers["set-cookie"]
@@ -193,21 +196,6 @@ def test_remote_pairing_claim_and_revocation_endpoint(pairing_store: Path, monke
 
     document = json.loads(pairing_store.read_text(encoding="utf-8"))
     assert document["pairing_codes"] == {}
-
-
-@pytest.mark.asyncio
-async def test_pairing_me_migrates_legacy_header_to_cookie(pairing_store: Path) -> None:
-    claimed = claim_pairing_code(create_pairing_code(["chat"], now=100)["code"], "Legacy phone", now=101)
-    response = Response()
-    device = await pairing_routes.pairing_me(
-        _request("/v1/pairing/me", client="192.168.1.44", token=claimed["token"]),
-        response,
-    )
-    assert device["device"]["name"] == "Legacy phone"
-    cookie = response.headers["set-cookie"]
-    assert f"{DEVICE_TOKEN_COOKIE}=" in cookie
-    assert "HttpOnly" in cookie
-    assert "samesite=strict" in cookie.lower()
 
 
 def test_http_only_cookie_authorizes_scoped_protected_route(pairing_store: Path) -> None:

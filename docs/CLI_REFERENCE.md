@@ -134,10 +134,9 @@ scope. `index`, `system`, `agent`, and `agent_yolo` are retired for paired
 devices and are rejected even when an admin credential is sent from LAN.
 
 The browser keeps new pairing credentials in an `HttpOnly; SameSite=Strict`
-cookie scoped to `/api/rag`; only a legacy bearer is read from browser storage
-during the explicit `/v1/pairing/me` migration. A packaged CLI
-acting as a paired remote device reads `TRINAXAI_DEVICE_TOKEN` and sends
-`X-TrinaxAI-Device-Token`; point `--api-url` at the gateway RAG base, for example
+cookie scoped to `/api/rag`. A packaged CLI acting as a paired remote device
+reads `TRINAXAI_DEVICE_TOKEN` and sends `X-TrinaxAI-Device-Token`; the API never
+copies that header into a response cookie. Point `--api-url` at the gateway RAG base, for example
 `https://host:3334/api/rag`. Do not put a token in command history or a committed
 TOML file. Pairing represents a revocable device capability, not a user account.
 

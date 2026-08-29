@@ -61,10 +61,9 @@ canonical list of every supported `TRINAXAI_*` and `VITE_TRINAXAI_*` setting.
   `trinaxai pair list`, and revoke them from the host. A new PWA claim receives
   the device bearer only in an `HttpOnly; SameSite=Strict` cookie scoped to
   `/api/rag`; the claim JSON contains device metadata, not a bearer. The PWA
-  does not persist new device tokens in browser storage. A legacy stored bearer
-  is read only for the explicit `GET /v1/pairing/me` migration, then removed
-  after a successful response; the CLI remains compatible through its
-  `X-TrinaxAI-Device-Token` header. Pairing is device capability management,
+  does not persist new device tokens in browser storage. Legacy CLI bearers
+  remain header-only through `X-TrinaxAI-Device-Token`; pairing is device
+  capability management,
   not a multi-user account system.
 - File tools remain under registered agent roots. Linux terminal calls require
   networkless bubblewrap; unsupported hosts fail closed unless the operator

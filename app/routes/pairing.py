@@ -19,7 +19,6 @@ from app.security.admin_auth import (
 )
 from app.security.device_auth import (
     ALL_DEVICE_SCOPES,
-    DEVICE_TOKEN_HEADER,
     DeviceRegistryError,
     claim_pairing_code,
     create_pairing_code,
@@ -170,15 +169,12 @@ async def pairing_revoke(device_id: str, request: Request):
 
 
 @router.get("/me")
-async def pairing_me(request: Request, response: Response = None):
-    response = response or Response()
+async def pairing_me(request: Request):
     token = _device_token(request)
     device = device_for_token(token) if token else None
     if device is None:
         raise HTTPException(status_code=403, detail="A valid device credential is required.")
     _client_host(request)
-    if request.headers.get(DEVICE_TOKEN_HEADER, "").strip():
-        _set_device_cookie(response, request, token, device.get("expires_at"))
     return {"ok": True, "device": device}
 
 

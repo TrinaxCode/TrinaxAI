@@ -78,9 +78,8 @@ TrinaxAI's threat model assumes:
   recorded scopes. A new PWA claim keeps it only in an `HttpOnly; SameSite=Strict`
   cookie scoped to `/api/rag`; the browser never receives a new bearer in JSON or
   persists it in browser storage. FastAPI stores only a keyed hash, and
-  host/admin operators can revoke it immediately. Existing legacy storage is
-  consumed only by the explicit `/v1/pairing/me` migration and cleared after a
-  successful response. Pair only devices you control and revoke a lost device
+  host/admin operators can revoke it immediately. Legacy CLI bearers remain
+  header-only and are never copied into a response cookie. Pair only devices you control and revoke a lost device
   with `trinaxai pair revoke`; the CLI remains header-based.
 - **Forged proxy identity:** Client-supplied TrinaxAI/forwarding headers are stripped
   by the gateway. FastAPI accepts a fresh, single-use HMAC signature only from

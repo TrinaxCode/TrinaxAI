@@ -93,16 +93,15 @@ contains device metadata but no bearer. Only keyed hashes are persisted. Codes
 expire after 60–900 seconds and are single-use.
 
 The PWA sends that cookie automatically and does not persist newly claimed
-device tokens in `localStorage` or `sessionStorage`. For compatibility, an
-older stored bearer is sent only as the `X-TrinaxAI-Device-Token` header to the
-explicit `GET /v1/pairing/me` migration; after a successful response the PWA
-removes the legacy value. The CLI continues to use that header (for example via
-`TRINAXAI_DEVICE_TOKEN`). The registry and hashing secret are separate atomic
+device tokens in `localStorage` or `sessionStorage`. The CLI continues to use
+an older bearer only in the `X-TrinaxAI-Device-Token` header (for example via
+`TRINAXAI_DEVICE_TOKEN`); `GET /v1/pairing/me` never copies that header into a
+response cookie. The registry and hashing secret are separate atomic
 mode-0600 files. Pairing authenticates a device/capability; it is not a
 multi-user account or authorization delegation system.
 
 `GET /v1/pairing/me` and `DELETE /v1/pairing/me` accept the cookie; the legacy
-header remains supported for CLI clients and migration. `GET /v1/pairing/devices`
+header remains supported for CLI clients only. `GET /v1/pairing/devices`
 and `DELETE /v1/pairing/devices/{id}` are loopback-only operations. Revocation
 takes effect for FastAPI and the Ollama gateway.
 
