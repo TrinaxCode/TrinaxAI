@@ -335,6 +335,33 @@ safe_remove() {
   done
 }
 
+env_value() {
+  local key="$1"
+  [ -f ".env" ] || return 0
+  awk -F= -v key="$key" '$1 == key { sub(/^[^=]*=/, ""); gsub(/\r$/, ""); print; exit }' .env
+}
+
+add_unique_model() {
+  local model="$1"
+  [ -n "$model" ] || return 0
+  case " ${MODELS[*]-} " in
+    *" $model "*) ;;
+    *) MODELS+=("$model");;
+  esac
+}
+
+configured_models() {
+  MODELS=()
+  add_unique_model "$(env_value TRINAXAI_MODEL_CODE)"
+  add_unique_model "$(env_value TRINAXAI_MODEL_DEEP)"
+  add_unique_model "$(env_value TRINAXAI_MODEL_GENERAL)"
+  add_unique_model "$(env_value TRINAXAI_MODEL_FAST)"
+  add_unique_model "$(env_value TRINAXAI_EMBED)"
+  if [ "${#MODELS[@]}" -eq 0 ]; then
+    MODELS=(qwen3.5:2b qwen3.5:4b qwen3-embedding:0.6b qwen3-embedding:4b)
+  fi
+}
+
 remove_cli_path_block() {
   local profile tmp
   for profile in "$HOME/.zshrc" "$HOME/.bashrc" "$HOME/.bash_profile" "$HOME/.profile" "$HOME/.config/fish/config.fish"; do
@@ -390,6 +417,11 @@ if [ "$INTERACTIVE" = "1" ]; then
     REMOVE_OLLAMA=1
     REMOVE_MODELS=1
   fi
+fi
+
+MODELS=()
+if [ "$REMOVE_MODELS" = "1" ]; then
+  configured_models
 fi
 
 if [ "$STOP_SERVICES" = "1" ]; then
@@ -484,7 +516,7 @@ if [ "$REMOVE_VENV" = "1" ]; then
 fi
 
 if [ "$REMOVE_MODELS" = "1" ] && command -v ollama >/dev/null 2>&1; then
-  for model in qwen3.5:9b qwen3.5:4b qwen3.5:2b qwen3.5:0.8b granite4:3b qwen3-vl:4b-instruct qwen3-vl:8b-instruct qwen3:4b-instruct-2507-q4_K_M qwen3:30b-a3b-instruct-2507-q4_K_M qwen2.5-coder:1.5b qwen2.5-coder:3b qwen2.5-coder:7b qwen3-coder:30b llama3.2:1b bge-m3 qwen3-vl:2b qwen3-vl:4b qwen3-vl:8b qwen3-vl:32b qwen2.5-coder:14b llama3.2:3b nomic-embed-text moondream qwen2.5vl:3b qwen2.5vl:7b llava:7b; do
+  for model in "${MODELS[@]}" qwen3.5:9b qwen3.5:4b qwen3.5:2b qwen3.5:0.8b granite4:3b qwen3-vl:4b-instruct qwen3-vl:8b-instruct qwen3:4b-instruct-2507-q4_K_M qwen3:30b-a3b-instruct-2507-q4_K_M qwen2.5-coder:1.5b qwen2.5-coder:3b qwen2.5-coder:7b qwen3-coder:30b llama3.2:1b bge-m3 qwen3-vl:2b qwen3-vl:4b qwen3-vl:8b qwen3-vl:32b qwen2.5-coder:14b llama3.2:3b nomic-embed-text qwen3-embedding:0.6b qwen3-embedding:4b moondream qwen2.5vl:3b qwen2.5vl:7b llava:7b; do
     ollama rm "$model" 2>/dev/null || true
   done
 elif [ "$REMOVE_MODELS" = "1" ]; then

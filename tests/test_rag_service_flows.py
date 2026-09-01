@@ -89,6 +89,7 @@ def test_completion_metadata_marks_length_and_open_markdown_as_pending() -> None
 def test_rag_abstention_signal_is_limited_to_deterministic_messages() -> None:
     assert rag_service._is_rag_abstention(rag_service.NO_RELEVANT_RESULTS_MSG, rag_requested=True)
     assert rag_service._is_rag_abstention("I am unable to answer from the provided context.", rag_requested=True)
+    assert rag_service._is_rag_abstention("No se ha encontrado información en los archivos.", rag_requested=True)
     assert not rag_service._is_rag_abstention(rag_service.NO_RELEVANT_RESULTS_MSG, rag_requested=False)
     assert not rag_service._is_rag_abstention("The model chose these words.", rag_requested=True)
 

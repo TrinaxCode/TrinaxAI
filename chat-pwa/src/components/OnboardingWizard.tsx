@@ -4,7 +4,7 @@ import { MdContentCopy, MdCheck, MdStop } from 'react-icons/md';
 import { useI18n } from '../i18n/I18nContext';
 import { useTheme } from '../theme/ThemeContext';
 import { APP_CONFIG } from '../lib/config';
-import { cancelIndexJob, folderLabelFromFiles, getIndexJob, indexableFilesFrom, startFolderIndex, type IndexJobStatus } from '../lib/api';
+import { MODEL_PRESETS, cancelIndexJob, checkStatus, folderLabelFromFiles, getIndexJob, indexableFilesFrom, startFolderIndex, type IndexJobStatus, type ModelPreset } from '../lib/api';
 import { systemFetch } from '../lib/authHeaders';
 import { syncSharedStateOnce } from '../lib/sharedState';
 import BackButton from './BackButton';
@@ -14,14 +14,20 @@ interface Props {
   canConfigureSystem: boolean;
 }
 
-const DEFAULT_MODELS = {
-  chat: 'qwen3.5:4b',
-  deep: 'qwen3.5:4b',
-  vision: 'qwen3.5:4b',
-  embed: 'qwen3-embedding:0.6b',
-  code: 'qwen3.5:4b',
-  fast: 'qwen3.5:2b',
-};
+type ModelRole = 'chat' | 'deep' | 'vision' | 'embed' | 'code' | 'fast';
+type OnboardingModels = Record<ModelRole, string>;
+
+function modelsForProfile(profile: ModelPreset): OnboardingModels {
+  const preset = MODEL_PRESETS[profile];
+  return {
+    chat: preset['tc-models-chat'],
+    deep: preset['tc-models-deep'],
+    vision: preset['tc-models-vision'],
+    embed: preset['tc-models-embed'],
+    code: preset['tc-models-code'],
+    fast: preset['tc-models-fast'],
+  };
+}
 
 type Step = 1 | 2 | 3 | 4 | 5 | 6;
 
@@ -38,8 +44,10 @@ export default function OnboardingWizard({ onComplete, canConfigureSystem }: Pro
   const [nickname, setNickname] = useState('');
   const [finishing, setFinishing] = useState(false);
   const [modelChoice, setModelChoice] = useState<'default' | 'custom' | 'test' | null>(null);
-  const [customModels, setCustomModels] = useState(DEFAULT_MODELS);
+  const [recommendedModels, setRecommendedModels] = useState<OnboardingModels | null>(null);
+  const [customModels, setCustomModels] = useState(() => modelsForProfile('16gb'));
   const [customStep, setCustomStep] = useState(0);
+  const customModelsEditedRef = useRef(new Set<ModelRole>());
   const folderInputRef = useRef<HTMLInputElement>(null);
   const [ollamaDetected, setOllamaDetected] = useState<boolean | null>(null);
   const [indexing, setIndexing] = useState(false);
@@ -55,6 +63,22 @@ export default function OnboardingWizard({ onComplete, canConfigureSystem }: Pro
   useEffect(() => {
     return () => indexAbortRef.current?.abort();
   }, []);
+
+  useEffect(() => {
+    if (!canConfigureSystem) return undefined;
+    let alive = true;
+    void checkStatus().then((status) => {
+      if (!alive || !status.profile) return;
+      const detectedModels = modelsForProfile(status.profile);
+      setRecommendedModels(detectedModels);
+      setCustomModels((current) => {
+        const next = { ...detectedModels };
+        for (const key of customModelsEditedRef.current) next[key] = current[key];
+        return next;
+      });
+    }).catch(() => undefined);
+    return () => { alive = false; };
+  }, [canConfigureSystem]);
 
   const copyToClipboard = useCallback(async (text: string, key: string) => {
     try {
@@ -87,20 +111,31 @@ export default function OnboardingWizard({ onComplete, canConfigureSystem }: Pro
     localStorage.removeItem('tc-user-name');
     localStorage.removeItem('tc-user-avatar');
     if (canConfigureSystem) {
-      const models = modelChoice === 'custom' ? customModels : DEFAULT_MODELS;
-      localStorage.setItem('tc-models-chat', models.chat);
-      localStorage.setItem('tc-models-deep', models.deep);
-      localStorage.setItem('tc-models-vision', models.vision);
-      localStorage.removeItem('tc-models-vision-quality');
-      localStorage.setItem('tc-models-embed', models.embed);
-      localStorage.setItem('tc-models-code', models.code);
-      localStorage.setItem('tc-models-fast', models.fast);
+      const models = modelChoice === 'custom' ? customModels : recommendedModels;
+      if (models) {
+        const fields = [
+          ['chat', 'tc-models-chat'],
+          ['deep', 'tc-models-deep'],
+          ['vision', 'tc-models-vision'],
+          ['embed', 'tc-models-embed'],
+          ['code', 'tc-models-code'],
+          ['fast', 'tc-models-fast'],
+        ] as const;
+        for (const [role, storageKey] of fields) {
+          if (modelChoice !== 'custom' || recommendedModels || customModelsEditedRef.current.has(role)) {
+            localStorage.setItem(storageKey, models[role]);
+          }
+        }
+        if (modelChoice !== 'custom' || recommendedModels || customModelsEditedRef.current.has('vision')) {
+          localStorage.removeItem('tc-models-vision-quality');
+        }
+      }
     }
     syncSharedStateOnce(2500, true).finally(() => {
       setFinishing(false);
       onComplete();
     });
-  }, [nickname, modelChoice, customModels, canConfigureSystem, onComplete]);
+  }, [nickname, modelChoice, customModels, recommendedModels, canConfigureSystem, onComplete]);
 
   const runSystemTest = useCallback(async () => {
     setTestResults(null);
@@ -351,7 +386,10 @@ export default function OnboardingWizard({ onComplete, canConfigureSystem }: Pro
                       <input
                         type="text"
                         value={customModels[modelKeys[customStep].key]}
-                        onChange={(e) => setCustomModels((m) => ({ ...m, [modelKeys[customStep].key]: e.target.value }))}
+                        onChange={(e) => {
+                          customModelsEditedRef.current.add(modelKeys[customStep].key);
+                          setCustomModels((m) => ({ ...m, [modelKeys[customStep].key]: e.target.value }));
+                        }}
                         className={`w-full px-3 py-2 rounded-lg border text-sm outline-none ${inputBg}`}
                       />
                       <div className="flex gap-2">

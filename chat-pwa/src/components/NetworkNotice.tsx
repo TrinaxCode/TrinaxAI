@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { MdClose, MdContentCopy, MdDeleteOutline, MdLan, MdOpenInNew, MdRefresh } from 'react-icons/md';
 import { systemFetch } from '../lib/authHeaders';
 import { wipeRevokedDeviceData } from '../lib/deviceWipe';
@@ -26,6 +26,7 @@ export default function NetworkNotice({ canManageSystem }: { canManageSystem: bo
   const [copied, setCopied] = useState(false);
   const [removing, setRemoving] = useState(false);
   const [dismissed, setDismissed] = useState('');
+  const copyResetTimer = useRef<number | null>(null);
 
   const check = useCallback(async () => {
     try {
@@ -59,6 +60,7 @@ export default function NetworkNotice({ canManageSystem }: { canManageSystem: bo
     return () => {
       window.removeEventListener('online', check);
       window.removeEventListener('offline', handleOffline);
+      if (copyResetTimer.current !== null) window.clearTimeout(copyResetTimer.current);
     };
   }, [check, handleOffline]);
 
@@ -66,7 +68,11 @@ export default function NetworkNotice({ canManageSystem }: { canManageSystem: bo
     try {
       await navigator.clipboard.writeText(info?.refreshCommand || 'trinaxai network refresh');
       setCopied(true);
-      window.setTimeout(() => setCopied(false), 1800);
+      if (copyResetTimer.current !== null) window.clearTimeout(copyResetTimer.current);
+      copyResetTimer.current = window.setTimeout(() => {
+        setCopied(false);
+        copyResetTimer.current = null;
+      }, 1800);
     } catch { /* The command remains visible for manual copying. */ }
   };
 

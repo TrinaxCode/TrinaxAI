@@ -1,6 +1,18 @@
-# TrinaxAI on Windows
+<h1 align="center">
+  <a href="https://www.trinaxai.app/"><img src="../chat-pwa/public/logo.webp" alt="TrinaxAI" width="64" valign="middle"></a>
+  <a href="https://www.trinaxai.app/">TrinaxAI</a> · 🪟 Windows Installation
+</h1>
 
-[Versión en español](INSTALL_WINDOWS.es.md)
+<p align="center">
+  <a href="https://github.com/TrinaxCode/TrinaxAI"><img src="https://img.shields.io/github/stars/TrinaxCode/TrinaxAI?style=flat&amp;label=%E2%98%85&amp;color=006bbd" alt="GitHub stars"></a>
+  <a href="https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.2.0"><img src="https://img.shields.io/badge/version-1.2.0-006bbd" alt="Current candidate: 1.2.0"></a>
+  <a href="https://github.com/TrinaxCode/TrinaxAI/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/TrinaxCode/TrinaxAI/ci.yml?branch=main&amp;label=CI" alt="CI status"></a>
+  <a href="https://github.com/TrinaxCode/TrinaxAI/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0--or--later-006bbd" alt="License: AGPL-3.0-or-later"></a>
+  <img src="https://img.shields.io/badge/macOS%20%7C%20Windows%20%7C%20Linux-4493F8?style=flat-square" alt="Supported platforms: macOS, Windows, and Linux">
+</p>
+
+<p align="center"><sub><strong>English</strong> · <a href="INSTALL_WINDOWS.es.md">Español</a></sub></p>
+<p align="center"><sub><a href="https://www.trinaxai.app/">Website</a> · <a href="README.md">Documentation</a> · <a href="../README.md">Home</a> · <a href="CHANGELOG.md">Changelog</a></sub></p>
 
 Guide to install, configure, start, and get TrinaxAI running on Windows 10/11 with PowerShell.
 
@@ -33,23 +45,49 @@ When done, you should have:
 | Ollama | Yes | Latest version |
 | PowerShell | 5+ | PowerShell 7 |
 
-## Recommended one-command install
+## Recommended release-pinned install
+
+> Release status: `v1.2.0` is the current candidate, but its GitHub Release assets are not published yet. The command below is ready for the published release; for immediate testing, use the local checkout with `powershell -ExecutionPolicy Bypass -File .\install.ps1`. The installer intentionally refuses to fall back to `main`.
 
 Open PowerShell and run:
 
 ```powershell
-irm https://raw.githubusercontent.com/TrinaxCode/TrinaxAI/main/install.ps1 | iex
+$ErrorActionPreference = "Stop"
+$version = "1.2.0"
+if ($version -notmatch '^[0-9]+\.[0-9]+\.[0-9]+$') { throw "Invalid release version" }
+$base = "https://github.com/TrinaxCode/TrinaxAI/releases/download/v$version"
+$installer = Join-Path $env:TEMP "TrinaxAI-$version-installer.ps1"
+$manifest = Join-Path $env:TEMP "TrinaxAI-$version-SHA256SUMS"
+Invoke-WebRequest -Uri "$base/TrinaxAI-$version-installer.ps1" -OutFile $installer
+Invoke-WebRequest -Uri "$base/SHA256SUMS" -OutFile $manifest
+$line = Get-Content -LiteralPath $manifest | Where-Object { $_ -match "\s\*?TrinaxAI-$version-installer\.ps1$" } | Select-Object -First 1
+$expected = if ($line -match '^\s*([0-9a-fA-F]{64})\s+') { $Matches[1] } else { "" }
+$actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $installer).Hash
+if ($expected -notmatch '^[0-9a-fA-F]{64}$' -or $actual -ine $expected) { throw "Installer SHA-256 verification failed." }
+Get-Content -Path $installer
+& $installer
 ```
 
 The installer downloads the source ZIP directly from GitHub. It does not need Git, Python, or Node.js beforehand; it installs the required dependencies, configures Ollama, builds the PWA, and starts TrinaxAI. Approve administrator permission when Windows requests it.
+The SHA-256 manifest check above is required before execution. Detached GPG verification is an optional additional check only when the signing-key fingerprint was obtained and trusted independently; a key or fingerprint downloaded from the same release is not an authenticity anchor. The repository does not yet ship a pinned public-key trust anchor.
 
 ## Optional reviewed PowerShell install
 
 Open PowerShell and download, inspect, then run the guided installer. It downloads TrinaxAI to `%LOCALAPPDATA%\TrinaxAI` by default:
 
 ```powershell
-$installer = Join-Path $env:TEMP "TrinaxAI-installer.ps1"
-Invoke-WebRequest -Uri "https://raw.githubusercontent.com/TrinaxCode/TrinaxAI/main/install.ps1" -OutFile $installer
+$ErrorActionPreference = "Stop"
+$version = "1.2.0"
+if ($version -notmatch '^[0-9]+\.[0-9]+\.[0-9]+$') { throw "Invalid release version" }
+$base = "https://github.com/TrinaxCode/TrinaxAI/releases/download/v$version"
+$installer = Join-Path $env:TEMP "TrinaxAI-$version-installer.ps1"
+$manifest = Join-Path $env:TEMP "TrinaxAI-$version-SHA256SUMS"
+Invoke-WebRequest -Uri "$base/TrinaxAI-$version-installer.ps1" -OutFile $installer
+Invoke-WebRequest -Uri "$base/SHA256SUMS" -OutFile $manifest
+$line = Get-Content -LiteralPath $manifest | Where-Object { $_ -match "\s\*?TrinaxAI-$version-installer\.ps1$" } | Select-Object -First 1
+$expected = if ($line -match '^\s*([0-9a-fA-F]{64})\s+') { $Matches[1] } else { "" }
+$actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $installer).Hash
+if ($expected -notmatch '^[0-9a-fA-F]{64}$' -or $actual -ine $expected) { throw "Installer SHA-256 verification failed." }
 Get-Content -Path $installer
 & $installer
 ```
@@ -68,11 +106,15 @@ The installer:
 
 Required dependencies are installed automatically. Optional choices such as models, startup, and service start are prompted by default. Legacy LAN-system configuration is accepted for compatibility but never grants remote host administration. Use `-NonInteractive` for scripted installs. If the automatic paths cannot finish, the signed official `OllamaSetup.exe` opens in its own window; select **Install**, wait for it to finish, and rerun the installer if PowerShell still cannot find `ollama.exe`.
 
+Use `-NoStart` to leave TrinaxAI stopped; Windows boot autostart is skipped too and can be enabled later after starting TrinaxAI.
+
 If you already have the project or want to select another install directory:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\install.ps1 -InstallDir "D:\Apps\TrinaxAI"
 ```
+
+Running from a local checkout is an operator/development mode and is intentionally not blocked; review and protect that checkout separately from the verified release-download flow.
 
 After installation, manage TrinaxAI from any directory:
 
@@ -113,13 +155,23 @@ ollama --version
 
 ## Manual install
 
-### 1. Download the project
+### 1. Download the release archive
 
 ```powershell
-$zip = "$env:TEMP\trinaxai.zip"
-irm https://github.com/TrinaxCode/TrinaxAI/archive/refs/heads/main.zip -OutFile $zip
+$ErrorActionPreference = "Stop"
+$version = "1.2.0"
+if ($version -notmatch '^[0-9]+\.[0-9]+\.[0-9]+$') { throw "Invalid release version" }
+$base = "https://github.com/TrinaxCode/TrinaxAI/releases/download/v$version"
+$zip = "$env:TEMP\TrinaxAI-$version.zip"
+$manifest = "$env:TEMP\TrinaxAI-$version-SHA256SUMS"
+Invoke-WebRequest -Uri "$base/TrinaxAI-$version.zip" -OutFile $zip
+Invoke-WebRequest -Uri "$base/SHA256SUMS" -OutFile $manifest
+$line = Get-Content -LiteralPath $manifest | Where-Object { $_ -match "\s\*?TrinaxAI-$version\.zip$" } | Select-Object -First 1
+$expected = if ($line -match '^\s*([0-9a-fA-F]{64})\s+') { $Matches[1] } else { "" }
+$actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $zip).Hash
+if ($expected -notmatch '^[0-9a-fA-F]{64}$' -or $actual -ine $expected) { throw "Source archive SHA-256 verification failed." }
 Expand-Archive $zip $env:TEMP -Force
-Move-Item "$env:TEMP\TrinaxAI-main" "$env:USERPROFILE\trinaxai"
+Move-Item "$env:TEMP\TrinaxAI-$version" "$env:USERPROFILE\trinaxai"
 cd $env:USERPROFILE\trinaxai
 ```
 
@@ -160,10 +212,11 @@ ollama list
 Copy-Item .env.example .env
 ```
 
-Recommended values:
+Recommended values (leave the profile automatic unless you need an explicit override):
 
 ```text
-TRINAXAI_PROFILE=16gb
+# Leave unset for CPU/RAM/GPU detection.
+#TRINAXAI_PROFILE=16gb
 TRINAXAI_HOST=127.0.0.1
 TRINAXAI_PORT=3333
 TRINAXAI_INDEX_DIR=./local_sources

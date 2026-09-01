@@ -78,6 +78,38 @@ function env(name, fallback) {
   return process.env[name] || fallback;
 }
 
+function boundedInteger(value, fallback, minimum, maximum) {
+  const parsed = Number(String(value ?? '').trim());
+  if (!Number.isSafeInteger(parsed) || parsed < minimum) return fallback;
+  return Math.min(parsed, maximum);
+}
+
+function boundedNumber(value, fallback, minimum, maximum) {
+  const parsed = Number(String(value ?? '').trim());
+  if (!Number.isFinite(parsed) || parsed < minimum) return fallback;
+  return Math.min(parsed, maximum);
+}
+
+const proxyBodyLimit = boundedInteger(
+  process.env.TRINAXAI_PWA_MAX_BODY_BYTES
+    ?? process.env.TRINAXAI_GATEWAY_MAX_BODY_BYTES
+    ?? process.env.TRINAXAI_PROXY_MAX_BODY_BYTES,
+  512 * 1024 * 1024,
+  1,
+  512 * 1024 * 1024,
+);
+const proxyTimeoutMs = process.env.TRINAXAI_PWA_PROXY_TIMEOUT_MS
+  ?? process.env.TRINAXAI_GATEWAY_TIMEOUT_MS
+  ?? process.env.TRINAXAI_PROXY_TIMEOUT_MS;
+const proxyTimeout = boundedInteger(proxyTimeoutMs, 300_000, 1, 3_600_000);
+const proxyQueueTimeoutSeconds = boundedNumber(
+  process.env.TRINAXAI_INFERENCE_QUEUE_TIMEOUT,
+  600,
+  1,
+  86_400,
+);
+const proxyRateLimit = boundedInteger(process.env.TRINAXAI_OLLAMA_PROXY_RATE_LIMIT, 30, 1, 1_000_000);
+
 function configuredPath(name, fallback) {
   const value = process.env[name];
   return value ? (path.isAbsolute(value) ? value : path.resolve(repoRoot, value)) : fallback;
@@ -145,7 +177,7 @@ function sendError(res, status, code) {
 }
 
 function rateAllowed(peer) {
-  const limit = Math.max(1, Number(process.env.TRINAXAI_OLLAMA_PROXY_RATE_LIMIT || 30) || 30);
+  const limit = proxyRateLimit;
   const now = Date.now();
   const previous = rateBuckets.get(peer) || { tokens: limit, updatedAt: now };
   const tokens = Math.min(limit, previous.tokens + ((now - previous.updatedAt) * limit) / 60_000);
@@ -246,6 +278,49 @@ async function proxyRequest(req, res, url, prefix) {
     }
   }
 
+  let release = () => {};
+  let lockAcquired = false;
+  let released = false;
+  const releaseOnce = () => {
+    if (released || !lockAcquired) return;
+    released = true;
+    release();
+  };
+  let upstream;
+  let requestErrored = false;
+  let requestTimedOut = false;
+  let bodyTooLarge = false;
+  req.setTimeout(proxyTimeout, () => {
+    requestTimedOut = true;
+    if (!res.headersSent) sendError(res, 504, 'proxy_timeout');
+    upstream?.destroy();
+    req.destroy();
+  });
+  req.once('error', () => {
+    requestErrored = true;
+    releaseOnce();
+    if (!res.headersSent && !res.writableEnded) {
+      sendError(res, requestTimedOut ? 504 : bodyTooLarge ? 413 : 502, requestTimedOut ? 'proxy_timeout' : bodyTooLarge ? 'proxy_body_too_large' : 'proxy_unavailable');
+    }
+  });
+  req.once('end', () => {
+    req.setTimeout(0);
+  });
+  if (req.readableEnded) {
+    req.setTimeout(0);
+  }
+  const contentLength = req.headers['content-length'];
+  if (contentLength !== undefined) {
+    const parsedLength = Number(String(contentLength).trim());
+    if (!/^\d+$/.test(String(contentLength).trim())
+      || !Number.isSafeInteger(parsedLength)
+      || parsedLength > proxyBodyLimit) {
+      req.resume();
+      sendError(res, 413, 'proxy_body_too_large');
+      return;
+    }
+  }
+
   let target;
   try {
     target = ollama
@@ -256,7 +331,6 @@ async function proxyRequest(req, res, url, prefix) {
     sendError(res, 503, 'proxy_invalid_configuration');
     return;
   }
-  let release = () => {};
   // Model generation/pull/delete must be serialized, but a read-only health
   // probe must never wait behind an active stream. Otherwise the UI can report
   // Ollama as offline while Ollama is healthy and serving the current request.
@@ -264,12 +338,17 @@ async function proxyRequest(req, res, url, prefix) {
     try {
       release = await acquireInferenceProcessLock(
         configuredPath('TRINAXAI_INFERENCE_LOCK_FILE', path.join(repoRoot, 'storage', '.inference.lock')),
-        { timeoutMs: Math.max(1000, Number(process.env.TRINAXAI_INFERENCE_QUEUE_TIMEOUT || 600) * 1000) },
+        { timeoutMs: proxyQueueTimeoutSeconds * 1000 },
       );
+      lockAcquired = true;
     } catch {
-      sendError(res, 503, 'proxy_queue_timeout');
+      if (!res.headersSent) sendError(res, requestTimedOut ? 504 : 503, requestTimedOut ? 'proxy_timeout' : 'proxy_queue_timeout');
       return;
     }
+  }
+  if (req.destroyed || requestErrored || requestTimedOut || res.writableEnded) {
+    releaseOnce();
+    return;
   }
 
   const upstreamPath = `${target.pathname.replace(/\/$/, '')}${browserPath.slice(prefix.length) || '/'}${url.search}`;
@@ -285,13 +364,6 @@ async function proxyRequest(req, res, url, prefix) {
   }
   const client = target.protocol === 'https:' ? https : http;
   const localTls = target.protocol === 'https:' && isLoopbackAddress(target.hostname) && localCa;
-  let released = false;
-  const releaseOnce = () => {
-    if (released) return;
-    released = true;
-    release();
-  };
-  let upstream;
   try {
     upstream = client.request(
       {
@@ -304,6 +376,10 @@ async function proxyRequest(req, res, url, prefix) {
         ...(localTls ? { ca: localCa } : {}),
       },
       (upstreamResponse) => {
+        if (bodyTooLarge || requestTimedOut || res.writableEnded) {
+          upstreamResponse.resume();
+          return;
+        }
         res.writeHead(upstreamResponse.statusCode || 502, upstreamResponse.headers);
         upstreamResponse.pipe(res);
         upstreamResponse.once('end', releaseOnce);
@@ -316,11 +392,29 @@ async function proxyRequest(req, res, url, prefix) {
     sendError(res, 502, 'proxy_unavailable');
     return;
   }
+  let upstreamTimedOut = false;
+  upstream.setTimeout(proxyTimeout, () => {
+    upstreamTimedOut = true;
+    upstream.destroy(new Error('proxy upstream timeout'));
+  });
   upstream.on('error', (error) => {
     console.error('TrinaxAI proxy failure.');
     releaseOnce();
-    if (!res.headersSent) sendError(res, 502, 'proxy_unavailable');
-    else res.destroy();
+    if (!res.headersSent) sendError(res, upstreamTimedOut || error?.code === 'ETIMEDOUT' ? 504 : 502, upstreamTimedOut || error?.code === 'ETIMEDOUT' ? 'proxy_timeout' : 'proxy_unavailable');
+    else if (!res.writableEnded) res.destroy();
+  });
+  let receivedBodyBytes = 0;
+  req.on('data', (chunk) => {
+    if (bodyTooLarge) return;
+    receivedBodyBytes += Buffer.isBuffer(chunk) ? chunk.length : Buffer.byteLength(String(chunk));
+    if (receivedBodyBytes <= proxyBodyLimit) return;
+    bodyTooLarge = true;
+    req.pause();
+    upstream.destroy(new Error('proxy body too large'));
+    releaseOnce();
+    if (!res.headersSent) sendError(res, 413, 'proxy_body_too_large');
+    else if (!res.writableEnded) res.destroy();
+    req.resume();
   });
   req.once('aborted', () => {
     upstream.destroy();
@@ -431,9 +525,19 @@ function networkInfo(req, res) {
     sendError(res, 405, 'method_not_allowed');
     return;
   }
+  const status = networkStatus();
+  const peer = normalizeAddress(req.socket.remoteAddress || 'unknown');
+  if (!isLoopbackAddress(peer)) {
+    sendJson(res, 200, {
+      online: status.online,
+      existingInstallation: status.existingInstallation,
+      capabilities: { manageSystem: false },
+    });
+    return;
+  }
   sendJson(res, 200, {
-    ...networkStatus(),
-    capabilities: { manageSystem: isAuthorizedSystemProxyPeer(req.socket.remoteAddress || 'unknown') },
+    ...status,
+    capabilities: { manageSystem: isAuthorizedSystemProxyPeer(peer) },
   });
 }
 

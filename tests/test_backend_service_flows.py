@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sys
+import time
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -455,7 +456,9 @@ async def test_usage_rebuilds_corrupt_log_and_records_sanitized_values(monkeypat
         "\n".join(
             [
                 "{broken",
-                json.dumps({"ts": 1, "engine": "rag", "model": "model", "collections": ["docs"], "est_tokens": 4}),
+                json.dumps(
+                    {"ts": time.time(), "engine": "rag", "model": "model", "collections": ["docs"], "est_tokens": 4}
+                ),
                 "[]",
                 "",
             ]

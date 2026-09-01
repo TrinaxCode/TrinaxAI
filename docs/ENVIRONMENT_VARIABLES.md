@@ -1,6 +1,18 @@
-# Environment variable inventory
+<h1 align="center">
+  <a href="https://www.trinaxai.app/"><img src="../chat-pwa/public/logo.webp" alt="TrinaxAI" width="64" valign="middle"></a>
+  <a href="https://www.trinaxai.app/">TrinaxAI</a> · 🔧 Environment Variables
+</h1>
 
-[Versión en español](ENVIRONMENT_VARIABLES.es.md)
+<p align="center">
+  <a href="https://github.com/TrinaxCode/TrinaxAI"><img src="https://img.shields.io/github/stars/TrinaxCode/TrinaxAI?style=flat&amp;label=%E2%98%85&amp;color=006bbd" alt="GitHub stars"></a>
+  <a href="https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.2.0"><img src="https://img.shields.io/badge/version-1.2.0-006bbd" alt="Current candidate: 1.2.0"></a>
+  <a href="https://github.com/TrinaxCode/TrinaxAI/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/TrinaxCode/TrinaxAI/ci.yml?branch=main&amp;label=CI" alt="CI status"></a>
+  <a href="https://github.com/TrinaxCode/TrinaxAI/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0--or--later-006bbd" alt="License: AGPL-3.0-or-later"></a>
+  <img src="https://img.shields.io/badge/macOS%20%7C%20Windows%20%7C%20Linux-4493F8?style=flat-square" alt="Supported platforms: macOS, Windows, and Linux">
+</p>
+
+<p align="center"><sub><strong>English</strong> · <a href="ENVIRONMENT_VARIABLES.es.md">Español</a></sub></p>
+<p align="center"><sub><a href="https://www.trinaxai.app/">Website</a> · <a href="README.md">Documentation</a> · <a href="../README.md">Home</a> · <a href="CHANGELOG.md">Changelog</a></sub></p>
 
 This is the canonical inventory of environment variables understood by TrinaxAI.
 Use [`.env.example`](../.env.example) as a starting template and keep only the
@@ -181,6 +193,8 @@ Ollama also consumes `OLLAMA_BASE_URL` (backend endpoint), `OLLAMA_HOST`
 | `TRINAXAI_CHAT_ATTACHMENTS_MAX_BYTES` | `4294967296` | Total retained chat-attachment quota. |
 | `TRINAXAI_CHAT_ATTACHMENTS_MAX_FILES` | `1000` | Retained chat-attachment count quota. |
 | `TRINAXAI_OCR` | `0` | Enables optional OCR for sparse-text scanned PDFs. |
+| `TRINAXAI_OCR_MAX_PAGES` | `50` | Maximum PDF pages rasterized by OCR for one document. |
+| `TRINAXAI_OCR_MAX_PIXELS` | `100000000` | Maximum estimated rasterized pixels processed by OCR for one document. |
 
 The indexer recognizes source code, common prose/data formats, PDF and Office
 documents, HTML, EPUB, email, subtitles, calendars, contacts, and notebooks.
@@ -198,6 +212,14 @@ garbage.
 | `TRINAXAI_MEMORY_MAX_TAGS` | `50` | Maximum tags on one memory entry. |
 | `TRINAXAI_MEMORY_TAG_MAX_CHARS` | `100` | Maximum characters in one memory tag. |
 | `TRINAXAI_MEMORY_SUMMARY_MAX_CHARS` | `50000` | Maximum input used to refresh the human-facing memory overview. The global overview is not injected into turns. |
+
+## Usage accounting
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `TRINAXAI_USAGE_MAX_RECORDS` | `10000` | Maximum retained usage events before older records are discarded. |
+| `TRINAXAI_USAGE_RETENTION_SECONDS` | `7776000` | Retention window for usage events (90 days). |
+| `TRINAXAI_USAGE_MAX_DIMENSIONS` | `1000` | Maximum distinct model/engine/collection dimensions retained in aggregates. |
 
 ## Voice
 
@@ -237,6 +259,12 @@ changing them. Non-`VITE_*` proxy targets are read by the production gateway at 
 |---|---|---|
 | `TRINAXAI_RAG_TARGET` | `http://127.0.0.1:3333` | Server-side target for `/api/rag`. |
 | `TRINAXAI_OLLAMA_TARGET` | `http://127.0.0.1:11434` | Server-side target for `/api/ollama`. |
+| `TRINAXAI_PWA_MAX_BODY_BYTES` | `536870912` | Maximum request body forwarded by the gateway. |
+| `TRINAXAI_PWA_PROXY_TIMEOUT_MS` | `300000` | Gateway client/upstream inactivity timeout in milliseconds. |
+| `TRINAXAI_GATEWAY_MAX_BODY_BYTES` | legacy alias | Compatibility alias for `TRINAXAI_PWA_MAX_BODY_BYTES`. |
+| `TRINAXAI_PROXY_MAX_BODY_BYTES` | legacy alias | Compatibility alias for `TRINAXAI_PWA_MAX_BODY_BYTES`. |
+| `TRINAXAI_GATEWAY_TIMEOUT_MS` | legacy alias | Compatibility alias for `TRINAXAI_PWA_PROXY_TIMEOUT_MS`. |
+| `TRINAXAI_PROXY_TIMEOUT_MS` | legacy alias | Compatibility alias for `TRINAXAI_PWA_PROXY_TIMEOUT_MS`. |
 | `VITE_TRINAXAI_RAG_TARGET` | RAG target fallback | Legacy/build-time RAG proxy target fallback. |
 | `VITE_TRINAXAI_RAG_BASE` | `/api/rag` | Production browser RAG base. |
 | `VITE_TRINAXAI_OLLAMA_BASE` | `/api/ollama` | Production browser Ollama base. |
@@ -259,11 +287,11 @@ runtime.
 |---|---|---|
 | `TRINAXAI_INTERACTIVE` | `1` | Allows optional prompts in POSIX install/update/uninstall scripts. |
 | `TRINAXAI_NONINTERACTIVE` | `0` | Suppresses optional prompts when enabled. |
-| `TRINAXAI_INSTALL_MODELS` | `1` | Downloads configured models during installation. |
+| `TRINAXAI_INSTALL_MODELS` | `1` | Downloads configured models during installation. When `0`, every configured model must already be installed. |
 | `TRINAXAI_INSTALL_VISION` | `1` | Compatibility switch; vision models now download on first image analysis instead of during installation. |
 | `TRINAXAI_ENABLE_AUTOSTART` | `1` | Enables boot/login autostart during installation. |
 | `TRINAXAI_ENABLE_AUTO_UPDATE` | `1` | Installs the scheduled **check-only** release-availability task; it does not modify the installation. |
-| `TRINAXAI_START_NOW` | `1` | Starts TrinaxAI when installation completes. |
+| `TRINAXAI_START_NOW` | `1` | Starts and verifies TrinaxAI when installation completes. When `0`, installation finishes prepared but not running. |
 | `TRINAXAI_BACKUP_DIR` | `./backups` | Destination used by backup/update scripts. |
 | `TRINAXAI_BACKUP_QUIESCE` | `1` | Pauses the API while creating a backup; the archive also takes the shared index lock. Disable only for an externally quiesced snapshot. |
 | `TRINAXAI_UPDATE_BACKUP` | `1` | Creates a pre-update backup. |
@@ -273,9 +301,11 @@ runtime.
 | `TRINAXAI_UPDATE_REPAIR_OLLAMA` | `0` | Reinstalls or repairs Ollama during update. |
 | `TRINAXAI_UPDATE_RESTART` | auto/prompted | Restarts services after update when enabled. |
 | `TRINAXAI_UPDATE_AUDIT` | `1` | Runs the post-update readiness audit. |
-| `TRINAXAI_RELEASE_VERSION` | unset | **Installer:** optional semantic GitHub release version; when set, source downloads use that signed release instead of `main`. |
-| `TRINAXAI_SOURCE_URL` | GitHub `main` archive | **Install source:** HTTPS archive URL used for a custom source package. |
+| `TRINAXAI_RELEASE_VERSION` | `1.2.0` | **Installer:** semantic GitHub release version used for the versioned source archive. The installer never falls back to `main`. |
+| `TRINAXAI_SOURCE_URL` | pinned GitHub release archive | **Install source:** HTTPS archive URL used for a custom source package. |
 | `TRINAXAI_SOURCE_SHA256` | unset | **Installer:** SHA-256 for a custom source archive URL; required with `TRINAXAI_SOURCE_URL`. |
+| `TRINAXAI_UPDATE_SOURCE_URL` | pinned GitHub release archive | **Updater:** HTTPS source archive URL used for an update. |
+| `TRINAXAI_UPDATE_SOURCE_SHA256` | unset | **Updater:** SHA-256 for a custom update archive URL; required when overriding `TRINAXAI_UPDATE_SOURCE_URL`. |
 | `TRINAXAI_UPDATE_ROOT` | script directory | **Internal:** installation root passed to the automatic updater. |
 | `TRINAXAI_PRIVILEGED_WRAPPER` | unset | **Internal:** prevents recursion when a sudoers lifecycle wrapper invokes the manager. |
 

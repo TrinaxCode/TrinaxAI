@@ -1,19 +1,20 @@
-# TrinaxAI
+<h1 align="center">
+  <a href="https://www.trinaxai.app/"><img src="chat-pwa/public/logo.webp" alt="TrinaxAI" width="64" valign="middle"></a>
+  <a href="https://www.trinaxai.app/">TrinaxAI</a>
+</h1>
 
 <p align="center">
-  <img src="chat-pwa/public/logo.webp" alt="TrinaxAI logo" width="180">
+  <a href="https://github.com/TrinaxCode/TrinaxAI"><img src="https://img.shields.io/github/stars/TrinaxCode/TrinaxAI?style=flat&amp;label=%E2%98%85&amp;color=006bbd" alt="GitHub stars"></a>
+  <a href="https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.2.0"><img src="https://img.shields.io/badge/version-1.2.0-006bbd" alt="Current candidate: 1.2.0"></a>
+  <a href="https://github.com/TrinaxCode/TrinaxAI/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/TrinaxCode/TrinaxAI/ci.yml?branch=main&amp;label=CI" alt="CI status"></a>
+  <a href="https://github.com/TrinaxCode/TrinaxAI/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0--or--later-006bbd" alt="License: AGPL-3.0-or-later"></a>
+  <img src="https://img.shields.io/badge/macOS%20%7C%20Windows%20%7C%20Linux-4493F8?style=flat-square" alt="Supported platforms: macOS, Windows, and Linux">
 </p>
 
-> A local-first AI assistant with a production RAG engine, a sandboxed coding agent, and capability-scoped device pairing.
->
-> Get cited answers over your own code and documents. Inference and persisted data stay on your machine by default. No cloud account. No subscription.
+<p align="center"><sub><strong>English</strong> · <a href="README.es.md">Español</a></sub></p>
+<p align="center"><sub><a href="https://www.trinaxai.app/">Website</a> · <a href="docs/README.md">Documentation</a> · <a href="docs/CHANGELOG.md">Changelog</a> · <a href="LICENSE">License</a></sub></p>
 
-[Website](https://www.trinaxai.app/) | [Documentation](docs/README.md) | [Changelog](docs/CHANGELOG.md) | [License](LICENSE) | [Spanish README](README.es.md)
-
-[![CI](https://img.shields.io/github/actions/workflow/status/TrinaxCode/TrinaxAI/ci.yml?branch=main&label=CI)](https://github.com/TrinaxCode/TrinaxAI/actions/workflows/ci.yml)
-[![Tests](https://img.shields.io/github/actions/workflow/status/TrinaxCode/TrinaxAI/ci.yml?branch=main&label=tests)](https://github.com/TrinaxCode/TrinaxAI/actions/workflows/ci.yml)
-[![Version](https://img.shields.io/badge/version-1.2.0-006bbd)](docs/CHANGELOG.md)
-[![License](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue)](LICENSE)
+<p align="center"><strong>A local-first AI assistant for working with your files on your own computer, with RAG, a sandboxed coding agent, and secure device pairing.</strong></p>
 
 <p align="center">
   <a href="https://www.trinaxai.app/"><img src="https://www.trinaxai.app/og-image.png" alt="TrinaxAI product overview" width="720"></a>
@@ -41,19 +42,51 @@ If TrinaxAI helps you, consider [starring the repository](https://github.com/Tri
 
 ## Quick start
 
-The normal installation is one command and does not require Git.
+The normal installation uses a release-pinned installer and does not require Git.
 
 Linux or macOS:
 
+> Release status: `v1.2.0` is the current candidate, but its GitHub Release assets are not published yet. For immediate testing, copy this tree to the target Linux/macOS machine and run `bash install.sh`; the installer intentionally refuses to fall back to `main`.
+
 ```bash
-curl -fsSL https://raw.githubusercontent.com/TrinaxCode/TrinaxAI/main/install.sh | bash
+set -eu
+version="1.2.0"
+base="https://github.com/TrinaxCode/TrinaxAI/releases/download/v${version}"
+installer="$(mktemp)"
+manifest="$(mktemp)"
+trap 'rm -f "$installer" "$manifest"' EXIT
+curl --fail --location --output "$installer" "${base}/TrinaxAI-${version}-installer.sh"
+curl --fail --location --output "$manifest" "${base}/SHA256SUMS"
+expected="$(awk -v asset="TrinaxAI-${version}-installer.sh" '$2 == asset || $2 == "*" asset { print $1; exit }' "$manifest")"
+if command -v sha256sum >/dev/null 2>&1; then actual="$(sha256sum "$installer" | awk '{print $1}')"; elif command -v shasum >/dev/null 2>&1; then actual="$(shasum -a 256 "$installer" | awk '{print $1}')"; else echo "A SHA-256 tool (sha256sum or shasum) is required." >&2; exit 2; fi
+if [ -z "$expected" ] || [ "$actual" != "$expected" ]; then echo "Installer SHA-256 verification failed." >&2; exit 1; fi
+bash -n "$installer"
+bash "$installer"
 ```
 
 Windows PowerShell:
 
+> Release status: `v1.2.0` is the current candidate, but its GitHub Release assets are not published yet. For immediate Windows testing, copy this tree to Windows and run `powershell -ExecutionPolicy Bypass -File .\install.ps1`; the installer intentionally refuses to fall back to `main`.
+
 ```powershell
-irm https://raw.githubusercontent.com/TrinaxCode/TrinaxAI/main/install.ps1 | iex
+$ErrorActionPreference = "Stop"
+$version = "1.2.0"
+$base = "https://github.com/TrinaxCode/TrinaxAI/releases/download/v$version"
+$installer = Join-Path $env:TEMP "TrinaxAI-$version-installer.ps1"
+$manifest = Join-Path $env:TEMP "TrinaxAI-$version-SHA256SUMS"
+Invoke-WebRequest -Uri "$base/TrinaxAI-$version-installer.ps1" -OutFile $installer
+Invoke-WebRequest -Uri "$base/SHA256SUMS" -OutFile $manifest
+$line = Get-Content -LiteralPath $manifest | Where-Object { $_ -match "\s\*?TrinaxAI-$version-installer\.ps1$" } | Select-Object -First 1
+$expected = if ($line -match '^\s*([0-9a-fA-F]{64})\s+') { $Matches[1] } else { "" }
+$actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $installer).Hash
+if ($expected -notmatch '^[0-9a-fA-F]{64}$' -or $actual -ine $expected) { throw "Installer SHA-256 verification failed." }
+Get-Content -Path $installer
+& $installer
 ```
+
+The SHA-256 manifest check above is required before executing a release installer; it checks integrity but does not authenticate the release. Detached GPG verification is an optional additional check only when you have independently obtained and trusted the signing-key fingerprint; a key or fingerprint downloaded from the same release is not an authenticity anchor. See [release signing](docs/RELEASE_SIGNING.md). The repository does not yet ship a pinned public-key trust anchor.
+
+A local checkout run (`./install.sh` or `./install.ps1`) remains available for operator/development use and is intentionally not blocked; review and protect that checkout separately.
 
 The installer downloads the TrinaxAI source archive directly from GitHub, installs the required tools, detects your hardware, configures Ollama, builds the PWA, and starts the local app. When it finishes, open `https://localhost:3334`.
 
@@ -66,9 +99,17 @@ The commands below are optional reviewed or automated variants of the same URL-b
 Download the script, inspect it, and then run it:
 
 ```bash
+set -eu
 installer="$(mktemp)"
-trap 'rm -f "$installer"' EXIT
-curl --fail --location --output "$installer" "https://raw.githubusercontent.com/TrinaxCode/TrinaxAI/main/install.sh"
+manifest="$(mktemp)"
+trap 'rm -f "$installer" "$manifest"' EXIT
+version="1.2.0"
+base="https://github.com/TrinaxCode/TrinaxAI/releases/download/v${version}"
+curl --fail --location --output "$installer" "${base}/TrinaxAI-${version}-installer.sh"
+curl --fail --location --output "$manifest" "${base}/SHA256SUMS"
+expected="$(awk -v asset="TrinaxAI-${version}-installer.sh" '$2 == asset || $2 == "*" asset { print $1; exit }' "$manifest")"
+if command -v sha256sum >/dev/null 2>&1; then actual="$(sha256sum "$installer" | awk '{print $1}')"; elif command -v shasum >/dev/null 2>&1; then actual="$(shasum -a 256 "$installer" | awk '{print $1}')"; else echo "A SHA-256 tool (sha256sum or shasum) is required." >&2; exit 2; fi
+if [ -z "$expected" ] || [ "$actual" != "$expected" ]; then echo "Installer SHA-256 verification failed." >&2; exit 1; fi
 bash -n "$installer"
 less "$installer"
 bash "$installer"
@@ -79,8 +120,17 @@ bash "$installer"
 Download, inspect, and run the guided installer from PowerShell:
 
 ```powershell
-$installer = Join-Path $env:TEMP "TrinaxAI-installer.ps1"
-Invoke-WebRequest -Uri "https://raw.githubusercontent.com/TrinaxCode/TrinaxAI/main/install.ps1" -OutFile $installer
+$ErrorActionPreference = "Stop"
+$version = "1.2.0"
+$base = "https://github.com/TrinaxCode/TrinaxAI/releases/download/v$version"
+$installer = Join-Path $env:TEMP "TrinaxAI-$version-installer.ps1"
+$manifest = Join-Path $env:TEMP "TrinaxAI-$version-SHA256SUMS"
+Invoke-WebRequest -Uri "$base/TrinaxAI-$version-installer.ps1" -OutFile $installer
+Invoke-WebRequest -Uri "$base/SHA256SUMS" -OutFile $manifest
+$line = Get-Content -LiteralPath $manifest | Where-Object { $_ -match "\s\*?TrinaxAI-$version-installer\.ps1$" } | Select-Object -First 1
+$expected = if ($line -match '^\s*([0-9a-fA-F]{64})\s+') { $Matches[1] } else { "" }
+$actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $installer).Hash
+if ($expected -notmatch '^[0-9a-fA-F]{64}$' -or $actual -ine $expected) { throw "Installer SHA-256 verification failed." }
 Get-Content -Path $installer
 & $installer
 ```
@@ -105,7 +155,7 @@ Security note for advanced installation: review downloaded scripts before execut
 
 ```bash
 ./install.sh --non-interactive        # Unattended install for CI or scripts
-./install.sh --no-models              # Skip model downloads
+./install.sh --no-models              # Require configured models to be preinstalled
 ./install.sh --profile 16gb           # Force a hardware profile
 ```
 
@@ -113,11 +163,11 @@ Security note for advanced installation: review downloaded scripts before execut
 | --- | --- |
 | `--interactive` | Guided install with optional choices. This is the default. |
 | `--non-interactive` | Unattended install for CI and scripts. |
-| `--no-models` | Skip downloading Ollama models. |
+| `--no-models` | Skip downloads, but require every configured Ollama model to already be installed. |
 | `--no-vision` | Compatibility option. Vision models still download on first image analysis. |
 | `--no-autostart` | Do not enable start on boot. |
 | `--no-auto-update` | Do not enable the weekly release check. |
-| `--no-start` | Do not start TrinaxAI after installation. |
+| `--no-start` | Prepare the installation without starting TrinaxAI or advertising its URLs as live. |
 | `--profile PROFILE` | Override the detected hardware profile with `8gb`, `16gb`, `32gb`, or `64gb`. |
 | `--lan-system` | Deprecated compatibility option. It is ignored and never enables LAN host administration. |
 
@@ -141,7 +191,7 @@ powershell -ExecutionPolicy Bypass -File .\update.ps1
 powershell -ExecutionPolicy Bypass -File .\uninstall.ps1
 ```
 
-Updates keep local data. The optional weekly task is check-only: it compares the installed revision with GitHub and writes availability to `logs/auto-update.log`. It never downloads or runs anything unattended. Run the guided updater yourself after reviewing the release.
+Updates keep local data. The optional weekly task is check-only: it compares the installed version with GitHub's latest stable release and writes availability to `logs/auto-update.log`. It never downloads or runs anything unattended. Run the guided updater yourself after reviewing the release.
 
 To stop the complete stack, use **Stop all** in the PWA or `trinaxai stop --all`. Only the loopback recovery page remains at `https://localhost:3334`; LAN access stays closed until you start TrinaxAI there again.
 
@@ -162,7 +212,7 @@ Indexing, memory/configuration writes, the Agent, model installation/deletion, l
 
 TrinaxAI is a local-first AI assistant that runs on your own hardware.
 
-Most local AI tools are Ollama wrappers. TrinaxAI combines a production-grade RAG engine with AST-aware chunking, hybrid vector and BM25 retrieval, an optional reranker, and cited answers. It also includes a sandboxed tool-using coding agent and capability-scoped device pairing, packaged with a CLI, an installable PWA, and cross-device synchronization.
+Most local AI tools are Ollama wrappers. TrinaxAI combines a local RAG engine with AST-aware chunking, hybrid vector and BM25 retrieval, an optional reranker, and cited answers. It also includes a sandboxed tool-using coding agent and capability-scoped device pairing, packaged with a CLI, an installable PWA, and cross-device synchronization.
 
 ### At a glance
 
@@ -284,7 +334,7 @@ Large uploads become durable background jobs with stage, page, chunk, and batch 
 | macOS: Intel and Apple Silicon | `install.sh` | launchctl | Backend, CLI, installer, and shell checks |
 | Windows 10 and 11 | `install.ps1` | Subprocess supervisor | Backend, CLI, installer, and PowerShell checks |
 
-CI runs backend and CLI checks on all three platforms, PWA tests/build/E2E on Ubuntu, and installer syntax/dry-run checks on Linux, macOS, and Windows. Full installation testing with real model downloads, service startup, and the first-run wizard remains a machine-level smoke test; follow [TESTING.md](TESTING.md) before calling a platform production-ready.
+CI runs backend and CLI checks on all three platforms, PWA tests/build/E2E on Ubuntu, and installer syntax/dry-run checks on Linux, macOS, and Windows. Full installation testing with real model downloads, service startup, and the first-run wizard remains a machine-level smoke test; follow [TESTING.md](TESTING.md) before calling a platform ready for public beta.
 
 TrinaxAI runs on CPU; no GPU is required. Performance scales with RAM and model size.
 

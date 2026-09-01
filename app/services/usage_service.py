@@ -2,6 +2,17 @@
 
 from __future__ import annotations
 
+from collections import deque
+
+from .runtime_usage import (
+    _USAGE_MAX_LINE_BYTES,
+    _normalize_summary,
+    _normalize_usage_record,
+    _retained_usage_records,
+    _usage_limits,
+    _write_usage_log_unlocked,
+)
+
 # ruff: noqa: F405
 from .shared_runtime import (
     LOG,
@@ -21,9 +32,10 @@ from .shared_runtime import (
 
 
 def _usage_summary_response(summary: dict) -> dict:
-    by_engine = {str(k): int(v) for k, v in (summary.get("messages_by_engine") or {}).items()}
-    by_model = {str(k): int(v) for k, v in (summary.get("model_counts") or {}).items()}
-    by_col = {str(k): int(v) for k, v in (summary.get("collection_counts") or {}).items()}
+    summary = _normalize_summary(summary)
+    by_engine = summary["messages_by_engine"]
+    by_model = summary["model_counts"]
+    by_col = summary["collection_counts"]
     return {
         "messages_total": int(summary.get("messages_total") or 0),
         "messages_by_engine": dict(sorted(by_engine.items(), key=lambda kv: -kv[1])),
@@ -36,22 +48,34 @@ def _usage_summary_response(summary: dict) -> dict:
     }
 
 
-def _build_usage_summary_from_log_unlocked() -> dict:
+def _build_usage_summary_from_log_unlocked(previous: dict | None = None) -> dict:
     summary = _empty_usage_summary()
+    if previous:
+        summary["index_runs"] = previous.get("index_runs", 0)
     if not os.path.isfile(USAGE_PATH):
         return summary
     try:
+        max_records, _retention, _max_dimensions = _usage_limits()
+        records: deque[dict] = deque(maxlen=max_records)
         with open(USAGE_PATH, encoding="utf-8") as f:
             for line in f:
                 line = line.strip()
                 if not line:
+                    continue
+                if len(line.encode("utf-8", errors="ignore")) > _USAGE_MAX_LINE_BYTES:
                     continue
                 try:
                     rec = json.loads(line)
                 except Exception:
                     continue
                 if isinstance(rec, dict):
-                    _apply_usage_record(summary, rec)
+                    normalized = _normalize_usage_record(rec)
+                    if normalized is not None:
+                        records.append(normalized)
+        retained_records = _retained_usage_records(list(records))
+        _write_usage_log_unlocked(retained_records, USAGE_PATH)
+        for record in retained_records:
+            _apply_usage_record(summary, record)
         _write_usage_summary_unlocked(summary)
     except Exception:
         LOG.debug("Best-effort operation failed", exc_info=True)
@@ -74,9 +98,11 @@ async def usage_stats(request: Request):
     """Aggregate local usage stats from storage/usage.jsonl."""
     _authorize_system(request)
     with state.usage_lock:
-        summary = _read_usage_summary_unlocked()
-        if summary is None:
-            summary = _build_usage_summary_from_log_unlocked()
+        previous = _read_usage_summary_unlocked()
+        if os.path.isfile(USAGE_PATH):
+            summary = _build_usage_summary_from_log_unlocked(previous)
+        else:
+            summary = previous or _build_usage_summary_from_log_unlocked()
         return _usage_summary_response(summary)
 
 

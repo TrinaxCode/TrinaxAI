@@ -6,7 +6,9 @@ import asyncio
 import re
 import threading
 import time
+import unicodedata
 import urllib.request
+from contextvars import ContextVar
 from typing import Callable
 
 from app.security.admin_auth import authorize_scope
@@ -104,17 +106,124 @@ _ABSTENTION_MESSAGES = frozenset({NO_INDEX_MSG, EMPTY_COLLECTION_MSG, NO_RELEVAN
 _ABSTENTION_MARKERS = (
     "no se encontró",
     "no encontre",
+    "no se encuentra",
+    "no se ha encontrado",
+    "no menciona",
+    "no detalla",
+    "no proporciona",
     "no hay evidencia",
     "no aparece en",
     "no puedo determinar",
     "i don't know",
     "i do not know",
+    "i did not find",
+    "unable to find",
+    "could not find",
+    "couldn't find",
+    "no information",
+    "not mentioned",
+    "not specified",
+    "not available",
+    "not provided",
+    "not included",
+    "is not mentioned",
+    "does not mention",
     "unable to answer",
     "do not have access",
     "not found in",
     "no evidence",
     "cannot determine",
     "cannot provide",
+)
+# Keep common interrogative/function words out of the cheap lexical tie-breaker.
+# The semantic retrievers still handle queries with no lexical overlap; this
+# only removes unrelated candidates when the current question contains terms
+# that appear verbatim in one or more retrieved chunks.
+_RAG_STOP_WORDS = frozenset(
+    {
+        "a",
+        "al",
+        "an",
+        "and",
+        "ante",
+        "are",
+        "as",
+        "at",
+        "be",
+        "but",
+        "by",
+        "como",
+        "con",
+        "contra",
+        "cual",
+        "cuales",
+        "cuantos",
+        "de",
+        "del",
+        "desde",
+        "did",
+        "do",
+        "does",
+        "donde",
+        "durante",
+        "el",
+        "en",
+        "entre",
+        "es",
+        "esta",
+        "este",
+        "for",
+        "from",
+        "fue",
+        "have",
+        "has",
+        "hay",
+        "how",
+        "in",
+        "is",
+        "it",
+        "la",
+        "las",
+        "lo",
+        "los",
+        "me",
+        "mi",
+        "mis",
+        "of",
+        "on",
+        "or",
+        "para",
+        "por",
+        "que",
+        "quien",
+        "se",
+        "sin",
+        "sobre",
+        "son",
+        "su",
+        "sus",
+        "that",
+        "the",
+        "this",
+        "to",
+        "tu",
+        "tus",
+        "un",
+        "una",
+        "usa",
+        "usar",
+        "was",
+        "what",
+        "when",
+        "where",
+        "which",
+        "who",
+        "with",
+        "would",
+        "y",
+        "you",
+        "your",
+    }
 )
 _CATALOG_QUERY_PATTERNS = (
     r"\b(?:qué|que)\s+(?:proyectos?|archivos?|ficheros?|documentos?|colecciones?)\b.*\bindexad",
@@ -202,6 +311,8 @@ def _hide_private_node_metadata(source_nodes) -> None:
 
 def detect_project(text: str) -> str | None:
     """Detecta si la consulta menciona un proyecto conocido (match conservador)."""
+    if not _PRIVATE_METADATA_ALLOWED.get():
+        return None
     t = text.casefold()
     best, best_len = None, 0
     for proj in state.known_projects:
@@ -257,6 +368,16 @@ def _chat_messages(messages: list[dict]) -> list[dict]:
 
 
 _MEMORY_CONTEXT_MARKER = "Persistent memory summary"
+_PRIVATE_METADATA_ALLOWED = ContextVar("trinaxai_private_metadata_allowed", default=True)
+
+
+def _has_read_private_scope(request: Request) -> bool:
+    identity = getattr(getattr(request, "state", None), "trinaxai_identity", None)
+    scopes = identity.get("scopes", ()) if isinstance(identity, dict) else ()
+    if not isinstance(scopes, (list, tuple, set, frozenset)):
+        return False
+    normalized = {str(scope).strip() for scope in scopes}
+    return "*" in normalized or "read_private" in normalized
 
 
 def _with_persistent_memory(messages: list[dict]) -> list[dict]:
@@ -463,7 +584,6 @@ def _prepare_rag_context(
     retrieval_mode: str = "auto",
 ):
     """Build the request context shared by sync and async RAG pipelines."""
-    messages = _with_persistent_memory(messages)
     chat = _chat_messages(messages)
     user_messages = [m for m in chat if m.get("role") == "user"]
     current = user_messages[-1].get("content", "") if user_messages else (chat[-1].get("content", "") if chat else "")
@@ -550,16 +670,63 @@ def _cached_retrieve(
         if exact_nodes:
             nodes = exact_nodes
 
+    query_terms = _retrieval_terms(current)
+    lexical_scores = {id(node): _lexical_overlap(node, query_terms) for node in nodes} if query_terms else {}
+    if lexical_scores and max(lexical_scores.values(), default=0) > 0:
+        # RRF scores are rank-based and become nearly indistinguishable when a
+        # collection is smaller than the configured candidate window. A small
+        # lexical margin keeps directly matching chunks while dropping obvious
+        # noise, without changing semantic-only queries.
+        best_overlap = max(lexical_scores.values())
+        minimum_overlap = max(1, (best_overlap + 1) // 2)
+        focused = [node for node in nodes if lexical_scores.get(id(node), 0) >= minimum_overlap]
+        if focused:
+            nodes = focused
+
     # Reranking: reordena por relevancia REAL a la pregunta (no al texto+historial).
     if state.reranker is not None and nodes:
         nodes = state.reranker.postprocess_nodes(nodes, query_bundle=QueryBundle(current))
     else:
-        nodes = sorted(nodes, key=exact_match_count, reverse=True)[: config.SIMILARITY_TOP_K]
+        nodes = sorted(
+            nodes,
+            key=lambda node: (
+                lexical_scores.get(id(node), 0),
+                _node_score(node),
+                exact_match_count(node),
+            ),
+            reverse=True,
+        )[: config.SIMILARITY_TOP_K]
 
     nodes = list(nodes)
     if config.RETRIEVAL_CACHE_SECONDS > 0:
         _cache_set(state.retrieval_cache, state.retrieval_cache_lock, cache_key, nodes)
     return list(nodes)
+
+
+def _retrieval_terms(value: str) -> set[str]:
+    normalized = unicodedata.normalize("NFKD", str(value or ""))
+    normalized = "".join(char for char in normalized if not unicodedata.combining(char)).casefold()
+    return {
+        token for token in re.findall(r"[a-z0-9_]+", normalized) if len(token) >= 2 and token not in _RAG_STOP_WORDS
+    }
+
+
+def _lexical_overlap(node, query_terms: set[str]) -> int:
+    if not query_terms:
+        return 0
+    getter = getattr(node, "get_content", None)
+    try:
+        content = getter() if callable(getter) else str(node)
+    except Exception:
+        return 0
+    return len(query_terms.intersection(_retrieval_terms(content)))
+
+
+def _node_score(node) -> float:
+    try:
+        return float(getattr(node, "score", 0.0) or 0.0)
+    except (TypeError, ValueError):
+        return 0.0
 
 
 def _usage_payload(messages: list[dict], content: str, nodes=()) -> dict:
@@ -850,8 +1017,10 @@ async def chat(req: ChatRequest, request: Request):
     Endpoint principal de chat, compatible con la API de OpenAI. Enruta el
     modelo, decide si usar RAG y responde en streaming (SSE) o en un único JSON.
     """
+    private_data_allowed = _has_read_private_scope(request)
     if req.mode == "knowledge":
         authorize_scope(request, "read_private")
+        private_data_allowed = True
     enforce_rate_limit(request, bucket="chat")
     request_id = getattr(request.state, "request_id", f"legacy-{int(time.time())}")
     _preview_spec = build_task_spec(
@@ -862,6 +1031,11 @@ async def chat(req: ChatRequest, request: Request):
     )
     if req.mode != "knowledge" and _preview_spec.use_rag:
         authorize_scope(request, "read_private")
+        private_data_allowed = True
+    if private_data_allowed:
+        # Persistent memory is host-private even for a general chat request.
+        # Prepare it after the scope check so chat-only devices never load it.
+        req.messages = _with_persistent_memory(req.messages)
     collection_state = _knowledge_collection_state(req.collections) if req.mode == "knowledge" else "ready"
 
     if collection_state == "empty":
@@ -896,18 +1070,28 @@ async def chat(req: ChatRequest, request: Request):
         }
 
     if req.stream:
+        stream = async_generate_stream(
+            req.messages,
+            req.collections,
+            model=req.model,
+            keep_alive=req.keep_alive,
+            aggressive_quant=req.aggressive_quant,
+            retrieval_mode=req.mode,
+            request_id=request_id,
+            thinking=_thinking_preference(req.think),
+            request=request,
+        )
+
+        async def scoped_stream():
+            token = _PRIVATE_METADATA_ALLOWED.set(private_data_allowed)
+            try:
+                async for event in stream:
+                    yield event
+            finally:
+                _PRIVATE_METADATA_ALLOWED.reset(token)
+
         return StreamingResponse(
-            async_generate_stream(
-                req.messages,
-                req.collections,
-                model=req.model,
-                keep_alive=req.keep_alive,
-                aggressive_quant=req.aggressive_quant,
-                retrieval_mode=req.mode,
-                request_id=request_id,
-                thinking=_thinking_preference(req.think),
-                request=request,
-            ),
+            scoped_stream(),
             media_type="text/event-stream",
             headers={
                 "Cache-Control": "no-cache",
@@ -921,7 +1105,11 @@ async def chat(req: ChatRequest, request: Request):
         content, sources, model, project = NO_INDEX_MSG, [], config.LLM_MODEL, None
     else:
         cancel_event = threading.Event()
-        task = asyncio.create_task(run_in_threadpool(_run_rag_nonstream, req, cancel_event))
+        metadata_token = _PRIVATE_METADATA_ALLOWED.set(private_data_allowed)
+        try:
+            task = asyncio.create_task(run_in_threadpool(_run_rag_nonstream, req, cancel_event))
+        finally:
+            _PRIVATE_METADATA_ALLOWED.reset(metadata_token)
         while not task.done():
             if state.lifecycle_stopping.is_set() or await request.is_disconnected():
                 cancel_event.set()
@@ -938,7 +1126,12 @@ async def chat(req: ChatRequest, request: Request):
         usage_nodes = nodes
         content, sources = str(response), sources_payload(nodes)
         finish_reason = _response_finish_reason(response)
+    public_project = project if private_data_allowed else None
     abstained = _is_rag_abstention(content, rag_requested=_preview_spec.use_rag)
+    # An abstention is not a citation. Do not present unrelated context chunks
+    # as evidence for a claim the model explicitly could not ground.
+    if abstained:
+        sources = []
     return {
         "id": f"chatcmpl-{request_id}",
         "object": "chat.completion",
@@ -953,7 +1146,7 @@ async def chat(req: ChatRequest, request: Request):
         ],
         "trinaxai": {
             "model": model,
-            "project": project,
+            "project": public_project,
             "sources": sources,
             "mode": _preview_spec.retrieval_mode,
             "rag_used": _preview_spec.use_rag and state.fusion_retriever is not None,

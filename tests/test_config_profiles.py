@@ -157,3 +157,44 @@ def test_legacy_small_environment_profile_is_migrated_to_8gb(tmp_path: Path) -> 
         check=True,
     )
     assert json.loads(result.stdout) == ["8gb", True, "qwen3.5:2b"]
+
+
+def test_detected_profile_drives_recommendations_and_explicit_override_caps_them(tmp_path: Path) -> None:
+    hardware = {
+        "cpu": {"model": "Test CPU", "cores": 8},
+        "ram": {"total_bytes": 8 * 10**9},
+        "gpu": {"vendor": "nvidia", "name": "Test GPU", "vram_bytes": 12 * 1024**3, "unified_memory": False},
+        "gpus": [{"vendor": "nvidia", "name": "Test GPU", "vram_bytes": 12 * 1024**3, "unified_memory": False}],
+    }
+    (tmp_path / "dotenv.py").write_text("def load_dotenv(*args, **kwargs):\n    return False\n", encoding="utf-8")
+    (tmp_path / "sitecustomize.py").write_text(
+        f"import trinaxai_core\ntrinaxai_core.detect_hardware = lambda: {hardware!r}\n",
+        encoding="utf-8",
+    )
+    base_env = {
+        **os.environ,
+        "PYTHONPATH": os.pathsep.join([str(tmp_path), str(ROOT)]),
+        "TRINAXAI_PERSIST_DIR": str(tmp_path / "storage"),
+    }
+    for name in ("TRINAXAI_MODEL_GENERAL", "TRINAXAI_MODEL_CODE", "TRINAXAI_MODEL_DEEP", "TRINAXAI_MODEL_FAST"):
+        base_env.pop(name, None)
+    command = [
+        sys.executable,
+        "-c",
+        "import json, config; print(json.dumps([config.DETECTED_PROFILE, config.TRINAXAI_PROFILE, config.MODEL_RECOMMENDATIONS['general']]))",
+    ]
+
+    detected_env = {**base_env}
+    detected_env.pop("TRINAXAI_PROFILE", None)
+    detected = subprocess.run(command, cwd=ROOT, env=detected_env, capture_output=True, text=True, check=True)
+    overridden = subprocess.run(
+        command,
+        cwd=ROOT,
+        env={**base_env, "TRINAXAI_PROFILE": "8gb"},
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
+    assert json.loads(detected.stdout) == ["32gb", "32gb", "qwen3.5:9b"]
+    assert json.loads(overridden.stdout) == ["32gb", "8gb", "qwen3.5:2b"]

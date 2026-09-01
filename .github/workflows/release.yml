@@ -44,7 +44,7 @@ jobs:
         run: |
           set -euo pipefail
           if [[ -z "$RELEASE_SIGNING_KEY_BASE64" || -z "$RELEASE_SIGNING_KEY_PASSPHRASE" || -z "$RELEASE_SIGNING_KEY_FINGERPRINT" ]]; then
-            echo "Release signing credentials are required for stable releases" >&2
+            echo "Release signing credentials are required for tagged releases" >&2
             exit 1
           fi
 
@@ -78,11 +78,13 @@ jobs:
         run: |
           set -euo pipefail
           version="${GITHUB_REF_NAME#v}"
+          export SOURCE_DATE_EPOCH="$(git show -s --format=%ct "${GITHUB_SHA}")"
           mkdir -p release
           git archive --format=tar --prefix="TrinaxAI-${version}/" "${GITHUB_SHA}" \
             | gzip -n > "release/TrinaxAI-${version}.tar.gz"
           git archive --format=zip --prefix="TrinaxAI-${version}/" "${GITHUB_SHA}" \
             -o "release/TrinaxAI-${version}.zip"
+          rm -rf build
           python -m pip wheel . --no-deps --no-build-isolation --wheel-dir release
           cp install.sh "release/TrinaxAI-${version}-installer.sh"
           cp install.ps1 "release/TrinaxAI-${version}-installer.ps1"
@@ -123,55 +125,90 @@ jobs:
               gpg --detach-sign --batch --yes --pinentry-mode loopback --passphrase-fd 0 \
                 --local-user "$signing_key" --armor \
                 --output "${asset}.asc" "$asset"
-            gpg --batch --verify "${asset}.asc" "$asset" >/dev/null
           done
 
-      - name: Publish simple release with assets
+      - name: Stage draft release with assets
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
           if gh release view "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            is_draft="$(gh release view "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" --json isDraft --jq .isDraft)"
+            if [[ "$is_draft" != "true" ]]; then
+              echo "Refusing to overwrite an already-published release" >&2
+              exit 1
+            fi
             gh release upload "${GITHUB_REF_NAME}" release/* \
               --repo "${GITHUB_REPOSITORY}" --clobber
           else
             gh release create "${GITHUB_REF_NAME}" release/* \
               --repo "${GITHUB_REPOSITORY}" \
+              --draft \
               --verify-tag \
               --title "TrinaxAI ${GITHUB_REF_NAME#v}" \
               --generate-notes
           fi
 
-      - name: Verify published release assets
+      - name: Verify exact draft release assets and signatures
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_SIGNING_KEY_FINGERPRINT: ${{ secrets.RELEASE_SIGNING_KEY_FINGERPRINT }}
         shell: bash
         run: |
           set -euo pipefail
-          assets="$(gh release view "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" --json assets --jq '.assets[].name')"
-          for expected in \
-            "TrinaxAI-${GITHUB_REF_NAME#v}.tar.gz" \
-            "TrinaxAI-${GITHUB_REF_NAME#v}.zip" \
-            "TrinaxAI-${GITHUB_REF_NAME#v}-installer.sh" \
-            "TrinaxAI-${GITHUB_REF_NAME#v}-installer.ps1" \
-            "SHA256SUMS" \
-            "TrinaxAI-release-signing-key.asc" \
-            "TrinaxAI-release-signing-key.fingerprint" \
-            "TrinaxAI-${GITHUB_REF_NAME#v}.tar.gz.asc" \
-            "TrinaxAI-${GITHUB_REF_NAME#v}.zip.asc" \
-            "trinaxai-${GITHUB_REF_NAME#v}-py3-none-any.whl.asc" \
-            "TrinaxAI-${GITHUB_REF_NAME#v}-installer.sh.asc" \
-            "TrinaxAI-${GITHUB_REF_NAME#v}-installer.ps1.asc" \
-            "TrinaxAI-release-signing-key.asc.asc" \
-            "TrinaxAI-release-signing-key.fingerprint.asc" \
-            "SHA256SUMS.asc"; do
-            if [[ $'\n'"$assets"$'\n' != *$'\n'"$expected"$'\n'* ]]; then
-              echo "Missing published release asset: $expected" >&2
+          expected="${RUNNER_TEMP}/release-expected.txt"
+          actual="${RUNNER_TEMP}/release-draft-actual.txt"
+          verify_dir="${RUNNER_TEMP}/release-draft-verify"
+          find release -mindepth 1 -maxdepth 1 -type f -printf '%f\n' | sort > "$expected"
+          is_draft="$(gh release view "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" --json isDraft --jq .isDraft)"
+          [[ "$is_draft" == "true" ]] || {
+            echo "Refusing to verify or publish a non-draft release candidate." >&2
+            exit 1
+          }
+          gh release view "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" --json assets --jq '.assets[].name' | sort > "$actual"
+          if ! diff -u "$expected" "$actual"; then
+            echo "Draft release assets differ from the signed local asset set." >&2
+            exit 1
+          fi
+          rm -rf "$verify_dir"
+          mkdir -p "$verify_dir"
+          gh release download "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" --dir "$verify_dir" --pattern '*'
+          find "$verify_dir" -mindepth 1 -maxdepth 1 -type f -printf '%f\n' | sort > "${RUNNER_TEMP}/release-draft-downloaded.txt"
+          if ! diff -u "$expected" "${RUNNER_TEMP}/release-draft-downloaded.txt"; then
+            echo "Downloaded draft assets differ from the staged asset set." >&2
+            exit 1
+          fi
+          cd "$verify_dir"
+          export GNUPGHOME="$RUNNER_TEMP/gnupg-release-draft"
+          install -d -m 700 "$GNUPGHOME"
+          gpg --batch --import TrinaxAI-release-signing-key.asc
+          actual_fingerprint="$(gpg --batch --with-colons --fingerprint | awk -F: '$1 == "fpr" { print $10; exit }')"
+          expected_fingerprint="$(printf '%s' "$RELEASE_SIGNING_KEY_FINGERPRINT" | tr -d '[:space:]')"
+          test -n "$actual_fingerprint"
+          test "${actual_fingerprint^^}" = "${expected_fingerprint^^}"
+          published_fingerprint="$(tr -d '[:space:]' < TrinaxAI-release-signing-key.fingerprint)"
+          test "${published_fingerprint^^}" = "${actual_fingerprint^^}"
+          sha256sum --check SHA256SUMS
+          while read -r _digest asset; do
+            if [[ -z "$asset" || ! -f "$asset" || ! -f "$asset.asc" ]]; then
+              echo "Draft release asset is missing its detached signature: $asset" >&2
               exit 1
             fi
-            curl --fail --silent --show-error --location --retry 3 --output /dev/null \
-              "https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}/${expected}"
+          done < SHA256SUMS
+          shopt -s nullglob
+          signatures=(*.asc)
+          if (( ${#signatures[@]} == 0 )); then
+            echo "Draft release contains no detached signatures" >&2
+            exit 1
+          fi
+          for signature in "${signatures[@]}"; do
+            asset="${signature%.asc}"
+            [[ -f "$asset" ]] || {
+              echo "Draft release contains an orphan signature: $signature" >&2
+              exit 1
+            }
+            gpg --batch --verify "$signature" "$asset" >/dev/null
           done
 
       - name: Log in to GitHub Container Registry
@@ -223,3 +260,60 @@ jobs:
               --certificate-identity-regexp "^https://github.com/${GITHUB_REPOSITORY}/.github/workflows/.*@refs/tags/${GITHUB_REF_NAME}$" \
               "$image" >/dev/null
           done <<< '${{ steps.container.outputs.tags }}'
+
+      - name: Publish verified release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release edit "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" --draft=false
+
+      - name: Verify published release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_SIGNING_KEY_FINGERPRINT: ${{ secrets.RELEASE_SIGNING_KEY_FINGERPRINT }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          verify_dir="${RUNNER_TEMP}/release-verify"
+          expected="${RUNNER_TEMP}/release-published-expected.txt"
+          actual="${RUNNER_TEMP}/release-published-actual.txt"
+          find release -mindepth 1 -maxdepth 1 -type f -printf '%f\n' | sort > "$expected"
+          mkdir -p "$verify_dir"
+          gh release download "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" --dir "$verify_dir"
+          find "$verify_dir" -mindepth 1 -maxdepth 1 -type f -printf '%f\n' | sort > "$actual"
+          if ! diff -u "$expected" "$actual"; then
+            echo "Published release assets differ from the signed local asset set." >&2
+            exit 1
+          fi
+          cd "$verify_dir"
+          export GNUPGHOME="$RUNNER_TEMP/gnupg-release-verify"
+          install -d -m 700 "$GNUPGHOME"
+          gpg --batch --import TrinaxAI-release-signing-key.asc
+          actual_fingerprint="$(gpg --batch --with-colons --fingerprint | awk -F: '$1 == "fpr" { print $10; exit }')"
+          expected_fingerprint="$(printf '%s' "$RELEASE_SIGNING_KEY_FINGERPRINT" | tr -d '[:space:]')"
+          test -n "$actual_fingerprint"
+          test "${actual_fingerprint^^}" = "${expected_fingerprint^^}"
+          test "$(tr -d '[:space:]' < TrinaxAI-release-signing-key.fingerprint | tr '[:lower:]' '[:upper:]')" = "${actual_fingerprint^^}"
+          sha256sum --check SHA256SUMS
+          while read -r _digest asset; do
+            [[ -n "$asset" && -f "$asset" && -f "$asset.asc" ]] || {
+              echo "Published release asset is missing its detached signature: $asset" >&2
+              exit 1
+            }
+          done < SHA256SUMS
+          shopt -s nullglob
+          signatures=(*.asc)
+          if (( ${#signatures[@]} == 0 )); then
+            echo "Published release contains no detached signatures" >&2
+            exit 1
+          fi
+          for signature in "${signatures[@]}"; do
+            asset="${signature%.asc}"
+            [[ -f "$asset" ]] || {
+              echo "Published release contains an orphan signature: $signature" >&2
+              exit 1
+            }
+            gpg --batch --verify "$signature" "$asset" >/dev/null
+          done

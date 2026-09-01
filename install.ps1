@@ -11,7 +11,7 @@ param(
   [string]$InstallDir = "",
   [string]$SourceUrl = "",
   [string]$SourceSha256 = "",
-  [ValidateSet("8gb", "16gb", "32gb", "64gb", "max", "ultra")]
+  [ValidateSet("8gb", "16gb", "32gb", "64gb")]
   [string]$Profile = "",
   [ValidateSet("en", "es")]
   [string]$Language = ""
@@ -20,21 +20,25 @@ param(
 <# 
 TrinaxAI - Windows one-command installer
 Run in PowerShell:
-  irm https://raw.githubusercontent.com/TrinaxCode/TrinaxAI/main/install.ps1 | iex
+  $ErrorActionPreference = "Stop"
+  $version = "1.2.0"; $base = "https://github.com/TrinaxCode/TrinaxAI/releases/download/v$version"
+  $installer = Join-Path $env:TEMP "TrinaxAI-$version-installer.ps1"; $manifest = Join-Path $env:TEMP "TrinaxAI-$version-SHA256SUMS"
+  Invoke-WebRequest -Uri "$base/TrinaxAI-$version-installer.ps1" -OutFile $installer; Invoke-WebRequest -Uri "$base/SHA256SUMS" -OutFile $manifest
+  $line = Get-Content -LiteralPath $manifest | Where-Object { $_ -match "\s\*?TrinaxAI-$version-installer\.ps1$" } | Select-Object -First 1; $expected = if ($line -match '^\s*([0-9a-fA-F]{64})\s+') { $Matches[1] } else { "" }
+  $actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $installer).Hash; if ($expected -notmatch '^[0-9a-fA-F]{64}$' -or $actual -ine $expected) { throw "Installer SHA-256 verification failed." }
+  Get-Content -Path $installer; & $installer
+# SHA-256 verification is mandatory; detached GPG verification is optional only
+# with an independently trusted fingerprint (same-release keys are not an
+# authenticity anchor; this repository has no pinned trust anchor yet).
 #>
 
 $ErrorActionPreference = "Stop"
 if ([string]::IsNullOrWhiteSpace($Language)) { $Language = if ($env:TRINAXAI_LANG -match '^es') { 'es' } elseif ((Get-Culture).Name -match '^es') { 'es' } else { 'en' } }
 function T($English, $Spanish) { if ($Language -eq 'es') { return $Spanish }; return $English }
-$ReleaseVersion = if (-not [string]::IsNullOrWhiteSpace($env:TRINAXAI_RELEASE_VERSION)) { $env:TRINAXAI_RELEASE_VERSION } else { "" }
-if ($ReleaseVersion -and $ReleaseVersion -notmatch '^[0-9]+\.[0-9]+\.[0-9]+$') { throw "Invalid TrinaxAI release version: $ReleaseVersion" }
-if ($ReleaseVersion) {
-  $DefaultSourceArchiveName = "TrinaxAI-$ReleaseVersion.zip"
-  $DefaultSourceArchiveUrl = "https://github.com/TrinaxCode/TrinaxAI/releases/download/v$ReleaseVersion/$DefaultSourceArchiveName"
-} else {
-  $DefaultSourceArchiveName = "TrinaxAI-main.zip"
-  $DefaultSourceArchiveUrl = "https://github.com/TrinaxCode/TrinaxAI/archive/refs/heads/main.zip"
-}
+$ReleaseVersion = if (-not [string]::IsNullOrWhiteSpace($env:TRINAXAI_RELEASE_VERSION)) { $env:TRINAXAI_RELEASE_VERSION } else { "1.2.0" }
+if ($ReleaseVersion -notmatch '^[0-9]+\.[0-9]+\.[0-9]+$') { throw "Invalid TrinaxAI release version: $ReleaseVersion" }
+$DefaultSourceArchiveName = "TrinaxAI-$ReleaseVersion.zip"
+$DefaultSourceArchiveUrl = "https://github.com/TrinaxCode/TrinaxAI/releases/download/v$ReleaseVersion/$DefaultSourceArchiveName"
 
 function Write-Step($Text) { Write-Host "`n=== $Text ===`n" -ForegroundColor Blue }
 function Write-Ok($Text) { Write-Host "  [OK] $Text" -ForegroundColor Green }
@@ -197,6 +201,43 @@ function Invoke-NativeChecked([string]$FilePath, [string[]]$Arguments, [string]$
   $ExitCode = $LASTEXITCODE
   if ($ExitCode -ne 0) { throw "$Label failed with exit code $ExitCode." }
 }
+function Get-HardwareRecommendations($PythonCommand, [string]$RequestedProfile) {
+  $Code = @'
+import json
+import sys
+from trinaxai_core import detect_hardware, model_recommendations, select_profile
+hardware = detect_hardware()
+detected = select_profile(hardware)
+requested = sys.argv[1].strip()
+profile = requested if requested in {"8gb", "16gb", "32gb", "64gb"} else detected
+recommendations = model_recommendations(hardware, profile=profile)
+large = profile in {"32gb", "64gb"}
+print(json.dumps({
+    "detected_profile": detected,
+    "profile": profile,
+    "ram_gb": round(float(hardware.get("ram", {}).get("total_bytes") or 0) / 1_000_000_000),
+    "general": recommendations["general"],
+    "code": recommendations["code"],
+    "deep": recommendations["deep"],
+    "fast": recommendations["fast"],
+    "embed_preset": "quality" if large else "balanced",
+    "embed": "qwen3-embedding:4b" if large else "qwen3-embedding:0.6b",
+    "embed_dims": 2560 if large else 1024,
+    "embed_batch": 16 if profile == "64gb" else 8 if profile != "8gb" else 1,
+    "embed_keep_alive": "30m" if large else "0s" if profile == "8gb" else "15m",
+}))
+'@
+  $InvocationArgs = @($PythonCommand.Args) + @("-c", $Code, $RequestedProfile)
+  $Output = & $PythonCommand.Exe @InvocationArgs 2>$null
+  if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace(($Output -join ""))) {
+    throw "Could not detect hardware or calculate model recommendations."
+  }
+  try {
+    return (($Output -join "`n") | ConvertFrom-Json)
+  } catch {
+    throw "Could not parse hardware recommendations: $($_.Exception.Message)"
+  }
+}
 function Get-ValidatedRemoteArchiveUrl([string]$Url) {
   $Parsed = $null
   if (-not [Uri]::TryCreate($Url, [UriKind]::Absolute, [ref]$Parsed)) {
@@ -254,6 +295,7 @@ function Install-RemoteRepository([string]$Target) {
   if ($SourceUrl) { $RequestedSourceUrl = $SourceUrl }
   $SourceArchiveUrl = Get-ValidatedRemoteArchiveUrl $RequestedSourceUrl
   $ExpectedChecksum = if ($SourceSha256) { $SourceSha256 } elseif ($env:TRINAXAI_SOURCE_SHA256) { $env:TRINAXAI_SOURCE_SHA256 } else { $null }
+  if ($ExpectedChecksum) { $ExpectedChecksum = $ExpectedChecksum.Trim() }
   if (-not $ExpectedChecksum -and $RequestedSourceUrl -ne $DefaultSourceArchiveUrl) {
     throw "TRINAXAI_SOURCE_URL or -SourceUrl requires a matching SHA-256 checksum."
   }
@@ -440,6 +482,104 @@ function Ensure-OllamaRunning {
   }
   return $false
 }
+function Test-OllamaModel([string]$OllamaExe, [string]$Model) {
+  try {
+    $Rows = @(& $OllamaExe list 2>$null)
+    if ($LASTEXITCODE -ne 0) { return $false }
+    $Pattern = "^\s*$([regex]::Escape($Model))(\s|$)"
+    return [bool]($Rows | Where-Object { $_ -match $Pattern })
+  } catch {
+    return $false
+  }
+}
+function Get-EnvFileValue([string]$Key) {
+  $Path = Join-Path $Repo ".env"
+  if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return "" }
+  foreach ($Line in Get-Content -LiteralPath $Path) {
+    if ($Line -match "^\s*$([regex]::Escape($Key))=(.*)$") {
+      return $Matches[1].Trim().Trim('"').Trim("'")
+    }
+  }
+  return ""
+}
+function Add-ConfiguredModel([System.Collections.Generic.List[string]]$List, [string]$Model) {
+  if (-not [string]::IsNullOrWhiteSpace($Model) -and -not $List.Contains($Model)) {
+    $List.Add($Model) | Out-Null
+  }
+}
+function Get-ConfiguredModels {
+  $List = New-Object System.Collections.Generic.List[string]
+  Add-ConfiguredModel $List (Get-EnvFileValue "TRINAXAI_MODEL_CODE")
+  Add-ConfiguredModel $List (Get-EnvFileValue "TRINAXAI_MODEL_DEEP")
+  Add-ConfiguredModel $List (Get-EnvFileValue "TRINAXAI_MODEL_GENERAL")
+  Add-ConfiguredModel $List (Get-EnvFileValue "TRINAXAI_MODEL_FAST")
+  Add-ConfiguredModel $List (Get-EnvFileValue "TRINAXAI_EMBED")
+  if ($List.Count -eq 0) {
+    foreach ($Model in @("qwen3.5:2b", "qwen3.5:4b", "qwen3-embedding:0.6b", "qwen3-embedding:4b")) {
+      Add-ConfiguredModel $List $Model
+    }
+  }
+  return $List
+}
+function Invoke-LocalWebRequest([string]$Uri, [string]$Method = "GET", [string]$Body = "") {
+  $Params = @{
+    Uri = $Uri
+    Method = $Method
+    UseBasicParsing = $true
+    TimeoutSec = 5
+    ErrorAction = "Stop"
+  }
+  if ($Body) {
+    $Params.Body = $Body
+    $Params.ContentType = "application/json"
+  }
+  $Command = Get-Command Invoke-WebRequest
+  if ($Command.Parameters.ContainsKey("SkipCertificateCheck")) {
+    $Params.SkipCertificateCheck = $true
+    return Invoke-WebRequest @Params
+  }
+  $OriginalCallback = [Net.ServicePointManager]::ServerCertificateValidationCallback
+  try {
+    [Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }
+    return Invoke-WebRequest @Params
+  } finally {
+    [Net.ServicePointManager]::ServerCertificateValidationCallback = $OriginalCallback
+  }
+}
+function Wait-LocalUrl([int]$Port, [string]$Path = "/") {
+  foreach ($Scheme in @("https", "http")) {
+    $Uri = "$Scheme://127.0.0.1:$Port$Path"
+    for ($i = 0; $i -lt 20; $i++) {
+      try {
+        Invoke-LocalWebRequest $Uri | Out-Null
+        return "$Scheme://127.0.0.1:$Port"
+      } catch {
+        Start-Sleep -Seconds 1
+      }
+    }
+  }
+  return ""
+}
+function Assert-RuntimeReady {
+  $RagPortText = if ($env:TRINAXAI_PORT) { $env:TRINAXAI_PORT } else { Get-EnvFileValue "TRINAXAI_PORT" }
+  $PwaPortText = if ($env:TRINAXAI_PWA_PORT) { $env:TRINAXAI_PWA_PORT } else { Get-EnvFileValue "TRINAXAI_PWA_PORT" }
+  $RagPort = if ($RagPortText) { [int]$RagPortText } else { 3333 }
+  $PwaPort = if ($PwaPortText) { [int]$PwaPortText } else { 3334 }
+  $RagBase = Wait-LocalUrl $RagPort "/health"
+  if (-not $RagBase) { throw "TrinaxAI backend is not ready on port $RagPort." }
+  $PwaBase = Wait-LocalUrl $PwaPort
+  if (-not $PwaBase) { throw "TrinaxAI PWA is not ready on port $PwaPort." }
+  $Body = @{ messages = @(@{ role = "user"; content = "Reply with the single word OK." }); stream = $false; mode = "model"; think = $false } | ConvertTo-Json -Compress
+  try {
+    $Response = Invoke-LocalWebRequest "$RagBase/v1/chat/completions" "POST" $Body
+    $Payload = $Response.Content | ConvertFrom-Json
+    $Content = $Payload.choices[0].message.content
+    if ([string]::IsNullOrWhiteSpace([string]$Content)) { throw "empty response" }
+  } catch {
+    throw "TrinaxAI smoke inference failed: $($_.Exception.Message)"
+  }
+  Write-Ok "Backend, PWA, and smoke inference are ready"
+}
 function Ensure-TrinaxAICertificate($Repo, $LanIp) {
   $CertDir = Join-Path $Repo "chat-pwa\certs"
   New-Item -ItemType Directory -Force -Path $CertDir | Out-Null
@@ -583,8 +723,14 @@ if ($LocalRepo -and $InstallDirWasProvided) {
   $LocalRepoIsTarget = ([IO.Path]::GetFullPath($LocalRepo) -eq [IO.Path]::GetFullPath($InstallDir))
 }
 
-# Support the remote flow after downloading the script to a local file:
-#   $p = Join-Path $env:TEMP "TrinaxAI-1.2.0-installer.ps1"; Invoke-WebRequest -Uri "https://github.com/TrinaxCode/TrinaxAI/releases/download/v1.2.0/TrinaxAI-1.2.0-installer.ps1" -OutFile $p; Get-Content $p; & $p
+# Support the remote flow after downloading the script to a local file. Verify
+# the exact release asset before executing it:
+#   $version = "1.2.0"; $base = "https://github.com/TrinaxCode/TrinaxAI/releases/download/v$version"
+#   $p = Join-Path $env:TEMP "TrinaxAI-$version-installer.ps1"; $m = Join-Path $env:TEMP "TrinaxAI-$version-SHA256SUMS"
+#   Invoke-WebRequest -Uri "$base/TrinaxAI-$version-installer.ps1" -OutFile $p; Invoke-WebRequest -Uri "$base/SHA256SUMS" -OutFile $m
+#   $line = Get-Content -LiteralPath $m | Where-Object { $_ -match "\s\*?TrinaxAI-$version-installer\.ps1$" } | Select-Object -First 1; $expected = if ($line -match '^\s*([0-9a-fA-F]{64})\s+') { $Matches[1] } else { "" }
+#   $actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $p).Hash; if ($expected -notmatch '^[0-9a-fA-F]{64}$' -or $actual -ine $expected) { throw "Installer SHA-256 verification failed." }
+#   Get-Content $p; & $p
 if (
   -not $LocalRepo -or
   -not (Test-Path (Join-Path $LocalRepo "pyproject.toml")) -or
@@ -618,8 +764,45 @@ if (
 $Repo = $LocalRepo
 Set-Location $Repo
 
-$RamGb = [math]::Round((Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory / 1GB)
-$AutoProfile = if ($RamGb -ge 64) { "64gb" } elseif ($RamGb -ge 32) { "32gb" } elseif ($RamGb -le 8) { "8gb" } else { "16gb" }
+Write-Step "1/6 Dependencies"
+Update-ProcessPath
+if (Test-Cmd winget) {
+  $PythonCommand = Get-PythonCommand
+  if ($null -eq $PythonCommand) {
+    Write-Host "  Installing Python.Python.3.12 with winget..."
+    winget install --id Python.Python.3.12 --silent --accept-package-agreements --accept-source-agreements
+    if ($LASTEXITCODE -ne 0) {
+      Write-Warn "winget could not install Python automatically."
+      Write-Warn "Install Python 3.12 from https://python.org, reopen PowerShell, and re-run install.ps1."
+      exit 1
+    }
+    Update-ProcessPath
+    $PythonCommand = Get-PythonCommand
+  }
+} else {
+  Write-Warn "winget was not found. Automatic dependency installation is not available on this Windows image."
+  $PythonCommand = Get-PythonCommand
+}
+if ($null -eq $PythonCommand) {
+  Write-Warn "Python 3.10+ was not found or only the Microsoft Store alias is available."
+  Write-Warn "Install Python from winget/python.org, reopen PowerShell, and re-run install.ps1."
+  Write-Warn "Recommended command:"
+  Write-Warn "  winget install --id Python.Python.3.12 --source winget"
+  exit 1
+}
+$PythonExe = Invoke-Python -PythonCommand $PythonCommand -PythonArgs @("-c", "import sys; print(sys.executable)")
+Write-Ok "Python found: $($PythonExe | Select-Object -First 1)"
+Require-Command "node" "OpenJS.NodeJS.LTS" "Node.js" "https://nodejs.org"
+$NodeMajor = [int](& node -p "process.versions.node.split('.')[0]")
+if ($NodeMajor -lt 22) {
+  Write-Warn "Node.js 22 or newer is required. Install an active Node.js LTS release and re-run the script."
+  exit 1
+}
+Require-Ollama
+
+$Hardware = Get-HardwareRecommendations -PythonCommand $PythonCommand -RequestedProfile ""
+$RamGb = [int]$Hardware.ram_gb
+$AutoProfile = [string]$Hardware.detected_profile
 if (-not $Profile) { $Profile = if ($env:TRINAXAI_PROFILE) { $env:TRINAXAI_PROFILE } else { $AutoProfile } }
 $Profile = Normalize-Profile $Profile $AutoProfile
 
@@ -651,49 +834,18 @@ if ((-not $NonInteractive) -and $Mode -match "^[Aa]") {
   Write-Ok "Automatic setup selected: profile=$Profile"
 }
 
-$ModelGeneral = "qwen3.5:4b"
-$ModelCode = "qwen3.5:4b"
-$ModelDeep = "qwen3.5:4b"
-$ModelFast = "qwen3.5:2b"
-$EmbedPreset = "balanced"
-$EmbedModel = "qwen3-embedding:0.6b"
-$EmbedDims = "1024"
-$EmbedBatch = "8"
-$EmbedKeepAlive = "15m"
-$VisionModel = "qwen3.5:4b"
-if ($Profile -eq "8gb") {
-  $ModelGeneral = "qwen3.5:2b"
-  $ModelCode = "qwen3.5:2b"
-  $ModelDeep = "qwen3.5:2b"
-  $ModelFast = "qwen3.5:2b"
-  $EmbedPreset = "balanced"
-  $EmbedModel = "qwen3-embedding:0.6b"
-  $EmbedDims = "1024"
-  $EmbedBatch = "1"
-  $EmbedKeepAlive = "0s"
-  $VisionModel = "qwen3.5:2b"
-} elseif ($Profile -eq "32gb") {
-  $ModelGeneral = "qwen3.5:9b"
-  $ModelCode = "qwen3.5:9b"
-  $ModelDeep = "qwen3.5:9b"
-  $ModelFast = "qwen3.5:4b"
-  $VisionModel = "qwen3.5:9b"
-  $EmbedPreset = "quality"
-  $EmbedModel = "qwen3-embedding:4b"
-  $EmbedDims = "2560"
-  $EmbedKeepAlive = "30m"
-} elseif ($Profile -eq "64gb") {
-  $ModelGeneral = "qwen3.5:35b"
-  $ModelCode = "qwen3-coder:30b"
-  $ModelDeep = "qwen3.5:35b"
-  $ModelFast = "qwen3.5:4b"
-  $VisionModel = "qwen3.5:35b"
-   $EmbedPreset = "quality"
-   $EmbedModel = "qwen3-embedding:4b"
-   $EmbedDims = "2560"
-  $EmbedBatch = "16"
-  $EmbedKeepAlive = "30m"
-}
+$Hardware = Get-HardwareRecommendations -PythonCommand $PythonCommand -RequestedProfile $Profile
+$Profile = [string]$Hardware.profile
+$ModelGeneral = [string]$Hardware.general
+$ModelCode = [string]$Hardware.code
+$ModelDeep = [string]$Hardware.deep
+$ModelFast = [string]$Hardware.fast
+$EmbedPreset = [string]$Hardware.embed_preset
+$EmbedModel = [string]$Hardware.embed
+$EmbedDims = [string]$Hardware.embed_dims
+$EmbedBatch = [string]$Hardware.embed_batch
+$EmbedKeepAlive = [string]$Hardware.embed_keep_alive
+$VisionModel = $ModelGeneral
 
 Write-Host ""
 Write-Host "Model roles TrinaxAI needs:" -ForegroundColor Cyan
@@ -770,43 +922,6 @@ Merge-EnvFileDefaults -Path ".env" -Defaults $EnvLines
 Set-EnvFileValue ".env" "TRINAXAI_ALLOW_LAN_SYSTEM" "0"
 Write-Ok ".env written with profile=$Profile"
 
-Write-Step "2/6 Dependencies"
-Update-ProcessPath
-if (Test-Cmd winget) {
-  $PythonCommand = Get-PythonCommand
-  if ($null -eq $PythonCommand) {
-    Write-Host "  Installing Python.Python.3.12 with winget..."
-    winget install --id Python.Python.3.12 --silent --accept-package-agreements --accept-source-agreements
-    if ($LASTEXITCODE -ne 0) {
-      Write-Warn "winget could not install Python automatically."
-      Write-Warn "Install Python 3.12 from https://python.org, reopen PowerShell, and re-run install.ps1."
-      exit 1
-    }
-    Update-ProcessPath
-    $PythonCommand = Get-PythonCommand
-  }
-} else {
-  Write-Warn "winget was not found. Automatic dependency installation is not available on this Windows image."
-  $PythonCommand = Get-PythonCommand
-}
-if ($null -eq $PythonCommand) {
-  Write-Warn "Python 3.10+ was not found or only the Microsoft Store alias is available."
-  Write-Warn "Install Python from winget/python.org, reopen PowerShell, and re-run this script."
-  Write-Warn "Recommended command:"
-  Write-Warn "  winget install --id Python.Python.3.12 --source winget"
-  exit 1
-} else {
-  $PythonExe = Invoke-Python -PythonCommand $PythonCommand -PythonArgs @("-c", "import sys; print(sys.executable)")
-  Write-Ok "Python found: $($PythonExe | Select-Object -First 1)"
-}
-Require-Command "node" "OpenJS.NodeJS.LTS" "Node.js" "https://nodejs.org"
-$NodeMajor = [int](& node -p "process.versions.node.split('.')[0]")
-if ($NodeMajor -lt 22) {
-  Write-Warn "Node.js 22 or newer is required. Install an active Node.js LTS release and re-run this script."
-  exit 1
-}
-Require-Ollama
-
 Ensure-TrinaxAICertificate -Repo $Repo -LanIp $LanIp
 Sync-RagTransportFromCertificate -Repo $Repo
 Enable-TrinaxAIFirewallRules
@@ -843,65 +958,72 @@ Write-Ok "TrinaxAI CLI installed: .\.venv\Scripts\trinaxai.exe"
 Write-Ok "CLI path configured for this user: $VenvScripts"
 
 Write-Step "4/6 PWA frontend"
-if ((Test-Cmd npm) -and (Test-Path "chat-pwa")) {
-  Push-Location "chat-pwa"
-  try {
-    Invoke-NativeChecked "npm" @("ci") "npm ci"
-    Invoke-NativeChecked "npm" @("run", "build") "npm run build"
-  } finally {
-    Pop-Location
-  }
-  Write-Ok "PWA ready"
+if (-not (Test-Path "chat-pwa\package.json") -or -not (Test-Path "chat-pwa\package-lock.json")) {
+  throw "chat-pwa/package.json and package-lock.json are required for the PWA."
 }
+if (-not (Test-Cmd npm)) { throw "npm is required to build the PWA." }
+Push-Location "chat-pwa"
+try {
+  Invoke-NativeChecked "npm" @("ci") "npm ci"
+  Invoke-NativeChecked "npm" @("run", "build") "npm run build"
+} finally {
+  Pop-Location
+}
+if (-not (Test-Path "chat-pwa\dist\index.html")) { throw "PWA build completed without chat-pwa/dist/index.html." }
+Write-Ok "PWA ready"
 
 Write-Step "5/6 AI models"
-$Models = @($ModelCode, $ModelDeep, $ModelGeneral, $ModelFast, $EmbedModel) |
-  Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
-  Select-Object -Unique
+$Models = @(Get-ConfiguredModels)
 Write-Host "  $(T 'General chat' 'Chat general'): $ModelGeneral"
 Write-Host "  $(T 'Code' 'Código'):         $ModelCode"
 Write-Host "  $(T 'Deep' 'Profundo'):       $ModelDeep"
 Write-Host "  $(T 'Embeddings' 'Embeddings'):   $EmbedModel"
 Write-Host "  $(T 'Vision' 'Visión'):       $VisionModel ($(T 'downloads on first image analysis' 'se descarga al analizar la primera imagen'))"
 if (-not $NonInteractive) {
-  $SkipModels = Read-Host (T "Download these Ollama models now? Choose N if you already have your own. [Y/n]" "¿Descargar estos modelos Ollama ahora? Elige N si ya tienes los tuyos. [Y/n]")
+  $SkipModels = Read-Host (T "Download these configured Ollama models now? Choose N only if they are already installed. [Y/n]" "¿Descargar ahora estos modelos Ollama configurados? Elige N solo si ya están instalados. [Y/n]")
   if ($SkipModels -match "^[Nn]") {
     $NoModels = $true
-    Write-Warn "Model download skipped. The configured model names were still saved to .env."
+    Write-Warn "Model downloads skipped; every configured model must already be installed."
   }
 }
-if (-not $NoModels -and (Ensure-OllamaRunning)) {
-  $OllamaExe = Get-OllamaCommand
+if (-not (Ensure-OllamaRunning)) { throw "Ollama API is not ready." }
+$OllamaExe = Get-OllamaCommand
+if (-not $OllamaExe) { throw "Ollama executable is not available." }
+if (-not $NoModels) {
   foreach ($Model in $Models) {
     Write-Host "  Pulling $Model..."
-    & $OllamaExe pull $Model
+    Invoke-NativeChecked $OllamaExe @("pull", $Model) "ollama pull $Model"
   }
-  Write-Host "  Vision model $VisionModel will download on first image analysis."
-  Write-Ok "Models ready"
-} elseif ($NoModels) {
-  Write-Warn "Model download skipped by flag."
 } else {
-  Write-Warn "Ollama did not start; skipping model downloads. TrinaxAI is installed, but models must be pulled later."
+  Write-Warn "Model download skipped by flag; installed models will still be verified."
 }
+foreach ($Model in $Models) {
+  if (-not (Test-OllamaModel $OllamaExe $Model)) { throw "Required Ollama model is not ready: $Model" }
+}
+Write-Host "  Vision model $VisionModel will download on first image analysis."
+Write-Ok "Models ready"
 
 Write-Step "6/6 Start"
 if (-not $NoStart) {
   if (Read-YesNo (T "Start TrinaxAI now after install?" "¿Iniciar TrinaxAI ahora al terminar?" ) $true) {
-    & ".\.venv\Scripts\python.exe" "service_manager.py" "start" "--base-dir" $Repo
+    Invoke-NativeChecked ".\.venv\Scripts\python.exe" @("service_manager.py", "start", "--base-dir", $Repo) "TrinaxAI services"
     Write-Ok "TrinaxAI started"
+    Assert-RuntimeReady
   } else {
     $NoStart = $true
     Write-Warn "Start skipped. Run .\.venv\Scripts\trinaxai.exe start when ready."
   }
 }
-if (-not $NoAutostart) {
+if (-not $NoStart -and -not $NoAutostart) {
   if (-not (Read-YesNo (T "Start TrinaxAI automatically when Windows starts?" "¿Iniciar TrinaxAI automáticamente al iniciar Windows?" ) $true)) {
     $NoAutostart = $true
   }
 }
-if (-not $NoAutostart) {
+if (-not $NoStart -and -not $NoAutostart) {
   & ".\.venv\Scripts\python.exe" "service_manager.py" "enable-autostart" "--base-dir" $Repo
   Write-Ok "Auto-start enabled"
+} elseif ($NoStart) {
+  Write-Warn (T "Auto-start skipped because TrinaxAI was not started. Enable it after starting TrinaxAI." "El inicio automático se omitió porque TrinaxAI no se inició. Actívalo después de iniciar TrinaxAI.")
 }
 if (-not $NoAutoUpdate -and (Test-Path "scripts\auto_update.py")) {
   Write-Host "  Enabling safe weekly updates from GitHub..." -ForegroundColor Cyan
@@ -909,14 +1031,20 @@ if (-not $NoAutoUpdate -and (Test-Path "scripts\auto_update.py")) {
   if ($LASTEXITCODE -eq 0) { Write-Ok "Automatic updates enabled (weekly)" }
   else { Write-Warn "Could not enable the weekly update task." }
 }
-Write-Host "Then open:" -ForegroundColor Cyan
-Write-Host "  https://localhost:3334"
+if ($NoStart) {
+  Write-Warn (T "Installation prepared; TrinaxAI is not running." "Instalación preparada; TrinaxAI no está en ejecución.")
+  Write-Host (T "Start it with:" "Inícialo con:") -ForegroundColor Cyan
+  Write-Host "  trinaxai start"
+} else {
+  Write-Ok (T "TrinaxAI is ready" "TrinaxAI está listo")
+  Write-Host (T "Then open:" "Después abre:") -ForegroundColor Cyan
+  Write-Host "  https://localhost:3334"
+  if ($LanIp) { Write-Host "  https://$($LanIp):3334" }
+}
 Write-Host "CLI:" -ForegroundColor Cyan
 Write-Host "  trinaxai"
 Write-Host "Updates:" -ForegroundColor Cyan
 Write-Host "  Automatic check every week"
-if ($LanIp) { Write-Host "  https://$($LanIp):3334" }
 Write-Host ""
 Write-Host "  Sensitive system administration remains localhost-only." -ForegroundColor Yellow
 Write-Host ""
-Write-Ok "TrinaxAI setup finished"

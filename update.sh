@@ -141,7 +141,7 @@ EOF
   exit "${1:-0}"
 }
 
-INTERACTIVE="${TRINAXAI_INTERACTIVE:-0}"
+INTERACTIVE="${TRINAXAI_INTERACTIVE:-1}"
 NONINTERACTIVE="${TRINAXAI_NONINTERACTIVE:-0}"
 if [ "$NONINTERACTIVE" = "1" ]; then
   INTERACTIVE=0
@@ -263,6 +263,27 @@ ask_yes_no() {
 ROOT="${TRINAXAI_UPDATE_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
 cd "$ROOT"
 
+RELEASE_VERSION="${TRINAXAI_RELEASE_VERSION:-}"
+if [ -n "$RELEASE_VERSION" ] && [[ ! "$RELEASE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  echo "[!] TRINAXAI_RELEASE_VERSION must be a semantic version." >&2
+  exit 2
+fi
+SOURCE_UPDATE_URL="${TRINAXAI_UPDATE_SOURCE_URL:-}"
+SOURCE_UPDATE_SHA256="${TRINAXAI_UPDATE_SOURCE_SHA256:-${TRINAXAI_SOURCE_SHA256:-}}"
+SOURCE_UPDATE_SHA256="$(printf '%s' "$SOURCE_UPDATE_SHA256" | tr -d '[:space:]')"
+if [ -n "$SOURCE_UPDATE_SHA256" ] && [[ ! "$SOURCE_UPDATE_SHA256" =~ ^[0-9a-fA-F]{64}$ ]]; then
+  echo "[!] SOURCE_UPDATE_SHA256 must be a 64-character SHA-256 digest." >&2
+  exit 2
+fi
+if [ -z "$SOURCE_UPDATE_URL" ] && [ -n "$RELEASE_VERSION" ]; then
+  SOURCE_UPDATE_URL="https://github.com/TrinaxCode/TrinaxAI/releases/download/v${RELEASE_VERSION}/TrinaxAI-${RELEASE_VERSION}.tar.gz"
+fi
+if [ -n "$SOURCE_UPDATE_URL" ] && [[ ! "$SOURCE_UPDATE_URL" =~ ^https://github\.com/TrinaxCode/TrinaxAI/releases/download/v[0-9]+\.[0-9]+\.[0-9]+/TrinaxAI-[0-9]+\.[0-9]+\.[0-9]+\.tar\.gz$ ]] &&
+  [ -z "$SOURCE_UPDATE_SHA256" ]; then
+  echo "[!] A SHA-256 checksum is required for a custom source archive URL." >&2
+  exit 2
+fi
+
 if [ "$DRY_RUN" = "1" ]; then
   echo -e "${YELLOW}${BOLD}$(tr_text 'DRY-RUN: nothing will be downloaded, installed, or changed.')${NC}"
   print_step "Source Code"
@@ -376,7 +397,7 @@ configured_models() {
   add_unique_model "$(env_value TRINAXAI_MODEL_FAST)"
   add_unique_model "$(env_value TRINAXAI_EMBED)"
   if [ "${#MODELS[@]}" -eq 0 ]; then
-    MODELS=(qwen3.5:2b qwen3.5:4b qwen3-embedding:0.6b)
+    MODELS=(qwen3.5:2b qwen3.5:4b qwen3-embedding:0.6b qwen3-embedding:4b)
   fi
 }
 
@@ -390,6 +411,72 @@ ensure_ollama_running() {
     ollama list >/dev/null 2>&1 && return 0
   done
   return 1
+}
+
+ollama_model_installed() {
+  local model="$1"
+  ollama list 2>/dev/null | awk -v model="$model" 'NR > 1 && $1 == model { found=1 } END { exit(found ? 0 : 1) }'
+}
+
+verify_models() {
+  local model
+  for model in "${MODELS[@]}"; do
+    if ! ollama_model_installed "$model"; then
+      echo "[!] Required Ollama model is not ready: $model" >&2
+      return 1
+    fi
+  done
+}
+
+wait_for_local_url() {
+  local url="$1"
+  for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
+    if curl -kfsS --connect-timeout 2 --max-time 5 "$url" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 1
+  done
+  return 1
+}
+
+smoke_inference() {
+  local response
+  response="$(curl -kfsS --connect-timeout 3 --max-time 300 \
+    -H 'Content-Type: application/json' \
+    -d '{"messages":[{"role":"user","content":"Reply with the single word OK."}],"stream":false,"mode":"model","think":false}' \
+    "$RAG_BASE_URL/v1/chat/completions")" || return 1
+  if ! printf '%s' "$response" | "${PYTHON_CMD[@]}" -c \
+    'import json, sys; data = json.load(sys.stdin); content = data["choices"][0]["message"]["content"]; raise SystemExit(0 if isinstance(content, str) and content.strip() else 1)'; then
+    return 1
+  fi
+}
+
+assert_runtime_ready() {
+  local rag_port pwa_port scheme rag_url="" pwa_url=""
+  rag_port="${TRINAXAI_PORT:-$(env_value TRINAXAI_PORT)}"
+  rag_port="${rag_port:-3333}"
+  pwa_port="${TRINAXAI_PWA_PORT:-$(env_value TRINAXAI_PWA_PORT)}"
+  pwa_port="${pwa_port:-3334}"
+  for scheme in https http; do
+    if wait_for_local_url "$scheme://127.0.0.1:$rag_port/health"; then
+      rag_url="$scheme://127.0.0.1:$rag_port"
+      break
+    fi
+  done
+  [ -n "$rag_url" ] || { echo "[!] TrinaxAI backend is not ready on port $rag_port." >&2; return 1; }
+  for scheme in https http; do
+    if wait_for_local_url "$scheme://127.0.0.1:$pwa_port/"; then
+      pwa_url="$scheme://127.0.0.1:$pwa_port"
+      break
+    fi
+  done
+  [ -n "$pwa_url" ] || { echo "[!] TrinaxAI PWA is not ready on port $pwa_port." >&2; return 1; }
+  RAG_BASE_URL="$rag_url"
+  if ! smoke_inference; then
+    echo "[!] TrinaxAI smoke inference failed." >&2
+    return 1
+  fi
+  print_ok "Backend, PWA, and smoke inference are ready"
 }
 
 repair_ollama() {
@@ -442,8 +529,11 @@ run_service_manager() {
 }
 
 sync_repository() {
+  local source_args=("$ROOT/scripts/source_update.py" update --root "$ROOT")
+  [ -z "$SOURCE_UPDATE_URL" ] || source_args+=(--url "$SOURCE_UPDATE_URL")
+  [ -z "$SOURCE_UPDATE_SHA256" ] || source_args+=(--sha256 "$SOURCE_UPDATE_SHA256")
   print_info "Downloading the latest TrinaxAI source package from GitHub…"
-  "${PYTHON_CMD[@]}" "$ROOT/scripts/source_update.py" update --root "$ROOT"
+  "${PYTHON_CMD[@]}" "${source_args[@]}"
   ROLLBACK_ACTIVE=1
   print_ok "Source package updated"
 }
@@ -561,7 +651,10 @@ if [ -f "$ROOT/scripts/generate_continue_config.py" ]; then
   print_ok "Continue configuration regenerated"
 fi
 
-if [ -d "chat-pwa" ] && [ "${#NPM_CMD[@]}" -gt 0 ]; then
+if [ ! -d "chat-pwa" ] || [ ! -f "chat-pwa/package.json" ] || [ ! -f "chat-pwa/package-lock.json" ]; then
+  echo "[!] chat-pwa/package.json and package-lock.json are required for the PWA." >&2
+  exit 1
+elif [ "${#NPM_CMD[@]}" -gt 0 ]; then
   print_step "Web App"
   if ! (cd chat-pwa && "${NPM_CMD[@]}" ci && "${NPM_CMD[@]}" run build); then
     if is_windows; then
@@ -574,9 +667,11 @@ EOF
     fi
     exit 1
   fi
+  [ -f "chat-pwa/dist/index.html" ] || { echo "[!] PWA build completed without chat-pwa/dist/index.html." >&2; exit 1; }
   print_ok "PWA dependencies installed and production build created"
-elif [ -d "chat-pwa" ]; then
-  echo "[!] npm not found; skipped PWA rebuild."
+else
+  echo "[!] npm not found; cannot rebuild the PWA." >&2
+  exit 1
 fi
 
 if [ "$PULL_MODELS" = "1" ]; then
@@ -587,11 +682,20 @@ if [ "$PULL_MODELS" = "1" ]; then
   if ensure_ollama_running; then
     for model in "${MODELS[@]}"; do
       echo "Pulling $model..."
-      ollama pull "$model" || echo "[!] Failed to pull $model"
+      if ! ollama pull "$model" || ! ollama_model_installed "$model"; then
+        echo "[!] Failed to prepare required model $model" >&2
+        exit 1
+      fi
     done
   else
-    echo "[!] Ollama is not available; model update skipped."
+    echo "[!] Ollama is not available; required models cannot be prepared." >&2
+    exit 1
   fi
+fi
+configured_models
+if ! ensure_ollama_running || ! verify_models; then
+  echo "[!] Required Ollama models are not ready. Pull configured models and retry." >&2
+  exit 1
 fi
 
 case "$AUTOSTART_ACTION" in
@@ -608,9 +712,15 @@ fi
 if [ "$RESTART_AFTER" = "1" ]; then
   print_step "Restart"
   run_service_manager stop-all
-  run_service_manager start
+  if ! "${PYTHON_CMD[@]}" "$ROOT/service_manager.py" start --base-dir "$ROOT"; then
+    echo "[!] TrinaxAI services failed to start." >&2
+    exit 1
+  fi
 else
-  echo "Update complete. Restart later with ./startup_ai.sh or trinaxai restart."
+  print_info "Restart skipped; checking the already-running TrinaxAI services."
+fi
+if ! assert_runtime_ready; then
+  exit 1
 fi
 
 echo -e "\n${GREEN}${BOLD}✓ TrinaxAI is up to date${NC}"

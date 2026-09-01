@@ -38,6 +38,26 @@ Assert-Contains $Install "-TimeoutSec 120" "Remote download timeout is missing"
 Assert-NotMatches $Install '\$EnvLines\s*\|\s*Set-Content' "Installer must merge existing configuration"
 Assert-Contains $Install 'Install-RemoteRepository -Target $Repo' "Missing checked remote repository install"
 Assert-Contains $Install "Invoke-NativeChecked" "Installer hides native command failures"
+Assert-Contains $Install 'releases/download/v$ReleaseVersion' "Installer source archive is not version pinned"
+Assert-NotMatches $Install 'archive/refs/heads/main' "Installer must not download an unpinned main archive"
+Assert-Contains $Install "Get-FileHash -Algorithm SHA256" "Installer source checksum verification is missing"
+Assert-Contains $Install "requires a matching SHA-256 checksum" "Installer custom source checksum gate is missing"
+Assert-Contains $Install "detect_hardware" "Installer hardware detection is not canonical"
+Assert-Contains $Install "model_recommendations" "Installer model recommendations are not canonical"
+Assert-Contains $Install "select_profile" "Installer profile selection is not canonical"
+Assert-Contains $Install "Assert-RuntimeReady" "Installer readiness gate is missing"
+Assert-Contains $Install "Test-OllamaModel" "Installer model readiness check is missing"
+Assert-Contains $Install "chat-pwa\dist\index.html" "Installer PWA artifact check is missing"
+Assert-Contains $Install "Installation prepared; TrinaxAI is not running." "Installer no-start status is misleading"
+Assert-Contains $Install 'if ($NoStart) {' "Installer live URLs are not conditional on startup"
+Assert-Contains $Install "function Get-ConfiguredModels" "Installer does not read persisted model configuration"
+Assert-Contains $Install '$Models = @(Get-ConfiguredModels)' "Installer model checks do not use persisted models"
+Assert-Contains $Install 'if (-not $NoStart -and -not $NoAutostart) {' "Installer autostart is not gated on startup"
+$InstallAutostartAt = $Install.LastIndexOf('if (-not $NoStart -and -not $NoAutostart) {', [StringComparison]::Ordinal)
+$InstallAutostartCommandAt = $Install.IndexOf('"enable-autostart"', $InstallAutostartAt, [StringComparison]::Ordinal)
+if ($InstallAutostartAt -lt 0 -or $InstallAutostartCommandAt -lt $InstallAutostartAt -or $InstallAutostartCommandAt -gt ($Install.IndexOf("`n}", $InstallAutostartAt, [StringComparison]::Ordinal))) {
+  throw "Installer autostart command is outside the no-start guard"
+}
 Write-Host "[OK] Install remote archive, path, and error checks found"
 
 Assert-Contains $Update "Sync-TrinaxRepository" "Missing source synchronization"
@@ -45,6 +65,13 @@ Assert-Contains $Update "scripts\source_update.py" "Missing archive updater"
 Assert-Contains $Update "Restore-FailedUpdate" "Missing update rollback"
 Assert-Contains $Update '"rollback", "--root", $Repo' "Missing source rollback command"
 Assert-Contains $Update "Get-ConfiguredModels" "Updater does not read configured models"
+Assert-Contains $Update 'releases/download/v$ReleaseVersion' "Updater source archive is not version pinned"
+Assert-Contains $Update "--url" "Updater does not pass a pinned source URL"
+Assert-Contains $Update "requires a matching SHA-256 checksum" "Updater custom source checksum gate is missing"
+Assert-Contains $Update "Assert-RuntimeReady" "Updater readiness gate is missing"
+Assert-Contains $Update "Test-OllamaModel" "Updater model readiness check is missing"
+Assert-Contains $Update "chat-pwa\dist\index.html" "Updater PWA artifact check is missing"
+Assert-Contains $Update '$Interactive = $true' "Updater is not guided by default"
 $ConfiguredRemovalStart = $Update.IndexOf("function Remove-ConfiguredModels", [StringComparison]::Ordinal)
 $ConfiguredRemovalEnd = $Update.IndexOf("function New-TrinaxAIBackup", [StringComparison]::Ordinal)
 if ($ConfiguredRemovalStart -lt 0 -or $ConfiguredRemovalEnd -le $ConfiguredRemovalStart) { throw "Cannot isolate updater model removal" }

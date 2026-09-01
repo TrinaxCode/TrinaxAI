@@ -34,7 +34,27 @@ $LanguageExplicit = -not [string]::IsNullOrWhiteSpace($Language) -or -not [strin
 if ([string]::IsNullOrWhiteSpace($Language)) { $Language = if ($env:TRINAXAI_LANG -match '^es') { 'es' } elseif ((Get-Culture).Name -match '^es') { 'es' } else { 'en' } }
 function T($English, $Spanish) { if ($Language -eq 'es') { return $Spanish }; return $English }
 
-if (-not $LanguageExplicit -and -not $NonInteractive -and -not $DryRun) {
+$ReleaseVersion = if (-not [string]::IsNullOrWhiteSpace($env:TRINAXAI_RELEASE_VERSION)) { $env:TRINAXAI_RELEASE_VERSION } else { "" }
+if ($ReleaseVersion -and $ReleaseVersion -notmatch '^[0-9]+\.[0-9]+\.[0-9]+$') { throw "Invalid TrinaxAI release version: $ReleaseVersion" }
+$SourceUpdateUrl = if (-not [string]::IsNullOrWhiteSpace($env:TRINAXAI_UPDATE_SOURCE_URL)) { $env:TRINAXAI_UPDATE_SOURCE_URL } else { "" }
+$SourceUpdateSha256 = if (-not [string]::IsNullOrWhiteSpace($env:TRINAXAI_UPDATE_SOURCE_SHA256)) { $env:TRINAXAI_UPDATE_SOURCE_SHA256 } else { $env:TRINAXAI_SOURCE_SHA256 }
+if ($SourceUpdateSha256) { $SourceUpdateSha256 = $SourceUpdateSha256.Trim() }
+if ($SourceUpdateSha256 -and $SourceUpdateSha256 -notmatch '^[0-9a-fA-F]{64}$') {
+  throw "Source archive checksum must be a SHA-256 digest."
+}
+if ([string]::IsNullOrWhiteSpace($SourceUpdateUrl) -and $ReleaseVersion) {
+  $SourceUpdateUrl = "https://github.com/TrinaxCode/TrinaxAI/releases/download/v$ReleaseVersion/TrinaxAI-$ReleaseVersion.tar.gz"
+}
+$IsReleaseSourceUrl = $SourceUpdateUrl -match '^https://github\.com/TrinaxCode/TrinaxAI/releases/download/v[0-9]+\.[0-9]+\.[0-9]+/TrinaxAI-[0-9]+\.[0-9]+\.[0-9]+\.tar\.gz$'
+if ($SourceUpdateUrl -and -not $IsReleaseSourceUrl -and [string]::IsNullOrWhiteSpace($SourceUpdateSha256)) {
+  throw "TRINAXAI_UPDATE_SOURCE_URL requires a matching SHA-256 checksum."
+}
+
+if (-not $Interactive -and -not $NonInteractive -and -not $DryRun -and -not $Scheduled -and $env:TRINAXAI_INTERACTIVE -ne "0") {
+  $Interactive = $true
+}
+
+if (-not $LanguageExplicit -and -not $NonInteractive -and -not $DryRun -and -not $Scheduled) {
   $Reply = Read-Host "Select language / Selecciona idioma [en/es, default: $Language]"
   if ($Reply -match '^es') { $Language = 'es' } elseif ($Reply -match '^en') { $Language = 'en' }
 }
@@ -115,6 +135,75 @@ function Ensure-OllamaRunning {
     if (Test-OllamaReady) { return $Ollama }
   }
   return $null
+}
+function Test-OllamaModel([string]$OllamaExe, [string]$Model) {
+  try {
+    $Rows = @(& $OllamaExe list 2>$null)
+    if ($LASTEXITCODE -ne 0) { return $false }
+    $Pattern = "^\s*$([regex]::Escape($Model))(\s|$)"
+    return [bool]($Rows | Where-Object { $_ -match $Pattern })
+  } catch {
+    return $false
+  }
+}
+function Invoke-LocalWebRequest([string]$Uri, [string]$Method = "GET", [string]$Body = "") {
+  $Params = @{
+    Uri = $Uri
+    Method = $Method
+    UseBasicParsing = $true
+    TimeoutSec = 5
+    ErrorAction = "Stop"
+  }
+  if ($Body) {
+    $Params.Body = $Body
+    $Params.ContentType = "application/json"
+  }
+  $Command = Get-Command Invoke-WebRequest
+  if ($Command.Parameters.ContainsKey("SkipCertificateCheck")) {
+    $Params.SkipCertificateCheck = $true
+    return Invoke-WebRequest @Params
+  }
+  $OriginalCallback = [Net.ServicePointManager]::ServerCertificateValidationCallback
+  try {
+    [Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }
+    return Invoke-WebRequest @Params
+  } finally {
+    [Net.ServicePointManager]::ServerCertificateValidationCallback = $OriginalCallback
+  }
+}
+function Wait-LocalUrl([int]$Port, [string]$Path = "/") {
+  foreach ($Scheme in @("https", "http")) {
+    $Uri = "$Scheme://127.0.0.1:$Port$Path"
+    for ($i = 0; $i -lt 20; $i++) {
+      try {
+        Invoke-LocalWebRequest $Uri | Out-Null
+        return "$Scheme://127.0.0.1:$Port"
+      } catch {
+        Start-Sleep -Seconds 1
+      }
+    }
+  }
+  return ""
+}
+function Assert-RuntimeReady {
+  $RagPortText = if ($env:TRINAXAI_PORT) { $env:TRINAXAI_PORT } else { Read-EnvValue "TRINAXAI_PORT" }
+  $PwaPortText = if ($env:TRINAXAI_PWA_PORT) { $env:TRINAXAI_PWA_PORT } else { Read-EnvValue "TRINAXAI_PWA_PORT" }
+  $RagPort = if ($RagPortText) { [int]$RagPortText } else { 3333 }
+  $PwaPort = if ($PwaPortText) { [int]$PwaPortText } else { 3334 }
+  $RagBase = Wait-LocalUrl $RagPort "/health"
+  if (-not $RagBase) { throw "TrinaxAI backend is not ready on port $RagPort." }
+  $PwaBase = Wait-LocalUrl $PwaPort
+  if (-not $PwaBase) { throw "TrinaxAI PWA is not ready on port $PwaPort." }
+  $Body = @{ messages = @(@{ role = "user"; content = "Reply with the single word OK." }); stream = $false; mode = "model"; think = $false } | ConvertTo-Json -Compress
+  try {
+    $Response = Invoke-LocalWebRequest "$RagBase/v1/chat/completions" "POST" $Body
+    $Payload = $Response.Content | ConvertFrom-Json
+    $Content = $Payload.choices[0].message.content
+    if ([string]::IsNullOrWhiteSpace([string]$Content)) { throw "empty response" }
+  } catch {
+    throw "TrinaxAI smoke inference failed: $($_.Exception.Message)"
+  }
+  Write-Ok "Backend, PWA, and smoke inference are ready"
 }
 function Stop-OllamaProcesses {
   try {
@@ -205,7 +294,7 @@ function Get-ConfiguredModels {
   Add-Model $List (Read-EnvValue "TRINAXAI_MODEL_FAST")
   Add-Model $List (Read-EnvValue "TRINAXAI_EMBED")
   if ($List.Count -eq 0) {
-    foreach ($Model in @("qwen3.5:2b", "qwen3.5:4b", "qwen3-embedding:0.6b")) {
+    foreach ($Model in @("qwen3.5:2b", "qwen3.5:4b", "qwen3-embedding:0.6b", "qwen3-embedding:4b")) {
       Add-Model $List $Model
     }
   }
@@ -287,7 +376,10 @@ function Sync-TrinaxRepository {
     throw "The safe source updater is missing; source update stopped safely."
   }
   Write-Info "Downloading the latest TrinaxAI source package from GitHub..."
-  Invoke-Python @((Join-Path $Repo "scripts\source_update.py"), "update", "--root", $Repo)
+  $SourceArgs = @((Join-Path $Repo "scripts\source_update.py"), "update", "--root", $Repo)
+  if ($SourceUpdateUrl) { $SourceArgs += @("--url", $SourceUpdateUrl) }
+  if ($SourceUpdateSha256) { $SourceArgs += @("--sha256", $SourceUpdateSha256) }
+  Invoke-Python $SourceArgs
   $script:RollbackActive = $true
   Write-Ok "Source package updated"
 }
@@ -349,6 +441,7 @@ $PullCode = -not $NoPull
 $PullModels = $Models -and -not $NoModels
 $RunAudit = -not $NoAudit
 $RestartAfter = $Restart -and -not $NoRestart
+if (-not $RestartAfter -and $env:TRINAXAI_UPDATE_RESTART -eq "1") { $RestartAfter = $true }
 $AutostartAction = if ($EnableAutostart) { "enable-autostart" } elseif ($DisableAutostart) { "disable-autostart" } else { "" }
 $RepairOllamaNow = $RepairOllama
 $RemoveModelsFirst = $RemoveModels
@@ -431,36 +524,39 @@ if (Test-Path "scripts\generate_continue_config.py") {
 }
 
 Write-Step "4/7 PWA frontend"
-if ((Test-Cmd "npm") -and (Test-Path "chat-pwa")) {
-  Push-Location "chat-pwa"
-  try {
-    Invoke-NativeChecked "npm" @("ci") "npm ci"
-    Invoke-NativeChecked "npm" @("run", "build") "npm run build"
-  } finally {
-    Pop-Location
-  }
-  Write-Ok "PWA rebuilt"
-} else {
-  Write-Warn "npm or chat-pwa not found; PWA build skipped."
+if (-not (Test-Path "chat-pwa\package.json") -or -not (Test-Path "chat-pwa\package-lock.json")) {
+  throw "chat-pwa/package.json and package-lock.json are required for the PWA."
 }
+if (-not (Test-Cmd "npm")) { throw "npm is required to build the PWA." }
+Push-Location "chat-pwa"
+try {
+  Invoke-NativeChecked "npm" @("ci") "npm ci"
+  Invoke-NativeChecked "npm" @("run", "build") "npm run build"
+} finally {
+  Pop-Location
+}
+if (-not (Test-Path "chat-pwa\dist\index.html")) { throw "PWA build completed without chat-pwa/dist/index.html." }
+Write-Ok "PWA rebuilt"
 
-if ($PullModels) {
-  Write-Step "5/7 Ollama models"
-  if ($RemoveModelsFirst) {
-    Remove-ConfiguredModels
-  }
-  $Ollama = Ensure-OllamaRunning
-  if ($Ollama) {
-    foreach ($Model in Get-ConfiguredModels) {
-      Write-Host "  Pulling $Model..."
-      & $Ollama pull $Model
-      if ($LASTEXITCODE -ne 0) { Write-Warn "Could not pull configured model $Model." }
-    }
-    Write-Ok "Models updated"
-  } else {
-    Write-Warn "Ollama is not available; model update skipped."
-  }
+Write-Step "5/7 Ollama models"
+$ConfiguredModels = @(Get-ConfiguredModels)
+if ($RemoveModelsFirst -and $PullModels) {
+  Remove-ConfiguredModels
 }
+$Ollama = Ensure-OllamaRunning
+if (-not $Ollama) { throw "Ollama API is not ready." }
+if ($PullModels) {
+  foreach ($Model in $ConfiguredModels) {
+    Write-Host "  Pulling $Model..."
+    Invoke-NativeChecked $Ollama @("pull", $Model) "ollama pull $Model"
+  }
+} else {
+  Write-Warn "Model downloads skipped; installed models will still be verified."
+}
+foreach ($Model in $ConfiguredModels) {
+  if (-not (Test-OllamaModel $Ollama $Model)) { throw "Required Ollama model is not ready: $Model" }
+}
+Write-Ok "Models ready"
 
 Write-Step "6/7 Autostart and audit"
 if ($AutostartAction) {
@@ -478,8 +574,9 @@ if ($RestartAfter) {
   Invoke-ServiceManager "start"
   Write-Ok "TrinaxAI restarted"
 } else {
-  Write-Warn "Restart skipped. Run .\.venv\Scripts\trinaxai.exe start when ready."
+  Write-Warn "Restart skipped; checking the already-running TrinaxAI services."
 }
+Assert-RuntimeReady
 
 Invoke-Python @((Join-Path $Repo "scripts\source_update.py"), "finish", "--root", $Repo)
 $script:RollbackActive = $false

@@ -8,7 +8,13 @@ from pathlib import Path
 
 
 def _looks_like_install(path: Path) -> bool:
-    return (path / "service_manager.py").is_file() and (path / "trinaxai_cli").is_dir()
+    required = (
+        path / "service_manager.py",
+        path / "rag_api.py",
+        path / "chat-pwa" / "server.mjs",
+        path / "trinaxai_cli",
+    )
+    return all(item.is_file() for item in required[:-1]) and required[-1].is_dir()
 
 
 def install_candidates() -> list[Path]:
@@ -18,15 +24,13 @@ def install_candidates() -> list[Path]:
     if override:
         candidates.append(Path(override).expanduser())
 
-    # Editable installs resolve here. A venv Python also gives us its project
-    # root, including Windows' ``.venv\Scripts`` layout.
+    # Editable installs resolve here; normal wheel installs stay isolated from
+    # unrelated source trees that happen to contain the invoking interpreter.
     package_path = Path(__file__).resolve()
-    executable_path = Path(sys.executable).resolve()
     cwd = Path.cwd()
     candidates.extend(
         [
             package_path.parents[1],
-            *list(executable_path.parents)[:3],
             cwd,
             *cwd.parents,
         ]

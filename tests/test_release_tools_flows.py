@@ -104,8 +104,14 @@ def test_public_readiness_git_failure_and_missing_ignore_are_safe(monkeypatch, t
 def test_release_runtime_uses_locked_frontend_install_and_non_root_container() -> None:
     root = Path(public_readiness.__file__).resolve().parents[1]
     dockerfile = (root / "Dockerfile").read_text(encoding="utf-8")
+    workflow = (root / ".github/workflows/release.yml").read_text(encoding="utf-8")
     assert "COPY config.py index.py rag_api.py recovery_server.py service_manager.py" in dockerfile
     assert "USER trinaxai" in dockerfile
+    assert workflow.index("rm -rf build") < workflow.index("python -m pip wheel")
+    assert workflow.index("Verify exact draft release assets and signatures") < workflow.index(
+        "Publish verified release"
+    )
+    assert 'diff -u "$expected" "$actual"' in workflow
     for name in ("install.sh", "install.ps1", "update.sh", "update.ps1"):
         text = (root / name).read_text(encoding="utf-8")
         assert "npm ci" in text
@@ -154,18 +160,15 @@ def test_auto_update_disable_removes_platform_state(monkeypatch, tmp_path: Path,
     assert auto_update.disable(tmp_path) == "weekly automatic updates disabled"
 
 
-def test_scheduled_update_checks_versions_without_executing_remote_code(monkeypatch, tmp_path: Path) -> None:
-    (tmp_path / ".git").mkdir()
-    monkeypatch.setattr(auto_update.shutil, "which", lambda _name: "/usr/bin/git")
+def test_scheduled_update_checks_stable_release_without_executing_remote_code(monkeypatch, tmp_path: Path) -> None:
+    (tmp_path / "pyproject.toml").write_text('[project]\nversion = "1.0.0"\n', encoding="utf-8")
     logged = []
     monkeypatch.setattr(auto_update, "_log", lambda _base, message: logged.append(message))
-    responses = iter(
-        [
-            SimpleNamespace(returncode=0, stdout="a" * 40 + "\n", stderr=""),
-            SimpleNamespace(returncode=0, stdout="b" * 40 + "\trefs/heads/main\n", stderr=""),
-        ]
+    monkeypatch.setattr(
+        auto_update,
+        "resolve_latest_release",
+        lambda: SimpleNamespace(version="1.2.0", tag="v1.2.0"),
     )
-    monkeypatch.setattr(auto_update, "_run", lambda *_args, **_kwargs: next(responses))
 
     assert auto_update.run_update(tmp_path) == 0
     assert "Update available" in logged[-1]
@@ -178,20 +181,19 @@ def test_scheduled_update_checks_versions_without_executing_remote_code(monkeypa
     assert "already running" in logged[-1]
 
 
-def test_scheduled_update_no_git_and_lookup_failure_are_logged(monkeypatch, tmp_path: Path) -> None:
+def test_scheduled_update_no_git_performs_release_check_and_logs_failures(monkeypatch, tmp_path: Path) -> None:
     logged = []
     monkeypatch.setattr(auto_update, "_log", lambda _base, message: logged.append(message))
-    monkeypatch.setattr(auto_update.shutil, "which", lambda _name: None)
-    assert auto_update.run_update(tmp_path) == 0
-    assert "no Git metadata" in logged[-1]
-
-    (tmp_path / ".git").mkdir()
-    monkeypatch.setattr(auto_update.shutil, "which", lambda _name: "/usr/bin/git")
+    (tmp_path / "pyproject.toml").write_text('[project]\nversion = "1.2.0"\n', encoding="utf-8")
     monkeypatch.setattr(
         auto_update,
-        "_run",
-        lambda *_args, **_kwargs: SimpleNamespace(returncode=1, stdout="", stderr="network offline"),
+        "resolve_latest_release",
+        lambda: SimpleNamespace(version="1.2.0", tag="v1.2.0"),
     )
+    assert auto_update.run_update(tmp_path) == 0
+    assert "No update available" in logged[-1]
+
+    monkeypatch.setattr(auto_update, "resolve_latest_release", lambda: (_ for _ in ()).throw(RuntimeError("offline")))
     assert auto_update.run_update(tmp_path) == 1
     assert "failed safely" in logged[-1]
 

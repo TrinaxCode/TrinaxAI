@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "trinaxai"
 version = "1.2.0"
-description = "TrinaxAI — local-first AI assistant with RAG, vision, voice, CLI, and PWA."
+description = "Command-line client for a local TrinaxAI installation."
 readme = "README.md"
 requires-python = ">=3.10"
 license = "AGPL-3.0-or-later"
@@ -15,7 +15,7 @@ authors = [
 ]
 keywords = ["ai", "rag", "ollama", "local-first", "pwa", "cli", "llama-index"]
 classifiers = [
-  "Development Status :: 5 - Production/Stable",
+  "Development Status :: 4 - Beta",
   "Environment :: Console",
   "Intended Audience :: Developers",
   "Operating System :: OS Independent",
@@ -24,7 +24,10 @@ classifiers = [
   "Programming Language :: Python :: 3.12",
   "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
+# The wheel is CLI-only. Full backend/PWA releases are installed from the
+# signed source archives; the CLI discovers and controls that installation.
 dependencies = [
+  "defusedxml>=0.7.1",
   "httpx>=0.28.1",
   "prompt-toolkit>=3.0.48",
   "rich>=13.0",
@@ -38,43 +41,6 @@ Changelog = "https://github.com/TrinaxCode/TrinaxAI/blob/main/docs/CHANGELOG.md"
 Issues = "https://github.com/TrinaxCode/TrinaxAI/issues"
 
 [project.optional-dependencies]
-server = [
-  "fastapi>=0.115",
-  "uvicorn[standard]>=0.30",
-  "pydantic>=2.8",
-  "python-dotenv>=1.0",
-  "python-multipart>=0.0.9",
-  "llama-index>=0.12",
-  "llama-index-llms-ollama>=0.5",
-  "llama-index-embeddings-ollama>=0.5",
-  "llama-index-retrievers-bm25>=0.5",
-  "bm25s>=0.2",
-  "docx2txt>=0.9",
-  "pypdf>=5.0",
-  "python-pptx>=1.0.2",
-  "openpyxl>=3.1",
-  "odfpy>=1.4.1",
-  "striprtf>=0.0.28",
-  "tree-sitter>=0.22",
-  "tree-sitter-language-pack>=0.9",
-  "psutil>=6.0",
-  "watchdog>=6.0",
-  "nltk>=3.10.2",
-]
-voice = [
-  "faster-whisper>=1.2.1",
-  "pyttsx3>=2.90",
-  "soundfile>=0.12",
-  "numpy>=1.24",
-]
-voice_quality = [
-  "piper-tts>=1.2",
-]
-rerank = [
-  "llama-index-postprocessor-sbert-rerank>=0.3",
-  "sentence-transformers>=3.0",
-  "torch>=2.3",
-]
 dev = [
   "pytest>=8.0",
   "pytest-cov>=7.0",
@@ -83,9 +49,6 @@ dev = [
   "pip-audit>=2.10.1",
   "bandit>=1.9.4",
 ]
-all = [
-  "trinaxai[server,voice,rerank,dev,voice_quality]",
-]
 
 [project.scripts]
 trinaxai = "trinaxai_cli.app:main"
@@ -93,18 +56,14 @@ trinaxai = "trinaxai_cli.app:main"
 [tool.setuptools]
 py-modules = [
   "config",
-  "index",
-  "rag_api",
-  "service_manager",
   "trinaxai_core",
   "trinaxai_errors",
-  "trinaxai_index_documents",
-  "trinaxai_index_state",
-  "trinaxai_index_storage",
 ]
 
 [tool.setuptools.packages.find]
-include = ["app*", "trinaxai_cli*"]
+include = [
+  "trinaxai_cli*",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

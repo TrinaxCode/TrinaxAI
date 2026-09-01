@@ -172,15 +172,16 @@ def generate_stream(
             stopping = service.state.lifecycle_stopping.is_set()
             finish_reason = service._response_finish_reason(response, cancelled=stopping)
             abstained = service._is_rag_abstention(content, rag_requested=preview_spec.use_rag)
+            public_nodes = [] if abstained else nodes
             yield _sse({"trinaxai_finish": _completion_metadata(finish_reason, content)})
             yield _sse(
                 {
-                    "trinaxai_sources": service.sources_payload(nodes),
+                    "trinaxai_sources": service.sources_payload(public_nodes),
                     "trinaxai_retrieval": {
                         "mode": preview_spec.retrieval_mode,
                         "rag_used": preview_spec.use_rag,
                         "abstained": abstained,
-                        "result_count": len(nodes),
+                        "result_count": len(public_nodes),
                         "collections": list(collections or []),
                     },
                 },
@@ -490,15 +491,16 @@ async def async_generate_stream(
             stopping = service.state.lifecycle_stopping.is_set()
             finish_reason = service._response_finish_reason(response, cancelled=stopping)
             abstained = service._is_rag_abstention(content, rag_requested=preview_spec.use_rag)
+            public_nodes = [] if abstained else nodes
             yield _sse({"trinaxai_finish": service._completion_metadata(finish_reason, content)})
             yield _sse(
                 {
-                    "trinaxai_sources": service.sources_payload(nodes),
+                    "trinaxai_sources": service.sources_payload(public_nodes),
                     "trinaxai_retrieval": {
                         "mode": preview_spec.retrieval_mode,
                         "rag_used": preview_spec.use_rag,
                         "abstained": abstained,
-                        "result_count": len(nodes),
+                        "result_count": len(public_nodes),
                         "collections": list(collections or []),
                     },
                 }

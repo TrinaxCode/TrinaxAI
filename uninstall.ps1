@@ -207,7 +207,7 @@ function Get-ConfiguredModels {
   Add-ConfiguredModel $List (Read-EnvValue "TRINAXAI_MODEL_FAST")
   Add-ConfiguredModel $List (Read-EnvValue "TRINAXAI_EMBED")
   if ($List.Count -eq 0) {
-    foreach ($Model in @("qwen3.5:2b", "qwen3.5:4b", "qwen3-embedding:0.6b")) {
+    foreach ($Model in @("qwen3.5:2b", "qwen3.5:4b", "qwen3-embedding:0.6b", "qwen3-embedding:4b")) {
       Add-ConfiguredModel $List $Model
     }
   }
@@ -350,6 +350,9 @@ if (-not ($Yes -or $NonInteractive)) {
 # Read the configured fleet before optional removal of .env; model-only cleanup
 # must never fall back to a directory-wide deletion or to a stale hardcoded list.
 $ModelsToRemove = @(Get-ConfiguredModels)
+foreach ($Model in @("qwen3-embedding:0.6b", "qwen3-embedding:4b")) {
+  if ($ModelsToRemove -notcontains $Model) { $ModelsToRemove += $Model }
+}
 
 if ($StopServices) {
   Write-Step "1/4 Services"

@@ -10,6 +10,9 @@ on:
       - 'uninstall.sh'
       - 'uninstall.ps1'
       - 'test-installers.*'
+      - 'scripts/source_update.py'
+      - 'scripts/auto_update.py'
+      - 'setup_trinaxai.sh'
       - 'TESTING.md'
       - '.github/workflows/test-installers.yml'
   pull_request:
@@ -21,6 +24,9 @@ on:
       - 'uninstall.sh'
       - 'uninstall.ps1'
       - 'test-installers.*'
+      - 'scripts/source_update.py'
+      - 'scripts/auto_update.py'
+      - 'setup_trinaxai.sh'
       - 'TESTING.md'
       - '.github/workflows/test-installers.yml'
 
@@ -31,19 +37,19 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: [ubuntu-24.04, macos-15]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       - name: Run syntax and dry-run checks
         shell: bash
         run: ./test-installers.sh
 
   windows:
-    name: PowerShell installers (windows-latest)
-    runs-on: windows-latest
+    name: PowerShell installers (windows-2025)
+    runs-on: windows-2025
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.12"
       - name: Run PowerShell dry-run checks

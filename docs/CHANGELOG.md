@@ -1,6 +1,18 @@
-# Changelog
+<h1 align="center">
+  <a href="https://www.trinaxai.app/"><img src="../chat-pwa/public/logo.webp" alt="TrinaxAI" width="64" valign="middle"></a>
+  <a href="https://www.trinaxai.app/">TrinaxAI</a> · 🧭 Changelog
+</h1>
 
-[Versión en español](CHANGELOG.es.md)
+<p align="center">
+  <a href="https://github.com/TrinaxCode/TrinaxAI"><img src="https://img.shields.io/github/stars/TrinaxCode/TrinaxAI?style=flat&amp;label=%E2%98%85&amp;color=006bbd" alt="GitHub stars"></a>
+  <a href="https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.2.0"><img src="https://img.shields.io/badge/version-1.2.0-006bbd" alt="Current candidate: 1.2.0"></a>
+  <a href="https://github.com/TrinaxCode/TrinaxAI/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/TrinaxCode/TrinaxAI/ci.yml?branch=main&amp;label=CI" alt="CI status"></a>
+  <a href="https://github.com/TrinaxCode/TrinaxAI/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0--or--later-006bbd" alt="License: AGPL-3.0-or-later"></a>
+  <img src="https://img.shields.io/badge/macOS%20%7C%20Windows%20%7C%20Linux-4493F8?style=flat-square" alt="Supported platforms: macOS, Windows, and Linux">
+</p>
+
+<p align="center"><sub><strong>English</strong> · <a href="CHANGELOG.es.md">Español</a></sub></p>
+<p align="center"><sub><a href="https://www.trinaxai.app/">Website</a> · <a href="README.md">Documentation</a> · <a href="../README.md">Home</a> · <a href="CHANGELOG.md">Changelog</a></sub></p>
 
 All notable changes to TrinaxAI are documented here. This project follows the
 [Keep a Changelog](https://keepachangelog.com/) format.
@@ -59,8 +71,9 @@ All notable changes to TrinaxAI are documented here. This project follows the
 - Improved responsive PWA navigation, keyboard/focus behavior, accessible
   labels, offline handling and attachment actions across desktop, tablet and
   phone viewports.
-- Release publication now builds all native Manager packages before creating the
-  GitHub release, includes them in `SHA256SUMS`, and verifies their download URLs.
+- Release publication now builds signed source archives, installers, and the
+  CLI-only wheel, includes them in `SHA256SUMS`, and verifies every published
+  asset after download.
 
 ## [1.1.0] — 2026-08-05
 

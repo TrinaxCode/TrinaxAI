@@ -19,6 +19,7 @@ the new generation is kept and only transaction debris is removed.
 from __future__ import annotations
 
 import hashlib
+import heapq
 import json
 import math
 import os
@@ -48,19 +49,20 @@ TRANSACTION_DIR_NAME = ".index-transactions"
 GENERATION_MARKER_NAME = ".index-generation.json"
 SQLITE_VECTOR_STORE_NAME = "vectors.sqlite3"
 SQLITE_VECTOR_STORE_SCHEMA = 1
+SQLITE_VECTOR_QUERY_BATCH_SIZE = 256
 
 
 class SQLiteVectorStore(BasePydanticVectorStore):
-    """Small embedded vector store with atomic SQLite snapshots.
+    """Embedded vector store with atomic SQLite snapshots.
 
-    The in-memory mapping is intentional: indexing mutates a private snapshot
-    and ``persist`` writes it only into the publisher's staging directory.
-    That keeps a failed indexing run from modifying the active generation.
+    Persisted snapshots stay on disk for queries. Index mutations lazily copy
+    the snapshot into memory so a failed indexing run cannot modify the active
+    generation before publication.
     """
 
     stores_text: bool = False
     db_path: str
-    _entries: dict[str, tuple[list[float], str, dict[str, Any]]] = PrivateAttr(default_factory=dict)
+    _entries: dict[str, tuple[list[float], str, dict[str, Any]]] | None = PrivateAttr(default=None)
 
     def __init__(
         self,
@@ -72,7 +74,10 @@ class SQLiteVectorStore(BasePydanticVectorStore):
         data.setdefault("stores_text", False)
         data.setdefault("is_embedding_query", True)
         super().__init__(db_path=db_path, **data)
-        self._entries = entries if entries is not None else self._read_snapshot(Path(db_path))
+        path = Path(db_path)
+        self._entries = entries if entries is not None or path.is_file() else {}
+        if self._entries is None:
+            self._validate_snapshot(path)
 
     @classmethod
     def class_name(cls) -> str:
@@ -97,6 +102,7 @@ class SQLiteVectorStore(BasePydanticVectorStore):
                 continue
             store._entries = store._read_legacy(legacy_path)
             store._write_snapshot(path)
+            store._entries = None
             break
         return store
 
@@ -114,6 +120,16 @@ class SQLiteVectorStore(BasePydanticVectorStore):
         if dimensions < 0 or len(blob) != dimensions * 4:
             raise RuntimeError("Invalid SQLite vector dimensions")
         return list(struct.unpack(f"<{dimensions}f", blob))
+
+    @staticmethod
+    def _validate_snapshot(path: Path) -> None:
+        try:
+            with sqlite3.connect(path) as connection:
+                connection.execute(
+                    "SELECT node_id, ref_doc_id, dimensions, embedding, metadata FROM embeddings LIMIT 0"
+                )
+        except (OSError, sqlite3.DatabaseError) as exc:
+            raise RuntimeError(f"Unable to load SQLite vector store: {path}") from exc
 
     @classmethod
     def _read_snapshot(cls, path: Path) -> dict[str, tuple[list[float], str, dict[str, Any]]]:
@@ -136,6 +152,11 @@ class SQLiteVectorStore(BasePydanticVectorStore):
             raise RuntimeError(f"Unable to load SQLite vector store: {path}") from exc
         return entries
 
+    def _mutable_entries(self) -> dict[str, tuple[list[float], str, dict[str, Any]]]:
+        if self._entries is None:
+            self._entries = self._read_snapshot(Path(self.db_path))
+        return self._entries
+
     @staticmethod
     def _read_legacy(path: Path) -> dict[str, tuple[list[float], str, dict[str, Any]]]:
         legacy = SimpleVectorStore.from_persist_path(str(path))
@@ -150,37 +171,43 @@ class SQLiteVectorStore(BasePydanticVectorStore):
         }
 
     def _write_snapshot(self, path: Path) -> None:
+        if self._entries is None and Path(self.db_path).resolve() == path.resolve():
+            return
         path.parent.mkdir(parents=True, exist_ok=True)
         temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
         connection: sqlite3.Connection | None = None
         try:
             connection = sqlite3.connect(temporary)
-            connection.execute(f"PRAGMA user_version = {SQLITE_VECTOR_STORE_SCHEMA}")
-            connection.execute(
-                """
-                CREATE TABLE embeddings (
-                    node_id TEXT PRIMARY KEY,
-                    ref_doc_id TEXT NOT NULL,
-                    dimensions INTEGER NOT NULL,
-                    embedding BLOB NOT NULL,
-                    metadata TEXT NOT NULL
-                )
-                """
-            )
-            connection.executemany(
-                "INSERT INTO embeddings(node_id, ref_doc_id, dimensions, embedding, metadata) VALUES (?, ?, ?, ?, ?)",
-                (
-                    (
-                        node_id,
-                        ref_doc_id,
-                        dimensions,
-                        blob,
-                        json.dumps(metadata, ensure_ascii=False, sort_keys=True, default=str),
+            if self._entries is None:
+                with sqlite3.connect(self.db_path) as source:
+                    source.backup(connection)
+            else:
+                connection.execute(f"PRAGMA user_version = {SQLITE_VECTOR_STORE_SCHEMA}")
+                connection.execute(
+                    """
+                    CREATE TABLE embeddings (
+                        node_id TEXT PRIMARY KEY,
+                        ref_doc_id TEXT NOT NULL,
+                        dimensions INTEGER NOT NULL,
+                        embedding BLOB NOT NULL,
+                        metadata TEXT NOT NULL
                     )
-                    for node_id, (embedding, ref_doc_id, metadata) in self._entries.items()
-                    for blob, dimensions in (self._pack_embedding(embedding),)
-                ),
-            )
+                    """
+                )
+                connection.executemany(
+                    "INSERT INTO embeddings(node_id, ref_doc_id, dimensions, embedding, metadata) VALUES (?, ?, ?, ?, ?)",
+                    (
+                        (
+                            node_id,
+                            ref_doc_id,
+                            dimensions,
+                            blob,
+                            json.dumps(metadata, ensure_ascii=False, sort_keys=True, default=str),
+                        )
+                        for node_id, (embedding, ref_doc_id, metadata) in self._entries.items()
+                        for blob, dimensions in (self._pack_embedding(embedding),)
+                    ),
+                )
             connection.commit()
             connection.close()
             connection = None
@@ -196,11 +223,12 @@ class SQLiteVectorStore(BasePydanticVectorStore):
                 pass
 
     def add(self, nodes: Sequence[BaseNode], **_: Any) -> list[str]:
+        entries = self._mutable_entries()
         for node in nodes:
             metadata = node_to_metadata_dict(node, remove_text=True, flat_metadata=False)
             metadata.pop("_node_content", None)
             embedding, _ = self._pack_embedding(node.get_embedding())
-            self._entries[node.node_id] = (
+            entries[node.node_id] = (
                 self._unpack_embedding(embedding, len(embedding) // 4),
                 node.ref_doc_id or "None",
                 metadata,
@@ -208,7 +236,7 @@ class SQLiteVectorStore(BasePydanticVectorStore):
         return [node.node_id for node in nodes]
 
     def delete(self, ref_doc_id: str, **_: Any) -> None:
-        self._entries = {node_id: entry for node_id, entry in self._entries.items() if entry[1] != ref_doc_id}
+        self._entries = {node_id: entry for node_id, entry in self._mutable_entries().items() if entry[1] != ref_doc_id}
 
     def delete_nodes(
         self,
@@ -216,65 +244,180 @@ class SQLiteVectorStore(BasePydanticVectorStore):
         filters: MetadataFilters | None = None,
         **_: Any,
     ) -> None:
-        filter_fn = build_metadata_filter_fn(lambda node_id: self._entries[node_id][2], filters)
+        entries = self._mutable_entries()
+        filter_fn = build_metadata_filter_fn(lambda node_id: entries[node_id][2], filters)
         allowed = set(node_ids) if node_ids is not None else None
         self._entries = {
             node_id: entry
-            for node_id, entry in self._entries.items()
+            for node_id, entry in entries.items()
             if (allowed is not None and node_id not in allowed) or not filter_fn(node_id)
         }
 
     def clear(self) -> None:
-        self._entries.clear()
+        self._entries = {}
 
     @staticmethod
     def _similarity(left: Sequence[float], right: Sequence[float]) -> float:
         if len(left) != len(right):
             raise ValueError("Embedding dimensions do not match")
         left_norm = math.sqrt(sum(value * value for value in left))
-        right_norm = math.sqrt(sum(value * value for value in right))
+        similarity, _right_norm = SQLiteVectorStore._similarity_and_norm(left, right, left_norm)
+        return similarity
+
+    @staticmethod
+    def _similarity_and_norm(left: Sequence[float], right: Sequence[float], left_norm: float) -> tuple[float, float]:
+        if len(left) != len(right):
+            raise ValueError("Embedding dimensions do not match")
+        dot_product = 0.0
+        right_norm_squared = 0.0
+        for left_value, right_value in zip(left, right, strict=True):
+            dot_product += left_value * right_value
+            right_norm_squared += right_value * right_value
+        right_norm = math.sqrt(right_norm_squared)
+        if not left_norm or not right_norm:
+            return 0.0, right_norm
+        return dot_product / (left_norm * right_norm), right_norm
+
+    @staticmethod
+    def _similarity_with_norms(
+        left: Sequence[float], right: Sequence[float], left_norm: float, right_norm: float
+    ) -> float:
+        if len(left) != len(right):
+            raise ValueError("Embedding dimensions do not match")
         if not left_norm or not right_norm:
             return 0.0
-        return sum(a * b for a, b in zip(left, right, strict=True)) / (left_norm * right_norm)
+        dot_product = 0.0
+        for left_value, right_value in zip(left, right, strict=True):
+            dot_product += left_value * right_value
+        return dot_product / (left_norm * right_norm)
+
+    def _iter_candidates(self, query: VectorStoreQuery, connection: sqlite3.Connection | None = None):
+        query_embedding = query.query_embedding or []
+        metadata: dict[str, Any] = {}
+        filter_fn = build_metadata_filter_fn(lambda _node_id: metadata, query.filters)
+        has_metadata_filters = bool(query.filters and query.filters.filters)
+
+        if self._entries is not None:
+            requested = set(query.node_ids) if query.node_ids is not None else None
+            documents = set(query.doc_ids) if query.doc_ids is not None else None
+            for node_id, (embedding, ref_doc_id, node_metadata) in self._entries.items():
+                metadata.clear()
+                metadata.update(node_metadata)
+                if (
+                    len(embedding) == len(query_embedding)
+                    and (requested is None or node_id in requested)
+                    and (documents is None or ref_doc_id in documents)
+                    and filter_fn(node_id)
+                ):
+                    yield node_id, embedding
+            return
+
+        joins: list[str] = []
+        owns_connection = connection is None
+        try:
+            if connection is None:
+                connection = sqlite3.connect(self.db_path)
+            if query.node_ids is not None:
+                connection.execute("CREATE TEMP TABLE IF NOT EXISTS query_node_ids (node_id TEXT PRIMARY KEY)")
+                connection.executemany(
+                    "INSERT OR IGNORE INTO query_node_ids VALUES (?)",
+                    ((node_id,) for node_id in query.node_ids),
+                )
+                joins.append("JOIN query_node_ids AS qn ON qn.node_id = e.node_id")
+            if query.doc_ids is not None:
+                connection.execute("CREATE TEMP TABLE IF NOT EXISTS query_doc_ids (doc_id TEXT PRIMARY KEY)")
+                connection.executemany(
+                    "INSERT OR IGNORE INTO query_doc_ids VALUES (?)",
+                    ((doc_id,) for doc_id in query.doc_ids),
+                )
+                joins.append("JOIN query_doc_ids AS qd ON qd.doc_id = e.ref_doc_id")
+            metadata_column = ", e.metadata" if has_metadata_filters else ""
+            cursor = connection.execute(
+                f"SELECT e.node_id, e.dimensions, e.embedding{metadata_column} "
+                f"FROM embeddings AS e {' '.join(joins)} WHERE e.dimensions = ? ORDER BY e.rowid",
+                (len(query_embedding),),
+            )
+            while rows := cursor.fetchmany(SQLITE_VECTOR_QUERY_BATCH_SIZE):
+                for row in rows:
+                    if has_metadata_filters:
+                        decoded = json.loads(row[3])
+                        metadata.clear()
+                        metadata.update(decoded if isinstance(decoded, dict) else {})
+                        if not filter_fn(str(row[0])):
+                            continue
+                    yield str(row[0]), self._unpack_embedding(bytes(row[2]), int(row[1]))
+        except (OSError, sqlite3.DatabaseError, TypeError, ValueError) as exc:
+            raise RuntimeError(f"Unable to query SQLite vector store: {self.db_path}") from exc
+        finally:
+            if owns_connection and connection is not None:
+                connection.close()
 
     def query(self, query: VectorStoreQuery, **kwargs: Any) -> VectorStoreQueryResult:
         if query.query_embedding is None:
             raise ValueError("SQLiteVectorStore requires a query embedding")
-        filter_fn = build_metadata_filter_fn(lambda node_id: self._entries[node_id][2], query.filters)
-        requested = set(query.node_ids) if query.node_ids is not None else None
-        documents = set(query.doc_ids) if query.doc_ids is not None else None
-        # ponytail: brute-force O(n) scan; move to sqlite-vec only when corpus size makes it measurable.
-        candidates = [
-            (node_id, entry[0])
-            for node_id, entry in self._entries.items()
-            if (requested is None or node_id in requested)
-            and (documents is None or entry[1] in documents)
-            and filter_fn(node_id)
-            and len(entry[0]) == len(query.query_embedding)
-        ]
-        ids = [node_id for node_id, _ in candidates]
-        embeddings = [embedding for _, embedding in candidates]
+        limit = max(query.similarity_top_k, 0)
+        query_norm = math.sqrt(sum(value * value for value in query.query_embedding))
         if query.mode == VectorStoreQueryMode.DEFAULT:
-            scored = sorted(
-                ((self._similarity(query.query_embedding, embedding), node_id) for node_id, embedding in candidates),
-                reverse=True,
-            )[: query.similarity_top_k]
+            if not limit:
+                return VectorStoreQueryResult(similarities=[], ids=[])
+            # ponytail: brute-force O(n) scan, bounded O(top_k + dimensions) RAM;
+            # add sqlite-vec/ANN only when corpus size makes it measurable.
+            scored: list[tuple[float, str]] = []
+            for node_id, embedding in self._iter_candidates(query):
+                similarity, _embedding_norm = self._similarity_and_norm(query.query_embedding, embedding, query_norm)
+                candidate = similarity, node_id
+                if len(scored) < limit:
+                    heapq.heappush(scored, candidate)
+                elif limit and candidate > scored[0]:
+                    heapq.heapreplace(scored, candidate)
+            scored.sort(reverse=True)
             return VectorStoreQueryResult(
                 similarities=[score for score, _ in scored],
                 ids=[node_id for _, node_id in scored],
             )
         if query.mode == VectorStoreQueryMode.MMR:
-            from llama_index.core.indices.query.embedding_utils import get_top_k_mmr_embeddings
+            threshold = (query.mmr_threshold if query.mmr_threshold is not None else kwargs.get("mmr_threshold")) or 0.5
+            selected_ids: list[str] = []
+            selected_scores: list[float] = []
+            selected = set()
+            relevance: dict[str, tuple[float, float]] = {}
+            best: tuple[float, str, list[float], float] | None = None
+            candidate_connection: sqlite3.Connection | None = None
+            try:
+                if self._entries is None:
+                    candidate_connection = sqlite3.connect(self.db_path)
+                for node_id, embedding in self._iter_candidates(query, candidate_connection):
+                    similarity, embedding_norm = self._similarity_and_norm(query.query_embedding, embedding, query_norm)
+                    relevance[node_id] = similarity, embedding_norm
+                    score = threshold * similarity
+                    if best is None or score > best[0]:
+                        best = score, node_id, embedding, embedding_norm
 
-            similarities, top_ids = get_top_k_mmr_embeddings(
-                query.query_embedding,
-                embeddings,
-                similarity_fn=self._similarity,
-                similarity_top_k=query.similarity_top_k,
-                embedding_ids=ids,
-                mmr_threshold=query.mmr_threshold if query.mmr_threshold is not None else kwargs.get("mmr_threshold"),
-            )
-            return VectorStoreQueryResult(similarities=list(similarities), ids=list(top_ids))
+                # ponytail: exact LlamaIndex MMR is O(top_k * candidates) CPU and
+                # O(candidates) scalar RAM; add native SQLite KNN only when measured
+                # corpus latency or memory justifies a production dependency.
+                # LlamaIndex treats MMR top_k=0 as "all candidates". Keep that
+                # behavior while retaining the streaming query path.
+                mmr_limit = None if query.similarity_top_k == 0 else limit
+                while best is not None and (mmr_limit is None or len(selected_ids) < mmr_limit):
+                    score, node_id, recent_embedding, recent_norm = best
+                    selected.add(node_id)
+                    selected_ids.append(node_id)
+                    selected_scores.append(score)
+                    best = None
+                    for node_id, embedding in self._iter_candidates(query, candidate_connection):
+                        if node_id in selected:
+                            continue
+                        similarity, embedding_norm = relevance[node_id]
+                        score = threshold * similarity - (1 - threshold) * self._similarity_with_norms(
+                            embedding, recent_embedding, embedding_norm, recent_norm
+                        )
+                        if best is None or score > best[0]:
+                            best = score, node_id, embedding, embedding_norm
+            finally:
+                if candidate_connection is not None:
+                    candidate_connection.close()
+            return VectorStoreQueryResult(similarities=selected_scores, ids=selected_ids)
         raise ValueError(f"Invalid query mode: {query.mode}")
 
     def persist(self, persist_path: str = "./storage/vector_store.json", fs: Any = None) -> None:

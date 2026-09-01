@@ -116,7 +116,6 @@ if _RAW_PROFILE and not _PROFILE_OVERRIDE:
         "Unsupported profile override; using detected profile %r",
         DETECTED_PROFILE,
     )
-load_hardware_profile(HARDWARE_PROFILE_PATH, fallback=DETECTED_PROFILE)
 save_hardware_profile(HARDWARE_PROFILE_PATH, HARDWARE, TRINAXAI_PROFILE)
 PERSISTED_HARDWARE_PROFILE = load_hardware_profile(HARDWARE_PROFILE_PATH, fallback=TRINAXAI_PROFILE)
 

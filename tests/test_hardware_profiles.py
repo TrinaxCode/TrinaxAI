@@ -36,8 +36,9 @@ def test_profiles_use_ram_and_gpu_together() -> None:
     assert {"8gb", "16gb", "32gb", "64gb"} == VALID_PROFILES
 
     gpu_first = _hardware(8, vendor="nvidia", vram_gb=12)
-    assert select_profile(gpu_first) == "8gb"
+    assert select_profile(gpu_first) == "32gb"
     assert model_recommendations(gpu_first)["general"] == "qwen3.5:9b"
+    assert model_recommendations(gpu_first, profile="8gb")["general"] == "qwen3.5:2b"
     assert recommended_ollama_gpu_layers(gpu_first) == 999
 
     cpu_first = _hardware(64, vendor="amd", vram_gb=2)
@@ -124,6 +125,14 @@ def test_model_recommendations_cover_ram_vram_and_unified_memory() -> None:
         assert model_recommendations(hardware)["general"] == model
 
 
+def test_cpu_caps_large_ram_profile_without_a_gpu() -> None:
+    hardware = _hardware(64)
+    hardware["cpu"] = {"model": "Small CPU", "cores": 4}
+
+    assert select_profile(hardware) == "16gb"
+    assert model_recommendations(hardware)["general"] == "qwen3.5:4b"
+
+
 def test_legacy_profile_values_migrate_and_never_persist(tmp_path) -> None:
     legacy_32 = bytes((109, 97, 120)).decode("ascii")
     legacy_64 = bytes((117, 108, 116, 114, 97)).decode("ascii")
@@ -149,6 +158,9 @@ def test_legacy_profile_values_migrate_and_never_persist(tmp_path) -> None:
     assert persisted["detected_profile"] == "64gb"
     save_hardware_profile(snapshot, hardware, legacy_32)
     assert json.loads(snapshot.read_text(encoding="utf-8"))["profile"] == "32gb"
+    updated_at = json.loads(snapshot.read_text(encoding="utf-8"))["updated_at"]
+    save_hardware_profile(snapshot, hardware, "32gb")
+    assert json.loads(snapshot.read_text(encoding="utf-8"))["updated_at"] == updated_at
     hardware_8 = _hardware(4)
     snapshot.write_text(json.dumps({"profile": legacy_8, "hardware": hardware_8}), encoding="utf-8")
     loaded = load_hardware_profile(snapshot)

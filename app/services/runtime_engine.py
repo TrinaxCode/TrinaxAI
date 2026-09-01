@@ -198,14 +198,18 @@ def _build_engine_from_disk() -> bool:
             storage_context = runtime.storage_context_for_persist_dir(runtime.config.PERSIST_DIR)
             index = runtime.load_index_from_storage(storage_context)
             runtime.state.vector_index = index
-            vector_retriever = index.as_retriever(similarity_top_k=runtime.config.FUSION_CANDIDATES)
+            # bm25s rejects a candidate window larger than the indexed corpus.
+            # Cap all retrievers to the current generation so small installs
+            # start cleanly without warnings (and without changing large ones).
+            candidate_k = min(runtime.config.FUSION_CANDIDATES, max(1, len(index.docstore.docs)))
+            vector_retriever = index.as_retriever(similarity_top_k=candidate_k)
             bm25_retriever = runtime.BM25Retriever.from_defaults(
                 docstore=index.docstore,
-                similarity_top_k=runtime.config.FUSION_CANDIDATES,
+                similarity_top_k=candidate_k,
             )
             runtime.state.fusion_retriever = runtime.QueryFusionRetriever(
                 [vector_retriever, bm25_retriever],
-                similarity_top_k=runtime.config.FUSION_CANDIDATES,
+                similarity_top_k=candidate_k,
                 num_queries=1,
                 mode="reciprocal_rerank",
                 # ``retrieve()`` is invoked from worker threads by both the API
@@ -321,6 +325,7 @@ def _retriever_for_collections(active_collections: tuple[str, ...]):
         ]
         if not nodes:
             return None
+        candidate_k = min(runtime.config.FUSION_CANDIDATES, len(nodes))
         filters = runtime.MetadataFilters(
             filters=[
                 runtime.MetadataFilter(key="collection_id", value=collection_id) for collection_id in active_collections
@@ -328,16 +333,16 @@ def _retriever_for_collections(active_collections: tuple[str, ...]):
             condition=runtime.FilterCondition.OR,
         )
         vector_retriever = runtime.state.vector_index.as_retriever(
-            similarity_top_k=runtime.config.FUSION_CANDIDATES,
+            similarity_top_k=candidate_k,
             filters=filters,
         )
         bm25_retriever = runtime.BM25Retriever.from_defaults(
             nodes=nodes,
-            similarity_top_k=runtime.config.FUSION_CANDIDATES,
+            similarity_top_k=candidate_k,
         )
         retriever = runtime.QueryFusionRetriever(
             [vector_retriever, bm25_retriever],
-            similarity_top_k=runtime.config.FUSION_CANDIDATES,
+            similarity_top_k=candidate_k,
             num_queries=1,
             mode="reciprocal_rerank",
             use_async=False,

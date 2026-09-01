@@ -178,6 +178,29 @@ def test_cached_retrieval_prioritizes_exact_identifiers(monkeypatch) -> None:
     assert nodes == [exact]
 
 
+def test_cached_retrieval_drops_rrf_noise_when_query_terms_match(monkeypatch) -> None:
+    noise = SimpleNamespace(metadata={}, score=0.9, get_content=lambda: "unrelated service notes")
+    wanted = SimpleNamespace(
+        metadata={},
+        score=0.1,
+        get_content=lambda: "El animal guardián de Aurora es el quetzal.",
+    )
+    retriever = SimpleNamespace(retrieve=lambda _query: [noise, wanted])
+    monkeypatch.setattr(rag_service, "_retriever_for_collections", lambda _collections: retriever)
+    monkeypatch.setattr(rag_service.state, "reranker", None)
+    monkeypatch.setattr(config, "RETRIEVAL_CACHE_SECONDS", 0)
+    monkeypatch.setattr(config, "SIMILARITY_TOP_K", 2)
+
+    nodes = rag_service._cached_retrieve(
+        "¿Cuál es el animal guardián de Aurora?",
+        "¿Cuál es el animal guardián de Aurora?",
+        None,
+        None,
+    )
+
+    assert nodes == [wanted]
+
+
 def test_text_response_deliverables_relevance_and_sources_are_stable() -> None:
     response = rag_service._TextResponse(gen=iter(["one", "two"]))
     assert response.response == "onetwo"

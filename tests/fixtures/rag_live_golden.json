@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "name": "trinaxai-live-backend-v1",
+  "description": "Small heterogeneous bilingual corpus for the opt-in Ollama-backed API evaluation.",
+  "cases": [
+    {"id":"es-guardian","query":"¿Cuál es el animal guardián de Aurora?","collections":["rag-eval"],"expected_sources":["aurora.md"],"answer_contains":["quetzal esmeralda"]},
+    {"id":"es-csv","query":"¿Qué puerto usa el servicio de telemetría?","collections":["rag-eval"],"expected_sources":["operaciones.csv"],"answer_contains":["4317"]},
+    {"id":"es-json","query":"¿Cuántos días retiene auditoría la política?","collections":["rag-eval"],"expected_sources":["politica.json"],"answer_contains":["30"]},
+    {"id":"en-text","query":"What is the health route in the runbook?","collections":["rag-eval"],"expected_sources":["runbook.txt"],"answer_contains":["GET /health"]},
+    {"id":"missing-ceo","query":"¿Quién es el CEO de Aurora?","collections":["rag-eval"],"expected_sources":[],"answer_contains":[],"should_answer":false},
+    {"id":"missing-budget","query":"What was Aurora's 2025 budget?","collections":["rag-eval"],"expected_sources":[],"answer_contains":[],"should_answer":false}
+  ]
+}

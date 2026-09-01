@@ -1,7 +1,18 @@
 #!/usr/bin/env bash
 # TrinaxAI — One-Command Installer (Linux/macOS/Windows Bash)
-# Linux/macOS one-command install:
-#   curl -fsSL https://raw.githubusercontent.com/TrinaxCode/TrinaxAI/main/install.sh | bash
+# Linux/macOS release-pinned install (replace 1.2.0 with a validated stable release):
+#   version="1.2.0"
+#   base="https://github.com/TrinaxCode/TrinaxAI/releases/download/v${version}"
+#   installer="$(mktemp)"; manifest="$(mktemp)"
+#   curl --fail --location --output "$installer" "${base}/TrinaxAI-${version}-installer.sh"
+#   curl --fail --location --output "$manifest" "${base}/SHA256SUMS"
+#   expected="$(awk -v asset="TrinaxAI-${version}-installer.sh" '$2 == asset || $2 == "*" asset { print $1; exit }' "$manifest")"
+#   if command -v sha256sum >/dev/null 2>&1; then actual="$(sha256sum "$installer" | awk '{print $1}')"; elif command -v shasum >/dev/null 2>&1; then actual="$(shasum -a 256 "$installer" | awk '{print $1}')"; else echo "A SHA-256 tool (sha256sum or shasum) is required." >&2; exit 2; fi
+#   if [ -z "$expected" ] || [ "$actual" != "$expected" ]; then echo "Installer SHA-256 verification failed." >&2; exit 1; fi
+#   bash -n "$installer" && bash "$installer"
+# The SHA-256 check is mandatory; detached GPG verification is optional only
+# with a signing-key fingerprint obtained independently (same-release keys are
+# not an authenticity anchor; this repository has no pinned trust anchor yet).
 
 set -euo pipefail
 
@@ -34,10 +45,11 @@ if [ "$LANGUAGE" = "es" ]; then
       title) echo 'Instalador de TrinaxAI en un comando' ;;
       'TrinaxAI - Local AI Assistant') echo 'TrinaxAI - Asistente de IA local' ;;
       'TrinaxAI is ready!') echo 'TrinaxAI está listo' ;;
+      'Installation prepared; TrinaxAI is not running.') echo 'Instalación preparada; TrinaxAI no está en ejecución.' ;;
       usage) echo 'Uso' ;;
       guided) echo 'Instalación guiada (pregunta opciones)' ;;
       automatic) echo 'Instalación automática para CI/scripts' ;;
-      skip_models) echo 'Omitir descargas de modelos' ;;
+      skip_models) echo 'Omitir descargas; requiere los modelos configurados ya instalados' ;;
       help) echo 'Mostrar esta ayuda' ;;
       '--install-dir requires a path') echo 'Se requiere una ruta para --install-dir' ;;
       'Unknown option:'*) echo "Opción desconocida:${1#Unknown option:}" ;;
@@ -168,12 +180,13 @@ if [ "$LANGUAGE" = "es" ]; then
       'Could not enable the weekly task.'*) echo "No se pudo activar la tarea semanal.${1#Could not enable the weekly task.}" ;;
       'Auto-start enabled') echo 'Inicio automático activado' ;;
       'Could not enable auto-start automatically.'*) echo "No se pudo activar el inicio automático.${1#Could not enable auto-start automatically.}" ;;
+      'Auto-start skipped because TrinaxAI was not started. Enable it after starting TrinaxAI.') echo 'El inicio automático se omitió porque TrinaxAI no se inició. Actívalo después de iniciar TrinaxAI.' ;;
       'Auto-start skipped.'*) echo "Inicio automático omitido.${1#Auto-start skipped.}" ;;
       *) echo "$1" ;;
     esac
   }
 else
-  tr_text_en() { case "$1" in title) echo 'TrinaxAI One-Command Installer' ;; usage) echo 'Usage:' ;; guided) echo 'Guided install (asks optional choices)' ;; automatic) echo 'Automatic install for CI/scripts' ;; skip_models) echo 'Skip model downloads' ;; help) echo 'Show this help' ;; 'LAN / Red local') echo 'LAN' ;; *) echo "$1" ;; esac; }
+  tr_text_en() { case "$1" in title) echo 'TrinaxAI One-Command Installer' ;; usage) echo 'Usage:' ;; guided) echo 'Guided install (asks optional choices)' ;; automatic) echo 'Automatic install for CI/scripts' ;; skip_models) echo 'Skip downloads; requires configured models already installed' ;; help) echo 'Show this help' ;; 'LAN / Red local') echo 'LAN' ;; *) echo "$1" ;; esac; }
 fi
 if [ "$LANGUAGE" = "es" ]; then
   tr_text() { tr_text_es "$@"; }
@@ -430,30 +443,39 @@ ask_yes_no() {
   return 1
 }
 
-detect_ram_gb() {
-  if [ "$OS" = "linux" ] && command -v awk >/dev/null 2>&1; then
-    awk '/MemTotal/ { printf "%.0f", $2/1024/1024 }' /proc/meminfo 2>/dev/null || echo "0"
-  elif [ "$OS" = "macos" ]; then
-    bytes=$(sysctl -n hw.memsize 2>/dev/null || echo 0)
-    echo $((bytes / 1024 / 1024 / 1024))
-  else
-    echo "0"
-  fi
-}
+hardware_recommendations() {
+  "$PYTHON_BIN" - "$1" <<'PY'
+import sys
 
-recommended_profile() {
-  ram_gb="$(detect_ram_gb)"
-  if [ "${ram_gb:-0}" -ge 64 ]; then
-    echo "64gb"
-  elif [ "${ram_gb:-0}" -ge 32 ]; then
-    echo "32gb"
-  elif [ "${ram_gb:-0}" -ge 16 ]; then
-    echo "16gb"
-  elif [ "${ram_gb:-0}" -ge 8 ]; then
-    echo "8gb"
-  else
-    echo "8gb"
-  fi
+from trinaxai_core import detect_hardware, model_recommendations, select_profile
+
+hardware = detect_hardware()
+detected = select_profile(hardware)
+requested = sys.argv[1].strip()
+profile = requested if requested in {"8gb", "16gb", "32gb", "64gb"} else detected
+recommendations = model_recommendations(hardware, profile=profile)
+large = profile in {"32gb", "64gb"}
+embed = "qwen3-embedding:4b" if large else "qwen3-embedding:0.6b"
+embed_dims = "2560" if large else "1024"
+embed_batch = "16" if profile == "64gb" else "8" if profile != "8gb" else "1"
+embed_keep_alive = "30m" if large else "0s" if profile == "8gb" else "15m"
+print("\t".join(
+    [
+        detected,
+        str(round(float(hardware.get("ram", {}).get("total_bytes") or 0) / 1_000_000_000)),
+        profile,
+        recommendations["general"],
+        recommendations["code"],
+        recommendations["deep"],
+        recommendations["fast"],
+        "quality" if large else "balanced",
+        embed,
+        embed_dims,
+        embed_batch,
+        embed_keep_alive,
+    ]
+))
+PY
 }
 
 lan_ip() {
@@ -483,6 +505,99 @@ ensure_ollama_running() {
     sleep 1
   done
   return 1
+}
+
+env_file_value() {
+  local key="$1"
+  [ -f ".env" ] || return 0
+  awk -F= -v key="$key" '$1 == key { sub(/^[^=]*=/, ""); gsub(/\r$/, ""); print; exit }' .env
+}
+
+add_unique_model() {
+  local model="$1"
+  [ -n "$model" ] || return 0
+  case " ${MODELS[*]-} " in
+    *" $model "*) ;;
+    *) MODELS+=("$model");;
+  esac
+}
+
+configured_models() {
+  MODELS=()
+  add_unique_model "$(env_file_value TRINAXAI_MODEL_CODE)"
+  add_unique_model "$(env_file_value TRINAXAI_MODEL_DEEP)"
+  add_unique_model "$(env_file_value TRINAXAI_MODEL_GENERAL)"
+  add_unique_model "$(env_file_value TRINAXAI_MODEL_FAST)"
+  add_unique_model "$(env_file_value TRINAXAI_EMBED)"
+  if [ "${#MODELS[@]}" -eq 0 ]; then
+    MODELS=(qwen3.5:2b qwen3.5:4b qwen3-embedding:0.6b qwen3-embedding:4b)
+  fi
+}
+
+ollama_model_installed() {
+  local model="$1"
+  ollama list 2>/dev/null | awk -v model="$model" 'NR > 1 && $1 == model { found=1 } END { exit(found ? 0 : 1) }'
+}
+
+verify_models() {
+  local model
+  for model in "${MODELS[@]}"; do
+    if ! ollama_model_installed "$model"; then
+      print_err "Required Ollama model is not ready: $model"
+      return 1
+    fi
+  done
+}
+
+wait_for_local_url() {
+  local url="$1"
+  for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
+    if curl -kfsS --connect-timeout 2 --max-time 5 "$url" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 1
+  done
+  return 1
+}
+
+smoke_inference() {
+  local response
+  response="$(curl -kfsS --connect-timeout 3 --max-time 300 \
+    -H 'Content-Type: application/json' \
+    -d '{"messages":[{"role":"user","content":"Reply with the single word OK."}],"stream":false,"mode":"model","think":false}' \
+    "$RAG_BASE_URL/v1/chat/completions")" || return 1
+  if ! printf '%s' "$response" | "$PYTHON_BIN" -c \
+    'import json, sys; data = json.load(sys.stdin); content = data["choices"][0]["message"]["content"]; raise SystemExit(0 if isinstance(content, str) and content.strip() else 1)'; then
+    return 1
+  fi
+}
+
+assert_runtime_ready() {
+  local rag_port pwa_port scheme rag_url="" pwa_url=""
+  rag_port="${TRINAXAI_PORT:-$(env_file_value TRINAXAI_PORT)}"
+  rag_port="${rag_port:-3333}"
+  pwa_port="${TRINAXAI_PWA_PORT:-$(env_file_value TRINAXAI_PWA_PORT)}"
+  pwa_port="${pwa_port:-3334}"
+  for scheme in https http; do
+    if wait_for_local_url "$scheme://127.0.0.1:$rag_port/health"; then
+      rag_url="$scheme://127.0.0.1:$rag_port"
+      break
+    fi
+  done
+  [ -n "$rag_url" ] || { print_err "TrinaxAI backend is not ready on port $rag_port."; return 1; }
+  for scheme in https http; do
+    if wait_for_local_url "$scheme://127.0.0.1:$pwa_port/"; then
+      pwa_url="$scheme://127.0.0.1:$pwa_port"
+      break
+    fi
+  done
+  [ -n "$pwa_url" ] || { print_err "TrinaxAI PWA is not ready on port $pwa_port."; return 1; }
+  RAG_BASE_URL="$rag_url"
+  if ! smoke_inference; then
+    print_err "TrinaxAI smoke inference failed."
+    return 1
+  fi
+  print_ok "Backend, PWA, and smoke inference are ready"
 }
 
 ensure_https_certificate() {
@@ -788,57 +903,51 @@ if [ -z "$SCRIPT_DIR" ] || [ ! -f "$SCRIPT_DIR/rag_api.py" ] || [ ! -f "$SCRIPT_
     mkdir -p "$(dirname "$REPO_DIR")"
     temp_dir="$(mktemp -d "${TMPDIR:-/tmp}/trinaxai.XXXXXX")"
     trap 'rm -rf -- "$temp_dir"' EXIT
-    release_version="${TRINAXAI_RELEASE_VERSION:-}"
+    release_version="${TRINAXAI_RELEASE_VERSION:-1.2.0}"
     if [ -n "$release_version" ] && [[ ! "$release_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
       print_err "TRINAXAI_RELEASE_VERSION must be a semantic version."
       exit 2
     fi
-    if [ -n "$release_version" ]; then
-      source_archive_name="TrinaxAI-${release_version}.tar.gz"
-      default_source_archive_url="https://github.com/TrinaxCode/TrinaxAI/releases/download/v${release_version}/${source_archive_name}"
-    else
-      source_archive_name="TrinaxAI-main.tar.gz"
-      default_source_archive_url="https://github.com/TrinaxCode/TrinaxAI/archive/refs/heads/main.tar.gz"
-    fi
+    source_archive_name="TrinaxAI-${release_version}.tar.gz"
+    default_source_archive_url="https://github.com/TrinaxCode/TrinaxAI/releases/download/v${release_version}/${source_archive_name}"
     source_url_override="${TRINAXAI_SOURCE_URL:-}"
     source_archive_url="${source_url_override:-$default_source_archive_url}"
-    source_checksum=""
     case "$source_archive_url" in
       https://*) ;;
       *) print_err "Source package URL must use HTTPS."; exit 2 ;;
     esac
-    curl -fsSL --retry 3 --connect-timeout 15 --max-time 300 \
-      -o "$temp_dir/trinaxai.tar.gz" "$source_archive_url"
     if [ -n "$source_url_override" ]; then
       source_checksum="$(printf '%s' "${TRINAXAI_SOURCE_SHA256:-}" | tr -d '[:space:]')"
       if [ -z "$source_checksum" ]; then
         print_err "TRINAXAI_SOURCE_URL requires TRINAXAI_SOURCE_SHA256."
         exit 2
       fi
-    elif [ -n "$release_version" ]; then
+    elif [ -n "${TRINAXAI_SOURCE_SHA256:-}" ]; then
+      source_checksum="$(printf '%s' "$TRINAXAI_SOURCE_SHA256" | tr -d '[:space:]')"
+    else
       source_checksum="$(curl -fsSL --retry 3 --connect-timeout 15 --max-time 60 \
         "https://github.com/TrinaxCode/TrinaxAI/releases/download/v${release_version}/SHA256SUMS" \
         | awk -v asset="$source_archive_name" '$2 == asset || $2 == "*" asset { print $1; exit }')"
     fi
-    if [ -n "$source_checksum" ]; then
-      if [[ ! "$source_checksum" =~ ^[0-9a-fA-F]{64}$ ]]; then
-        print_err "Could not obtain a valid SHA-256 for the source package."
-        exit 2
-      fi
-      if command -v sha256sum >/dev/null 2>&1; then
-        source_archive_digest="$(sha256sum "$temp_dir/trinaxai.tar.gz" | awk '{print $1}')"
-      elif command -v shasum >/dev/null 2>&1; then
-        source_archive_digest="$(shasum -a 256 "$temp_dir/trinaxai.tar.gz" | awk '{print $1}')"
-      else
-        print_err "sha256sum or shasum is required to verify the source package."
-        exit 2
-      fi
-      source_archive_digest="$(printf '%s' "$source_archive_digest" | tr '[:upper:]' '[:lower:]')"
-      source_checksum="$(printf '%s' "$source_checksum" | tr '[:upper:]' '[:lower:]')"
-      if [ "$source_archive_digest" != "$source_checksum" ]; then
-        print_err "The source package failed SHA-256 verification."
-        exit 2
-      fi
+    if [[ ! "$source_checksum" =~ ^[0-9a-fA-F]{64}$ ]]; then
+      print_err "Could not obtain a valid SHA-256 for the source package."
+      exit 2
+    fi
+    curl -fsSL --retry 3 --connect-timeout 15 --max-time 300 \
+      -o "$temp_dir/trinaxai.tar.gz" "$source_archive_url"
+    if command -v sha256sum >/dev/null 2>&1; then
+      source_archive_digest="$(sha256sum "$temp_dir/trinaxai.tar.gz" | awk '{print $1}')"
+    elif command -v shasum >/dev/null 2>&1; then
+      source_archive_digest="$(shasum -a 256 "$temp_dir/trinaxai.tar.gz" | awk '{print $1}')"
+    else
+      print_err "sha256sum or shasum is required to verify the source package."
+      exit 2
+    fi
+    source_archive_digest="$(printf '%s' "$source_archive_digest" | tr '[:upper:]' '[:lower:]')"
+    source_checksum="$(printf '%s' "$source_checksum" | tr '[:upper:]' '[:lower:]')"
+    if [ "$source_archive_digest" != "$source_checksum" ]; then
+      print_err "The source package failed SHA-256 verification."
+      exit 2
     fi
     extract_source_archive "$temp_dir/trinaxai.tar.gz" "$temp_dir/extracted"
     mv "$temp_dir/extracted/$SOURCE_ARCHIVE_ROOT" "$REPO_DIR"
@@ -919,10 +1028,13 @@ print_ok "Runtime versions ready: $($PYTHON_BIN --version 2>&1), Node $(node --v
 
 # ── Profile and .env ──
 print_header "1.5/6 TrinaxAI Profile"
-AUTO_PROFILE="$(recommended_profile)"
-RAM_GB="$(detect_ram_gb)"
-  echo -e "  ${CYAN}$(tr_text 'Detected RAM'):${NC} ${RAM_GB:-unknown} GB"
-  echo -e "  ${CYAN}$(tr_text 'Recommended profile'):${NC} ${GREEN}${AUTO_PROFILE}${NC}"
+if ! hardware_data="$(hardware_recommendations "")"; then
+  print_err "Could not detect hardware or calculate the recommended profile."
+  exit 1
+fi
+IFS=$'\t' read -r AUTO_PROFILE RAM_GB PROFILE MODEL_GENERAL MODEL_CODE MODEL_DEEP MODEL_FAST EMBED_PRESET EMBED_MODEL EMBED_DIMS EMBED_BATCH EMBED_KEEP_ALIVE <<< "$hardware_data"
+echo -e "  ${CYAN}$(tr_text 'Detected RAM'):${NC} ${RAM_GB:-unknown} GB"
+echo -e "  ${CYAN}$(tr_text 'Recommended profile'):${NC} ${GREEN}${AUTO_PROFILE}${NC}"
 echo ""
 if [ -n "$PROFILE_OVERRIDE" ]; then
   case "$PROFILE_OVERRIDE" in
@@ -953,49 +1065,13 @@ else
 fi
 print_ok "Automatic setup selected: profile=$PROFILE"
 
-MODEL_GENERAL="qwen3.5:4b"
-MODEL_CODE="qwen3.5:4b"
-MODEL_DEEP="qwen3.5:4b"
-MODEL_FAST="qwen3.5:2b"
-EMBED_PRESET="balanced"
-EMBED_MODEL="qwen3-embedding:0.6b"
-EMBED_DIMS="1024"
-EMBED_BATCH="8"
-EMBED_KEEP_ALIVE="15m"
-VISION_MODEL="qwen3.5:4b"
-if [ "$PROFILE" = "8gb" ]; then
-  MODEL_GENERAL="qwen3.5:2b"
-  MODEL_CODE="qwen3.5:2b"
-  MODEL_DEEP="qwen3.5:2b"
-  MODEL_FAST="qwen3.5:2b"
-  EMBED_PRESET="balanced"
-  EMBED_MODEL="qwen3-embedding:0.6b"
-  EMBED_DIMS="1024"
-  EMBED_BATCH="1"
-  EMBED_KEEP_ALIVE="0s"
-  VISION_MODEL="qwen3.5:2b"
-elif [ "$PROFILE" = "32gb" ]; then
-  MODEL_GENERAL="qwen3.5:9b"
-  MODEL_CODE="qwen3.5:9b"
-  MODEL_DEEP="qwen3.5:9b"
-  MODEL_FAST="qwen3.5:4b"
-  VISION_MODEL="qwen3.5:9b"
-  EMBED_PRESET="quality"
-  EMBED_MODEL="qwen3-embedding:4b"
-  EMBED_DIMS="2560"
-  EMBED_KEEP_ALIVE="30m"
-elif [ "$PROFILE" = "64gb" ]; then
-  MODEL_GENERAL="qwen3.5:35b"
-  MODEL_CODE="qwen3-coder:30b"
-  MODEL_DEEP="qwen3.5:35b"
-  MODEL_FAST="qwen3.5:4b"
-  VISION_MODEL="qwen3.5:35b"
-  EMBED_PRESET="quality"
-  EMBED_MODEL="qwen3-embedding:4b"
-  EMBED_DIMS="2560"
-  EMBED_BATCH="16"
-  EMBED_KEEP_ALIVE="30m"
+if ! hardware_data="$(hardware_recommendations "$PROFILE")"; then
+  print_err "Could not calculate model recommendations for profile=$PROFILE."
+  exit 1
 fi
+IFS=$'\t' read -r DETECTED_PROFILE RAM_GB SELECTED_PROFILE MODEL_GENERAL MODEL_CODE MODEL_DEEP MODEL_FAST EMBED_PRESET EMBED_MODEL EMBED_DIMS EMBED_BATCH EMBED_KEEP_ALIVE <<< "$hardware_data"
+PROFILE="$SELECTED_PROFILE"
+VISION_MODEL="$MODEL_GENERAL"
 
 echo ""
 echo -e "${CYAN}$(tr_text 'Model roles TrinaxAI needs:')${NC}"
@@ -1112,12 +1188,20 @@ else
   elif [ "$OS" = "macos" ]; then
     brew install ollama
   elif [ "$OS" = "windows" ]; then
-    print_warn "Download Ollama from: https://ollama.com/download/windows"
-    print_warn "Install Ollama, then re-run this script for full setup."
-    print_info "Continuing with Python and frontend setup..."
+    print_err "Ollama is not installed. Download it from: https://ollama.com/download/windows"
+    exit 1
   fi
+  command -v ollama >/dev/null 2>&1 || {
+    print_err "Ollama installation completed without a usable ollama command."
+    exit 1
+  }
   print_ok "Ollama installed"
 fi
+if ! ensure_ollama_running; then
+  print_err "Ollama is not ready on http://localhost:11434."
+  exit 1
+fi
+print_ok "Ollama API ready"
 
 # ── 3. Python Environment ──
 print_header "3/6 Python Virtual Environment"
@@ -1176,19 +1260,23 @@ fi
 # ── 4. PWA Frontend ──
 print_header "4/6 PWA Frontend"
 
-if [ -d "chat-pwa" ]; then
+if [ -d "chat-pwa" ] && [ -f "chat-pwa/package.json" ] && [ -f "chat-pwa/package-lock.json" ]; then
   cd chat-pwa
-  if command -v node &>/dev/null; then
+  if command -v node &>/dev/null && command -v npm &>/dev/null; then
     npm ci --silent 2>/dev/null || npm ci
-    npm run build >/dev/null 2>&1 || print_warn "PWA build failed - you can retry with: cd chat-pwa && npm run build"
-    print_ok "PWA dependencies installed"
+    if ! npm run build >/dev/null 2>&1 || [ ! -f dist/index.html ]; then
+      print_err "PWA build failed - retry with: cd chat-pwa && npm run build"
+      exit 1
+    fi
+    print_ok "PWA build ready"
   else
-    print_warn "Node.js not found. Install from https://nodejs.org"
-    print_info "The PWA needs Node.js 22+ to build and serve"
+    print_err "Node.js 22+ and npm are required to build the PWA. Install them from https://nodejs.org"
+    exit 1
   fi
   cd ..
 else
-  print_warn "chat-pwa/ directory not found"
+  print_err "chat-pwa/package.json and package-lock.json are required for the PWA."
+  exit 1
 fi
 
 # ── 5. Default Models ──
@@ -1199,14 +1287,7 @@ if [ "${DISK_GB:-0}" -gt 0 ] && [ "$DISK_GB" -lt 12 ]; then
   print_warn "Only ${DISK_GB}GB free. Model downloads may fail; free disk space before pulling large models."
 fi
 
-DEFAULT_MODELS=()
-for model in "$MODEL_CODE" "$MODEL_DEEP" "$MODEL_GENERAL" "$MODEL_FAST" "$EMBED_MODEL"; do
-  [ -n "$model" ] || continue
-  case " ${DEFAULT_MODELS[*]-} " in
-    *" $model "*) ;;
-    *) DEFAULT_MODELS+=("$model");;
-  esac
-done
+configured_models
 
 echo ""
 echo -e "${YELLOW}TrinaxAI works best with these models:${NC}"
@@ -1218,7 +1299,7 @@ echo "  Vision (lazy):  $VISION_MODEL"
 echo ""
 
 if [ "$INSTALL_MODELS" = "1" ]; then
-  if ask_yes_no "Download the configured Ollama models now? Choose N if you will use models you already have." y; then
+  if ask_yes_no "Download the configured Ollama models now? Choose N only if they are already installed." y; then
     INSTALL_MODELS=1
   else
     INSTALL_MODELS=0
@@ -1227,18 +1308,26 @@ fi
 
 if [ "$INSTALL_MODELS" = "1" ]; then
   if ensure_ollama_running; then
-    for model in "${DEFAULT_MODELS[@]}"; do
+    for model in "${MODELS[@]}"; do
       echo "  Pulling $model..."
-      ollama pull "$model" && print_ok "$model" || print_err "$model failed"
+      if ! ollama pull "$model" || ! ollama_model_installed "$model"; then
+        print_err "$model failed"
+        exit 1
+      fi
+      print_ok "$model"
     done
 
     print_info "Vision model $VISION_MODEL will download on first image analysis."
   else
-    print_warn "Ollama is not available yet; skipping model downloads. TrinaxAI will still install."
-    print_info "After installing/starting Ollama, run: ollama pull qwen3.5:2b && ollama pull qwen3.5:4b && ollama pull qwen3-embedding:0.6b"
+    print_err "Ollama is not available; required models cannot be prepared."
+    exit 1
   fi
 else
-  print_info "Skipping model download. You can pull them later with: ollama pull <model>"
+  print_info "Skipping model downloads; checking the configured models already installed."
+fi
+if ! ensure_ollama_running || ! verify_models; then
+  print_err "Required Ollama models are not ready. Re-run without --no-models or pull the configured models."
+  exit 1
 fi
 
 # ── 6. Auto-Start Service ──
@@ -1247,13 +1336,12 @@ print_header "6/6 Auto-Start on Boot"
 if [ "$START_NOW" = "1" ]; then
   if ask_yes_no "Start TrinaxAI now after install?" y; then
     print_info "Starting TrinaxAI services..."
-    python service_manager.py start --base-dir "$SCRIPT_DIR" || \
-      print_info "Supervisor returned a non-zero status; checking the RAG API directly."
-    sleep 2
-    if curl -kfsS "https://127.0.0.1:3333/health" >/dev/null 2>&1 || curl -fsS "http://127.0.0.1:3333/health" >/dev/null 2>&1; then
-      print_ok "TrinaxAI and the RAG API are ready"
-    else
-      print_warn "TrinaxAI did not answer on the health endpoint yet. Run: ./startup_ai.sh"
+    if ! python service_manager.py start --base-dir "$SCRIPT_DIR"; then
+      print_err "TrinaxAI services failed to start."
+      exit 1
+    fi
+    if ! assert_runtime_ready; then
+      exit 1
     fi
   else
     START_NOW=0
@@ -1261,7 +1349,7 @@ if [ "$START_NOW" = "1" ]; then
   fi
 fi
 
-if [ "$ENABLE_AUTOSTART" = "1" ]; then
+if [ "$START_NOW" = "1" ] && [ "$ENABLE_AUTOSTART" = "1" ]; then
   echo ""
   echo -e "${YELLOW}Start TrinaxAI automatically when your computer turns on?${NC}"
   echo "You can change this later in the PWA Settings page."
@@ -1279,27 +1367,33 @@ if [ "$ENABLE_AUTO_UPDATE" = "1" ] && [ -f "$SCRIPT_DIR/scripts/auto_update.py" 
     print_warn "Could not enable the weekly task. Run: python scripts/auto_update.py enable"
 fi
 
-if [ "$ENABLE_AUTOSTART" = "1" ]; then
+if [ "$START_NOW" = "1" ] && [ "$ENABLE_AUTOSTART" = "1" ]; then
   python service_manager.py enable-autostart --base-dir "$SCRIPT_DIR" && \
     print_ok "Auto-start enabled" || \
     print_warn "Could not enable auto-start automatically. Use: python service_manager.py enable-autostart --base-dir \"$SCRIPT_DIR\""
+elif [ "$START_NOW" != "1" ]; then
+  print_info "Auto-start skipped because TrinaxAI was not started. Enable it after starting TrinaxAI."
 else
   print_info "Auto-start skipped. Enable it later in PWA Settings."
 fi
 
 # ── Done ──
 echo ""
-echo -e "${GREEN}${BOLD}$(tr_text 'TrinaxAI is ready!')${NC}"
-echo ""
-echo -e "${BOLD}${CYAN}$(tr_text 'Links to enter')${NC}"
-echo -e "  ${BLUE}$(tr_text 'Localhost'):${NC}     https://localhost:3334"
-if [ -n "${LAN_IP:-}" ]; then
-  echo -e "  ${BLUE}$(tr_text 'LAN / Red local'):${NC} https://${LAN_IP}:3334"
+if [ "$START_NOW" = "1" ]; then
+  echo -e "${GREEN}${BOLD}$(tr_text 'TrinaxAI is ready!')${NC}"
+  echo ""
+  echo -e "${BOLD}${CYAN}$(tr_text 'Links to enter')${NC}"
+  echo -e "  ${BLUE}$(tr_text 'Localhost'):${NC}     https://localhost:3334"
+  if [ -n "${LAN_IP:-}" ]; then
+    echo -e "  ${BLUE}$(tr_text 'LAN / Red local'):${NC} https://${LAN_IP}:3334"
+  else
+    echo -e "  ${BLUE}$(tr_text 'LAN / Red local'):${NC} https://[YOUR-LAN-IP]:3334"
+  fi
+  echo -e "  ${BLUE}$(tr_text 'RAG health'):${NC}    https://localhost:3333/health"
+  echo -e "  ${BLUE}$(tr_text 'Ollama API'):${NC}    http://localhost:11434"
 else
-  echo -e "  ${BLUE}$(tr_text 'LAN / Red local'):${NC} https://[YOUR-LAN-IP]:3334"
+  echo -e "${YELLOW}${BOLD}$(tr_text 'Installation prepared; TrinaxAI is not running.')${NC}"
 fi
-echo -e "  ${BLUE}$(tr_text 'RAG health'):${NC}    https://localhost:3333/health"
-echo -e "  ${BLUE}$(tr_text 'Ollama API'):${NC}    http://localhost:11434"
 echo ""
 echo -e "  ${BLUE}$(tr_text 'Quick start'):${NC}   ./startup_ai.sh"
 echo -e "  ${BLUE}$(tr_text 'CLI'):${NC}           trinaxai"
@@ -1309,8 +1403,10 @@ echo -e "  ${BLUE}$(tr_text 'System test'):${NC}   python test_system.py --verbo
 echo -e "  ${BLUE}$(tr_text 'Updates'):${NC}       $(tr_text 'Automatic check every week')"
 echo -e "  ${BLUE}$(tr_text 'Docs'):${NC}         https://github.com/TrinaxCode/TrinaxAI"
 echo ""
-echo -e "  ($(tr_text 'Same WiFi network required. Check firewall: ports 3333, 3334'))"
-echo ""
+if [ "$START_NOW" = "1" ]; then
+  echo -e "  ($(tr_text 'Same WiFi network required. Check firewall: ports 3333, 3334'))"
+  echo ""
+fi
 echo -e "  ${YELLOW}$(tr_text 'LAN system control remains localhost-only')${NC}"
 echo ""
 echo -e "  ${YELLOW}$(tr_text 'Star the repo'):${NC} github.com/TrinaxCode/TrinaxAI"

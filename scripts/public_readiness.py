@@ -54,6 +54,26 @@ REQUIRED_FILES = [
     "chat-pwa/public/offline.html",
     "trinaxai_cli/i18n.py",
 ]
+INSTALL_SURFACE_FILES = (
+    "install.sh",
+    "install.ps1",
+    "README.md",
+    "README.es.md",
+    "TESTING.md",
+    "TESTING.es.md",
+    "docs/README.md",
+    "docs/README.es.md",
+    "docs/INSTALL_LINUX.md",
+    "docs/INSTALL_LINUX.es.md",
+    "docs/INSTALL_MACOS.md",
+    "docs/INSTALL_MACOS.es.md",
+    "docs/INSTALL_WINDOWS.md",
+    "docs/INSTALL_WINDOWS.es.md",
+)
+UNPINNED_INSTALL_MARKERS = (
+    "raw.githubusercontent.com/TrinaxCode/TrinaxAI/main",
+    "github.com/TrinaxCode/TrinaxAI/archive/refs/heads/main",
+)
 ALLOW_HARDCODE_IN = {
     ".env.example",
     "README.md",
@@ -129,62 +149,145 @@ RELEASE_ACTION_REF = re.compile(r"^\s*(?:-\s*)?uses:\s*([^@\s]+)@([^\s#]+)")
 EXACT_BUILD_VERSION = re.compile(r"\"\d+\.\d+\.\d+\"")
 
 
-def check_release_workflow_security(workflow: str) -> list[str]:
-    """Keep stable release publication signed and reproducible."""
+def _read_ci_workflow() -> str:
+    try:
+        return (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+    except OSError:
+        return ""
+
+
+def _workflow_code(workflow: str) -> str:
+    """Ignore comments so readiness markers cannot be satisfied by prose."""
+    return "\n".join(line.split("#", 1)[0] for line in workflow.splitlines())
+
+
+def check_ci_workflow_contract(workflow: str) -> list[str]:
+    """Keep the required publication gates visible and fail-closed."""
+    errors: list[str] = []
+    code = _workflow_code(workflow)
+    required_commands = (
+        ("Ruff lint", r"(?m)^\s*run:\s+ruff\s+check\s+\.\s*$"),
+        ("Ruff format check", r"(?m)^\s*run:\s+ruff\s+format\s+--check\s+\.\s*$"),
+        ("Mypy gradual boundary", r"(?m)^\s*run:\s+mypy\s*$"),
+        ("branch coverage", r"(?m)^\s*--cov-branch\s*$"),
+        ("coverage threshold", r"(?m)^\s*--cov-report=.*--cov-fail-under=98\s*$"),
+        ("deterministic RAG", r"(?m)^\s*run:\s+python\s+scripts/evaluate_rag\.py\s+--deterministic\b"),
+        ("frontend coverage", r"(?m)^\s*run:\s+npm\s+run\s+test:coverage\s*$"),
+        ("TypeScript check", r"(?m)^\s*run:\s+npx\s+tsc\s+--noEmit\s*$"),
+        ("ESLint", r"(?m)^\s*run:\s+npm\s+run\s+lint\s*$"),
+        ("Build PWA", r"(?m)^\s*run:\s+npm\s+run\s+build\s*$"),
+        ("frontend bundle budgets", r"(?m)^\s*run:\s+npm\s+run\s+check:bundle\s*$"),
+    )
+    for marker, pattern in required_commands:
+        if not re.search(pattern, code):
+            errors.append(f"CI workflow is missing required gate: {marker}")
+    if re.search(r"(?m)^\s*continue-on-error\s*:", code):
+        errors.append("CI publication gates must not use continue-on-error")
+    if not re.search(r"(?m)^\s*run:\s+.*scripts/evaluate_rag\.py\s+--deterministic(?:\s|$)", code):
+        errors.append("CI must run the deterministic RAG fixture as its own gate")
+    if not re.search(r"(?m)^\s*run:\s+.*scripts/evaluate_rag\.py\s+--ollama-smoke(?:\s|$)", code):
+        errors.append("CI must expose a separate live Ollama smoke")
+    if "workflow_dispatch:" not in code or "run_ollama_smoke" not in code:
+        errors.append("live Ollama smoke must be an explicit workflow dispatch option")
+    if not re.search(
+        r"(?m)^\s*if:\s*github\.event_name\s*==\s*'workflow_dispatch'\s*&&\s*inputs\.run_ollama_smoke\s*==\s*true",
+        code,
+    ):
+        errors.append("live Ollama smoke must be opt-in and manually triggered")
+    return errors
+
+
+def check_release_workflow_security(workflow: str, ci_workflow: str | None = None) -> list[str]:
+    """Keep tagged release publication signed, fail-closed, and reproducible.
+
+    This is intentionally dependency-free rather than a full YAML parser.  The
+    critical controls are therefore matched as uncommented, executable lines;
+    workflow review remains responsible for YAML structure outside these gates.
+    """
     errors: list[str] = []
     action_refs = []
-    for line in workflow.splitlines():
-        if "uses:" not in line or "./" in line:
-            continue
-        match = RELEASE_ACTION_REF.match(line)
-        if not match:
-            errors.append(f"release action is not pinned immutably: {line.strip()}")
-            continue
-        action, ref = match.groups()
-        action_refs.append(action)
-        if not re.fullmatch(r"[0-9a-f]{40}", ref):
-            errors.append(f"release action {action} is not pinned to a commit SHA")
+    code = _workflow_code(workflow)
+    ci_workflow = _read_ci_workflow() if ci_workflow is None else ci_workflow
+    workflows = (("release", workflow), ("CI", ci_workflow))
+    for label, source in workflows:
+        for line in source.splitlines():
+            if "uses:" not in line or "./" in line:
+                continue
+            match = RELEASE_ACTION_REF.match(line)
+            if not match:
+                errors.append(f"{label} action is not pinned immutably: {line.strip()}")
+                continue
+            action, ref = match.groups()
+            action_refs.append(action)
+            if not re.fullmatch(r"[0-9a-f]{40}", ref):
+                errors.append(f"{label} action {action} is not pinned to a commit SHA")
     if not action_refs:
         errors.append("release workflow has no externally pinned actions")
 
-    if re.search(r"(?:runs-on:|\bos:)\s*[^\n]*-latest\b", workflow):
-        errors.append("release workflow uses a mutable latest runner")
-    python_versions = re.findall(r"python-version:\s*([^\s#]+)", workflow)
+    combined = "\n".join(source for _label, source in workflows)
+    if re.search(r"(?:runs-on:|\bos:)\s*[^\n]*-latest\b", combined):
+        errors.append("release or transitive CI workflow uses a mutable latest runner")
+    python_versions = re.findall(r"python-version:\s*([^\s#]+)", combined)
     if not python_versions or any(not EXACT_BUILD_VERSION.fullmatch(value) for value in python_versions):
-        errors.append("release workflow must use an exact Python toolchain version")
-    node_versions = re.findall(r"node-version:\s*([^\s#]+)", workflow)
+        errors.append("release and transitive CI workflows must use exact Python toolchain versions")
+    node_versions = re.findall(r"node-version:\s*([^\s#]+)", combined)
     if not node_versions or any(not EXACT_BUILD_VERSION.fullmatch(value) for value in node_versions):
-        errors.append("release workflow must use an exact Node toolchain version")
+        errors.append("release and transitive CI workflows must use exact Node toolchain versions")
     for tool in ("pip", "setuptools", "wheel"):
         if not re.search(rf"['\"]{tool}==\d+(?:\.\d+){{1,2}}['\"]", workflow):
             errors.append(f"release workflow must pin {tool}")
 
-    required_markers = (
-        "name: Require release signing credentials",
-        "gpg --batch --verify",
-        "--detach-sign",
-        "name: Sign and verify container images",
-        "cosign sign --yes",
-        "cosign verify",
-        "cosign-release: v2.5.3",
+    command_markers = (
+        (
+            "release signing credential guard",
+            r'if\s+\[\[\s+-z\s+"\$RELEASE_SIGNING_KEY_BASE64"\s+\|\|\s+-z\s+"\$RELEASE_SIGNING_KEY_PASSPHRASE"\s+\|\|\s+-z\s+"\$RELEASE_SIGNING_KEY_FINGERPRINT"\s+\]\];\s+then',
+        ),
+        ("gpg --batch --verify", r"gpg\s+--batch\s+--verify\b"),
+        ("gpg --detach-sign", r"gpg\s+--detach-sign\b"),
+        ("cosign sign --yes", r"cosign\s+sign\s+--yes\b"),
+        ("cosign verify", r"cosign\s+verify\b"),
+        (
+            "gpg --batch --import TrinaxAI-release-signing-key.asc",
+            r"gpg\s+--batch\s+--import\s+TrinaxAI-release-signing-key\.asc\b",
+        ),
+        ("sha256sum --check SHA256SUMS", r"sha256sum\s+--check\s+SHA256SUMS\b"),
+        (
+            "release-key fingerprint comparison",
+            r'test\s+"\$\{actual_fingerprint\^\^\}"\s*=\s*"\$\{expected_fingerprint\^\^\}"',
+        ),
+        ("SOURCE_DATE_EPOCH export", r"export\s+SOURCE_DATE_EPOCH="),
+        ("draft release creation", r"gh\s+release\s+create\b"),
+        ("draft release flag", r"--draft(?:\s|$)"),
+        ("published release edit", r"gh\s+release\s+edit\b[^\n]*--draft=false"),
     )
-    for marker in required_markers:
-        if marker not in workflow:
+    for marker, pattern in command_markers:
+        if not re.search(rf"(?m)^\s*{pattern}", code):
             errors.append(f"release workflow is missing signing control: {marker}")
+    if not re.search(r'(?m)^\s*if\s+\[\[\s+"\$is_draft"\s+!=\s+"true"\s+\]\];\s+then', code):
+        errors.append("release workflow must refuse overwriting an already-published release")
+    if not re.search(r"(?m)^\s*cosign-release:\s*v2\.5\.3\s*$", code):
+        errors.append("release workflow must pin the cosign release")
     if "env.WINDOWS_SIGNING_CERTIFICATE_BASE64 != ''" in workflow:
         errors.append("Windows signing must not be optional")
     if "env.MACOS_SIGNING_CERTIFICATE_BASE64 != ''" in workflow:
         errors.append("macOS signing must not be optional")
     if re.search(r"if:\s*runner\.os == '(?:Windows|macOS)'\s*&&", workflow):
         errors.append("platform signing must not be conditional on secret presence")
-    signing = workflow.find("name: Sign and verify release assets")
-    publishing = workflow.find("name: Publish simple release with assets")
-    if signing < 0 or publishing < 0 or signing > publishing:
-        errors.append("release assets must be signed before publication")
-    if "SHA256SUMS.asc" not in workflow:
-        errors.append("release signature manifest is not verified after publication")
-    if "py3-none-any.whl.asc" not in workflow:
-        errors.append("Python wheel signature is not verified after publication")
+    signing = code.find("name: Sign and verify release assets")
+    staging = code.find("name: Stage draft release with assets")
+    container_signing = code.find("name: Sign and verify container images")
+    publishing = code.find("name: Publish verified release")
+    verification = code.find("name: Verify published release assets")
+    if min(signing, staging, container_signing, publishing, verification) < 0 or not (
+        signing < staging < container_signing < publishing < verification
+    ):
+        errors.append("release must stay draft until assets and container are signed, then verify publication")
+    if len(re.findall(r"(?m)^\s*gpg\s+--batch\s+--verify\b", code)) < 2:
+        errors.append("release workflow must verify signatures with gpg --batch --verify before and after publication")
+    if not re.search(r'(?m)^\s*for\s+signature\s+in\s+"\$\{signatures\[@\]\}"', code):
+        errors.append("release workflow must verify every published detached signature")
+    if not re.search(r'(?m)^\s*\[\[\s+-n\s+"\$asset"\s+&&\s+-f\s+"\$asset"\s+&&\s+-f\s+"\$asset\.asc"\s+\]\]', code):
+        errors.append("release workflow must require a signature for every checksummed asset")
     return errors
 
 
@@ -192,6 +295,9 @@ def required_gate_commands() -> tuple[tuple[str, tuple[str, ...], Path], ...]:
     """Return the release gates that must run before readiness can pass."""
     npm = "npm.cmd" if os.name == "nt" else "npm"
     return (
+        ("Python lint", (sys.executable, "-m", "ruff", "check", "."), ROOT),
+        ("Python format", (sys.executable, "-m", "ruff", "format", "--check", "."), ROOT),
+        ("Python typecheck", (sys.executable, "-m", "mypy"), ROOT),
         (
             "Python coverage",
             (
@@ -210,9 +316,16 @@ def required_gate_commands() -> tuple[tuple[str, tuple[str, ...], Path], ...]:
             ),
             ROOT,
         ),
+        (
+            "Deterministic RAG",
+            (sys.executable, "scripts/evaluate_rag.py", "--deterministic", "--output", "-"),
+            ROOT,
+        ),
+        ("Frontend lint", (npm, "run", "lint"), ROOT / "chat-pwa"),
         ("TypeScript typecheck", (npm, "run", "typecheck"), ROOT / "chat-pwa"),
         ("Frontend coverage", (npm, "run", "test:coverage"), ROOT / "chat-pwa"),
         ("PWA build", (npm, "run", "build"), ROOT / "chat-pwa"),
+        ("Frontend bundle budget", (npm, "run", "check:bundle"), ROOT / "chat-pwa"),
     )
 
 
@@ -480,6 +593,21 @@ def _single_match(path: Path, pattern: str) -> str | None:
     return match.group(1) if match else None
 
 
+def check_install_surfaces() -> list[str]:
+    """Reject executable TrinaxAI bootstrap/archive references tied to ``main``."""
+    errors: list[str] = []
+    for rel in INSTALL_SURFACE_FILES:
+        path = ROOT / rel
+        try:
+            text = path.read_text(encoding="utf-8", errors="ignore")
+        except OSError:
+            continue
+        for marker in UNPINNED_INSTALL_MARKERS:
+            if marker in text:
+                errors.append(f"{rel} contains an unpinned TrinaxAI install reference: {marker}")
+    return errors
+
+
 def check_release_contract() -> list[str]:
     """Check that the source, docs, and release workflow describe one release."""
     errors: list[str] = []
@@ -502,6 +630,7 @@ def check_release_contract() -> list[str]:
         errors.append(f"release versions are inconsistent: {details}")
         return errors
     version = next(iter(versions))
+    errors.extend(check_install_surfaces())
 
     for readme_name in ("README.md", "README.es.md"):
         readme = ROOT / readme_name
@@ -514,12 +643,17 @@ def check_release_contract() -> list[str]:
             errors.append(f"{readme_name} does not advertise version {version}")
         if "TrinaxAI-Manager" in text or "trinaxai_manager" in text:
             errors.append(f"{readme_name} still advertises the removed desktop Manager")
-        if "raw.githubusercontent.com/TrinaxCode/TrinaxAI/main/install.sh" not in text:
-            errors.append(f"{readme_name} is missing the Unix one-command installer")
-        if "raw.githubusercontent.com/TrinaxCode/TrinaxAI/main/install.ps1" not in text:
-            errors.append(f"{readme_name} is missing the Windows one-command installer")
+        if "releases/download/v${version}" not in text or "TrinaxAI-${version}-installer.sh" not in text:
+            errors.append(f"{readme_name} is missing the Unix release-pinned installer")
+        if "releases/download/v$version" not in text or "TrinaxAI-$version-installer.ps1" not in text:
+            errors.append(f"{readme_name} is missing the Windows release-pinned installer")
 
     workflow_path = ROOT / ".github/workflows/release.yml"
+    ci_workflow = _read_ci_workflow()
+    if not ci_workflow:
+        errors.append("missing CI workflow")
+    else:
+        errors.extend(check_ci_workflow_contract(ci_workflow))
     try:
         workflow = workflow_path.read_text(encoding="utf-8")
     except OSError:
@@ -529,7 +663,7 @@ def check_release_contract() -> list[str]:
             errors.append("release workflow still contains the removed desktop Manager")
         if "Verify published release assets" not in workflow:
             errors.append("release workflow does not verify published release assets")
-        errors.extend(check_release_workflow_security(workflow))
+        errors.extend(check_release_workflow_security(workflow, ci_workflow))
 
     for doc_name in ("docs/INSTALL_LINUX.md", "docs/INSTALL_LINUX.es.md"):
         text = (ROOT / doc_name).read_text(encoding="utf-8", errors="ignore") if (ROOT / doc_name).is_file() else ""
@@ -583,7 +717,8 @@ def main() -> int:
         for err in errors:
             print(f"- {err}")
         return 1
-    print("Public readiness audit passed.")
+    print("Public readiness checks passed; deterministic RAG evidence is present, but no live Ollama evidence was run.")
+    print("Run `python scripts/evaluate_rag.py --ollama-smoke` for direct model evidence.")
     return 0
 
 

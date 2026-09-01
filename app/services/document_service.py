@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import zipfile
 
 # ruff: noqa: F405
@@ -27,6 +28,10 @@ from .shared_runtime import (
 _ARCHIVE_EXTENSIONS = frozenset({".docx", ".pptx", ".xlsx", ".odt", ".ods", ".odp"})
 _ARCHIVE_MAX_MEMBERS = 10_000
 _ARCHIVE_MAX_UNCOMPRESSED_BYTES = 256 * 1024 * 1024
+_OCR_DPI = 200
+_OCR_MAX_PAGES = config._env_int("TRINAXAI_OCR_MAX_PAGES", 50, minimum=1, maximum=1_000)
+_OCR_MAX_PIXELS = config._env_int("TRINAXAI_OCR_MAX_PIXELS", 100_000_000, minimum=1, maximum=4_000_000_000)
+_OCR_UNKNOWN_PAGE_PIXELS = 1_000_000
 
 
 def _validate_archive(filename: str, data: bytes) -> None:
@@ -55,6 +60,20 @@ def _decode_text_bytes(data: bytes) -> str:
     return data.decode("utf-8", errors="replace")
 
 
+def _pdf_page_pixels(page, dpi: int) -> int:
+    box = getattr(page, "mediabox", None) or getattr(page, "mediaBox", None)
+    if box is None:
+        return _OCR_UNKNOWN_PAGE_PIXELS
+    try:
+        width = float(box.width)
+        height = float(box.height)
+    except (AttributeError, TypeError, ValueError):
+        return _OCR_UNKNOWN_PAGE_PIXELS
+    if not math.isfinite(width) or not math.isfinite(height) or width <= 0 or height <= 0:
+        return _OCR_MAX_PIXELS + 1
+    return math.ceil(width * dpi / 72) * math.ceil(height * dpi / 72)
+
+
 def _extract_pdf_text(data: bytes) -> str:
     try:
         from pypdf import PdfReader
@@ -76,19 +95,45 @@ def _extract_pdf_text(data: bytes) -> str:
                 import pytesseract  # type: ignore
                 from pdf2image import convert_from_bytes  # type: ignore
 
-                images = convert_from_bytes(data, dpi=200)
+                page_count = len(reader.pages)
+                if page_count > _OCR_MAX_PAGES:
+                    raise HTTPException(status_code=413, detail="PDF OCR exceeds the page limit.")
+                expected_pixels = 0
+                for page in reader.pages:
+                    expected_pixels += _pdf_page_pixels(page, _OCR_DPI)
+                    if expected_pixels > _OCR_MAX_PIXELS:
+                        raise HTTPException(status_code=413, detail="PDF OCR exceeds the pixel budget.")
+
                 ocr_pages: list[str] = []
-                for i, img in enumerate(images, start=1):
-                    ocr_text = pytesseract.image_to_string(img, lang="eng+spa") or ""
-                    if ocr_text.strip():
-                        ocr_pages.append(f"[Page {i}]\n{ocr_text.strip()}")
+                actual_pixels = 0
+                for i in range(1, page_count + 1):
+                    images = convert_from_bytes(data, dpi=_OCR_DPI, first_page=i, last_page=i)
+                    try:
+                        for img in images:
+                            width, height = getattr(img, "size", (0, 0))
+                            if width and height:
+                                actual_pixels += int(width) * int(height)
+                                if actual_pixels > _OCR_MAX_PIXELS:
+                                    raise HTTPException(status_code=413, detail="PDF OCR exceeds the pixel budget.")
+                            ocr_text = pytesseract.image_to_string(img, lang="eng+spa") or ""
+                            if ocr_text.strip():
+                                ocr_pages.append(f"[Page {i}]\n{ocr_text.strip()}")
+                    finally:
+                        for img in images:
+                            close = getattr(img, "close", None)
+                            if close is not None:
+                                close()
                 ocr_result = "\n\n".join(ocr_pages).strip()
                 if ocr_result and len(ocr_result) > len(text_result):
                     return ocr_result
+            except HTTPException:
+                raise
             except Exception:
                 # OCR not installed or failed; fall through to original text.
                 pass
         return text_result
+    except HTTPException:
+        raise
     except Exception as exc:
         raise HTTPException(status_code=422, detail=f"Could not extract PDF text: {str(exc)[:180]}") from exc
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import json
 import os
 import re
 import shutil
@@ -15,13 +16,16 @@ import urllib.error
 import urllib.request
 import zipfile
 from pathlib import Path, PurePosixPath
+from typing import NamedTuple
 from urllib.parse import urlsplit
 
+REPOSITORY = "TrinaxCode/TrinaxAI"
+LATEST_RELEASE_URL = f"https://api.github.com/repos/{REPOSITORY}/releases/latest"
 RELEASE_VERSION = "1.2.0"
 ARCHIVE_NAME = f"TrinaxAI-{RELEASE_VERSION}.tar.gz"
 RELEASE_ARCHIVE_URL = f"https://github.com/TrinaxCode/TrinaxAI/releases/download/v{RELEASE_VERSION}/{ARCHIVE_NAME}"
-ARCHIVE_URL = "https://github.com/TrinaxCode/TrinaxAI/archive/refs/heads/main.tar.gz"
 CHECKSUM_URL = f"https://github.com/TrinaxCode/TrinaxAI/releases/download/v{RELEASE_VERSION}/SHA256SUMS"
+ARCHIVE_URL = None
 DOWNLOAD_TIMEOUT = 120
 MAX_ARCHIVE_BYTES = 512 * 1024 * 1024
 MAX_MEMBER_BYTES = 256 * 1024 * 1024
@@ -50,6 +54,14 @@ LIFECYCLE_FILES = {
     "uninstall.sh",
     "update.sh",
 }
+
+
+class ReleaseInfo(NamedTuple):
+    version: str
+    tag: str
+    archive_name: str
+    archive_url: str
+    checksum_url: str
 
 
 def _is_preserved(relative: Path, preserved: set[str] | frozenset[str] = PRESERVED) -> bool:
@@ -235,41 +247,110 @@ def _extract_archive(archive: Path, destination: Path) -> Path:
     return extracted
 
 
-def _release_checksum() -> str:
+_STABLE_VERSION = re.compile(r"(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)")
+
+
+def _read_remote(url: str, max_bytes: int, description: str = "remote release metadata") -> bytes:
+    request = urllib.request.Request(
+        url,
+        headers={
+            "Accept": "application/vnd.github+json",
+            "User-Agent": "TrinaxAI-updater",
+        },
+    )
     try:
-        # CHECKSUM_URL is the fixed official HTTPS release manifest.
-        with urllib.request.urlopen(CHECKSUM_URL, timeout=DOWNLOAD_TIMEOUT) as response:  # nosec B310
-            payload = response.read(1024 * 1024 + 1)
+        with urllib.request.urlopen(request, timeout=DOWNLOAD_TIMEOUT) as response:  # nosec B310
+            payload = response.read(max_bytes + 1)
     except (OSError, TimeoutError, urllib.error.URLError, ValueError) as error:
-        raise RuntimeError(f"The release checksum manifest could not be downloaded: {error}") from error
-    if len(payload) > 1024 * 1024:
-        raise RuntimeError("The release checksum manifest is too large.")
+        raise RuntimeError(f"The {description} could not be downloaded: {error}") from error
+    if len(payload) > max_bytes:
+        raise RuntimeError(f"The {description} is too large.")
+    return payload
+
+
+def _release_info(version: str) -> ReleaseInfo:
+    if not _STABLE_VERSION.fullmatch(version):
+        raise RuntimeError("The release version must be a stable semantic version.")
+    tag = f"v{version}"
+    archive_name = f"TrinaxAI-{version}.tar.gz"
+    base = f"https://github.com/{REPOSITORY}/releases/download/{tag}"
+    return ReleaseInfo(version, tag, archive_name, f"{base}/{archive_name}", f"{base}/SHA256SUMS")
+
+
+def resolve_latest_release() -> ReleaseInfo:
+    """Resolve the latest non-draft, non-prerelease GitHub release.
+
+    The returned URLs are derived from the validated tag rather than copied
+    from API-provided URLs, so a response cannot redirect the updater to an
+    unrelated host or asset path.
+    """
+
+    payload = _read_remote(LATEST_RELEASE_URL, 4 * 1024 * 1024)
+    try:
+        release = json.loads(payload)
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise RuntimeError("The latest release metadata is not valid JSON.") from error
+    if not isinstance(release, dict) or release.get("draft") is not False or release.get("prerelease") is not False:
+        raise RuntimeError("GitHub did not return a stable release.")
+    tag = release.get("tag_name")
+    if not isinstance(tag, str) or not re.fullmatch(r"v(\d+\.\d+\.\d+)", tag):
+        raise RuntimeError("The latest release has no stable semantic-version tag.")
+    info = _release_info(tag[1:])
+    assets = release.get("assets")
+    if not isinstance(assets, list):
+        raise RuntimeError("The latest release has no asset list.")
+    names = {asset.get("name") for asset in assets if isinstance(asset, dict)}
+    if info.archive_name not in names or "SHA256SUMS" not in names:
+        raise RuntimeError("The latest release is missing its source archive or checksum manifest.")
+    return info
+
+
+def _release_from_url(url: str) -> ReleaseInfo | None:
+    parsed = urlsplit(url)
+    if parsed.scheme != "https" or parsed.netloc != "github.com" or parsed.query or parsed.fragment:
+        return None
+    match = re.fullmatch(
+        rf"/{re.escape(REPOSITORY)}/releases/download/v(\d+\.\d+\.\d+)/TrinaxAI-(\d+\.\d+\.\d+)\.tar\.gz",
+        parsed.path,
+    )
+    if not match or match.group(1) != match.group(2):
+        return None
+    return _release_info(match.group(1))
+
+
+def _release_checksum(checksum_url: str | None = None, archive_name: str | None = None) -> str:
+    checksum_url = checksum_url or CHECKSUM_URL
+    archive_name = archive_name or ARCHIVE_NAME
+    payload = _read_remote(checksum_url, 1024 * 1024, "release checksum manifest")
     try:
         text = payload.decode("utf-8")
     except UnicodeDecodeError as error:
         raise RuntimeError("The release checksum manifest is not valid UTF-8.") from error
     for line in text.splitlines():
         fields = line.split()
-        if len(fields) >= 2 and fields[1].lstrip("*") == ARCHIVE_NAME:
+        if len(fields) >= 2 and fields[1].lstrip("*") == archive_name:
             checksum = fields[0].lower()
             if re.fullmatch(r"[0-9a-f]{64}", checksum):
                 return checksum
-    raise RuntimeError(f"The release checksum manifest has no valid entry for {ARCHIVE_NAME}.")
+    raise RuntimeError(f"The release checksum manifest has no valid entry for {archive_name}.")
 
 
-def _expected_checksum(url: str, checksum: str | None) -> str | None:
+def _expected_checksum(url: str | None, checksum: str | None) -> str | None:
     if checksum is not None:
         value = checksum.strip().lower()
         if not re.fullmatch(r"[0-9a-f]{64}", value):
             raise RuntimeError("The archive checksum must be a 64-character SHA-256 digest.")
         return value
+    if url is None:
+        raise RuntimeError("The update source was not resolved to a stable release.")
+    release = _release_from_url(url)
+    if release is not None:
+        return _release_checksum(release.checksum_url, release.archive_name)
     parsed = urlsplit(url)
-    if parsed.scheme == "https" and url == RELEASE_ARCHIVE_URL:
-        return _release_checksum()
-    if parsed.scheme == "https" and url == ARCHIVE_URL:
-        return None
     if parsed.scheme == "https":
         raise RuntimeError("Custom HTTPS update URLs require --sha256.")
+    if parsed.scheme == "file":
+        raise RuntimeError("Custom file update URLs require an explicit SHA-256 checksum (--sha256).")
     return None
 
 
@@ -357,7 +438,7 @@ def _recover_pending(root: Path) -> None:
     _clear_marker(marker, backup)
 
 
-def update(root: Path, url: str = ARCHIVE_URL, sha256: str | None = None) -> None:
+def update(root: Path, url: str | None = ARCHIVE_URL, sha256: str | None = None) -> None:
     try:
         root = _root_path(root)
         if not (root / ".trinaxai-managed").is_file():
@@ -368,6 +449,8 @@ def update(root: Path, url: str = ARCHIVE_URL, sha256: str | None = None) -> Non
         with tempfile.TemporaryDirectory(prefix="trinaxai-update-") as temporary:
             temporary_path = Path(temporary)
             archive = temporary_path / "source-package"
+            if url is None:
+                url = resolve_latest_release().archive_url
             _download(url, archive, _expected_checksum(url, sha256))
             source = _extract_archive(archive, temporary_path / "source")
 

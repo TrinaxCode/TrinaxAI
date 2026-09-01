@@ -5,17 +5,29 @@ on:
     branches: [main]
   pull_request:
   workflow_call:
+  workflow_dispatch:
+    inputs:
+      run_ollama_smoke:
+        description: Run the opt-in live Ollama smoke on this runner
+        required: false
+        default: false
+        type: boolean
+      ollama_model:
+        description: Installed Ollama model to exercise
+        required: false
+        default: qwen3.5:2b
+        type: string
 
 # If GitHub Actions is temporarily blocked by billing, run the same commands
 # locally with: make check
 
 jobs:
   dco:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     if: github.event_name == 'pull_request'
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           fetch-depth: 0
 
@@ -39,25 +51,25 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-latest
+          - os: ubuntu-24.04
             pytest-command: >-
               pytest -q
               --cov=app --cov=trinaxai_cli --cov=trinaxai_core
               --cov=service_manager --cov=index
               --cov-branch
               --cov-report=xml:coverage.xml --cov-fail-under=98
-          - os: macos-latest
+          - os: macos-15
             pytest-command: pytest -q
-          - os: windows-latest
+          - os: windows-2025
             pytest-command: python scripts/run_windows_pytest.py
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
 
       - name: Setup Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
-          python-version: "3.12"
+          python-version: "3.12.10"
           cache: pip
           cache-dependency-path: |
             requirements.txt
@@ -84,19 +96,167 @@ jobs:
       - name: Mypy gradual boundary
         run: mypy
 
-      - name: Golden RAG fixture
-        run: pytest -q tests/test_rag_metrics.py -k checked_in_rag_golden_fixture
+      - name: Deterministic RAG publication gate (no Ollama)
+        if: runner.os == 'Linux'
+        run: python scripts/evaluate_rag.py --deterministic --output rag-eval-report.json
+
+      - name: Upload deterministic RAG report
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: deterministic-rag-report
+          path: rag-eval-report.json
+          if-no-files-found: error
 
       - name: Pytest
         run: ${{ matrix.pytest-command }}
 
       - name: Upload Python coverage
         if: runner.os == 'Linux'
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: python-coverage
           path: coverage.xml
           if-no-files-found: error
+
+  python-compat:
+    name: python compatibility (3.10 and 3.11)
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Setup Python 3.10
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.10.17"
+          cache: pip
+          cache-dependency-path: requirements.lock
+
+      - name: Test on Python 3.10
+        run: |
+          python -m pip install --require-hashes -r requirements.lock
+          python -m py_compile scripts/evaluate_rag.py
+          python -m pytest -q tests/test_rag_metrics.py
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.11.12"
+          cache: pip
+          cache-dependency-path: requirements.lock
+
+      - name: Test on Python 3.11
+        run: |
+          python -m pip install --require-hashes -r requirements.lock
+          python -m py_compile scripts/evaluate_rag.py
+          python -m pytest -q tests/test_rag_metrics.py
+
+  ollama-smoke:
+    name: Live backend RAG (manual)
+    if: github.event_name == 'workflow_dispatch' && inputs.run_ollama_smoke == true
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Setup Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12.10"
+          cache: pip
+          cache-dependency-path: requirements.lock
+
+      - name: Install evaluator dependencies
+        run: python -m pip install --require-hashes -r requirements.lock
+
+      - name: Install Ollama
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --location --retry 3 https://ollama.com/install.sh | sh
+
+      - name: Start Ollama
+        env:
+          OLLAMA_HOST: 127.0.0.1:11434
+        shell: bash
+        run: |
+          set -euo pipefail
+          nohup ollama serve >"$RUNNER_TEMP/ollama.log" 2>&1 &
+          for attempt in {1..60}; do
+            if curl --fail --silent http://127.0.0.1:11434/api/tags >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat "$RUNNER_TEMP/ollama.log"
+          exit 1
+
+      - name: Pull chat and embedding models
+        env:
+          OLLAMA_HOST: 127.0.0.1:11434
+          OLLAMA_MODEL: ${{ inputs.ollama_model }}
+          OLLAMA_EMBED_MODEL: qwen3-embedding:0.6b
+        run: |
+          ollama pull "$OLLAMA_MODEL"
+          ollama pull "$OLLAMA_EMBED_MODEL"
+
+      - name: Verify direct Ollama generation
+        env:
+          OLLAMA_MODEL: ${{ inputs.ollama_model }}
+        run: python scripts/evaluate_rag.py --ollama-smoke --ollama-url http://127.0.0.1:11434 --ollama-model "$OLLAMA_MODEL" --output ollama-smoke-report.json
+
+      - name: Start TrinaxAI backend
+        env:
+          OLLAMA_BASE_URL: http://127.0.0.1:11434
+          TRINAXAI_ADMIN_TOKEN: ci-rag-evaluation
+          TRINAXAI_EMBED: qwen3-embedding:0.6b
+          TRINAXAI_MODEL_CODE: ${{ inputs.ollama_model }}
+          TRINAXAI_MODEL_DEEP: ${{ inputs.ollama_model }}
+          TRINAXAI_MODEL_FAST: ${{ inputs.ollama_model }}
+          TRINAXAI_MODEL_GENERAL: ${{ inputs.ollama_model }}
+          TRINAXAI_PERSIST_DIR: ${{ runner.temp }}/trinaxai-rag-storage
+          TRINAXAI_PROFILE: 8gb
+        shell: bash
+        run: |
+          set -euo pipefail
+          nohup python -m uvicorn app.main:app --host 127.0.0.1 --port 3333 >"$RUNNER_TEMP/backend.log" 2>&1 &
+          for attempt in {1..60}; do
+            if curl --fail --silent http://127.0.0.1:3333/health >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat "$RUNNER_TEMP/backend.log"
+          exit 1
+
+      - name: Index corpus and evaluate live backend RAG
+        env:
+          TRINAXAI_ADMIN_TOKEN: ci-rag-evaluation
+        run: >-
+          python scripts/evaluate_rag.py
+          --golden tests/fixtures/rag_live_golden.json
+          --api-url http://127.0.0.1:3333
+          --index-corpus tests/fixtures/rag_eval/corpus
+          --collection-id rag-eval
+          --embed-model qwen3-embedding:0.6b
+          --timeout 900
+          --output live-backend-rag-report.json
+
+      - name: Print backend log on failure
+        if: failure()
+        run: cat "$RUNNER_TEMP/backend.log"
+
+      - name: Upload live RAG evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: live-backend-rag-report
+          path: |
+            ollama-smoke-report.json
+            live-backend-rag-report.json
+            ${{ runner.temp }}/backend.log
+          if-no-files-found: warn
 
   cli:
     name: cli (${{ matrix.os }})
@@ -104,15 +264,15 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: [ubuntu-24.04, macos-15, windows-2025]
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
 
       - name: Setup Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
-          python-version: "3.12"
+          python-version: "3.12.10"
           cache: pip
           cache-dependency-path: |
             requirements.txt
@@ -143,10 +303,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: [ubuntu-24.04, macos-15, windows-2025]
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
 
       - name: Bash syntax checks
         if: runner.os != 'Windows'
@@ -180,15 +340,15 @@ jobs:
           }
 
   frontend:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
 
       - name: Setup Node
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
-          node-version: 22
+          node-version: "22.14.0"
           cache: npm
           cache-dependency-path: chat-pwa/package-lock.json
 
@@ -234,15 +394,15 @@ jobs:
 
   e2e-real:
     name: Browser E2E (real FastAPI)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
 
       - name: Setup Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
-          python-version: "3.12"
+          python-version: "3.12.10"
           cache: pip
           cache-dependency-path: |
             requirements.lock
@@ -250,9 +410,9 @@ jobs:
             pyproject.toml
 
       - name: Setup Node
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
-          node-version: 22
+          node-version: "22.14.0"
           cache: npm
           cache-dependency-path: chat-pwa/package-lock.json
 
@@ -280,19 +440,19 @@ jobs:
         run: TRINAXAI_E2E_REAL=1 TRINAXAI_E2E_PORT=3335 TRINAXAI_E2E_RAG_PORT=3336 npx playwright test --grep @real --project=chromium-desktop
 
   security:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
     steps:
       - name: Checkout full history
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           fetch-depth: 0
 
       - name: Setup Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
-          python-version: "3.12"
+          python-version: "3.12.10"
           cache: pip
           cache-dependency-path: |
             requirements.lock
@@ -308,7 +468,7 @@ jobs:
 
       - name: Upload SBOM
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: trinaxai-python-sbom
           path: trinaxai-sbom.cdx.json
@@ -320,30 +480,30 @@ jobs:
           --severity-level high --confidence-level high
 
   gitleaks:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       pull-requests: read
     steps:
       - name: Checkout full history
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           fetch-depth: 0
       - name: Detect committed secrets
-        uses: gitleaks/gitleaks-action@v2
+        uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   public-readiness:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
 
       - name: Setup Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
-          python-version: "3.12"
+          python-version: "3.12.10"
           cache: pip
           cache-dependency-path: |
             requirements.txt
@@ -352,9 +512,9 @@ jobs:
             pyproject.toml
 
       - name: Setup Node
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
-          node-version: 22
+          node-version: "22.14.0"
           cache: npm
           cache-dependency-path: chat-pwa/package-lock.json
 

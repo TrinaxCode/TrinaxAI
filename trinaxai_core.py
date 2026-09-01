@@ -388,15 +388,32 @@ def select_profile(hardware: dict[str, Any]) -> str:
     # Hardware vendors label RAM in decimal GB; using GiB would misclassify a
     # normal 16 GB machine as 8 GB because the OS reports roughly 14.9 GiB.
     ram_gb = float(hardware.get("ram", {}).get("total_bytes") or 0) / _DECIMAL_GB
-    if ram_gb < 8:
-        return "8gb"
-    if ram_gb < 16:
-        return "8gb"
-    if ram_gb < 32:
-        return "16gb"
-    if ram_gb < 64:
+    if ram_gb >= 64:
+        profile = "64gb"
+    elif ram_gb >= 32:
+        profile = "32gb"
+    elif ram_gb >= 16:
+        profile = "16gb"
+    else:
+        profile = "8gb"
+    vram_gb = _dedicated_vram_gb(hardware)
+    if vram_gb >= 24:
+        return "64gb"
+    if vram_gb >= 12 and profile in {"8gb", "16gb"}:
         return "32gb"
-    return "64gb"
+    if vram_gb >= 8 and profile == "8gb":
+        return "16gb"
+
+    gpu = hardware.get("gpu") or {}
+    gpus = hardware.get("gpus") or [gpu]
+    cores = int((hardware.get("cpu") or {}).get("cores") or 0)
+    has_usable_gpu = any(item.get("vendor") in {"nvidia", "amd", "apple"} for item in gpus if isinstance(item, dict))
+    if not has_usable_gpu and cores:
+        if cores < 4:
+            return "8gb"
+        if cores < 8 and profile in {"32gb", "64gb"}:
+            return "16gb"
+    return profile
 
 
 def _dedicated_vram_gb(hardware: dict[str, Any]) -> float:
@@ -412,27 +429,17 @@ def _dedicated_vram_gb(hardware: dict[str, Any]) -> float:
 
 
 def model_recommendations(hardware: dict[str, Any], *, profile: str | None = None) -> dict[str, Any]:
-    """Pick a small, known Ollama fleet using RAM and usable GPU memory."""
+    """Pick a known Ollama fleet within the selected hardware profile."""
+    profile = normalize_profile(profile)
     profile = profile if profile in VALID_PROFILES else select_profile(hardware)
-    ram_gb = float(hardware.get("ram", {}).get("total_bytes") or 0) / _DECIMAL_GB
     gpu = hardware.get("gpu") or {}
-    vram_gb = _dedicated_vram_gb(hardware)
-    if vram_gb >= 12:
-        tier, reason = "qwen3.5:9b", "GPU con VRAM suficiente; el modelo cabe principalmente en VRAM."
-    elif vram_gb >= 8:
-        tier, reason = "qwen3.5:4b", "GPU capaz; se mantiene margen de VRAM para el sistema."
-    elif gpu.get("unified_memory") and profile == "64gb":
-        tier, reason = "qwen3.5:35b", "Memoria unificada abundante; se prioriza calidad en Apple Silicon."
-    elif gpu.get("unified_memory") and ram_gb >= 32:
-        tier, reason = "qwen3.5:9b", "Apple Silicon usa memoria unificada y puede compartir la RAM con Metal."
-    elif profile == "64gb":
-        tier, reason = "qwen3.5:35b", "RAM abundante; se prioriza calidad aunque la GPU sea débil."
-    elif profile == "32gb":
-        tier, reason = "qwen3.5:9b", "RAM suficiente para un modelo mayor en CPU/RAM."
-    elif profile == "16gb":
-        tier, reason = "qwen3.5:4b", "Equilibrio entre RAM disponible y latencia local."
-    else:
-        tier, reason = "qwen3.5:2b", "Se reserva memoria para el sistema y el embedder."
+    tier = {
+        "8gb": "qwen3.5:2b",
+        "16gb": "qwen3.5:4b",
+        "32gb": "qwen3.5:9b",
+        "64gb": "qwen3.5:35b",
+    }[profile]
+    reason = "El perfil activo limita el modelo al presupuesto de CPU, RAM y memoria de GPU disponible."
     fast = "qwen3.5:4b" if tier in {"qwen3.5:9b", "qwen3.5:35b"} else "qwen3.5:2b"
     code = "qwen3-coder:30b" if tier == "qwen3.5:35b" else tier
     return {
@@ -468,15 +475,21 @@ def recommended_ollama_gpu_layers(hardware: dict[str, Any]) -> int:
 def save_hardware_profile(path: str | os.PathLike[str], hardware: dict[str, Any], profile: str) -> None:
     """Persist the detected snapshot so Settings and diagnostics see one source of truth."""
     target = Path(path)
-    target.parent.mkdir(parents=True, exist_ok=True)
-    temporary = target.with_name(f".{target.name}.{uuid.uuid4().hex}.tmp")
     canonical = normalize_profile(profile, fallback=select_profile(hardware))
-    payload = {
+    stable_payload = {
         "profile": canonical,
         "detected_profile": select_profile(hardware),
         "hardware": hardware,
-        "updated_at": time.time(),
     }
+    try:
+        existing = json.loads(target.read_text(encoding="utf-8"))
+    except (OSError, TypeError, ValueError):
+        existing = None
+    if isinstance(existing, dict) and all(existing.get(key) == value for key, value in stable_payload.items()):
+        return
+    payload = {**stable_payload, "updated_at": time.time()}
+    target.parent.mkdir(parents=True, exist_ok=True)
+    temporary = target.with_name(f".{target.name}.{uuid.uuid4().hex}.tmp")
     try:
         temporary.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
         os.replace(temporary, target)

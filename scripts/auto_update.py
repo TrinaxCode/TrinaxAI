@@ -7,12 +7,18 @@ import argparse
 import os
 import platform
 import plistlib
+import re
 import shlex
 import shutil
 import subprocess
 import sys
 import time
 from pathlib import Path
+
+try:
+    from .source_update import ReleaseInfo, resolve_latest_release
+except ImportError:  # pragma: no cover - exercised when run as a script
+    from source_update import ReleaseInfo, resolve_latest_release
 
 TASK_NAME = "TrinaxAI Weekly Update"
 LINUX_SERVICE = "trinaxai-update.service"
@@ -34,6 +40,45 @@ def _log(base_dir: Path, message: str) -> None:
     stamp = time.strftime("%Y-%m-%d %H:%M:%S")
     with (log_dir / "auto-update.log").open("a", encoding="utf-8") as handle:
         handle.write(f"[{stamp}] {message.rstrip()}\n")
+
+
+def _installed_version(base_dir: Path) -> str | None:
+    for path, pattern in (
+        (base_dir / "pyproject.toml", r'^version\s*=\s*"(\d+\.\d+\.\d+)"$'),
+        (base_dir / "trinaxai_cli" / "app.py", r'^VERSION\s*=\s*"(\d+\.\d+\.\d+)"$'),
+    ):
+        try:
+            for line in path.read_text(encoding="utf-8").splitlines():
+                match = re.match(pattern, line)
+                if match:
+                    return match.group(1)
+        except OSError:
+            continue
+    return None
+
+
+def _version_key(version: str) -> tuple[int, int, int]:
+    major, minor, patch = (int(part) for part in version.split("."))
+    return major, minor, patch
+
+
+def _log_release_check(base_dir: Path, release: ReleaseInfo) -> None:
+    installed = _installed_version(base_dir)
+    if installed is None:
+        _log(
+            base_dir,
+            f"Checked latest stable release {release.tag}; installed version is unknown. Run 'trinaxai update' manually.",
+        )
+        return
+    if _version_key(release.version) > _version_key(installed):
+        _log(
+            base_dir,
+            f"Update available: {installed} -> {release.version}. Run 'trinaxai update' interactively.",
+        )
+    elif _version_key(release.version) == _version_key(installed):
+        _log(base_dir, f"No update available ({release.tag}).")
+    else:
+        _log(base_dir, f"Installed version {installed} is newer than latest stable {release.version}.")
 
 
 def enable(base_dir: Path) -> str:
@@ -186,37 +231,10 @@ def run_update(base_dir: Path) -> int:
     os.close(fd)
 
     try:
-        # Executing a mutable script downloaded from ``main`` is not a secure
-        # update channel. Until signed release manifests are available, the
-        # scheduled task is deliberately check-only and asks the user to run
-        # the installed updater interactively after reviewing the release.
-        if not (base_dir / ".git").is_dir() or not shutil.which("git"):
-            _log(
-                base_dir,
-                "Update check skipped: no Git metadata; run 'trinaxai update' manually.",
-            )
-            return 0
-        local = _run(["git", "-C", str(base_dir), "rev-parse", "HEAD"])
-        remote = _run(
-            [
-                "git",
-                "ls-remote",
-                "https://github.com/TrinaxCode/TrinaxAI.git",
-                "refs/heads/main",
-            ]
-        )
-        if local.returncode or remote.returncode or not remote.stdout.strip():
-            detail = (remote.stderr or local.stderr or "could not resolve versions").strip()
-            raise RuntimeError(detail)
-        local_sha = local.stdout.strip()
-        remote_sha = remote.stdout.split()[0]
-        if local_sha == remote_sha:
-            _log(base_dir, f"No update available ({local_sha[:12]}).")
-        else:
-            _log(
-                base_dir,
-                f"Update available: {local_sha[:12]} -> {remote_sha[:12]}. Run 'trinaxai update' interactively.",
-            )
+        # Check release metadata only. The scheduled task never downloads or
+        # executes source code; the interactive updater performs the package
+        # and checksum validation after the user starts it.
+        _log_release_check(base_dir, resolve_latest_release())
         return 0
     except Exception as exc:
         _log(base_dir, f"Automatic update failed safely: {exc}")

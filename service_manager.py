@@ -682,12 +682,7 @@ def _state_path(base_dir: str) -> Path:
 
 
 def _read_ai_enabled(base_dir: str) -> bool:
-    path = _state_path(base_dir)
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-        return bool(data.get("ai_enabled", True))
-    except Exception:
-        return True
+    return bool(_read_service_state(base_dir).get("ai_enabled", True))
 
 
 def _read_service_state(base_dir: str) -> dict:

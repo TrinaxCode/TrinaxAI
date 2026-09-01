@@ -8,7 +8,10 @@ from trinaxai_cli.commands import _lifecycle
 
 def make_install(path: Path) -> Path:
     (path / "trinaxai_cli").mkdir(parents=True)
+    (path / "chat-pwa").mkdir()
     (path / "service_manager.py").write_text("", encoding="utf-8")
+    (path / "rag_api.py").write_text("", encoding="utf-8")
+    (path / "chat-pwa" / "server.mjs").write_text("", encoding="utf-8")
     return path
 
 
@@ -16,6 +19,13 @@ def test_explicit_install_root_wins(monkeypatch, tmp_path: Path) -> None:
     install = make_install(tmp_path / "custom install")
     monkeypatch.setenv("TRINAXAI_HOME", str(install))
     assert runtime.find_install_root() == install.resolve()
+
+
+def test_partial_runtime_is_not_a_full_install(tmp_path: Path) -> None:
+    (tmp_path / "trinaxai_cli").mkdir()
+    (tmp_path / "service_manager.py").write_text("", encoding="utf-8")
+
+    assert not runtime._looks_like_install(tmp_path)
 
 
 def test_posix_lifecycle_command_preserves_paths_with_spaces(monkeypatch, tmp_path: Path) -> None:

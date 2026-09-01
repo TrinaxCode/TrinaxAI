@@ -145,6 +145,7 @@ test('production gateway preserves credentials, replaces proxy identity, and rej
       TRINAXAI_RAG_TARGET: `http://127.0.0.1:${backendPort}`,
       TRINAXAI_PROXY_SECRET: 'test-only-proxy-secret',
       TRINAXAI_ADMIN_TOKEN: 'test-admin-token',
+      TRINAXAI_PWA_MAX_BODY_BYTES: '4',
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -193,6 +194,14 @@ test('production gateway preserves credentials, replaces proxy identity, and rej
     assert.equal(received.path, '/private%20file?value=1');
     assert.equal(received.headers['x-trinaxai-proxy-signature'], expectedSignature);
 
+    const oversized = await fetch(`http://127.0.0.1:${gatewayPort}/api/rag/private`, {
+      method: 'POST',
+      headers: { 'X-Admin-Token': 'test-admin-token', 'Content-Type': 'text/plain' },
+      body: '12345',
+    });
+    assert.equal(oversized.status, 413);
+    assert.deepEqual((await oversized.json()).error, { code: 'proxy_body_too_large' });
+
     const missing = await fetch(`http://127.0.0.1:${gatewayPort}/assets/missing.js`);
     assert.equal(missing.status, 404);
 
@@ -210,6 +219,49 @@ test('production gateway preserves credentials, replaces proxy identity, and rej
       headers: { Origin: 'https://example.com' },
     });
     assert.equal(forbiddenRefresh.status, 403);
+  } finally {
+    gateway.kill();
+    await new Promise((resolve) => backend.close(resolve));
+  }
+});
+
+test('production gateway returns a timeout when the upstream stalls', async () => {
+  ensureFrontendFixture();
+  const backend = http.createServer(() => {});
+  const backendPort = await listen(backend);
+  const gatewayPort = await unusedPort();
+  const gateway = spawn(process.execPath, ['server.mjs'], {
+    cwd: new URL('.', import.meta.url),
+    env: {
+      ...process.env,
+      CI: 'true',
+      TRINAXAI_PWA_HOST: '127.0.0.1',
+      TRINAXAI_PWA_PORT: String(gatewayPort),
+      TRINAXAI_RAG_TARGET: `http://127.0.0.1:${backendPort}`,
+      TRINAXAI_ADMIN_TOKEN: 'test-admin-token',
+      TRINAXAI_PWA_PROXY_TIMEOUT_MS: '100',
+    },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  try {
+    await new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error('gateway startup timed out')), 5000);
+      gateway.once('exit', (code) => reject(new Error(`gateway exited with ${code}`)));
+      gateway.stdout.on('data', (chunk) => {
+        if (!String(chunk).includes('listening')) return;
+        clearTimeout(timeout);
+        resolve();
+      });
+    });
+    const controller = new AbortController();
+    const abortTimer = setTimeout(() => controller.abort(), 2000);
+    const response = await fetch(`http://127.0.0.1:${gatewayPort}/api/rag/private`, {
+      headers: { 'X-Admin-Token': 'test-admin-token' },
+      signal: controller.signal,
+    });
+    clearTimeout(abortTimer);
+    assert.equal(response.status, 504);
+    assert.deepEqual((await response.json()).error, { code: 'proxy_timeout' });
   } finally {
     gateway.kill();
     await new Promise((resolve) => backend.close(resolve));
@@ -291,6 +343,9 @@ test('production gateway rejects LAN host administration even with legacy creden
     assert.equal(chat.status, 403);
     const network = await (await fetch(`${base}/api/network`)).json();
     assert.equal(network.capabilities.manageSystem, false);
+    assert.equal('hostname' in network, false);
+    assert.equal('addresses' in network, false);
+    assert.equal('recommendedUrl' in network, false);
   } finally {
     gateway.kill();
     fs.rmSync(credentialsRoot, { recursive: true, force: true });

@@ -24,12 +24,38 @@ def test_release_contract_matches_the_repository():
     assert public_readiness.check_release_contract() == []
 
 
+def test_install_surface_contract_rejects_unpinned_trinaxai_bootstrap(tmp_path, monkeypatch):
+    monkeypatch.setattr(public_readiness, "ROOT", tmp_path)
+    (tmp_path / "README.md").write_text(
+        "curl -fsSL https://raw.githubusercontent.com/TrinaxCode/TrinaxAI/main/install.sh | bash\n",
+        encoding="utf-8",
+    )
+
+    errors = public_readiness.check_install_surfaces()
+
+    assert any("README.md" in error and "unpinned" in error for error in errors)
+
+
 def test_release_workflow_security_contract_is_fail_closed_and_reproducible():
     workflow = (Path(public_readiness.__file__).resolve().parents[1] / ".github/workflows/release.yml").read_text(
         encoding="utf-8"
     )
 
     assert public_readiness.check_release_workflow_security(workflow) == []
+
+
+def test_ci_workflow_has_effective_publication_gates():
+    workflow = (Path(public_readiness.__file__).resolve().parents[1] / ".github/workflows/ci.yml").read_text(
+        encoding="utf-8"
+    )
+
+    assert public_readiness.check_ci_workflow_contract(workflow) == []
+    assert public_readiness.check_ci_workflow_contract(workflow.replace("--cov-fail-under=98", "", 1))
+    assert public_readiness.check_ci_workflow_contract(workflow + "\ncontinue-on-error: true\n")
+    live_smoke = "run: python scripts/evaluate_rag.py --ollama-smoke"
+    assert public_readiness.check_ci_workflow_contract(workflow.replace(live_smoke, "run: true", 1))
+    echoed_gate = workflow.replace("run: ruff check .", 'run: echo "ruff check ."', 1)
+    assert public_readiness.check_ci_workflow_contract(echoed_gate)
 
 
 def test_release_workflow_security_contract_catches_regressions():
@@ -47,8 +73,21 @@ def test_release_workflow_security_contract_catches_regressions():
     unsigned = workflow.replace("gpg --batch --verify", "gpg --batch --inspect", 1)
     assert any("gpg --batch --verify" in error for error in public_readiness.check_release_workflow_security(unsigned))
 
+    echoed = workflow.replace("gpg --batch --verify", 'echo "gpg --batch --verify"', 1)
+    assert any("gpg --batch --verify" in error for error in public_readiness.check_release_workflow_security(echoed))
+
     floating_tool = workflow.replace('"wheel==0.45.1"', '"wheel"', 1)
     assert any("wheel" in error for error in public_readiness.check_release_workflow_security(floating_tool))
+
+    unsigned_published_asset = workflow.replace(
+        '[[ -n "$asset" && -f "$asset" && -f "$asset.asc" ]]',
+        '[[ -n "$asset" && -f "$asset" ]]',
+        1,
+    )
+    assert any(
+        "signature for every checksummed asset" in error
+        for error in public_readiness.check_release_workflow_security(unsigned_published_asset)
+    )
 
 
 def test_required_gates_run_repository_commands_without_logging_output(monkeypatch, capsys):
@@ -61,24 +100,28 @@ def test_required_gates_run_repository_commands_without_logging_output(monkeypat
     monkeypatch.setattr(public_readiness.subprocess, "run", run)
 
     assert public_readiness.check_required_gates() == []
-    assert len(calls) == 4
-    assert calls[0][0][0] == public_readiness.sys.executable
-    assert "--cov-branch" in calls[0][0]
-    assert "--cov-fail-under=98" in calls[0][0]
-    assert calls[1][0][1:] == ["run", "typecheck"]
-    assert calls[2][0][1:] == ["run", "test:coverage"]
-    assert calls[3][0][1:] == ["run", "build"]
+    assert len(calls) == 10
+    assert calls[0][0][1:] == ["-m", "ruff", "check", "."]
+    assert calls[2][0][1:] == ["-m", "mypy"]
+    assert "--cov-branch" in calls[3][0]
+    assert "--cov-fail-under=98" in calls[3][0]
+    assert calls[4][0][1:] == ["scripts/evaluate_rag.py", "--deterministic", "--output", "-"]
+    assert calls[5][0][1:] == ["run", "lint"]
+    assert calls[6][0][1:] == ["run", "typecheck"]
+    assert calls[7][0][1:] == ["run", "test:coverage"]
+    assert calls[8][0][1:] == ["run", "build"]
+    assert calls[9][0][1:] == ["run", "check:bundle"]
     assert "gate output" not in capsys.readouterr().out
 
 
 def test_required_gate_failure_is_reported_without_leaking_output(monkeypatch, capsys):
     responses = iter(
-        [
-            SimpleNamespace(returncode=0, stdout="coverage secret output", stderr=""),
-            SimpleNamespace(returncode=2, stdout="private typecheck output", stderr="private typecheck failure"),
-            SimpleNamespace(returncode=0, stdout="frontend coverage secret", stderr=""),
-            SimpleNamespace(returncode=0, stdout="private build output", stderr=""),
-        ]
+        SimpleNamespace(
+            returncode=2 if index == 6 else 0,
+            stdout="private gate output",
+            stderr="private gate failure",
+        )
+        for index in range(10)
     )
     monkeypatch.setattr(public_readiness.subprocess, "run", lambda *_args, **_kwargs: next(responses))
 

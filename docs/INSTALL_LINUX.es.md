@@ -1,6 +1,18 @@
-# TrinaxAI en Linux
+<h1 align="center">
+  <a href="https://www.trinaxai.app/"><img src="../chat-pwa/public/logo.webp" alt="TrinaxAI" width="64" valign="middle"></a>
+  <a href="https://www.trinaxai.app/">TrinaxAI</a> · 🐧 Instalación en Linux
+</h1>
 
-[English](INSTALL_LINUX.md)
+<p align="center">
+  <a href="https://github.com/TrinaxCode/TrinaxAI"><img src="https://img.shields.io/github/stars/TrinaxCode/TrinaxAI?style=flat&amp;label=%E2%98%85&amp;color=006bbd" alt="GitHub stars"></a>
+  <a href="https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.2.0"><img src="https://img.shields.io/badge/version-1.2.0-006bbd" alt="Current candidate: 1.2.0"></a>
+  <a href="https://github.com/TrinaxCode/TrinaxAI/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/TrinaxCode/TrinaxAI/ci.yml?branch=main&amp;label=CI" alt="CI status"></a>
+  <a href="https://github.com/TrinaxCode/TrinaxAI/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0--or--later-006bbd" alt="License: AGPL-3.0-or-later"></a>
+  <img src="https://img.shields.io/badge/macOS%20%7C%20Windows%20%7C%20Linux-4493F8?style=flat-square" alt="Supported platforms: macOS, Windows, and Linux">
+</p>
+
+<p align="center"><sub><a href="INSTALL_LINUX.md">English</a> · <strong>Español</strong></sub></p>
+<p align="center"><sub><a href="https://www.trinaxai.app/">Sitio web</a> · <a href="README.es.md">Documentación</a> · <a href="../README.es.md">Inicio</a> · <a href="CHANGELOG.es.md">Cambios</a></sub></p>
 
 Guía para instalar, configurar, iniciar y dejar listo TrinaxAI en Linux. Aplica para Ubuntu, Debian, Fedora, Arch, openSUSE y distribuciones similares.
 
@@ -33,28 +45,53 @@ Al terminar deberías tener:
 
 Si usas NVIDIA, instala los drivers antes de descargar modelos grandes. TrinaxAI también funciona solo con CPU, pero las respuestas serán más lentas.
 
-## Instalación recomendada con un comando
+## Instalación recomendada fijada a un release
+
+> Estado del release: `v1.2.0` es el candidato actual, pero sus assets del Release de GitHub todavía no se han publicado. El comando siguiente queda listo para cuando se publique el release; para probarlo ahora, usa el checkout local con `bash install.sh`. El instalador se niega intencionalmente a caer en `main`.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/TrinaxCode/TrinaxAI/main/install.sh | bash
+set -eu
+version="1.2.0"
+base="https://github.com/TrinaxCode/TrinaxAI/releases/download/v${version}"
+installer="$(mktemp)"
+manifest="$(mktemp)"
+trap 'rm -f "$installer" "$manifest"' EXIT
+curl --fail --location --output "$installer" "${base}/TrinaxAI-${version}-installer.sh"
+curl --fail --location --output "$manifest" "${base}/SHA256SUMS"
+expected="$(awk -v asset="TrinaxAI-${version}-installer.sh" '$2 == asset || $2 == "*" asset { print $1; exit }' "$manifest")"
+if command -v sha256sum >/dev/null 2>&1; then actual="$(sha256sum "$installer" | awk '{print $1}')"; elif command -v shasum >/dev/null 2>&1; then actual="$(shasum -a 256 "$installer" | awk '{print $1}')"; else echo "Se necesita una herramienta SHA-256 (sha256sum o shasum)." >&2; exit 2; fi
+if [ -z "$expected" ] || [ "$actual" != "$expected" ]; then echo "Falló la verificación SHA-256 del instalador." >&2; exit 1; fi
+bash -n "$installer"
+bash "$installer"
 ```
 
 El instalador descarga directamente el archivo fuente desde GitHub. No necesita Git, detecta tu hardware, instala las dependencias necesarias, configura Ollama, compila la PWA e inicia TrinaxAI. Acepta la solicitud de contraseña cuando tu distribución la pida para instalar paquetes del sistema.
+La comprobación del manifiesto SHA-256 anterior es obligatoria antes de ejecutar. La verificación GPG separada es un control adicional opcional, sólo cuando hayas obtenido y confiado en la huella de la clave de firma por un canal independiente; una clave o huella descargada del mismo release no es un ancla de autenticidad. El repositorio todavía no incluye un ancla de confianza de clave pública fijada.
 
 ## Alternativa avanzada por terminal
 
 Desde una terminal:
 
 ```bash
+set -eu
 installer="$(mktemp)"
-trap 'rm -f "$installer"' EXIT
-curl --fail --location --output "$installer" "https://raw.githubusercontent.com/TrinaxCode/TrinaxAI/main/install.sh"
+manifest="$(mktemp)"
+trap 'rm -f "$installer" "$manifest"' EXIT
+version="1.2.0"
+base="https://github.com/TrinaxCode/TrinaxAI/releases/download/v${version}"
+curl --fail --location --output "$installer" "${base}/TrinaxAI-${version}-installer.sh"
+curl --fail --location --output "$manifest" "${base}/SHA256SUMS"
+expected="$(awk -v asset="TrinaxAI-${version}-installer.sh" '$2 == asset || $2 == "*" asset { print $1; exit }' "$manifest")"
+if command -v sha256sum >/dev/null 2>&1; then actual="$(sha256sum "$installer" | awk '{print $1}')"; elif command -v shasum >/dev/null 2>&1; then actual="$(shasum -a 256 "$installer" | awk '{print $1}')"; else echo "Se necesita una herramienta SHA-256 (sha256sum o shasum)." >&2; exit 2; fi
+if [ -z "$expected" ] || [ "$actual" != "$expected" ]; then echo "Falló la verificación SHA-256 del instalador." >&2; exit 1; fi
 bash -n "$installer"
 less "$installer"
 bash "$installer"
 ```
 
 Una instalación nueva se guarda en `$XDG_DATA_HOME/trinaxai` (normalmente `~/.local/share/trinaxai`), manteniendo compatibilidad con instalaciones anteriores en `~/trinaxai`. Para elegir otra ruta, sustituye el último comando del bloque anterior por el siguiente. El instalador detecta tu RAM, crea `.env`, instala dependencias y prepara la PWA.
+
+Usa `./install.sh --no-start` para dejar TrinaxAI detenido; también se omite el inicio automático y podrás activarlo después de iniciar TrinaxAI.
 
 ```bash
 bash "$installer" --install-dir "/ruta/a/trinaxai"
@@ -77,6 +114,8 @@ cd /ruta/a/TrinaxAI
 chmod +x install.sh
 ./install.sh
 ```
+
+Ejecutar desde un checkout local es un modo de operador/desarrollo y no se bloquea intencionalmente; revisa y protege ese checkout por separado del flujo de descarga de releases verificado.
 
 El perfil se elige automáticamente según CPU, RAM, GPU y VRAM. En modo interactivo, elige `Normal` salvo que sepas que quieres un perfil manual:
 
@@ -116,11 +155,22 @@ openSUSE:
 sudo zypper install python3 python3-pip curl unzip nodejs npm
 ```
 
-### 2. Descargar el proyecto
+### 2. Descargar el archivo del release
 
 ```bash
+set -eu
+version="1.2.0"
+base="https://github.com/TrinaxCode/TrinaxAI/releases/download/v${version}"
 mkdir -p ~/trinaxai
-curl -fsSL https://github.com/TrinaxCode/TrinaxAI/archive/refs/heads/main.tar.gz | tar -xz --strip-components=1 -C ~/trinaxai
+archive="$(mktemp)"
+manifest="$(mktemp)"
+trap 'rm -f "$archive" "$manifest"' EXIT
+curl --fail --location --output "$archive" "${base}/TrinaxAI-${version}.tar.gz"
+curl --fail --location --output "$manifest" "${base}/SHA256SUMS"
+expected="$(awk -v asset="TrinaxAI-${version}.tar.gz" '$2 == asset || $2 == "*" asset { print $1; exit }' "$manifest")"
+if command -v sha256sum >/dev/null 2>&1; then actual="$(sha256sum "$archive" | awk '{print $1}')"; elif command -v shasum >/dev/null 2>&1; then actual="$(shasum -a 256 "$archive" | awk '{print $1}')"; else echo "Se necesita una herramienta SHA-256 (sha256sum o shasum)." >&2; exit 2; fi
+if [ -z "$expected" ] || [ "$actual" != "$expected" ]; then echo "Falló la verificación SHA-256 del archivo fuente." >&2; exit 1; fi
+tar -xzf "$archive" --strip-components=1 -C ~/trinaxai
 cd ~/trinaxai
 ```
 
@@ -163,10 +213,11 @@ Puedes copiar la plantilla:
 cp .env.example .env
 ```
 
-Valores recomendados para empezar:
+Valores recomendados para empezar (deja el perfil automático salvo que necesites sobrescribirlo):
 
 ```bash
-TRINAXAI_PROFILE=16gb
+# Déjalo sin definir para detectar CPU/RAM/GPU.
+#TRINAXAI_PROFILE=16gb
 TRINAXAI_HOST=127.0.0.1
 TRINAXAI_PORT=3333
 TRINAXAI_INDEX_DIR=./local_sources

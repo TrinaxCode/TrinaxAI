@@ -204,13 +204,120 @@ def test_installers_support_client_first_install_locations() -> None:
     assert "XDG_DATA_HOME" in posix
     assert "Application Support" in posix
     assert "[string]$InstallDir" in windows
-    assert "archive/refs/heads/main.tar.gz" in posix
-    assert "archive/refs/heads/main.zip" in windows
+    assert (
+        'default_source_archive_url="https://github.com/TrinaxCode/TrinaxAI/releases/download/v${release_version}/${source_archive_name}"'
+        in posix
+    )
     assert "releases/download/v$ReleaseVersion/$DefaultSourceArchiveName" in windows
-    assert "raw.githubusercontent.com/TrinaxCode/TrinaxAI/main/install.sh" in posix
-    assert "raw.githubusercontent.com/TrinaxCode/TrinaxAI/main/install.ps1" in windows
     assert "Git\\usr\\bin\\openssl.exe" not in windows
     assert "TRINAXAI_HOME=" in windows
+
+
+def test_user_install_docs_reject_unpinned_trinaxai_bootstraps() -> None:
+    paths = (
+        "install.sh",
+        "install.ps1",
+        "README.md",
+        "README.es.md",
+        "TESTING.md",
+        "TESTING.es.md",
+        "docs/README.md",
+        "docs/README.es.md",
+        "docs/INSTALL_LINUX.md",
+        "docs/INSTALL_LINUX.es.md",
+        "docs/INSTALL_MACOS.md",
+        "docs/INSTALL_MACOS.es.md",
+        "docs/INSTALL_WINDOWS.md",
+        "docs/INSTALL_WINDOWS.es.md",
+    )
+    forbidden = (
+        "raw.githubusercontent.com/TrinaxCode/TrinaxAI/main",
+        "github.com/TrinaxCode/TrinaxAI/archive/refs/heads/main",
+    )
+    for path in paths:
+        text = (ROOT / path).read_text(encoding="utf-8")
+        assert not any(marker in text for marker in forbidden), path
+
+
+def test_release_installer_guides_verify_exact_asset_before_execution() -> None:
+    paths = (
+        "install.sh",
+        "install.ps1",
+        "README.md",
+        "README.es.md",
+        "TESTING.md",
+        "TESTING.es.md",
+        "docs/README.md",
+        "docs/README.es.md",
+        "docs/INSTALL_LINUX.md",
+        "docs/INSTALL_LINUX.es.md",
+        "docs/INSTALL_MACOS.md",
+        "docs/INSTALL_MACOS.es.md",
+        "docs/INSTALL_WINDOWS.md",
+        "docs/INSTALL_WINDOWS.es.md",
+    )
+    for path in paths:
+        text = (ROOT / path).read_text(encoding="utf-8")
+        if "installer.sh" in text:
+            download = text.index("TrinaxAI-${version}-installer.sh")
+            execution = text.index('bash "$installer"', download)
+            assert download < text.index("SHA256SUMS", download) < execution, path
+            assert text.index('awk -v asset="TrinaxAI-${version}-installer.sh"', download) < execution, path
+            assert text.index("sha256sum", download) < execution, path
+        if "installer.ps1" in text:
+            download = text.index("TrinaxAI-$version-installer.ps1")
+            execution = text.index("& $installer", download)
+            assert download < text.index("SHA256SUMS", download) < execution, path
+            assert text.index("Get-FileHash -Algorithm SHA256", download) < execution, path
+
+
+def test_installers_only_advertise_live_urls_after_runtime_readiness() -> None:
+    posix = (ROOT / "install.sh").read_text(encoding="utf-8")
+    windows = (ROOT / "install.ps1").read_text(encoding="utf-8")
+
+    posix_done = posix[posix.index("# ── Done ──") :]
+    assert 'if [ "$START_NOW" = "1" ]; then' in posix_done
+    assert "Installation prepared; TrinaxAI is not running." in posix_done
+    assert posix_done.index('if [ "$START_NOW" = "1" ]; then') < posix_done.index("https://localhost:3334")
+
+    windows_done = windows[windows.rindex("if ($NoStart) {") :]
+    assert "Installation prepared; TrinaxAI is not running." in windows_done
+    assert windows_done.index("} else {") < windows_done.index("https://localhost:3334")
+
+
+def test_no_models_contract_requires_preinstalled_configured_models() -> None:
+    posix = (ROOT / "install.sh").read_text(encoding="utf-8")
+    windows = (ROOT / "install.ps1").read_text(encoding="utf-8")
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+
+    assert "checking the configured models already installed" in posix
+    assert "installed models will still be verified" in windows
+    assert "every configured Ollama model to already be installed" in readme
+
+
+def test_installers_use_persisted_models_and_never_autostart_with_no_start() -> None:
+    posix = (ROOT / "install.sh").read_text(encoding="utf-8")
+    windows = (ROOT / "install.ps1").read_text(encoding="utf-8")
+
+    assert "configured_models()" in posix
+    assert 'for model in "${MODELS[@]}"; do' in posix
+    posix_guard = 'if [ "$START_NOW" = "1" ] && [ "$ENABLE_AUTOSTART" = "1" ]; then'
+    posix_autostart = posix.rsplit(posix_guard, 1)[1].split("\n", 4)[0:4]
+    assert "python service_manager.py enable-autostart" in "\n".join(posix_autostart)
+
+    assert "function Get-ConfiguredModels" in windows
+    assert "$Models = @(Get-ConfiguredModels)" in windows
+    windows_guard = "if (-not $NoStart -and -not $NoAutostart) {"
+    windows_autostart = windows.rsplit(windows_guard, 1)[1].split("\n", 4)[0:4]
+    assert '"enable-autostart"' in "\n".join(windows_autostart)
+
+
+def test_installer_release_version_docs_match_versioned_default() -> None:
+    docs = (ROOT / "docs" / "ENVIRONMENT_VARIABLES.md").read_text(encoding="utf-8")
+
+    release_row = next(line for line in docs.splitlines() if "`TRINAXAI_RELEASE_VERSION`" in line)
+    assert "| `1.2.0` |" in release_row
+    assert "never falls back to `main`" in release_row
 
 
 def test_desktop_manager_is_removed_from_the_product() -> None:
@@ -238,10 +345,10 @@ def test_installers_share_conservative_profile_thresholds_and_preserve_models() 
     windows = (ROOT / "install.ps1").read_text(encoding="utf-8")
     setup = (ROOT / "setup_trinaxai.sh").read_text(encoding="utf-8")
 
-    assert '"${ram_gb:-0}" -ge 64' in posix
-    assert '"${ram_gb:-0}" -ge 32' in posix
-    assert "$RamGb -ge 64" in windows
-    assert "$RamGb -ge 32" in windows
+    for script in (posix, windows):
+        assert "detect_hardware" in script
+        assert "model_recommendations" in script
+        assert '"8gb", "16gb", "32gb", "64gb"' in script
     assert "qwen3.5:35b qwen3-coder:30b" in setup
     assert "qwen3.5:4b qwen3.5:9b" in setup
     assert "qwen3-embedding:4b qwen3.5:4b" in setup
@@ -252,7 +359,8 @@ def test_windows_installer_uses_canonical_profiles_and_embedding_fleet() -> None
     windows = (ROOT / "install.ps1").read_text(encoding="utf-8")
 
     assert 'ValidateSet("8gb", "16gb", "32gb", "64gb"' in windows
-    assert '$AutoProfile = if ($RamGb -ge 64) { "64gb" } elseif ($RamGb -ge 32) { "32gb" }' in windows
+    assert '"detected_profile"' in windows
+    assert "select_profile" in windows
     assert "TRINAXAI_PROFILE=$Profile" in windows
     assert "qwen3-embedding:8b" not in windows
 
@@ -297,10 +405,10 @@ def test_windows_installer_configures_rag_transport_and_lan_firewall() -> None:
     assert "3333" in script and "3334" in script
 
 
-def test_installers_use_light_models_for_8gb_profile() -> None:
+def test_installers_delegate_light_models_to_canonical_profile_matrix() -> None:
     for script_name in ("install.ps1", "install.sh"):
         script = (ROOT / script_name).read_text(encoding="utf-8")
-        assert "qwen3.5:2b" in script
+        assert "model_recommendations" in script
         assert "qwen3-embedding:0.6b" in script
 
 
@@ -365,6 +473,25 @@ def test_updaters_use_archives_and_scheduled_mode_is_check_only() -> None:
     assert "no remote code execution" in windows
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Bash wrapper is validated on POSIX runners")
+def test_updater_wrappers_reject_unchecksummed_custom_file_urls(tmp_path: Path) -> None:
+    posix = (ROOT / "update.sh").read_text(encoding="utf-8")
+    windows = (ROOT / "update.ps1").read_text(encoding="utf-8")
+    assert 'SOURCE_UPDATE_URL" != file://' not in posix
+    assert "$SourceUpdateUrl -and -not $IsReleaseSourceUrl" in windows
+
+    result = subprocess.run(
+        ["bash", str(ROOT / "update.sh"), "--dry-run"],
+        cwd=ROOT,
+        env={**os.environ, "TRINAXAI_UPDATE_SOURCE_URL": (tmp_path / "source.tar.gz").as_uri()},
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode != 0
+    assert "SHA-256 checksum is required" in result.stderr
+
+
 def test_archive_update_rolls_back_after_partial_failure() -> None:
     updater = (ROOT / "update.sh").read_text(encoding="utf-8")
 
@@ -421,4 +548,5 @@ def test_weekly_updater_never_downloads_or_executes_remote_scripts() -> None:
     updater = (ROOT / "scripts" / "auto_update.py").read_text(encoding="utf-8")
     assert "urllib.request" not in updater
     assert "raw.githubusercontent.com" not in updater
-    assert '"ls-remote"' in updater
+    assert "resolve_latest_release" in updater
+    assert "git" not in updater
