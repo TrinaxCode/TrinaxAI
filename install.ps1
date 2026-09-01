@@ -548,11 +548,11 @@ function Invoke-LocalWebRequest([string]$Uri, [string]$Method = "GET", [string]$
 }
 function Wait-LocalUrl([int]$Port, [string]$Path = "/") {
   foreach ($Scheme in @("https", "http")) {
-    $Uri = "$Scheme://127.0.0.1:$Port$Path"
+    $Uri = "${Scheme}://127.0.0.1:${Port}${Path}"
     for ($i = 0; $i -lt 20; $i++) {
       try {
         Invoke-LocalWebRequest $Uri | Out-Null
-        return "$Scheme://127.0.0.1:$Port"
+        return "${Scheme}://127.0.0.1:${Port}"
       } catch {
         Start-Sleep -Seconds 1
       }
