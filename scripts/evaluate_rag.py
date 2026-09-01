@@ -15,6 +15,12 @@ from typing import Any
 
 import httpx
 
+# Keep the standalone evaluator runnable from a clean checkout; the CLI-only
+# wheel intentionally does not install the backend package it evaluates.
+_REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
+if str(_REPOSITORY_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPOSITORY_ROOT))
+
 from app.evaluation import evaluate_results, load_golden_set
 
 _REFERENCE_DOCUMENTS = {
