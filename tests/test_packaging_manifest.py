@@ -37,8 +37,8 @@ def test_manifest_exposes_only_cli_and_development_dependencies() -> None:
     ]
     optional = manifest.split("[project.optional-dependencies]", 1)[1].split("\n[", 1)[0]
     assert re.findall(r"(?m)^([A-Za-z0-9_-]+)\s*=", optional) == ["dev"]
-    assert "Development Status :: 4 - Beta" in manifest
-    assert "Development Status :: 5 - Production/Stable" not in manifest
+    assert "Development Status :: 5 - Production/Stable" in manifest
+    assert "Development Status :: 4 - Beta" not in manifest
 
 
 def test_built_wheel_is_an_isolated_cli_not_a_full_runtime(tmp_path: Path) -> None:
@@ -134,8 +134,8 @@ for command in pkgutil.iter_modules(trinaxai_cli.commands.__path__):
 
 metadata = next(importlib.metadata.distributions(path=[target])).metadata
 assert metadata.get_all("Provides-Extra") == ["dev"]
-assert "Development Status :: 4 - Beta" in metadata.get_all("Classifier")
-assert "Development Status :: 5 - Production/Stable" not in metadata.get_all("Classifier")
+assert "Development Status :: 5 - Production/Stable" in metadata.get_all("Classifier")
+assert "Development Status :: 4 - Beta" not in metadata.get_all("Classifier")
 
 from trinaxai_cli import runtime
 from trinaxai_cli.commands import _lifecycle, _system

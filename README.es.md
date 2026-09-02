@@ -4,596 +4,177 @@
 </h1>
 
 <p align="center">
-  <a href="https://github.com/TrinaxCode/TrinaxAI"><img src="https://img.shields.io/github/stars/TrinaxCode/TrinaxAI?style=flat&amp;label=%E2%98%85&amp;color=006bbd" alt="GitHub stars"></a>
-  <a href="https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.2.0"><img src="https://img.shields.io/badge/version-1.2.0-006bbd" alt="Current candidate: 1.2.0"></a>
-  <a href="https://github.com/TrinaxCode/TrinaxAI/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/TrinaxCode/TrinaxAI/ci.yml?branch=main&amp;label=CI" alt="CI status"></a>
-  <a href="https://github.com/TrinaxCode/TrinaxAI/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0--or--later-006bbd" alt="License: AGPL-3.0-or-later"></a>
-  <img src="https://img.shields.io/badge/macOS%20%7C%20Windows%20%7C%20Linux-4493F8?style=flat-square" alt="Supported platforms: macOS, Windows, and Linux">
+  <a href="https://github.com/TrinaxCode/TrinaxAI"><img src="https://img.shields.io/github/stars/TrinaxCode/TrinaxAI?style=flat&amp;label=%E2%98%85&amp;color=006bbd" alt="Estrellas en GitHub"></a>
+  <a href="https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.2.1"><img src="https://img.shields.io/badge/version-1.2.1-006bbd" alt="Release estable: 1.2.1"></a>
+  <a href="https://github.com/TrinaxCode/TrinaxAI/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/TrinaxCode/TrinaxAI/ci.yml?branch=main&amp;label=CI" alt="Estado de CI"></a>
+  <a href="https://github.com/TrinaxCode/TrinaxAI/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0--or--later-006bbd" alt="Licencia AGPL-3.0-or-later"></a>
+  <img src="https://img.shields.io/badge/macOS%20%7C%20Windows%20%7C%20Linux-4493F8?style=flat-square" alt="Plataformas: macOS, Windows y Linux">
 </p>
 
 <p align="center"><sub><a href="README.md">English</a> · <strong>Español</strong></sub></p>
 <p align="center"><sub><a href="https://www.trinaxai.app/">Sitio web</a> · <a href="docs/README.es.md">Documentación</a> · <a href="docs/CHANGELOG.es.md">Cambios</a> · <a href="LICENSE">Licencia</a></sub></p>
 
-<p align="center"><strong>Un asistente de IA local-first para trabajar con tus archivos en tu propio equipo, con RAG, un agente de código aislado y vinculación segura entre dispositivos.</strong></p>
+> Tu asistente privado para trabajar con tus archivos desde tu propio equipo.
 
-<p align="center">
-  <a href="https://www.trinaxai.app/"><img src="https://www.trinaxai.app/og-image.png" alt="Vista general del producto TrinaxAI" width="720"></a>
-</p>
-
-Si TrinaxAI te resulta útil, considera [dar una estrella al repositorio](https://github.com/TrinaxCode/TrinaxAI).
-
-## Contenido
-
-- [Inicio rápido](#inicio-rápido)
-- [Qué es TrinaxAI](#qué-es-trinaxai)
-- [Capacidades](#capacidades)
-- [Cómo funciona](#cómo-funciona)
-- [Plataformas compatibles](#plataformas-compatibles)
-- [CLI](#cli)
-- [Modelos y perfiles de hardware](#modelos-y-perfiles-de-hardware)
-- [VS Code y Continue.dev](#vs-code-y-continuedev)
-- [Modelo de seguridad](#modelo-de-seguridad)
-- [Solución de problemas y recuperación](docs/TROUBLESHOOTING.es.md)
-- [Desarrollo](#desarrollo)
-- [Documentación](#documentación)
-- [Estructura del proyecto](#estructura-del-proyecto)
-- [Preguntas frecuentes](#preguntas-frecuentes)
-- [Contribución y licencia](#contribución-y-licencia)
+TrinaxAI es un asistente local basado en Ollama. Combina chat directo, RAG con
+citas, investigación web opcional, un agente de código con sandbox, una CLI y
+una PWA instalable. La inferencia y los datos indexados permanecen en el equipo
+configurado salvo que elijas explícitamente un servicio remoto.
 
 ## Inicio rápido
 
-La instalación normal usa un instalador fijado a un release y no necesita Git.
+### Linux y macOS
 
-Linux o macOS:
-
-> Estado del release: `v1.2.0` es el candidato actual, pero sus assets del Release de GitHub todavía no se han publicado. Para probarlo ahora, copia este árbol a la máquina Linux/macOS de destino y ejecuta `bash install.sh`; el instalador se niega intencionalmente a caer en `main`.
+El instalador estable detecta CPU, RAM, GPU y VRAM, elige un perfil seguro,
+verifica el checksum del paquete fuente, compila la PWA, comprueba Ollama y los
+modelos necesarios, ejecuta una inferencia de smoke test e inicia la app.
 
 ```bash
-set -eu
-version="1.2.0"
-base="https://github.com/TrinaxCode/TrinaxAI/releases/download/v${version}"
-installer="$(mktemp)"
-manifest="$(mktemp)"
-trap 'rm -f "$installer" "$manifest"' EXIT
-curl --fail --location --output "$installer" "${base}/TrinaxAI-${version}-installer.sh"
-curl --fail --location --output "$manifest" "${base}/SHA256SUMS"
-expected="$(awk -v asset="TrinaxAI-${version}-installer.sh" '$2 == asset || $2 == "*" asset { print $1; exit }' "$manifest")"
-if command -v sha256sum >/dev/null 2>&1; then actual="$(sha256sum "$installer" | awk '{print $1}')"; elif command -v shasum >/dev/null 2>&1; then actual="$(shasum -a 256 "$installer" | awk '{print $1}')"; else echo "Se necesita una herramienta SHA-256 (sha256sum o shasum)." >&2; exit 2; fi
-if [ -z "$expected" ] || [ "$actual" != "$expected" ]; then echo "Falló la verificación SHA-256 del instalador." >&2; exit 1; fi
-bash -n "$installer"
-bash "$installer"
+set -e; version="1.2.1"; base="https://github.com/TrinaxCode/TrinaxAI/releases/download/v${version}"; installer="$(mktemp)"; trap 'rm -f "$installer"' EXIT; curl -fsSL "$base/TrinaxAI-${version}-installer.sh" -o "$installer"; expected="$(curl -fsSL "$base/SHA256SUMS" | awk -v asset="TrinaxAI-${version}-installer.sh" '$2 == asset || $2 == "*" asset { print $1; exit }')"; actual="$( (shasum -a 256 "$installer" 2>/dev/null || sha256sum "$installer") | awk '{print $1}' )"; test "$expected" = "$actual"; bash "$installer"
 ```
 
-Windows PowerShell:
-
-> Estado del release: `v1.2.0` es el candidato actual, pero sus assets del Release de GitHub todavía no se han publicado. Para probarlo ahora en Windows, copia este árbol a Windows y ejecuta `powershell -ExecutionPolicy Bypass -File .\install.ps1`; el instalador se niega intencionalmente a caer en `main`.
+### Windows PowerShell
 
 ```powershell
-$ErrorActionPreference = "Stop"
-$version = "1.2.0"
-$base = "https://github.com/TrinaxCode/TrinaxAI/releases/download/v$version"
-$installer = Join-Path $env:TEMP "TrinaxAI-$version-installer.ps1"
-$manifest = Join-Path $env:TEMP "TrinaxAI-$version-SHA256SUMS"
-Invoke-WebRequest -Uri "$base/TrinaxAI-$version-installer.ps1" -OutFile $installer
-Invoke-WebRequest -Uri "$base/SHA256SUMS" -OutFile $manifest
-$line = Get-Content -LiteralPath $manifest | Where-Object { $_ -match "\s\*?TrinaxAI-$version-installer\.ps1$" } | Select-Object -First 1
-$expected = if ($line -match '^\s*([0-9a-fA-F]{64})\s+') { $Matches[1] } else { "" }
-$actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $installer).Hash
-if ($expected -notmatch '^[0-9a-fA-F]{64}$' -or $actual -ine $expected) { throw "Falló la verificación SHA-256 del instalador." }
-Get-Content -Path $installer
-& $installer
+$ErrorActionPreference="Stop"; $version="1.2.1"; $base="https://github.com/TrinaxCode/TrinaxAI/releases/download/v$version"; $installer=Join-Path $env:TEMP "TrinaxAI-$version-installer.ps1"; Invoke-WebRequest -Uri "$base/TrinaxAI-$version-installer.ps1" -OutFile $installer; $line=Invoke-RestMethod -Uri "$base/SHA256SUMS" | Where-Object { $_ -match "\s\*?TrinaxAI-$version-installer\.ps1$" } | Select-Object -First 1; $expected=if ($line -match '^\s*([0-9a-fA-F]{64})\s+') { $Matches[1] } else { "" }; $actual=(Get-FileHash -Algorithm SHA256 -LiteralPath $installer).Hash; if ($expected -notmatch '^[0-9a-fA-F]{64}$' -or $actual -ine $expected) { throw "Installer SHA-256 verification failed." }; & $installer
 ```
 
-La comprobación del manifiesto SHA-256 anterior es obligatoria antes de ejecutar un instalador de release; comprueba la integridad, pero no autentica el release. La verificación GPG separada es un control adicional opcional, sólo cuando hayas obtenido y confiado en la huella de la clave de firma por un canal independiente; una clave o huella descargada del mismo release no es un ancla de autenticidad. Consulta [firma de releases](docs/RELEASE_SIGNING.es.md). El repositorio todavía no incluye un ancla de confianza de clave pública fijada.
+Los instaladores de release están fijados a una versión y nunca vuelven a
+`main`. Para verificar una descarga de forma independiente, sigue los comandos
+breves de [firma de releases](docs/RELEASE_SIGNING.es.md). Un checkout local
+(`bash install.sh` o `powershell -ExecutionPolicy Bypass -File .\install.ps1`)
+es el modo de operador/desarrollo.
 
-La ejecución desde un checkout local (`./install.sh` o `./install.ps1`) sigue disponible para uso de operador/desarrollo y no se bloquea intencionalmente; revisa y protege ese checkout por separado.
+Al terminar, abre **https://localhost:3334**. Con `--no-models`, los modelos de
+Ollama configurados deben estar instalados previamente; el instalador verifica
+cada uno antes de declarar éxito.
 
-El instalador descarga directamente el archivo fuente de TrinaxAI desde GitHub, instala las herramientas necesarias, detecta tu hardware, configura Ollama, compila la PWA e inicia la aplicación local. Al terminar, abre `https://localhost:3334`.
-
-## Instalación avanzada y automatización
-
-Los comandos siguientes son variantes opcionales para revisar el script o automatizar la instalación basada en URL.
-
-### Alternativa por terminal: Linux y macOS
-
-Descarga el script, revísalo y después ejecútalo:
+Opciones útiles:
 
 ```bash
-set -eu
-installer="$(mktemp)"
-manifest="$(mktemp)"
-trap 'rm -f "$installer" "$manifest"' EXIT
-version="1.2.0"
-base="https://github.com/TrinaxCode/TrinaxAI/releases/download/v${version}"
-curl --fail --location --output "$installer" "${base}/TrinaxAI-${version}-installer.sh"
-curl --fail --location --output "$manifest" "${base}/SHA256SUMS"
-expected="$(awk -v asset="TrinaxAI-${version}-installer.sh" '$2 == asset || $2 == "*" asset { print $1; exit }' "$manifest")"
-if command -v sha256sum >/dev/null 2>&1; then actual="$(sha256sum "$installer" | awk '{print $1}')"; elif command -v shasum >/dev/null 2>&1; then actual="$(shasum -a 256 "$installer" | awk '{print $1}')"; else echo "Se necesita una herramienta SHA-256 (sha256sum o shasum)." >&2; exit 2; fi
-if [ -z "$expected" ] || [ "$actual" != "$expected" ]; then echo "Falló la verificación SHA-256 del instalador." >&2; exit 1; fi
-bash -n "$installer"
-less "$installer"
-bash "$installer"
-```
-
-### Alternativa por terminal: Windows
-
-Descarga, revisa y ejecuta el instalador guiado desde PowerShell:
-
-```powershell
-$ErrorActionPreference = "Stop"
-$version = "1.2.0"
-$base = "https://github.com/TrinaxCode/TrinaxAI/releases/download/v$version"
-$installer = Join-Path $env:TEMP "TrinaxAI-$version-installer.ps1"
-$manifest = Join-Path $env:TEMP "TrinaxAI-$version-SHA256SUMS"
-Invoke-WebRequest -Uri "$base/TrinaxAI-$version-installer.ps1" -OutFile $installer
-Invoke-WebRequest -Uri "$base/SHA256SUMS" -OutFile $manifest
-$line = Get-Content -LiteralPath $manifest | Where-Object { $_ -match "\s\*?TrinaxAI-$version-installer\.ps1$" } | Select-Object -First 1
-$expected = if ($line -match '^\s*([0-9a-fA-F]{64})\s+') { $Matches[1] } else { "" }
-$actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $installer).Hash
-if ($expected -notmatch '^[0-9a-fA-F]{64}$' -or $actual -ine $expected) { throw "Falló la verificación SHA-256 del instalador." }
-Get-Content -Path $installer
-& $installer
-```
-
-Descarga el archivo fuente de GitHub en `%LOCALAPPDATA%\TrinaxAI`.
-
-El instalador de Windows descarga las dependencias automáticamente. Primero usa el instalador oficial de Ollama, verifica el fallback firmado `OllamaSetup.exe` si hace falta y deja `winget` como último recurso.
-
-### Backend Docker
-
-Cada release publica la imagen de la API RAG en GitHub Container Registry. El gateway de la PWA y Ollama continúan ejecutándose en el equipo anfitrión.
-
-```bash
-docker pull ghcr.io/trinaxcode/trinaxai:1.2.0
-```
-
-Usa la imagen con el `compose.yaml` incluido configurando `TRINAXAI_DOCKER_IMAGE`. El procedimiento completo limitado a loopback está documentado en la [guía de instalación de Linux](docs/INSTALL_LINUX.es.md#backend-opcional-con-docker).
-
-Nota de seguridad para la instalación avanzada: revisa los scripts descargados antes de ejecutarlos.
-
-### Opciones avanzadas de instalación
-
-```bash
-./install.sh --non-interactive        # Instalación desatendida para CI o scripts
-./install.sh --no-models              # Requerir modelos configurados preinstalados
-./install.sh --profile 16gb           # Forzar un perfil de hardware
-```
-
-| Opción | Descripción |
-| --- | --- |
-| `--interactive` | Instalación guiada con opciones. Es el valor predeterminado. |
-| `--non-interactive` | Instalación desatendida para CI y scripts. |
-| `--no-models` | Omitir descargas, pero exigir que todos los modelos Ollama configurados ya estén instalados. |
-| `--no-vision` | Opción de compatibilidad. Los modelos de visión se descargan al analizar la primera imagen. |
-| `--no-autostart` | No activar el inicio automático. |
-| `--no-auto-update` | No activar la comprobación semanal de releases. |
-| `--no-start` | Preparar la instalación sin iniciar TrinaxAI ni anunciar sus URLs como activas. |
-| `--profile PERFIL` | Sobrescribir el perfil detectado con `8gb`, `16gb`, `32gb` o `64gb`. |
-| `--lan-system` | Opción de compatibilidad obsoleta. Se ignora y nunca activa administración del host por LAN. |
-
-El instalador detecta CPU, RAM, GPU y VRAM, y selecciona uno de los perfiles `8gb`, `16gb`, `32gb` o `64gb`. La combinación de perfil y hardware determina qué modelos de Ollama se descargan. Consulta [Modelos y perfiles de hardware](#modelos-y-perfiles-de-hardware).
-
-Guías por plataforma: [Linux](docs/INSTALL_LINUX.es.md), [macOS](docs/INSTALL_MACOS.es.md) y [Windows](docs/INSTALL_WINDOWS.es.md).
-
-Guías en inglés: [Linux](docs/INSTALL_LINUX.md), [macOS](docs/INSTALL_MACOS.md) y [Windows](docs/INSTALL_WINDOWS.md).
-
-### Actualizar y desinstalar
-
-Desde cualquier terminal, administra la instalación con la CLI incluida. No necesitas Git:
-
-```bash
-./update.sh      # Actualización guiada; conserva datos y pregunta por backup, modelos y reinicio
-./uninstall.sh   # Desinstalación guiada; pregunta antes de eliminar cada elemento
+bash install.sh --no-start       # prepara sin iniciar servicios
+bash install.sh --profile 16gb  # sobrescribe el perfil detectado
 ```
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\update.ps1
-powershell -ExecutionPolicy Bypass -File .\uninstall.ps1
+.\install.ps1 -NoStart
+.\install.ps1 -Profile 16gb
 ```
 
-Las actualizaciones conservan los datos locales. La tarea semanal opcional solo comprueba versiones: compara la versión instalada con el último release estable de GitHub y registra la disponibilidad en `logs/auto-update.log`. Nunca descarga ni ejecuta nada sin supervisión. Ejecuta el actualizador guiado después de revisar el release.
-
-Para detener toda la pila, usa **Detener TODO** en la PWA o `trinaxai stop --all`. Solo queda la página de recuperación en loopback en `https://localhost:3334`; el acceso LAN permanece cerrado hasta iniciar TrinaxAI de nuevo allí.
-
-### Vincular otro dispositivo
-
-Cualquier teléfono, tableta u ordenador de la misma red privada puede abrir `https://HOST-LAN-IP:3334`. La PWA guía la conexión segura:
-
-1. En el equipo anfitrión, abre **TrinaxAI > Configuración > Dispositivo vinculado** y selecciona **Generar código de vinculación**.
-2. En el otro dispositivo, abre la PWA con la IP LAN del anfitrión, elige **Ya tengo TrinaxAI en otro dispositivo** e introduce el código de un solo uso.
-3. Asigna un nombre al dispositivo y confirma la vinculación. Instala la PWA desde **Añadir a pantalla de inicio** o **Instalar aplicación** en el navegador.
-4. En el anfitrión, revisa o revoca dispositivos desde **Configuración > Dispositivo vinculado**.
-
-El certificado HTTPS local debe ser confiable en cada dispositivo. Ejecuta `trinaxai network` después de `trinaxai network refresh` para ver la ruta del certificado público y sigue la [guía de pairing LAN y confianza HTTPS](docs/NETWORK_PAIRING.es.md). Un navegador remoto debe vincularse antes de usar el chat o las APIs privadas. El pairing solo puede conceder `chat`, `read_private` y `web`; `read_private` habilita RAG autorizado, historial sincronizado, contexto de memoria, archivos y otras lecturas privadas.
-
-Indexar, escribir memoria/configuración, usar el Agente, instalar/eliminar modelos, controlar servicios, restaurar todo y administrar dispositivos son acciones exclusivas del host. Ábrelas desde `https://localhost:3334`; ni un token admin ni un token antiguo con `system`, `index` o `agent` las autoriza desde LAN. La CLI usa `chat,read_private` por defecto y el anfitrión puede revocar el acceso de inmediato. Consulta la [guía completa de pairing de la PWA](chat-pwa/README.es.md#emparejar-un-navegador).
-
-## Qué es TrinaxAI
-
-TrinaxAI es un asistente de IA local-first que se ejecuta en tu propio hardware.
-
-La mayoría de las herramientas de IA local son envoltorios de Ollama. TrinaxAI combina un motor RAG local con fragmentación consciente de AST, recuperación híbrida vectorial y BM25, reranker opcional y respuestas con citas. También incluye un agente de código con herramientas y sandbox, pairing de dispositivos por capacidades, una CLI, una PWA instalable y sincronización entre dispositivos.
-
-### Resumen
-
-| Área | Valor predeterminado |
-| --- | --- |
-| Interfaces | PWA instalable y CLI para desarrolladores |
-| Runtime de IA | Ollama local |
-| API RAG | Servicio local en el puerto `3333` |
-| PWA | `https://localhost:3334` |
-| Acceso de dispositivos | Pairing con capacidades revocables |
-| Ubicación de datos | Anfitrión configurado, salvo que se seleccione un endpoint remoto explícito |
-| Plataformas | Linux, macOS y Windows |
-| Versión | `1.2.0` |
-| Licencia | [AGPL-3.0-or-later](LICENSE) |
-
-La inferencia y los datos persistentes permanecen en el anfitrión configurado por defecto. La red solo se usa para acciones explícitas como instalación, descarga de modelos, búsqueda web opcional o un endpoint remoto de Ollama o búsqueda configurado deliberadamente.
-
-Cada dispositivo vinculado usa capacidades explícitas de bajo riesgo para chat, lecturas privadas y búsqueda web opcional. Administrar el host, indexar y acceder al workspace del Agente siempre exige una conexión loopback verificada. Los permisos del sistema operativo siguen aplicándose: TrinaxAI no puede acceder a una carpeta, micrófono, cámara u operación de shell que el usuario actual o el navegador no hayan autorizado.
-
-## Capacidades
-
-- **Dos motores:** chat directo con Ollama para respuestas rápidas y creativas, y RAG para respuestas fundamentadas y citadas sobre tus archivos.
-- **Pipeline inteligente de generación:** un clasificador determinista sin LLM selecciona el modelo, los parámetros de decodificación y el estilo de prompt para código, razonamiento y matemáticas, creatividad, preguntas fundamentadas o explicaciones. No añade llamadas extra al modelo.
-- **Orquestación de herramientas:** el agente integrado combina búsqueda web, investigación profunda, memoria, búsqueda en documentos indexados, colecciones y herramientas de workspace aisladas. Los interruptores de herramientas limitan la disponibilidad, pero nunca fuerzan la ejecución. Las acciones peligrosas requieren aprobación.
-- **RAG personalizado:** indexa proyectos con fragmentación consciente de AST para 16 lenguajes de código, fallback de texto para formatos adicionales, recuperación híbrida vectorial y BM25, reranker cross-encoder opcional y citas hacia `rel_path`.
-- **Investigación profunda:** descomposición RAG en varias pasadas mediante `trinaxai research` o el activador de la aplicación.
-- **Búsqueda web opcional:** resultados actuales mediante DuckDuckGo, Brave Search o SearXNG, con fuentes visibles y lectura limitada de páginas públicas.
-- **Colecciones de conocimiento:** espacios RAG separados que pueden consultarse individualmente o en conjunto.
-- **Sonidos de interfaz:** un interruptor persistente en Configuración controla señales centralizadas y no superpuestas. Cuando está desactivado, no se inicializa audio de señales.
-- **Watcher de archivos:** reindexa automáticamente las carpetas cuando cambian.
-- **Memoria local:** los datos guardados con "recuerda que..." persisten localmente y se sincronizan entre dispositivos vinculados.
-- **Modo de voz:** conversión local de voz a texto y de texto a voz, incluida una vista de llamada de voz manos libres en la PWA.
-- **Visión:** análisis de imágenes y capturas con un modelo de visión local.
-- **CLI para desarrolladores:** comandos como `ask`, `chat`, `index`, `agent`, `research` y `doctor`.
-- **Sincronización entre dispositivos:** configuración, historial y memoria se sincronizan mediante el backend local sin servicio en la nube.
-- **Interfaz bilingüe:** español e inglés se detectan automáticamente y las respuestas siguen el idioma en que escribes.
-- **PWA instalable:** funciona en iOS, Android y escritorio con shell offline y tema claro u oscuro.
-- **Documentos y adjuntos:** sube imágenes y documentos, extrae texto limitado para el turno actual y conserva referencias de adjuntos respaldadas por el anfitrión para dispositivos vinculados.
-- **Sincronización de estado y uso:** sincronización versionada de configuración e historial con revisiones seguras ante conflictos, borrados explícitos y estadísticas locales de uso.
-- **Seguridad local-first:** servicios en loopback, pairing de dispositivos por scopes, gateway firmado con HMAC y agente aislado.
-
-### Búsqueda web
-
-La búsqueda web usa `auto` por defecto: primero Brave si existe `TRINAXAI_BRAVE_SEARCH_API_KEY`, luego `TRINAXAI_SEARXNG_URL` configurado y, en otro caso, DuckDuckGo sin clave.
-
-Configura la búsqueda desde **Configuración > Búsqueda web** sin usar la terminal. Puedes activar o desactivar la búsqueda, elegir DuckDuckGo, Brave o SearXNG, guardar una clave de Brave en el archivo privado del anfitrión, configurar una URL pública de SearXNG o el endpoint local documentado `http://127.0.0.1:8080`, y probar la conexión.
-
-Las variables de entorno tienen prioridad y aparecen como gestionadas externamente. Sus valores nunca se devuelven al navegador. Fuerza un proveedor asignando `TRINAXAI_WEB_SEARCH_PROVIDER` a `duckduckgo`, `brave` o `searxng`, o desactiva la búsqueda con `disabled`.
-
-Las consultas salen del equipo solo cuando se solicita una búsqueda en Internet. DuckDuckGo puede bloquear temporalmente la automatización, Brave requiere una clave y SearXNG debe exponer búsquedas JSON. `TRINAXAI_WEB_SEARCH_TIMEOUT` y `TRINAXAI_WEB_SEARCH_MAX_RESULTS` limitan las solicitudes. Consulta la [referencia de configuración](docs/CONFIGURATION.es.md).
-
-### Voz
-
-Instala los motores locales opcionales con:
+Actualiza o elimina una instalación existente con los scripts guiados:
 
 ```bash
-pip install -e ".[voice]"
+bash update.sh
+bash uninstall.sh
 ```
 
-La conversión de voz a texto usa faster-whisper y descarga los modelos en el primer uso. La conversión de texto a voz usa el motor de voz de la plataforma mediante pyttsx3. Linux puede requerir paquetes del sistema para voz y audio. macOS y Windows requieren permiso para el micrófono. Los sistemas sin interfaz pueden informar de hardware no disponible.
-
-Comprueba `GET /v1/voice/capabilities` antes de activar los controles. Si la voz no está disponible, verifica que el extra esté instalado, los permisos del micrófono, el acceso para descargar el modelo y el servicio de audio del anfitrión. La disponibilidad de la API no demuestra que el hardware real funcione.
-
-### Exploración de carpetas del agente
-
-La exploración de carpetas y las herramientas de workspace del Agente son exclusivas del host y exigen abrir la PWA por loopback. El pairing nunca concede `agent`, `agent_yolo`, `index` ni `system`; las herramientas peligrosas conservan las comprobaciones de aprobación y sandbox.
-
-## Cómo funciona
-
-TrinaxAI es un stack local con un gateway de PWA opcionalmente accesible por LAN, un backend FastAPI y Ollama. Las solicitudes de la PWA pasan por el gateway consciente de capacidades; la CLI usa las mismas reglas de autorización del backend. Las operaciones privadas remotas requieren un scope de dispositivo vinculado y Ollama solo se expone mediante una fachada con lista permitida.
-
-```mermaid
-flowchart TB
-  user["Usuario"] --> pwa["PWA React<br/>puerto 3334"]
-  user --> cli["trinaxai CLI<br/>chat, index, agent, research<br/>memory, watch, pair, doctor, Obsidian"]
-  pwa --> gateway["Gateway same-origin<br/>pairing, scopes, HMAC, limites"]
-  cli --> api
-  cli --> ollama
-  gateway --> direct["Chat directo y visión<br/>NDJSON con lista permitida"]
-  direct --> ollama["Ollama<br/>puerto 11434"]
-  gateway --> private["APIs privadas<br/>SSE y JSON"]
-  private --> api["Backend FastAPI<br/>puerto 3333"]
-
-  api --> router["Router de generacion determinista<br/>classify -> TaskSpec -> decode"]
-  router --> ollama
-  api --> rag["RAG y respuestas con citas"]
-  rag --> retrieve["Recuperacion hibrida<br/>vector, BM25, reranker opcional"]
-  retrieve --> store["Colecciones y almacenamiento del índice"]
-  rag --> citations["Fuentes y citas"]
-  api --> research["Investigación profunda"]
-  research --> rag
-  research --> web["Búsqueda web opcional<br/>DuckDuckGo, Brave, SearXNG"]
-
-  api --> agent["Agente con herramientas"]
-  agent --> tools["Herramientas aisladas<br/>read, write, edit, grep, run"]
-  tools --> workspace["Raíces de workspace aprobadas"]
-  api --> data["Memoria, adjuntos<br/>estado, historial, uso"]
-  api --> pairing["Pairing de dispositivos<br/>scopes revocables"]
-  api --> watcher["Watcher de archivos"]
-  watcher --> indexer["Indexer incremental<br/>extract -> chunk -> embed"]
-  sources["Proyectos y documentos<br/>PDF, Office, codigo, texto, metadatos multimedia"] --> indexer
-  indexer --> store
-  pwa --> voice["Voz<br/>STT y TTS locales"]
+```powershell
+.\update.ps1
+.\uninstall.ps1
 ```
 
-Un turno de chat normal se clasifica localmente y se envía al mejor modelo configurado. Un turno RAG recupera información de las colecciones seleccionadas, puede reordenar los candidatos y pide a Ollama sintetizar una respuesta con citas. Research combina varias pasadas de recuperación local con fuentes web opcionales. El agente opera solo dentro de las raíces de workspace aprobadas.
+Consulta las guías de [Linux](docs/INSTALL_LINUX.es.md),
+[macOS](docs/INSTALL_MACOS.es.md) y [Windows](docs/INSTALL_WINDOWS.es.md)
+para requisitos, certificados, emparejamiento LAN, Docker y recuperación.
 
-El watcher mantiene los índices actualizados. Memoria, adjuntos, historial, configuración, pairing y uso permanecen respaldados por el anfitrión y solo se sincronizan con dispositivos autorizados. `service_manager.py` supervisa servicios en Linux, macOS y Windows mediante systemd, launchctl o un supervisor de subprocesos.
+## Qué incluye
 
-El modelo general predeterminado de `16gb` es `qwen3.5:4b`, seleccionado por su mejor calidad de conversación en español. `qwen3.5:2b` sigue disponible para saludos y solicitudes triviales. El router automático determinista usa los modelos configurados de código, deep y fast cuando la tarea lo requiere.
+- Chat directo con Ollama y enrutamiento determinista para chat, código, razonamiento y matemáticas.
+- RAG híbrido sobre código y documentos con citas, colecciones, indexación incremental y reranker opcional.
+- Agente de código aislado y limitado a los espacios de trabajo aprobados.
+- Búsqueda web, investigación profunda, memoria, voz y visión opcionales.
+- PWA HTTPS para escritorio y móvil, con emparejamiento revocable y sincronización local.
+- CLI para chat, indexación, investigación, ciclo de vida, diagnósticos y exportaciones.
 
-Las cargas grandes se convierten en jobs persistentes en segundo plano con etapa, página, chunk y progreso por lote, tiempos límite acotados, cancelación, estado reconectable y reintentos seguros. Los fallos de búsqueda, proveedor RAG, índice, stream y primer token dejan la interfaz en un estado de error recuperable en vez de cargar indefinidamente. La PWA muestra la siguiente acción cuando puede, incluyendo **Abrir indexación**, **Reintentar**, **Encender IA** y **Abrir configuración**. Consulta la [guía de solución de problemas y recuperación](docs/TROUBLESHOOTING.es.md), [Configuración](docs/CONFIGURATION.es.md) y la [arquitectura y flujo de datos](docs/ARCHITECTURE.es.md).
+## Modelos y hardware
 
-## Plataformas compatibles
+El instalador usa CPU, RAM, GPU y VRAM para elegir los perfiles `8gb`, `16gb`,
+`32gb` o `64gb`. Apple Silicon usa memoria unificada. Puedes sobrescribir el
+perfil en `.env` o con `--profile` / `-Profile`.
 
-| Sistema operativo | Instalador | Gestor de servicios | Cobertura CI |
-| --- | --- | --- | --- |
-| Linux: Ubuntu, Debian, Fedora, Arch | `install.sh` | systemd de usuario | Backend, CLI, PWA, instalador y E2E |
-| macOS: Intel y Apple Silicon | `install.sh` | launchctl | Backend, CLI, instalador y shell |
-| Windows 10 y 11 | `install.ps1` | Supervisor de subprocesos | Backend, CLI, instalador y PowerShell |
-
-CI ejecuta comprobaciones de backend y CLI en las tres plataformas, tests/build/E2E de la PWA en Ubuntu y validaciones de sintaxis/dry-run de instaladores en Linux, macOS y Windows. La instalación completa con descargas reales de modelos, inicio de servicios y asistente inicial sigue requiriendo un smoke test en una máquina real; consulta [TESTING.es.md](TESTING.es.md) antes de considerar una plataforma lista para beta pública.
-
-TrinaxAI funciona con CPU; no requiere GPU. El rendimiento escala con la RAM y el tamaño del modelo.
-
-## CLI
-
-Instala la CLI desde la raíz del repositorio:
-
-```bash
-pip install -e .
-```
-
-Comandos habituales:
-
-```bash
-trinaxai                              # REPL interactiva con routing automático
-trinaxai ask "..."                    # Pregunta de una sola ejecucion
-trinaxai chat                         # Sesion de chat interactiva
-trinaxai chat --engine rag            # Forzar respuestas RAG fundamentadas
-trinaxai index .                      # Indexar el directorio actual
-trinaxai agent --workspace .          # Agente de código local con herramientas
-trinaxai research --query "..." --depth 2
-trinaxai browse list-collections
-trinaxai collections list
-trinaxai memory list
-trinaxai watch start --paths . --collection default
-trinaxai pair start                   # Vincular navegador LAN con mínimo privilegio
-trinaxai doctor                       # Comprobación del sistema
-trinaxai doctor --strict --json       # Puerta determinista para automatizacion
-trinaxai start | stop | status        # Ciclo de vida de servicios
-trinaxai export                       # Exportar una conversacion a Markdown, PDF o Word
-```
-
-Otros comandos principales incluyen `browse`, `collections`, `memory`, `watch`, `pair`, `network`, `obsidian`, `models`, `config`, `restart`, `update`, `uninstall`, `version` y `help`. `trinaxai mcp` está reservado para una integración futura y termina con un estado distinto de cero; en esta versión usa la API HTTP o los comandos de la CLI.
-
-El motor predeterminado de la CLI es Ollama. Usa `--engine rag` cuando necesites contexto indexado.
-
-Dentro de `trinaxai` o `trinaxai chat`, escribe `/` para ver el menú de comandos. Los comandos disponibles son `/help`, `/exit` y `/quit`, `/clear`, `/chat`, `/general`, `/ollama`, `/agent`, `/web`, `/research`, `/rag`, `/auto`, `/model`, `/workspace`, `/yolo`, `/index`, `/memory`, `/collections`, `/watch` y `/status`.
-
-La sintaxis completa, los subcomandos y la configuración TOML están en la [referencia de CLI](docs/CLI_REFERENCE.es.md).
-
-## VS Code y Continue.dev
-
-[Continue.dev](https://www.continue.dev/) es una extensión open source para VS
-Code que ofrece chat, generación de código, autocompletado inline, edición y
-aplicación de diffs. Con TrinaxAI conecta dos motores locales desde el editor:
-
-- **TrinaxAI RAG:** respuestas con citas sobre los proyectos y documentos indexados por TrinaxAI.
-- **Ollama directo:** chat rápido, revisión, edición/aplicación, autocompletado y visión local.
-
-### Instalar y conectar
-
-1. Instala **Continue - open-source AI code assistant** desde la vista Extensiones de VS Code.
-2. Inicia TrinaxAI y Ollama. Los endpoints predeterminados son `https://localhost:3333/v1` y `http://localhost:11434`.
-3. Copia la configuración incluida al directorio de usuario de Continue:
-
-   ```bash
-   cp continue-config.yaml ~/.continue/config.yaml
-   ```
-
-   En Windows, cópiala a `%USERPROFILE%\.continue\config.yaml`.
-4. Recarga VS Code (`Developer: Reload Window`) y abre Continue. **TrinaxAI RAG (Primary)** será el modelo predeterminado.
-
-Continue no interpola variables de entorno en YAML, por lo que no puede leer
-`TRINAXAI_PROFILE` directamente. El archivo incluye toda la matriz y marca los
-valores que se deben cambiar al seleccionar un perfil. Ollama debe tener
-instalados los modelos correspondientes:
-
-| Perfil | Chat/código | Rápido/autocompletado | Embeddings |
+| Perfil | Chat/código | Rápido | Embeddings |
 | --- | --- | --- | --- |
 | `8gb` | `qwen3.5:2b` | `qwen3.5:2b` | `qwen3-embedding:0.6b` |
 | `16gb` | `qwen3.5:4b` | `qwen3.5:2b` | `qwen3-embedding:0.6b` |
 | `32gb` | `qwen3.5:9b` | `qwen3.5:4b` | `qwen3-embedding:4b` |
-| `64gb` | `qwen3.5:35b`, `qwen3-coder:30b` | `qwen3.5:4b` | `qwen3-embedding:4b` |
+| `64gb` | `qwen3.5:35b` / `qwen3-coder:30b` | `qwen3.5:4b` | `qwen3-embedding:4b` |
 
-Comprueba la disponibilidad con `ollama list`. Si falta un modelo, instálalo
-con `ollama pull MODELO` o ejecuta el flujo de instalación/actualización de
-modelos de TrinaxAI. En equipos con poca RAM, no mantengas varios modelos
-grandes cargados a la vez.
+El perfil `8gb` funciona con CPU; no necesitas GPU. Los modelos grandes solo se
+descargan cuando el perfil los requiere. Consulta la
+[configuración](docs/CONFIGURATION.es.md) para cambiar nombres o límites.
 
-### Cambiar de perfil
+## CLI
 
-Abre `~/.continue/config.yaml` y actualiza los comentarios de `ACTIVE PROFILE`,
-`embeddingsProvider.model` y el nombre de `rerank.model`. Conserva
-`defaultModel` como **TrinaxAI RAG (Primary)**; para trabajo directo con Ollama,
-selecciona el modelo del perfil en el selector de Continue, por ejemplo
-**Qwen3.5 9B (32GB)**.
+Después de instalar, abre una terminal nueva y usa:
 
-Para regenerar el archivo desde el perfil instalado y copiarlo a Continue,
-ejecuta `python scripts/generate_continue_config.py --install-user-config`.
+```bash
+trinaxai ask "Resume mi proyecto indexado" --engine rag
+trinaxai index .
+trinaxai agent --workspace .
+trinaxai research --query "Compara estos documentos" --depth 2
+trinaxai doctor --strict --json
+trinaxai start
+trinaxai stop
+trinaxai status
+```
 
-Después de cambiar embeddings, vuelve a indexar `@codebase` en Continue. No se
-deben mezclar vectores con dimensiones diferentes. El índice propio de
-TrinaxAI es independiente y se administra con el perfil y `.env` de TrinaxAI.
+Ejecuta `trinaxai --help` o consulta la [referencia CLI](docs/CLI_REFERENCE.es.md).
+`trinaxai doctor` es el diagnóstico inicial más rápido.
 
-### Usar RAG, código, visión y autocompletado
+## Privacidad y seguridad
 
-- Usa **TrinaxAI RAG (Primary)** para preguntas fundamentadas y citas de archivos.
-- Usa `@codebase`, `@file`, `@git`, `@diff` o `@terminal` cuando quieras añadir contexto explícito de VS Code.
-- Usa `/rag` para una pregunta citada sobre proyectos indexados, `/code` para implementar o revisar, `/explain` para explicar y `/test` para cobertura de regresión.
-- Selecciona un modelo de perfil de Ollama para chat, edición o apply sin recuperación de TrinaxAI.
-- Conserva **Qwen3.5 2B (Fast)** como autocompletado Tab para reducir latencia y consumo de memoria.
-- Selecciona el modelo de visión del perfil y adjunta una captura o imagen para analizar UI, diagramas y errores.
+Los servicios se enlazan a loopback por defecto y Ollama nunca se expone como
+proxy genérico. Los navegadores LAN deben emparejarse con un código de un solo
+uso y reciben únicamente capacidades explícitas; indexación, administración,
+agente y gestión de modelos quedan en el host. El agente está aislado y las
+acciones peligrosas requieren aprobación.
 
-### Solución de problemas
+Mantén privados los puertos `3333` y `11434`, protege
+`storage/.proxy_secret` y usa una VPN en vez de abrir el equipo a Internet.
+Consulta [seguridad](docs/SECURITY.es.md), [emparejamiento](docs/NETWORK_PAIRING.es.md)
+y [firma de releases](docs/RELEASE_SIGNING.es.md).
 
-- **RAG no disponible:** ejecuta `trinaxai status` o `trinaxai doctor`, confirma `https://localhost:3333/v1` e inicia con `./startup_ai.sh` o `trinaxai start`.
-- **Error TLS/certificado:** conserva `verifySsl: true`; confía en la CA local generada por TrinaxAI en el sistema operativo o configura un bundle CA en el entorno del cliente. No desactives TLS en un endpoint LAN.
-- **Modelo de Ollama inexistente:** ejecuta `ollama serve`, después `ollama list` y `ollama pull MODELO`.
-- **Respuestas lentas o falta de memoria:** selecciona un modelo menor, reduce modelos concurrentes y evita mantener cargados un modelo de chat grande y el modelo de embeddings al mismo tiempo.
-- **Resultados antiguos en `@codebase`:** vuelve a indexar Continue después de cambiar el modelo de embeddings o el workspace.
+## Plataformas compatibles
 
-Para la tabla amplia de decisiones sobre PWA, RAG, modelos, LAN y recuperación,
-consulta la [guía de solución de problemas](docs/TROUBLESHOOTING.es.md). La
-versión en inglés está en `README.md`. El archivo fuente es
-[`continue-config.yaml`](continue-config.yaml).
+| Plataforma | Instalador | Ciclo de vida | Cobertura automatizada |
+| --- | --- | --- | --- |
+| Linux (Ubuntu, Debian, Fedora, Arch) | `install.sh` | systemd de usuario | backend, CLI, PWA, E2E, instalador |
+| macOS (Intel y Apple Silicon) | `install.sh` | launchctl | backend, CLI, instalador shell |
+| Windows 10/11 | `install.ps1` | supervisor de procesos | backend, CLI, instalador PowerShell |
 
-## Modelos y perfiles de hardware
+La release se prueba en runners fijados de GitHub. Descargas de modelos,
+permisos y certificados dependen del equipo destino; sigue el checklist de
+[TESTING.es.md](TESTING.es.md) para una instalación limpia.
 
-El instalador selecciona un perfil de hardware según CPU, RAM, GPU y VRAM. Los perfiles compatibles son `8gb`, `16gb`, `32gb` y `64gb`. Cada ajuste se puede sobrescribir en `.env`.
+## Documentación
 
-| Rol | 8GB | 16GB | 32GB | 64GB |
-| --- | --- | --- | --- | --- |
-| Chat y razonamiento | `qwen3.5:2b` | `qwen3.5:4b` | `qwen3.5:9b` | `qwen3.5:35b` |
-| Código | `qwen3.5:2b` | `qwen3.5:4b` | `qwen3.5:9b` | `qwen3-coder:30b` |
-| Deep | `qwen3.5:2b` | `qwen3.5:4b` | `qwen3.5:9b` | `qwen3.5:35b` |
-| Visión | `qwen3.5:2b` | `qwen3.5:4b` | `qwen3.5:9b` | `qwen3.5:35b` |
-| Rápido | `qwen3.5:2b` | `qwen3.5:2b` | `qwen3.5:4b` | `qwen3.5:4b` |
-| Embeddings | `qwen3-embedding:0.6b` | `qwen3-embedding:0.6b` | `qwen3-embedding:4b` | `qwen3-embedding:4b` |
+Empieza en el [hub de documentación](docs/README.es.md):
 
-La recomendación usa la combinación real: una GPU NVIDIA/AMD con suficiente VRAM puede elevar el modelo aunque la RAM sea menor; si la VRAM es insuficiente, se priorizan modelos que caben en CPU/RAM. Apple Silicon se trata como memoria unificada.
+- [Arquitectura y flujo](docs/ARCHITECTURE.es.md)
+- [Configuración](docs/CONFIGURATION.es.md)
+- [Variables de entorno](docs/ENVIRONMENT_VARIABLES.es.md)
+- [API HTTP](docs/API_REFERENCE.es.md)
+- [Solución de problemas y recuperación](docs/TROUBLESHOOTING.es.md)
+- [Guía de desarrollo](docs/DEVELOPER_GUIDE.es.md)
 
-El pipeline de generación distribuye cada solicitud entre los roles general, deep, code y fast del perfil. Qwen3.5 también gestiona la visión, evitando un segundo modelo residente de visión y lenguaje. Los modelos de visión se descargan al analizar la primera imagen, por lo que la instalación y las actualizaciones no se bloquean por una descarga grande.
-
-Confirma los nombres de los modelos con `ollama list` y ajusta `.env` si los cambias. Consulta la [referencia de configuración](docs/CONFIGURATION.es.md) y el [inventario de variables de entorno](docs/ENVIRONMENT_VARIABLES.es.md).
-
-## Modelo de seguridad
-
-TrinaxAI está diseñado como una aplicación local-first.
-
-| Capa | Valor predeterminado | Cómo reforzarla |
-| --- | --- | --- |
-| API RAG | Solo loopback, detrás del gateway del mismo anfitrión | Conserva `TRINAXAI_HOST=127.0.0.1`; expón la PWA solo en una LAN o VPN confiable. |
-| Identidad del gateway | Identidad del cliente firmada con un secreto HMAC de instalación | Conserva `storage/.proxy_secret` con modo `0600`. |
-| Pairing de dispositivos | Código de un uso que concede `chat,read_private` y puede añadir `web` | La revocación es inmediata; los scopes elevados retirados se ignoran. |
-| Administración y datos privados | Lecturas protegidas usan credenciales; administrar el host exige loopback verificado | Usa `https://localhost:3334` para mutaciones del host y protege las credenciales. |
-| Ollama | Solo loopback; el gateway expone una lista permitida limitada | Nunca publiques el puerto `11434` ni un proxy genérico. |
-| PWA | HTTPS con certificado local generado | Confía en el certificado por dispositivo o usa nginx/Caddy con Let's Encrypt. |
-| Agente | Herramientas de archivos limitadas a raíces registradas; el shell Linux usa bubblewrap sin red | Mantén desactivado HTTP yolo; nunca habilites remotamente la salida del sandbox. |
-| CORS | Localhost y tu IP LAN | Personaliza con `TRINAXAI_CORS_ORIGINS`. |
-
-Para acceso LAN o remoto, usa un firewall que bloquee los puertos `3333` y `11434`, usa una VPN como Tailscale o WireGuard en vez de exponer puertos y ejecuta `trinaxai pair start` con scopes mínimos. Consulta el [modelo de amenazas y guía de reportes](docs/SECURITY.es.md).
-
-Después de cambiar de Wi-Fi, router o ubicación, no reinstales. Ejecuta `trinaxai network refresh` en el anfitrión. Renueva el HTTPS local, elimina el origen LAN antiguo, muestra la IP actual y una alternativa `https://HOSTNAME.local:3334`, y reinicia los consumidores del certificado.
-
-La nueva dirección detecta la instalación existente; vincúlala una vez para recuperar chats y preferencias. Si se abre una dirección offline antigua, usa **Eliminar esta PWA antigua** para borrar los datos, la caché y el service worker de ese origen en el dispositivo.
+La PWA también incluye esta documentación en **Docs**.
 
 ## Desarrollo
-
-Esta sección es solo para contribuidores que trabajan con el código fuente. No forma parte de la instalación normal; los usuarios deben usar el instalador de un comando.
 
 ```bash
 git clone https://github.com/TrinaxCode/TrinaxAI.git
 cd TrinaxAI
-
-# Backend
 python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-python rag_api.py                     # Sirve app.main:app en el puerto 3333
-
-# PWA
-(cd chat-pwa && npm install && npm run dev) # Puerto 3334
-
-# CLI en modo editable
-pip install -e . && trinaxai doctor
+pip install -r requirements.lock
+(cd chat-pwa && npm ci && npm run dev)
 ```
 
-Las tareas habituales están disponibles en el `Makefile`:
+Ejecuta `make check` antes de enviar cambios. Consulta
+[CONTRIBUTING.es.md](docs/CONTRIBUTING.es.md) para el flujo completo.
 
-```bash
-make dev
-make build
-make lint
-make test
-make check
-```
+## Licencia
 
-Consulta la [guía completa del desarrollador](docs/DEVELOPER_GUIDE.es.md).
+TrinaxAI usa AGPL-3.0-or-later. Consulta [LICENSE](LICENSE) y la
+[guía de marca](docs/TRADEMARK.es.md).
 
-## Documentación
-
-El [sitio web oficial](https://www.trinaxai.app/) ofrece la vista general del producto, capturas, benchmarks, resumen de arquitectura y resumen de instalación. Este repositorio contiene la documentación de referencia; empieza por el [hub documental](docs/README.es.md).
-
-| Tema | Referencia |
-| --- | --- |
-| Arquitectura y flujo de datos | [docs/ARCHITECTURE.es.md](docs/ARCHITECTURE.es.md) |
-| Configuración | [docs/CONFIGURATION.es.md](docs/CONFIGURATION.es.md) |
-| Variables de entorno | [docs/ENVIRONMENT_VARIABLES.es.md](docs/ENVIRONMENT_VARIABLES.es.md) |
-| Referencia de CLI | [docs/CLI_REFERENCE.es.md](docs/CLI_REFERENCE.es.md) |
-| API HTTP | [docs/API_REFERENCE.es.md](docs/API_REFERENCE.es.md) |
-| Guía del desarrollador | [docs/DEVELOPER_GUIDE.es.md](docs/DEVELOPER_GUIDE.es.md) |
-| Solución de problemas y recuperación | [docs/TROUBLESHOOTING.es.md](docs/TROUBLESHOOTING.es.md) |
-| Frontend PWA | [chat-pwa/README.es.md](chat-pwa/README.es.md) |
-| Pruebas de instaladores | [TESTING.es.md](TESTING.es.md) |
-| Instalación de Linux, macOS y Windows | [Linux](docs/INSTALL_LINUX.es.md), [macOS](docs/INSTALL_MACOS.es.md), [Windows](docs/INSTALL_WINDOWS.es.md) |
-
-La PWA también incluye documentación integrada. Abre **Docs** desde la barra lateral para consultar instalación, configuración, modelos, indexación, seguridad, API, solución de problemas y configuración del teléfono.
-
-## Estructura del proyecto
-
-| Ruta | Propósito |
-| --- | --- |
-| `app/main.py` | Fábrica de la aplicación FastAPI y middleware |
-| `app/routes/`, `app/services/` | Routers de dominio y servicios del backend |
-| `app/generation/` | Pipeline de generación: clasificador, puntuación, presets, prompts y validación |
-| `rag_api.py` | Punto de entrada compatible que reexporta `app.main:app` |
-| `index.py` | Indexador de proyectos con fragmentación AST y modo incremental |
-| `config.py` | Configuración central de modelos, perfiles, fragmentación y recuperación |
-| `trinaxai_cli/` | Paquete modular de la CLI |
-| `trinaxai_cli/agent/` | Agente con herramientas y sandbox |
-| `service_manager.py` | Supervisor multiplataforma de inicio, parada, estado y watch |
-| `install.sh`, `install.ps1` | Instaladores de un comando |
-| `update.sh`, `uninstall.sh`, `backup.sh` | Scripts de mantenimiento; las equivalencias de Windows usan `.ps1` |
-| `chat-pwa/` | Frontend PWA de React; consulta su [README](chat-pwa/README.es.md) |
-| `docs/` | Documentación técnica y operativa |
-
-## Preguntas frecuentes
-
-**¿TrinaxAI envía mis datos a la nube?**
-
-No por defecto. La inferencia usa Ollama en loopback y los datos RAG permanecen en el anfitrión. Solo la instalación, las descargas de modelos y la investigación web opcional contactan la red. Si apuntas Ollama o los destinos de búsqueda a otro anfitrión, las solicitudes siguen tu configuración.
-
-**¿Necesito una GPU?**
-
-No. Ollama funciona con CPU y el perfil `8gb` usa modelos pequeños ajustados para inferencia en CPU.
-
-**¿Puedo usar TrinaxAI desde otro dispositivo?**
-
-Sí. Genera un código de un solo uso en la configuración de la PWA del anfitrión, abre `https://HOST-LAN-IP:3334` en el otro dispositivo e introdúcelo. Estar en la misma Wi-Fi no concede acceso a datos privados ni a funciones privilegiadas.
-
-**¿Puedo indexar toda mi carpeta Documents?**
-
-Sí. Además del código fuente, el indexador extrae texto de documentos PDF y Office, Markdown y texto, archivos de datos, HTML, EPUB, correo, subtítulos, calendarios, contactos y notebooks. La reindexación es incremental; los archivos binarios y multimedia se omiten.
-
-**¿Qué hago si la colección seleccionada no contiene documentos indexados?**
-
-Pulsa **Abrir indexación** en el aviso, elige la carpeta y colección en **Configuración → Indexación**, espera a que termine el job y reintenta. Un adjunto o una carpeta seleccionada no se indexan automáticamente. Consulta la [guía de solución de problemas](docs/TROUBLESHOOTING.es.md).
-
-**¿Qué licencia usa TrinaxAI?**
-
-AGPL-3.0-or-later, libre para uso personal y comercial. Consulta [LICENSE](LICENSE) y la [guía de marca](docs/TRADEMARK.es.md).
-
-## Contribución y licencia
-
-Las pull requests son bienvenidas. Consulta [CONTRIBUTING.es.md](docs/CONTRIBUTING.es.md) para reportar errores, sugerir funciones, mejorar documentación, traducir o enviar una pull request.
-
-TrinaxAI se distribuye bajo [AGPL-3.0-or-later](LICENSE). Para el uso del nombre y el logotipo, consulta [TRADEMARK.es.md](docs/TRADEMARK.es.md).
-
----
-
-Creado por [TrinaxCode](https://github.com/TrinaxCode) | [Sitio web oficial](https://www.trinaxai.app/)
-
-La IA debe ser libre, privada y local.
+Creado por [TrinaxCode](https://github.com/TrinaxCode) · [trinaxai.app](https://www.trinaxai.app/)

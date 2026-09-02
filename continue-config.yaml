@@ -13,7 +13,7 @@
 # The model matrix is sourced from TrinaxAI's hardware-aware recommendations.
 
 name: TrinaxAI Local
-version: 1.2.0
+version: 1.2.1
 schema: v1
 
 # -----------------------------------------------------------------------------

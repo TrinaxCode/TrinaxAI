@@ -5,7 +5,7 @@
 
 <p align="center">
   <a href="https://github.com/TrinaxCode/TrinaxAI"><img src="https://img.shields.io/github/stars/TrinaxCode/TrinaxAI?style=flat&amp;label=%E2%98%85&amp;color=006bbd" alt="GitHub stars"></a>
-  <a href="https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.2.0"><img src="https://img.shields.io/badge/version-1.2.0-006bbd" alt="Current candidate: 1.2.0"></a>
+  <a href="https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.2.1"><img src="https://img.shields.io/badge/version-1.2.1-006bbd" alt="Stable release: 1.2.1"></a>
   <a href="https://github.com/TrinaxCode/TrinaxAI/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/TrinaxCode/TrinaxAI/ci.yml?branch=main&amp;label=CI" alt="CI status"></a>
   <a href="https://github.com/TrinaxCode/TrinaxAI/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0--or--later-006bbd" alt="License: AGPL-3.0-or-later"></a>
   <img src="https://img.shields.io/badge/macOS%20%7C%20Windows%20%7C%20Linux-4493F8?style=flat-square" alt="Supported platforms: macOS, Windows, and Linux">
@@ -37,6 +37,24 @@ el formato de [Keep a Changelog](https://keepachangelog.com/).
 - Se alinearon README, API, CLI, configuración, PWA, soporte y Docs integrada con
   los perfiles actuales, la confianza HTTPS, los jobs recuperables y el comando
   MCP reservado.
+
+## [1.2.1] — 2026-09-02
+
+### Cambiado
+
+- Se promovió la release de escritorio validada a Production/Stable y se alinearon
+  paquete Python, CLI, PWA, instaladores, actualizador y documentación en una versión.
+- Se simplificó la instalación pública a un comando corto por plataforma, manteniendo
+  archivos fuente verificados por checksum y firmados.
+- Se fijó la clave pública del release en el repositorio y se cerraron las alertas
+  de dependencias restantes.
+
+### Corregido
+
+- La evaluación RAG independiente ahora importa el paquete desde un checkout limpio,
+  coherente con el contrato del wheel aislado de CLI.
+- Las URLs de release de PowerShell se interpretan correctamente en Windows y el
+  instalador rechaza paquetes fuente sin verificación o sin pinning.
 
 ## [1.2.0] — 2026-08-17
 
@@ -216,6 +234,7 @@ el formato de [Keep a Changelog](https://keepachangelog.com/).
 - CI revisa dependencias Python/frontend, hallazgos estáticos de severidad alta,
   secretos, paquetes, flujos del navegador y preparación para release pública.
 
+[1.2.1]: https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.2.1
 [1.2.0]: https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.2.0
 [1.1.0]: https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.1.0
 [1.0.2]: https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.0.2

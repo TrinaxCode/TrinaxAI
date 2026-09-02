@@ -5,7 +5,7 @@
 
 <p align="center">
   <a href="https://github.com/TrinaxCode/TrinaxAI"><img src="https://img.shields.io/github/stars/TrinaxCode/TrinaxAI?style=flat&amp;label=%E2%98%85&amp;color=006bbd" alt="GitHub stars"></a>
-  <a href="https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.2.0"><img src="https://img.shields.io/badge/version-1.2.0-006bbd" alt="Current candidate: 1.2.0"></a>
+  <a href="https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.2.1"><img src="https://img.shields.io/badge/version-1.2.1-006bbd" alt="Stable release: 1.2.1"></a>
   <a href="https://github.com/TrinaxCode/TrinaxAI/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/TrinaxCode/TrinaxAI/ci.yml?branch=main&amp;label=CI" alt="CI status"></a>
   <a href="https://github.com/TrinaxCode/TrinaxAI/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0--or--later-006bbd" alt="License: AGPL-3.0-or-later"></a>
   <img src="https://img.shields.io/badge/macOS%20%7C%20Windows%20%7C%20Linux-4493F8?style=flat-square" alt="Supported platforms: macOS, Windows, and Linux">
@@ -49,26 +49,13 @@ Apple Silicon usa Metal automáticamente a través de Ollama cuando el modelo lo
 
 ## Instalación recomendada fijada a un release
 
-> Estado del release: `v1.2.0` es el candidato actual, pero sus assets del Release de GitHub todavía no se han publicado. Para probarlo ahora, usa el checkout local con este árbol; el instalador se niega intencionalmente a caer en `main`.
+> Estado del release: `v1.2.1` es Production/Stable. Sus paquetes fuente, instaladores, wheel, checksums y firmas están publicados en GitHub. El instalador nunca vuelve a `main`.
 
 ```bash
-set -eu
-version="1.2.0"
-base="https://github.com/TrinaxCode/TrinaxAI/releases/download/v${version}"
-installer="$(mktemp)"
-manifest="$(mktemp)"
-trap 'rm -f "$installer" "$manifest"' EXIT
-curl --fail --location --output "$installer" "${base}/TrinaxAI-${version}-installer.sh"
-curl --fail --location --output "$manifest" "${base}/SHA256SUMS"
-expected="$(awk -v asset="TrinaxAI-${version}-installer.sh" '$2 == asset || $2 == "*" asset { print $1; exit }' "$manifest")"
-if command -v sha256sum >/dev/null 2>&1; then actual="$(sha256sum "$installer" | awk '{print $1}')"; elif command -v shasum >/dev/null 2>&1; then actual="$(shasum -a 256 "$installer" | awk '{print $1}')"; else echo "Se necesita una herramienta SHA-256 (sha256sum o shasum)." >&2; exit 2; fi
-if [ -z "$expected" ] || [ "$actual" != "$expected" ]; then echo "Falló la verificación SHA-256 del instalador." >&2; exit 1; fi
-bash -n "$installer"
-bash "$installer"
+set -e; version="1.2.1"; base="https://github.com/TrinaxCode/TrinaxAI/releases/download/v${version}"; installer="$(mktemp)"; trap 'rm -f "$installer"' EXIT; curl -fsSL "$base/TrinaxAI-${version}-installer.sh" -o "$installer"; expected="$(curl -fsSL "$base/SHA256SUMS" | awk -v asset="TrinaxAI-${version}-installer.sh" '$2 == asset || $2 == "*" asset { print $1; exit }')"; actual="$( (shasum -a 256 "$installer" 2>/dev/null || sha256sum "$installer") | awk '{print $1}' )"; test "$expected" = "$actual"; bash "$installer"
 ```
 
-El instalador descarga directamente el archivo fuente desde GitHub. No necesita Git, detecta tu hardware, instala las dependencias necesarias, configura Ollama, compila la PWA e inicia TrinaxAI. Acepta la solicitud de contraseña cuando macOS pida instalar una dependencia.
-La comprobación del manifiesto SHA-256 anterior es obligatoria antes de ejecutar. La verificación GPG separada es un control adicional opcional, sólo cuando hayas obtenido y confiado en la huella de la clave de firma por un canal independiente; una clave o huella descargada del mismo release no es un ancla de autenticidad. El repositorio todavía no incluye un ancla de confianza de clave pública fijada.
+El instalador descarga directamente el archivo fuente desde GitHub. No necesita Git, detecta tu hardware, instala las dependencias necesarias, configura Ollama, compila la PWA, verifica una inferencia de smoke test e inicia TrinaxAI. Acepta la solicitud de contraseña cuando macOS pida instalar una dependencia. Para revisar checksum o GPG manualmente, consulta [firma de releases](RELEASE_SIGNING.es.md).
 
 ## Avanzado: instalar herramientas base manualmente
 
@@ -103,23 +90,10 @@ bash install.sh
 
 Ejecutar desde un checkout local es un modo de operador/desarrollo y no se bloquea intencionalmente; revisa y protege ese checkout por separado del flujo de descarga de releases verificado.
 
-Si todavia no lo tienes, el instalador de un comando lo guarda en `~/Library/Application Support/TrinaxAI`:
+Si todavía no lo tienes, el instalador de una línea lo guarda en `~/Library/Application Support/TrinaxAI`:
 
 ```bash
-set -eu
-installer="$(mktemp)"
-manifest="$(mktemp)"
-trap 'rm -f "$installer" "$manifest"' EXIT
-version="1.2.0"
-base="https://github.com/TrinaxCode/TrinaxAI/releases/download/v${version}"
-curl --fail --location --output "$installer" "${base}/TrinaxAI-${version}-installer.sh"
-curl --fail --location --output "$manifest" "${base}/SHA256SUMS"
-expected="$(awk -v asset="TrinaxAI-${version}-installer.sh" '$2 == asset || $2 == "*" asset { print $1; exit }' "$manifest")"
-if command -v sha256sum >/dev/null 2>&1; then actual="$(sha256sum "$installer" | awk '{print $1}')"; elif command -v shasum >/dev/null 2>&1; then actual="$(shasum -a 256 "$installer" | awk '{print $1}')"; else echo "Se necesita una herramienta SHA-256 (sha256sum o shasum)." >&2; exit 2; fi
-if [ -z "$expected" ] || [ "$actual" != "$expected" ]; then echo "Falló la verificación SHA-256 del instalador." >&2; exit 1; fi
-bash -n "$installer"
-less "$installer"
-bash "$installer"
+set -e; version="1.2.1"; base="https://github.com/TrinaxCode/TrinaxAI/releases/download/v${version}"; installer="$(mktemp)"; trap 'rm -f "$installer"' EXIT; curl -fsSL "$base/TrinaxAI-${version}-installer.sh" -o "$installer"; expected="$(curl -fsSL "$base/SHA256SUMS" | awk -v asset="TrinaxAI-${version}-installer.sh" '$2 == asset || $2 == "*" asset { print $1; exit }')"; actual="$( (shasum -a 256 "$installer" 2>/dev/null || sha256sum "$installer") | awk '{print $1}' )"; test "$expected" = "$actual"; bash "$installer"
 ```
 
 El instalador detecta RAM, crea `.env`, prepara Python e instala la PWA automáticamente. Las opciones como descargar modelos, autoarranque e iniciar servicios se preguntan por defecto. La configuración legacy de sistema por LAN se acepta por compatibilidad, pero nunca concede administración remota del host. Usa `bash install.sh --non-interactive` para instalaciones automatizadas.
@@ -142,7 +116,7 @@ trinaxai uninstall
 
 ```bash
 set -eu
-version="1.2.0"
+version="1.2.1"
 base="https://github.com/TrinaxCode/TrinaxAI/releases/download/v${version}"
 mkdir -p ~/trinaxai
 archive="$(mktemp)"

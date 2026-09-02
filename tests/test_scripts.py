@@ -263,7 +263,7 @@ def test_release_installer_guides_verify_exact_asset_before_execution() -> None:
             execution = text.index('bash "$installer"', download)
             assert download < text.index("SHA256SUMS", download) < execution, path
             assert text.index('awk -v asset="TrinaxAI-${version}-installer.sh"', download) < execution, path
-            assert text.index("sha256sum", download) < execution, path
+            assert any(marker in text[download:execution] for marker in ("sha256sum", "shasum -a 256")), path
         if "installer.ps1" in text:
             download = text.index("TrinaxAI-$version-installer.ps1")
             execution = text.index("& $installer", download)
@@ -292,7 +292,8 @@ def test_no_models_contract_requires_preinstalled_configured_models() -> None:
 
     assert "checking the configured models already installed" in posix
     assert "installed models will still be verified" in windows
-    assert "every configured Ollama model to already be installed" in readme
+    assert "every configured Ollama model" in readme
+    assert "already be installed" in readme
 
 
 def test_installers_use_persisted_models_and_never_autostart_with_no_start() -> None:
@@ -316,7 +317,7 @@ def test_installer_release_version_docs_match_versioned_default() -> None:
     docs = (ROOT / "docs" / "ENVIRONMENT_VARIABLES.md").read_text(encoding="utf-8")
 
     release_row = next(line for line in docs.splitlines() if "`TRINAXAI_RELEASE_VERSION`" in line)
-    assert "| `1.2.0` |" in release_row
+    assert "| `1.2.1` |" in release_row
     assert "never falls back to `main`" in release_row
 
 

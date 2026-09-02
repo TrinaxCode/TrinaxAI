@@ -5,7 +5,7 @@
 
 <p align="center">
   <a href="https://github.com/TrinaxCode/TrinaxAI"><img src="https://img.shields.io/github/stars/TrinaxCode/TrinaxAI?style=flat&amp;label=%E2%98%85&amp;color=006bbd" alt="GitHub stars"></a>
-  <a href="https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.2.0"><img src="https://img.shields.io/badge/version-1.2.0-006bbd" alt="Current candidate: 1.2.0"></a>
+  <a href="https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.2.1"><img src="https://img.shields.io/badge/version-1.2.1-006bbd" alt="Stable release: 1.2.1"></a>
   <a href="https://github.com/TrinaxCode/TrinaxAI/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/TrinaxCode/TrinaxAI/ci.yml?branch=main&amp;label=CI" alt="CI status"></a>
   <a href="https://github.com/TrinaxCode/TrinaxAI/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0--or--later-006bbd" alt="License: AGPL-3.0-or-later"></a>
   <img src="https://img.shields.io/badge/macOS%20%7C%20Windows%20%7C%20Linux-4493F8?style=flat-square" alt="Supported platforms: macOS, Windows, and Linux">
@@ -47,15 +47,20 @@ El comprobador de preparación usa deliberadamente comprobaciones sin
 dependencias y ancladas a líneas de comandos críticos, en vez de un parser YAML
 completo; no sustituye revisar la estructura YAML fuera de esos comandos.
 
-## Estado del ancla de confianza
+## Ancla de confianza
 
-Este repositorio todavía no contiene una huella ni una clave pública fijada.
-`TrinaxAI-release-signing-key.asc` y su correspondiente
-`TrinaxAI-release-signing-key.fingerprint` son archivos del mismo release, así
-que no prueban su autenticidad de forma independiente. No uses la huella
-descargada del mismo release como ancla de confianza. Obtén la huella esperada
-por un canal independiente (por ejemplo, una clave previamente confiable o un
-anuncio del mantenedor) antes de importar o ejecutar cualquier archivo.
+El repositorio fija la clave pública del release en
+[`RELEASE_SIGNING_KEY.asc`](RELEASE_SIGNING_KEY.asc) y su huella en
+[`RELEASE_SIGNING_KEY.fingerprint`](RELEASE_SIGNING_KEY.fingerprint):
+
+```text
+CF927A2365A5C46438A790FCCCE8FD65623D065C
+```
+
+El secreto `RELEASE_SIGNING_KEY_FINGERPRINT` de GitHub Actions debe coincidir
+con este valor. Compara la huella desde el checkout del repositorio antes de
+confiar en un asset; nunca sustituyas este ancla por una clave descargada del
+mismo release.
 
 ## Verificar una descarga
 
@@ -68,15 +73,13 @@ ancla independiente GPG no puede demostrar autenticidad; nunca trates una
 clave o huella descargada del mismo release como ancla de confianza.
 
 ```bash
-version=v1.2.0
+version=v1.2.1
 base="https://github.com/TrinaxCode/TrinaxAI/releases/download/${version}"
-curl -fLO "${base}/TrinaxAI-release-signing-key.asc"
-trusted_fingerprint="PEGA_LA_HUELLA_PUBLICADA_POR_OTRO_CANAL"
+curl -fsSL https://raw.githubusercontent.com/TrinaxCode/TrinaxAI/main/docs/RELEASE_SIGNING_KEY.asc -o TrinaxAI-release-signing-key.asc
+trusted_fingerprint="CF927A2365A5C46438A790FCCCE8FD65623D065C"
 actual_fingerprint="$(gpg --show-keys --with-colons TrinaxAI-release-signing-key.asc | awk -F: '$1 == "fpr" { print $10; exit }')"
-trusted_fingerprint="$(printf '%s' "$trusted_fingerprint" | tr -d '[:space:]' | tr '[:lower:]' '[:upper:]')"
 test "${actual_fingerprint^^}" = "$trusted_fingerprint"
 gpg --import TrinaxAI-release-signing-key.asc
-curl -fLO "${base}/TrinaxAI-release-signing-key.fingerprint"
 curl -fLO "${base}/SHA256SUMS"
 curl -fLO "${base}/SHA256SUMS.asc"
 gpg --verify SHA256SUMS.asc SHA256SUMS
@@ -94,6 +97,5 @@ gpg --verify "${asset}.asc" "$asset"
 
 El actualizador valida los metadatos HTTPS del release y el manifiesto SHA-256,
 y exige un SHA-256 proporcionado por el operador para toda URL de archivo
-personalizada, incluido `file://`.
-No puede establecer autenticidad de firma de extremo a extremo hasta que este
-repositorio publique un ancla de confianza fijada.
+personalizada, incluido `file://`. No ejecuta una actualización descargada hasta
+que el checksum del archivo coincida con el manifiesto firmado.

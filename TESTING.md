@@ -5,7 +5,7 @@
 
 <p align="center">
   <a href="https://github.com/TrinaxCode/TrinaxAI"><img src="https://img.shields.io/github/stars/TrinaxCode/TrinaxAI?style=flat&amp;label=%E2%98%85&amp;color=006bbd" alt="GitHub stars"></a>
-  <a href="https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.2.0"><img src="https://img.shields.io/badge/version-1.2.0-006bbd" alt="Current candidate: 1.2.0"></a>
+  <a href="https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.2.1"><img src="https://img.shields.io/badge/version-1.2.1-006bbd" alt="Stable release: 1.2.1"></a>
   <a href="https://github.com/TrinaxCode/TrinaxAI/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/TrinaxCode/TrinaxAI/ci.yml?branch=main&amp;label=CI" alt="CI status"></a>
   <a href="https://github.com/TrinaxCode/TrinaxAI/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0--or--later-006bbd" alt="License: AGPL-3.0-or-later"></a>
   <img src="https://img.shields.io/badge/macOS%20%7C%20Windows%20%7C%20Linux-4493F8?style=flat-square" alt="Supported platforms: macOS, Windows, and Linux">
@@ -16,18 +16,17 @@
 
 These checks cover the URL-based lifecycle scripts, CLI behavior, and real-machine tests. Dry-run never downloads the source package or Ollama, installs packages, starts services, changes PATH, edits launch agents, or removes files.
 
-> Release status: `v1.2.0` is the current candidate, but its GitHub Release assets are not published yet. Until they are available, run installer checks from this local checkout (`./install.sh` or `./install.ps1`). The release-pinned download examples below are for the published release and never fall back to `main`.
+> Release status: `v1.2.1` is Production/Stable. Its GitHub Release assets are published and the release-pinned installers never fall back to `main`.
 
 ## URL installer smoke test
 
-Test the normal user journey on a clean machine with the current release candidate (or the published stable release when its assets are available):
-The SHA-256 manifest check in each download block is required before execution. Detached GPG verification is an optional additional check only when the signing-key fingerprint was obtained and trusted independently; a key or fingerprint downloaded from the same release is not an authenticity anchor. The repository does not yet ship a pinned public-key trust anchor.
+Test the normal user journey on a clean machine with the published stable release. The SHA-256 manifest check in each download block is required before execution. The pinned public key and GPG verification procedure are documented in [Release signing](docs/RELEASE_SIGNING.md).
 
 1. Download, inspect, and run a release-pinned installer.
    Linux/macOS:
    ```bash
    set -eu
-   version="1.2.0"
+   version="1.2.1"
    base="https://github.com/TrinaxCode/TrinaxAI/releases/download/v${version}"
    installer="$(mktemp)"
    manifest="$(mktemp)"
@@ -43,7 +42,7 @@ The SHA-256 manifest check in each download block is required before execution. 
    Windows PowerShell:
    ```powershell
    $ErrorActionPreference = "Stop"
-   $version = "1.2.0"
+   $version = "1.2.1"
    $base = "https://github.com/TrinaxCode/TrinaxAI/releases/download/v$version"
    $installer = Join-Path $env:TEMP "TrinaxAI-$version-installer.ps1"
    $manifest = Join-Path $env:TEMP "TrinaxAI-$version-SHA256SUMS"
@@ -89,7 +88,7 @@ Use a normal user account with Homebrew available or allow the installer to offe
 
 ```bash
 set -eu
-version="1.2.0"
+version="1.2.1"
 base="https://github.com/TrinaxCode/TrinaxAI/releases/download/v${version}"
 installer="$(mktemp)"
 manifest="$(mktemp)"
@@ -121,7 +120,7 @@ Run PowerShell as the user who will run TrinaxAI. The installer may request Admi
 ```powershell
 $ErrorActionPreference = "Stop"
 Set-ExecutionPolicy -Scope Process Bypass
-$version = "1.2.0"
+$version = "1.2.1"
 $base = "https://github.com/TrinaxCode/TrinaxAI/releases/download/v$version"
 $installer = Join-Path $env:TEMP "TrinaxAI-$version-installer.ps1"
 $manifest = Join-Path $env:TEMP "TrinaxAI-$version-SHA256SUMS"
@@ -139,7 +138,7 @@ For a safe simulation from a downloaded script:
 
 ```powershell
 $ErrorActionPreference = "Stop"
-$version = "1.2.0"
+$version = "1.2.1"
 $base = "https://github.com/TrinaxCode/TrinaxAI/releases/download/v$version"
 $installer = Join-Path $env:TEMP "TrinaxAI-$version-installer.ps1"
 $manifest = Join-Path $env:TEMP "TrinaxAI-$version-SHA256SUMS"

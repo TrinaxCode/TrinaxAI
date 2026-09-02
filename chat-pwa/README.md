@@ -5,7 +5,7 @@
 
 <p align="center">
   <a href="https://github.com/TrinaxCode/TrinaxAI"><img src="https://img.shields.io/github/stars/TrinaxCode/TrinaxAI?style=flat&amp;label=%E2%98%85&amp;color=006bbd" alt="GitHub stars"></a>
-  <a href="https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.2.0"><img src="https://img.shields.io/badge/version-1.2.0-006bbd" alt="Current candidate: 1.2.0"></a>
+  <a href="https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.2.1"><img src="https://img.shields.io/badge/version-1.2.1-006bbd" alt="Stable release: 1.2.1"></a>
   <a href="https://github.com/TrinaxCode/TrinaxAI/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/TrinaxCode/TrinaxAI/ci.yml?branch=main&amp;label=CI" alt="CI status"></a>
   <a href="https://github.com/TrinaxCode/TrinaxAI/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0--or--later-006bbd" alt="License: AGPL-3.0-or-later"></a>
   <img src="https://img.shields.io/badge/macOS%20%7C%20Windows%20%7C%20Linux-4493F8?style=flat-square" alt="Supported platforms: macOS, Windows, and Linux">
@@ -14,7 +14,7 @@
 <p align="center"><sub><strong>English</strong> · <a href="README.es.md">Español</a></sub></p>
 <p align="center"><sub><a href="https://www.trinaxai.app/">Website</a> · <a href="../docs/README.md">Documentation</a> · <a href="../README.md">Home</a> · <a href="../docs/CHANGELOG.md">Changelog</a></sub></p>
 
-TrinaxAI 1.2.0 frontend built with React 19, TypeScript, and Vite 6 under AGPL-3.0-or-later. It provides direct Ollama chat, cited RAG, optional web search, deep research, a tool-using agent, image analysis, documents, local voice, memory, and installable PWA behavior.
+TrinaxAI 1.2.1 frontend built with React 19, TypeScript, and Vite 6 under AGPL-3.0-or-later. It provides direct Ollama chat, cited RAG, optional web search, deep research, a tool-using agent, image analysis, documents, local voice, memory, and installable PWA behavior.
 
 [Project documentation](../docs/README.md) · [API reference](../docs/API_REFERENCE.md) · [Troubleshooting](../docs/TROUBLESHOOTING.md)
 

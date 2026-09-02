@@ -5,7 +5,7 @@
 
 <p align="center">
   <a href="https://github.com/TrinaxCode/TrinaxAI"><img src="https://img.shields.io/github/stars/TrinaxCode/TrinaxAI?style=flat&amp;label=%E2%98%85&amp;color=006bbd" alt="GitHub stars"></a>
-  <a href="https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.2.0"><img src="https://img.shields.io/badge/version-1.2.0-006bbd" alt="Current candidate: 1.2.0"></a>
+  <a href="https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.2.1"><img src="https://img.shields.io/badge/version-1.2.1-006bbd" alt="Stable release: 1.2.1"></a>
   <a href="https://github.com/TrinaxCode/TrinaxAI/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/TrinaxCode/TrinaxAI/ci.yml?branch=main&amp;label=CI" alt="CI status"></a>
   <a href="https://github.com/TrinaxCode/TrinaxAI/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0--or--later-006bbd" alt="License: AGPL-3.0-or-later"></a>
   <img src="https://img.shields.io/badge/macOS%20%7C%20Windows%20%7C%20Linux-4493F8?style=flat-square" alt="Supported platforms: macOS, Windows, and Linux">
@@ -16,18 +16,17 @@
 
 Estas comprobaciones cubren los scripts del ciclo de vida basados en URL, el comportamiento de la CLI y pruebas en máquinas reales. El modo dry-run nunca descarga el paquete de código ni Ollama, instala paquetes, inicia servicios, modifica `PATH`, edita launch agents ni elimina archivos.
 
-> Estado del release: `v1.2.0` es el candidato actual, pero sus assets del Release de GitHub todavía no se han publicado. Hasta que estén disponibles, ejecuta las comprobaciones del instalador desde este checkout local (`./install.sh` o `./install.ps1`). Los ejemplos de descarga fijados al release son para el release publicado y nunca vuelven a `main`.
+> Estado del release: `v1.2.1` es Production/Stable. Sus assets del Release de GitHub están publicados y los instaladores fijados nunca vuelven a `main`.
 
 ## Prueba rápida del instalador por URL
 
-Prueba el recorrido normal en una máquina limpia con el candidato actual (o con el release estable publicado cuando sus assets estén disponibles):
-La comprobación del manifiesto SHA-256 de cada bloque de descarga es obligatoria antes de ejecutar. La verificación GPG separada es un control adicional opcional, sólo cuando hayas obtenido y confiado en la huella de la clave de firma por un canal independiente; una clave o huella descargada del mismo release no es un ancla de autenticidad. El repositorio todavía no incluye un ancla de confianza de clave pública fijada.
+Prueba el recorrido normal en una máquina limpia con el release estable publicado. La comprobación del manifiesto SHA-256 de cada bloque de descarga es obligatoria antes de ejecutar. La clave pública fijada y el procedimiento de verificación GPG están documentados en [firma de releases](docs/RELEASE_SIGNING.es.md).
 
 1. Descarga, revisa y ejecuta un instalador fijado al release.
    Linux/macOS:
    ```bash
    set -eu
-   version="1.2.0"
+   version="1.2.1"
    base="https://github.com/TrinaxCode/TrinaxAI/releases/download/v${version}"
    installer="$(mktemp)"
    manifest="$(mktemp)"
@@ -43,7 +42,7 @@ La comprobación del manifiesto SHA-256 de cada bloque de descarga es obligatori
    Windows PowerShell:
    ```powershell
    $ErrorActionPreference = "Stop"
-   $version = "1.2.0"
+   $version = "1.2.1"
    $base = "https://github.com/TrinaxCode/TrinaxAI/releases/download/v$version"
    $installer = Join-Path $env:TEMP "TrinaxAI-$version-installer.ps1"
    $manifest = Join-Path $env:TEMP "TrinaxAI-$version-SHA256SUMS"
@@ -91,7 +90,7 @@ Usa una cuenta de usuario normal con Homebrew disponible o permite que el instal
 
 ```bash
 set -eu
-version="1.2.0"
+version="1.2.1"
 base="https://github.com/TrinaxCode/TrinaxAI/releases/download/v${version}"
 installer="$(mktemp)"
 manifest="$(mktemp)"
@@ -123,7 +122,7 @@ Ejecuta PowerShell con el usuario que utilizará TrinaxAI. El instalador puede s
 ```powershell
 $ErrorActionPreference = "Stop"
 Set-ExecutionPolicy -Scope Process Bypass
-$version = "1.2.0"
+$version = "1.2.1"
 $base = "https://github.com/TrinaxCode/TrinaxAI/releases/download/v$version"
 $installer = Join-Path $env:TEMP "TrinaxAI-$version-installer.ps1"
 $manifest = Join-Path $env:TEMP "TrinaxAI-$version-SHA256SUMS"
@@ -141,7 +140,7 @@ Para una simulación segura desde un script descargado:
 
 ```powershell
 $ErrorActionPreference = "Stop"
-$version = "1.2.0"
+$version = "1.2.1"
 $base = "https://github.com/TrinaxCode/TrinaxAI/releases/download/v$version"
 $installer = Join-Path $env:TEMP "TrinaxAI-$version-installer.ps1"
 $manifest = Join-Path $env:TEMP "TrinaxAI-$version-SHA256SUMS"

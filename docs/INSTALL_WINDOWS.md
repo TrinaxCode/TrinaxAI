@@ -5,7 +5,7 @@
 
 <p align="center">
   <a href="https://github.com/TrinaxCode/TrinaxAI"><img src="https://img.shields.io/github/stars/TrinaxCode/TrinaxAI?style=flat&amp;label=%E2%98%85&amp;color=006bbd" alt="GitHub stars"></a>
-  <a href="https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.2.0"><img src="https://img.shields.io/badge/version-1.2.0-006bbd" alt="Current candidate: 1.2.0"></a>
+  <a href="https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.2.1"><img src="https://img.shields.io/badge/version-1.2.1-006bbd" alt="Stable release: 1.2.1"></a>
   <a href="https://github.com/TrinaxCode/TrinaxAI/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/TrinaxCode/TrinaxAI/ci.yml?branch=main&amp;label=CI" alt="CI status"></a>
   <a href="https://github.com/TrinaxCode/TrinaxAI/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0--or--later-006bbd" alt="License: AGPL-3.0-or-later"></a>
   <img src="https://img.shields.io/badge/macOS%20%7C%20Windows%20%7C%20Linux-4493F8?style=flat-square" alt="Supported platforms: macOS, Windows, and Linux">
@@ -47,49 +47,24 @@ When done, you should have:
 
 ## Recommended release-pinned install
 
-> Release status: `v1.2.0` is the current candidate, but its GitHub Release assets are not published yet. The command below is ready for the published release; for immediate testing, use the local checkout with `powershell -ExecutionPolicy Bypass -File .\install.ps1`. The installer intentionally refuses to fall back to `main`.
+> Release status: `v1.2.1` is Production/Stable. Its signed archives, installers, wheel, checksums, and signatures are published on GitHub. The installer never falls back to `main`.
 
 Open PowerShell and run:
 
 ```powershell
-$ErrorActionPreference = "Stop"
-$version = "1.2.0"
-if ($version -notmatch '^[0-9]+\.[0-9]+\.[0-9]+$') { throw "Invalid release version" }
-$base = "https://github.com/TrinaxCode/TrinaxAI/releases/download/v$version"
-$installer = Join-Path $env:TEMP "TrinaxAI-$version-installer.ps1"
-$manifest = Join-Path $env:TEMP "TrinaxAI-$version-SHA256SUMS"
-Invoke-WebRequest -Uri "$base/TrinaxAI-$version-installer.ps1" -OutFile $installer
-Invoke-WebRequest -Uri "$base/SHA256SUMS" -OutFile $manifest
-$line = Get-Content -LiteralPath $manifest | Where-Object { $_ -match "\s\*?TrinaxAI-$version-installer\.ps1$" } | Select-Object -First 1
-$expected = if ($line -match '^\s*([0-9a-fA-F]{64})\s+') { $Matches[1] } else { "" }
-$actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $installer).Hash
-if ($expected -notmatch '^[0-9a-fA-F]{64}$' -or $actual -ine $expected) { throw "Installer SHA-256 verification failed." }
-Get-Content -Path $installer
-& $installer
+$ErrorActionPreference="Stop"; $version="1.2.1"; $base="https://github.com/TrinaxCode/TrinaxAI/releases/download/v$version"; $installer=Join-Path $env:TEMP "TrinaxAI-$version-installer.ps1"; Invoke-WebRequest -Uri "$base/TrinaxAI-$version-installer.ps1" -OutFile $installer; $line=Invoke-RestMethod -Uri "$base/SHA256SUMS" | Where-Object { $_ -match "\s\*?TrinaxAI-$version-installer\.ps1$" } | Select-Object -First 1; $expected=if ($line -match '^\s*([0-9a-fA-F]{64})\s+') { $Matches[1] } else { "" }; $actual=(Get-FileHash -Algorithm SHA256 -LiteralPath $installer).Hash; if ($expected -notmatch '^[0-9a-fA-F]{64}$' -or $actual -ine $expected) { throw "Installer SHA-256 verification failed." }; & $installer
 ```
 
-The installer downloads the source ZIP directly from GitHub. It does not need Git, Python, or Node.js beforehand; it installs the required dependencies, configures Ollama, builds the PWA, and starts TrinaxAI. Approve administrator permission when Windows requests it.
-The SHA-256 manifest check above is required before execution. Detached GPG verification is an optional additional check only when the signing-key fingerprint was obtained and trusted independently; a key or fingerprint downloaded from the same release is not an authenticity anchor. The repository does not yet ship a pinned public-key trust anchor.
+The installer downloads the source ZIP directly from GitHub. It does not need Git, Python, or Node.js beforehand; it installs the required dependencies, configures Ollama, builds the PWA, verifies a smoke inference, and starts TrinaxAI. Approve administrator permission when Windows requests it. For manual checksum or GPG review, see [Release signing](RELEASE_SIGNING.md).
 
-## Optional reviewed PowerShell install
+## Installer options
 
-Open PowerShell and download, inspect, then run the guided installer. It downloads TrinaxAI to `%LOCALAPPDATA%\TrinaxAI` by default:
+The release-pinned command above is the normal path. It installs to
+`%LOCALAPPDATA%\TrinaxAI` by default; use a local checkout or a custom directory
+when you need to review or control the source:
 
 ```powershell
-$ErrorActionPreference = "Stop"
-$version = "1.2.0"
-if ($version -notmatch '^[0-9]+\.[0-9]+\.[0-9]+$') { throw "Invalid release version" }
-$base = "https://github.com/TrinaxCode/TrinaxAI/releases/download/v$version"
-$installer = Join-Path $env:TEMP "TrinaxAI-$version-installer.ps1"
-$manifest = Join-Path $env:TEMP "TrinaxAI-$version-SHA256SUMS"
-Invoke-WebRequest -Uri "$base/TrinaxAI-$version-installer.ps1" -OutFile $installer
-Invoke-WebRequest -Uri "$base/SHA256SUMS" -OutFile $manifest
-$line = Get-Content -LiteralPath $manifest | Where-Object { $_ -match "\s\*?TrinaxAI-$version-installer\.ps1$" } | Select-Object -First 1
-$expected = if ($line -match '^\s*([0-9a-fA-F]{64})\s+') { $Matches[1] } else { "" }
-$actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $installer).Hash
-if ($expected -notmatch '^[0-9a-fA-F]{64}$' -or $actual -ine $expected) { throw "Installer SHA-256 verification failed." }
-Get-Content -Path $installer
-& $installer
+powershell -ExecutionPolicy Bypass -File .\install.ps1
 ```
 
 The installer:
@@ -159,7 +134,7 @@ ollama --version
 
 ```powershell
 $ErrorActionPreference = "Stop"
-$version = "1.2.0"
+$version = "1.2.1"
 if ($version -notmatch '^[0-9]+\.[0-9]+\.[0-9]+$') { throw "Invalid release version" }
 $base = "https://github.com/TrinaxCode/TrinaxAI/releases/download/v$version"
 $zip = "$env:TEMP\TrinaxAI-$version.zip"

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # TrinaxAI — One-Command Installer (Linux/macOS/Windows Bash)
-# Linux/macOS release-pinned install (replace 1.2.0 with a validated stable release):
-#   version="1.2.0"
+# Linux/macOS release-pinned install (this script is copied into each stable release):
+#   version="1.2.1"
 #   base="https://github.com/TrinaxCode/TrinaxAI/releases/download/v${version}"
 #   installer="$(mktemp)"; manifest="$(mktemp)"
 #   curl --fail --location --output "$installer" "${base}/TrinaxAI-${version}-installer.sh"
@@ -12,7 +12,7 @@
 #   bash -n "$installer" && bash "$installer"
 # The SHA-256 check is mandatory; detached GPG verification is optional only
 # with a signing-key fingerprint obtained independently (same-release keys are
-# not an authenticity anchor; this repository has no pinned trust anchor yet).
+# not an authenticity anchor; use the pinned public key in docs/RELEASE_SIGNING.md).
 
 set -euo pipefail
 
@@ -903,7 +903,7 @@ if [ -z "$SCRIPT_DIR" ] || [ ! -f "$SCRIPT_DIR/rag_api.py" ] || [ ! -f "$SCRIPT_
     mkdir -p "$(dirname "$REPO_DIR")"
     temp_dir="$(mktemp -d "${TMPDIR:-/tmp}/trinaxai.XXXXXX")"
     trap 'rm -rf -- "$temp_dir"' EXIT
-    release_version="${TRINAXAI_RELEASE_VERSION:-1.2.0}"
+    release_version="${TRINAXAI_RELEASE_VERSION:-1.2.1}"
     if [ -n "$release_version" ] && [[ ! "$release_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
       print_err "TRINAXAI_RELEASE_VERSION must be a semantic version."
       exit 2

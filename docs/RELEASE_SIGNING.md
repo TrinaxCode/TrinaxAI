@@ -5,7 +5,7 @@
 
 <p align="center">
   <a href="https://github.com/TrinaxCode/TrinaxAI"><img src="https://img.shields.io/github/stars/TrinaxCode/TrinaxAI?style=flat&amp;label=%E2%98%85&amp;color=006bbd" alt="GitHub stars"></a>
-  <a href="https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.2.0"><img src="https://img.shields.io/badge/version-1.2.0-006bbd" alt="Current candidate: 1.2.0"></a>
+  <a href="https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.2.1"><img src="https://img.shields.io/badge/version-1.2.1-006bbd" alt="Stable release: 1.2.1"></a>
   <a href="https://github.com/TrinaxCode/TrinaxAI/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/TrinaxCode/TrinaxAI/ci.yml?branch=main&amp;label=CI" alt="CI status"></a>
   <a href="https://github.com/TrinaxCode/TrinaxAI/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0--or--later-006bbd" alt="License: AGPL-3.0-or-later"></a>
   <img src="https://img.shields.io/badge/macOS%20%7C%20Windows%20%7C%20Linux-4493F8?style=flat-square" alt="Supported platforms: macOS, Windows, and Linux">
@@ -45,15 +45,20 @@ The readiness checker intentionally uses dependency-free, line-anchored checks
 for critical commands instead of a full YAML parser; it cannot replace review
 of YAML structure outside those commands.
 
-## Trust-anchor status
+## Trust anchor
 
-This repository does not currently contain a pinned public-key fingerprint or
-key. `TrinaxAI-release-signing-key.asc` and its matching
-`TrinaxAI-release-signing-key.fingerprint` are both release assets, so they are
-not independent proof of authenticity. Do not treat the fingerprint downloaded
-from the same release as a trust anchor. Obtain the expected fingerprint from
-an independent channel (for example, a previously trusted key or a maintainer
-announcement) before importing or executing anything.
+The repository pins the release public key in
+[`RELEASE_SIGNING_KEY.asc`](RELEASE_SIGNING_KEY.asc) and its fingerprint in
+[`RELEASE_SIGNING_KEY.fingerprint`](RELEASE_SIGNING_KEY.fingerprint):
+
+```text
+CF927A2365A5C46438A790FCCCE8FD65623D065C
+```
+
+The GitHub Actions secret `RELEASE_SIGNING_KEY_FINGERPRINT` must match this
+value. Compare the key fingerprint from the repository checkout before trusting
+any release asset; never replace this anchor with a key downloaded from the
+same release.
 
 ## Verify a download
 
@@ -66,15 +71,13 @@ anchor, GPG cannot establish authenticity; never treat a key or fingerprint
 downloaded from the same release as a trust anchor.
 
 ```bash
-version=v1.2.0
+version=v1.2.1
 base="https://github.com/TrinaxCode/TrinaxAI/releases/download/${version}"
-curl -fLO "${base}/TrinaxAI-release-signing-key.asc"
-trusted_fingerprint="PASTE_INDEPENDENTLY_PUBLISHED_FINGERPRINT"
+curl -fsSL https://raw.githubusercontent.com/TrinaxCode/TrinaxAI/main/docs/RELEASE_SIGNING_KEY.asc -o TrinaxAI-release-signing-key.asc
+trusted_fingerprint="CF927A2365A5C46438A790FCCCE8FD65623D065C"
 actual_fingerprint="$(gpg --show-keys --with-colons TrinaxAI-release-signing-key.asc | awk -F: '$1 == "fpr" { print $10; exit }')"
-trusted_fingerprint="$(printf '%s' "$trusted_fingerprint" | tr -d '[:space:]' | tr '[:lower:]' '[:upper:]')"
 test "${actual_fingerprint^^}" = "$trusted_fingerprint"
 gpg --import TrinaxAI-release-signing-key.asc
-curl -fLO "${base}/TrinaxAI-release-signing-key.fingerprint"
 curl -fLO "${base}/SHA256SUMS"
 curl -fLO "${base}/SHA256SUMS.asc"
 gpg --verify SHA256SUMS.asc SHA256SUMS
@@ -93,6 +96,5 @@ gpg --verify "${asset}.asc" "$asset"
 
 The source updater validates HTTPS release metadata and the SHA-256 manifest,
 and requires an operator-provided SHA-256 for every custom archive URL,
-including `file://`. It cannot
-establish end-to-end signing authenticity until this repository publishes a
-pinned trust anchor.
+including `file://`. It does not execute a downloaded update until the release
+archive checksum matches the signed manifest.

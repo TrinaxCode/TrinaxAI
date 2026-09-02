@@ -5,7 +5,7 @@
 
 <p align="center">
   <a href="https://github.com/TrinaxCode/TrinaxAI"><img src="https://img.shields.io/github/stars/TrinaxCode/TrinaxAI?style=flat&amp;label=%E2%98%85&amp;color=006bbd" alt="GitHub stars"></a>
-  <a href="https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.2.0"><img src="https://img.shields.io/badge/version-1.2.0-006bbd" alt="Current candidate: 1.2.0"></a>
+  <a href="https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.2.1"><img src="https://img.shields.io/badge/version-1.2.1-006bbd" alt="Stable release: 1.2.1"></a>
   <a href="https://github.com/TrinaxCode/TrinaxAI/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/TrinaxCode/TrinaxAI/ci.yml?branch=main&amp;label=CI" alt="CI status"></a>
   <a href="https://github.com/TrinaxCode/TrinaxAI/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0--or--later-006bbd" alt="License: AGPL-3.0-or-later"></a>
   <img src="https://img.shields.io/badge/macOS%20%7C%20Windows%20%7C%20Linux-4493F8?style=flat-square" alt="Supported platforms: macOS, Windows, and Linux">
@@ -69,7 +69,7 @@ Estos valores los consume `compose.yaml`; son ajustes de despliegue, no opciones
 
 | Variable | Predeterminado | Propósito |
 |---|---|---|
-| `TRINAXAI_DOCKER_IMAGE` | `trinaxai-api:local` | Imagen backend. Usa `ghcr.io/trinaxcode/trinaxai:1.2.0` para el paquete oficial fijado. |
+| `TRINAXAI_DOCKER_IMAGE` | `trinaxai-api:local` | Imagen backend. Usa `ghcr.io/trinaxcode/trinaxai:1.2.1` para el paquete oficial fijado. |
 | `TRINAXAI_DOCKER_UID` / `TRINAXAI_DOCKER_GID` | `1000` | Identidad del host dentro del contenedor para conservar propietarios de archivos montados. |
 | `TRINAXAI_DOCKER_PORT` | `3333` | Puerto loopback del host asignado al puerto `3333` del contenedor. |
 | `TRINAXAI_DOCKER_OLLAMA_URL` | `http://host.docker.internal:11434` | Endpoint Ollama accesible desde el contenedor. |
@@ -276,7 +276,7 @@ cambiarlas. Los destinos sin `VITE_*` se leen al ejecutar el gateway.
 | `TRINAXAI_UPDATE_REPAIR_OLLAMA` | `0` | Reinstala o repara Ollama durante la actualización. |
 | `TRINAXAI_UPDATE_RESTART` | auto/preguntado | Reinicia servicios después de actualizar. |
 | `TRINAXAI_UPDATE_AUDIT` | `1` | Ejecuta el readiness audit posterior. |
-| `TRINAXAI_RELEASE_VERSION` | `1.2.0` | **Instalador:** versión semántica del release de GitHub usada para el paquete fuente versionado. El instalador nunca vuelve a `main`. |
+| `TRINAXAI_RELEASE_VERSION` | `1.2.1` | **Instalador:** versión semántica del release de GitHub usada para el paquete fuente versionado. El instalador nunca vuelve a `main`. |
 | `TRINAXAI_SOURCE_URL` | release fijado de GitHub | **Origen de instalación:** URL HTTPS de un paquete fuente personalizado. |
 | `TRINAXAI_SOURCE_SHA256` | sin definir | **Instalador:** SHA-256 del archivo fuente personalizado; obligatorio junto con `TRINAXAI_SOURCE_URL`. |
 | `TRINAXAI_UPDATE_SOURCE_URL` | release fijado de GitHub | **Actualizador:** URL HTTPS del paquete fuente de actualización. |
