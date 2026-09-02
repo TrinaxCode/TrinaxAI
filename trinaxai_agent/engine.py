@@ -11,8 +11,8 @@
    final answer.
 
 The engine is UI-agnostic: it talks to the outside world only through three
-callbacks so the same engine backs both the CLI command and (Phase 2) the PWA
-backend endpoint:
+callbacks so the same engine backs both the CLI command and the PWA backend
+endpoint:
 
 * ``on_confirm(tool, args) -> bool`` — approve a dangerous action.
 * ``on_tool_start(tool, args)`` / ``on_tool_result(tool, result)`` — progress.
@@ -32,7 +32,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, ContextManager
 
-from trinaxai_cli.agent.tools import (
+from trinaxai_agent.tools import (
     DEFAULT_TOOLS,
     SandboxError,
     Tool,
@@ -598,7 +598,7 @@ class AgentEngine:
     @staticmethod
     def _post(url: str, payload: dict[str, Any]) -> dict[str, Any]:
         # urllib keeps the engine dependency-free so it can run in the backend
-        # threadpool (Phase 2) without importing httpx.
+        # threadpool without importing httpx.
         import time
         import urllib.error
         import urllib.request

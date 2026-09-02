@@ -36,7 +36,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
-from trinaxai_cli.agent.extract import extract_document_text, is_document
+from trinaxai_agent.extract import extract_document_text, is_document
 
 # Cap tool output so a huge file or noisy command cannot blow the model's
 # context window. Handlers truncate and append a clear marker when they hit it.
