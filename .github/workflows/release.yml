@@ -306,7 +306,9 @@ jobs:
             }
           done < SHA256SUMS
           shopt -s nullglob
-          signatures=(*.asc)
+          # The public signing key is itself an .asc asset. Detached
+          # signatures therefore have the unambiguous .asc.asc suffix.
+          signatures=(*.asc.asc)
           if (( ${#signatures[@]} == 0 )); then
             echo "Published release contains no detached signatures" >&2
             exit 1
