@@ -399,15 +399,16 @@ Después inicia solo el gateway PWA del host y la API en Docker:
 ```bash
 export TRINAXAI_DOCKER_UID="$(id -u)"
 export TRINAXAI_DOCKER_GID="$(id -g)"
-export TRINAXAI_DOCKER_IMAGE=ghcr.io/trinaxcode/trinaxai:1.2.1
-docker compose pull
-docker compose up --no-build -d
+# v1.2.1 publica archivos fuente/instaladores firmados, no una imagen GHCR.
+# Construye la API opcional desde este checkout verificado:
+docker compose up --build -d
 .venv/bin/python service_manager.py start-frontend --base-dir "$PWD"
 ```
 
-El registro también publica las etiquetas `1.2`, `1` y `latest`. Fija `1.2.1`
-para un despliegue reproducible. Para construir el checkout actual, omite
-`TRINAXAI_DOCKER_IMAGE` y ejecuta `docker compose up --build -d`.
+Cuando una release futura liste una imagen para la versión exacta, define
+`TRINAXAI_DOCKER_IMAGE=ghcr.io/trinaxcode/trinaxai:<versión>`, ejecuta
+`docker compose pull` y conserva esa etiqueta fija para reproducibilidad. No
+hagas pull de una etiqueta que no esté listada.
 
 La API queda publicada solo en `127.0.0.1:3333`, por lo que la PWA nativa puede
 seguir usando su gateway en `3334`. Los índices, fuentes y secretos permanecen
