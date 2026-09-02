@@ -696,7 +696,7 @@ Write-Host ""
 Write-Host "==========================================" -ForegroundColor Blue
 Write-Host " TrinaxAI - Local AI Assistant for Windows " -ForegroundColor Blue
 Write-Host "==========================================" -ForegroundColor Blue
-Write-Host " Privacy: 100% local. Nothing leaves your machine." -ForegroundColor Cyan
+Write-Host " Privacy: local-first. Inference and data stay on this machine unless you enable a remote service; downloads use the network." -ForegroundColor Cyan
 
 $ScriptPath = $MyInvocation.MyCommand.Path
 $LocalRepo = if ($ScriptPath) { Split-Path -Parent $ScriptPath } else { "" }
