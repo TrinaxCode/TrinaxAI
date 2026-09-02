@@ -119,7 +119,7 @@ TrinaxAI's threat model assumes:
    `storage/device_pairing.json`.
 5. **Use a firewall** to restrict the PWA port to intended devices and block direct ports 3333/11434.
 6. **Use a VPN** (Tailscale, WireGuard) for remote access — never forward ports directly to the internet.
-7. **Keep dependencies reproducible and audited** — install `requirements.lock`, run `pip-audit --require-hashes -r requirements.lock` and `npm audit`, and do not downgrade the NLTK `>=3.10.0` floor.
+7. **Keep dependencies reproducible and audited** — install `requirements.lock`, run `pip-audit --require-hashes -r requirements.lock --ignore PYSEC-2026-3740` and `npm audit`. The narrow NLTK exception covers an upstream model-path advisory with no patched release; TrinaxAI does not use those model persistence APIs, and CI must remove the ignore when NLTK publishes a fix.
 8. **Keep shell isolation fail-closed.** Install bubblewrap on Linux; do not enable `TRINAXAI_AGENT_ALLOW_UNSANDBOXED_COMMANDS` on a remotely reachable service.
 9. **Encrypt backups** when they leave the host; the archive includes `.env`, chats, attachments, sources and indexes even though its filesystem mode is private.
 10. **Audit your install** with `trinaxai doctor --strict --json` and `python3 scripts/public_readiness.py`.

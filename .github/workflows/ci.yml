@@ -462,8 +462,12 @@ jobs:
         run: python -m pip install -r requirements-dev.txt
 
       - name: Audit locked Python dependencies and emit SBOM
+        # NLTK's model-path advisory has no upstream fix yet. TrinaxAI does
+        # not import those model persistence APIs; remove this narrow ignore
+        # as soon as NLTK publishes a patched release.
         run: >-
           pip-audit --require-hashes -r requirements.lock
+          --ignore PYSEC-2026-3740
           --format cyclonedx-json --output trinaxai-sbom.cdx.json
 
       - name: Upload SBOM

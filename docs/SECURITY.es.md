@@ -120,7 +120,7 @@ El modelo de amenazas de TrinaxAI asume:
    `storage/.proxy_secret` ni `storage/.device_secret`; conserva modo `0600`
    también en `storage/device_pairing.json`.
 5. **Usa firewall y VPN**; limita la PWA a dispositivos previstos y bloquea acceso directo a 3333/11434.
-6. **Mantén dependencias reproducibles/auditadas** — instala `requirements.lock`, ejecuta `pip-audit --require-hashes -r requirements.lock` y `npm audit`, y no rebajes NLTK por debajo de 3.10.0.
+6. **Mantén dependencias reproducibles/auditadas** — instala `requirements.lock`, ejecuta `pip-audit --require-hashes -r requirements.lock --ignore PYSEC-2026-3740` y `npm audit`. La excepción acotada de NLTK cubre un aviso upstream sobre rutas de modelos sin versión corregida; TrinaxAI no usa esas API de persistencia y CI debe eliminar la excepción cuando NLTK publique una corrección.
 7. **Mantén el shell con fallo cerrado.** Instala bubblewrap en Linux y no habilites `TRINAXAI_AGENT_ALLOW_UNSANDBOXED_COMMANDS` en servicios remotos.
 8. **Cifra backups** cuando salgan del host; contienen `.env`, chats, adjuntos, fuentes e índices aunque el archivo tenga modo privado.
 9. **Audita** con `trinaxai doctor --strict --json` y `python3 scripts/public_readiness.py`.
