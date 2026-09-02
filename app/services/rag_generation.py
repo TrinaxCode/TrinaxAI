@@ -7,7 +7,7 @@ import re
 import threading
 from typing import Callable
 
-from .shared_runtime import Regime
+from app.generation.spec import Regime
 
 
 def estimate_tokens(text: str) -> int:

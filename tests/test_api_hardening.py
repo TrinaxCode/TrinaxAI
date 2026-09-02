@@ -5,8 +5,8 @@ from fastapi import HTTPException
 from pydantic import ValidationError
 from starlette.testclient import TestClient
 
-from app.main import _SecurityObservabilityMiddleware
 from app.schemas import ResearchRequest
+from app.security.observability import SecurityObservabilityMiddleware
 from app.services import research_service as research
 
 
@@ -106,7 +106,7 @@ class _StaticASGIApp:
 
 @pytest.mark.parametrize("path", ["/collections", "/collections/docs", "/v1/stats"])
 def test_private_api_paths_disable_caching_without_storage(path: str) -> None:
-    client = TestClient(_SecurityObservabilityMiddleware(_StaticASGIApp()))
+    client = TestClient(SecurityObservabilityMiddleware(_StaticASGIApp()))
 
     response = client.get(path)
 

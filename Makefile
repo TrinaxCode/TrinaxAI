@@ -1,4 +1,4 @@
-.PHONY: setup frontend-install dev build lint test test-python test-frontend rag-eval audit audit-optional index check clean clean-build clean-all help typecheck readiness
+.PHONY: setup frontend-install dev build lint test test-python test-frontend rag-eval audit audit-optional index check clean clean-generated clean-deps clean-build clean-data clean-all help typecheck readiness
 
 # Cross-platform Python detection: prefer venv, fall back to system python3/py.
 PYTHON ?= python3
@@ -27,8 +27,10 @@ help:
 	@echo "  audit-optional   Print optional security audit commands"
 	@echo "  readiness        Run public release readiness check"
 	@echo "  check            Run lint, tests, typecheck, audit, and build"
-	@echo "  clean-build      Remove build artifacts (.venv, node_modules, dist, __pycache__)"
-	@echo "  clean-all        Remove build artifacts AND user data (storage/) — DESTRUCTIVE"
+	@echo "  clean-generated  Remove generated build artifacts and caches"
+	@echo "  clean-deps       Remove .venv and frontend node_modules"
+	@echo "  clean-build      Remove generated artifacts and dependencies"
+	@echo "  clean-all        Remove generated artifacts, dependencies AND user data — DESTRUCTIVE"
 	@echo ""
 
 setup:
@@ -58,7 +60,7 @@ test: test-python test-frontend
 
 test-python:
 	$(VENV_PYTHON) -m pytest -q \
-		--cov=app --cov=trinaxai_cli --cov=trinaxai_core \
+		--cov=app --cov=trinaxai_agent --cov=trinaxai_cli --cov=trinaxai_core \
 		--cov=service_manager --cov=index \
 		--cov-branch --cov-report=term --cov-fail-under=98
 
@@ -99,13 +101,21 @@ audit-optional:
 
 check: lint test typecheck readiness audit build
 
-clean: clean-build
+clean: clean-generated clean-deps
 
-clean-build:
-	rm -rf __pycache__ .venv chat-pwa/node_modules chat-pwa/dist
-	find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+clean-generated:
+	rm -rf __pycache__ node_modules trinaxai.egg-info .coverage coverage.xml coverage.json htmlcov .pytest_cache .ruff_cache .mypy_cache chat-pwa/dist chat-pwa/server-dist chat-pwa/coverage chat-pwa/test-results chat-pwa/playwright-report chat-pwa/blob-report
+	find . -path './.git' -prune -o -path './.venv' -prune -o -path './chat-pwa/node_modules' -prune -o -path './storage' -prune -o -path './storage.bak*' -prune -o -path './build' -prune -o -path './dist' -prune -o -type d -name "__pycache__" -prune -exec rm -rf {} + 2>/dev/null || true
 
-clean-all: clean-build
+clean-deps:
+	rm -rf .venv chat-pwa/node_modules
+
+clean-build: clean-generated clean-deps
+
+clean-data:
 	@echo "⚠️  This will delete storage/ (your RAG index and collections). Press Ctrl+C to cancel."
 	@sleep 3
 	rm -rf storage/
+
+clean-all: clean-generated clean-deps
+	$(MAKE) clean-data

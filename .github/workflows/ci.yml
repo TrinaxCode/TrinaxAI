@@ -54,7 +54,7 @@ jobs:
           - os: ubuntu-24.04
             pytest-command: >-
               pytest -q
-              --cov=app --cov=trinaxai_cli --cov=trinaxai_core
+              --cov=app --cov=trinaxai_agent --cov=trinaxai_cli --cov=trinaxai_core
               --cov=service_manager --cov=index
               --cov-branch
               --cov-report=xml:coverage.xml --cov-fail-under=98
@@ -480,7 +480,7 @@ jobs:
 
       - name: Bandit high-severity gate
         run: >-
-          bandit -r app trinaxai_cli service_manager.py index.py
+          bandit -r app trinaxai_agent trinaxai_cli service_manager.py index.py
           --severity-level high --confidence-level high
 
   gitleaks:

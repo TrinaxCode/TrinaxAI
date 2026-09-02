@@ -1,7 +1,7 @@
 """``trinaxai agent`` — agentic assistant that reads, writes and runs code.
 
 Local-first by design: the agent uses file and shell
-tools in :mod:`trinaxai_cli.agent` to accomplish a task, asking for confirmation
+tools in :mod:`trinaxai_agent` to accomplish a task, asking for confirmation
 before every dangerous action (write / edit / shell) unless ``--yolo`` is set.
 
 Interactive REPL by default; ``--prompt`` runs a single task and exits. The
@@ -18,7 +18,7 @@ from types import SimpleNamespace
 from typing import Any
 
 import config as runtime_config
-from trinaxai_cli.agent import DEFAULT_TOOLS, AgentEngine, Tool, format_tool_failure
+from trinaxai_agent import DEFAULT_TOOLS, AgentEngine, Tool, format_tool_failure
 from trinaxai_cli.commands import _system
 from trinaxai_cli.session import Session
 

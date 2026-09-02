@@ -1,6 +1,6 @@
 """Agentic assistant service — file/shell tool-use over a workspace via SSE.
 
-Wraps :class:`trinaxai_cli.agent.AgentEngine` behind an HTTP/SSE API so the PWA
+Wraps :class:`trinaxai_agent.AgentEngine` behind an HTTP/SSE API so the PWA
 can drive the same agent the CLI uses. Two endpoints cooperate:
 
 * ``POST /v1/agent`` opens an ``text/event-stream``. The engine runs on a worker
@@ -31,9 +31,9 @@ from typing import Any
 
 from app.schemas import AgentCancelRequest
 from app.security.admin_auth import authorize_scope
-from trinaxai_cli.agent import DEFAULT_TOOLS, AgentEngine, Tool, format_tool_failure  # noqa: E402
-from trinaxai_cli.agent.engine import AgentCancelled  # noqa: E402
-from trinaxai_cli.agent.tools import _bubblewrap_argv  # noqa: E402
+from trinaxai_agent import DEFAULT_TOOLS, AgentEngine, Tool, format_tool_failure  # noqa: E402
+from trinaxai_agent.engine import AgentCancelled  # noqa: E402
+from trinaxai_agent.tools import _bubblewrap_argv  # noqa: E402
 from trinaxai_errors import ErrorCategory, classify_error
 
 from .app_state_service import _read_app_state

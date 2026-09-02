@@ -22,7 +22,7 @@ def test_wheel_declares_cli_only_contents() -> None:
 
     assert set(_string_array(manifest, "tool.setuptools", "py-modules")) == expected
     assert all((root / f"{module}.py").is_file() for module in expected)
-    assert _string_array(manifest, "tool.setuptools.packages.find", "include") == ["trinaxai_cli*"]
+    assert _string_array(manifest, "tool.setuptools.packages.find", "include") == ["trinaxai_cli*", "trinaxai_agent*"]
 
 
 def test_manifest_exposes_only_cli_and_development_dependencies() -> None:
@@ -50,6 +50,7 @@ def test_built_wheel_is_an_isolated_cli_not_a_full_runtime(tmp_path: Path) -> No
     for module in root.glob("*.py"):
         shutil.copy2(module, source / module.name)
     shutil.copytree(root / "app", source / "app")
+    shutil.copytree(root / "trinaxai_agent", source / "trinaxai_agent")
     shutil.copytree(root / "trinaxai_cli", source / "trinaxai_cli")
 
     wheelhouse = tmp_path / "wheelhouse"

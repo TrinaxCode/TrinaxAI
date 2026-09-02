@@ -171,7 +171,7 @@ def prepare_local_file(path: str | Path, prompt: str = "") -> dict[str, Any]:
 
     # Keep document parsers optional: plain CLI installs can still analyze text
     # and images without importing the server-only extraction dependencies.
-    from trinaxai_cli.agent.extract import extract_document_text, is_document
+    from trinaxai_agent.extract import extract_document_text, is_document
 
     if is_document(target):
         if size > LOCAL_DOCUMENT_MAX_BYTES:

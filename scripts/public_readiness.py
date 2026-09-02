@@ -306,6 +306,7 @@ def required_gate_commands() -> tuple[tuple[str, tuple[str, ...], Path], ...]:
                 "pytest",
                 "-q",
                 "--cov=app",
+                "--cov=trinaxai_agent",
                 "--cov=trinaxai_cli",
                 "--cov=trinaxai_core",
                 "--cov=service_manager",

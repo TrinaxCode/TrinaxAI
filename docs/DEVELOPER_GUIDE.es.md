@@ -56,6 +56,7 @@ cp .env.example .env
 │   ├── schemas/           # Contratos Pydantic compartidos
 │   ├── services/          # Chat, fuentes, memoria, indexación, sistema, etc.
 │   └── security/          # Autorización y rate limiting
+├── trinaxai_agent/        # Motor, herramientas y extracción compartidos del agente
 ├── trinaxai_cli/          # Interfaz de terminal (modular, con subcomandos)
 ├── service_manager.py     # Supervisor de servicios multiplataforma
 ├── test_system.py         # Verificaciones de salud automatizadas

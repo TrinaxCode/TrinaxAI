@@ -12,7 +12,7 @@ import httpx
 # ruff: noqa: F405
 from app.security.admin_auth import authorize_scope
 from app.security.rate_limit import enforce_rate_limit
-from trinaxai_cli.agent.tools import external_failure_message, format_tool_failure
+from trinaxai_agent.tools import external_failure_message, format_tool_failure
 from trinaxai_errors import ErrorCategory, classify_error
 
 from .shared_runtime import (

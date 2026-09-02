@@ -139,6 +139,12 @@ Python package with subcommands including `chat`, `agent`, `index`, `browse`,
 
 Uses `httpx` for API calls and `rich` for terminal formatting.
 
+### `trinaxai_agent/` — Shared Agent Core
+
+The UI-agnostic agent engine, sandboxed tools, and document extraction live in
+this package so the API and CLI share one implementation. `trinaxai_cli.agent`
+remains a compatibility import surface for existing integrations.
+
 ### `service_manager.py` — Cross-Platform Supervisor
 
 Abstracts service lifecycle across OSes:

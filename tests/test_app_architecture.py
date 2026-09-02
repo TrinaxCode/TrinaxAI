@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-import pytest
-from starlette.requests import Request
-from starlette.responses import Response
+from starlette.testclient import TestClient
 
 import rag_api
 from app.main import app
+from app.security.observability import SecurityObservabilityMiddleware
 from app.services.engine_state import EngineState, state
 
 EXPECTED_OPERATIONS = {
@@ -104,29 +103,20 @@ def test_legacy_state_alias_points_to_canonical_state(monkeypatch) -> None:
     assert rag_api._fusion_retriever is marker
 
 
-def _request(path: str, *, scheme: str = "http") -> Request:
-    return Request(
-        {
-            "type": "http",
-            "method": "GET",
-            "path": path,
-            "raw_path": path.encode(),
-            "query_string": b"",
-            "headers": [(b"x-request-id", b"bad id")],
-            "client": ("127.0.0.1", 3333),
-            "server": ("localhost", 3333),
-            "scheme": scheme,
-        }
-    )
+class _StaticASGIApp:
+    async def __call__(self, scope, receive, send) -> None:
+        await send({"type": "http.response.start", "status": 200, "headers": []})
+        await send({"type": "http.response.body", "body": b"ok"})
 
 
-@pytest.mark.asyncio
-async def test_security_middleware_and_cors_fallbacks(monkeypatch) -> None:
+def test_security_middleware_and_cors_fallbacks(monkeypatch) -> None:
     import app.main as app_main
 
-    response = await app_main._security_and_observability(
-        _request("/app-state", scheme="https"), lambda _request: _response()
+    client = TestClient(
+        SecurityObservabilityMiddleware(_StaticASGIApp()),
+        base_url="https://localhost",
     )
+    response = client.get("/app-state", headers={"X-Request-ID": "bad id"})
     assert response.headers["Strict-Transport-Security"] == "max-age=31536000"
     assert response.headers["Cache-Control"] == "no-store"
     assert response.headers["X-Request-ID"]
@@ -135,10 +125,6 @@ async def test_security_middleware_and_cors_fallbacks(monkeypatch) -> None:
     assert app_main._cors_origins() == ["*"]
     monkeypatch.setenv("TRINAXAI_CORS_ORIGINS", "   ")
     assert app_main._cors_origins()
-
-
-async def _response() -> Response:
-    return Response("ok")
 
 
 def test_legacy_facade_handles_unknown_attribute_mutations() -> None:

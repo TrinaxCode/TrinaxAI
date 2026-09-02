@@ -63,6 +63,7 @@ py-modules = [
 [tool.setuptools.packages.find]
 include = [
   "trinaxai_cli*",
+  "trinaxai_agent*",
 ]
 
 [tool.pytest.ini_options]

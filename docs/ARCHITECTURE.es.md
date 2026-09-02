@@ -137,6 +137,13 @@ Paquete Python con `chat`, `agent`, `index`, `browse`, `research`, `memory`,
 
 Usa `httpx` para las llamadas a la API y `rich` para el formato en terminal.
 
+### `trinaxai_agent/` — Núcleo Compartido del Agente
+
+El motor independiente de la interfaz, las herramientas sandbox y la
+extracción de documentos viven en este paquete para que API y CLI compartan una
+sola implementación. `trinaxai_cli.agent` permanece como superficie de
+compatibilidad para integraciones existentes.
+
 ### `service_manager.py` — Supervisor Multiplataforma
 
 Abstrae el ciclo de vida de los servicios en distintos sistemas operativos:

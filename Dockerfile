@@ -15,8 +15,9 @@ ARG APP_GID=1000
 RUN groupadd --gid "${APP_GID}" trinaxai \
   && useradd --uid "${APP_UID}" --gid "${APP_GID}" --create-home --home-dir /tmp/trinaxai --shell /usr/sbin/nologin trinaxai
 
-# The backend imports the CLI agent and the indexer, so both stay in the image.
+# The backend imports the shared agent core and the indexer.
 COPY app ./app
+COPY trinaxai_agent ./trinaxai_agent
 COPY trinaxai_cli ./trinaxai_cli
 COPY config.py index.py rag_api.py recovery_server.py service_manager.py trinaxai_core.py trinaxai_errors.py trinaxai_index_documents.py trinaxai_index_state.py trinaxai_index_storage.py pyproject.toml ./
 RUN mkdir -p /app/storage /data/projects \
