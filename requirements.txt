@@ -4,7 +4,7 @@ pydantic>=2.8
 python-dotenv>=1.0
 python-multipart>=0.0.9
 
-llama-index>=0.12
+llama-index>=0.14.24
 llama-index-llms-ollama>=0.5
 llama-index-embeddings-ollama>=0.5
 llama-index-retrievers-bm25>=0.5
