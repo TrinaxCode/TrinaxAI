@@ -990,10 +990,10 @@ Write-Host "  $(T 'Deep' 'Profundo'):       $ModelDeep"
 Write-Host "  $(T 'Embeddings' 'Embeddings'):   $EmbedModel"
 Write-Host "  $(T 'Vision' 'Visión'):       $VisionModel ($(T 'downloads on first image analysis' 'se descarga al analizar la primera imagen'))"
 if (-not $NonInteractive) {
-  $SkipModels = Read-Host (T "Download these configured Ollama models now? Choose N only if they are already installed. [Y/n]" "¿Descargar ahora estos modelos Ollama configurados? Elige N solo si ya están instalados. [Y/n]")
+  $SkipModels = Read-Host (T "Download these configured Ollama models now? Choose N to defer model downloads. [Y/n]" "¿Descargar ahora estos modelos Ollama configurados? Elige N para dejar las descargas para después. [Y/n]")
   if ($SkipModels -match "^[Nn]") {
     $NoModels = $true
-    Write-Warn "Model downloads skipped; every configured model must already be installed."
+    Write-Warn "Model downloads skipped; model preparation is deferred."
   }
 }
 if (-not (Ensure-OllamaRunning)) { throw "Ollama API is not ready." }
@@ -1005,13 +1005,15 @@ if (-not $NoModels) {
     Invoke-NativeChecked $OllamaExe @("pull", $Model) "ollama pull $Model"
   }
 } else {
-  Write-Warn "Model download skipped by flag; installed models will still be verified."
+  Write-Warn "Model downloads skipped; model preparation is deferred."
 }
-foreach ($Model in $Models) {
-  if (-not (Test-OllamaModel $OllamaExe $Model)) { throw "Required Ollama model is not ready: $Model" }
+if (-not $NoModels) {
+  foreach ($Model in $Models) {
+    if (-not (Test-OllamaModel $OllamaExe $Model)) { throw "Required Ollama model is not ready: $Model" }
+  }
+  Write-Ok "Models ready"
 }
 Write-Host "  Vision model $VisionModel will download on first image analysis."
-Write-Ok "Models ready"
 
 Write-Step "6/6 Start"
 if (-not $NoStart) {

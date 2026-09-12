@@ -77,9 +77,9 @@ The verified release installers are intentionally pinned and never fall back to
 (`bash install.sh` or `powershell -ExecutionPolicy Bypass -File .\install.ps1`)
 is the operator/development path.
 
-When installation finishes, open **https://localhost:3334**. If you use
-`--no-models`, every configured Ollama model must already be installed; the
-installer still verifies each model before it reports success.
+When installation finishes, open **https://localhost:3334**. With
+`--no-models`, model downloads and readiness checks are deferred so you can
+prepare the application first and pull the configured models later.
 
 Useful options:
 

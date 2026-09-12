@@ -267,6 +267,8 @@ def test_service_manager_cli_dispatches_every_public_action(monkeypatch, tmp_pat
     for action in ("start", "start-ai", "start-frontend", "stop", "stop-ai", "stop-all", "watch"):
         assert sm.main([action, *base]) == 0
 
+    assert sm.main(["stop-all", "--no-recovery", *base]) == 0
+
     assert sm.main(["status", "--json", *base]) == 0
     payload = json.loads(capsys.readouterr().out.splitlines()[-1])
     assert payload[0]["display_name"] == "TrinaxAI RAG API"
@@ -287,6 +289,40 @@ def test_status_text_uses_stable_display_name_for_rag_api(monkeypatch, tmp_path:
     output = capsys.readouterr().out
     assert "TrinaxAI RAG API: running" in output
     assert "rag_api: running" not in output
+
+
+def test_watch_restarts_full_stack_and_ollama(monkeypatch, tmp_path: Path) -> None:
+    started: list[str] = []
+    monkeypatch.setattr(sm, "_system_state", lambda _base: "running")
+    monkeypatch.setattr(sm, "_read_ai_enabled", lambda _base: True)
+    monkeypatch.setattr(sm, "_reap_zombie_children", lambda: None)
+    monkeypatch.setattr(sm, "_backend", SimpleNamespace(status=lambda name: sm.ProcessState(name, False)))
+    monkeypatch.setattr(
+        sm,
+        "_start_named",
+        lambda _base, name: started.append(name) or sm.ProcessState(name, True, detail="restarted"),
+    )
+    monkeypatch.setattr(sm.time, "sleep", _stop_sleep)
+
+    with pytest.raises(StopIteration):
+        sm.watch(str(tmp_path), interval=5)
+
+    assert started == sm.STARTUP_ORDER
+
+
+def test_disable_autostart_removes_darwin_launch_agent(monkeypatch, tmp_path: Path) -> None:
+    home = tmp_path / "home"
+    plist = home / "Library" / "LaunchAgents" / "com.trinaxcode.trinaxai.plist"
+    plist.parent.mkdir(parents=True)
+    plist.write_text("plist", encoding="utf-8")
+    monkeypatch.setattr(sm.Path, "home", lambda: home)
+    monkeypatch.setattr(sm.platform, "system", lambda: "Darwin")
+    monkeypatch.setattr(sm.subprocess, "run", lambda *_args, **_kwargs: _completed())
+
+    result = sm.disable_autostart(str(tmp_path))
+
+    assert not plist.exists()
+    assert result.detail == "disabled launch agent"
 
 
 def test_direct_backend_and_windows_process_paths(monkeypatch, tmp_path: Path) -> None:
@@ -608,6 +644,11 @@ def test_public_lifecycle_remaining_branches_and_text_status(monkeypatch, tmp_pa
     monkeypatch.setattr(sm, "_backend", SimpleNamespace(stop=lambda name: sm.ProcessState(name, False)))
     result = sm.stop_all_for_base(str(tmp_path))
     assert result[-1].name == "recovery"
+
+    monkeypatch.setattr(sm, "_wait_port_free", lambda: True)
+    monkeypatch.setattr(sm, "_wait_service_stopped", lambda _name: True)
+    result = sm.stop_all_for_base(str(tmp_path), start_recovery=False)
+    assert all(item.name != "recovery" for item in result)
 
     monkeypatch.setattr(sm, "_backend", SimpleNamespace(status=lambda name: sm.ProcessState(name, False)))
     monkeypatch.setattr(sm, "_read_ai_enabled", lambda _base: True)

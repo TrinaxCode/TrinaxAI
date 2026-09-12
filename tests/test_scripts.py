@@ -291,15 +291,15 @@ def test_installers_only_advertise_live_urls_after_runtime_readiness() -> None:
     assert windows_done.index("} else {") < windows_done.index("https://localhost:3334")
 
 
-def test_no_models_contract_requires_preinstalled_configured_models() -> None:
+def test_no_models_contract_defers_model_preparation() -> None:
     posix = (ROOT / "install.sh").read_text(encoding="utf-8")
     windows = (ROOT / "install.ps1").read_text(encoding="utf-8")
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
 
-    assert "checking the configured models already installed" in posix
-    assert "installed models will still be verified" in windows
-    assert "every configured Ollama model" in readme
-    assert "already be installed" in readme
+    assert "Model downloads deferred; run the installer again when you are ready." in posix
+    assert "Model downloads skipped; model preparation is deferred." in windows
+    assert "model downloads and readiness checks are deferred" in readme
+    assert "already be installed" not in readme
 
 
 def test_installers_use_persisted_models_and_never_autostart_with_no_start() -> None:

@@ -77,9 +77,9 @@ breves de [firma de releases](docs/RELEASE_SIGNING.es.md). Un checkout local
 (`bash install.sh` o `powershell -ExecutionPolicy Bypass -File .\install.ps1`)
 es el modo de operador/desarrollo.
 
-Al terminar, abre **https://localhost:3334**. Con `--no-models`, los modelos de
-Ollama configurados deben estar instalados previamente; el instalador verifica
-cada uno antes de declarar éxito.
+Al terminar, abre **https://localhost:3334**. Con `--no-models`, las descargas y
+comprobaciones de modelos quedan pendientes para que puedas preparar primero la
+aplicación y descargarlos después.
 
 Opciones útiles:
 

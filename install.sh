@@ -175,6 +175,8 @@ if [ "$LANGUAGE" = "es" ]; then
       'Ollama is not available yet; skipping model downloads.'*) echo "Ollama aún no está disponible; se omiten las descargas de modelos. TrinaxAI se instalará de todos modos." ;;
       'After installing/starting Ollama, run:'*) echo "Después de instalar/iniciar Ollama, ejecuta:${1#After installing/starting Ollama, run:}" ;;
       'Skipping model download.'*) echo "Se omite la descarga de modelos. Puedes descargarlos después con:${1#Skipping model download.}" ;;
+      'Skipping model downloads; model preparation is deferred.') echo 'Se omite la descarga de modelos; la preparación queda para después.' ;;
+      'Model downloads deferred; run the installer again when you are ready.') echo 'Las descargas de modelos quedan pendientes; vuelve a ejecutar el instalador cuando estés listo.' ;;
       'Starting TrinaxAI services...') echo 'Iniciando servicios de TrinaxAI...' ;;
       'Supervisor returned a non-zero status; checking the RAG API directly.') echo 'El supervisor devolvió un estado distinto de cero; se comprobará la API RAG directamente.' ;;
       'TrinaxAI and the RAG API are ready') echo 'TrinaxAI y la API RAG están listas' ;;
@@ -191,7 +193,7 @@ if [ "$LANGUAGE" = "es" ]; then
     esac
   }
 else
-  tr_text_en() { case "$1" in title) echo 'TrinaxAI One-Command Installer' ;; usage) echo 'Usage:' ;; guided) echo 'Guided install (asks optional choices)' ;; automatic) echo 'Automatic install for CI/scripts' ;; skip_models) echo 'Skip downloads; requires configured models already installed' ;; help) echo 'Show this help' ;; 'LAN / Red local') echo 'LAN' ;; *) echo "$1" ;; esac; }
+  tr_text_en() { case "$1" in title) echo 'TrinaxAI One-Command Installer' ;; usage) echo 'Usage:' ;; guided) echo 'Guided install (asks optional choices)' ;; automatic) echo 'Automatic install for CI/scripts' ;; skip_models) echo 'Skip model downloads; prepare them later' ;; help) echo 'Show this help' ;; 'LAN / Red local') echo 'LAN' ;; *) echo "$1" ;; esac; }
 fi
 if [ "$LANGUAGE" = "es" ]; then
   tr_text() { tr_text_es "$@"; }
@@ -1369,7 +1371,7 @@ echo "  Vision (lazy):  $VISION_MODEL"
 echo ""
 
 if [ "$INSTALL_MODELS" = "1" ]; then
-  if ask_yes_no "Download the configured Ollama models now? Choose N only if they are already installed." y; then
+  if ask_yes_no "Download the configured Ollama models now? Choose N to defer model downloads." y; then
     INSTALL_MODELS=1
   else
     INSTALL_MODELS=0

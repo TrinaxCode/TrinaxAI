@@ -543,20 +543,25 @@ $ConfiguredModels = @(Get-ConfiguredModels)
 if ($RemoveModelsFirst -and $PullModels) {
   Remove-ConfiguredModels
 }
-$Ollama = Ensure-OllamaRunning
-if (-not $Ollama) { throw "Ollama API is not ready." }
+$Ollama = $null
+if ($PullModels) {
+  $Ollama = Ensure-OllamaRunning
+  if (-not $Ollama) { throw "Ollama API is not ready." }
+}
 if ($PullModels) {
   foreach ($Model in $ConfiguredModels) {
     Write-Host "  Pulling $Model..."
     Invoke-NativeChecked $Ollama @("pull", $Model) "ollama pull $Model"
   }
 } else {
-  Write-Warn "Model downloads skipped; installed models will still be verified."
+  Write-Warn "Model downloads skipped; model preparation is deferred."
 }
-foreach ($Model in $ConfiguredModels) {
-  if (-not (Test-OllamaModel $Ollama $Model)) { throw "Required Ollama model is not ready: $Model" }
+if ($PullModels) {
+  foreach ($Model in $ConfiguredModels) {
+    if (-not (Test-OllamaModel $Ollama $Model)) { throw "Required Ollama model is not ready: $Model" }
+  }
+  Write-Ok "Models ready"
 }
-Write-Ok "Models ready"
 
 Write-Step "6/7 Autostart and audit"
 if ($AutostartAction) {
@@ -574,9 +579,10 @@ if ($RestartAfter) {
   Invoke-ServiceManager "start"
   Write-Ok "TrinaxAI restarted"
 } else {
-  Write-Warn "Restart skipped; checking the already-running TrinaxAI services."
+  Write-Warn "Restart skipped; runtime readiness check deferred."
+  $RestartAfter = $false
 }
-Assert-RuntimeReady
+if ($RestartAfter) { Assert-RuntimeReady }
 
 Invoke-Python @((Join-Path $Repo "scripts\source_update.py"), "finish", "--root", $Repo)
 $script:RollbackActive = $false
