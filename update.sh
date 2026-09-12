@@ -747,11 +747,12 @@ if [ "$PULL_MODELS" = "1" ]; then
     echo "[!] Ollama is not available; required models cannot be prepared." >&2
     exit 1
   fi
-fi
-configured_models
-if ! ensure_ollama_running || ! verify_models; then
-  echo "[!] Required Ollama models are not ready. Pull configured models and retry." >&2
-  exit 1
+  if ! verify_models; then
+    echo "[!] Required Ollama models are not ready. Pull configured models and retry." >&2
+    exit 1
+  fi
+else
+  echo "[i] Model downloads skipped; model preparation is deferred."
 fi
 
 case "$AUTOSTART_ACTION" in
@@ -773,10 +774,12 @@ if [ "$RESTART_AFTER" = "1" ]; then
     exit 1
   fi
 else
-  print_info "Restart skipped; checking the already-running TrinaxAI services."
+  print_info "Restart skipped; runtime readiness check deferred."
 fi
-if ! assert_runtime_ready; then
-  exit 1
+if [ "$RESTART_AFTER" = "1" ]; then
+  if ! assert_runtime_ready; then
+    exit 1
+  fi
 fi
 
 echo -e "\n${GREEN}${BOLD}✓ TrinaxAI is up to date${NC}"

@@ -1393,11 +1393,15 @@ if [ "$INSTALL_MODELS" = "1" ]; then
     exit 1
   fi
 else
-  print_info "Skipping model downloads; checking the configured models already installed."
+  print_info "Skipping model downloads; model preparation is deferred."
 fi
-if ! ensure_ollama_running || ! verify_models; then
-  print_err "Required Ollama models are not ready. Re-run without --no-models or pull the configured models."
-  exit 1
+if [ "$INSTALL_MODELS" = "1" ]; then
+  if ! verify_models; then
+    print_err "Required Ollama models are not ready. Re-run without --no-models or pull the configured models."
+    exit 1
+  fi
+else
+  print_info "Model downloads deferred; run the installer again when you are ready."
 fi
 
 # ── 6. Auto-Start Service ──
