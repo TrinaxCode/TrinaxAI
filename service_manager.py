@@ -1077,7 +1077,7 @@ def stop_all() -> list[ProcessState]:
     return results
 
 
-def stop_all_for_base(base_dir: str) -> list[ProcessState]:
+def stop_all_for_base(base_dir: str, *, start_recovery: bool = True) -> list[ProcessState]:
     """Stop everything and keep AI disabled for the next boot."""
     print("[lifecycle] shutdown requested by local user")
     try:
@@ -1107,6 +1107,8 @@ def stop_all_for_base(base_dir: str) -> list[ProcessState]:
         _write_service_state(base_dir, system_state="error")
         return results
     _write_service_state(base_dir, system_state="stopped_by_user")
+    if not start_recovery:
+        return results
     results.append(_start_recovery(base_dir))
     print("[lifecycle] recovery server requested on loopback")
     return results
@@ -1325,6 +1327,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--base-dir", default=str(Path(__file__).resolve().parent))
     parser.add_argument("--interval", type=int, default=15)
     parser.add_argument("--json", action="store_true", help="Emit machine-readable status output")
+    parser.add_argument("--no-recovery", action="store_true", help="Do not start the loopback recovery server")
     args = parser.parse_args(argv)
 
     if args.action in {"start", "start-all"}:
@@ -1351,7 +1354,7 @@ def main(argv: list[str] | None = None) -> int:
         for item in stop_ai(args.base_dir):
             print(f"{item.name}: {item.detail}")
     elif args.action == "stop-all":
-        for item in stop_all_for_base(args.base_dir):
+        for item in stop_all_for_base(args.base_dir, start_recovery=not args.no_recovery):
             print(f"{item.name}: {item.detail}")
     elif args.action == "status":
         items = status_all()

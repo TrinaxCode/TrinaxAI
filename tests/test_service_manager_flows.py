@@ -257,7 +257,7 @@ def test_service_manager_cli_dispatches_every_public_action(monkeypatch, tmp_pat
     monkeypatch.setattr(sm, "start_ai", lambda _base: [running])
     monkeypatch.setattr(sm, "start_frontend", lambda _base: [running])
     monkeypatch.setattr(sm, "stop_ai", lambda _base: [stopped])
-    monkeypatch.setattr(sm, "stop_all_for_base", lambda _base: [stopped])
+    monkeypatch.setattr(sm, "stop_all_for_base", lambda _base, **_kwargs: [stopped])
     monkeypatch.setattr(sm, "status_all", lambda: [running])
     monkeypatch.setattr(sm, "watch", lambda _base, _interval: None)
     monkeypatch.setattr(sm, "enable_autostart", lambda _base: sm.ProcessState("autostart", True, detail="enabled"))

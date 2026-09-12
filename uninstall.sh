@@ -322,7 +322,8 @@ abs_path() {
 }
 
 safe_remove() {
-  local target abs win_path
+  local target abs win_path root_abs
+  root_abs="$(abs_path "$ROOT")"
   for target in "$@"; do
     if [ -L "$target" ]; then
       echo "Refusing to remove a symbolic-link target: $target" >&2
@@ -331,8 +332,8 @@ safe_remove() {
     [ -e "$target" ] || continue
     abs="$(abs_path "$target")"
     case "$abs" in
-      "$ROOT") echo "Refusing to remove project root: $abs" >&2; exit 1 ;;
-      "$ROOT"/*) ;;
+      "$root_abs") echo "Refusing to remove project root: $abs" >&2; exit 1 ;;
+      "$root_abs"/*) ;;
       *) echo "Refusing to remove path outside project: $abs" >&2; exit 1 ;;
     esac
     if is_windows && command -v powershell.exe >/dev/null 2>&1; then
@@ -438,7 +439,7 @@ fi
 if [ "$STOP_SERVICES" = "1" ]; then
   print_step "Stopping Services"
   if [ "${#PYTHON_CMD[@]}" -gt 0 ] && [ -f "$ROOT/service_manager.py" ]; then
-    TRINAXAI_PRIVILEGED_WRAPPER=1 "${PYTHON_CMD[@]}" "$ROOT/service_manager.py" stop-all --base-dir "$ROOT" || true
+    TRINAXAI_PRIVILEGED_WRAPPER=1 "${PYTHON_CMD[@]}" "$ROOT/service_manager.py" stop-all --base-dir "$ROOT" --no-recovery || true
   elif [ -f "./shutdown_ai.sh" ]; then
     bash ./shutdown_ai.sh || true
   fi
