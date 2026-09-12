@@ -4,7 +4,7 @@
 
 <p align="center">
   <a href="https://github.com/TrinaxCode/TrinaxAI"><img src="https://img.shields.io/github/stars/TrinaxCode/TrinaxAI?style=flat&amp;label=%E2%98%85&amp;color=006bbd" alt="GitHub stars"></a>
-  <a href="https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.2.3"><img src="https://img.shields.io/badge/version-1.2.3-006bbd" alt="Stable release: 1.2.3"></a>
+  <a href="https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.2.4"><img src="https://img.shields.io/badge/version-1.2.4-006bbd" alt="Stable release: 1.2.4"></a>
   <a href="https://github.com/TrinaxCode/TrinaxAI/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/TrinaxCode/TrinaxAI/ci.yml?branch=main&amp;label=CI" alt="CI status"></a>
   <a href="https://github.com/TrinaxCode/TrinaxAI/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0--or--later-006bbd" alt="License: AGPL-3.0-or-later"></a>
   <img src="https://img.shields.io/badge/macOS%20%7C%20Windows%20%7C%20Linux-4493F8?style=flat-square" alt="Supported platforms: macOS, Windows, and Linux">
@@ -57,13 +57,13 @@ The short bootstrap is the easiest path. It fetches the current installer from
 
 ## Verified release-pinned install
 
-> Release status: `v1.2.3` is Production/Stable. Its signed archives, installers, wheel, checksums, and signatures are published on GitHub. The installer never falls back to `main`.
+> Release status: `v1.2.4` is Production/Stable. Its signed archives, installers, wheel, checksums, and signatures are published on GitHub. The installer never falls back to `main`.
 
 Open PowerShell and run:
 
 ```powershell
 $ErrorActionPreference = "Stop"
-$version = "1.2.3"
+$version = "1.2.4"
 $base = "https://github.com/TrinaxCode/TrinaxAI/releases/download/v$version"
 $installer = Join-Path $env:TEMP "TrinaxAI-$version-installer.ps1"
 $manifest = Join-Path $env:TEMP "TrinaxAI-$version-SHA256SUMS"
@@ -160,7 +160,7 @@ ollama --version
 
 ```powershell
 $ErrorActionPreference = "Stop"
-$version = "1.2.3"
+$version = "1.2.4"
 if ($version -notmatch '^[0-9]+\.[0-9]+\.[0-9]+$') { throw "Invalid release version" }
 $base = "https://github.com/TrinaxCode/TrinaxAI/releases/download/v$version"
 $zip = "$env:TEMP\TrinaxAI-$version.zip"

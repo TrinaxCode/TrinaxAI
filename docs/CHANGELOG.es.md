@@ -4,7 +4,7 @@
 
 <p align="center">
   <a href="https://github.com/TrinaxCode/TrinaxAI"><img src="https://img.shields.io/github/stars/TrinaxCode/TrinaxAI?style=flat&amp;label=%E2%98%85&amp;color=006bbd" alt="GitHub stars"></a>
-  <a href="https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.2.3"><img src="https://img.shields.io/badge/version-1.2.3-006bbd" alt="Stable release: 1.2.3"></a>
+  <a href="https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.2.4"><img src="https://img.shields.io/badge/version-1.2.4-006bbd" alt="Stable release: 1.2.4"></a>
   <a href="https://github.com/TrinaxCode/TrinaxAI/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/TrinaxCode/TrinaxAI/ci.yml?branch=main&amp;label=CI" alt="CI status"></a>
   <a href="https://github.com/TrinaxCode/TrinaxAI/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0--or--later-006bbd" alt="License: AGPL-3.0-or-later"></a>
   <img src="https://img.shields.io/badge/macOS%20%7C%20Windows%20%7C%20Linux-4493F8?style=flat-square" alt="Supported platforms: macOS, Windows, and Linux">
@@ -17,6 +17,14 @@ Todos los cambios importantes de TrinaxAI se documentan aquí. El proyecto sigue
 el formato de [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Sin publicar]
+
+## [1.2.4] — 2026-09-11
+
+### Corregido
+
+- Las instalaciones y actualizaciones pueden dejar pendientes las descargas de modelos con `--no-models`.
+- Las cachés npm de macOS ya no dependen de entradas propiedad de root en `~/.npm`.
+- Las comprobaciones del desinstalador funcionan con la canonicalización de `/tmp` en macOS y no dejan activo el recovery local.
 
 ## [1.2.3] — 2026-09-11
 

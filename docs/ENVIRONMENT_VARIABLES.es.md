@@ -4,7 +4,7 @@
 
 <p align="center">
   <a href="https://github.com/TrinaxCode/TrinaxAI"><img src="https://img.shields.io/github/stars/TrinaxCode/TrinaxAI?style=flat&amp;label=%E2%98%85&amp;color=006bbd" alt="GitHub stars"></a>
-  <a href="https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.2.3"><img src="https://img.shields.io/badge/version-1.2.3-006bbd" alt="Stable release: 1.2.3"></a>
+  <a href="https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.2.4"><img src="https://img.shields.io/badge/version-1.2.4-006bbd" alt="Stable release: 1.2.4"></a>
   <a href="https://github.com/TrinaxCode/TrinaxAI/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/TrinaxCode/TrinaxAI/ci.yml?branch=main&amp;label=CI" alt="CI status"></a>
   <a href="https://github.com/TrinaxCode/TrinaxAI/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0--or--later-006bbd" alt="License: AGPL-3.0-or-later"></a>
   <img src="https://img.shields.io/badge/macOS%20%7C%20Windows%20%7C%20Linux-4493F8?style=flat-square" alt="Supported platforms: macOS, Windows, and Linux">
@@ -262,7 +262,7 @@ cambiarlas. Los destinos sin `VITE_*` se leen al ejecutar el gateway.
 |---|---|---|
 | `TRINAXAI_INTERACTIVE` | `1` | Permite preguntas opcionales en scripts POSIX. |
 | `TRINAXAI_NONINTERACTIVE` | `0` | Suprime preguntas opcionales. |
-| `TRINAXAI_INSTALL_MODELS` | `1` | Descarga modelos configurados durante la instalación. Con `0`, todos los modelos configurados deben estar ya instalados. |
+| `TRINAXAI_INSTALL_MODELS` | `1` | Descarga modelos configurados durante la instalación. Con `0`, las descargas y comprobaciones de modelos quedan pendientes. |
 | `TRINAXAI_INSTALL_VISION` | `1` | Flag de compatibilidad; visión se descarga al primer análisis. |
 | `TRINAXAI_ENABLE_AUTOSTART` | `1` | Activa arranque automático. |
 | `TRINAXAI_ENABLE_AUTO_UPDATE` | `1` | Instala la tarea de comprobación de disponibilidad de releases. |
@@ -276,7 +276,7 @@ cambiarlas. Los destinos sin `VITE_*` se leen al ejecutar el gateway.
 | `TRINAXAI_UPDATE_REPAIR_OLLAMA` | `0` | Reinstala o repara Ollama durante la actualización. |
 | `TRINAXAI_UPDATE_RESTART` | auto/preguntado | Reinicia servicios después de actualizar. |
 | `TRINAXAI_UPDATE_AUDIT` | `1` | Ejecuta el readiness audit posterior. |
-| `TRINAXAI_RELEASE_VERSION` | `1.2.3` | **Instalador:** versión semántica del release de GitHub usada para el paquete fuente versionado. El instalador nunca vuelve a `main`. |
+| `TRINAXAI_RELEASE_VERSION` | `1.2.4` | **Instalador:** versión semántica del release de GitHub usada para el paquete fuente versionado. El instalador nunca vuelve a `main`. |
 | `TRINAXAI_SOURCE_URL` | release fijado de GitHub | **Origen de instalación:** URL HTTPS de un paquete fuente personalizado. |
 | `TRINAXAI_SOURCE_SHA256` | sin definir | **Instalador:** SHA-256 del archivo fuente personalizado; obligatorio junto con `TRINAXAI_SOURCE_URL`. |
 | `TRINAXAI_UPDATE_SOURCE_URL` | release fijado de GitHub | **Actualizador:** URL HTTPS del paquete fuente de actualización. |
