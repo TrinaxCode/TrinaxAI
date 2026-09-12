@@ -407,6 +407,7 @@ If you enabled autostart:
 |---|---|
 | `brew` not found | Install Homebrew and open a new terminal. |
 | `python3` points to an old version | Install `python@3.12` and use `python3.12 -m venv .venv`. |
+| npm fails with `EACCES`/`EEXIST` while installing the PWA | An earlier `sudo npm` command may have left root-owned entries in `~/.npm`. The installer uses a dedicated user cache and retries with a clean temporary cache. For a manual install, set `TRINAXAI_NPM_CACHE="$HOME/Library/Caches/TrinaxAI/npm"` before `npm ci`; do not run npm with `sudo`. |
 | Ollama does not respond | Open the Ollama app or run `ollama serve`. |
 | macOS blocks folder access | Check System Settings > Privacy & Security > Files and Folders. |
 | PWA cannot connect from iPhone | Run `trinaxai network refresh`, open the reported `https://HOST-LAN-IP:3334` URL, and allow the gateway on the private network. |

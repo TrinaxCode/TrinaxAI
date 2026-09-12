@@ -15,13 +15,13 @@
     "preview": "npm run serve",
     "preview:vite": "vite preview --port 3334",
     "serve": "node server.mjs",
-    "test": "vitest run && npm run test:server",
+    "test": "node scripts/run-vitest.mjs run && npm run test:server",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "test:server": "npm run build:server && node --test server.integration.mjs",
-    "test:coverage": "vitest run --coverage",
+    "test:coverage": "node scripts/run-vitest.mjs run --coverage",
     "test:e2e": "playwright test",
-    "test:watch": "vitest"
+    "test:watch": "node scripts/run-vitest.mjs"
   },
   "dependencies": {
     "framer-motion": "^11.15.0",

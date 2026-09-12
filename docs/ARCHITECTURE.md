@@ -370,7 +370,7 @@ This section helps contributors find the right files for common tasks.
 
 ```bash
 cd chat-pwa
-npx vitest run              # Unit tests
+node scripts/run-vitest.mjs run  # Unit tests
 npx tsc --noEmit            # Type checking
 npm run build               # Production build check
 ```

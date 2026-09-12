@@ -25,6 +25,13 @@ if grep -Fq 'npm run build >/dev/null 2>&1' "$ROOT/install.sh"; then
 fi
 ok "macOS frontend failures remain visible"
 
+for script in install.sh update.sh; do
+  grep -Fq 'TRINAXAI_NPM_CACHE' "$ROOT/$script" || fail "npm cache override is missing: $script"
+  grep -Fq -- '--cache "$cache_dir"' "$ROOT/$script" || fail "dedicated npm cache is not used: $script"
+  grep -Fq 'trinaxai-npm-cache.XXXXXX' "$ROOT/$script" || fail "temporary npm cache fallback is missing: $script"
+done
+ok "PWA installs isolate npm cache permissions and have a clean-cache fallback"
+
 for script in install.sh update.sh uninstall.sh; do
   grep -Fq 'pause_on_macos_failure' "$ROOT/$script" || fail "macOS failure pause is missing: $script"
 done

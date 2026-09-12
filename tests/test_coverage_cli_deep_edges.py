@@ -143,6 +143,19 @@ def test_tool_helpers_cover_external_and_workspace_failures(monkeypatch: pytest.
     monkeypatch.setattr(tools_module.inspect, "signature", __import__("inspect").signature)
     assert len(_python_stdlib_facts(many_calls)) == 12
 
+    def blocked_turtle_import(name):
+        if name == "turtle":
+            raise ImportError("_tkinter is unavailable")
+        return real_import(name)
+
+    monkeypatch.setattr(tools_module.importlib, "import_module", blocked_turtle_import)
+    turtle_facts = _python_stdlib_facts("import turtle\nt = turtle.Turtle()\nt.speed(500)\nt.goto((1, 2))\n")
+    assert any("verified turtle.Turtle.goto" in fact for fact in turtle_facts)
+    assert any("a pair (tuple) of coordinates" in fact for fact in turtle_facts)
+
+    monkeypatch.setattr(tools_module.importlib.util, "find_spec", lambda _name: None)
+    assert tools_module._static_turtle_api() == (set(), {})
+
 
 def test_tool_file_and_directory_error_edges(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     original_iterdir = Path.iterdir

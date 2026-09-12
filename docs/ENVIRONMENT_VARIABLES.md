@@ -34,6 +34,7 @@ child processes and normally should not be added to `.env`.
 | Variable | Default | Purpose |
 |---|---|---|
 | `TRINAXAI_HOME` | auto-detected | Installation root used by the CLI, frontend gateway, and lifecycle scripts. |
+| `TRINAXAI_NPM_CACHE` | platform user cache | **Installer/updater:** npm cache used for PWA dependencies. Set this when a custom user-owned cache location is required; the scripts fall back to a clean temporary cache if it cannot be used. |
 | `TRINAXAI_PYTHON` | current Python | Python executable used by service and maintenance scripts. |
 | `TRINAXAI_PROFILE` | auto-detected | Hardware preset: `8gb`, `16gb`, `32gb`, or `64gb`. CPU/RAM/GPU detection is persisted in `storage/hardware_profile.json`. |
 | `TRINAXAI_PERFORMANCE_MODE` | `fast` | Runtime tuning: `fast`, `balanced`, or `quality`. |

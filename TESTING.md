@@ -215,7 +215,7 @@ documentation test:
 
 ```bash
 cd chat-pwa
-npx vitest run src/components/Docs.test.tsx
+node scripts/run-vitest.mjs run src/components/Docs.test.tsx
 npx tsc --noEmit
 cd ..
 git diff --check

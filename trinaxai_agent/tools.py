@@ -24,6 +24,7 @@ from __future__ import annotations
 import ast
 import fnmatch
 import importlib
+import importlib.util
 import inspect
 import os
 import re
@@ -224,6 +225,56 @@ def _compact_doc(obj: Any, limit: int = 700) -> str:
     return doc if len(doc) <= limit else doc[: limit - 1].rstrip() + "…"
 
 
+def _static_turtle_api() -> tuple[set[str], dict[tuple[str, str], tuple[str, str]]]:
+    """Read turtle's local source when its optional Tk dependency is absent.
+
+    ``turtle`` is part of the standard library, but importing it can fail on a
+    headless Python installation because ``_tkinter`` is optional. Reading and
+    parsing the installed stdlib source keeps review evidence available without
+    importing user code or opening a GUI.
+    """
+    try:
+        spec = importlib.util.find_spec("turtle")
+        origin = getattr(spec, "origin", None)
+        if not origin or not origin.endswith(".py"):
+            return set(), {}
+        tree = ast.parse(Path(origin).read_text(encoding="utf-8"), filename=origin)
+    except (ImportError, OSError, SyntaxError, ValueError):
+        return set(), {}
+
+    classes = {node.name: node for node in tree.body if isinstance(node, ast.ClassDef)}
+    methods: dict[tuple[str, str], tuple[str, str]] = {}
+
+    def inherited_methods(
+        class_name: str, seen: set[str] | None = None
+    ) -> dict[str, ast.FunctionDef | ast.AsyncFunctionDef]:
+        visited = set(seen or ())
+        if class_name in visited:
+            return {}
+        visited.add(class_name)
+        node = classes.get(class_name)
+        if node is None:
+            return {}
+        found = {item.name: item for item in node.body if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef))}
+        for base in node.bases:
+            if isinstance(base, ast.Name):
+                for name, method in inherited_methods(base.id, visited).items():
+                    found.setdefault(name, method)
+        return found
+
+    for class_name in classes:
+        for method_name, node in inherited_methods(class_name).items():
+            try:
+                signature = f"({ast.unparse(node.args)})"
+            except Exception:  # noqa: BLE001 - static metadata is best-effort
+                signature = "(signature unavailable)"
+            doc = " ".join((ast.get_docstring(node) or "").split())
+            if len(doc) > 700:
+                doc = doc[:699].rstrip() + "…"
+            methods[(class_name, method_name)] = (signature, doc)
+    return set(classes), methods
+
+
 def _python_stdlib_facts(source: str) -> list[str]:
     """Return verified call signatures/docs without executing user code.
 
@@ -244,6 +295,11 @@ def _python_stdlib_facts(source: str) -> list[str]:
                 top_level = alias.name.split(".", 1)[0]
                 if top_level in _SAFE_STDLIB_INTROSPECTION:
                     modules[alias.asname or top_level] = top_level
+
+    static_classes: set[str] = set()
+    static_methods: dict[tuple[str, str], tuple[str, str]] = {}
+    if "turtle" in modules.values():
+        static_classes, static_methods = _static_turtle_api()
 
     loaded: dict[str, Any] = {}
 
@@ -270,7 +326,8 @@ def _python_stdlib_facts(source: str) -> list[str]:
         instance_module_name = modules.get(value.func.value.id)
         module = load(instance_module_name) if instance_module_name else None
         class_name = value.func.attr
-        if instance_module_name is None or module is None or not inspect.isclass(getattr(module, class_name, None)):
+        class_available = module is not None and inspect.isclass(getattr(module, class_name, None))
+        if instance_module_name is None or not class_available and class_name not in static_classes:
             continue
         for target in targets:
             if isinstance(target, ast.Name):
@@ -301,16 +358,26 @@ def _python_stdlib_facts(source: str) -> list[str]:
             module = load(call_module_name)
             obj = getattr(module, ast_node.func.attr, None) if module else None
             label = f"{call_module_name}.{ast_node.func.attr}"
-        if obj is None or label is None or label in seen:
+        if label is None or label in seen:
+            continue
+        static_info = None
+        if obj is None and call_module_name == "turtle":
+            static_info = static_methods.get((class_name, ast_node.func.attr))
+            if static_info is None:
+                continue
+        if obj is None and static_info is None:
             continue
         seen.add(label)
-        try:
-            signature = str(inspect.signature(obj))
-        except (TypeError, ValueError):
-            signature = "(signature unavailable)"
+        if static_info is not None:
+            signature, doc = static_info
+        else:
+            try:
+                signature = str(inspect.signature(obj))
+            except (TypeError, ValueError):
+                signature = "(signature unavailable)"
+            doc = _compact_doc(obj)
         call_text = ast.get_source_segment(source, ast_node) or label
         call_text = " ".join(call_text.split())
-        doc = _compact_doc(obj)
         fact = (
             f"- line {ast_node.lineno}: {call_text} -> verified {label}{signature}; {doc or 'no local documentation'}"
         )

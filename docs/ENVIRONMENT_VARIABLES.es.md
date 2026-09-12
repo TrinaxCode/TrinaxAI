@@ -24,6 +24,7 @@ Si un override provoca un fallo, usa la [guía de solución de problemas y recup
 | Variable | Predeterminado | Propósito |
 |---|---|---|
 | `TRINAXAI_HOME` | autodetectado | Raíz de instalación usada por la CLI, el gateway frontend y los scripts de ciclo de vida. |
+| `TRINAXAI_NPM_CACHE` | caché del usuario de la plataforma | **Instalador/actualizador:** caché de npm usado para las dependencias PWA. Defínelo si necesitas una ubicación personalizada propiedad del usuario; los scripts usan un caché temporal limpio si no pueden usarlo. |
 | `TRINAXAI_PYTHON` | Python actual | Ejecutable de Python usado por servicios y scripts de mantenimiento. |
 | `TRINAXAI_PROFILE` | autodetectado | Perfil: `8gb`, `16gb`, `32gb` o `64gb`. La detección CPU/RAM/GPU se guarda en `storage/hardware_profile.json`. |
 | `TRINAXAI_PERFORMANCE_MODE` | `fast` | Ajuste de ejecución: `fast`, `balanced` o `quality`. |

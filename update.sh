@@ -65,6 +65,11 @@ if [ "$LANGUAGE" = "es" ]; then
       'Run public readiness audit after updating?') echo '¿Ejecutar la auditoría pública de preparación después de actualizar?' ;;
       'Python environment refreshed') echo 'Entorno Python actualizado' ;;
       'PWA dependencies installed and production build created') echo 'Dependencias PWA instaladas y compilación de producción creada' ;;
+      'Using dedicated npm cache:'*) echo "Usando caché de npm dedicado:${1#Using dedicated npm cache:}" ;;
+      'Configured npm cache is a symbolic link; using a temporary cache.') echo 'El caché de npm configurado es un enlace simbólico; se usará un caché temporal.' ;;
+      'The configured npm cache could not be used; retrying with a clean temporary cache.') echo 'No se pudo usar el caché de npm configurado; se reintentará con un caché temporal limpio.' ;;
+      'Could not create a writable npm cache; retrying with a clean temporary cache.') echo 'No se pudo crear un caché de npm escribible; se reintentará con un caché temporal limpio.' ;;
+      'Could not create a temporary npm cache.') echo 'No se pudo crear un caché temporal de npm.' ;;
       'Update complete. Restart later with ./startup_ai.sh or trinaxai restart.') echo 'Actualización terminada. Reinicia después con ./startup_ai.sh o trinaxai restart.' ;;
       'Settings, indexes, models, and personal data were preserved.') echo 'Se conservaron la configuración, los índices, los modelos y los datos personales.' ;;
       *) echo "$1" ;;
@@ -385,6 +390,46 @@ elif command -v npm >/dev/null 2>&1; then
   NPM_CMD=(npm)
 fi
 
+npm_cache_dir() {
+  if [ -n "${TRINAXAI_NPM_CACHE:-}" ]; then
+    printf '%s\n' "$TRINAXAI_NPM_CACHE"
+  elif [ "$(uname -s 2>/dev/null || echo unknown)" = "Darwin" ]; then
+    printf '%s\n' "${XDG_CACHE_HOME:-$HOME/Library/Caches}/TrinaxAI/npm"
+  else
+    printf '%s\n' "${XDG_CACHE_HOME:-$HOME/.cache}/TrinaxAI/npm"
+  fi
+}
+
+run_npm_ci() {
+  local cache_dir="${TRINAXAI_NPM_CACHE:-}" temp_cache="" status=0
+  cache_dir="${cache_dir:-$(npm_cache_dir)}"
+
+  if [ -L "$cache_dir" ]; then
+    print_warn "Configured npm cache is a symbolic link; using a temporary cache."
+  elif mkdir -p -- "$cache_dir" 2>/dev/null; then
+    print_info "Using dedicated npm cache: $cache_dir"
+    if "${NPM_CMD[@]}" --cache "$cache_dir" ci; then
+      return 0
+    fi
+    print_warn "The configured npm cache could not be used; retrying with a clean temporary cache."
+  else
+    print_warn "Could not create a writable npm cache; retrying with a clean temporary cache."
+  fi
+
+  temp_cache="$(mktemp -d "${TMPDIR:-/tmp}/trinaxai-npm-cache.XXXXXX")" || {
+    print_err "Could not create a temporary npm cache."
+    return 1
+  }
+  if "${NPM_CMD[@]}" --cache "$temp_cache" ci; then
+    rm -rf -- "$temp_cache"
+    return 0
+  else
+    status=$?
+  fi
+  rm -rf -- "$temp_cache"
+  return "$status"
+}
+
 env_value() {
   local key="$1"
   [ -f ".env" ] || return 0
@@ -667,7 +712,7 @@ if [ ! -d "chat-pwa" ] || [ ! -f "chat-pwa/package.json" ] || [ ! -f "chat-pwa/p
   exit 1
 elif [ "${#NPM_CMD[@]}" -gt 0 ]; then
   print_step "Web App"
-  if ! (cd chat-pwa && "${NPM_CMD[@]}" ci && "${NPM_CMD[@]}" run build); then
+  if ! (cd chat-pwa && run_npm_ci && "${NPM_CMD[@]}" run build); then
     if is_windows; then
       cat >&2 <<'EOF'
 [!] PWA build failed on Windows.

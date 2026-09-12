@@ -14,6 +14,10 @@ def _completed(returncode: int = 0, stdout: str = "", stderr: str = ""):
     return SimpleNamespace(returncode=returncode, stdout=stdout, stderr=stderr, args=[])
 
 
+def _stop_sleep(_seconds):
+    raise StopIteration
+
+
 def test_systemctl_uses_passwordless_fallback_and_check(monkeypatch) -> None:
     calls = []
     responses = iter([_completed(1, stderr="denied"), _completed(0)])
@@ -239,7 +243,7 @@ def test_supervisor_restarts_wanted_services_once(monkeypatch, tmp_path: Path) -
         SimpleNamespace(status=lambda name: statuses.append(name) or sm.ProcessState(name, False)),
     )
     monkeypatch.setattr(sm, "_start_named", lambda _base, name: sm.ProcessState(name, True, detail="restarted"))
-    monkeypatch.setattr(sm.time, "sleep", lambda _seconds: (_ for _ in ()).throw(StopIteration()))
+    monkeypatch.setattr(sm.time, "sleep", _stop_sleep)
 
     with pytest.raises(StopIteration):
         sm.watch(str(tmp_path), interval=5)
@@ -609,7 +613,7 @@ def test_public_lifecycle_remaining_branches_and_text_status(monkeypatch, tmp_pa
     monkeypatch.setattr(sm, "_read_ai_enabled", lambda _base: True)
     monkeypatch.setattr(sm, "_reap_zombie_children", lambda: None)
     monkeypatch.setattr(sm, "_start_named", lambda _base, name: sm.ProcessState(name, True, detail="started"))
-    monkeypatch.setattr(sm.time, "sleep", lambda _seconds: (_ for _ in ()).throw(StopIteration()))
+    monkeypatch.setattr(sm.time, "sleep", _stop_sleep)
     with pytest.raises(StopIteration):
         sm.watch(str(tmp_path), interval=5)
 

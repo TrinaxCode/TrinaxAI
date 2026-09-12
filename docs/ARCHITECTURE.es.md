@@ -369,7 +369,7 @@ Esta sección ayuda a los contribuidores a encontrar los archivos correctos para
 
 ```bash
 cd chat-pwa
-npx vitest run              # Pruebas unitarias
+node scripts/run-vitest.mjs run  # Pruebas unitarias
 npx tsc --noEmit            # Verificación de tipos
 npm run build               # Verificación de build de producción
 ```

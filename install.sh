@@ -162,6 +162,11 @@ if [ "$LANGUAGE" = "es" ]; then
       'CLI entry point was not found at '*) echo "No se encontró el punto de entrada de la CLI en ${1#CLI entry point was not found at }" ;;
       'PWA build failed - you can retry with:'*) echo "Falló la compilación de la PWA; puedes reintentarlo con:${1#PWA build failed - you can retry with:}" ;;
       'PWA dependencies installed') echo 'Dependencias de la PWA instaladas' ;;
+      'Using dedicated npm cache:'*) echo "Usando caché de npm dedicado:${1#Using dedicated npm cache:}" ;;
+      'Configured npm cache is a symbolic link; using a temporary cache.') echo 'El caché de npm configurado es un enlace simbólico; se usará un caché temporal.' ;;
+      'The configured npm cache could not be used; retrying with a clean temporary cache.') echo 'No se pudo usar el caché de npm configurado; se reintentará con un caché temporal limpio.' ;;
+      'Could not create a writable npm cache; retrying with a clean temporary cache.') echo 'No se pudo crear un caché de npm escribible; se reintentará con un caché temporal limpio.' ;;
+      'Could not create a temporary npm cache.') echo 'No se pudo crear un caché temporal de npm.' ;;
       Node.js\ not\ found.\ Install\ from\ *) echo "No se encontró Node.js. Instálalo desde ${1#Node.js not found. Install from }" ;;
       'The PWA needs Node.js 22+ to build and serve') echo 'La PWA necesita Node.js 22+ para compilarse y servirse' ;;
       'chat-pwa/ directory not found') echo 'No se encontró el directorio chat-pwa/' ;;
@@ -266,7 +271,7 @@ What it does:
 Additional variables: TRINAXAI_PROFILE, TRINAXAI_INTERACTIVE, TRINAXAI_NONINTERACTIVE,
 TRINAXAI_INSTALL_MODELS, TRINAXAI_INSTALL_VISION, TRINAXAI_ENABLE_AUTOSTART,
 TRINAXAI_ENABLE_AUTO_UPDATE, TRINAXAI_START_NOW, TRINAXAI_ALLOW_LAN_SYSTEM (deprecated and ignored),
-TRINAXAI_ADMIN_TOKEN, TRINAXAI_HOME and TRINAXAI_LANG.
+TRINAXAI_ADMIN_TOKEN, TRINAXAI_HOME, TRINAXAI_NPM_CACHE and TRINAXAI_LANG.
 EOF
   fi
   exit "${1:-0}"
@@ -725,6 +730,46 @@ pause_on_macos_failure() {
   exit "$status"
 }
 trap pause_on_macos_failure EXIT
+
+npm_cache_dir() {
+  if [ -n "${TRINAXAI_NPM_CACHE:-}" ]; then
+    printf '%s\n' "$TRINAXAI_NPM_CACHE"
+  elif [ "$OS" = "macos" ]; then
+    printf '%s\n' "${XDG_CACHE_HOME:-$HOME/Library/Caches}/TrinaxAI/npm"
+  else
+    printf '%s\n' "${XDG_CACHE_HOME:-$HOME/.cache}/TrinaxAI/npm"
+  fi
+}
+
+run_npm_ci() {
+  local cache_dir="${TRINAXAI_NPM_CACHE:-}" temp_cache="" status=0
+  cache_dir="${cache_dir:-$(npm_cache_dir)}"
+
+  if [ -L "$cache_dir" ]; then
+    print_warn "Configured npm cache is a symbolic link; using a temporary cache."
+  elif mkdir -p -- "$cache_dir" 2>/dev/null; then
+    print_info "Using dedicated npm cache: $cache_dir"
+    if npm --cache "$cache_dir" ci; then
+      return 0
+    fi
+    print_warn "The configured npm cache could not be used; retrying with a clean temporary cache."
+  else
+    print_warn "Could not create a writable npm cache; retrying with a clean temporary cache."
+  fi
+
+  temp_cache="$(mktemp -d "${TMPDIR:-/tmp}/trinaxai-npm-cache.XXXXXX")" || {
+    print_err "Could not create a temporary npm cache."
+    return 1
+  }
+  if npm --cache "$temp_cache" ci; then
+    rm -rf -- "$temp_cache"
+    return 0
+  else
+    status=$?
+  fi
+  rm -rf -- "$temp_cache"
+  return "$status"
+}
 
 validate_install_dir() {
   case "$INSTALL_DIR" in
@@ -1281,7 +1326,7 @@ print_header "4/6 PWA Frontend"
 if [ -d "chat-pwa" ] && [ -f "chat-pwa/package.json" ] && [ -f "chat-pwa/package-lock.json" ]; then
   cd chat-pwa
   if command -v node &>/dev/null && command -v npm &>/dev/null; then
-    if ! npm ci; then
+    if ! run_npm_ci; then
       print_err "PWA dependency installation failed."
       exit 1
     fi

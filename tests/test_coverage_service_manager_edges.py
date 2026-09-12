@@ -14,6 +14,10 @@ def _completed(returncode=0, *, stdout="", stderr=""):
     return SimpleNamespace(returncode=returncode, stdout=stdout, stderr=stderr, args=[])
 
 
+def _stop_sleep(_seconds):
+    raise StopIteration
+
+
 def test_service_manager_low_level_platform_and_wait_edges(monkeypatch, tmp_path: Path):
     monkeypatch.setattr(sm.sys, "platform", "linux")
     monkeypatch.setattr(sm.subprocess, "run", lambda *_args, **_kwargs: _completed(1))
@@ -256,7 +260,7 @@ def test_service_manager_autostart_failure_status_watch_and_cli_guard(monkeypatc
 
     monkeypatch.setattr(sm, "_system_state", lambda _base: "running")
     monkeypatch.setattr(sm, "_read_ai_enabled", lambda _base: False)
-    monkeypatch.setattr(sm.time, "sleep", lambda _seconds: (_ for _ in ()).throw(StopIteration()))
+    monkeypatch.setattr(sm.time, "sleep", _stop_sleep)
     with pytest.raises(StopIteration):
         sm.watch(base, interval=1)
 
