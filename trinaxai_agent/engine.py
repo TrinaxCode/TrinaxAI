@@ -382,13 +382,14 @@ class AgentEngine:
             return clipped
         # Always keep the first user message (the task) as an anchor.
         first_user = next((i for i, m in enumerate(clipped) if m.get("role") == "user"), None)
-        head = [clipped[first_user]] if first_user is not None else []
+        first_user_message = clipped[first_user] if first_user is not None else None
+        head = [first_user_message] if first_user_message is not None else []
         head_chars = sum(_message_chars(m) for m in head)
         # Fill from the end (most recent) until we hit the remaining budget.
         kept_tail: list[dict[str, Any]] = []
         used = head_chars
         for m in reversed(clipped):
-            if head and m is clipped[first_user]:
+            if first_user_message is not None and m is first_user_message:
                 continue
             c = _message_chars(m)
             if used + c > budget and kept_tail:

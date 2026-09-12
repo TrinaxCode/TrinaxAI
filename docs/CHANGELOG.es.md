@@ -1,11 +1,10 @@
 <h1 align="center">
-  <a href="https://www.trinaxai.app/"><img src="../chat-pwa/public/logo.webp" alt="TrinaxAI" width="64" valign="middle"></a>
-  <a href="https://www.trinaxai.app/">TrinaxAI</a> · 🧭 Registro de cambios
+  <a href="https://www.trinaxai.app/"><img src="../chat-pwa/public/logo.webp" alt="TrinaxAI" width="144" valign="middle"></a> · 🧭 Registro de cambios
 </h1>
 
 <p align="center">
   <a href="https://github.com/TrinaxCode/TrinaxAI"><img src="https://img.shields.io/github/stars/TrinaxCode/TrinaxAI?style=flat&amp;label=%E2%98%85&amp;color=006bbd" alt="GitHub stars"></a>
-  <a href="https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.2.1"><img src="https://img.shields.io/badge/version-1.2.1-006bbd" alt="Stable release: 1.2.1"></a>
+  <a href="https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.2.2"><img src="https://img.shields.io/badge/version-1.2.2-006bbd" alt="Stable release: 1.2.2"></a>
   <a href="https://github.com/TrinaxCode/TrinaxAI/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/TrinaxCode/TrinaxAI/ci.yml?branch=main&amp;label=CI" alt="CI status"></a>
   <a href="https://github.com/TrinaxCode/TrinaxAI/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0--or--later-006bbd" alt="License: AGPL-3.0-or-later"></a>
   <img src="https://img.shields.io/badge/macOS%20%7C%20Windows%20%7C%20Linux-4493F8?style=flat-square" alt="Supported platforms: macOS, Windows, and Linux">
@@ -18,6 +17,8 @@ Todos los cambios importantes de TrinaxAI se documentan aquí. El proyecto sigue
 el formato de [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Sin publicar]
+
+## [1.2.2] — 2026-09-11
 
 ### Cambiado
 
@@ -37,6 +38,16 @@ el formato de [Keep a Changelog](https://keepachangelog.com/).
 - Se alinearon README, API, CLI, configuración, PWA, soporte y Docs integrada con
   los perfiles actuales, la confianza HTTPS, los jobs recuperables y el comando
   MCP reservado.
+
+### Corregido
+
+- Se hizo explícita la instalación de una línea para Linux, macOS y Windows,
+  manteniendo el paquete del release fijado y verificado con SHA-256.
+- Se corrigió el parseo de PowerShell 5.1 publicando los instaladores con BOM
+  UTF-8 y los fallos de dependencias nativas ahora detienen claramente la instalación.
+- Los errores del frontend y del ciclo de vida en macOS permanecen visibles en
+  lugar de cerrar la terminal sin contexto accionable.
+- Los ejemplos de checksum de PowerShell ahora interpretan `SHA256SUMS` línea por línea.
 
 ## [1.2.1] — 2026-09-02
 
@@ -234,6 +245,7 @@ el formato de [Keep a Changelog](https://keepachangelog.com/).
 - CI revisa dependencias Python/frontend, hallazgos estáticos de severidad alta,
   secretos, paquetes, flujos del navegador y preparación para release pública.
 
+[1.2.2]: https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.2.2
 [1.2.1]: https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.2.1
 [1.2.0]: https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.2.0
 [1.1.0]: https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.1.0

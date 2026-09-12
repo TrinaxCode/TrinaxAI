@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import WebSearchSettings from './WebSearchSettings';
@@ -98,10 +98,10 @@ describe('WebSearchSettings', () => {
 
   it('surfaces reset failures', async () => {
     reset.mockRejectedValue(new Error('Reset failed'));
-    vi.spyOn(window, 'confirm').mockReturnValueOnce(true);
     render(<WebSearchSettings canManageSystem />);
     await screen.findByText('Web search');
     await userEvent.click(screen.getByRole('button', { name: 'Reset' }));
+    await userEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Reset' }));
     expect(await screen.findByText('Reset failed')).toBeInTheDocument();
   });
 });

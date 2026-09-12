@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { MdCheckCircleOutline, MdClose, MdErrorOutline, MdInfoOutline, MdWarningAmber } from 'react-icons/md';
 import { useI18n } from '../i18n/I18nContext';
 import { audioManager, type SoundEvent } from '../services/audioManager';
+import ErrorRepairModal from './ErrorRepairModal';
 
 export interface ToastAction {
   label: string;
@@ -49,6 +50,7 @@ const TOAST_SOUNDS: Record<Toast['type'], SoundEvent> = {
 export function ToastProvider({ children }: { children: ReactNode }) {
   const { t } = useI18n();
   const [toasts, setToasts] = useState<Toast[]>([]);
+  const [repairId, setRepairId] = useState<number | null>(null);
   const nextIdRef = useRef(0);
   const timersRef = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map());
   const actionsRef = useRef<Map<number, ToastAction>>(new Map());
@@ -87,19 +89,40 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     timersRef.current.set(id, handle);
   }, [clearTimer]);
 
-  const runAction = useCallback(async (id: number) => {
+  const runAction = useCallback(async (id: number): Promise<boolean> => {
     const action = actionsRef.current.get(id);
-    if (!action || pendingActionsRef.current.has(id)) return;
+    if (!action || pendingActionsRef.current.has(id)) return false;
     pendingActionsRef.current.add(id);
     setToasts((prev) => prev.map((item) => item.id === id ? { ...item, actionPending: true } : item));
     try {
       await action.onClick();
       requestDismiss(id);
+      return true;
     } catch {
       pendingActionsRef.current.delete(id);
       setToasts((prev) => prev.map((item) => item.id === id ? { ...item, actionPending: false } : item));
+      return false;
     }
   }, [requestDismiss]);
+
+  const repairNotice = repairId === null ? undefined : toasts.find((notice) => notice.id === repairId);
+  const openRepair = useCallback((id: number) => {
+    clearTimer(id);
+    setRepairId(id);
+  }, [clearTimer]);
+  const confirmRepair = useCallback(async () => {
+    if (!repairNotice) return;
+    if (!repairNotice.action) {
+      setRepairId(null);
+      requestDismiss(repairNotice.id);
+      return;
+    }
+    if (await runAction(repairNotice.id)) setRepairId(null);
+  }, [repairNotice, requestDismiss, runAction]);
+  const cancelRepair = useCallback(() => {
+    if (repairNotice) requestDismiss(repairNotice.id);
+    setRepairId(null);
+  }, [repairNotice, requestDismiss]);
 
   const toast = useCallback((message: string, type: Toast['type'] = 'info', options?: ToastOptions) => {
     const id = ++nextIdRef.current;
@@ -160,6 +183,15 @@ export function ToastProvider({ children }: { children: ReactNode }) {
                     {notice.actionPending ? (notice.action.pendingLabel || t('startingUp')) : notice.action.label}
                   </button>
                 )}
+                {notice.type === 'error' && (
+                  <button
+                    type="button"
+                    onClick={() => openRepair(notice.id)}
+                    className="mt-2 ml-1 inline-flex min-h-8 items-center justify-center rounded-lg border border-current/30 px-2.5 py-1 text-[11px] font-semibold transition-colors hover:bg-white/15"
+                  >
+                    {t('fixError')}
+                  </button>
+                )}
               </div>
               <button
                 type="button"
@@ -173,6 +205,19 @@ export function ToastProvider({ children }: { children: ReactNode }) {
           ))}
         </AnimatePresence>
       </div>
+      <ErrorRepairModal
+        open={Boolean(repairNotice)}
+        dark={document.documentElement.classList.contains('dark')}
+        title={t('errorRepairTitle')}
+        message={t('errorRepairMessage')}
+        details={repairNotice ? `${repairNotice.message}\n\n${t('errorRepairHint')}` : ''}
+        confirmLabel={repairNotice?.action?.label || t('close')}
+        cancelLabel={t('cancel')}
+        confirmDisabled={repairNotice?.actionPending}
+        showCancel={Boolean(repairNotice?.action)}
+        onConfirm={() => void confirmRepair()}
+        onCancel={cancelRepair}
+      />
     </ToastContext.Provider>
   );
 }

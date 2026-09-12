@@ -23,6 +23,13 @@ function Invoke-PowerShellDryRun([string]$Script, [string[]]$Arguments = @()) {
 $PowerShellEngine = Get-Command pwsh -ErrorAction SilentlyContinue
 if (-not $PowerShellEngine) { $PowerShellEngine = Get-Command powershell.exe -ErrorAction SilentlyContinue }
 
+foreach ($Script in @("install.ps1", "update.ps1", "uninstall.ps1")) {
+  $Bytes = [IO.File]::ReadAllBytes((Join-Path $Root $Script))
+  if ($Bytes.Length -lt 3 -or $Bytes[0] -ne 0xEF -or $Bytes[1] -ne 0xBB -or $Bytes[2] -ne 0xBF) {
+    throw "$Script must be UTF-8 with BOM for Windows PowerShell 5.1"
+  }
+}
+
 $Install = Get-Content -Raw (Join-Path $Root "install.ps1")
 $Update = Get-Content -Raw (Join-Path $Root "update.ps1")
 $Uninstall = Get-Content -Raw (Join-Path $Root "uninstall.ps1")
@@ -38,6 +45,8 @@ Assert-Contains $Install "-TimeoutSec 120" "Remote download timeout is missing"
 Assert-NotMatches $Install '\$EnvLines\s*\|\s*Set-Content' "Installer must merge existing configuration"
 Assert-Contains $Install 'Install-RemoteRepository -Target $Repo' "Missing checked remote repository install"
 Assert-Contains $Install "Invoke-NativeChecked" "Installer hides native command failures"
+Assert-Contains $Install 'Invoke-NativeChecked $VenvPython' "PowerShell installer does not check pip failures"
+Assert-NotMatches $Install 'npm run build\s*>/dev/null' "PowerShell installer does not hide frontend output"
 Assert-Contains $Install 'releases/download/v$ReleaseVersion' "Installer source archive is not version pinned"
 Assert-NotMatches $Install 'archive/refs/heads/main' "Installer must not download an unpinned main archive"
 Assert-Contains $Install "Get-FileHash -Algorithm SHA256" "Installer source checksum verification is missing"
@@ -105,7 +114,7 @@ if ($PowerShellEngine) {
     Write-Host "[OK] PowerShell dry-run passed: $Script"
   }
 
-  $SpacePath = Join-Path $env:TEMP ("trinaxai installer test " + [guid]::NewGuid().ToString("N"))
+  $SpacePath = Join-Path ([IO.Path]::GetTempPath()) ("trinaxai installer test " + [guid]::NewGuid().ToString("N"))
   $InstallOutput = Invoke-PowerShellDryRun "install.ps1" @("-DryRun", "-NonInteractive", "-InstallDir", $SpacePath)
   Assert-Contains $InstallOutput $SpacePath "Install dry-run lost a path containing spaces"
   if (Test-Path -LiteralPath $SpacePath) { throw "Install dry-run changed the path containing spaces" }

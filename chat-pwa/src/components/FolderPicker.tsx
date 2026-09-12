@@ -5,6 +5,7 @@ import { useTheme } from '../theme/ThemeContext';
 import { useI18n } from '../i18n/I18nContext';
 import { browseDirectories, userFacingError, type DirectoryListing } from '../lib/api';
 import { useDialogAccessibility } from '../hooks/useDialogAccessibility';
+import ErrorRepairModal from './ErrorRepairModal';
 
 interface FolderPickerProps {
   initialPath?: string;
@@ -23,6 +24,7 @@ export default function FolderPicker({ initialPath, onSelect, onClose }: FolderP
   const [listing, setListing] = useState<DirectoryListing | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [repairOpen, setRepairOpen] = useState(false);
   const [closing, setClosing] = useState(false);
   const closeTimerRef = useRef<number | null>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
@@ -111,7 +113,12 @@ export default function FolderPicker({ initialPath, onSelect, onClose }: FolderP
           {loading ? (
             <div className={`py-8 text-center text-sm ${subtle}`}>{t('loading')}</div>
           ) : error ? (
-            <div className="px-3 py-8 text-center text-sm text-red-400">{error}</div>
+            <div role="alert" className="px-3 py-8 text-center text-sm text-red-400">
+              <p>{error}</p>
+              <button type="button" onClick={() => setRepairOpen(true)} className="mt-2 text-[#006bbd] underline underline-offset-2">
+                {t('fixError')}
+              </button>
+            </div>
           ) : listing && listing.directories.length === 0 ? (
             <div className={`py-8 text-center text-sm ${subtle}`}>{t('agentNoSubfolders')}</div>
           ) : (
@@ -146,6 +153,20 @@ export default function FolderPicker({ initialPath, onSelect, onClose }: FolderP
           </button>
         </div>
       </div>
+      <ErrorRepairModal
+        open={repairOpen}
+        dark={isDark}
+        title={t('errorRepairTitle')}
+        message={t('errorRepairMessage')}
+        details={`${error ?? ''}\n\n${t('errorRepairHint')}`}
+        confirmLabel={t('retry')}
+        cancelLabel={t('cancel')}
+        onConfirm={() => {
+          setRepairOpen(false);
+          load(listing?.path ?? initialPath);
+        }}
+        onCancel={() => setRepairOpen(false)}
+      />
     </div>,
     document.body,
   );

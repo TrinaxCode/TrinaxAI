@@ -267,40 +267,40 @@ def _python_stdlib_facts(source: str) -> list[str]:
             and isinstance(value.func.value, ast.Name)
         ):
             continue
-        module_name = modules.get(value.func.value.id)
-        module = load(module_name) if module_name else None
+        instance_module_name = modules.get(value.func.value.id)
+        module = load(instance_module_name) if instance_module_name else None
         class_name = value.func.attr
-        if module is None or not inspect.isclass(getattr(module, class_name, None)):
+        if instance_module_name is None or module is None or not inspect.isclass(getattr(module, class_name, None)):
             continue
         for target in targets:
             if isinstance(target, ast.Name):
-                instances[target.id] = (module_name, class_name)
+                instances[target.id] = (instance_module_name, class_name)
 
     facts: list[str] = []
     seen: set[str] = set()
     constructed_modules = {module_name for module_name, _ in instances.values()}
-    for node in ast.walk(tree):
-        if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
+    for ast_node in ast.walk(tree):
+        if not isinstance(ast_node, ast.Call) or not isinstance(ast_node.func, ast.Attribute):
             continue
-        owner = node.func.value
-        module_name: str | None = None
+        owner = ast_node.func.value
+        call_module_name: str | None = None
         label: str | None = None
         obj: Any = None
         if isinstance(owner, ast.Name) and owner.id in instances:
-            module_name, class_name = instances[owner.id]
-            module = load(module_name)
+            call_module_name, class_name = instances[owner.id]
+            module = load(call_module_name)
             cls = getattr(module, class_name, None) if module else None
-            obj = getattr(cls, node.func.attr, None) if cls else None
-            label = f"{module_name}.{class_name}.{node.func.attr}"
+            obj = getattr(cls, ast_node.func.attr, None) if cls else None
+            label = f"{call_module_name}.{class_name}.{ast_node.func.attr}"
         elif isinstance(owner, ast.Name) and owner.id in modules:
-            module_name = modules[owner.id]
+            call_module_name = modules[owner.id]
             # Module-level evidence is most valuable when it belongs to the
             # same API as an inferred instance; skip noisy math/json helpers.
-            if module_name not in constructed_modules:
+            if call_module_name not in constructed_modules:
                 continue
-            module = load(module_name)
-            obj = getattr(module, node.func.attr, None) if module else None
-            label = f"{module_name}.{node.func.attr}"
+            module = load(call_module_name)
+            obj = getattr(module, ast_node.func.attr, None) if module else None
+            label = f"{call_module_name}.{ast_node.func.attr}"
         if obj is None or label is None or label in seen:
             continue
         seen.add(label)
@@ -308,10 +308,12 @@ def _python_stdlib_facts(source: str) -> list[str]:
             signature = str(inspect.signature(obj))
         except (TypeError, ValueError):
             signature = "(signature unavailable)"
-        call_text = ast.get_source_segment(source, node) or label
+        call_text = ast.get_source_segment(source, ast_node) or label
         call_text = " ".join(call_text.split())
         doc = _compact_doc(obj)
-        fact = f"- line {node.lineno}: {call_text} -> verified {label}{signature}; {doc or 'no local documentation'}"
+        fact = (
+            f"- line {ast_node.lineno}: {call_text} -> verified {label}{signature}; {doc or 'no local documentation'}"
+        )
         facts.append(fact)
         if len(facts) >= 12:
             break

@@ -11,9 +11,10 @@ interface Props {
   text: string;
   isDark: boolean;
   sources: Source[];
+  resolveLink?: (href: string | undefined) => string | undefined;
 }
 
-export default function ChatMarkdownMath({ text, isDark, sources }: Props) {
+export default function ChatMarkdownMath({ text, isDark, sources, resolveLink }: Props) {
   return (
     <ReactMarkdown
       remarkPlugins={[remarkGfm, remarkMath, citationLinksPlugin(sources)]}
@@ -21,7 +22,7 @@ export default function ChatMarkdownMath({ text, isDark, sources }: Props) {
       components={{
         a: ({ children, href }) => (
           <a
-            href={href}
+            href={resolveLink?.(href) ?? href}
             target="_blank"
             rel="noreferrer"
             className={`underline decoration-1 underline-offset-2 ${isDark ? 'text-blue-400 hover:text-blue-300' : 'text-blue-600 hover:text-blue-700'}`}

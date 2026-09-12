@@ -1,8 +1,10 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useI18n } from '../i18n/I18nContext';
 import { useTheme } from '../theme/ThemeContext';
 import { APP_CONFIG } from '../lib/config';
 import BackButton from './BackButton';
+import ChatMarkdown from './chat/ChatMarkdown';
+import './chat/chat.css';
 
 type Section =
   | 'intro'
@@ -18,7 +20,8 @@ type Section =
   | 'api'
   | 'pwa'
   | 'troubleshoot'
-  | 'contributing';
+  | 'contributing'
+  | 'community';
 
 interface DocLink {
   file: string;
@@ -142,17 +145,71 @@ const sections: DocSection[] = [
       { file: 'DEVELOPER_GUIDE.md', labelEs: 'Guía de desarrollo', labelEn: 'Developer guide' },
     ],
   },
+  {
+    id: 'community', labelEs: 'Proyecto y comunidad', labelEn: 'Project & Community',
+    summaryEs: 'Soporte, cambios, licencia, marca y verificación de releases.',
+    summaryEn: 'Support, changes, licensing, branding, and release verification.',
+    links: [
+      { file: 'SUPPORT.md', labelEs: 'Soporte', labelEn: 'Support' },
+      { file: 'CHANGELOG.md', labelEs: 'Registro de cambios', labelEn: 'Changelog' },
+      { file: 'TESTING.md', labelEs: 'Guía de pruebas', labelEn: 'Testing guide' },
+      { file: 'RELEASE_SIGNING.md', labelEs: 'Firma de releases', labelEn: 'Release signing' },
+      { file: 'CODE_OF_CONDUCT.md', labelEs: 'Código de conducta', labelEn: 'Code of conduct' },
+      { file: 'TRADEMARK.md', labelEs: 'Marca', labelEn: 'Trademark' },
+    ],
+  },
 ];
 
+const rootDocFiles = new Set(['README.md', 'TESTING.md']);
+
+function localizedFile(file: string, isEs: boolean): string {
+  return isEs ? file.replace(/\.md$/, '.es.md') : file;
+}
+
+function docAssetUrl(file: string, isEs: boolean): string {
+  const localized = localizedFile(file, isEs);
+  const assetPath = rootDocFiles.has(file) || file.startsWith('chat-pwa/') || file.startsWith('docs/')
+    ? localized
+    : `docs/${localized}`;
+  return `/docs-content/${assetPath}`;
+}
+
+function documentBody(markdown: string | undefined): string {
+  return (markdown || '')
+    .replace(/^\s*<h1[\s\S]*?<\/h1>\s*/i, '')
+    .replace(/^\s*(?:<p[\s\S]*?<\/p>\s*){1,3}/i, '')
+    .trim();
+}
+
+function repositoryPath(file: string): string {
+  return rootDocFiles.has(file) || file.startsWith('chat-pwa/') || file.startsWith('docs/') ? file : `docs/${file}`;
+}
+
+function resolveDocumentLink(file: string, href: string | undefined): string | undefined {
+  if (!href || href.startsWith('#') || href.startsWith('/') || /^(?:[a-z][a-z\d+.-]*:|\/\/)/i.test(href)) {
+    return href;
+  }
+
+  try {
+    const target = new URL(href, `https://docs.invalid/${repositoryPath(file)}`);
+    const path = target.pathname.replace(/^\/+/, '');
+    return `${APP_CONFIG.repoUrl}/blob/main/${path}${target.search}${target.hash}`;
+  } catch {
+    return href;
+  }
+}
+
 const docUrl = (file: string) => {
-  const path = file === 'README.md' || file.startsWith('chat-pwa/') ? file : `docs/${file}`;
-  return `${APP_CONFIG.repoUrl}/blob/main/${path}`;
+  return `${APP_CONFIG.repoUrl}/blob/main/${repositoryPath(file)}`;
 };
 
 export default function Docs({ onBack }: { onBack: () => void }) {
   const { t, lang } = useI18n();
   const { isDark } = useTheme();
   const [active, setActive] = useState<Section>('intro');
+  const [documents, setDocuments] = useState<Record<string, string>>({});
+  const [documentsLoading, setDocumentsLoading] = useState(true);
+  const contentRef = useRef<HTMLElement>(null);
   const selected = sections.find((section) => section.id === active) ?? sections[0];
   const isEs = lang === 'es';
   const textMain = isDark ? 'text-white' : 'text-gray-900';
@@ -162,12 +219,40 @@ export default function Docs({ onBack }: { onBack: () => void }) {
   const activeLink = isDark ? 'bg-[#006bbd]/15 text-[#006bbd]' : 'bg-[#006bbd]/10 text-[#006bbd]';
   const inactiveLink = isDark ? 'text-white/50 hover:bg-white/[0.04] hover:text-white/80' : 'text-gray-500 hover:bg-gray-100 hover:text-gray-800';
 
+  useEffect(() => {
+    contentRef.current?.scrollTo({ top: 0, left: 0 });
+  }, [active, isEs]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setDocuments({});
+    setDocumentsLoading(true);
+
+    Promise.all(selected.links.map(async (link) => {
+      try {
+        const response = await fetch(docAssetUrl(link.file, isEs));
+        if (!response.ok) return null;
+        return [link.file, await response.text()] as const;
+      } catch {
+        return null;
+      }
+    })).then((entries) => {
+      if (!cancelled) setDocuments(Object.fromEntries(entries.filter((entry): entry is readonly [string, string] => entry !== null)));
+    }).finally(() => {
+      if (!cancelled) setDocumentsLoading(false);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [active, isEs]);
+
   return (
     <div className="docs-page flex h-full min-w-0 max-w-full flex-col overflow-hidden bg-transparent">
       <div className="page-header flex shrink-0 items-center gap-3 px-4 pb-3 pt-[env(safe-area-inset-top,0px)]">
         <BackButton onClick={onBack} label={t('docsBack')} isDark={isDark} className="-ml-2" />
         <span className={`text-sm font-medium ${isDark ? 'text-white/80' : 'text-gray-800'}`}>{t('docsTitle')}</span>
-        <img src="/logo-for-ai-transparent.webp" alt="TrinaxAI" className="ml-auto h-10 w-10 rounded-full object-contain" width={40} height={40} draggable={false} />
+        <img src="/logo-for-ai-transparent.webp" alt="TrinaxAI" translate="no" className="ml-auto h-14 w-14 rounded-full object-contain" width={56} height={56} draggable={false} />
       </div>
 
       <div className="flex min-h-0 min-w-0 max-w-full flex-1">
@@ -176,6 +261,7 @@ export default function Docs({ onBack }: { onBack: () => void }) {
             {sections.map((section) => (
               <button
                 key={section.id}
+                type="button"
                 onClick={() => setActive(section.id)}
                 aria-current={active === section.id ? 'page' : undefined}
                 className={`w-full rounded-lg px-3 py-2 text-left text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4aa7ed] ${active === section.id ? activeLink : inactiveLink}`}
@@ -187,6 +273,7 @@ export default function Docs({ onBack }: { onBack: () => void }) {
         </aside>
 
         <main
+          ref={contentRef}
           id="docs-content"
           tabIndex={-1}
           aria-label={isEs ? 'Contenido de documentación' : 'Documentation content'}
@@ -208,29 +295,45 @@ export default function Docs({ onBack }: { onBack: () => void }) {
           </div>
 
           <section className={`rounded-2xl border p-5 sm:p-6 ${card}`} aria-labelledby="docs-section-title">
-            <p className={`text-xs font-semibold uppercase tracking-[0.16em] text-[#006bbd]`}>{isEs ? 'Documentación canónica' : 'Canonical documentation'}</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#006bbd]">{isEs ? 'Guía integrada' : 'Integrated guide'}</p>
             <h1 id="docs-section-title" className={`mt-2 text-2xl font-bold ${textMain}`}>{isEs ? selected.labelEs : selected.labelEn}</h1>
             <p className={`mt-3 text-sm leading-relaxed ${textSub}`}>{isEs ? selected.summaryEs : selected.summaryEn}</p>
-            <div className="mt-6 space-y-3">
+            <div className="mt-6 space-y-6">
               {selected.links.map((link) => (
-                <a
-                  key={link.file}
-                  href={docUrl(link.file)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className={`flex items-center justify-between gap-4 rounded-xl border px-4 py-3 text-sm font-medium transition-colors hover:border-[#006bbd]/50 ${card} ${textMain}`}
-                >
-                  <span>{isEs ? link.labelEs : link.labelEn}</span>
-                  <span aria-hidden="true" className="text-[#006bbd]">↗</span>
-                </a>
+                <article key={link.file} className={`rounded-xl border p-4 sm:p-5 ${card}`}>
+                  <div className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b border-current/10 pb-3">
+                    <h2 className={`text-base font-semibold ${textMain}`}>{isEs ? link.labelEs : link.labelEn}</h2>
+                    <a
+                      href={docUrl(link.file)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-xs font-medium text-[#006bbd] underline decoration-1 underline-offset-2 hover:text-[#4aa7ed]"
+                    >
+                      {isEs ? 'Abrir referencia' : 'Open reference'} ↗
+                    </a>
+                  </div>
+                  {documents[link.file] !== undefined ? (
+                    <ChatMarkdown
+                      text={documentBody(documents[link.file])}
+                      isDark={isDark}
+                      resolveLink={(href) => resolveDocumentLink(link.file, href)}
+                    />
+                  ) : documentsLoading ? (
+                    <p role="status" aria-live="polite" className={`text-sm ${textSub}`}>{isEs ? 'Cargando documentación…' : 'Loading documentation…'}</p>
+                  ) : (
+                    <p role="status" aria-live="polite" className={`text-sm ${textSub}`}>
+                      {isEs ? 'Esta referencia no está disponible en este build.' : 'This reference is not available in this build.'}
+                    </p>
+                  )}
+                </article>
               ))}
             </div>
           </section>
 
           <p className={`mt-5 text-center text-xs leading-relaxed ${textMuted}`}>
             {isEs
-              ? 'Estas páginas se mantienen en el repositorio para evitar que la guía bilingüe y la interfaz se desfasen.'
-              : 'These pages live in the repository so the bilingual guide and the interface do not drift apart.'}
+              ? 'La guía se incluye en la PWA para consultarla sin salir de la aplicación; cada enlace abre la referencia canónica del repositorio.'
+              : 'The guide is bundled into the PWA for in-app reading; each link opens the canonical repository reference.'}
           </p>
         </main>
       </div>

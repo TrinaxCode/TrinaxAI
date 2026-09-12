@@ -24,16 +24,27 @@ def test_release_contract_matches_the_repository():
     assert public_readiness.check_release_contract() == []
 
 
-def test_install_surface_contract_rejects_unpinned_trinaxai_bootstrap(tmp_path, monkeypatch):
+def test_install_surface_contract_rejects_unpinned_trinaxai_archive(tmp_path, monkeypatch):
     monkeypatch.setattr(public_readiness, "ROOT", tmp_path)
     (tmp_path / "README.md").write_text(
-        "curl -fsSL https://raw.githubusercontent.com/TrinaxCode/TrinaxAI/main/install.sh | bash\n",
+        "curl -fsSL https://github.com/TrinaxCode/TrinaxAI/archive/refs/heads/main.tar.gz | bash\n",
         encoding="utf-8",
     )
 
     errors = public_readiness.check_install_surfaces()
 
     assert any("README.md" in error and "unpinned" in error for error in errors)
+
+
+def test_install_surface_contract_allows_the_short_bootstraps(tmp_path, monkeypatch):
+    monkeypatch.setattr(public_readiness, "ROOT", tmp_path)
+    (tmp_path / "README.md").write_text(
+        "curl -fsSL https://raw.githubusercontent.com/TrinaxCode/TrinaxAI/main/install.sh | bash\n"
+        "irm https://raw.githubusercontent.com/TrinaxCode/TrinaxAI/main/install.ps1 | iex\n",
+        encoding="utf-8",
+    )
+
+    assert public_readiness.check_install_surfaces() == []
 
 
 def test_release_workflow_security_contract_is_fail_closed_and_reproducible():

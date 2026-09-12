@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "trinaxai"
-version = "1.2.1"
+version = "1.2.2"
 description = "Command-line client for a local TrinaxAI installation."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -96,7 +96,16 @@ ignore = ["E501", "B008", "SIM105", "SIM112", "SIM115", "SIM117"]
 
 [tool.mypy]
 python_version = "3.10"
-files = ["app/security", "app/services"]
+files = [
+  "app/security",
+  "app/services",
+  "app/routes",
+  "app/generation",
+  "app/schemas",
+  "trinaxai_agent",
+  "trinaxai_index_storage.py",
+  "index.py",
+]
 follow_imports = "skip"
 ignore_missing_imports = true
 allow_untyped_defs = true

@@ -76,6 +76,21 @@ describe('api helpers', () => {
     expect(error.message).not.toContain('hidden server detail');
   });
 
+  it('preserves structured recovery from agent-shaped error events', () => {
+    const error = apiErrorFromPayload(500, {
+      type: 'error',
+      error: 'internal details are not shown',
+      category: 'model_loading_failed',
+      code: 'ERR_MODEL_LOADING_FAILED',
+      recovery: 'Use a smaller model.',
+      recoverable: true,
+    });
+
+    expect(error.recovery).toBe('Use a smaller model.');
+    expect(error.retryable).toBe(true);
+    expect(error.message).not.toContain('internal details');
+  });
+
   it('keeps technical API details out of user-facing error messages', () => {
     const log = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     const error = new ApiError('RuntimeError: password=secret at /home/service.py:42', 500);
@@ -709,6 +724,12 @@ def mystery(A):
   it('surfaces Ollama errors emitted after a stream has started', () => {
     expect(parseOllamaJsonLine('{"error":"runner crashed"}')).toEqual({ error: 'runner crashed' });
     expect(parseOllamaJsonLine('{"message":{"content":"hola"}}')).toEqual({ token: 'hola' });
+  });
+
+  it('keeps recovery metadata from structured RAG stream errors', () => {
+    const result = parseRagSseLine('data: {"trinaxai_error":{"category":"model_loading_failed","code":"ERR_MODEL_LOADING_FAILED","recovery":"Use a smaller model."}}');
+    expect(result.errorRecovery).toBe('Use a smaller model.');
+    expect(result.errorCode).toBe('ERR_MODEL_LOADING_FAILED');
   });
 
   it('recognizes Gemma SentencePiece markers in streamed model output', () => {

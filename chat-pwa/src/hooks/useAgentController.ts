@@ -14,6 +14,7 @@ import {
   resolveAgentModel,
   runAgent,
   apiErrorFromPayload,
+  formatUserFacingError,
   userFacingError,
   type AgentEvent,
   type ChatMessage,
@@ -377,11 +378,16 @@ export function useAgentController({
         if (!sawAgentTokenRef.current) queueAgentText(event.answer);
         break;
       case 'error':
+        {
         activityPhaseRef.current = 'error';
         setAgentActivity(t('agentRecoverableError'));
         patchAssistant((turn) => ({ ...turn, completionStatus: event.completion_status || 'error' }));
-        queueAgentText(`\n\n${t('errorPrefix')}: ${event.category ? apiErrorFromPayload(500, { error: { category: event.category, code: event.code } }).message : userFacingError(new Error(event.error), 'internal_server_error')}`);
+        const failure = event.category || event.code || event.recovery
+          ? apiErrorFromPayload(500, event)
+          : new Error(event.error);
+        queueAgentText(`\n\n${t('errorPrefix')}: ${formatUserFacingError(failure, 'internal_server_error')}`);
         break;
+        }
       default:
         break;
     }
@@ -467,7 +473,7 @@ export function useAgentController({
           if (description) requestText = `${requestText}\n\n[${t('agentImageContext')}]:\n${description}`;
         } catch (err) {
           if (!controller.signal.aborted) {
-            const msg = userFacingError(err, 'document_unreadable');
+            const msg = formatUserFacingError(err, 'document_unreadable');
             queueAgentText(`\n\n${t('errorPrefix')}: ${msg}`);
           }
         } finally {
@@ -496,7 +502,7 @@ export function useAgentController({
       await waitForAgentTypewriter();
     } catch (err) {
       if (!controller.signal.aborted) {
-        const msg = userFacingError(err, 'external_service_unavailable');
+        const msg = formatUserFacingError(err, 'external_service_unavailable');
         queueAgentText(`\n\n${t('errorPrefix')}: ${msg}`);
         await waitForAgentTypewriter();
       }

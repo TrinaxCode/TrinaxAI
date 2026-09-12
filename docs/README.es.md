@@ -1,11 +1,10 @@
 <h1 align="center">
-  <a href="https://www.trinaxai.app/"><img src="../chat-pwa/public/logo.webp" alt="TrinaxAI" width="64" valign="middle"></a>
-  <a href="https://www.trinaxai.app/">TrinaxAI</a> · 📚 Documentación
+  <a href="https://www.trinaxai.app/"><img src="../chat-pwa/public/logo.webp" alt="TrinaxAI" width="144" valign="middle"></a> · 📚 Documentación
 </h1>
 
 <p align="center">
   <a href="https://github.com/TrinaxCode/TrinaxAI"><img src="https://img.shields.io/github/stars/TrinaxCode/TrinaxAI?style=flat&amp;label=%E2%98%85&amp;color=006bbd" alt="GitHub stars"></a>
-  <a href="https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.2.1"><img src="https://img.shields.io/badge/version-1.2.1-006bbd" alt="Stable release: 1.2.1"></a>
+  <a href="https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.2.2"><img src="https://img.shields.io/badge/version-1.2.2-006bbd" alt="Stable release: 1.2.2"></a>
   <a href="https://github.com/TrinaxCode/TrinaxAI/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/TrinaxCode/TrinaxAI/ci.yml?branch=main&amp;label=CI" alt="CI status"></a>
   <a href="https://github.com/TrinaxCode/TrinaxAI/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0--or--later-006bbd" alt="License: AGPL-3.0-or-later"></a>
   <img src="https://img.shields.io/badge/macOS%20%7C%20Windows%20%7C%20Linux-4493F8?style=flat-square" alt="Supported platforms: macOS, Windows, and Linux">
@@ -14,11 +13,11 @@
 <p align="center"><sub><a href="README.md">English</a> · <strong>Español</strong></sub></p>
 <p align="center"><sub><a href="https://www.trinaxai.app/">Sitio web</a> · <a href="README.es.md">Documentación</a> · <a href="../README.es.md">Inicio</a> · <a href="CHANGELOG.es.md">Cambios</a></sub></p>
 
-Este directorio es el punto de entrada a la documentación técnica y operativa de **TrinaxAI 1.2.1**, la release actual Production/Stable bajo **AGPL-3.0-or-later**. La documentación describe la rama de release; cuando una opción o endpoint sea crítico, confirma también su valor en `.env.example`, `chat-pwa/package.json` o en la especificación OpenAPI expuesta por FastAPI.
+Este directorio es el punto de entrada a la documentación técnica y operativa de **TrinaxAI 1.2.2**, la release actual Production/Stable bajo **AGPL-3.0-or-later**. La documentación describe la rama de release; cuando una opción o endpoint sea crítico, confirma también su valor en `.env.example`, `chat-pwa/package.json` o en la especificación OpenAPI expuesta por FastAPI.
 
 Para la vista general del producto, las capturas y los benchmarks, consulta la web oficial: **[trinaxai.app](https://www.trinaxai.app/)**.
 
-> Estado del release: `v1.2.1` es la release actual Production/Stable. Sus paquetes fuente, instaladores, wheel, checksums y firmas separadas están publicados en GitHub. Los instaladores están fijados y nunca vuelven a `main`.
+> Estado del release: `v1.2.2` es la release actual Production/Stable. Sus paquetes fuente, instaladores, wheel, checksums y firmas separadas están publicados en GitHub. Los instaladores están fijados y nunca vuelven a `main`.
 
 ## Capacidades actuales
 
@@ -35,16 +34,44 @@ Para la vista general del producto, las capturas y los benchmarks, consulta la w
 
 ## Empieza aquí
 
-Para una instalación normal, ejecuta el comando de una línea de tu plataforma. No necesitas Git:
+Para la instalación más sencilla en Linux o macOS, ejecuta:
 
 ```bash
-set -e; version="1.2.1"; base="https://github.com/TrinaxCode/TrinaxAI/releases/download/v${version}"; installer="$(mktemp)"; trap 'rm -f "$installer"' EXIT; curl -fsSL "$base/TrinaxAI-${version}-installer.sh" -o "$installer"; expected="$(curl -fsSL "$base/SHA256SUMS" | awk -v asset="TrinaxAI-${version}-installer.sh" '$2 == asset || $2 == "*" asset { print $1; exit }')"; actual="$( (shasum -a 256 "$installer" 2>/dev/null || sha256sum "$installer") | awk '{print $1}' )"; test "$expected" = "$actual"; bash "$installer"
+curl -fsSL https://raw.githubusercontent.com/TrinaxCode/TrinaxAI/main/install.sh | bash
+```
+
+En Windows PowerShell:
+
+```powershell
+irm https://raw.githubusercontent.com/TrinaxCode/TrinaxAI/main/install.ps1 | iex
+```
+
+Son bootstraps de conveniencia. Después el instalador descarga el paquete
+versionado del release y lo verifica con SHA-256. Para revisar el instalador
+antes de ejecutarlo, usa el flujo fijado siguiente:
+
+```bash
+set -e; version="1.2.2"; base="https://github.com/TrinaxCode/TrinaxAI/releases/download/v${version}"; installer="$(mktemp)"; trap 'rm -f "$installer"' EXIT; curl -fsSL "$base/TrinaxAI-${version}-installer.sh" -o "$installer"; expected="$(curl -fsSL "$base/SHA256SUMS" | awk -v asset="TrinaxAI-${version}-installer.sh" '$2 == asset || $2 == "*" asset { print $1; exit }')"; actual="$( (shasum -a 256 "$installer" 2>/dev/null || sha256sum "$installer") | awk '{print $1}' )"; test "$expected" = "$actual"; bash "$installer"
 ```
 
 En Windows PowerShell usa el mismo flujo de revisar antes de ejecutar con un instalador fijado al release:
 
 ```powershell
-$ErrorActionPreference="Stop"; $version="1.2.1"; $base="https://github.com/TrinaxCode/TrinaxAI/releases/download/v$version"; $installer=Join-Path $env:TEMP "TrinaxAI-$version-installer.ps1"; Invoke-WebRequest -Uri "$base/TrinaxAI-$version-installer.ps1" -OutFile $installer; $line=Invoke-RestMethod -Uri "$base/SHA256SUMS" | Where-Object { $_ -match "\s\*?TrinaxAI-$version-installer\.ps1$" } | Select-Object -First 1; $expected=if ($line -match '^\s*([0-9a-fA-F]{64})\s+') { $Matches[1] } else { "" }; $actual=(Get-FileHash -Algorithm SHA256 -LiteralPath $installer).Hash; if ($expected -notmatch '^[0-9a-fA-F]{64}$' -or $actual -ine $expected) { throw "Installer SHA-256 verification failed." }; & $installer
+$ErrorActionPreference = "Stop"
+$version = "1.2.2"
+$base = "https://github.com/TrinaxCode/TrinaxAI/releases/download/v$version"
+$installer = Join-Path $env:TEMP "TrinaxAI-$version-installer.ps1"
+$manifest = Join-Path $env:TEMP "TrinaxAI-$version-SHA256SUMS"
+Invoke-WebRequest -Uri "$base/TrinaxAI-$version-installer.ps1" -OutFile $installer
+Invoke-WebRequest -Uri "$base/SHA256SUMS" -OutFile $manifest
+$line = Get-Content -LiteralPath $manifest | Where-Object {
+  $fields = $_ -split '\s+'
+  $fields.Count -ge 2 -and (($fields[1] -replace '^\*', '') -eq "TrinaxAI-$version-installer.ps1")
+} | Select-Object -First 1
+$expected = if ($line) { ($line -split '\s+')[0] } else { "" }
+$actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $installer).Hash
+if ($expected -notmatch '^[0-9a-fA-F]{64}$' -or $actual -ine $expected) { throw "Installer SHA-256 verification failed." }
+& $installer
 ```
 
 El instalador valida el paquete fuente firmado y su manifiesto SHA-256. Para

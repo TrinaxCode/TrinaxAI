@@ -1,11 +1,10 @@
 <h1 align="center">
-  <a href="https://www.trinaxai.app/"><img src="../chat-pwa/public/logo.webp" alt="TrinaxAI" width="64" valign="middle"></a>
-  <a href="https://www.trinaxai.app/">TrinaxAI</a> · 🍎 Instalación en macOS
+  <a href="https://www.trinaxai.app/"><img src="../chat-pwa/public/logo.webp" alt="TrinaxAI" width="144" valign="middle"></a> · 🍎 Instalación en macOS
 </h1>
 
 <p align="center">
   <a href="https://github.com/TrinaxCode/TrinaxAI"><img src="https://img.shields.io/github/stars/TrinaxCode/TrinaxAI?style=flat&amp;label=%E2%98%85&amp;color=006bbd" alt="GitHub stars"></a>
-  <a href="https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.2.1"><img src="https://img.shields.io/badge/version-1.2.1-006bbd" alt="Stable release: 1.2.1"></a>
+  <a href="https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.2.2"><img src="https://img.shields.io/badge/version-1.2.2-006bbd" alt="Stable release: 1.2.2"></a>
   <a href="https://github.com/TrinaxCode/TrinaxAI/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/TrinaxCode/TrinaxAI/ci.yml?branch=main&amp;label=CI" alt="CI status"></a>
   <a href="https://github.com/TrinaxCode/TrinaxAI/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0--or--later-006bbd" alt="License: AGPL-3.0-or-later"></a>
   <img src="https://img.shields.io/badge/macOS%20%7C%20Windows%20%7C%20Linux-4493F8?style=flat-square" alt="Supported platforms: macOS, Windows, and Linux">
@@ -47,12 +46,21 @@ Al terminar deberías tener:
 
 Apple Silicon usa Metal automáticamente a través de Ollama cuando el modelo lo permite.
 
-## Instalación recomendada fijada a un release
-
-> Estado del release: `v1.2.1` es Production/Stable. Sus paquetes fuente, instaladores, wheel, checksums y firmas están publicados en GitHub. El instalador nunca vuelve a `main`.
+## Instalación rápida
 
 ```bash
-set -e; version="1.2.1"; base="https://github.com/TrinaxCode/TrinaxAI/releases/download/v${version}"; installer="$(mktemp)"; trap 'rm -f "$installer"' EXIT; curl -fsSL "$base/TrinaxAI-${version}-installer.sh" -o "$installer"; expected="$(curl -fsSL "$base/SHA256SUMS" | awk -v asset="TrinaxAI-${version}-installer.sh" '$2 == asset || $2 == "*" asset { print $1; exit }')"; actual="$( (shasum -a 256 "$installer" 2>/dev/null || sha256sum "$installer") | awk '{print $1}' )"; test "$expected" = "$actual"; bash "$installer"
+curl -fsSL https://raw.githubusercontent.com/TrinaxCode/TrinaxAI/main/install.sh | bash
+```
+
+Este bootstrap corto es la ruta más sencilla. Descarga el instalador actual
+desde `main`; ese instalador descarga y verifica el paquete versionado del release.
+
+## Instalación verificada fijada a un release
+
+> Estado del release: `v1.2.2` es Production/Stable. Sus paquetes fuente, instaladores, wheel, checksums y firmas están publicados en GitHub. El instalador nunca vuelve a `main`.
+
+```bash
+set -e; version="1.2.2"; base="https://github.com/TrinaxCode/TrinaxAI/releases/download/v${version}"; installer="$(mktemp)"; trap 'rm -f "$installer"' EXIT; curl -fsSL "$base/TrinaxAI-${version}-installer.sh" -o "$installer"; expected="$(curl -fsSL "$base/SHA256SUMS" | awk -v asset="TrinaxAI-${version}-installer.sh" '$2 == asset || $2 == "*" asset { print $1; exit }')"; actual="$( (shasum -a 256 "$installer" 2>/dev/null || sha256sum "$installer") | awk '{print $1}' )"; test "$expected" = "$actual"; bash "$installer"
 ```
 
 El instalador descarga directamente el archivo fuente desde GitHub. No necesita Git, detecta tu hardware, instala las dependencias necesarias, configura Ollama, compila la PWA, verifica una inferencia de smoke test e inicia TrinaxAI. Acepta la solicitud de contraseña cuando macOS pida instalar una dependencia. Para revisar checksum o GPG manualmente, consulta [firma de releases](RELEASE_SIGNING.es.md).
@@ -93,7 +101,7 @@ Ejecutar desde un checkout local es un modo de operador/desarrollo y no se bloqu
 Si todavía no lo tienes, el instalador de una línea lo guarda en `~/Library/Application Support/TrinaxAI`:
 
 ```bash
-set -e; version="1.2.1"; base="https://github.com/TrinaxCode/TrinaxAI/releases/download/v${version}"; installer="$(mktemp)"; trap 'rm -f "$installer"' EXIT; curl -fsSL "$base/TrinaxAI-${version}-installer.sh" -o "$installer"; expected="$(curl -fsSL "$base/SHA256SUMS" | awk -v asset="TrinaxAI-${version}-installer.sh" '$2 == asset || $2 == "*" asset { print $1; exit }')"; actual="$( (shasum -a 256 "$installer" 2>/dev/null || sha256sum "$installer") | awk '{print $1}' )"; test "$expected" = "$actual"; bash "$installer"
+set -e; version="1.2.2"; base="https://github.com/TrinaxCode/TrinaxAI/releases/download/v${version}"; installer="$(mktemp)"; trap 'rm -f "$installer"' EXIT; curl -fsSL "$base/TrinaxAI-${version}-installer.sh" -o "$installer"; expected="$(curl -fsSL "$base/SHA256SUMS" | awk -v asset="TrinaxAI-${version}-installer.sh" '$2 == asset || $2 == "*" asset { print $1; exit }')"; actual="$( (shasum -a 256 "$installer" 2>/dev/null || sha256sum "$installer") | awk '{print $1}' )"; test "$expected" = "$actual"; bash "$installer"
 ```
 
 El instalador detecta RAM, crea `.env`, prepara Python e instala la PWA automáticamente. Las opciones como descargar modelos, autoarranque e iniciar servicios se preguntan por defecto. La configuración legacy de sistema por LAN se acepta por compatibilidad, pero nunca concede administración remota del host. Usa `bash install.sh --non-interactive` para instalaciones automatizadas.
@@ -116,7 +124,7 @@ trinaxai uninstall
 
 ```bash
 set -eu
-version="1.2.1"
+version="1.2.2"
 base="https://github.com/TrinaxCode/TrinaxAI/releases/download/v${version}"
 mkdir -p ~/trinaxai
 archive="$(mktemp)"

@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { within } from '@testing-library/dom';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import NetworkNotice from './NetworkNotice';
@@ -85,11 +86,12 @@ describe('NetworkNotice', () => {
 
   it('removes an old offline origin only after explicit confirmation', async () => {
     vi.mocked(fetch).mockRejectedValue(new TypeError('offline'));
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
     wipeRevokedDeviceData.mockReturnValue(new Promise(() => undefined));
     render(<NetworkNotice canManageSystem={false} />);
     await userEvent.click(await screen.findByRole('button', { name: 'networkRemoveOld' }));
-    expect(window.confirm).toHaveBeenCalledWith('networkRemoveOldConfirm');
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByText('networkRemoveOldConfirm')).toBeInTheDocument();
+    await userEvent.click(within(dialog).getByRole('button', { name: 'networkRemoveOld' }));
     expect(wipeRevokedDeviceData).toHaveBeenCalledOnce();
   });
 });

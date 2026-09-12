@@ -216,7 +216,7 @@ describe('AgentInterface handoff', () => {
     expect(localStorage.getItem('tc-agent-yolo-mode')).toBe('0');
   });
 
-  it('keeps all agent model choices available in the mobile tools menu', () => {
+  it('keeps YOLO in the mobile nav and the other agent controls in the tools menu', () => {
     const previousMatchMedia = window.matchMedia;
     Object.defineProperty(window, 'matchMedia', {
       configurable: true,
@@ -240,6 +240,10 @@ describe('AgentInterface handoff', () => {
         </ThemeProvider>,
       );
 
+      const nav = screen.getByRole('navigation');
+      const yoloButton = within(nav).getByRole('switch', { name: 'Normal mode: ask for approval' });
+      expect(yoloButton).toHaveClass('min-h-10');
+
       const toolsButton = screen.getByRole('button', { name: 'Agent tools' });
       fireEvent.click(toolsButton);
       const toolsMenu = toolsButton.parentElement;
@@ -251,8 +255,7 @@ describe('AgentInterface handoff', () => {
       expect(within(toolsMenu as HTMLElement).getByRole('button', { name: 'RAG enabled' })).toBeInTheDocument();
       expect(within(toolsMenu as HTMLElement).getByRole('button', { name: 'Web search on' })).toBeInTheDocument();
       expect(within(toolsMenu as HTMLElement).getByRole('button', { name: 'Deep research' })).toBeInTheDocument();
-      const yoloButton = within(toolsMenu as HTMLElement).getByRole('switch', { name: 'Normal mode: ask for approval' });
-      expect(yoloButton).toHaveClass('w-full', 'text-left');
+      expect(within(toolsMenu as HTMLElement).queryByRole('switch', { name: 'Normal mode: ask for approval' })).not.toBeInTheDocument();
     } finally {
       Object.defineProperty(window, 'matchMedia', { configurable: true, value: previousMatchMedia });
     }

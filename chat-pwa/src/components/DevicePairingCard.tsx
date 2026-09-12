@@ -14,6 +14,7 @@ import {
 } from '../lib/devicePairing';
 import { isLocalHostBrowser } from '../lib/authHeaders';
 import ConfirmModal from './ConfirmModal';
+import ErrorRepairModal from './ErrorRepairModal';
 
 function pairingCodeFromLocation(): string {
   try {
@@ -66,6 +67,7 @@ export default function DevicePairingCard({
   const [revokingId, setRevokingId] = useState('');
   const [pendingRevokeId, setPendingRevokeId] = useState<string | null>(null);
   const [canManageDevices, setCanManageDevices] = useState(false);
+  const [repairOpen, setRepairOpen] = useState(false);
 
   const loadManagedDevices = async (): Promise<boolean> => {
     try {
@@ -266,7 +268,10 @@ export default function DevicePairingCard({
           </div>
         </div>
       )}
-      {error && <p role="alert" className="text-[10px] text-red-400">{error}</p>}
+      {error && <div role="alert" className="text-[10px] text-red-400">
+        <p>{error}</p>
+        <button type="button" onClick={() => setRepairOpen(true)} className="mt-1 text-[#006bbd] underline underline-offset-2">{t('fixError')}</button>
+      </div>}
       <ConfirmModal
         open={pendingRevokeId !== null}
         title={t('deviceRevokeConfirmTitle')}
@@ -292,6 +297,17 @@ export default function DevicePairingCard({
           </div>
         </ConfirmModal>
       )}
+      <ErrorRepairModal
+        open={repairOpen}
+        dark={isDark}
+        title={t('errorRepairTitle')}
+        message={t('errorRepairMessage')}
+        details={error ? `${error}\n\n${t('errorRepairHint')}` : ''}
+        confirmLabel={t('close')}
+        showCancel={false}
+        onConfirm={() => setRepairOpen(false)}
+        onCancel={() => setRepairOpen(false)}
+      />
     </div>
   );
 }

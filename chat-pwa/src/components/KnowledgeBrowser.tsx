@@ -8,6 +8,7 @@ import { escapeRegExp } from '../utils/str';
 import { getCollections, getCollectionSources, getFileChunks, deleteCollectionSources, deleteSource, userFacingError, type Collection, type CollectionSourceRow, type FileChunk } from '../lib/api';
 import BackButton from './BackButton';
 import ConfirmModal from './ConfirmModal';
+import ErrorRepairModal from './ErrorRepairModal';
 
 interface Props {
   onBack: () => void;
@@ -56,6 +57,8 @@ export default function KnowledgeBrowser({ onBack, canManageSystem = false, init
   const [copiedChunkId, setCopiedChunkId] = useState<string | null>(null);
   const [deletingFile, setDeletingFile] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<{ file: string; name: string; sourceId: string | null } | null>(null);
+  const [confirmDeleteAll, setConfirmDeleteAll] = useState(false);
+  const [repairError, setRepairError] = useState<{ message: string; retry: () => void } | null>(null);
   // Mobile: which panel is visible ('collections' | 'files' | 'chunks')
   const [mobileView, setMobileView] = useState<'collections' | 'files' | 'chunks'>(initialFile ? 'chunks' : 'collections');
   const collectionsRequestRef = useRef(0);
@@ -248,8 +251,8 @@ export default function KnowledgeBrowser({ onBack, canManageSystem = false, init
       setChunks([]);
       setChunkTotal(0);
       refreshSources();
-    } catch {
-      toast.toast(t('sourceDeleteFailed'), 'error');
+    } catch (error) {
+      toast.toast(userFacingError(error, 'external_service_unavailable'), 'error');
     } finally {
       setDeletingFile(null);
     }
@@ -270,9 +273,10 @@ export default function KnowledgeBrowser({ onBack, canManageSystem = false, init
     <>
       {loading && <p aria-live="polite" className={`px-3 py-2 text-xs ${muted}`}>{t('loading')}</p>}
       {error && (
-        <div aria-live="polite" className="px-3 py-2 text-xs">
+        <div role="alert" aria-live="polite" className="px-3 py-2 text-xs">
           <p className={muted}>{error}</p>
-          <button type="button" onClick={retry} className="mt-1 text-[#006bbd] underline underline-offset-2">{t('retry')}</button>
+          <button type="button" onClick={() => setRepairError({ message: error, retry })} className="mt-1 text-[#006bbd] underline underline-offset-2">{t('fixError')}</button>
+          <button type="button" onClick={retry} className="ml-3 mt-1 text-[#006bbd] underline underline-offset-2">{t('retry')}</button>
         </div>
       )}
     </>
@@ -460,10 +464,8 @@ export default function KnowledgeBrowser({ onBack, canManageSystem = false, init
             )}
             {canManageSystem && sources.length > 0 && (
               <button
-                onClick={() => {
-                  if (confirm(t('deleteAllSourcesConfirm'))) {
-                    void handleDeleteAll();
-                  }
+              onClick={() => {
+                  setConfirmDeleteAll(true);
                 }}
                 disabled={deletingFile === '__all__'}
                 className={`p-0.5 rounded ${muted} ${hover} disabled:opacity-30`}
@@ -524,9 +526,7 @@ export default function KnowledgeBrowser({ onBack, canManageSystem = false, init
               {canManageSystem && sources.length > 0 && (
                 <button
                   onClick={() => {
-                    if (confirm(t('deleteAllSourcesConfirm'))) {
-                      void handleDeleteAll();
-                    }
+                    setConfirmDeleteAll(true);
                   }}
                   disabled={deletingFile === '__all__'}
                   className={`ml-auto p-1.5 rounded-lg ${muted} ${hover} disabled:opacity-30`}
@@ -603,6 +603,31 @@ export default function KnowledgeBrowser({ onBack, canManageSystem = false, init
         </div>
       </div>
 
+      <ConfirmModal
+        open={confirmDeleteAll}
+        title={t('deleteAllSources')}
+        message={t('deleteAllSourcesConfirm')}
+        confirmLabel={deletingFile ? t('deleting') : t('delete')}
+        cancelLabel={t('cancel')}
+        danger
+        confirmDisabled={Boolean(deletingFile)}
+        onCancel={() => setConfirmDeleteAll(false)}
+        onConfirm={() => void handleDeleteAll().finally(() => setConfirmDeleteAll(false))}
+      />
+      <ErrorRepairModal
+        open={Boolean(repairError)}
+        dark={isDark}
+        title={t('errorRepairTitle')}
+        message={t('errorRepairMessage')}
+        details={repairError ? `${repairError.message}\n\n${t('errorRepairHint')}` : ''}
+        confirmLabel={t('retry')}
+        cancelLabel={t('cancel')}
+        onConfirm={() => {
+          repairError?.retry();
+          setRepairError(null);
+        }}
+        onCancel={() => setRepairError(null)}
+      />
       <ConfirmModal
         open={Boolean(canManageSystem && confirmDelete)}
         title={t('deleteSourceConfirm')}

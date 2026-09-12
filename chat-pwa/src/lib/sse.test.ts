@@ -70,4 +70,10 @@ describe('SSE stream parser', () => {
       error: 'Un servicio externo no está disponible.',
     });
   });
+
+  it('preserves recovery metadata for structured stream errors', () => {
+    const result = parseRagSseLine('data: {"trinaxai_error":{"category":"model_loading_failed","code":"ERR_MODEL_LOADING_FAILED","recovery":"Use a smaller model."}}');
+    expect(result.errorRecovery).toBe('Use a smaller model.');
+    expect(result.errorCode).toBe('ERR_MODEL_LOADING_FAILED');
+  });
 });

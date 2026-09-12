@@ -14,6 +14,28 @@ while IFS= read -r -d '' script; do
 done < <(find "$ROOT" -type f -name '*.sh' -print0)
 ok "All shell scripts pass bash -n"
 
+for script in install.ps1 update.ps1 uninstall.ps1; do
+  bom=$(od -An -tx1 -N3 "$ROOT/$script" | tr -d '[:space:]')
+  [ "$bom" = "efbbbf" ] || fail "$script must be UTF-8 with BOM for Windows PowerShell 5.1"
+done
+ok "PowerShell scripts are UTF-8 BOM compatible with Windows PowerShell 5.1"
+
+if grep -Fq 'npm run build >/dev/null 2>&1' "$ROOT/install.sh"; then
+  fail "macOS frontend build output must not be hidden"
+fi
+ok "macOS frontend failures remain visible"
+
+for script in install.sh update.sh uninstall.sh; do
+  grep -Fq 'pause_on_macos_failure' "$ROOT/$script" || fail "macOS failure pause is missing: $script"
+done
+ok "macOS lifecycle failures remain visible"
+
+if grep -R -Fq 'Invoke-RestMethod -Uri "$base/SHA256SUMS"' \
+  "$ROOT"/*.md "$ROOT"/docs/*.md 2>/dev/null; then
+  fail "PowerShell checksum examples must read SHA256SUMS line by line"
+fi
+ok "PowerShell release checksum examples parse manifest lines"
+
 if grep --line-number --fixed-strings 'realpath -m' \
   "$ROOT/install.sh" "$ROOT/update.sh" "$ROOT/uninstall.sh" \
   "$ROOT/install.ps1" "$ROOT/update.ps1" "$ROOT/uninstall.ps1"; then

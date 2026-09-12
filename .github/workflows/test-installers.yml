@@ -13,7 +13,12 @@ on:
       - 'scripts/source_update.py'
       - 'scripts/auto_update.py'
       - 'setup_trinaxai.sh'
+      - 'README.md'
+      - 'README.es.md'
       - 'TESTING.md'
+      - 'TESTING.es.md'
+      - 'docs/README*.md'
+      - 'docs/INSTALL_WINDOWS*.md'
       - '.github/workflows/test-installers.yml'
   pull_request:
     paths:
@@ -27,7 +32,12 @@ on:
       - 'scripts/source_update.py'
       - 'scripts/auto_update.py'
       - 'setup_trinaxai.sh'
+      - 'README.md'
+      - 'README.es.md'
       - 'TESTING.md'
+      - 'TESTING.es.md'
+      - 'docs/README*.md'
+      - 'docs/INSTALL_WINDOWS*.md'
       - '.github/workflows/test-installers.yml'
 
 jobs:
@@ -55,6 +65,14 @@ jobs:
       - name: Run PowerShell dry-run checks
         shell: pwsh
         run: .\test-installers.ps1
+      - name: Run Windows PowerShell 5.1 dry-run checks
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Stop"
+          foreach ($script in @("install.ps1", "update.ps1", "uninstall.ps1")) {
+            & powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\$script" -DryRun -NonInteractive
+            if ($LASTEXITCODE -ne 0) { throw "$script failed under Windows PowerShell 5.1" }
+          }
       - name: Run shell syntax and dry-run checks
         shell: bash
         run: ./test-installers.sh

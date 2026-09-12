@@ -213,7 +213,7 @@ def test_installers_support_client_first_install_locations() -> None:
     assert "TRINAXAI_HOME=" in windows
 
 
-def test_user_install_docs_reject_unpinned_trinaxai_bootstraps() -> None:
+def test_user_install_docs_reject_unpinned_source_archives() -> None:
     paths = (
         "install.sh",
         "install.ps1",
@@ -230,13 +230,19 @@ def test_user_install_docs_reject_unpinned_trinaxai_bootstraps() -> None:
         "docs/INSTALL_WINDOWS.md",
         "docs/INSTALL_WINDOWS.es.md",
     )
-    forbidden = (
-        "raw.githubusercontent.com/TrinaxCode/TrinaxAI/main",
-        "github.com/TrinaxCode/TrinaxAI/archive/refs/heads/main",
-    )
+    forbidden = ("github.com/TrinaxCode/TrinaxAI/archive/refs/heads/main",)
     for path in paths:
         text = (ROOT / path).read_text(encoding="utf-8")
         assert not any(marker in text for marker in forbidden), path
+
+
+def test_short_install_bootstrap_is_documented_for_each_platform() -> None:
+    for path in ("README.md", "docs/INSTALL_LINUX.md", "docs/INSTALL_MACOS.md"):
+        text = (ROOT / path).read_text(encoding="utf-8")
+        assert "curl -fsSL https://raw.githubusercontent.com/TrinaxCode/TrinaxAI/main/install.sh | bash" in text
+    for path in ("README.md", "docs/INSTALL_WINDOWS.md"):
+        text = (ROOT / path).read_text(encoding="utf-8")
+        assert "irm https://raw.githubusercontent.com/TrinaxCode/TrinaxAI/main/install.ps1 | iex" in text
 
 
 def test_release_installer_guides_verify_exact_asset_before_execution() -> None:
@@ -315,9 +321,10 @@ def test_installers_use_persisted_models_and_never_autostart_with_no_start() -> 
 
 def test_installer_release_version_docs_match_versioned_default() -> None:
     docs = (ROOT / "docs" / "ENVIRONMENT_VARIABLES.md").read_text(encoding="utf-8")
+    version = (ROOT / "pyproject.toml").read_text(encoding="utf-8").split('version = "', 1)[1].split('"', 1)[0]
 
     release_row = next(line for line in docs.splitlines() if "`TRINAXAI_RELEASE_VERSION`" in line)
-    assert "| `1.2.1` |" in release_row
+    assert f"| `{version}` |" in release_row
     assert "never falls back to `main`" in release_row
 
 

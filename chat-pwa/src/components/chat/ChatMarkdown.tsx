@@ -12,12 +12,13 @@ interface ChatMarkdownProps {
   text: string;
   isDark: boolean;
   sources?: Source[];
+  resolveLink?: (href: string | undefined) => string | undefined;
 }
 
-function ChatMarkdown({ text, isDark, sources = [] }: ChatMarkdownProps) {
+function ChatMarkdown({ text, isDark, sources = [], resolveLink }: ChatMarkdownProps) {
   const link = ({ children, href }: { children?: React.ReactNode; href?: string }) => (
     <a
-      href={href}
+      href={resolveLink?.(href) ?? href}
       target="_blank"
       rel="noreferrer"
       className={`underline decoration-1 underline-offset-2 ${isDark ? 'text-blue-400 hover:text-blue-300' : 'text-blue-600 hover:text-blue-700'}`}
@@ -30,7 +31,7 @@ function ChatMarkdown({ text, isDark, sources = [] }: ChatMarkdownProps) {
     <div className={`chat-markdown prose prose-sm min-w-0 max-w-full break-words [overflow-wrap:anywhere] ${isDark ? 'prose-invert' : ''}`}>
       {containsMath(text) ? (
         <Suspense fallback={<p className="chat-plain-text whitespace-pre-wrap">{text}</p>}>
-          <ChatMarkdownMath text={text} isDark={isDark} sources={sources} />
+          <ChatMarkdownMath text={text} isDark={isDark} sources={sources} resolveLink={resolveLink} />
         </Suspense>
       ) : (
         <ReactMarkdown

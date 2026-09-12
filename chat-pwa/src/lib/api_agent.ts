@@ -33,7 +33,7 @@ export type AgentEvent =
   | { type: 'approval_timeout'; approval_id: string }
   | { type: 'token'; content: string }
   | { type: 'done'; answer: string; finish_reason?: string; completion_status?: string }
-  | { type: 'error'; error: string; category?: ErrorCategory; code?: string; recoverable?: boolean; finish_reason?: string; completion_status?: string };
+  | { type: 'error'; error: string; category?: ErrorCategory; code?: string; recovery?: string; recoverable?: boolean; finish_reason?: string; completion_status?: string };
 
 function parseAgentSseLine(line: string): AgentEvent | { done: true } | null {
   const trimmed = line.trim();

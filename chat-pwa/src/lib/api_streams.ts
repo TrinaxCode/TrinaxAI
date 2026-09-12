@@ -181,6 +181,8 @@ export function parseRagSseLine(line: string): {
   researchMeta?: ResearchStreamMeta;
   done?: boolean;
   error?: string;
+  errorRecovery?: string;
+  errorCode?: string;
 } {
   const trimmed = line.trim();
   if (!trimmed || !trimmed.startsWith('data: ')) return {};
@@ -200,7 +202,7 @@ export function parseRagSseLine(line: string): {
     }
     if (parsed.trinaxai_error && typeof parsed.trinaxai_error === 'object') {
       const failure = apiErrorFromPayload(503, { error: parsed.trinaxai_error });
-      return { error: failure.message };
+      return { error: failure.message, errorRecovery: failure.recovery, errorCode: failure.code };
     }
     if (typeof parsed.trinaxai_error === 'string' && parsed.trinaxai_error.trim()) {
       return { error: apiErrorFromPayload(503, parsed.trinaxai_error).message };
@@ -597,7 +599,7 @@ export async function streamRag(
   let retrievalErrorCode = '';
   await readStreamLines(response, signal, (line) => {
     const event = parseRagSseLine(line);
-    if (event.error) throw apiErrorFromPayload(503, event.error);
+    if (event.error) throw new ApiError('', 503, event.errorCode, { recovery: event.errorRecovery });
     if (event.meta) {
       sawFinish = sawFinish || typeof event.meta.finishReason === 'string';
       retrievalErrorCode ||= event.meta.errorCode || '';

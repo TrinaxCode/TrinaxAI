@@ -1,4 +1,4 @@
-import type { ChangeEventHandler, Dispatch, RefObject, SetStateAction } from 'react';
+import { useState, type ChangeEventHandler, type Dispatch, type RefObject, type SetStateAction } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { MdAdd, MdBuild, MdCheck, MdClose, MdContentCopy, MdDelete, MdEdit, MdFolder, MdHistory, MdImage, MdMic, MdPublic, MdRefresh, MdScience, MdSearch, MdSend, MdSmartToy, MdStop, MdStorage, MdUploadFile } from 'react-icons/md';
 import type { AgentSession } from '../../hooks/useAgentHistory';
@@ -177,6 +177,7 @@ export function AgentInterfaceView({
   const surface = isDark ? 'text-white' : 'text-gray-900';
   const subtle = isDark ? 'text-white/50' : 'text-gray-500';
   const cardBg = isDark ? 'bg-white/[0.04] border-white/[0.08]' : 'bg-gray-50 border-gray-200';
+  const [pendingDeleteSession, setPendingDeleteSession] = useState<AgentSession | null>(null);
 
   return (
     <div className={`agent-page relative flex h-full min-h-0 w-full overflow-hidden ${surface}`}>
@@ -225,7 +226,7 @@ export function AgentInterfaceView({
                       {session.title || t('agentUntitled')}
                     </button>
                     <button
-                      onClick={() => history.deleteSession(session.id)}
+                      onClick={() => setPendingDeleteSession(session)}
                       className={`shrink-0 rounded p-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 ${isDark ? 'text-white/40 hover:text-red-400' : 'text-gray-500 hover:text-red-600'}`}
                       aria-label={t('delete')}
                     >
@@ -297,8 +298,8 @@ export function AgentInterfaceView({
               >
                 <MdScience size={18} />
               </button>
-              <AgentYoloButton enabled={yoloMode} disabled={running} onChange={handleYoloChange} isDark={isDark} t={t} />
             </div>
+            <AgentYoloButton enabled={yoloMode} disabled={running} onChange={handleYoloChange} isDark={isDark} t={t} />
             <div ref={mobileToolsRef} className="relative mr-1 sm:hidden">
               <button
                 type="button"
@@ -358,7 +359,6 @@ export function AgentInterfaceView({
                         {deepResearch && <MdCheck size={14} aria-hidden="true" />}
                       </button>
                       <div className={`my-1 border-t ${isDark ? 'border-white/[0.08]' : 'border-gray-200'}`} />
-                      <AgentYoloButton enabled={yoloMode} disabled={running} onChange={(value) => { handleYoloChange(value); setMobileToolsOpen(false); }} isDark={isDark} t={t} mobile />
                       <label className={`flex items-center gap-2 rounded-lg px-2.5 py-2 text-xs ${isDark ? 'text-white/75' : 'text-gray-700'}`}>
                         <span className="min-w-0 flex-1 truncate">{t('agentModel')}</span>
                         <select
@@ -637,6 +637,18 @@ export function AgentInterfaceView({
         </div>
       </div>
       <ConfirmModal
+        open={Boolean(pendingDeleteSession)}
+        title={t('delete')}
+        message={t('agentDeleteSessionConfirm')}
+        confirmLabel={t('delete')}
+        danger
+        onConfirm={() => {
+          if (pendingDeleteSession) history.deleteSession(pendingDeleteSession.id);
+          setPendingDeleteSession(null);
+        }}
+        onCancel={() => setPendingDeleteSession(null)}
+      />
+      <ConfirmModal
         open={yoloConfirmOpen}
         title={t('agentYoloConfirmTitle')}
         message={t('agentYoloConfirmMessage')}
@@ -711,7 +723,7 @@ function AgentYoloButton({ enabled, disabled, onChange, isDark, t, mobile = fals
         title={enabled ? t('agentYoloModeOn') : t('agentYoloModeOff')}
         onClick={() => onChange(!enabled)}
         disabled={disabled}
-        className={`${mobile ? 'flex w-full items-center px-2.5 py-2 text-left' : 'px-2 py-1'} rounded-lg text-[10px] font-bold uppercase tracking-wide transition-[background-color,color,transform] active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500/70 disabled:opacity-40 ${enabled ? 'bg-red-500/15 text-red-500 hover:bg-red-500/25' : isDark ? 'text-white/40 hover:bg-white/[0.06] hover:text-white/75' : 'text-gray-400 hover:bg-gray-100 hover:text-gray-700'}`}
+        className={`${mobile ? 'flex w-full items-center px-2.5 py-2 text-left' : 'flex min-h-10 items-center px-2 py-1 sm:min-h-0'} rounded-lg text-[10px] font-bold uppercase tracking-wide transition-[background-color,color,transform] active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500/70 disabled:opacity-40 ${enabled ? 'bg-red-500/15 text-red-500 hover:bg-red-500/25' : isDark ? 'text-white/40 hover:bg-white/[0.06] hover:text-white/75' : 'text-gray-400 hover:bg-gray-100 hover:text-gray-700'}`}
       >
         {t('agentYoloMode')}
       </button>

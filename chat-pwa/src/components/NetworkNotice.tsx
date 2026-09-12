@@ -2,8 +2,11 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { MdClose, MdContentCopy, MdDeleteOutline, MdLan, MdOpenInNew, MdRefresh } from 'react-icons/md';
 import { systemFetch } from '../lib/authHeaders';
 import { wipeRevokedDeviceData } from '../lib/deviceWipe';
+import { formatUserFacingError } from '../lib/api';
 import { useI18n } from '../i18n/I18nContext';
 import { useTheme } from '../theme/ThemeContext';
+import ConfirmModal from './ConfirmModal';
+import ErrorRepairModal from './ErrorRepairModal';
 
 interface NetworkInfo {
   online: true;
@@ -25,6 +28,8 @@ export default function NetworkNotice({ canManageSystem }: { canManageSystem: bo
   const [readyUrl, setReadyUrl] = useState('');
   const [copied, setCopied] = useState(false);
   const [removing, setRemoving] = useState(false);
+  const [confirmRemoveOld, setConfirmRemoveOld] = useState(false);
+  const [removeError, setRemoveError] = useState('');
   const [dismissed, setDismissed] = useState('');
   const copyResetTimer = useRef<number | null>(null);
 
@@ -93,10 +98,16 @@ export default function NetworkNotice({ canManageSystem }: { canManageSystem: bo
   };
 
   const removeOldPwa = async () => {
-    if (!window.confirm(t('networkRemoveOldConfirm'))) return;
     setRemoving(true);
-    await wipeRevokedDeviceData();
-    window.location.reload();
+    try {
+      await wipeRevokedDeviceData();
+      window.location.reload();
+    } catch (error) {
+      setRemoveError(formatUserFacingError(error, 'external_service_unavailable'));
+    } finally {
+      setRemoving(false);
+      setConfirmRemoveOld(false);
+    }
   };
 
   if (!offline && !readyUrl && !info?.needsRefresh) return null;
@@ -104,6 +115,7 @@ export default function NetworkNotice({ canManageSystem }: { canManageSystem: bo
   const command = info?.refreshCommand || 'trinaxai network refresh';
 
   return (
+    <>
     <aside
       role="status"
       aria-live="polite"
@@ -149,7 +161,7 @@ export default function NetworkNotice({ canManageSystem }: { canManageSystem: bo
                 <button type="button" onClick={() => void check()} className={`inline-flex min-h-10 items-center gap-2 rounded-xl border px-3 py-2 text-xs font-semibold ${isDark ? 'border-white/15 text-white/75' : 'border-gray-200 text-gray-700'}`}>
                   <MdRefresh size={15} /> {t('networkRetry')}
                 </button>
-                <button type="button" onClick={() => void removeOldPwa()} disabled={removing} className={`inline-flex min-h-10 items-center gap-2 rounded-xl border px-3 py-2 text-xs font-semibold disabled:opacity-50 ${isDark ? 'border-red-300/25 text-red-200' : 'border-red-200 text-red-700'}`}>
+                <button type="button" onClick={() => setConfirmRemoveOld(true)} disabled={removing} className={`inline-flex min-h-10 items-center gap-2 rounded-xl border px-3 py-2 text-xs font-semibold disabled:opacity-50 ${isDark ? 'border-red-300/25 text-red-200' : 'border-red-200 text-red-700'}`}>
                   <MdDeleteOutline size={16} /> {removing ? t('networkRemovingOld') : t('networkRemoveOld')}
                 </button>
               </>
@@ -166,5 +178,27 @@ export default function NetworkNotice({ canManageSystem }: { canManageSystem: bo
         </button>
       </div>
     </aside>
+    <ConfirmModal
+      open={confirmRemoveOld}
+      title={t('networkRemoveOld')}
+      message={t('networkRemoveOldConfirm')}
+      confirmLabel={removing ? t('networkRemovingOld') : t('networkRemoveOld')}
+      confirmDisabled={removing}
+      danger
+      onConfirm={() => void removeOldPwa()}
+      onCancel={() => setConfirmRemoveOld(false)}
+    />
+    <ErrorRepairModal
+      open={Boolean(removeError)}
+      dark={isDark}
+      title={t('errorRepairTitle')}
+      message={t('errorRepairMessage')}
+      details={removeError ? `${removeError}\n\n${t('errorRepairHint')}` : ''}
+      confirmLabel={t('networkRemoveOld')}
+      cancelLabel={t('cancel')}
+      onConfirm={() => { setRemoveError(''); void removeOldPwa(); }}
+      onCancel={() => setRemoveError('')}
+    />
+    </>
   );
 }

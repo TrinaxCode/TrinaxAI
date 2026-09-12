@@ -72,6 +72,7 @@ export const translations = {
     agentNoHistory: 'Aún no hay conversaciones.',
     agentUntitled: 'Sin título',
     agentNewSession: 'Nueva sesión',
+    agentDeleteSessionConfirm: '¿Eliminar esta sesión del historial?',
     agentPickFolder: 'Elegir carpeta',
     agentUseThisFolder: 'Usar esta carpeta',
     agentHomeFolder: 'Carpeta personal',
@@ -657,6 +658,10 @@ export const translations = {
     errorBoundaryTitle: 'No pudimos mostrar esta sección',
     errorBoundaryDetail: 'Tus datos están seguros y el resto de TrinaxAI sigue disponible. Recarga para intentarlo de nuevo.',
     errorBoundaryReload: 'Recargar',
+    fixError: 'Arreglar este error',
+    errorRepairTitle: 'Cómo arreglar este error',
+    errorRepairMessage: 'Revisa el detalle del error y sigue la recomendación indicada.',
+    errorRepairHint: 'Si el problema continúa, reintenta o revisa la conexión y la configuración del servicio.',
     confirmDefault: 'Confirmar',
     cancelDefault: 'Cancelar',
 
@@ -713,6 +718,7 @@ export const translations = {
     watcherIndexStatus: 'Índice: {status}',
     watcherPendingEvents: '{count} evento(s) pendientes',
     watcherLastError: 'Último error: {error}',
+    watcherRemoveFolderConfirm: '¿Quitar esta carpeta vigilada y sus archivos indexados?',
 
     // ── Memory ──
     memoryAdded: 'Memoria añadida',
@@ -990,6 +996,7 @@ export const translations = {
     agentNoHistory: 'No conversations yet.',
     agentUntitled: 'Untitled',
     agentNewSession: 'New session',
+    agentDeleteSessionConfirm: 'Delete this session from history?',
     agentPickFolder: 'Choose folder',
     agentUseThisFolder: 'Use this folder',
     agentHomeFolder: 'Home folder',
@@ -1575,6 +1582,10 @@ export const translations = {
     errorBoundaryTitle: 'We could not display this section',
     errorBoundaryDetail: 'Your data is safe and the rest of TrinaxAI remains available. Reload to try again.',
     errorBoundaryReload: 'Reload',
+    fixError: 'Fix this error',
+    errorRepairTitle: 'How to fix this error',
+    errorRepairMessage: 'Review the error details and follow the recommended recovery step.',
+    errorRepairHint: 'If the problem continues, retry or check the connection and service settings.',
     confirmDefault: 'Confirm',
     cancelDefault: 'Cancel',
 
@@ -1631,6 +1642,7 @@ export const translations = {
     watcherIndexStatus: 'Index: {status}',
     watcherPendingEvents: '{count} pending event(s)',
     watcherLastError: 'Last error: {error}',
+    watcherRemoveFolderConfirm: 'Remove this watched folder and its indexed files?',
 
     // ── Memory ──
     memoryAdded: 'Memory added',

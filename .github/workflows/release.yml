@@ -88,6 +88,7 @@ jobs:
           python -m pip wheel . --no-deps --no-build-isolation --wheel-dir release
           cp install.sh "release/TrinaxAI-${version}-installer.sh"
           cp install.ps1 "release/TrinaxAI-${version}-installer.ps1"
+          test "$(od -An -tx1 -N3 install.ps1 | tr -d '[:space:]')" = "efbbbf"
 
       - name: Sign and verify release assets
         env:

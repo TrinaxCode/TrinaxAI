@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # TrinaxAI — One-Command Installer (Linux/macOS/Windows Bash)
 # Linux/macOS release-pinned install (this script is copied into each stable release):
-#   version="1.2.1"
+#   version="1.2.2"
 #   base="https://github.com/TrinaxCode/TrinaxAI/releases/download/v${version}"
 #   installer="$(mktemp)"; manifest="$(mktemp)"
 #   curl --fail --location --output "$installer" "${base}/TrinaxAI-${version}-installer.sh"
@@ -715,6 +715,17 @@ case "$(uname -s)" in
   MINGW*|MSYS*|CYGWIN*) OS="windows";;
 esac
 
+pause_on_macos_failure() {
+  local status=$?
+  trap - EXIT
+  if [ "$status" -ne 0 ] && [ "$OS" = "macos" ] && [ "${INTERACTIVE:-0}" = "1" ] && [ -r /dev/tty ]; then
+    printf '\n[!] Installer failed with exit code %s. The error is above.\n' "$status" >&2
+    read -r -p "Press Enter to close this window..." _ </dev/tty || true
+  fi
+  exit "$status"
+}
+trap pause_on_macos_failure EXIT
+
 validate_install_dir() {
   case "$INSTALL_DIR" in
     ""|/|.|..|../*|*/../*|*/..|*$'\n'*|*$'\r'*)
@@ -903,7 +914,7 @@ if [ -z "$SCRIPT_DIR" ] || [ ! -f "$SCRIPT_DIR/rag_api.py" ] || [ ! -f "$SCRIPT_
     mkdir -p "$(dirname "$REPO_DIR")"
     temp_dir="$(mktemp -d "${TMPDIR:-/tmp}/trinaxai.XXXXXX")"
     trap 'rm -rf -- "$temp_dir"' EXIT
-    release_version="${TRINAXAI_RELEASE_VERSION:-1.2.1}"
+    release_version="${TRINAXAI_RELEASE_VERSION:-1.2.2}"
     if [ -n "$release_version" ] && [[ ! "$release_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
       print_err "TRINAXAI_RELEASE_VERSION must be a semantic version."
       exit 2
@@ -990,14 +1001,21 @@ if [ "$OS" = "linux" ]; then
 elif [ "$OS" = "macos" ]; then
   if ! command -v brew &>/dev/null; then
     print_info "Installing Homebrew..."
-    /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" || true
+    /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
     if [ -x /opt/homebrew/bin/brew ]; then
       eval "$(/opt/homebrew/bin/brew shellenv)"
     elif [ -x /usr/local/bin/brew ]; then
       eval "$(/usr/local/bin/brew shellenv)"
     fi
   fi
-  brew install python@3.11 node curl openssl 2>/dev/null || true
+  if ! command -v brew &>/dev/null; then
+    print_err "Homebrew is required but was not found. Install Homebrew and run the installer again."
+    exit 1
+  fi
+  if ! brew install python@3.11 node curl openssl; then
+    print_err "macOS dependencies could not be installed."
+    exit 1
+  fi
   print_ok "macOS dependencies ready"
 elif [ "$OS" = "windows" ]; then
   print_warn "Windows detected. Please ensure you have:"
@@ -1263,9 +1281,16 @@ print_header "4/6 PWA Frontend"
 if [ -d "chat-pwa" ] && [ -f "chat-pwa/package.json" ] && [ -f "chat-pwa/package-lock.json" ]; then
   cd chat-pwa
   if command -v node &>/dev/null && command -v npm &>/dev/null; then
-    npm ci --silent 2>/dev/null || npm ci
-    if ! npm run build >/dev/null 2>&1 || [ ! -f dist/index.html ]; then
+    if ! npm ci; then
+      print_err "PWA dependency installation failed."
+      exit 1
+    fi
+    if ! npm run build; then
       print_err "PWA build failed - retry with: cd chat-pwa && npm run build"
+      exit 1
+    fi
+    if [ ! -f dist/index.html ]; then
+      print_err "PWA build completed without dist/index.html"
       exit 1
     fi
     print_ok "PWA build ready"

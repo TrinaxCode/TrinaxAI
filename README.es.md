@@ -1,11 +1,10 @@
 <h1 align="center">
-  <a href="https://www.trinaxai.app/"><img src="chat-pwa/public/logo.webp" alt="TrinaxAI" width="64" valign="middle"></a>
-  <a href="https://www.trinaxai.app/">TrinaxAI</a>
+  <a href="https://www.trinaxai.app/"><img src="chat-pwa/public/logo.webp" alt="TrinaxAI" width="220" valign="middle"></a>
 </h1>
 
 <p align="center">
   <a href="https://github.com/TrinaxCode/TrinaxAI"><img src="https://img.shields.io/github/stars/TrinaxCode/TrinaxAI?style=flat&amp;label=%E2%98%85&amp;color=006bbd" alt="Estrellas en GitHub"></a>
-  <a href="https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.2.1"><img src="https://img.shields.io/badge/version-1.2.1-006bbd" alt="Release estable: 1.2.1"></a>
+  <a href="https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.2.2"><img src="https://img.shields.io/badge/version-1.2.2-006bbd" alt="Release estable: 1.2.2"></a>
   <a href="https://github.com/TrinaxCode/TrinaxAI/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/TrinaxCode/TrinaxAI/ci.yml?branch=main&amp;label=CI" alt="Estado de CI"></a>
   <a href="https://github.com/TrinaxCode/TrinaxAI/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0--or--later-006bbd" alt="Licencia AGPL-3.0-or-later"></a>
   <img src="https://img.shields.io/badge/macOS%20%7C%20Windows%20%7C%20Linux-4493F8?style=flat-square" alt="Plataformas: macOS, Windows y Linux">
@@ -23,24 +22,57 @@ configurado salvo que elijas explícitamente un servicio remoto.
 
 ## Inicio rápido
 
-### Linux y macOS
+### Instalación rápida — Linux y macOS
+
+Para instalar de la forma más sencilla, ejecuta en Terminal:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/TrinaxCode/TrinaxAI/main/install.sh | bash
+```
+
+Este bootstrap corto descarga el instalador actual desde `main`; después el
+instalador descarga y verifica el paquete versionado del release. Para una
+descarga totalmente reproducible, con el checksum del instalador comprobado
+antes de ejecutarlo, usa el comando opcional siguiente.
+
+### Instalación verificada del release — Linux y macOS
 
 El instalador estable detecta CPU, RAM, GPU y VRAM, elige un perfil seguro,
 verifica el checksum del paquete fuente, compila la PWA, comprueba Ollama y los
 modelos necesarios, ejecuta una inferencia de smoke test e inicia la app.
 
 ```bash
-set -e; version="1.2.1"; base="https://github.com/TrinaxCode/TrinaxAI/releases/download/v${version}"; installer="$(mktemp)"; trap 'rm -f "$installer"' EXIT; curl -fsSL "$base/TrinaxAI-${version}-installer.sh" -o "$installer"; expected="$(curl -fsSL "$base/SHA256SUMS" | awk -v asset="TrinaxAI-${version}-installer.sh" '$2 == asset || $2 == "*" asset { print $1; exit }')"; actual="$( (shasum -a 256 "$installer" 2>/dev/null || sha256sum "$installer") | awk '{print $1}' )"; test "$expected" = "$actual"; bash "$installer"
+set -e; version="1.2.2"; base="https://github.com/TrinaxCode/TrinaxAI/releases/download/v${version}"; installer="$(mktemp)"; trap 'rm -f "$installer"' EXIT; curl -fsSL "$base/TrinaxAI-${version}-installer.sh" -o "$installer"; expected="$(curl -fsSL "$base/SHA256SUMS" | awk -v asset="TrinaxAI-${version}-installer.sh" '$2 == asset || $2 == "*" asset { print $1; exit }')"; actual="$( (shasum -a 256 "$installer" 2>/dev/null || sha256sum "$installer") | awk '{print $1}' )"; test "$expected" = "$actual"; bash "$installer"
 ```
 
-### Windows PowerShell
+### Instalación rápida — Windows PowerShell
 
 ```powershell
-$ErrorActionPreference="Stop"; $version="1.2.1"; $base="https://github.com/TrinaxCode/TrinaxAI/releases/download/v$version"; $installer=Join-Path $env:TEMP "TrinaxAI-$version-installer.ps1"; Invoke-WebRequest -Uri "$base/TrinaxAI-$version-installer.ps1" -OutFile $installer; $line=Invoke-RestMethod -Uri "$base/SHA256SUMS" | Where-Object { $_ -match "\s\*?TrinaxAI-$version-installer\.ps1$" } | Select-Object -First 1; $expected=if ($line -match '^\s*([0-9a-fA-F]{64})\s+') { $Matches[1] } else { "" }; $actual=(Get-FileHash -Algorithm SHA256 -LiteralPath $installer).Hash; if ($expected -notmatch '^[0-9a-fA-F]{64}$' -or $actual -ine $expected) { throw "Installer SHA-256 verification failed." }; & $installer
+irm https://raw.githubusercontent.com/TrinaxCode/TrinaxAI/main/install.ps1 | iex
 ```
 
-Los instaladores de release están fijados a una versión y nunca vuelven a
-`main`. Para verificar una descarga de forma independiente, sigue los comandos
+### Instalación verificada del release — Windows PowerShell
+
+```powershell
+$ErrorActionPreference = "Stop"
+$version = "1.2.2"
+$base = "https://github.com/TrinaxCode/TrinaxAI/releases/download/v$version"
+$installer = Join-Path $env:TEMP "TrinaxAI-$version-installer.ps1"
+$manifest = Join-Path $env:TEMP "TrinaxAI-$version-SHA256SUMS"
+Invoke-WebRequest -Uri "$base/TrinaxAI-$version-installer.ps1" -OutFile $installer
+Invoke-WebRequest -Uri "$base/SHA256SUMS" -OutFile $manifest
+$line = Get-Content -LiteralPath $manifest | Where-Object {
+  $fields = $_ -split '\s+'
+  $fields.Count -ge 2 -and (($fields[1] -replace '^\*', '') -eq "TrinaxAI-$version-installer.ps1")
+} | Select-Object -First 1
+$expected = if ($line) { ($line -split '\s+')[0] } else { "" }
+$actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $installer).Hash
+if ($expected -notmatch '^[0-9a-fA-F]{64}$' -or $actual -ine $expected) { throw "Installer SHA-256 verification failed." }
+& $installer
+```
+
+Los instaladores verificados del release están fijados a una versión y nunca
+vuelven a `main`. Para verificar una descarga de forma independiente, sigue los comandos
 breves de [firma de releases](docs/RELEASE_SIGNING.es.md). Un checkout local
 (`bash install.sh` o `powershell -ExecutionPolicy Bypass -File .\install.ps1`)
 es el modo de operador/desarrollo.
@@ -61,7 +93,14 @@ bash install.sh --profile 16gb  # sobrescribe el perfil detectado
 .\install.ps1 -Profile 16gb
 ```
 
-Actualiza o elimina una instalación existente con los scripts guiados:
+Actualiza o elimina una instalación existente desde cualquier carpeta:
+
+```text
+trinaxai update
+trinaxai uninstall
+```
+
+Para un checkout local u operaciones automatizadas, usa directamente los scripts nativos:
 
 ```bash
 bash update.sh

@@ -1,4 +1,4 @@
-param(
+﻿param(
   [switch]$Interactive,
   [switch]$NonInteractive,
   [switch]$NoBackup,

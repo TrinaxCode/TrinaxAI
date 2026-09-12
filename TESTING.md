@@ -1,11 +1,10 @@
 <h1 align="center">
-  <a href="https://www.trinaxai.app/"><img src="chat-pwa/public/logo.webp" alt="TrinaxAI" width="64" valign="middle"></a>
-  <a href="https://www.trinaxai.app/">TrinaxAI</a> · 🧪 Installer Testing
+  <a href="https://www.trinaxai.app/"><img src="chat-pwa/public/logo.webp" alt="TrinaxAI" width="144" valign="middle"></a> · 🧪 Installer Testing
 </h1>
 
 <p align="center">
   <a href="https://github.com/TrinaxCode/TrinaxAI"><img src="https://img.shields.io/github/stars/TrinaxCode/TrinaxAI?style=flat&amp;label=%E2%98%85&amp;color=006bbd" alt="GitHub stars"></a>
-  <a href="https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.2.1"><img src="https://img.shields.io/badge/version-1.2.1-006bbd" alt="Stable release: 1.2.1"></a>
+  <a href="https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.2.2"><img src="https://img.shields.io/badge/version-1.2.2-006bbd" alt="Stable release: 1.2.2"></a>
   <a href="https://github.com/TrinaxCode/TrinaxAI/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/TrinaxCode/TrinaxAI/ci.yml?branch=main&amp;label=CI" alt="CI status"></a>
   <a href="https://github.com/TrinaxCode/TrinaxAI/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0--or--later-006bbd" alt="License: AGPL-3.0-or-later"></a>
   <img src="https://img.shields.io/badge/macOS%20%7C%20Windows%20%7C%20Linux-4493F8?style=flat-square" alt="Supported platforms: macOS, Windows, and Linux">
@@ -16,7 +15,7 @@
 
 These checks cover the URL-based lifecycle scripts, CLI behavior, and real-machine tests. Dry-run never downloads the source package or Ollama, installs packages, starts services, changes PATH, edits launch agents, or removes files.
 
-> Release status: `v1.2.1` is Production/Stable. Its GitHub Release assets are published and the release-pinned installers never fall back to `main`.
+> Release status: `v1.2.2` is Production/Stable. Its GitHub Release assets are published and the release-pinned installers never fall back to `main`.
 
 ## URL installer smoke test
 
@@ -26,7 +25,7 @@ Test the normal user journey on a clean machine with the published stable releas
    Linux/macOS:
    ```bash
    set -eu
-   version="1.2.1"
+   version="1.2.2"
    base="https://github.com/TrinaxCode/TrinaxAI/releases/download/v${version}"
    installer="$(mktemp)"
    manifest="$(mktemp)"
@@ -42,14 +41,17 @@ Test the normal user journey on a clean machine with the published stable releas
    Windows PowerShell:
    ```powershell
    $ErrorActionPreference = "Stop"
-   $version = "1.2.1"
+   $version = "1.2.2"
    $base = "https://github.com/TrinaxCode/TrinaxAI/releases/download/v$version"
    $installer = Join-Path $env:TEMP "TrinaxAI-$version-installer.ps1"
    $manifest = Join-Path $env:TEMP "TrinaxAI-$version-SHA256SUMS"
    Invoke-WebRequest -Uri "$base/TrinaxAI-$version-installer.ps1" -OutFile $installer
    Invoke-WebRequest -Uri "$base/SHA256SUMS" -OutFile $manifest
-   $line = Get-Content -LiteralPath $manifest | Where-Object { $_ -match "\s\*?TrinaxAI-$version-installer\.ps1$" } | Select-Object -First 1
-   $expected = if ($line -match '^\s*([0-9a-fA-F]{64})\s+') { $Matches[1] } else { "" }
+   $line = Get-Content -LiteralPath $manifest | Where-Object {
+     $fields = $_ -split '\s+'
+     $fields.Count -ge 2 -and (($fields[1] -replace '^\*', '') -eq "TrinaxAI-$version-installer.ps1")
+   } | Select-Object -First 1
+   $expected = if ($line) { ($line -split '\s+')[0] } else { "" }
    $actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $installer).Hash
    if ($expected -notmatch '^[0-9a-fA-F]{64}$' -or $actual -ine $expected) { throw "Installer SHA-256 verification failed." }
    Get-Content -Path $installer
@@ -88,7 +90,7 @@ Use a normal user account with Homebrew available or allow the installer to offe
 
 ```bash
 set -eu
-version="1.2.1"
+version="1.2.2"
 base="https://github.com/TrinaxCode/TrinaxAI/releases/download/v${version}"
 installer="$(mktemp)"
 manifest="$(mktemp)"
@@ -120,14 +122,17 @@ Run PowerShell as the user who will run TrinaxAI. The installer may request Admi
 ```powershell
 $ErrorActionPreference = "Stop"
 Set-ExecutionPolicy -Scope Process Bypass
-$version = "1.2.1"
+$version = "1.2.2"
 $base = "https://github.com/TrinaxCode/TrinaxAI/releases/download/v$version"
 $installer = Join-Path $env:TEMP "TrinaxAI-$version-installer.ps1"
 $manifest = Join-Path $env:TEMP "TrinaxAI-$version-SHA256SUMS"
 Invoke-WebRequest -Uri "$base/TrinaxAI-$version-installer.ps1" -OutFile $installer
 Invoke-WebRequest -Uri "$base/SHA256SUMS" -OutFile $manifest
-$line = Get-Content -LiteralPath $manifest | Where-Object { $_ -match "\s\*?TrinaxAI-$version-installer\.ps1$" } | Select-Object -First 1
-$expected = if ($line -match '^\s*([0-9a-fA-F]{64})\s+') { $Matches[1] } else { "" }
+$line = Get-Content -LiteralPath $manifest | Where-Object {
+  $fields = $_ -split '\s+'
+  $fields.Count -ge 2 -and (($fields[1] -replace '^\*', '') -eq "TrinaxAI-$version-installer.ps1")
+} | Select-Object -First 1
+$expected = if ($line) { ($line -split '\s+')[0] } else { "" }
 $actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $installer).Hash
 if ($expected -notmatch '^[0-9a-fA-F]{64}$' -or $actual -ine $expected) { throw "Installer SHA-256 verification failed." }
 Get-Content -Path $installer
@@ -138,14 +143,17 @@ For a safe simulation from a downloaded script:
 
 ```powershell
 $ErrorActionPreference = "Stop"
-$version = "1.2.1"
+$version = "1.2.2"
 $base = "https://github.com/TrinaxCode/TrinaxAI/releases/download/v$version"
 $installer = Join-Path $env:TEMP "TrinaxAI-$version-installer.ps1"
 $manifest = Join-Path $env:TEMP "TrinaxAI-$version-SHA256SUMS"
 Invoke-WebRequest -Uri "$base/TrinaxAI-$version-installer.ps1" -OutFile $installer
 Invoke-WebRequest -Uri "$base/SHA256SUMS" -OutFile $manifest
-$line = Get-Content -LiteralPath $manifest | Where-Object { $_ -match "\s\*?TrinaxAI-$version-installer\.ps1$" } | Select-Object -First 1
-$expected = if ($line -match '^\s*([0-9a-fA-F]{64})\s+') { $Matches[1] } else { "" }
+$line = Get-Content -LiteralPath $manifest | Where-Object {
+  $fields = $_ -split '\s+'
+  $fields.Count -ge 2 -and (($fields[1] -replace '^\*', '') -eq "TrinaxAI-$version-installer.ps1")
+} | Select-Object -First 1
+$expected = if ($line) { ($line -split '\s+')[0] } else { "" }
 $actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $installer).Hash
 if ($expected -notmatch '^[0-9a-fA-F]{64}$' -or $actual -ine $expected) { throw "Installer SHA-256 verification failed." }
 powershell -NoProfile -ExecutionPolicy Bypass -File $installer -DryRun
@@ -164,7 +172,7 @@ If automatic Ollama installation fails, the official `OllamaSetup.exe` is opened
 
 ## GitHub Actions
 
-`.github/workflows/test-installers.yml` runs syntax and dry-run checks on the pinned `ubuntu-24.04`, `macos-15`, and `windows-2025` runners. It does not install Ollama or attempt to emulate another operating system. The release workflow publishes source archives and URL installers and verifies every published download URL.
+`.github/workflows/test-installers.yml` runs syntax and dry-run checks on the pinned `ubuntu-24.04`, `macos-15`, and `windows-2025` runners, including a Windows PowerShell 5.1 pass. It does not install Ollama or attempt to emulate another operating system. The release workflow publishes source archives and URL installers and verifies every published download URL.
 
 ## RAG quality evaluation
 

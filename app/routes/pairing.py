@@ -60,10 +60,10 @@ def _set_device_cookie(response: Response, request: Request, token: str, expires
     if safe_token is None:
         raise ValueError("Invalid device credential.")
     max_age = None
-    if expires_at is not None:
+    if isinstance(expires_at, (int, float, str)):
         try:
             max_age = max(0, int(float(expires_at) - time.time()))
-        except (TypeError, ValueError):
+        except ValueError:
             max_age = None
     response.set_cookie(
         key=DEVICE_TOKEN_COOKIE,

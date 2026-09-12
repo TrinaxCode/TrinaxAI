@@ -29,6 +29,15 @@ def test_systemctl_uses_passwordless_fallback_and_check(monkeypatch) -> None:
         sm._run_systemctl(["start", "missing.service"], check=True)
 
 
+def test_systemctl_status_query_does_not_try_sudo(monkeypatch) -> None:
+    calls = []
+    monkeypatch.setattr(sm.subprocess, "run", lambda command, **_kwargs: calls.append(command) or _completed(3))
+    monkeypatch.setattr(sm.shutil, "which", lambda name: "/usr/bin/sudo" if name == "sudo" else None)
+
+    assert sm._run_systemctl(["is-active", "trinaxai-frontend.service"]).returncode == 3
+    assert calls == [[sm._SYSTEMCTL, "is-active", "trinaxai-frontend.service"]]
+
+
 def test_systemd_backend_start_stop_status_and_direct_fallback(monkeypatch) -> None:
     backend = sm._SystemdBackend()
     monkeypatch.setattr(sm, "_systemd_units", lambda _name: ["primary.service", "legacy.service"])

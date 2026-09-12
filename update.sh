@@ -147,6 +147,17 @@ if [ "$NONINTERACTIVE" = "1" ]; then
   INTERACTIVE=0
 fi
 
+pause_on_macos_failure() {
+  local status=$?
+  trap - EXIT
+  if [ "$status" -ne 0 ] && [ "$(uname -s 2>/dev/null || echo unknown)" = "Darwin" ] && [ "${INTERACTIVE:-0}" = "1" ] && [ -r /dev/tty ]; then
+    printf '\n[!] Updater failed with exit code %s. The error is above.\n' "$status" >&2
+    read -r -p "Press Enter to close this window..." _ </dev/tty || true
+  fi
+  exit "$status"
+}
+trap pause_on_macos_failure EXIT
+
 CREATE_BACKUP="${TRINAXAI_UPDATE_BACKUP:-1}"
 PULL_CODE="${TRINAXAI_UPDATE_PULL:-1}"
 RUN_AUDIT="${TRINAXAI_UPDATE_AUDIT:-1}"

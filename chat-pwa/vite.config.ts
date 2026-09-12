@@ -1,4 +1,4 @@
-import { defineConfig } from 'vite';
+import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 import { execFile, spawn } from 'child_process';
@@ -28,6 +28,66 @@ import { PWA_SECURITY_HEADERS } from './security-headers';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '..');
+const documentationPrefix = '/docs-content/';
+const documentationFiles = [
+  'README.md',
+  'README.es.md',
+  'TESTING.md',
+  'TESTING.es.md',
+  'chat-pwa/README.md',
+  'chat-pwa/README.es.md',
+  ...fs.readdirSync(path.join(repoRoot, 'docs'))
+    .filter((file) => file.endsWith('.md'))
+    .map((file) => `docs/${file}`),
+];
+const documentationFileSet = new Set(documentationFiles);
+
+function documentationPlugin(): Plugin {
+  const documentationPath = (relative: string): string | undefined => {
+    if (!documentationFileSet.has(relative)) return undefined;
+    return path.join(repoRoot, relative);
+  };
+
+  return {
+    name: 'trinaxai-documentation',
+    configureServer(server) {
+      server.middlewares.use((req, res, next) => {
+        const requestPath = (req.url || '').split('?', 1)[0];
+        if (!requestPath.startsWith(documentationPrefix)) return next();
+
+        let relative = '';
+        try {
+          relative = decodeURIComponent(requestPath.slice(documentationPrefix.length));
+        } catch {
+          res.statusCode = 400;
+          res.end('Invalid documentation path');
+          return;
+        }
+        const file = documentationPath(relative);
+        if (!file) {
+          res.statusCode = 404;
+          res.end('Documentation not found');
+          return;
+        }
+        res.setHeader('Content-Type', 'text/markdown; charset=utf-8');
+        res.setHeader('Cache-Control', 'no-cache');
+        res.end(fs.readFileSync(file, 'utf8'));
+      });
+    },
+    generateBundle() {
+      for (const relative of documentationFiles) {
+        const file = documentationPath(relative);
+        if (!file) continue;
+        this.emitFile({
+          type: 'asset',
+          fileName: `${documentationPrefix.slice(1)}${relative}`,
+          source: fs.readFileSync(file, 'utf8'),
+        });
+      }
+    },
+  };
+}
+
 const certKey = path.join(__dirname, 'certs', 'localhost-key.pem');
 const certFile = path.join(__dirname, 'certs', 'localhost.pem');
 const certPfx = path.join(__dirname, 'certs', 'trinaxai-local.pfx');
@@ -492,6 +552,7 @@ function installSystemControl(server: any): void {
 export default defineConfig({
   plugins: [
     react(),
+    documentationPlugin(),
     VitePWA({
       // Keep an update waiting until the person explicitly applies it. Reloading
       // a chat automatically can interrupt a streamed answer or lose a draft.
@@ -567,7 +628,7 @@ export default defineConfig({
         // and provides the explicit offline.html fallback.
         navigateFallback: null,
         cleanupOutdatedCaches: true,
-        globPatterns: ['**/*.{js,css,html,ico,png,webp,svg,woff2}'],
+        globPatterns: ['**/*.{js,css,html,ico,png,webp,svg,woff2,md}'],
         runtimeCaching: [
           {
             // Always ask the current host for navigations first. Fall back to

@@ -57,6 +57,16 @@ describe('ToastProvider actions', () => {
     expect(screen.queryByText('normal error')).not.toBeInTheDocument();
   });
 
+  it('opens repair guidance from an error toast', () => {
+    render(<ToastProvider><Harness /></ToastProvider>);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Normal' }));
+    fireEvent.click(screen.getByRole('button', { name: 'fixError' }));
+
+    expect(screen.getByRole('dialog')).toHaveTextContent('normal error');
+    expect(screen.getByRole('dialog')).toHaveTextContent('errorRepairHint');
+  });
+
   it('keeps the local-service action visible for ten seconds and prevents duplicate runs', async () => {
     vi.useFakeTimers();
     render(<ToastProvider><Harness /></ToastProvider>);

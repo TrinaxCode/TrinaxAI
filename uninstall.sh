@@ -137,6 +137,17 @@ if [ "$NONINTERACTIVE" = "1" ]; then
   INTERACTIVE=0
 fi
 
+pause_on_macos_failure() {
+  local status=$?
+  trap - EXIT
+  if [ "$status" -ne 0 ] && [ "$(uname -s 2>/dev/null || echo unknown)" = "Darwin" ] && [ "${INTERACTIVE:-0}" = "1" ] && [ -r /dev/tty ]; then
+    printf '\n[!] Uninstaller failed with exit code %s. The error is above.\n' "$status" >&2
+    read -r -p "Press Enter to close this window..." _ </dev/tty || true
+  fi
+  exit "$status"
+}
+trap pause_on_macos_failure EXIT
+
 CONFIRM_UNINSTALL=0
 STOP_SERVICES=1
 DISABLE_AUTOSTART=1

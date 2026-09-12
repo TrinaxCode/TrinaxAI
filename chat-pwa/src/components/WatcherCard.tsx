@@ -4,6 +4,7 @@ import { MdDelete, MdFolder, MdRefresh, MdSync, MdVisibility, MdVisibilityOff } 
 import { useI18n } from '../i18n/I18nContext';
 import { useTheme } from '../theme/ThemeContext';
 import { useToast } from './Toast';
+import ConfirmModal from './ConfirmModal';
 import {
   deleteIndexedImport,
   getWatchStatus,
@@ -72,6 +73,7 @@ export default function WatcherCard({ collections }: Props) {
   const [events, setEvents] = useState(0);
   const [busy, setBusy] = useState(false);
   const [serverJob, setServerJob] = useState<WatchJobStatus | null>(null);
+  const [pendingRemoveFolder, setPendingRemoveFolder] = useState<WatchedFolder | null>(null);
 
   const updateFolders = useCallback((next: WatchedFolder[]) => {
     foldersRef.current = next;
@@ -142,7 +144,7 @@ export default function WatcherCard({ collections }: Props) {
     } catch (error) {
       toast.toast(userFacingError(error, 'external_service_unavailable'), 'error');
     }
-  }, [t, toast, updateFolders]);
+  }, [toast, updateFolders]);
 
   const toggleWatcher = useCallback(async () => {
     if (running) {
@@ -267,7 +269,7 @@ export default function WatcherCard({ collections }: Props) {
       {visibleFolders.length > 0 && <div className="space-y-1.5">
         {visibleFolders.map((folder) => <motion.div key={folder.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} className={`flex items-center gap-2 rounded-lg border px-2.5 py-2 text-xs ${field}`}>
           <MdFolder size={15} className="shrink-0 opacity-70" /><span className="min-w-0 flex-1 truncate" title={folder.name}>{folder.name}</span><span className={`text-[10px] ${muted}`}>{folder.files?.length || 0}</span>
-          <button onClick={() => void removeFolder(folder)} className="p-1 text-red-400 hover:text-red-300" aria-label={`${t('deleteFolder')} ${folder.name}`} title={t('deleteFolder')}><MdDelete size={15} /></button>
+          <button onClick={() => setPendingRemoveFolder(folder)} className="p-1 text-red-400 hover:text-red-300" aria-label={`${t('deleteFolder')} ${folder.name}`} title={t('deleteFolder')}><MdDelete size={15} /></button>
         </motion.div>)}
       </div>}
 
@@ -280,6 +282,18 @@ export default function WatcherCard({ collections }: Props) {
       {serverJob?.last_error && <p className="text-[11px] text-red-400" role="alert">
         {t('watcherLastError').replace('{error}', serverJob.last_error.slice(0, 500))}
       </p>}
+      <ConfirmModal
+        open={Boolean(pendingRemoveFolder)}
+        title={t('deleteFolder')}
+        message={t('watcherRemoveFolderConfirm')}
+        confirmLabel={t('delete')}
+        danger
+        onConfirm={() => {
+          if (pendingRemoveFolder) void removeFolder(pendingRemoveFolder);
+          setPendingRemoveFolder(null);
+        }}
+        onCancel={() => setPendingRemoveFolder(null)}
+      />
     </section>
   );
 }

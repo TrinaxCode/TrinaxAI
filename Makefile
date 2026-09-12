@@ -16,7 +16,7 @@ help:
 	@echo "  frontend-install Install Node dependencies only"
 	@echo "  dev              Start frontend dev server (hot-reload)"
 	@echo "  lint             Run Python lint/format and frontend ESLint"
-	@echo "  typecheck        Run Python compile check + TypeScript typecheck"
+	@echo "  typecheck        Run Python compile/mypy + TypeScript typecheck"
 	@echo "  test             Run backend + frontend unit tests"
 	@echo "  test-python      Run Python tests only"
 	@echo "  test-frontend    Run frontend tests only"
@@ -75,6 +75,7 @@ rag-eval:
 
 typecheck:
 	$(VENV_PYTHON) -m py_compile rag_api.py config.py index.py trinaxai_index_documents.py trinaxai_index_state.py trinaxai_core.py
+	$(VENV_PYTHON) -m mypy
 	cd chat-pwa && npx tsc --noEmit
 
 readiness:

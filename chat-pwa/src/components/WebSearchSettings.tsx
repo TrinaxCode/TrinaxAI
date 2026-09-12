@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useI18n } from '../i18n/I18nContext';
 import { useTheme } from '../theme/ThemeContext';
+import ConfirmModal from './ConfirmModal';
+import ErrorRepairModal from './ErrorRepairModal';
 import {
   deleteWebSearchCredential,
   getWebSearchSettings,
@@ -34,8 +36,21 @@ export default function WebSearchSettings({ canManageSystem }: { canManageSystem
   const [searxngUrl, setSearxngUrl] = useState('');
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
+  const [repairError, setRepairError] = useState('');
+  const [repairOpen, setRepairOpen] = useState(false);
+  const [confirmDeleteKey, setConfirmDeleteKey] = useState(false);
+  const [confirmReset, setConfirmReset] = useState(false);
   const card = isDark ? 'border-white/10 bg-white/[0.03]' : 'border-gray-200 bg-gray-50';
   const input = isDark ? 'border-white/10 bg-black/20 text-white' : 'border-gray-200 bg-white text-gray-900';
+  const clearMessage = () => {
+    setMessage('');
+    setRepairError('');
+  };
+  const showError = (error: unknown) => {
+    const next = userFacingError(error, 'external_service_unavailable');
+    setMessage(next);
+    setRepairError(next);
+  };
 
   useEffect(() => {
     if (!canManageSystem) return;
@@ -48,12 +63,12 @@ export default function WebSearchSettings({ canManageSystem }: { canManageSystem
         try { localStorage.setItem(WEB_SEARCH_PROVIDER_KEY, nextProvider); } catch { /* ignore */ }
       }
       setSearxngUrl(value.providers.searxng?.base_url || '');
-    }).catch((error) => { if (!controller.signal.aborted) setMessage(userFacingError(error, 'external_service_unavailable')); });
+    }).catch((error) => { if (!controller.signal.aborted) showError(error); });
     return () => controller.abort();
   }, [canManageSystem]);
 
   const save = async (): Promise<boolean> => {
-    setBusy(true); setMessage('');
+    setBusy(true); clearMessage();
     try {
       const next = await saveWebSearchSettings({
         ...(!settings?.externally_managed.preferred_provider ? { enabled, preferred_provider: provider } : {}),
@@ -70,13 +85,14 @@ export default function WebSearchSettings({ canManageSystem }: { canManageSystem
       setBraveKey('');
       notifyWebSearchSettingsUpdated(next);
       setMessage(t('webSearchSaved'));
+      setRepairError('');
       return true;
-    } catch (error) { setMessage(userFacingError(error, 'external_service_unavailable')); return false; }
+    } catch (error) { showError(error); return false; }
     finally { setBusy(false); }
   };
 
   const test = async () => {
-    setBusy(true); setMessage(t('webSearchTesting'));
+    setBusy(true); setMessage(t('webSearchTesting')); setRepairError('');
     try {
       if (braveKey.trim() || (provider === 'searxng' && searxngUrl.trim() !== settings?.providers.searxng?.base_url)) {
         if (!await save()) return;
@@ -84,19 +100,35 @@ export default function WebSearchSettings({ canManageSystem }: { canManageSystem
       }
       const result = await testWebSearchProvider(provider);
       setMessage(t('webSearchConnectionSuccess').replace('{provider}', result.provider));
-    } catch (error) { setMessage(userFacingError(error, 'external_service_unavailable')); }
+    } catch (error) { showError(error); }
     finally { setBusy(false); }
   };
 
   if (!canManageSystem) return <p role="alert">{t('webSearchSystemPermission')}</p>;
-  if (!settings) return <p>{message || t('webSearchLoading')}</p>;
+  const repairModal = (
+    <ErrorRepairModal
+      open={repairOpen}
+      dark={isDark}
+      title={t('errorRepairTitle')}
+      message={t('errorRepairMessage')}
+      details={repairError ? `${repairError}\n\n${t('errorRepairHint')}` : ''}
+      confirmLabel={t('close')}
+      showCancel={false}
+      onConfirm={() => setRepairOpen(false)}
+      onCancel={() => setRepairOpen(false)}
+    />
+  );
+  if (!settings) return <>
+    <p role={repairError ? 'alert' : undefined}>{message || t('webSearchLoading')}</p>
+    {repairError && <button type="button" onClick={() => setRepairOpen(true)} className="text-sm text-[#006bbd] underline underline-offset-2">{t('fixError')}</button>}
+    {repairModal}
+  </>;
   const configured = settings.providers[provider]?.configured;
   const providerExternal = settings.externally_managed.preferred_provider;
   const hasExternal = Object.values(settings.externally_managed).some(Boolean);
 
   const removeBraveKey = async () => {
-    if (!window.confirm(t('webSearchDeleteKeyConfirm'))) return;
-    setBusy(true); setMessage('');
+    setBusy(true); clearMessage();
     try {
       const next = await deleteWebSearchCredential('brave');
       setSettings(next);
@@ -104,13 +136,12 @@ export default function WebSearchSettings({ canManageSystem }: { canManageSystem
       setProvider(validProvider(next.preferred_provider, provider));
       notifyWebSearchSettingsUpdated(next);
     }
-    catch (error) { setMessage(userFacingError(error, 'external_service_unavailable')); }
+    catch (error) { showError(error); }
     finally { setBusy(false); }
   };
 
   const reset = async () => {
-    if (!window.confirm(t('webSearchResetConfirm'))) return;
-    setBusy(true); setMessage('');
+    setBusy(true); clearMessage();
     try {
       const next = await resetWebSearchSettings();
       setSettings(next);
@@ -118,7 +149,7 @@ export default function WebSearchSettings({ canManageSystem }: { canManageSystem
       setProvider(validProvider(next.preferred_provider, provider));
       notifyWebSearchSettingsUpdated(next);
     }
-    catch (error) { setMessage(userFacingError(error, 'external_service_unavailable')); }
+    catch (error) { showError(error); }
     finally { setBusy(false); }
   };
 
@@ -142,7 +173,7 @@ export default function WebSearchSettings({ canManageSystem }: { canManageSystem
     {provider === 'brave' && <label className="block space-y-1">
       <span>{t('webSearchBraveApiKey')} | {configured ? t('webSearchConfigured') : t('webSearchNotConfigured')}</span>
       <input name="brave-api-key" type="password" autoComplete="new-password" disabled={settings.externally_managed.brave_api_key || busy} value={braveKey} onChange={(event) => setBraveKey(event.target.value)} placeholder={configured ? t('webSearchReplaceKey') : 'BSA...'} className={`w-full rounded-lg border p-2 disabled:opacity-60 ${input}`} />
-      {configured && !settings.externally_managed.brave_api_key && <button type="button" onClick={removeBraveKey} className="text-sm text-red-500">{t('webSearchDeleteKey')}</button>}
+      {configured && !settings.externally_managed.brave_api_key && <button type="button" onClick={() => setConfirmDeleteKey(true)} className="text-sm text-red-500">{t('webSearchDeleteKey')}</button>}
     </label>}
     {provider === 'searxng' && <label className="block space-y-1">
       <span>{t('webSearchPublicSearxUrl')}</span>
@@ -152,8 +183,32 @@ export default function WebSearchSettings({ canManageSystem }: { canManageSystem
     <div className="flex flex-wrap gap-2">
       <button type="button" disabled={busy} onClick={save} className="rounded-lg bg-[#006bbd] px-4 py-2 text-white disabled:opacity-50">{busy ? t('webSearchSaving') : t('save')}</button>
       <button type="button" disabled={busy} onClick={test} className="rounded-lg border px-4 py-2 disabled:opacity-50">{t('webSearchTestButton')}</button>
-      <button type="button" disabled={busy || hasExternal} onClick={reset} className="rounded-lg border px-4 py-2 disabled:opacity-50">{t('webSearchResetButton')}</button>
+      <button type="button" disabled={busy || hasExternal} onClick={() => setConfirmReset(true)} className="rounded-lg border px-4 py-2 disabled:opacity-50">{t('webSearchResetButton')}</button>
     </div>
-    {message && <p role="status" className="text-sm">{message}</p>}
+    {message && <div role={repairError ? 'alert' : 'status'} className="text-sm">
+      <p>{message}</p>
+      {repairError && <button type="button" onClick={() => setRepairOpen(true)} className="mt-1 text-[#006bbd] underline underline-offset-2">{t('fixError')}</button>}
+    </div>}
+    <ConfirmModal
+      open={confirmDeleteKey}
+      title={t('webSearchDeleteKey')}
+      message={t('webSearchDeleteKeyConfirm')}
+      confirmLabel={t('webSearchDeleteKey')}
+      confirmDisabled={busy}
+      danger
+      onConfirm={() => { setConfirmDeleteKey(false); void removeBraveKey(); }}
+      onCancel={() => setConfirmDeleteKey(false)}
+    />
+    <ConfirmModal
+      open={confirmReset}
+      title={t('webSearchResetButton')}
+      message={t('webSearchResetConfirm')}
+      confirmLabel={t('webSearchResetButton')}
+      confirmDisabled={busy}
+      danger
+      onConfirm={() => { setConfirmReset(false); void reset(); }}
+      onCancel={() => setConfirmReset(false)}
+    />
+    {repairModal}
   </section>;
 }

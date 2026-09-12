@@ -227,9 +227,9 @@ class SQLiteVectorStore(BasePydanticVectorStore):
         for node in nodes:
             metadata = node_to_metadata_dict(node, remove_text=True, flat_metadata=False)
             metadata.pop("_node_content", None)
-            embedding, _ = self._pack_embedding(node.get_embedding())
+            embedding, dimensions = self._pack_embedding(node.get_embedding())
             entries[node.node_id] = (
-                self._unpack_embedding(embedding, len(embedding) // 4),
+                self._unpack_embedding(embedding, dimensions),
                 node.ref_doc_id or "None",
                 metadata,
             )

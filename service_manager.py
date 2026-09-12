@@ -106,7 +106,17 @@ def _run_systemctl(args: list[str], *, check: bool = False, timeout: int = 30) -
         capture_output=True,
         text=True,
     )
-    if result.returncode != 0 and shutil.which("sudo"):
+    privileged_action = bool(args) and args[0] in {
+        "start",
+        "stop",
+        "restart",
+        "enable",
+        "disable",
+        "reload",
+        "mask",
+        "unmask",
+    }
+    if privileged_action and result.returncode != 0 and shutil.which("sudo"):
         sudo_result = subprocess.run(
             ["sudo", "-n", _SYSTEMCTL, *args],
             check=False,

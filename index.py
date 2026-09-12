@@ -24,10 +24,10 @@ import subprocess as _subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from llama_index.core.schema import Document
+    from llama_index.core.schema import BaseNode, Document
 
 # On Windows, stdout defaults to cp1252 which can't encode emoji/Unicode.
 # Wrap it so the indexer doesn't crash mid-job on a harmless print.
@@ -377,18 +377,18 @@ def load_docs(paths: list[str], context: SourceContext | None = None) -> list[Do
     return load_docs_with_status(paths, context).documents
 
 
-def build_nodes(documents: list[Document]) -> list:
+def build_nodes(documents: list[Document]) -> list[BaseNode]:
     """Trocea por extensión: código → AST, prosa → texto. La metadata del
     documento (proyecto, ruta) se hereda automáticamente en cada chunk."""
     from llama_index.core.schema import TextNode
 
-    nodes = []
+    nodes: list[BaseNode] = []
     code_count = prose_count = fallback = 0
     for doc in documents:
         file_path = doc.metadata.get("rel_path", "")
         ext = os.path.splitext(file_path)[1].lower()
         language = config.CODE_LANG_BY_EXT.get(ext)
-        doc_nodes = []
+        doc_nodes: list[BaseNode] = []
 
         if language:
             try:
@@ -624,7 +624,7 @@ def run_manifest_recovery(
             # A deliberately non-matching fingerprint forces verification when
             # that collection is indexed next, while preserving its nodes now.
             metadata = node.metadata or {}
-            recovered_entry = {"unverified": True}
+            recovered_entry: dict[str, Any] = {"unverified": True}
             if metadata.get("source_id"):
                 recovered_entry.update(
                     {

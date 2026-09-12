@@ -68,6 +68,8 @@ const LEGACY_ERROR_CATEGORIES: Record<string, ErrorCategory> = {
   invalid_credential: 'authentication_failed',
   rate_limited: 'resource_exhausted',
   timeout: 'network_timeout',
+  proxy_timeout: 'network_timeout',
+  proxy_body_too_large: 'memory_limit_reached',
   rag_version_mismatch: 'external_service_unavailable',
   unsupported_format: 'unsupported_format',
 };
@@ -109,6 +111,8 @@ const LEGACY_MESSAGES: Record<string, [string, string]> = {
   collection_empty: ['La colección seleccionada no contiene documentos indexados.', 'The selected collection contains no indexed documents.'],
   collection_not_found: ['No se encontró la colección seleccionada.', 'The selected collection was not found.'],
   proxy_invalid_configuration: ['La configuración del proxy local no es válida.', 'The local proxy configuration is invalid.'],
+  proxy_timeout: ['La conexión con el servicio local agotó el tiempo de espera.', 'The local service connection timed out.'],
+  proxy_body_too_large: ['La solicitud es demasiado grande para procesarla.', 'The request is too large to process.'],
   system_scope_required: ['El control del sistema solo está disponible desde localhost en el equipo principal.', 'System control is available only from localhost on the host.'],
   unknown_system_action: ['La acción del sistema no es válida.', 'The system action is invalid.'],
   route_not_found: ['La ruta solicitada no existe.', 'The requested route does not exist.'],
@@ -132,6 +136,30 @@ export function isCollectionEmptyMessage(value: unknown): boolean {
 }
 
 const LEGACY_RECOVERIES: Record<string, [string, string]> = {
+  network_refresh_failed: [
+    'Comprueba el estado de TrinaxAI y vuelve a preparar la red.',
+    'Check TrinaxAI status and prepare the network again.',
+  ],
+  frontend_build_missing: [
+    'Ejecuta «npm run build» y vuelve a cargar la aplicación.',
+    'Run «npm run build» and reload the application.',
+  ],
+  proxy_scope_required: [
+    'Vincula un dispositivo autorizado o abre esta función desde el equipo principal.',
+    'Pair an authorized device or open this feature from the host computer.',
+  ],
+  proxy_rate_limited: [
+    'Espera unos segundos y vuelve a intentarlo.',
+    'Wait a few seconds and try again.',
+  ],
+  proxy_identity_unavailable: [
+    'Comprueba el certificado y la conexión segura del gateway local.',
+    'Check the local gateway certificate and secure connection.',
+  ],
+  proxy_queue_timeout: [
+    'Espera a que termine la operación activa y vuelve a intentarlo.',
+    'Wait for the active operation to finish and try again.',
+  ],
   proxy_unavailable: [
     'Pulsa «Encender IA» para iniciar los servicios locales y vuelve a intentarlo.',
     'Select «Start AI» to start the local services, then try again.',
@@ -159,6 +187,22 @@ const LEGACY_RECOVERIES: Record<string, [string, string]> = {
   system_start_failed: [
     'Verifica que TrinaxAI esté instalado correctamente y vuelve a intentarlo.',
     'Check that TrinaxAI is installed correctly, then try again.',
+  ],
+  proxy_invalid_configuration: [
+    'Revisa la configuración del servicio local y vuelve a intentarlo.',
+    'Review the local service configuration and try again.',
+  ],
+  system_scope_required: [
+    'Abre esta acción desde localhost en el equipo principal.',
+    'Open this action from localhost on the host computer.',
+  ],
+  proxy_timeout: [
+    'Comprueba que el servicio local esté encendido y vuelve a intentarlo.',
+    'Check that the local service is running and try again.',
+  ],
+  proxy_body_too_large: [
+    'Reduce el tamaño del archivo o de la solicitud e inténtalo de nuevo.',
+    'Reduce the file or request size and try again.',
   ],
 };
 
@@ -188,7 +232,9 @@ function publicMessage(category: ErrorCategory, code: string, fallbackCode = '')
 function parseErrorPayload(payload: unknown): { category?: ErrorCategory; code?: string; legacyCode?: string; recovery?: string; retryable?: boolean; requestId?: string } {
   if (!payload || typeof payload !== 'object') return {};
   const root = payload as Record<string, unknown>;
-  const error = root.error && typeof root.error === 'object' ? root.error as Record<string, unknown> : undefined;
+  const error = root.error && typeof root.error === 'object'
+    ? root.error as Record<string, unknown>
+    : root;
   const detail = root.detail && typeof root.detail === 'object' ? root.detail as Record<string, unknown> : undefined;
   const category = (error?.category || detail?.category) as ErrorCategory | undefined;
   const canonicalCode = typeof error?.code === 'string' ? error.code : typeof detail?.error_code === 'string' ? detail.error_code : undefined;

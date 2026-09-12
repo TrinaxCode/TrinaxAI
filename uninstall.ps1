@@ -1,4 +1,4 @@
-param(
+﻿param(
   [switch]$Yes,
   [switch]$Interactive,
   [switch]$NonInteractive,

@@ -171,7 +171,7 @@ export async function runResearch(
     const selectedModel = String(payload.model || '');
     await readStreamLines(response, signal, (line) => {
       const event = parseRagSseLine(line);
-      if (event.error) throw new ApiError(event.error, 503);
+      if (event.error) throw new ApiError('', 503, event.errorCode, { recovery: event.errorRecovery });
       if (event.done) sawDone = true;
       if (event.meta) completionMeta = { ...completionMeta, ...event.meta };
       if (event.token) {

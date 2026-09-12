@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import ErrorBoundary from './ErrorBoundary';
 
@@ -29,5 +29,16 @@ describe('ErrorBoundary', () => {
 
     expect(screen.getByText('We could not display this section')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Reload' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Fix this error' })).toBeInTheDocument();
+  });
+
+  it('opens repair guidance without exposing the thrown error', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    localStorage.setItem('tc-lang', 'en');
+    render(<ErrorBoundary><BrokenSection /></ErrorBoundary>);
+
+    screen.getByRole('button', { name: 'Fix this error' }).click();
+    await waitFor(() => expect(screen.getByRole('dialog')).toHaveTextContent('Your data is safe'));
+    expect(screen.getByRole('dialog')).not.toHaveTextContent('secret implementation');
   });
 });
