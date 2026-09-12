@@ -4,7 +4,7 @@
 
 <p align="center">
   <a href="https://github.com/TrinaxCode/TrinaxAI"><img src="https://img.shields.io/github/stars/TrinaxCode/TrinaxAI?style=flat&amp;label=%E2%98%85&amp;color=006bbd" alt="GitHub stars"></a>
-  <a href="https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.2.2"><img src="https://img.shields.io/badge/version-1.2.2-006bbd" alt="Stable release: 1.2.2"></a>
+  <a href="https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.2.3"><img src="https://img.shields.io/badge/version-1.2.3-006bbd" alt="Stable release: 1.2.3"></a>
   <a href="https://github.com/TrinaxCode/TrinaxAI/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/TrinaxCode/TrinaxAI/ci.yml?branch=main&amp;label=CI" alt="CI status"></a>
   <a href="https://github.com/TrinaxCode/TrinaxAI/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0--or--later-006bbd" alt="License: AGPL-3.0-or-later"></a>
   <img src="https://img.shields.io/badge/macOS%20%7C%20Windows%20%7C%20Linux-4493F8?style=flat-square" alt="Supported platforms: macOS, Windows, and Linux">
@@ -70,7 +70,7 @@ anchor, GPG cannot establish authenticity; never treat a key or fingerprint
 downloaded from the same release as a trust anchor.
 
 ```bash
-version=v1.2.2
+version=v1.2.3
 base="https://github.com/TrinaxCode/TrinaxAI/releases/download/${version}"
 curl -fsSL https://raw.githubusercontent.com/TrinaxCode/TrinaxAI/main/docs/RELEASE_SIGNING_KEY.asc -o TrinaxAI-release-signing-key.asc
 trusted_fingerprint="CF927A2365A5C46438A790FCCCE8FD65623D065C"

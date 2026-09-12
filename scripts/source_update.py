@@ -21,7 +21,7 @@ from urllib.parse import urlsplit
 
 REPOSITORY = "TrinaxCode/TrinaxAI"
 LATEST_RELEASE_URL = f"https://api.github.com/repos/{REPOSITORY}/releases/latest"
-RELEASE_VERSION = "1.2.2"
+RELEASE_VERSION = "1.2.3"
 ARCHIVE_NAME = f"TrinaxAI-{RELEASE_VERSION}.tar.gz"
 RELEASE_ARCHIVE_URL = f"https://github.com/TrinaxCode/TrinaxAI/releases/download/v{RELEASE_VERSION}/{ARCHIVE_NAME}"
 CHECKSUM_URL = f"https://github.com/TrinaxCode/TrinaxAI/releases/download/v{RELEASE_VERSION}/SHA256SUMS"

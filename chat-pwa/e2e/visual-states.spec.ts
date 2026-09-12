@@ -101,7 +101,7 @@ test('agent controls fit a 200 percent zoom equivalent viewport', async ({ page 
   await expect(tools.getByRole('button', { name: /RAG activado/i })).toBeVisible();
   await expect(tools.getByRole('button', { name: /Búsqueda web activada/i })).toBeVisible();
   await expect(tools.getByRole('button', { name: /Investigación profunda/i })).toBeVisible();
-  await expect(tools.getByRole('switch', { name: /Modo normal/i })).toHaveAttribute('aria-checked', 'false');
+  await expect(page.getByRole('switch', { name: /Modo normal/i })).toHaveAttribute('aria-checked', 'false');
   await expect(tools.getByRole('option', { name: 'Auto | Router' })).toBeAttached();
   await expect(tools.getByRole('option', { name: 'General' })).toBeAttached();
   await expect(tools.getByRole('option', { name: 'Profundo' })).toBeAttached();
