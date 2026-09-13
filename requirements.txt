@@ -17,7 +17,7 @@ openpyxl>=3.1
 odfpy>=1.4.1
 striprtf>=0.0.28
 tree-sitter>=0.22
-tree-sitter-language-pack>=0.9
+tree-sitter-language-pack>=1.16.1
 
 httpx>=0.28.1
 prompt-toolkit>=3.0.48
