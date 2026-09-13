@@ -4,7 +4,7 @@
 
 <p align="center">
   <a href="https://github.com/TrinaxCode/TrinaxAI"><img src="https://img.shields.io/github/stars/TrinaxCode/TrinaxAI?style=flat&amp;label=%E2%98%85&amp;color=006bbd" alt="GitHub stars"></a>
-  <a href="https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.2.4"><img src="https://img.shields.io/badge/version-1.2.4-006bbd" alt="Stable release: 1.2.4"></a>
+  <a href="https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.2.5"><img src="https://img.shields.io/badge/version-1.2.5-006bbd" alt="Stable release: 1.2.5"></a>
   <a href="https://github.com/TrinaxCode/TrinaxAI/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/TrinaxCode/TrinaxAI/ci.yml?branch=main&amp;label=CI" alt="CI status"></a>
   <a href="https://github.com/TrinaxCode/TrinaxAI/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0--or--later-006bbd" alt="License: AGPL-3.0-or-later"></a>
   <img src="https://img.shields.io/badge/macOS%20%7C%20Windows%20%7C%20Linux-4493F8?style=flat-square" alt="Supported platforms: macOS, Windows, and Linux">
@@ -13,11 +13,11 @@
 <p align="center"><sub><a href="README.md">English</a> · <strong>Español</strong></sub></p>
 <p align="center"><sub><a href="https://www.trinaxai.app/">Sitio web</a> · <a href="README.es.md">Documentación</a> · <a href="../README.es.md">Inicio</a> · <a href="CHANGELOG.es.md">Cambios</a></sub></p>
 
-Este directorio es el punto de entrada a la documentación técnica y operativa de **TrinaxAI 1.2.4**, la release actual Production/Stable bajo **AGPL-3.0-or-later**. La documentación describe la rama de release; cuando una opción o endpoint sea crítico, confirma también su valor en `.env.example`, `chat-pwa/package.json` o en la especificación OpenAPI expuesta por FastAPI.
+Este directorio es el punto de entrada a la documentación técnica y operativa de **TrinaxAI 1.2.5**, la release actual Production/Stable bajo **AGPL-3.0-or-later**. La documentación describe la rama de release; cuando una opción o endpoint sea crítico, confirma también su valor en `.env.example`, `chat-pwa/package.json` o en la especificación OpenAPI expuesta por FastAPI.
 
 Para la vista general del producto, las capturas y los benchmarks, consulta la web oficial: **[trinaxai.app](https://www.trinaxai.app/)**.
 
-> Estado del release: `v1.2.4` es la release actual Production/Stable. Sus paquetes fuente, instaladores, wheel, checksums y firmas separadas están publicados en GitHub. Los instaladores están fijados y nunca vuelven a `main`.
+> Estado del release: `v1.2.5` es la release actual Production/Stable. Sus paquetes fuente, instaladores, wheel, checksums y firmas separadas están publicados en GitHub. Los instaladores están fijados y nunca vuelven a `main`.
 
 ## Capacidades actuales
 
@@ -51,14 +51,14 @@ versionado del release y lo verifica con SHA-256. Para revisar el instalador
 antes de ejecutarlo, usa el flujo fijado siguiente:
 
 ```bash
-set -e; version="1.2.4"; base="https://github.com/TrinaxCode/TrinaxAI/releases/download/v${version}"; installer="$(mktemp)"; trap 'rm -f "$installer"' EXIT; curl -fsSL "$base/TrinaxAI-${version}-installer.sh" -o "$installer"; expected="$(curl -fsSL "$base/SHA256SUMS" | awk -v asset="TrinaxAI-${version}-installer.sh" '$2 == asset || $2 == "*" asset { print $1; exit }')"; actual="$( (shasum -a 256 "$installer" 2>/dev/null || sha256sum "$installer") | awk '{print $1}' )"; test "$expected" = "$actual"; bash "$installer"
+set -e; version="1.2.5"; base="https://github.com/TrinaxCode/TrinaxAI/releases/download/v${version}"; installer="$(mktemp)"; trap 'rm -f "$installer"' EXIT; curl -fsSL "$base/TrinaxAI-${version}-installer.sh" -o "$installer"; expected="$(curl -fsSL "$base/SHA256SUMS" | awk -v asset="TrinaxAI-${version}-installer.sh" '$2 == asset || $2 == "*" asset { print $1; exit }')"; actual="$( (shasum -a 256 "$installer" 2>/dev/null || sha256sum "$installer") | awk '{print $1}' )"; test "$expected" = "$actual"; bash "$installer"
 ```
 
 En Windows PowerShell usa el mismo flujo de revisar antes de ejecutar con un instalador fijado al release:
 
 ```powershell
 $ErrorActionPreference = "Stop"
-$version = "1.2.4"
+$version = "1.2.5"
 $base = "https://github.com/TrinaxCode/TrinaxAI/releases/download/v$version"
 $installer = Join-Path $env:TEMP "TrinaxAI-$version-installer.ps1"
 $manifest = Join-Path $env:TEMP "TrinaxAI-$version-SHA256SUMS"

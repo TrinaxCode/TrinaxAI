@@ -47,9 +47,21 @@ def test_remove_source_keeps_personal_data(tmp_path: Path):
     (tmp_path / "app.py").write_text("code", encoding="utf-8")
     (tmp_path / "storage").mkdir()
     (tmp_path / "storage" / "index").write_text("data", encoding="utf-8")
+    (tmp_path / "chat-pwa" / "node_modules" / ".bin").mkdir(parents=True)
+    tool_shim = tmp_path / "chat-pwa" / "node_modules" / ".bin" / "tool"
+    try:
+        tool_shim.symlink_to("../tool.js")
+        tool_was_symlink = True
+    except (NotImplementedError, OSError):
+        tool_shim.write_text("shim", encoding="utf-8")
+        tool_was_symlink = False
+    (tmp_path / "chat-pwa" / "dist").mkdir(parents=True)
+    (tmp_path / "chat-pwa" / "dist" / "index.html").write_text("built", encoding="utf-8")
     _remove_source(tmp_path)
     assert not (tmp_path / "app.py").exists()
     assert (tmp_path / "storage" / "index").read_text(encoding="utf-8") == "data"
+    assert tool_shim.is_symlink() is tool_was_symlink
+    assert (tmp_path / "chat-pwa" / "dist" / "index.html").read_text(encoding="utf-8") == "built"
 
 
 def test_archive_update_rejects_insecure_url_before_changes(tmp_path: Path) -> None:
