@@ -129,9 +129,12 @@ if [ "$LANGUAGE" = "es" ]; then
       'HTTPS certificate trusted in system CA store') echo 'Certificado HTTPS confiado en el almacén de CA del sistema' ;;
       'No supported CA trust updater found.'*) echo "No se encontró un actualizador de confianza CA compatible.${1#No supported CA trust updater found.}" ;;
       'Installing packages (Python, Node.js, npm, curl, unzip)...') echo 'Instalando paquetes (Python, Node.js, npm, curl, unzip)...' ;;
+      'Distro packages did not provide Node.js 22+; downloading the official archive...') echo 'Los paquetes de la distribución no proporcionaron Node.js 22+; se descargará el archivo oficial...' ;;
+      'Node.js 22+ installed from a SHA-256-verified archive') echo 'Node.js 22+ instalado desde un archivo verificado con SHA-256' ;;
       'npm was not installed.'*) echo "npm no se instaló.${1#npm was not installed.}" ;;
       Install\ Node.js\ 22+\ with\ npm\ from\ *) echo "Instala Node.js 22+ con npm desde ${1#Install Node.js 22+ with npm from }" ;;
       'Unknown Linux package manager.'*) echo "Gestor de paquetes de Linux desconocido.${1#Unknown Linux package manager.}" ;;
+      'Installation directory must be an absolute path:'*) echo "El directorio de instalación debe ser una ruta absoluta:${1#Installation directory must be an absolute path:}" ;;
       'Linux dependencies ready') echo 'Dependencias de Linux listas' ;;
       'Installing Homebrew...') echo 'Instalando Homebrew...' ;;
       'macOS dependencies ready') echo 'Dependencias de macOS listas' ;;
@@ -679,9 +682,79 @@ ensure_https_certificate() {
   fi
 }
 
+install_node_22_linux() (
+  local node_arch node_version archive_name temp_dir node_dir expected actual entry
+  case "$(uname -m)" in
+    x86_64|amd64) node_arch=x64 ;;
+    aarch64|arm64) node_arch=arm64 ;;
+    armv7l|armv7) node_arch=armv7l ;;
+    ppc64le) node_arch=ppc64le ;;
+    s390x) node_arch=s390x ;;
+    *) print_err "No official Node.js 22 binary is available for Linux architecture: $(uname -m)"; exit 1 ;;
+  esac
+  print_info "Distro packages did not provide Node.js 22+; downloading the official archive..."
+  temp_dir="$(mktemp -d "${TMPDIR:-/tmp}/trinaxai-node.XXXXXX")"
+  trap 'rm -rf -- "$temp_dir"' EXIT
+  if ! node_version="$(
+    curl -fsSL --retry 3 --connect-timeout 15 --max-time 60 https://nodejs.org/dist/index.json |
+      python3 -c 'import json, sys
+releases = json.load(sys.stdin)
+for release in releases:
+    version = release.get("version", "")
+    if version.startswith("v22."):
+        print(version)
+        break
+else:
+    raise SystemExit("No Node.js 22 release was found")'
+  )"; then
+    print_err "Could not resolve a current Node.js 22 release from nodejs.org."
+    exit 1
+  fi
+  if [[ ! "$node_version" =~ ^v22\.[0-9]+\.[0-9]+$ ]]; then
+    print_err "nodejs.org returned an invalid Node.js version: $node_version"
+    exit 1
+  fi
+  archive_name="node-${node_version}-linux-${node_arch}.tar.xz"
+  curl -fsSL --retry 3 --connect-timeout 15 --max-time 300 \
+    -o "$temp_dir/$archive_name" "https://nodejs.org/dist/$node_version/$archive_name"
+  curl -fsSL --retry 3 --connect-timeout 15 --max-time 60 \
+    -o "$temp_dir/SHASUMS256.txt" "https://nodejs.org/dist/$node_version/SHASUMS256.txt"
+  expected="$(awk -v asset="$archive_name" '$2 == asset { print $1; exit }' "$temp_dir/SHASUMS256.txt")"
+  if [[ ! "$expected" =~ ^[0-9a-fA-F]{64}$ ]]; then
+    print_err "Node.js 22 checksum manifest has no valid entry for $archive_name"
+    exit 1
+  fi
+  if command -v sha256sum >/dev/null 2>&1; then
+    actual="$(sha256sum "$temp_dir/$archive_name" | awk '{print $1}')"
+  elif command -v shasum >/dev/null 2>&1; then
+    actual="$(shasum -a 256 "$temp_dir/$archive_name" | awk '{print $1}')"
+  elif command -v openssl >/dev/null 2>&1; then
+    actual="$(openssl dgst -sha256 "$temp_dir/$archive_name" | awk '{print $NF}')"
+  else
+    print_err "sha256sum, shasum, or openssl is required to verify Node.js."
+    exit 2
+  fi
+  if [ "${actual,,}" != "${expected,,}" ]; then
+    print_err "The Node.js archive failed SHA-256 verification."
+    exit 1
+  fi
+  node_dir="/usr/local/lib/nodejs/node-${node_version}-linux-${node_arch}"
+  as_root mkdir -p /usr/local/lib/nodejs
+  as_root rm -rf -- "$node_dir"
+  as_root tar --no-same-owner --no-same-permissions -xJf "$temp_dir/$archive_name" -C /usr/local/lib/nodejs
+  [ -x "$node_dir/bin/node" ] || { print_err "The Node.js archive was incomplete."; exit 1; }
+  for entry in node npm npx corepack; do
+    [ -e "$node_dir/bin/$entry" ] || continue
+    as_root ln -sfn "$node_dir/bin/$entry" "/usr/local/bin/$entry"
+  done
+  print_ok "Node.js 22+ installed from a SHA-256-verified archive"
+)
+
 install_linux_deps() {
   if command -v python3 >/dev/null 2>&1 &&
     python3 -c 'import sys; raise SystemExit(sys.version_info < (3, 10))' 2>/dev/null &&
+    python3 -m pip --version >/dev/null 2>&1 &&
+    python3 -m venv --help >/dev/null 2>&1 &&
     command -v node >/dev/null 2>&1 &&
     node -e 'process.exit(Number(process.versions.node.split(".")[0]) >= 22 ? 0 : 1)' 2>/dev/null &&
     command -v npm >/dev/null 2>&1 && command -v curl >/dev/null 2>&1 &&
@@ -695,7 +768,7 @@ install_linux_deps() {
     # npm ships with NodeSource/Node.js, but the distro npm package may conflict.
     # Try nodejs + npm together; if that fails, install nodejs alone.
     as_root apt-get install -y python3 python3-pip python3-venv curl unzip ufw openssl
-    if ! command -v node >/dev/null 2>&1; then
+    if ! command -v node >/dev/null 2>&1 || ! node -e 'process.exit(Number(process.versions.node.split(".")[0]) >= 22 ? 0 : 1)' 2>/dev/null; then
       as_root apt-get install -y nodejs npm 2>/dev/null || as_root apt-get install -y nodejs || true
     fi
     if ! command -v npm >/dev/null 2>&1; then
@@ -712,6 +785,11 @@ install_linux_deps() {
     as_root apk add python3 py3-pip py3-virtualenv nodejs npm curl unzip openssl
   else
     print_warn "Unknown Linux package manager. Install Python 3.10+, pip, venv, Node.js 22+, npm, curl, unzip manually."
+  fi
+  if ! command -v node >/dev/null 2>&1 || ! node -e 'process.exit(Number(process.versions.node.split(".")[0]) >= 22 ? 0 : 1)' 2>/dev/null; then
+    install_node_22_linux
+    export PATH="/usr/local/bin:$PATH"
+    hash -r 2>/dev/null || true
   fi
 }
 
@@ -777,6 +855,13 @@ validate_install_dir() {
   case "$INSTALL_DIR" in
     ""|/|.|..|../*|*/../*|*/..|*$'\n'*|*$'\r'*)
       print_err "Refusing an unsafe installation directory: $INSTALL_DIR"
+      exit 2
+      ;;
+  esac
+  case "$INSTALL_DIR" in
+    /*) ;;
+    *)
+      print_err "Installation directory must be an absolute path: $INSTALL_DIR"
       exit 2
       ;;
   esac
@@ -906,11 +991,6 @@ run_dry_run() {
   return 0
 }
 
-if [ "$DRY_RUN" = "1" ]; then
-  run_dry_run
-  exit 0
-fi
-
 if [ -z "$INSTALL_DIR" ]; then
   if [ -f "$HOME/trinaxai/rag_api.py" ]; then
     INSTALL_DIR="$HOME/trinaxai"
@@ -921,6 +1001,11 @@ if [ -z "$INSTALL_DIR" ]; then
   fi
 fi
 validate_install_dir
+
+if [ "$DRY_RUN" = "1" ]; then
+  run_dry_run
+  exit 0
+fi
 
 if [ "$OS" = "windows" ] && [ -n "$SCRIPT_DIR" ] && [ -f "$SCRIPT_DIR/install.ps1" ] && command -v powershell.exe >/dev/null 2>&1; then
   PS_ARGS=("-ExecutionPolicy" "Bypass" "-File" "$(cygpath -w "$SCRIPT_DIR/install.ps1" 2>/dev/null || printf '%s' "$SCRIPT_DIR/install.ps1")")

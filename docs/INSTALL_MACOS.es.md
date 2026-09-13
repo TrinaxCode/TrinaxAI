@@ -48,12 +48,8 @@ Apple Silicon usa Metal automáticamente a través de Ollama cuando el modelo lo
 
 ## Instalación rápida
 
-```bash
-curl -fsSL https://raw.githubusercontent.com/TrinaxCode/TrinaxAI/main/install.sh | bash
-```
-
-Este bootstrap corto es la ruta más sencilla. Descarga el instalador actual
-desde `main`; ese instalador descarga y verifica el paquete versionado del release.
+Usa el comando fijado al release que aparece abajo; comprueba el SHA-256 del
+instalador antes de ejecutarlo.
 
 ## Instalación verificada fijada a un release
 

@@ -1118,14 +1118,19 @@ def _quote_cmd_arg(value: str) -> str:
     return '"' + value.replace('"', r"\"") + '"'
 
 
+def _systemd_escape(value: str | Path) -> str:
+    return "".join(
+        "%%" if char == "%" else f"\\x{ord(char):02x}" if char in " \t\n\r\\\"'" else char for char in str(value)
+    )
+
+
 def _systemd_quote(value: str | Path) -> str:
-    text = str(value).replace("\\", "\\\\").replace('"', '\\"')
-    return f'"{text}"'
+    return f'"{_systemd_escape(value)}"'
 
 
 def _systemd_path(value: str | Path) -> str:
     """Escape a path for systemd directives that do not use shell-style quotes."""
-    return str(value).replace("\\", "\\\\").replace(" ", "\\x20")
+    return _systemd_escape(value)
 
 
 def enable_autostart(base_dir: str) -> ProcessState:

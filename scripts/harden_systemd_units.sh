@@ -11,6 +11,14 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 OWNER="$(stat -c '%U' "$ROOT" 2>/dev/null || stat -f '%Su' "$ROOT")"
 BASH_BIN="$(command -v bash)"
 NPM_BIN="$(command -v npm)"
+systemd_escape_path() {
+  local value="$1"
+  value="${value//\\/\\x5c}"
+  value="${value// /\\x20}"
+  value="${value//%/%%}"
+  printf '%s' "$value"
+}
+ROOT_SYSTEMD="$(systemd_escape_path "$ROOT")"
 STAMP="$(date +%Y%m%d-%H%M%S)"
 LIFECYCLE_DIR=/usr/local/libexec/trinaxai
 LIFECYCLE_WRAPPER=$LIFECYCLE_DIR/trinaxai-lifecycle
@@ -35,9 +43,9 @@ Wants=ollama.service
 [Service]
 Type=simple
 User=$OWNER
-WorkingDirectory=$ROOT
-EnvironmentFile=-$ROOT/.env
-ExecStart=$BASH_BIN -lc 'cd "$ROOT" && source .venv/bin/activate && if [ "\${TRINAXAI_RAG_HTTPS:-1}" != "0" ] && [ "\${TRINAXAI_RAG_HTTPS:-1}" != "false" ] && [ -f "$ROOT/chat-pwa/certs/localhost-key.pem" ] && [ -f "$ROOT/chat-pwa/certs/localhost.pem" ]; then exec python -m uvicorn app.main:app --host 127.0.0.1 --port \${TRINAXAI_PORT:-3333} --ssl-keyfile "$ROOT/chat-pwa/certs/localhost-key.pem" --ssl-certfile "$ROOT/chat-pwa/certs/localhost.pem"; else exec python -m uvicorn app.main:app --host 127.0.0.1 --port \${TRINAXAI_PORT:-3333}; fi'
+WorkingDirectory=$ROOT_SYSTEMD
+EnvironmentFile=-$ROOT_SYSTEMD/.env
+ExecStart=$BASH_BIN -lc 'cd "\$1" && source .venv/bin/activate && if [ "\${TRINAXAI_RAG_HTTPS:-1}" != "0" ] && [ "\${TRINAXAI_RAG_HTTPS:-1}" != "false" ] && [ -f "\$1/chat-pwa/certs/localhost-key.pem" ] && [ -f "\$1/chat-pwa/certs/localhost.pem" ]; then exec python -m uvicorn app.main:app --host 127.0.0.1 --port \${TRINAXAI_PORT:-3333} --ssl-keyfile "\$1/chat-pwa/certs/localhost-key.pem" --ssl-certfile "\$1/chat-pwa/certs/localhost.pem"; else exec python -m uvicorn app.main:app --host 127.0.0.1 --port \${TRINAXAI_PORT:-3333}; fi' -- "$ROOT_SYSTEMD"
 Restart=on-failure
 RestartSec=5
 
@@ -53,8 +61,8 @@ After=network.target
 [Service]
 Type=simple
 User=$OWNER
-WorkingDirectory=$ROOT/chat-pwa
-EnvironmentFile=-$ROOT/.env
+WorkingDirectory=$ROOT_SYSTEMD/chat-pwa
+EnvironmentFile=-$ROOT_SYSTEMD/.env
 Environment=NODE_ENV=production
 ExecStart=$NPM_BIN run preview
 Restart=on-failure

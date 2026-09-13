@@ -40,8 +40,8 @@ PRESERVED = {
     ".venv",
     "backups",
     "chat-pwa/certs",
-    "chat-pwa/node_modules",
     "chat-pwa/dist",
+    "chat-pwa/node_modules",
     "local_sources",
     "logs",
     "storage",
@@ -464,10 +464,12 @@ def update(root: Path, url: str | None = ARCHIVE_URL, sha256: str | None = None)
                 _copy_source(source, root)
             except Exception as error:
                 try:
-                    _restore(root, backup)
-                    marker = _marker_path(root)
-                    if marker.exists():
+                    marker = root / MARKER
+                    if marker.is_file() and not marker.is_symlink():
+                        _restore(root, backup)
                         _clear_marker(marker, backup)
+                    else:
+                        shutil.rmtree(backup)
                 except Exception as rollback_error:
                     raise RuntimeError(
                         f"The source update failed and automatic rollback also failed: {rollback_error}"

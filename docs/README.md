@@ -34,21 +34,8 @@ For the product overview, screenshots and benchmarks, see the official website: 
 
 ## Start here
 
-For the simplest Linux or macOS installation, run:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/TrinaxCode/TrinaxAI/main/install.sh | bash
-```
-
-In Windows PowerShell:
-
-```powershell
-irm https://raw.githubusercontent.com/TrinaxCode/TrinaxAI/main/install.ps1 | iex
-```
-
-These are convenience bootstraps. The installer then downloads the versioned
-release package and verifies it with SHA-256. To inspect the installer before
-execution, use the pinned flow below:
+Use the release-pinned commands below. They verify the installer SHA-256 before
+execution on both Unix and Windows.
 
 ```bash
 set -e; version="1.2.5"; base="https://github.com/TrinaxCode/TrinaxAI/releases/download/v${version}"; installer="$(mktemp)"; trap 'rm -f "$installer"' EXIT; curl -fsSL "$base/TrinaxAI-${version}-installer.sh" -o "$installer"; expected="$(curl -fsSL "$base/SHA256SUMS" | awk -v asset="TrinaxAI-${version}-installer.sh" '$2 == asset || $2 == "*" asset { print $1; exit }')"; actual="$( (shasum -a 256 "$installer" 2>/dev/null || sha256sum "$installer") | awk '{print $1}' )"; test "$expected" = "$actual"; bash "$installer"

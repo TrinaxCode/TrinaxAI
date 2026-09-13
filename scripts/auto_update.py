@@ -31,7 +31,9 @@ def _run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[st
 
 
 def _quote_systemd(value: str | Path) -> str:
-    return '"' + str(value).replace("\\", "\\\\").replace('"', '\\"') + '"'
+    return "".join(
+        "%%" if char == "%" else f"\\x{ord(char):02x}" if char in " \t\n\r\\\"'" else char for char in str(value)
+    )
 
 
 def _log(base_dir: Path, message: str) -> None:

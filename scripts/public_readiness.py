@@ -70,8 +70,8 @@ INSTALL_SURFACE_FILES = (
     "docs/INSTALL_WINDOWS.md",
     "docs/INSTALL_WINDOWS.es.md",
 )
-UNPINNED_INSTALL_MARKERS = ("github.com/TrinaxCode/TrinaxAI/archive/refs/heads/main",)
-APPROVED_INSTALL_BOOTSTRAPS = (
+UNPINNED_INSTALL_MARKERS = (
+    "github.com/TrinaxCode/TrinaxAI/archive/refs/heads/main",
     "raw.githubusercontent.com/TrinaxCode/TrinaxAI/main/install.sh",
     "raw.githubusercontent.com/TrinaxCode/TrinaxAI/main/install.ps1",
 )
@@ -596,7 +596,7 @@ def _single_match(path: Path, pattern: str) -> str | None:
 
 
 def check_install_surfaces() -> list[str]:
-    """Reject unpinned source archives while allowing the two short bootstraps."""
+    """Reject mutable source archives and unverified installer bootstraps."""
     errors: list[str] = []
     for rel in INSTALL_SURFACE_FILES:
         path = ROOT / rel
@@ -607,13 +607,6 @@ def check_install_surfaces() -> list[str]:
         for marker in UNPINNED_INSTALL_MARKERS:
             if marker in text:
                 errors.append(f"{rel} contains an unpinned TrinaxAI install reference: {marker}")
-        remaining = text
-        for bootstrap in APPROVED_INSTALL_BOOTSTRAPS:
-            remaining = remaining.replace(bootstrap, "")
-        if "raw.githubusercontent.com/TrinaxCode/TrinaxAI/main" in remaining:
-            errors.append(
-                f"{rel} contains an unapproved TrinaxAI bootstrap: raw.githubusercontent.com/TrinaxCode/TrinaxAI/main"
-            )
     return errors
 
 

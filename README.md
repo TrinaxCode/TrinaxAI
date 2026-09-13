@@ -24,16 +24,8 @@ you explicitly choose a remote service.
 
 ### Fast install — Linux and macOS
 
-For the simplest installation, run this command in Terminal:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/TrinaxCode/TrinaxAI/main/install.sh | bash
-```
-
-This short bootstrap downloads the current installer from `main`; the installer
-then downloads and verifies the versioned release package. For a fully
-reproducible download with the installer checksum checked before execution, use
-the optional command below.
+The shortest safe path is the release-pinned command below. It checks the
+installer SHA-256 before execution.
 
 ### Verified release install — Linux and macOS
 
@@ -47,9 +39,8 @@ set -e; version="1.2.5"; base="https://github.com/TrinaxCode/TrinaxAI/releases/d
 
 ### Fast install — Windows PowerShell
 
-```powershell
-irm https://raw.githubusercontent.com/TrinaxCode/TrinaxAI/main/install.ps1 | iex
-```
+Use the release-pinned PowerShell command below; it checks the installer
+SHA-256 before execution.
 
 ### Verified release install — Windows PowerShell
 

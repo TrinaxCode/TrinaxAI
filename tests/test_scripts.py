@@ -236,13 +236,17 @@ def test_user_install_docs_reject_unpinned_source_archives() -> None:
         assert not any(marker in text for marker in forbidden), path
 
 
-def test_short_install_bootstrap_is_documented_for_each_platform() -> None:
+def test_install_bootstrap_is_release_pinned_for_each_platform() -> None:
     for path in ("README.md", "docs/INSTALL_LINUX.md", "docs/INSTALL_MACOS.md"):
         text = (ROOT / path).read_text(encoding="utf-8")
-        assert "curl -fsSL https://raw.githubusercontent.com/TrinaxCode/TrinaxAI/main/install.sh | bash" in text
+        assert "TrinaxAI-${version}-installer.sh" in text
+        assert "SHA256SUMS" in text
+        assert "raw.githubusercontent.com/TrinaxCode/TrinaxAI/main/install.sh" not in text
     for path in ("README.md", "docs/INSTALL_WINDOWS.md"):
         text = (ROOT / path).read_text(encoding="utf-8")
-        assert "irm https://raw.githubusercontent.com/TrinaxCode/TrinaxAI/main/install.ps1 | iex" in text
+        assert "TrinaxAI-$version-installer.ps1" in text
+        assert "Get-FileHash -Algorithm SHA256" in text
+        assert "raw.githubusercontent.com/TrinaxCode/TrinaxAI/main/install.ps1" not in text
 
 
 def test_release_installer_guides_verify_exact_asset_before_execution() -> None:
@@ -539,6 +543,18 @@ def test_system_setup_never_sudo_executes_user_writable_repo_scripts() -> None:
     for text in (script, hardened):
         assert "After=network.target ai-rag.service" not in text
         assert "Wants=ai-rag.service" not in text
+
+
+def test_systemd_setup_templates_escape_installation_paths() -> None:
+    setup = (ROOT / "setup_trinaxai.sh").read_text(encoding="utf-8")
+    hardened = (ROOT / "scripts" / "harden_systemd_units.sh").read_text(encoding="utf-8")
+
+    assert "systemd_escape_path" in setup
+    assert "WorkingDirectory=$PROJ_SYSTEMD" in setup
+    assert "EnvironmentFile=-$PROJ_SYSTEMD/.env" in setup
+    assert "systemd_escape_path" in hardened
+    assert "WorkingDirectory=$ROOT_SYSTEMD" in hardened
+    assert "EnvironmentFile=-$ROOT_SYSTEMD/.env" in hardened
 
 
 def test_installers_bind_privileged_backends_to_loopback() -> None:

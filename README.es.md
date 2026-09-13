@@ -24,16 +24,8 @@ configurado salvo que elijas explícitamente un servicio remoto.
 
 ### Instalación rápida — Linux y macOS
 
-Para instalar de la forma más sencilla, ejecuta en Terminal:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/TrinaxCode/TrinaxAI/main/install.sh | bash
-```
-
-Este bootstrap corto descarga el instalador actual desde `main`; después el
-instalador descarga y verifica el paquete versionado del release. Para una
-descarga totalmente reproducible, con el checksum del instalador comprobado
-antes de ejecutarlo, usa el comando opcional siguiente.
+La ruta segura más corta es el comando fijado al release que aparece abajo.
+Comprueba el SHA-256 del instalador antes de ejecutarlo.
 
 ### Instalación verificada del release — Linux y macOS
 
@@ -47,9 +39,8 @@ set -e; version="1.2.5"; base="https://github.com/TrinaxCode/TrinaxAI/releases/d
 
 ### Instalación rápida — Windows PowerShell
 
-```powershell
-irm https://raw.githubusercontent.com/TrinaxCode/TrinaxAI/main/install.ps1 | iex
-```
+Usa el comando de PowerShell fijado al release que aparece abajo; comprueba el
+SHA-256 del instalador antes de ejecutarlo.
 
 ### Instalación verificada del release — Windows PowerShell
 

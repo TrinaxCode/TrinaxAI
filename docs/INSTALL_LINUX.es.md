@@ -46,12 +46,8 @@ Si usas NVIDIA, instala los drivers antes de descargar modelos grandes. TrinaxAI
 
 ## Instalación rápida
 
-```bash
-curl -fsSL https://raw.githubusercontent.com/TrinaxCode/TrinaxAI/main/install.sh | bash
-```
-
-Este bootstrap corto es la ruta más sencilla. Descarga el instalador actual
-desde `main`; ese instalador descarga y verifica el paquete versionado del release.
+Usa el comando fijado al release que aparece abajo; comprueba el SHA-256 del
+instalador antes de ejecutarlo.
 
 ## Instalación verificada fijada a un release
 
@@ -72,7 +68,7 @@ cd /ruta/a/TrinaxAI
 ./install.sh
 ```
 
-Una instalación nueva se guarda en `$XDG_DATA_HOME/trinaxai` (normalmente `~/.local/share/trinaxai`), manteniendo compatibilidad con instalaciones anteriores en `~/trinaxai`. Para elegir otra ruta, sustituye el último comando del bloque anterior por el siguiente. El instalador detecta tu RAM, crea `.env`, instala dependencias y prepara la PWA.
+Una instalación nueva se guarda en `$XDG_DATA_HOME/trinaxai` (normalmente `~/.local/share/trinaxai`), manteniendo compatibilidad con instalaciones anteriores en `~/trinaxai`. Para elegir otra ruta, sustituye el último comando del bloque anterior por el siguiente y usa una ruta absoluta. El instalador detecta tu RAM, crea `.env`, instala dependencias y prepara la PWA.
 
 Usa `./install.sh --no-start` para dejar TrinaxAI detenido; también se omite el inicio automático y podrás activarlo después de iniciar TrinaxAI.
 
@@ -129,6 +125,14 @@ openSUSE:
 ```bash
 sudo zypper install python3 python3-pip curl unzip nodejs npm
 ```
+
+Verifica que el gestor haya instalado Node.js 22 o posterior antes de continuar:
+
+```bash
+node --version
+```
+
+Si es anterior, instala Node.js 22+ desde [nodejs.org](https://nodejs.org/) primero. El instalador automático descarga y verifica con SHA-256 el archivo oficial de Node.js 22 cuando el paquete de la distribución es demasiado antiguo.
 
 ### 2. Descargar el archivo del release
 

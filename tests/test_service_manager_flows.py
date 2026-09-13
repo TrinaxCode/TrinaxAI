@@ -233,6 +233,22 @@ def test_linux_and_windows_autostart_round_trip(monkeypatch, tmp_path: Path) -> 
     assert sm.disable_autostart(str(tmp_path)).running is False
 
 
+def test_linux_autostart_escapes_systemd_special_paths(monkeypatch, tmp_path: Path) -> None:
+    home = tmp_path / "home"
+    base_dir = tmp_path / "TrinaxAI %profile"
+    base_dir.mkdir()
+    monkeypatch.setattr(sm.Path, "home", lambda: home)
+    monkeypatch.setattr(sm.platform, "system", lambda: "Linux")
+    monkeypatch.setattr(sm.shutil, "which", lambda _name: "/usr/bin/systemctl")
+    monkeypatch.setattr(sm.subprocess, "run", lambda *_args, **_kwargs: _completed())
+
+    result = sm.enable_autostart(str(base_dir))
+
+    assert result.running is True
+    service = (home / ".config" / "systemd" / "user" / "trinaxai.service").read_text(encoding="utf-8")
+    assert "WorkingDirectory=" + str(base_dir).replace(" ", "\\x20").replace("%", "%%") in service
+
+
 def test_supervisor_restarts_wanted_services_once(monkeypatch, tmp_path: Path) -> None:
     statuses = []
     monkeypatch.setattr(sm, "_read_ai_enabled", lambda _base: False)

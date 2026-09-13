@@ -46,14 +46,8 @@ Al terminar deberías tener:
 
 ## Instalación rápida
 
-Abre PowerShell y ejecuta:
-
-```powershell
-irm https://raw.githubusercontent.com/TrinaxCode/TrinaxAI/main/install.ps1 | iex
-```
-
-Este bootstrap corto es la ruta más sencilla. Descarga el instalador actual
-desde `main`; ese instalador descarga y verifica el paquete versionado del release.
+Usa el comando de PowerShell fijado al release que aparece abajo; comprueba el
+SHA-256 del instalador antes de ejecutarlo.
 
 ## Instalación verificada fijada a un release
 

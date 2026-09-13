@@ -21,6 +21,12 @@ def test_archive_update_preserves_user_data_and_supports_rollback(tmp_path: Path
     (root / ".env").write_text("SECRET=kept", encoding="utf-8")
     (root / "storage").mkdir()
     (root / "storage" / "index").write_text("kept", encoding="utf-8")
+    (root / "vite-target").write_text("binary", encoding="utf-8")
+    frontend_bin = root / "chat-pwa" / "node_modules" / ".bin"
+    frontend_bin.mkdir(parents=True)
+    (frontend_bin / "vite").symlink_to(root / "vite-target")
+    (root / "chat-pwa" / "dist").mkdir(parents=True)
+    (root / "chat-pwa" / "dist" / "index.html").write_text("old build", encoding="utf-8")
     (source / "pyproject.toml").write_text("[project]", encoding="utf-8")
     (source / "new.py").write_text("new", encoding="utf-8")
     (source / "scripts").mkdir()
@@ -36,11 +42,38 @@ def test_archive_update_preserves_user_data_and_supports_rollback(tmp_path: Path
     assert (root / "new.py").read_text(encoding="utf-8") == "new"
     assert (root / ".env").read_text(encoding="utf-8") == "SECRET=kept"
     assert (root / "storage" / "index").read_text(encoding="utf-8") == "kept"
+    assert (frontend_bin / "vite").is_symlink()
+    assert (root / "chat-pwa" / "dist" / "index.html").read_text(encoding="utf-8") == "old build"
 
     finish(root, rollback=True)
     assert (root / "old.py").read_text(encoding="utf-8") == "old"
     assert not (root / "new.py").exists()
     assert not list(tmp_path.glob("trinaxai-previous-*"))
+
+
+def test_archive_update_rejects_unsupported_symlink_without_partial_rollback(tmp_path: Path):
+    root = tmp_path / "install"
+    source = tmp_path / "TrinaxAI-main"
+    root.mkdir()
+    source.mkdir()
+    (root / ".trinaxai-managed").write_text("managed", encoding="utf-8")
+    (root / "old.py").write_text("old", encoding="utf-8")
+    (root / "outside.txt").write_text("outside", encoding="utf-8")
+    (root / "unsafe-link").symlink_to(root / "outside.txt")
+    (source / "pyproject.toml").write_text("[project]", encoding="utf-8")
+    archive = tmp_path / "release.zip"
+    with zipfile.ZipFile(archive, "w") as bundle:
+        for path in source.rglob("*"):
+            bundle.write(path, path.relative_to(tmp_path))
+
+    digest = hashlib.sha256(archive.read_bytes()).hexdigest()
+    with pytest.raises(SystemExit, match="unsupported symbolic link"):
+        update(root, archive.as_uri(), digest)
+
+    assert (root / "old.py").read_text(encoding="utf-8") == "old"
+    assert (root / "unsafe-link").is_symlink()
+    assert not (root / source_update.MARKER).exists()
+    assert not list(tmp_path.glob(f"{source_update.BACKUP_PREFIX}*"))
 
 
 def test_remove_source_keeps_personal_data(tmp_path: Path):

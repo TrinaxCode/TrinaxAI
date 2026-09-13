@@ -55,3 +55,22 @@ def test_linux_weekly_update_creates_persistent_timer(tmp_path: Path) -> None:
     assert "Persistent=true" in timer
     assert "auto_update.py" in service
     assert str(base_dir) in service
+
+
+@pytest.mark.skipif(os.name == "nt", reason="systemd paths require POSIX semantics")
+def test_linux_systemd_unit_escapes_percent_paths(tmp_path: Path) -> None:
+    home = tmp_path / "home"
+    base_dir = tmp_path / "TrinaxAI %profile"
+    (base_dir / "scripts").mkdir(parents=True)
+    completed = SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    with (
+        patch.object(auto_update.platform, "system", return_value="Linux"),
+        patch.object(auto_update.Path, "home", return_value=home),
+        patch.object(auto_update.shutil, "which", return_value="/usr/bin/systemctl"),
+        patch.object(auto_update, "_run", return_value=completed),
+    ):
+        auto_update.enable(base_dir)
+
+    service = (home / ".config" / "systemd" / "user" / auto_update.LINUX_SERVICE).read_text(encoding="utf-8")
+    assert "TrinaxAI\\x20%%profile" in service

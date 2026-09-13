@@ -36,7 +36,7 @@ def test_install_surface_contract_rejects_unpinned_trinaxai_archive(tmp_path, mo
     assert any("README.md" in error and "unpinned" in error for error in errors)
 
 
-def test_install_surface_contract_allows_the_short_bootstraps(tmp_path, monkeypatch):
+def test_install_surface_contract_rejects_unverified_main_bootstraps(tmp_path, monkeypatch):
     monkeypatch.setattr(public_readiness, "ROOT", tmp_path)
     (tmp_path / "README.md").write_text(
         "curl -fsSL https://raw.githubusercontent.com/TrinaxCode/TrinaxAI/main/install.sh | bash\n"
@@ -44,7 +44,10 @@ def test_install_surface_contract_allows_the_short_bootstraps(tmp_path, monkeypa
         encoding="utf-8",
     )
 
-    assert public_readiness.check_install_surfaces() == []
+    errors = public_readiness.check_install_surfaces()
+
+    assert len(errors) == 2
+    assert all("main/install" in error for error in errors)
 
 
 def test_release_workflow_security_contract_is_fail_closed_and_reproducible():

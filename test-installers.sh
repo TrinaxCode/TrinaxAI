@@ -138,6 +138,17 @@ grep -Fq 'qwen3-embedding:4b' "$ROOT/uninstall.sh" || fail "shell purge misses t
 grep -Fq 'qwen3-embedding:4b' "$ROOT/uninstall.ps1" || fail "PowerShell purge misses the current large embedding model"
 ok "Release pinning, checksums, canonical profiles, readiness gates, and embedding purge checks found"
 
+grep -Fq 'python3 -m pip --version' "$ROOT/install.sh" || fail "installer does not check pip availability"
+grep -Fq 'python3 -m venv --help' "$ROOT/install.sh" || fail "installer does not check venv availability"
+grep -Fq 'process.versions.node.split(".")[0]) >= 22' "$ROOT/install.sh" || fail "installer does not refresh an old Node.js runtime"
+grep -Fq 'https://nodejs.org/dist/index.json' "$ROOT/install.sh" || fail "installer has no verified Node.js fallback"
+grep -Fq 'SHASUMS256.txt' "$ROOT/install.sh" || fail "installer does not verify the Node.js archive manifest"
+if (cd "$ROOT" && TRINAXAI_HOME=relative bash install.sh --dry-run >"$TMP_DIR/relative-install.out" 2>&1); then
+  fail "installer accepted a relative installation directory"
+fi
+grep -Fq 'absolute path' "$TMP_DIR/relative-install.out" || fail "relative installation path error is unclear"
+ok "Linux dependency and installation-path guards found"
+
 if (cd "$ROOT" && TRINAXAI_UPDATE_SOURCE_URL='https://github.com/TrinaxCode/TrinaxAI/archive/refs/heads/main.tar.gz' bash update.sh --dry-run >/dev/null 2>&1); then
   fail "updater accepted an unchecksummed main archive"
 fi

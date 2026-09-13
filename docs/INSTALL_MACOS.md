@@ -48,12 +48,8 @@ Apple Silicon uses Metal automatically through Ollama when the model supports it
 
 ## Quick install
 
-```bash
-curl -fsSL https://raw.githubusercontent.com/TrinaxCode/TrinaxAI/main/install.sh | bash
-```
-
-The short bootstrap is the easiest path. It fetches the current installer from
-`main`; that installer downloads and verifies the versioned release package.
+Use the release-pinned command below; it checks the installer SHA-256 before
+execution.
 
 ## Verified release-pinned install
 

@@ -47,12 +47,8 @@ If you use NVIDIA, install the drivers before downloading large models. TrinaxAI
 
 ## Quick install
 
-```bash
-curl -fsSL https://raw.githubusercontent.com/TrinaxCode/TrinaxAI/main/install.sh | bash
-```
-
-The short bootstrap is the easiest path. It fetches the current installer from
-`main`; that installer downloads and verifies the versioned release package.
+Use the release-pinned command below; it checks the installer SHA-256 before
+execution.
 
 ## Verified release-pinned install
 
@@ -79,7 +75,7 @@ Use `./install.sh --no-start` to leave TrinaxAI stopped; boot autostart is skipp
 
 Choose a different application directory when needed:
 
-Set `TRINAXAI_HOME` or pass `--install-dir PATH` when you need a custom location.
+Set `TRINAXAI_HOME` or pass `--install-dir PATH` when you need a custom location; use an absolute path.
 
 After installation, lifecycle operations do not require changing directories:
 
@@ -130,6 +126,14 @@ openSUSE:
 ```bash
 sudo zypper install python3 python3-pip curl unzip nodejs npm
 ```
+
+Verify that the package manager supplied Node.js 22 or newer before continuing:
+
+```bash
+node --version
+```
+
+If it is older, install Node.js 22+ from [nodejs.org](https://nodejs.org/) first. The automated installer downloads and SHA-256-verifies the official Node.js 22 archive when the distribution package is too old.
 
 ### 2. Download the release archive
 

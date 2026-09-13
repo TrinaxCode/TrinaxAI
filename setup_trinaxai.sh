@@ -118,6 +118,14 @@ else
 fi
 BASH_BIN="$(command -v bash)"
 NPM_BIN="$(command -v npm)"
+systemd_escape_path() {
+    local value="$1"
+    value="${value//\\/\\x5c}"
+    value="${value// /\\x20}"
+    value="${value//%/%%}"
+    printf '%s' "$value"
+}
+PROJ_SYSTEMD="$(systemd_escape_path "$PROJ")"
 PROFILE=""
 if [ -f "$PROJ/.env" ]; then
     if ! PROFILE="$(awk -F= '/^TRINAXAI_PROFILE=/{value=$0; sub(/^[^=]*=/, "", value)} END {print value}' "$PROJ/.env")"; then
@@ -240,9 +248,9 @@ Wants=ollama.service
 [Service]
 Type=simple
 User=$USER_NAME
-WorkingDirectory=$PROJ
-EnvironmentFile=-$PROJ/.env
-ExecStart=$BASH_BIN -lc 'cd "$PROJ" && source .venv/bin/activate && if [ "\${TRINAXAI_RAG_HTTPS:-1}" != "0" ] && [ "\${TRINAXAI_RAG_HTTPS:-1}" != "false" ] && [ -f "$PROJ/chat-pwa/certs/localhost-key.pem" ] && [ -f "$PROJ/chat-pwa/certs/localhost.pem" ]; then exec python -m uvicorn app.main:app --host 127.0.0.1 --port \${TRINAXAI_PORT:-3333} --ssl-keyfile "$PROJ/chat-pwa/certs/localhost-key.pem" --ssl-certfile "$PROJ/chat-pwa/certs/localhost.pem"; else exec python -m uvicorn app.main:app --host 127.0.0.1 --port \${TRINAXAI_PORT:-3333}; fi'
+WorkingDirectory=$PROJ_SYSTEMD
+EnvironmentFile=-$PROJ_SYSTEMD/.env
+ExecStart=$BASH_BIN -lc 'cd "\$1" && source .venv/bin/activate && if [ "\${TRINAXAI_RAG_HTTPS:-1}" != "0" ] && [ "\${TRINAXAI_RAG_HTTPS:-1}" != "false" ] && [ -f "\$1/chat-pwa/certs/localhost-key.pem" ] && [ -f "\$1/chat-pwa/certs/localhost.pem" ]; then exec python -m uvicorn app.main:app --host 127.0.0.1 --port \${TRINAXAI_PORT:-3333} --ssl-keyfile "\$1/chat-pwa/certs/localhost-key.pem" --ssl-certfile "\$1/chat-pwa/certs/localhost.pem"; else exec python -m uvicorn app.main:app --host 127.0.0.1 --port \${TRINAXAI_PORT:-3333}; fi' -- "$PROJ_SYSTEMD"
 Restart=on-failure
 RestartSec=5
 
@@ -265,8 +273,8 @@ After=network.target
 [Service]
 Type=simple
 User=$USER_NAME
-WorkingDirectory=$PROJ/chat-pwa
-EnvironmentFile=-$PROJ/.env
+WorkingDirectory=$PROJ_SYSTEMD/chat-pwa
+EnvironmentFile=-$PROJ_SYSTEMD/.env
 Environment="NODE_ENV=production"
 ExecStart=$NPM_BIN run preview
 Restart=on-failure
