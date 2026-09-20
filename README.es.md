@@ -7,22 +7,157 @@
   <a href="https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.2.6"><img src="https://img.shields.io/badge/version-1.2.6-006bbd" alt="Release estable: 1.2.6"></a>
   <a href="https://github.com/TrinaxCode/TrinaxAI/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/TrinaxCode/TrinaxAI/ci.yml?branch=main&amp;label=CI" alt="Estado de CI"></a>
   <a href="https://github.com/TrinaxCode/TrinaxAI/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0--or--later-006bbd" alt="Licencia AGPL-3.0-or-later"></a>
-  <img src="https://img.shields.io/badge/macOS%20%7C%20Windows%20%7C%20Linux-4493F8?style=flat-square" alt="Plataformas: macOS, Windows y Linux">
+  <img src="https://img.shields.io/badge/macOS%20%7C%20Windows%20%7C%20Linux-4493F8?style=flat-square" alt="Plataformas compatibles: macOS, Windows y Linux">
 </p>
 
 <p align="center"><sub><a href="README.md">English</a> · <strong>Español</strong></sub></p>
 <p align="center"><sub><a href="https://www.trinaxai.app/">Sitio web</a> · <a href="docs/README.es.md">Documentación</a> · <a href="docs/CHANGELOG.es.md">Cambios</a> · <a href="LICENSE">Licencia</a></sub></p>
 
-> Tu asistente privado para trabajar con tus archivos desde tu propio equipo.
+> Un asistente privado y local para tus archivos, investigaciones y código.
 
-TrinaxAI es un asistente local basado en Ollama. Combina chat directo, RAG con
-citas, investigación web opcional, un agente de código con sandbox, una CLI y
-una PWA instalable. La inferencia y los datos indexados permanecen en el equipo
-configurado salvo que elijas explícitamente un servicio remoto.
+TrinaxAI se ejecuta en tu equipo y mantiene la inferencia y los datos indexados
+en el host configurado salvo que elijas explícitamente un servicio remoto.
+Combina chat local, generación aumentada por recuperación (RAG) con citas,
+investigación web opcional, un agente de código aislado, una interfaz de
+terminal y una aplicación web progresiva (PWA) instalable.
+
+## Instalar con npm
+
+Usa el paquete npm en Linux, macOS o Windows. Necesitas Node.js 22 o posterior
+con npm disponible en la terminal.
+
+~~~bash
+npm install -g trinaxai@latest
+trinaxai setup
+~~~
+
+El lanzador descarga el release oficial correspondiente, verifica su checksum
+SHA-256 e inicia la configuración de la plataforma. El flujo prepara el
+backend, la PWA, Ollama y los modelos recomendados. Pregunta antes de descargar
+modelos opcionales o cambiar el autoarranque.
+
+El lanzador npm es la única ruta de instalación pública para usuarios finales.
+Los scripts de plataforma del repositorio implementan el release por debajo;
+no necesitas descargarlos ni ejecutarlos directamente.
+
+## Empezar a usar TrinaxAI
+
+Ejecuta primero la comprobación de salud:
+
+~~~bash
+trinaxai doctor
+trinaxai status
+~~~
+
+Después abre [https://localhost:3334](https://localhost:3334). El navegador
+puede pedirte que confíes en el certificado local la primera vez.
+
+Haz una pregunta sobre los archivos indexados:
+
+~~~bash
+trinaxai ask "Resume mi proyecto indexado" --engine rag
+~~~
+
+Si aplazaste la descarga de modelos, ejecuta `trinaxai setup` cuando estés
+listo. Usa `trinaxai --help` para consultar todos los comandos.
+
+## Opciones de configuración
+
+| Necesidad | Comando |
+| --- | --- |
+| Aplazar modelos | `trinaxai setup --no-models` |
+| Preparar sin iniciar servicios | `trinaxai setup --no-start` |
+| Elegir un perfil | `trinaxai setup --profile 16gb` |
+| Previsualizar cambios | `trinaxai setup --dry-run` |
+| Automatizar | `trinaxai setup --non-interactive` |
+
+El instalador detecta CPU, memoria, GPU y VRAM. Consulta
+[configuración](docs/CONFIGURATION.es.md) para ajustar modelos, límites o proveedores.
+
+## Comandos diarios
+
+| Objetivo | Comando |
+| --- | --- |
+| Abrir el asistente interactivo | `trinaxai chat` |
+| Hacer una pregunta | `trinaxai ask "..." --engine rag` |
+| Indexar una carpeta | `trinaxai index ./documentos` |
+| Ejecutar investigación | `trinaxai research --query "..." --depth 2` |
+| Usar el agente | `trinaxai agent --workspace .` |
+| Revisar servicios | `trinaxai status` |
+| Iniciar o detener servicios | `trinaxai start` / `trinaxai stop` |
+| Diagnosticar | `trinaxai doctor --strict` |
+| Actualizar | `trinaxai update` |
+| Eliminar TrinaxAI | `trinaxai uninstall` |
+
+## Qué incluye TrinaxAI
+
+- Chat local con Ollama y enrutamiento por tipo de tarea
+- RAG híbrido sobre código y documentos con citas, colecciones e indexación incremental
+- Búsqueda web, investigación profunda, memoria, voz y visión opcionales
+- Agente de código aislado con workspaces aprobados y aprobación de acciones
+- PWA HTTPS para escritorio y móvil con emparejamiento por scopes
+- Interfaz de terminal para chat, indexación, investigación, diagnósticos y exportaciones
+
+## Modelos y hardware
+
+La configuración elige un perfil según la memoria y los recursos gráficos:
+
+| Perfil | Chat y código | Respuestas rápidas | Embeddings |
+| --- | --- | --- | --- |
+| `8gb` | `qwen3.5:2b` | `qwen3.5:2b` | `qwen3-embedding:0.6b` |
+| `16gb` | `qwen3.5:4b` | `qwen3.5:2b` | `qwen3-embedding:0.6b` |
+| `32gb` | `qwen3.5:9b` | `qwen3.5:4b` | `qwen3-embedding:4b` |
+| `64gb` | `qwen3.5:35b` / `qwen3-coder:30b` | `qwen3.5:4b` | `qwen3-embedding:4b` |
+
+El perfil `8gb` funciona solo con CPU. Consulta la
+[referencia de configuración](docs/CONFIGURATION.es.md) para modelos y recursos.
+
+## Privacidad y seguridad
+
+TrinaxAI enlaza los servicios locales a loopback por defecto. Ollama no se
+expone como proxy genérico. Los navegadores LAN deben emparejarse con un código
+de un solo uso y reciben únicamente las capacidades que concedas. La
+indexación, administración, herramientas del agente y gestión de modelos
+permanecen en el host.
+
+Mantén privados los puertos `3333` y `11434`, protege `storage/.proxy_secret` y
+usa una VPN en vez de exponer el host. Lee [seguridad](docs/SECURITY.es.md) y
+[pairing LAN](docs/NETWORK_PAIRING.es.md) antes de conectar otro dispositivo.
+
+## Documentación
+
+| Quieres… | Consulta |
+| --- | --- |
+| Instalar, actualizar o eliminar | [Centro de documentación](docs/README.es.md) |
+| Configurar modelos, RAG, red o límites | [Configuración](docs/CONFIGURATION.es.md) |
+| Consultar una variable de entorno | [Variables de entorno](docs/ENVIRONMENT_VARIABLES.es.md) |
+| Usar todos los comandos | [Referencia CLI](docs/CLI_REFERENCE.es.md) |
+| Entender la arquitectura | [Arquitectura](docs/ARCHITECTURE.es.md) |
+| Integrar la API HTTP | [Referencia de API](docs/API_REFERENCE.es.md) |
+| Resolver un error | [Solución de problemas](docs/TROUBLESHOOTING.es.md) |
+| Emparejar otro dispositivo | [Pairing LAN](docs/NETWORK_PAIRING.es.md) |
+| Desarrollar o contribuir | [Guía del desarrollador](docs/DEVELOPER_GUIDE.es.md) |
+
+La PWA también expone estas guías en **Configuración → Documentación**.
+
+## Desarrollo
+
+Esta sección es para contribuidores que trabajan desde un checkout. Los
+usuarios finales deben usar la instalación npm anterior.
+
+~~~bash
+git clone https://github.com/TrinaxCode/TrinaxAI.git
+cd TrinaxAI
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.lock
+(cd chat-pwa && npm ci && npm run dev)
+~~~
+
+Ejecuta `make check` antes de enviar cambios. Consulta la
+[guía para contribuir](docs/CONTRIBUTING.es.md).
 
 ## Capturas
-
-Estas capturas del repositorio muestran el loop diario en la PWA con interfaz oscura:
 
 | Flujo | English | Español |
 | --- | --- | --- |
@@ -31,208 +166,10 @@ Estas capturas del repositorio muestran el loop diario en la PWA con interfaz os
 | Pairing | [Abrir](docs/assets/screenshots/pairing-en.png) | [Abrir](docs/assets/screenshots/pairing-es.png) |
 | Aprobación del agente | [Abrir](docs/assets/screenshots/agent-approval-en.png) | [Abrir](docs/assets/screenshots/agent-approval-es.png) |
 
-## Inicio rápido
-
-### CLI de npm
-
-Instala el lanzador multiplataforma corto con npm y deja que descargue y
-verifique el instalador oficial del release correspondiente:
-
-```bash
-npm install --global trinaxai@latest
-trinaxai setup
-```
-
-El paquete npm solo contiene el lanzador; el instalador verificado existente
-sigue preparando el backend, la PWA, Ollama y los modelos.
-
-### Instalación rápida — Linux y macOS
-
-La ruta segura más corta es el comando fijado al release que aparece abajo.
-Comprueba el SHA-256 del instalador antes de ejecutarlo.
-
-### Instalación verificada del release — Linux y macOS
-
-El instalador estable detecta CPU, RAM, GPU y VRAM, elige un perfil seguro,
-verifica el checksum del paquete fuente, compila la PWA, comprueba Ollama y los
-modelos necesarios, ejecuta una inferencia de smoke test e inicia la app.
-
-```bash
-set -e; version="1.2.6"; base="https://github.com/TrinaxCode/TrinaxAI/releases/download/v${version}"; installer="$(mktemp)"; trap 'rm -f "$installer"' EXIT; curl -fsSL "$base/TrinaxAI-${version}-installer.sh" -o "$installer"; expected="$(curl -fsSL "$base/SHA256SUMS" | awk -v asset="TrinaxAI-${version}-installer.sh" '$2 == asset || $2 == "*" asset { print $1; exit }')"; actual="$( (shasum -a 256 "$installer" 2>/dev/null || sha256sum "$installer") | awk '{print $1}' )"; test "$expected" = "$actual"; bash "$installer"
-```
-
-### Instalación rápida — Windows PowerShell
-
-Usa el comando de PowerShell fijado al release que aparece abajo; comprueba el
-SHA-256 del instalador antes de ejecutarlo.
-
-### Instalación verificada del release — Windows PowerShell
-
-```powershell
-$ErrorActionPreference = "Stop"
-$version = "1.2.6"
-$base = "https://github.com/TrinaxCode/TrinaxAI/releases/download/v$version"
-$installer = Join-Path $env:TEMP "TrinaxAI-$version-installer.ps1"
-$manifest = Join-Path $env:TEMP "TrinaxAI-$version-SHA256SUMS"
-Invoke-WebRequest -Uri "$base/TrinaxAI-$version-installer.ps1" -OutFile $installer
-Invoke-WebRequest -Uri "$base/SHA256SUMS" -OutFile $manifest
-$line = Get-Content -LiteralPath $manifest | Where-Object {
-  $fields = $_ -split '\s+'
-  $fields.Count -ge 2 -and (($fields[1] -replace '^\*', '') -eq "TrinaxAI-$version-installer.ps1")
-} | Select-Object -First 1
-$expected = if ($line) { ($line -split '\s+')[0] } else { "" }
-$actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $installer).Hash
-if ($expected -notmatch '^[0-9a-fA-F]{64}$' -or $actual -ine $expected) { throw "Installer SHA-256 verification failed." }
-& $installer
-```
-
-Los instaladores verificados del release están fijados a una versión y nunca
-vuelven a `main`. Para verificar una descarga de forma independiente, sigue los comandos
-breves de [firma de releases](docs/RELEASE_SIGNING.es.md). Un checkout local
-(`bash install.sh` o `powershell -ExecutionPolicy Bypass -File .\install.ps1`)
-es el modo de operador/desarrollo.
-
-Al terminar, abre **https://localhost:3334**. Con `--no-models`, las descargas y
-comprobaciones de modelos quedan pendientes para que puedas preparar primero la
-aplicación y descargarlos después.
-
-Opciones útiles:
-
-```bash
-bash install.sh --no-start       # prepara sin iniciar servicios
-bash install.sh --profile 16gb  # sobrescribe el perfil detectado
-```
-
-```powershell
-.\install.ps1 -NoStart
-.\install.ps1 -Profile 16gb
-```
-
-Actualiza o elimina una instalación existente desde cualquier carpeta:
-
-```text
-trinaxai update
-trinaxai uninstall
-```
-
-Para un checkout local u operaciones automatizadas, usa directamente los scripts nativos:
-
-```bash
-bash update.sh
-bash uninstall.sh
-```
-
-```powershell
-.\update.ps1
-.\uninstall.ps1
-```
-
-Consulta las guías de [Linux](docs/INSTALL_LINUX.es.md),
-[macOS](docs/INSTALL_MACOS.es.md) y [Windows](docs/INSTALL_WINDOWS.es.md)
-para requisitos, certificados, emparejamiento LAN, Docker y recuperación.
-
-## Qué incluye
-
-- Chat directo con Ollama y enrutamiento determinista para chat, código, razonamiento y matemáticas.
-- RAG híbrido sobre código y documentos con citas, colecciones, indexación incremental y reranker opcional.
-- Agente de código aislado y limitado a los espacios de trabajo aprobados.
-- Búsqueda web, investigación profunda, memoria, voz y visión opcionales.
-- PWA HTTPS para escritorio y móvil, con emparejamiento revocable y sincronización local.
-- CLI para chat, indexación, investigación, ciclo de vida, diagnósticos y exportaciones.
-
-## Modelos y hardware
-
-El instalador usa CPU, RAM, GPU y VRAM para elegir los perfiles `8gb`, `16gb`,
-`32gb` o `64gb`. Apple Silicon usa memoria unificada. Puedes sobrescribir el
-perfil en `.env` o con `--profile` / `-Profile`.
-
-| Perfil | Chat/código | Rápido | Embeddings |
-| --- | --- | --- | --- |
-| `8gb` | `qwen3.5:2b` | `qwen3.5:2b` | `qwen3-embedding:0.6b` |
-| `16gb` | `qwen3.5:4b` | `qwen3.5:2b` | `qwen3-embedding:0.6b` |
-| `32gb` | `qwen3.5:9b` | `qwen3.5:4b` | `qwen3-embedding:4b` |
-| `64gb` | `qwen3.5:35b` / `qwen3-coder:30b` | `qwen3.5:4b` | `qwen3-embedding:4b` |
-
-El perfil `8gb` funciona con CPU; no necesitas GPU. Los modelos grandes solo se
-descargan cuando el perfil los requiere. Consulta la
-[configuración](docs/CONFIGURATION.es.md) para cambiar nombres o límites.
-
-## CLI
-
-Después de instalar, abre una terminal nueva y usa:
-
-```bash
-trinaxai ask "Resume mi proyecto indexado" --engine rag
-trinaxai index .
-trinaxai agent --workspace .
-trinaxai research --query "Compara estos documentos" --depth 2
-trinaxai doctor --strict --json
-trinaxai start
-trinaxai stop
-trinaxai status
-```
-
-Ejecuta `trinaxai --help` o consulta la [referencia CLI](docs/CLI_REFERENCE.es.md).
-`trinaxai doctor` es el diagnóstico inicial más rápido.
-
-## Privacidad y seguridad
-
-Los servicios se enlazan a loopback por defecto y Ollama nunca se expone como
-proxy genérico. Los navegadores LAN deben emparejarse con un código de un solo
-uso y reciben únicamente capacidades explícitas; indexación, administración,
-agente y gestión de modelos quedan en el host. El agente está aislado y las
-acciones peligrosas requieren aprobación.
-
-Mantén privados los puertos `3333` y `11434`, protege
-`storage/.proxy_secret` y usa una VPN en vez de abrir el equipo a Internet.
-Consulta [seguridad](docs/SECURITY.es.md), [emparejamiento](docs/NETWORK_PAIRING.es.md)
-y [firma de releases](docs/RELEASE_SIGNING.es.md).
-
-Para reportar vulnerabilidades de seguridad, escribe a `trinaxcode@gmail.com`;
-no abras un issue público. Consulta la [política de seguridad](docs/SECURITY.es.md)
-para el proceso completo.
-
-## Plataformas compatibles
-
-| Plataforma | Instalador | Ciclo de vida | Cobertura automatizada |
-| --- | --- | --- | --- |
-| Linux (Ubuntu, Debian, Fedora, Arch) | `install.sh` | systemd de usuario | backend, CLI, PWA, E2E, instalador |
-| macOS (Intel y Apple Silicon) | `install.sh` | launchctl | backend, CLI, instalador shell |
-| Windows 10/11 | `install.ps1` | supervisor de procesos | backend, CLI, instalador PowerShell |
-
-La release se prueba en runners fijados de GitHub. Descargas de modelos,
-permisos y certificados dependen del equipo destino; sigue el checklist de
-[TESTING.es.md](TESTING.es.md) para una instalación limpia.
-
-## Documentación
-
-Empieza en el [hub de documentación](docs/README.es.md):
-
-- [Arquitectura y flujo](docs/ARCHITECTURE.es.md)
-- [Configuración](docs/CONFIGURATION.es.md)
-- [Variables de entorno](docs/ENVIRONMENT_VARIABLES.es.md)
-- [API HTTP](docs/API_REFERENCE.es.md)
-- [Solución de problemas y recuperación](docs/TROUBLESHOOTING.es.md)
-- [Guía de desarrollo](docs/DEVELOPER_GUIDE.es.md)
-
-La PWA también incluye esta documentación en **Docs**.
-
-## Desarrollo
-
-```bash
-git clone https://github.com/TrinaxCode/TrinaxAI.git
-cd TrinaxAI
-python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.lock
-(cd chat-pwa && npm ci && npm run dev)
-```
-
-Ejecuta `make check` antes de enviar cambios. Consulta
-[CONTRIBUTING.es.md](docs/CONTRIBUTING.es.md) para el flujo completo.
-
 ## Licencia
 
-TrinaxAI usa AGPL-3.0-or-later. Consulta [LICENSE](LICENSE) y la
-[guía de marca](docs/TRADEMARK.es.md).
+TrinaxAI se distribuye bajo AGPL-3.0-or-later. Consulta [LICENSE](LICENSE) y
+la [guía de marca](docs/TRADEMARK.es.md).
 
-Creado por [TrinaxCode](https://github.com/TrinaxCode) · [trinaxai.app](https://www.trinaxai.app/)
+Creado por [TrinaxCode](https://github.com/TrinaxCode) ·
+[trinaxai.app](https://www.trinaxai.app/)

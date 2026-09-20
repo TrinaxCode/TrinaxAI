@@ -1,536 +1,144 @@
 <h1 align="center">
-  <a href="https://www.trinaxai.app/"><img src="../chat-pwa/public/logo.webp" alt="TrinaxAI" width="144" valign="middle"></a> · 🐧 Instalación en Linux
+  <a href="https://www.trinaxai.app/"><img src="../chat-pwa/public/logo.webp" alt="TrinaxAI" width="144" valign="middle"></a> · 🐧 Linux
 </h1>
 
-<p align="center">
-  <a href="https://github.com/TrinaxCode/TrinaxAI"><img src="https://img.shields.io/github/stars/TrinaxCode/TrinaxAI?style=flat&amp;label=%E2%98%85&amp;color=006bbd" alt="GitHub stars"></a>
-  <a href="https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.2.6"><img src="https://img.shields.io/badge/version-1.2.6-006bbd" alt="Stable release: 1.2.6"></a>
-  <a href="https://github.com/TrinaxCode/TrinaxAI/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/TrinaxCode/TrinaxAI/ci.yml?branch=main&amp;label=CI" alt="CI status"></a>
-  <a href="https://github.com/TrinaxCode/TrinaxAI/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0--or--later-006bbd" alt="License: AGPL-3.0-or-later"></a>
-  <img src="https://img.shields.io/badge/macOS%20%7C%20Windows%20%7C%20Linux-4493F8?style=flat-square" alt="Supported platforms: macOS, Windows, and Linux">
-</p>
-
 <p align="center"><sub><a href="INSTALL_LINUX.md">English</a> · <strong>Español</strong></sub></p>
-<p align="center"><sub><a href="https://www.trinaxai.app/">Sitio web</a> · <a href="README.es.md">Documentación</a> · <a href="../README.es.md">Inicio</a> · <a href="CHANGELOG.es.md">Cambios</a></sub></p>
+<p align="center"><sub><a href="README.es.md">Documentación</a> · <a href="../README.es.md">Inicio</a> · <a href="TROUBLESHOOTING.es.md">Problemas</a></sub></p>
 
-Guía para instalar, configurar, iniciar y dejar listo TrinaxAI en Linux. Aplica para Ubuntu, Debian, Fedora, Arch, openSUSE y distribuciones similares.
+Esta guía explica los requisitos de Linux, la instalación npm, el primer
+inicio y las operaciones de servicio. Cubre Ubuntu, Debian, Fedora, Arch,
+openSUSE y distribuciones similares.
 
 ## Estado de soporte
 
-Linux es la plataforma principal validada por CI. El CI actual valida tests backend, tests/build frontend, smoke tests de CLI, public-readiness y sintaxis shell en Ubuntu. La validación end-to-end del instalador en todas las distribuciones listadas sigue pendiente.
-
-## Qué queda funcionando
-
-Al terminar deberías tener:
-
-- Ollama corriendo localmente en `http://localhost:11434`.
-- API RAG de TrinaxAI en `https://localhost:3333` cuando existe el certificado administrado (HTTP es el fallback).
-- PWA de TrinaxAI en `https://localhost:3334`.
-- Modelos base descargados si eliges esa opción.
-- Entorno Python `.venv` instalado.
-- Dependencias del frontend instaladas.
-- `.env` generado con el perfil de tu equipo.
-- Autoarranque opcional de usuario con systemd: la PWA vuelve al iniciar el equipo y la IA respeta si quedo encendida o apagada.
+Linux es la plataforma principal de CI. El release comprueba backend, frontend,
+CLI, preparación pública, seguridad y el lanzador npm en Linux. Los drivers,
+permisos y la velocidad de descarga de modelos dependen de tu equipo.
 
 ## Requisitos
 
 | Recurso | Mínimo | Recomendado |
-|---|---:|---:|
+| --- | ---: | ---: |
+| Node.js y npm | Node.js 22 con npm | Node.js LTS actual |
 | RAM | 8 GB | 16 GB o más |
-| Disco libre | 5 GB | 10-25 GB |
-| Python | 3.10 | 3.12 |
-| Node.js | 22 | 24 LTS |
-| Ollama | Sí | Última versión |
+| Disco libre | 5 GB | 10–25 GB |
+| Arquitectura | x86_64 o arm64 | Un destino compatible con Ollama |
 
-Si usas NVIDIA, instala los drivers antes de descargar modelos grandes. TrinaxAI también funciona solo con CPU, pero las respuestas serán más lentas.
+No necesitas Git para una instalación normal. Instala los drivers NVIDIA o AMD
+antes de descargar modelos grandes. TrinaxAI también funciona solo con CPU.
 
-## Instalación rápida
+Comprueba las herramientas antes de configurar:
 
-Usa el comando fijado al release que aparece abajo; comprueba el SHA-256 del
-instalador antes de ejecutarlo.
-
-## Instalación verificada fijada a un release
-
-> Estado del release: `v1.2.6` es Production/Stable. Sus paquetes fuente, instaladores, wheel, checksums y firmas están publicados en GitHub. El instalador nunca vuelve a `main`.
-
-```bash
-set -e; version="1.2.6"; base="https://github.com/TrinaxCode/TrinaxAI/releases/download/v${version}"; installer="$(mktemp)"; trap 'rm -f "$installer"' EXIT; curl -fsSL "$base/TrinaxAI-${version}-installer.sh" -o "$installer"; expected="$(curl -fsSL "$base/SHA256SUMS" | awk -v asset="TrinaxAI-${version}-installer.sh" '$2 == asset || $2 == "*" asset { print $1; exit }')"; actual="$( (shasum -a 256 "$installer" 2>/dev/null || sha256sum "$installer") | awk '{print $1}' )"; test "$expected" = "$actual"; bash "$installer"
-```
-
-El instalador descarga directamente el archivo fuente desde GitHub. No necesita Git, detecta tu hardware, instala las dependencias necesarias, configura Ollama, compila la PWA, verifica una inferencia de smoke test e inicia TrinaxAI. Acepta la solicitud de contraseña cuando tu distribución la pida para instalar paquetes del sistema. Para revisar checksum o GPG manualmente, consulta [firma de releases](RELEASE_SIGNING.es.md).
-
-## Opciones del instalador
-
-El comando fijado de arriba es la ruta normal. Para un checkout local:
-
-```bash
-cd /ruta/a/TrinaxAI
-./install.sh
-```
-
-Una instalación nueva se guarda en `$XDG_DATA_HOME/trinaxai` (normalmente `~/.local/share/trinaxai`), manteniendo compatibilidad con instalaciones anteriores en `~/trinaxai`. Para elegir otra ruta, sustituye el último comando del bloque anterior por el siguiente y usa una ruta absoluta. El instalador detecta tu RAM, crea `.env`, instala dependencias y prepara la PWA.
-
-Usa `./install.sh --no-start` para dejar TrinaxAI detenido; también se omite el inicio automático y podrás activarlo después de iniciar TrinaxAI.
-
-```bash
-bash "$installer" --install-dir "/ruta/a/trinaxai"
-```
-
-Después puedes administrarla desde cualquier carpeta:
-
-```bash
-trinaxai doctor
-trinaxai update
-trinaxai uninstall
-```
-
-`trinaxai uninstall -y` usa opciones seguras y conserva índices y modelos salvo que pidas eliminarlos.
-
-Ejecutar desde un checkout local es un modo de operador/desarrollo y no se bloquea intencionalmente; revisa y protege ese checkout por separado del flujo de descarga de releases verificado.
-
-El perfil se elige automáticamente según CPU, RAM, GPU y VRAM. En modo interactivo, elige `Normal` salvo que sepas que quieres un perfil manual:
-
-- `8gb`: equipos con poca memoria.
-- `16gb`: equipos equilibrados.
-- `32gb`: más RAM o una GPU capaz.
-- `64gb`: memoria abundante o una GPU potente.
-
-## Instalación manual
-
-Usa estos pasos si prefieres revisar cada parte.
-
-### 1. Instalar dependencias del sistema
-
-Ubuntu/Debian:
-
-```bash
-sudo apt-get update
-sudo apt-get install -y python3 python3-pip python3-venv curl unzip nodejs npm
-```
-
-Fedora:
-
-```bash
-sudo dnf install -y python3 python3-pip curl unzip nodejs npm
-```
-
-Arch:
-
-```bash
-sudo pacman -Sy --needed python python-pip curl unzip nodejs npm
-```
-
-openSUSE:
-
-```bash
-sudo zypper install python3 python3-pip curl unzip nodejs npm
-```
-
-Verifica que el gestor haya instalado Node.js 22 o posterior antes de continuar:
-
-```bash
+~~~bash
 node --version
-```
+npm --version
+~~~
 
-Si es anterior, instala Node.js 22+ desde [nodejs.org](https://nodejs.org/) primero. El instalador automático descarga y verifica con SHA-256 el archivo oficial de Node.js 22 cuando el paquete de la distribución es demasiado antiguo.
+## Instalar con npm
 
-### 2. Descargar el archivo del release
+Usa la misma ruta pública en todas las plataformas compatibles:
 
-```bash
-set -eu
-version="1.2.6"
-base="https://github.com/TrinaxCode/TrinaxAI/releases/download/v${version}"
-mkdir -p ~/trinaxai
-archive="$(mktemp)"
-manifest="$(mktemp)"
-trap 'rm -f "$archive" "$manifest"' EXIT
-curl --fail --location --output "$archive" "${base}/TrinaxAI-${version}.tar.gz"
-curl --fail --location --output "$manifest" "${base}/SHA256SUMS"
-expected="$(awk -v asset="TrinaxAI-${version}.tar.gz" '$2 == asset || $2 == "*" asset { print $1; exit }' "$manifest")"
-if command -v sha256sum >/dev/null 2>&1; then actual="$(sha256sum "$archive" | awk '{print $1}')"; elif command -v shasum >/dev/null 2>&1; then actual="$(shasum -a 256 "$archive" | awk '{print $1}')"; else echo "Se necesita una herramienta SHA-256 (sha256sum o shasum)." >&2; exit 2; fi
-if [ -z "$expected" ] || [ "$actual" != "$expected" ]; then echo "Falló la verificación SHA-256 del archivo fuente." >&2; exit 1; fi
-tar -xzf "$archive" --strip-components=1 -C ~/trinaxai
-cd ~/trinaxai
-```
+~~~bash
+npm install -g trinaxai@latest
+trinaxai setup
+~~~
 
-### 3. Crear el entorno Python
+El lanzador npm descarga el instalador correspondiente y verifica su checksum
+SHA-256. Después comprueba Python, Node.js, Ollama, almacenamiento,
+modelos, certificados y la PWA. Acepta el aviso del gestor de paquetes cuando
+Linux pida permisos.
 
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-python -m pip install --upgrade pip
-python -m pip install --require-hashes -r requirements.lock
-```
+Usa opciones solo si las necesitas:
 
-### 4. Instalar la PWA
+~~~bash
+trinaxai setup --no-models
+trinaxai setup --no-start
+trinaxai setup --profile 16gb
+~~~
 
-```bash
-cd chat-pwa
-npm ci
-npm run build
-cd ..
-```
+El lanzador npm es la entrada compatible para usuarios finales. No ejecutes
+install.sh desde un checkout para una instalación normal; esa ruta pertenece a
+los internals del release y al desarrollo.
 
-### 5. Instalar Ollama
+## Primer inicio
 
-```bash
-curl -fsSL https://ollama.com/install.sh | sh
-```
+Comprueba los servicios:
 
-Verifica que responda:
+~~~bash
+trinaxai doctor
+trinaxai status
+~~~
 
-```bash
-ollama --version
-ollama list
-```
+Abre https://localhost:3334. El navegador puede pedirte que confíes en el
+certificado local. Si aplazaste los modelos, ejecuta setup de nuevo sin
+--no-models.
 
-### 6. Crear `.env`
+Indexa una carpeta y haz una pregunta con citas:
 
-Puedes copiar la plantilla:
+~~~bash
+trinaxai index ~/Documents
+trinaxai ask "Resume mis archivos indexados" --engine rag
+~~~
 
-```bash
-cp .env.example .env
-```
+## Operaciones de servicio en Linux
 
-Valores recomendados para empezar (deja el perfil automático salvo que necesites sobrescribirlo):
+La instalación administrada guarda la aplicación en XDG_DATA_HOME/trinaxai,
+normalmente ~/.local/share/trinaxai. También reconoce una instalación antigua
+en ~/trinaxai. Usa la CLI desde cualquier carpeta:
 
-```bash
-# Déjalo sin definir para detectar CPU/RAM/GPU.
-#TRINAXAI_PROFILE=16gb
-TRINAXAI_HOST=127.0.0.1
-TRINAXAI_PORT=3333
-TRINAXAI_INDEX_DIR=./local_sources
-# Valor de compatibilidad obsoleto; la administración del host siempre es solo localhost.
-TRINAXAI_ALLOW_LAN_SYSTEM=0
-TRINAXAI_CORS_ORIGINS=https://localhost:3334,http://localhost:3334,https://127.0.0.1:3334,http://127.0.0.1:3334
-OLLAMA_BASE_URL=http://localhost:11434
-OLLAMA_HOST=127.0.0.1
-TRINAXAI_RAG_HTTPS=1
-TRINAXAI_RAG_TARGET=https://127.0.0.1:3333
-VITE_TRINAXAI_RAG_TARGET=https://127.0.0.1:3333
-```
+~~~bash
+trinaxai start
+trinaxai stop
+trinaxai restart
+trinaxai status
+~~~
 
-Si cambias de red o quieres conectar un teléfono en el mismo Wi-Fi, deja que TrinaxAI renueve la dirección local y el certificado HTTPS:
+La configuración puede activar el autoarranque con systemd de usuario. Mantén
+la administración del host solo en localhost salvo que entiendas el modelo de
+seguridad.
 
-```bash
+## Acceso desde la red local
+
+Para emparejar un teléfono o navegador de la misma red, actualiza la dirección
+y el certificado local:
+
+~~~bash
 trinaxai network refresh
-```
+trinaxai pair start
+~~~
 
-Abre la URL por IP que muestra. La URL `.local` es una alternativa cuando mDNS funciona en el router. Una PWA cacheada en la IP anterior es una copia offline, no otra instalación activa.
+Sigue [Pairing LAN](NETWORK_PAIRING.es.md). No expongas directamente los
+puertos 3333, 3334 ni 11434 a Internet.
 
-## Descargar modelos
+## Actualizar, respaldar y eliminar
 
-Perfil `16gb` recomendado:
+Crea una copia antes de actualizar o modificar el índice:
 
-```bash
-ollama pull qwen3.5:2b
-ollama pull qwen3.5:4b
-ollama pull qwen3-embedding:0.6b
-```
+~~~bash
+trinaxai update
+trinaxai doctor --strict
+trinaxai uninstall
+~~~
 
-Para `8gb`, `32gb` y `64gb`, usa la flota vigente de la
-[tabla de modelos y perfiles](../README.es.md#modelos-y-perfiles-de-hardware). El instalador
-descarga el conjunto de texto/RAG. La visión se descarga al analizar la primera
-imagen; los pulls manuales solo hacen falta en configuraciones personalizadas.
+La desinstalación predeterminada conserva índices y modelos de Ollama. Usa las
+opciones de purge solo después de leer la [referencia CLI](CLI_REFERENCE.es.md).
 
-## Indexar tus archivos
+## Docker y desarrollo desde código
 
-El indexado crea la base de conocimiento local que usa RAG.
-
-```bash
-cd ~/trinaxai
-source .venv/bin/activate
-python index.py
-```
-
-También puedes indexar desde la PWA: abre `https://localhost:3334`, ve a configuración, elige una carpeta y asígnala a una colección.
-
-Los archivos importados desde navegador se copian a `local_sources/collections/`. El navegador no entrega la ruta absoluta original por seguridad.
-
-## Iniciar TrinaxAI
-
-Camino recomendado:
-
-```bash
-cd ~/trinaxai
-./startup_ai.sh
-```
-
-Alternativa directa:
-
-```bash
-.venv/bin/python service_manager.py start --base-dir "$PWD"
-```
-
-El gateway escucha en loopback por defecto. Para un acceso LAN intencional,
-establece `TRINAXAI_PWA_HOST=0.0.0.0` en `.env`, reinicia TrinaxAI y vincula el
-navegador remoto antes de usarlo.
-
-Abrir:
-
-```text
-https://localhost:3334
-```
-
-Desde teléfono o tablet en la misma WiFi:
-
-```text
-https://TU-IP-LAN:3334
-```
-
-Si el navegador informa que el certificado no es confiable, instala la CA pública
-que muestra `trinaxai network` y confía en ella en ese dispositivo. No omitas la
-advertencia en una conexión LAN; consulta [pairing LAN y confianza HTTPS](NETWORK_PAIRING.es.md).
-
-## Apagar, reiniciar y revisar estado
-
-Apagar solo los servicios de IA, dejando la PWA disponible:
-
-```bash
-./shutdown_ai.sh
-```
-
-Apagar todo:
-
-```bash
-.venv/bin/python service_manager.py stop-all --base-dir "$PWD"
-```
-
-Esto deja solo la página de recuperación por loopback en `https://localhost:3334`; el acceso LAN permanece cerrado hasta iniciar TrinaxAI allí.
-
-Ver estado:
-
-```bash
-.venv/bin/python service_manager.py status --base-dir "$PWD"
-```
-
-Supervisor en primer plano:
-
-```bash
-.venv/bin/python service_manager.py watch --base-dir "$PWD"
-```
-
-## Autoarranque
-
-El instalador lo habilita automáticamente. El supervisor siempre intenta mantener la PWA disponible; si apagaste la IA con `./shutdown_ai.sh` o desde la PWA, el siguiente arranque no levanta Ollama/RAG hasta que vuelvas a encender la IA.
-
-### Opción segura por usuario
-
-Esta opción crea un servicio systemd de usuario y no requiere escribir en `/etc`:
-
-```bash
-cd ~/trinaxai
-.venv/bin/python service_manager.py enable-autostart --base-dir "$PWD"
-```
-
-Desactivar:
-
-```bash
-.venv/bin/python service_manager.py disable-autostart --base-dir "$PWD"
-```
-
-### Opción avanzada con systemd de sistema
-
-`setup_trinaxai.sh` es solo para Linux. Crea unidades systemd en `/etc/systemd/system`, configura Ollama y agrega una regla sudoers para permitir iniciar/apagar desde la PWA sin pedir contraseña.
-
-Ejecútalo solo si entiendes ese cambio de permisos:
-
-```bash
-cd ~/trinaxai
-sudo ./setup_trinaxai.sh
-```
-
-Revisar servicios:
-
-```bash
-systemctl status ollama
-systemctl status ai-rag
-systemctl status trinaxai-frontend
-```
-
-Logs:
-
-```bash
-journalctl -u ai-rag -f
-journalctl -u trinaxai-frontend -f
-```
-
-## Verificar que todo funciona
-
-```bash
-cd ~/trinaxai
-.venv/bin/python test_system.py --verbose
-```
-
-También puedes revisar manualmente:
-
-```bash
-curl http://localhost:11434/api/tags
-curl -k https://localhost:3333/health
-```
-
-La PWA debe abrir en:
-
-```text
-https://localhost:3334
-```
-
-## Uso diario
-
-1. Inicia TrinaxAI con `./startup_ai.sh` o deja autoarranque habilitado.
-2. Abre `https://localhost:3334`.
-3. Usa modo Ollama para chat general.
-4. Usa modo RAG para preguntas sobre tus archivos indexados.
-5. Crea colecciones para separar proyectos o temas.
-6. Adjunta archivos temporales si no quieres indexarlos.
-7. Usa frases como `recuerda que...` para guardar memoria local explícita.
-
-## Backend opcional con Docker
-
-Esta primera etapa containeriza únicamente la API RAG. La PWA, el gateway de
-seguridad y Ollama siguen ejecutándose en el host.
-
-Requisitos: Docker Compose y Ollama instalado en el host.
-
-```bash
-cd ~/trinaxai
-cp .env.example .env
-mkdir -p projects storage local_sources
-```
-
-En `.env`, cambia el destino de la API a HTTP porque el contenedor no termina
-TLS:
-
-```dotenv
-TRINAXAI_RAG_TARGET=http://127.0.0.1:3333
-VITE_TRINAXAI_RAG_TARGET=http://127.0.0.1:3333
-```
-
-Después inicia solo el gateway PWA del host y la API en Docker:
-
-```bash
-export TRINAXAI_DOCKER_UID="$(id -u)"
-export TRINAXAI_DOCKER_GID="$(id -g)"
-# v1.2.6 publica archivos fuente/instaladores firmados, no una imagen GHCR.
-# Construye la API opcional desde este checkout verificado:
-docker compose up --build -d
-.venv/bin/python service_manager.py start-frontend --base-dir "$PWD"
-```
-
-Cuando una release futura liste una imagen para la versión exacta, define
-`TRINAXAI_DOCKER_IMAGE=ghcr.io/trinaxcode/trinaxai:<versión>`, ejecuta
-`docker compose pull` y conserva esa etiqueta fija para reproducibilidad. No
-hagas pull de una etiqueta que no esté listada.
-
-La API queda publicada solo en `127.0.0.1:3333`, por lo que la PWA nativa puede
-seguir usando su gateway en `3334`. Los índices, fuentes y secretos permanecen
-en `storage/` y `local_sources/` mediante montajes persistentes.
-
-Por defecto, el contenedor busca Ollama en
-`http://host.docker.internal:11434`. En Linux, Ollama debe aceptar conexiones
-desde la red de Docker; configura su bind de forma consciente y limita el
-acceso con el firewall. Compose usa la subred privada `172.31.0.0/24` para
-transportar la identidad HMAC; si ya está ocupada, cambia
-`TRINAXAI_DOCKER_NETWORK_CIDR` por otra subred privada libre. Para otra
-dirección de Ollama:
-
-```bash
-TRINAXAI_DOCKER_OLLAMA_URL=http://host.docker.internal:11434 \
-  docker compose up --no-build -d
-```
-
-La carpeta indexada por el contenedor es `./projects` en modo lectura. Para
-usar otra carpeta del host, define `TRINAXAI_DOCKER_INDEX_DIR` antes de iniciar:
-
-```bash
-TRINAXAI_DOCKER_INDEX_DIR=/ruta/a/documentos docker compose up --no-build -d
-```
-
-Comprobar estado y detenerlo:
-
-```bash
-curl http://127.0.0.1:3333/health
-docker compose ps
-docker compose down
-```
-
-Este perfil no containeriza todavía la PWA ni Ollama, y no debe exponerse el
-puerto `3333` fuera del host. No uses `startup_ai.sh` ni `start-ai` mientras
-este Compose esté activo: intentarían iniciar otra API en el mismo puerto.
-
-El archivo `.env` es opcional para Compose. Si no existe, se usan los valores
-seguros de `compose.yaml`; añádelo solo cuando necesites sobrescribir la configuración.
-
-## Actualizar
-
-```bash
-cd ~/trinaxai
-./update.sh
-```
-
-El actualizador pregunta si quieres crear backup, descargar código nuevo, actualizar modelos, cambiar autoarranque, reiniciar servicios y correr la auditoría. Las dependencias Python/npm y el build de la PWA siguen siendo automáticos.
-
-El instalador activa un timer que comprueba GitHub semanalmente y registra si
-hay una actualización en `logs/auto-update.log`. Es solo comprobación: no
-descarga/ejecuta un updater ni modifica servicios. Revisa el release etiquetado
-y ejecuta manualmente el actualizador local guiado. Desactívalo con
-`python scripts/auto_update.py disable`.
-
-## Copias de seguridad
-
-Crear backup:
-
-```bash
-./backup.sh create
-```
-
-El archivo se publica con modo `0600` y contiene `.env`, chats, adjuntos,
-fuentes e índices privados. Cifra toda copia fuera del host. La restauración
-valida rutas y tipos, extrae a staging y revierte un reemplazo fallido; aun así
-pruébala antes de actualizar.
-
-Respaldar manualmente lo importante:
-
-- `.env`
-- `storage/`
-- `local_sources/`
-
-## Desinstalar
-
-```bash
-./uninstall.sh
-```
-
-El desinstalador pregunta qué archivos runtime quieres quitar. Los datos RAG y modelos de Ollama se conservan salvo que elijas borrarlos.
-
-Para dejar preseleccionada la opción de quitar modelos de Ollama:
-
-```bash
-./uninstall.sh --remove-models
-```
-
-## Puertos y firewall
-
-| Puerto | Servicio | Uso |
-|---:|---|---|
-| 11434 | Ollama | Modelos locales |
-| 3333 | RAG API | Backend FastAPI |
-| 3334 | PWA | Interfaz web |
-
-Si usas teléfono o tablet, permite solo el gateway PWA en `3334` dentro de tu
-red privada. Mantén FastAPI `3333` y Ollama `11434` en loopback; no los expongas
-a la LAN ni a Internet.
-
-Ollama no trae autenticación integrada. Si `OLLAMA_HOST=0.0.0.0`, otros dispositivos de tu LAN podrían usar tus modelos. Para acceso remoto, usa una VPN como Tailscale o WireGuard.
+Docker Compose y los checkouts del código son rutas separadas para operadores y
+desarrolladores. No son instaladores alternativos para usuarios finales.
+Consulta la [guía del desarrollador](DEVELOPER_GUIDE.es.md) para trabajar desde
+un checkout y la documentación de compose del repositorio para contenedores.
 
 ## Problemas comunes
 
-| Problema | Solución |
-|---|---|
-| `python3 -m venv` falla | Instala `python3-venv`. |
-| PWA no abre | Ejecuta `cd chat-pwa && npm run dev`. |
-| API no responde | Ejecuta `./startup_ai.sh` y revisa `logs/rag_api.log`. |
-| Modelo no encontrado | Ejecuta `ollama pull nombre-del-modelo`. |
-| El teléfono no conecta | Ejecuta `trinaxai network refresh`, abre la URL `https://HOST-LAN-IP:3334` que muestra y permite solo el gateway en el firewall de red privada. |
-| Certificado no confiable | Instala/confía en la CA pública que muestra `trinaxai network`; no omitas TLS en una LAN. Consulta [pairing LAN y confianza HTTPS](NETWORK_PAIRING.es.md). |
-| Respuestas lentas | Usa la matriz de modelos/perfiles del README raíz, reduce la concurrencia o elige `8gb`/un modelo instalado más pequeño. |
+| Síntoma | Acción |
+| --- | --- |
+| Falta npm o node | Instala un Node.js LTS activo, abre una terminal nueva y reintenta |
+| Ollama no está listo | Ejecuta trinaxai doctor y revisa el servicio de Ollama |
+| El certificado de la PWA es rechazado | Abre la URL que muestra trinaxai network y confía en la CA local |
+| Un modelo es demasiado lento | Elige un perfil menor con trinaxai setup --profile 8gb |
+| El servicio está desconectado | Ejecuta trinaxai status y trinaxai doctor --strict |
+
+Si el problema continúa, sigue [Solución de problemas](TROUBLESHOOTING.es.md) e
+incluye una salida de diagnóstico redactada al pedir soporte.

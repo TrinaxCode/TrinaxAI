@@ -13,7 +13,7 @@
 <p align="center"><sub><a href="CLI_REFERENCE.md">English</a> · <strong>Español</strong></sub></p>
 <p align="center"><sub><a href="https://www.trinaxai.app/">Sitio web</a> · <a href="README.es.md">Documentación</a> · <a href="../README.es.md">Inicio</a> · <a href="CHANGELOG.es.md">Cambios</a></sub></p>
 
-La CLI `trinaxai` ofrece chat directo con Ollama, consultas RAG, indexación, administración de memoria y colecciones, y control de servicios. Requiere Python 3.10 o superior. Para recuperar fallos por síntoma, consulta la [guía de solución de problemas](TROUBLESHOOTING.es.md).
+La CLI `trinaxai` ofrece chat directo con Ollama, consultas RAG, indexación, administración de memoria y colecciones, y control de servicios. Los usuarios finales la reciben mediante la instalación npm. El comando de checkout que aparece abajo es para contribuidores y desarrollo. Para recuperar fallos por síntoma, consulta la [guía de solución de problemas](TROUBLESHOOTING.es.md).
 
 ## Instalación y ayuda
 

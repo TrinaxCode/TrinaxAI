@@ -16,7 +16,7 @@ describe('PWA documentation', () => {
     vi.clearAllMocks();
     vi.stubGlobal('fetch', vi.fn(async () => ({
       ok: true,
-      text: async () => '> Your private assistant for working with your files on your own computer.\n\n[Repository reference](../README.md#quick-start)',
+      text: async () => '> Your private assistant for working with your files on your own computer.\n\n[Repository reference](../README.md#install-with-npm)',
     })));
   });
 
@@ -53,7 +53,7 @@ describe('PWA documentation', () => {
     expect(await screen.findByText(/Your private assistant/)).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Repository reference' })).toHaveAttribute(
       'href',
-      'https://github.com/TrinaxCode/TrinaxAI/blob/main/README.md#quick-start',
+      'https://github.com/TrinaxCode/TrinaxAI/blob/main/README.md#install-with-npm',
     );
     await user.selectOptions(screen.getByRole('combobox', { name: 'Select section' }), 'indexing');
     expect(screen.getAllByRole('link', { name: /Open on GitHub/ })[0]).toHaveAttribute('href', expect.stringContaining('/docs/ARCHITECTURE.md'));

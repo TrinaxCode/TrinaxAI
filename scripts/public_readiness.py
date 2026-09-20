@@ -616,7 +616,7 @@ def check_install_surfaces() -> list[str]:
 
 
 def check_release_contract() -> list[str]:
-    """Check that the source, docs, and release workflow describe one release."""
+    """Check that the source, npm docs, and release workflow describe one release."""
     errors: list[str] = []
     version_sources = {
         "pyproject.toml": _single_match(ROOT / "pyproject.toml", r'^version\s*=\s*"([^"]+)"$'),
@@ -651,10 +651,8 @@ def check_release_contract() -> list[str]:
             errors.append(f"{readme_name} does not advertise version {version}")
         if "TrinaxAI-Manager" in text or "trinaxai_manager" in text:
             errors.append(f"{readme_name} still advertises the removed desktop Manager")
-        if "releases/download/v${version}" not in text or "TrinaxAI-${version}-installer.sh" not in text:
-            errors.append(f"{readme_name} is missing the Unix release-pinned installer")
-        if "releases/download/v$version" not in text or "TrinaxAI-$version-installer.ps1" not in text:
-            errors.append(f"{readme_name} is missing the Windows release-pinned installer")
+        if "npm install -g trinaxai@latest" not in text or "trinaxai setup" not in text:
+            errors.append(f"{readme_name} is missing the canonical npm installation")
 
     workflow_path = ROOT / ".github/workflows/release.yml"
     ci_workflow = _read_ci_workflow()

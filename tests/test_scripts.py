@@ -290,16 +290,24 @@ def test_user_install_docs_reject_unpinned_source_archives() -> None:
         assert not any(marker in text for marker in forbidden), path
 
 
-def test_install_bootstrap_is_release_pinned_for_each_platform() -> None:
-    for path in ("README.md", "docs/INSTALL_LINUX.md", "docs/INSTALL_MACOS.md"):
+def test_user_install_docs_use_the_npm_release_path() -> None:
+    paths = (
+        "README.md",
+        "README.es.md",
+        "docs/README.md",
+        "docs/README.es.md",
+        "docs/INSTALL_LINUX.md",
+        "docs/INSTALL_LINUX.es.md",
+        "docs/INSTALL_MACOS.md",
+        "docs/INSTALL_MACOS.es.md",
+        "docs/INSTALL_WINDOWS.md",
+        "docs/INSTALL_WINDOWS.es.md",
+    )
+    for path in paths:
         text = (ROOT / path).read_text(encoding="utf-8")
-        assert "TrinaxAI-${version}-installer.sh" in text
-        assert "SHA256SUMS" in text
+        assert "npm install -g trinaxai@latest" in text, path
+        assert "trinaxai setup" in text, path
         assert "raw.githubusercontent.com/TrinaxCode/TrinaxAI/main/install.sh" not in text
-    for path in ("README.md", "docs/INSTALL_WINDOWS.md"):
-        text = (ROOT / path).read_text(encoding="utf-8")
-        assert "TrinaxAI-$version-installer.ps1" in text
-        assert "Get-FileHash -Algorithm SHA256" in text
         assert "raw.githubusercontent.com/TrinaxCode/TrinaxAI/main/install.ps1" not in text
 
 
@@ -356,7 +364,8 @@ def test_no_models_contract_defers_model_preparation() -> None:
 
     assert "Model downloads deferred; run the installer again when you are ready." in posix
     assert "Model downloads skipped; model preparation is deferred." in windows
-    assert "model downloads and readiness checks are deferred" in readme
+    assert "If you skipped model downloads during setup" in readme
+    assert "trinaxai setup --no-models" in readme
     assert "already be installed" not in readme
 
 

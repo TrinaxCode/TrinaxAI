@@ -50,7 +50,7 @@ La fuente única de verdad para todos los subsistemas. Define:
 
 - **Flota de modelos** — `MODEL_GENERAL`, `MODEL_CODE`, `MODEL_DEEP` y `MODEL_FAST`; los nombres concretos dependen del perfil activo y se pueden sobrescribir en `.env`.
 - **Perfiles de hardware** — conscientes de CPU/RAM/GPU (`8gb`/`16gb`/`32gb`/`64gb`), guardados en `storage/hardware_profile.json`
-- **Presets de embeddings** — Qwen3 Embedding 0.6B/4B/8B según perfil, nomic lite, all-minilm rápido
+- **Presets de embeddings** — Qwen3 Embedding 0.6B/4B, nomic lite y all-minilm rápido
 - **Funciones de fábrica** — `make_llm()`, `make_embed()`, `make_reranker()`
 - **Enrutador automático** — clasificador heurístico `route_model()` (sin llamada al LLM)
 - **Reglas de archivos** — qué indexar, qué omitir, tamaños de chunks por perfil
@@ -333,8 +333,9 @@ Esta sección ayuda a los contribuidores a encontrar los archivos correctos para
 
 | Qué cambiar | Dónde |
 |---|---|
-| Instalación Linux/macOS | `install.sh` |
-| Instalación Windows (PowerShell) | `install.ps1` |
+| Entrada pública de instalación | `npm-package/bin/trinaxai.js` |
+| Configuración del release en Linux/macOS | `install.sh` |
+| Configuración del release en Windows | `install.ps1` |
 | Actualización | `update.sh` / `update.ps1` |
 | Desinstalación | `uninstall.sh` / `uninstall.ps1` |
 | Gestión de servicios | `service_manager.py` + `startup_ai.sh` / `shutdown_ai.sh` |
@@ -384,7 +385,7 @@ python3 scripts/public_readiness.py
 
 ```bash
 make test        # Pruebas backend + frontend
-make lint        # Ruff + verificación de tipos TypeScript
+make lint        # Ruff, formato y ESLint
 make check       # Lint + test + audit + build
 make audit       # Auditorías locales bloqueantes
 ```

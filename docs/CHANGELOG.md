@@ -18,6 +18,10 @@ All notable changes to TrinaxAI are documented here. This project follows the
 
 ## [Unreleased]
 
+- Reworked the public documentation around one npm installation path, clarified
+  first-run and platform operations, aligned the English and Spanish guides,
+  and removed obsolete direct-installer onboarding.
+
 ## [1.2.6] — 2026-09-20
 
 ### Added

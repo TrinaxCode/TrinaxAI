@@ -13,12 +13,15 @@
 <p align="center"><sub><strong>English</strong> · <a href="DEVELOPER_GUIDE.es.md">Español</a></sub></p>
 <p align="center"><sub><a href="https://www.trinaxai.app/">Website</a> · <a href="README.md">Documentation</a> · <a href="../README.md">Home</a> · <a href="CHANGELOG.md">Changelog</a></sub></p>
 
-Use the [documentation hub](README.md) to choose the right reference. When a
-user-facing behavior changes, update the English guide, its `.es.md` counterpart,
+Use the [documentation hub](README.md) to choose the right reference. End users
+should install through npm; this page describes source-checkout development.
+When a user-facing behavior changes, update the English guide, its `.es.md` counterpart,
 the relevant in-app Docs section, and `CHANGELOG.md`. For user-facing failures,
 keep the action map aligned with [Troubleshooting](TROUBLESHOOTING.md).
 
 ## Setup
+
+This is the contributor setup, not the public installation path.
 
 ```bash
 git clone https://github.com/TrinaxCode/TrinaxAI.git
@@ -230,7 +233,10 @@ curl --cacert PATH_TO_PUBLIC_CA.pem -X POST https://localhost:3333/system/reload
 ## PWA Development
 
 ### Dev Server
-The Vite dev server runs on `https://localhost:3334` with hot module replacement. It proxies `/api/rag` → `localhost:3333` and `/api/ollama` → `localhost:11434`.
+The Vite dev server uses HTTPS on `https://localhost:3334` when local
+certificates exist; otherwise it falls back to HTTP. It keeps hot module
+replacement and proxies `/api/rag` to `localhost:3333` and `/api/ollama`
+to `localhost:11434`.
 
 ```bash
 cd chat-pwa

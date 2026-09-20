@@ -18,6 +18,11 @@ el formato de [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Sin publicar]
 
+- Se reorganizó la documentación pública alrededor de una única instalación
+  npm, se aclararon el primer inicio y las operaciones por plataforma, se
+  alinearon las guías en inglés y español y se eliminó el onboarding obsoleto
+  de instaladores directos.
+
 ## [1.2.6] — 2026-09-20
 
 ### Añadido

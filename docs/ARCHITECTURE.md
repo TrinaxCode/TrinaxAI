@@ -51,7 +51,7 @@ The single source of truth for all subsystems. Defines:
 
 - **Model fleet** — `MODEL_GENERAL`, `MODEL_CODE`, `MODEL_DEEP`, and `MODEL_FAST`; their concrete names come from the active profile and can be overridden in `.env`.
 - **Hardware profiles** — CPU/RAM/GPU-aware (`8gb`/`16gb`/`32gb`/`64gb`), persisted in `storage/hardware_profile.json`
-- **Embedding presets** — profile-sized Qwen3 Embedding 0.6B/4B/8B, nomic lite, all-minilm fast
+- **Embedding presets** — Qwen3 Embedding 0.6B/4B, nomic lite, and all-minilm fast
 - **Factory functions** — `make_llm()`, `make_embed()`, `make_reranker()`
 - **Auto-router** — `route_model()` heuristic classifier (no LLM call needed)
 - **File rules** — what to index, what to skip, chunk sizes per profile
@@ -334,8 +334,9 @@ This section helps contributors find the right files for common tasks.
 
 | What to change | Where |
 |---|---|
-| Linux/macOS install | `install.sh` |
-| Windows install (PowerShell) | `install.ps1` |
+| Public installation entrypoint | `npm-package/bin/trinaxai.js` |
+| Linux/macOS release setup | `install.sh` |
+| Windows release setup | `install.ps1` |
 | Update | `update.sh` / `update.ps1` |
 | Uninstall | `uninstall.sh` / `uninstall.ps1` |
 | Service management | `service_manager.py` + `startup_ai.sh` / `shutdown_ai.sh` |
@@ -385,7 +386,7 @@ python3 scripts/public_readiness.py
 
 ```bash
 make test        # Backend + frontend tests
-make lint        # Ruff + TypeScript typecheck
+make lint        # Ruff, formatting, and ESLint
 make check       # Lint + test + audit + build
 make audit       # Blocking local audits
 ```

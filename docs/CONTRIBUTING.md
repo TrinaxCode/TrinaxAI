@@ -76,6 +76,9 @@ Keep English and `.es.md` counterparts aligned. Verify command names against `tr
 
 ## Development Setup
 
+The npm installation is the public path for end users. The source-checkout
+commands below are for contributors.
+
 See [docs/DEVELOPER_GUIDE.md](DEVELOPER_GUIDE.md) for full setup instructions.
 
 Quick start:

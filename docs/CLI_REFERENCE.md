@@ -13,7 +13,7 @@
 <p align="center"><sub><strong>English</strong> · <a href="CLI_REFERENCE.es.md">Español</a></sub></p>
 <p align="center"><sub><a href="https://www.trinaxai.app/">Website</a> · <a href="README.md">Documentation</a> · <a href="../README.md">Home</a> · <a href="CHANGELOG.md">Changelog</a></sub></p>
 
-The `trinaxai` CLI provides direct Ollama chat, RAG queries, indexing, memory and collection management, and service control. It requires Python 3.10 or newer. For symptom-based recovery, see the [troubleshooting guide](TROUBLESHOOTING.md).
+The `trinaxai` CLI provides direct Ollama chat, RAG queries, indexing, memory and collection management, and service control. End users receive it through the npm installation. The source-checkout command below is for contributors and development. For symptom-based recovery, see the [troubleshooting guide](TROUBLESHOOTING.md).
 
 ## Installation and help
 
@@ -99,6 +99,74 @@ PDF, and Word (`docx`, also accepted as `word`) while retaining public
 DeepResearch metadata and sources. The reserved `trinaxai mcp` command returns
 exit code `2` and does not start an MCP server in this release; use the HTTP API
 or the supported CLI commands instead.
+
+## Indexing and exploration
+
+~~~bash
+trinaxai index . --collection default
+trinaxai index ~/Documents --collection documents --append
+trinaxai browse list-collections
+trinaxai browse list-files --collection default
+trinaxai browse show-chunks --collection default --file README.md --limit 20
+trinaxai obsidian --vault ~/Notes --collection notes
+~~~
+
+Use `--append` to keep files that no longer exist on disk. Without it, the
+command synchronizes the selected root. Each root has an independent stable
+`source_id`, so matching paths from another root do not replace the first root.
+
+## Memory and collections
+
+~~~bash
+trinaxai memory list
+trinaxai memory add --text "I prefer concise answers" --tags preference,style
+trinaxai memory forget --memory-id MEMORY_ID
+trinaxai memory refresh
+trinaxai memory summary
+
+trinaxai collections list
+trinaxai collections create --name "Documentation"
+trinaxai collections use --collection-id documentation
+trinaxai collections delete --collection-id documentation
+~~~
+
+## Watcher and export
+
+~~~bash
+trinaxai watch start --paths ~/projects/app --collection default
+trinaxai watch status
+trinaxai watch stop
+trinaxai export --session SESSION --format md --output conversation
+~~~
+
+The watcher requires the `watchdog` server dependency. Session export supports
+Markdown, PDF, and Word formats while retaining public research metadata,
+sources, and citations.
+
+## Lifecycle and diagnostics
+
+~~~bash
+trinaxai status
+trinaxai start
+trinaxai restart
+trinaxai stop
+trinaxai stop --all
+trinaxai models
+trinaxai config
+trinaxai doctor
+trinaxai doctor --strict --json
+trinaxai update
+trinaxai uninstall
+~~~
+
+`trinaxai stop --all` stops the PWA and the rest of the stack. Only the local
+recovery page remains at `https://localhost:3334`, and LAN access stays closed
+until TrinaxAI starts again.
+
+Read `trinaxai update --help` and `trinaxai uninstall --help` before automating
+maintenance. `uninstall --purge` can remove data, models, certificates, and
+Ollama. The reserved `trinaxai mcp` command exits with code `2` and does not
+start an MCP server in this release.
 
 ## Interactive slash commands
 

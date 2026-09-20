@@ -1,424 +1,124 @@
 <h1 align="center">
-  <a href="https://www.trinaxai.app/"><img src="../chat-pwa/public/logo.webp" alt="TrinaxAI" width="144" valign="middle"></a> · 🍎 macOS Installation
+  <a href="https://www.trinaxai.app/"><img src="../chat-pwa/public/logo.webp" alt="TrinaxAI" width="144" valign="middle"></a> · 🍎 macOS
 </h1>
 
-<p align="center">
-  <a href="https://github.com/TrinaxCode/TrinaxAI"><img src="https://img.shields.io/github/stars/TrinaxCode/TrinaxAI?style=flat&amp;label=%E2%98%85&amp;color=006bbd" alt="GitHub stars"></a>
-  <a href="https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.2.6"><img src="https://img.shields.io/badge/version-1.2.6-006bbd" alt="Stable release: 1.2.6"></a>
-  <a href="https://github.com/TrinaxCode/TrinaxAI/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/TrinaxCode/TrinaxAI/ci.yml?branch=main&amp;label=CI" alt="CI status"></a>
-  <a href="https://github.com/TrinaxCode/TrinaxAI/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0--or--later-006bbd" alt="License: AGPL-3.0-or-later"></a>
-  <img src="https://img.shields.io/badge/macOS%20%7C%20Windows%20%7C%20Linux-4493F8?style=flat-square" alt="Supported platforms: macOS, Windows, and Linux">
-</p>
-
 <p align="center"><sub><strong>English</strong> · <a href="INSTALL_MACOS.es.md">Español</a></sub></p>
-<p align="center"><sub><a href="https://www.trinaxai.app/">Website</a> · <a href="README.md">Documentation</a> · <a href="../README.md">Home</a> · <a href="CHANGELOG.md">Changelog</a></sub></p>
+<p align="center"><sub><a href="README.md">Documentation</a> · <a href="../README.md">Home</a> · <a href="TROUBLESHOOTING.md">Troubleshooting</a></sub></p>
 
-Guide to install, configure, start, and get TrinaxAI running on macOS, both Apple Silicon and Intel.
+This guide covers the macOS requirements, npm installation, first run, local
+networking, and service operations on Intel and Apple Silicon.
 
 ## Support status
 
-The macOS installer is available and CI now validates Python tests, CLI smoke tests, and bash syntax on macOS. Full end-to-end installer validation on real macOS hardware is still pending.
-
-## What you'll have running
-
-When done, you should have:
-
-- Ollama running locally at `http://localhost:11434`.
-- TrinaxAI RAG API at `https://localhost:3333` when the managed certificate is available (HTTP is the fallback).
-- PWA at `https://localhost:3334`.
-- Python `.venv` environment ready.
-- PWA dependencies installed.
-- Base models downloaded if you choose that option.
-- `.env` generated.
-- Optional autostart with LaunchAgent: the PWA comes back on boot and the AI respects whether it was left on or off.
+macOS is covered by the release checks for backend, frontend, CLI, Python,
+security, and the npm launcher. Apple Silicon uses unified memory when setup
+chooses a model profile.
 
 ## Requirements
 
 | Resource | Minimum | Recommended |
-|---|---:|---:|
-| macOS | A version supported by Homebrew/Ollama | Latest stable |
+| --- | ---: | ---: |
+| Node.js and npm | Node.js 22 with npm | Current Node.js LTS |
 | RAM | 8 GB | 16 GB or more |
-| Free disk | 5 GB | 10-25 GB |
-| Python | 3.10 | 3.12 |
-| Node.js | 22 | 24 LTS |
-| Homebrew | Recommended | Yes |
-| Ollama | Yes | Latest version |
+| Free disk | 5 GB | 10–25 GB |
+| CPU | Intel or Apple Silicon | Apple Silicon for local models |
 
-Apple Silicon uses Metal automatically through Ollama when the model supports it.
+Keep macOS updated and allow Terminal to access folders you plan to index.
+Check the tools before setup:
 
-## Quick install
+~~~bash
+node --version
+npm --version
+~~~
 
-Use the release-pinned command below; it checks the installer SHA-256 before
-execution.
+## Install with npm
 
-## Verified release-pinned install
+Use the same public path as Linux and Windows:
 
-> Release status: `v1.2.6` is Production/Stable. Its signed archives, installers, wheel, checksums, and signatures are published on GitHub. The installer never falls back to `main`.
+~~~bash
+npm install -g trinaxai@latest
+trinaxai setup
+~~~
 
-```bash
-set -e; version="1.2.6"; base="https://github.com/TrinaxCode/TrinaxAI/releases/download/v${version}"; installer="$(mktemp)"; trap 'rm -f "$installer"' EXIT; curl -fsSL "$base/TrinaxAI-${version}-installer.sh" -o "$installer"; expected="$(curl -fsSL "$base/SHA256SUMS" | awk -v asset="TrinaxAI-${version}-installer.sh" '$2 == asset || $2 == "*" asset { print $1; exit }')"; actual="$( (shasum -a 256 "$installer" 2>/dev/null || sha256sum "$installer") | awk '{print $1}' )"; test "$expected" = "$actual"; bash "$installer"
-```
+The npm launcher downloads the matching release installer and verifies its
+SHA-256 checksum. Setup prepares Python, Node.js, Ollama, the PWA, local
+certificates, and the selected models.
 
-The installer downloads the source archive directly from GitHub. It does not need Git, detects your hardware, installs the required dependencies, configures Ollama, builds the PWA, verifies a smoke inference, and starts TrinaxAI. Approve the password prompt when macOS asks to install a dependency. For manual checksum or GPG review, see [Release signing](RELEASE_SIGNING.md).
+Use options only when needed:
 
-## Advanced: install base tools manually
+~~~bash
+trinaxai setup --no-models
+trinaxai setup --no-start
+trinaxai setup --profile 16gb
+~~~
 
-Install Xcode Command Line Tools:
+The npm launcher is the supported end-user entrypoint. The shell installer is
+release implementation code; do not run it directly for a normal installation.
 
-```bash
-xcode-select --install
-```
+## First run
 
-Install Homebrew if you don't have it:
+Run the health check:
 
-```bash
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-```
-
-Install dependencies:
-
-```bash
-brew install python@3.12 node curl ollama
-```
-
-You can also install Ollama from the official macOS app and keep it open.
-
-## Advanced terminal fallback
-
-If you already have the repository:
-
-```bash
-cd /path/to/TrinaxAI
-bash install.sh
-```
-
-Running from a local checkout is an operator/development mode and is intentionally not blocked; review and protect that checkout separately from the verified release-download flow.
-
-If you don't have it yet, use the one-line installer. New installs live in `~/Library/Application Support/TrinaxAI`:
-
-```bash
-set -e; version="1.2.6"; base="https://github.com/TrinaxCode/TrinaxAI/releases/download/v${version}"; installer="$(mktemp)"; trap 'rm -f "$installer"' EXIT; curl -fsSL "$base/TrinaxAI-${version}-installer.sh" -o "$installer"; expected="$(curl -fsSL "$base/SHA256SUMS" | awk -v asset="TrinaxAI-${version}-installer.sh" '$2 == asset || $2 == "*" asset { print $1; exit }')"; actual="$( (shasum -a 256 "$installer" 2>/dev/null || sha256sum "$installer") | awk '{print $1}' )"; test "$expected" = "$actual"; bash "$installer"
-```
-
-The installer detects RAM, creates `.env`, sets up Python, and installs the PWA automatically. Optional choices such as model downloads, autostart, and starting services are prompted by default. Legacy LAN-system configuration is accepted for compatibility but never grants remote host administration. Use `bash install.sh --non-interactive` for scripted installs.
-
-Use `bash install.sh --no-start` to leave TrinaxAI stopped; boot autostart is skipped too and can be enabled later after starting TrinaxAI.
-
-The profile is chosen automatically from CPU, RAM, GPU, and VRAM. In interactive mode, choose `Normal` to use the recommended profile. Use `Advanced` only if you want to force `8gb`, `16gb`, `32gb`, or `64gb`.
-
-After installation, manage it from any directory:
-
-```bash
+~~~bash
 trinaxai doctor
-trinaxai update
-trinaxai uninstall
-```
+trinaxai status
+~~~
 
-The uninstaller removes the TrinaxAI launcher and, when requested, its local trusted certificate. User data and Ollama models remain opt-in removals.
+Open https://localhost:3334. Approve the local certificate in the browser when
+macOS asks for trust. Then index a folder:
 
-## Manual install
+~~~bash
+trinaxai index ~/Documents
+trinaxai ask "Summarize my indexed files" --engine rag
+~~~
 
-### 1. Download the release archive
+## macOS service operations
 
-```bash
-set -eu
-version="1.2.6"
-base="https://github.com/TrinaxCode/TrinaxAI/releases/download/v${version}"
-mkdir -p ~/trinaxai
-archive="$(mktemp)"
-manifest="$(mktemp)"
-trap 'rm -f "$archive" "$manifest"' EXIT
-curl --fail --location --output "$archive" "${base}/TrinaxAI-${version}.tar.gz"
-curl --fail --location --output "$manifest" "${base}/SHA256SUMS"
-expected="$(awk -v asset="TrinaxAI-${version}.tar.gz" '$2 == asset || $2 == "*" asset { print $1; exit }' "$manifest")"
-if command -v sha256sum >/dev/null 2>&1; then actual="$(sha256sum "$archive" | awk '{print $1}')"; elif command -v shasum >/dev/null 2>&1; then actual="$(shasum -a 256 "$archive" | awk '{print $1}')"; else echo "A SHA-256 tool (sha256sum or shasum) is required." >&2; exit 2; fi
-if [ -z "$expected" ] || [ "$actual" != "$expected" ]; then echo "Source archive SHA-256 verification failed." >&2; exit 1; fi
-tar -xzf "$archive" --strip-components=1 -C ~/trinaxai
-cd ~/trinaxai
-```
+Use the CLI from any directory:
 
-### 2. Create Python environment
+~~~bash
+trinaxai start
+trinaxai stop
+trinaxai restart
+trinaxai status
+~~~
 
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-python -m pip install --upgrade pip
-python -m pip install --require-hashes -r requirements.lock
-```
+The managed installation uses a user-level launchd lifecycle. Do not delete the
+application directory while services are running. Stop TrinaxAI first.
 
-### 3. Install the PWA
+## Local network access
 
-```bash
-cd chat-pwa
-npm ci
-npm run build
-cd ..
-```
+Refresh the local address and certificate before pairing another device:
 
-### 4. Start Ollama
-
-If you installed Ollama with Homebrew:
-
-```bash
-ollama serve
-```
-
-Leave that process open or use TrinaxAI's autostart. If you installed the official Ollama app, open the app and verify:
-
-```bash
-ollama list
-```
-
-### 5. Create `.env`
-
-```bash
-cp .env.example .env
-```
-
-Recommended values (leave the profile automatic unless you need an explicit override):
-
-```bash
-# Leave unset for CPU/RAM/GPU detection.
-#TRINAXAI_PROFILE=16gb
-TRINAXAI_HOST=127.0.0.1
-TRINAXAI_PORT=3333
-TRINAXAI_INDEX_DIR=./local_sources
-TRINAXAI_ALLOW_LAN_SYSTEM=0
-TRINAXAI_CORS_ORIGINS=https://localhost:3334,http://localhost:3334,https://127.0.0.1:3334,http://127.0.0.1:3334
-OLLAMA_BASE_URL=http://localhost:11434
-OLLAMA_HOST=127.0.0.1
-TRINAXAI_RAG_HTTPS=1
-TRINAXAI_RAG_TARGET=https://127.0.0.1:3333
-VITE_TRINAXAI_RAG_TARGET=https://127.0.0.1:3333
-```
-
-After changing Wi-Fi, renew the local address and HTTPS certificate:
-
-```bash
+~~~bash
 trinaxai network refresh
-```
+trinaxai pair start
+~~~
 
-Use the IP URL it prints from phones on the same network; the `.local` URL is an alternative when mDNS works on the router.
+Follow [LAN pairing](NETWORK_PAIRING.md). Keep local service ports private and
+use a VPN for networks you do not control.
 
-## Download models
+## Update, backup, and remove
 
-Recommended `16gb` profile:
+Use the CLI for maintenance:
 
-```bash
-ollama pull qwen3.5:2b
-ollama pull qwen3.5:4b
-ollama pull qwen3-embedding:0.6b
-```
+~~~bash
+trinaxai update
+trinaxai doctor --strict
+trinaxai uninstall
+~~~
 
-For every other profile, follow the current
-[Models & profiles table](../README.md#models-and-hardware-profiles). The installer selects
-and pulls the text/RAG fleet automatically. Vision models download on first
-image analysis.
-
-## Index your files
-
-```bash
-cd ~/trinaxai
-source .venv/bin/activate
-python index.py
-```
-
-You can also do it from the PWA in settings: choose a folder, assign it to a collection, and wait for the upload/indexing progress to complete.
-
-macOS may ask for permission to access folders such as Documents, Desktop, or Downloads. Accept the permission if you want to index those locations.
-
-## Start TrinaxAI
-
-```bash
-cd ~/trinaxai
-./startup_ai.sh
-```
-
-Alternative:
-
-```bash
-.venv/bin/python service_manager.py start --base-dir "$PWD"
-```
-
-The gateway is loopback-only by default. For intentional LAN access, set
-`TRINAXAI_PWA_HOST=0.0.0.0` in `.env`, restart TrinaxAI, and pair the remote
-browser before using it.
-
-Open:
-
-```text
-https://localhost:3334
-```
-
-From a phone/tablet on the same Wi-Fi:
-
-```text
-https://YOUR-LAN-IP:3334
-```
-
-If the browser reports an untrusted certificate, install the public CA printed by
-`trinaxai network` and trust it on that device. Do not bypass the warning for a
-LAN connection; see [LAN pairing and HTTPS trust](NETWORK_PAIRING.md).
-
-## Shut down, restart, and check status
-
-Shut down the AI and leave the PWA available:
-
-```bash
-./shutdown_ai.sh
-```
-
-Shut down everything:
-
-```bash
-.venv/bin/python service_manager.py stop-all --base-dir "$PWD"
-```
-
-This leaves only the loopback recovery page at `https://localhost:3334`; LAN access stays closed until you start TrinaxAI there.
-
-Check status:
-
-```bash
-.venv/bin/python service_manager.py status --base-dir "$PWD"
-```
-
-Manual supervisor:
-
-```bash
-.venv/bin/python service_manager.py watch --base-dir "$PWD"
-```
-
-## Autostart on macOS
-
-The installer enables it automatically. TrinaxAI uses a LaunchAgent in `~/Library/LaunchAgents/`. The supervisor always tries to keep the PWA available; if you shut down the AI with `./shutdown_ai.sh` or from the PWA, the next boot will not start Ollama/RAG until you turn the AI back on.
-
-Enable:
-
-```bash
-cd ~/trinaxai
-.venv/bin/python service_manager.py enable-autostart --base-dir "$PWD"
-```
-
-Disable:
-
-```bash
-.venv/bin/python service_manager.py disable-autostart --base-dir "$PWD"
-```
-
-Verify with `launchctl`:
-
-```bash
-launchctl list | grep trinax
-```
-
-Logs:
-
-```bash
-tail -f logs/supervisor.log
-tail -f logs/rag_api.log
-tail -f logs/frontend.log
-```
-
-## Verify everything works
-
-```bash
-cd ~/trinaxai
-.venv/bin/python test_system.py --verbose
-```
-
-Manual checks:
-
-```bash
-curl http://localhost:11434/api/tags
-curl -k https://localhost:3333/health
-```
-
-The PWA should open at:
-
-```text
-https://localhost:3334
-```
-
-## Daily use
-
-1. Open `https://localhost:3334`.
-2. Use Ollama for general chat.
-3. Use RAG to query indexed folders and collections.
-4. Install the PWA from Chrome/Edge or add it to the home screen from Safari on iPhone/iPad.
-
-## Update
-
-```bash
-cd ~/trinaxai
-./update.sh
-```
-
-The updater asks whether to create a backup, pull latest code, update models, change autostart, restart services, and run the readiness audit. Python/npm dependencies and the PWA build still run automatically.
-
-The installer also creates a weekly check-only LaunchAgent. It records update
-availability in `logs/auto-update.log` but never downloads/executes an updater
-or changes the install. Review the tagged release and run the local updater
-manually; disable checks with `python scripts/auto_update.py disable`.
-
-## Backups
-
-```bash
-./backup.sh create
-```
-
-The archive is published with mode `0600` and contains `.env`, chats,
-attachments, sources and indexes. Encrypt off-host copies. Restore validates
-paths/types, stages extraction and rolls back a failed replacement; test it
-before upgrading.
-
-Important data:
-
-- `.env`
-- `storage/`
-- `local_sources/`
-
-## Uninstall
-
-```bash
-./uninstall.sh
-```
-
-The uninstaller asks which runtime files to remove. RAG data and Ollama models are kept unless you choose to remove them.
-
-To preselect removing models:
-
-```bash
-./uninstall.sh --remove-models
-```
-
-If you enabled autostart:
-
-```bash
-.venv/bin/python service_manager.py disable-autostart --base-dir "$PWD"
-```
+The default uninstall keeps indexes and Ollama models. Read the
+[CLI reference](CLI_REFERENCE.md) before using purge options.
 
 ## Common issues
 
-| Problem | Solution |
-|---|---|
-| `brew` not found | Install Homebrew and open a new terminal. |
-| `python3` points to an old version | Install `python@3.12` and use `python3.12 -m venv .venv`. |
-| npm fails with `EACCES`/`EEXIST` while installing the PWA | An earlier `sudo npm` command may have left root-owned entries in `~/.npm`. The installer uses a dedicated user cache and retries with a clean temporary cache. For a manual install, set `TRINAXAI_NPM_CACHE="$HOME/Library/Caches/TrinaxAI/npm"` before `npm ci`; do not run npm with `sudo`. |
-| Ollama does not respond | Open the Ollama app or run `ollama serve`. |
-| macOS blocks folder access | Check System Settings > Privacy & Security > Files and Folders. |
-| PWA cannot connect from iPhone | Run `trinaxai network refresh`, open the reported `https://HOST-LAN-IP:3334` URL, and allow the gateway on the private network. |
-| Untrusted certificate | Install/trust the public CA from `trinaxai network` on the device; do not bypass TLS on a LAN. See [LAN pairing and HTTPS trust](NETWORK_PAIRING.md). |
-| Slow responses | Use the model/profile matrix in the root README, lower concurrency, or choose `8gb`/a smaller installed model. |
+| Symptom | Action |
+| --- | --- |
+| npm or node is missing | Install an active Node.js LTS release and open a new terminal |
+| macOS blocks a local action | Review System Settings, Privacy & Security, then retry setup |
+| The PWA certificate is rejected | Open the URL from trinaxai network and trust the local CA |
+| A model uses too much memory | Re-run setup with a smaller profile |
+| The service is offline | Run trinaxai status and trinaxai doctor --strict |
 
-## Security
-
-Keep FastAPI `3333` and Ollama `11434` on loopback; expose only the PWA gateway
-on `3334` to a trusted private network. Do not expose any of these ports to the
-internet. Use a VPN for remote access. System administration is always
-localhost-only; the legacy variable below is accepted for old `.env` files but
-cannot grant LAN authority:
-
-```bash
-TRINAXAI_ALLOW_LAN_SYSTEM=0
-TRINAXAI_ADMIN_TOKEN=a-long-token
-```
+For a full decision table, see [Troubleshooting](TROUBLESHOOTING.md).

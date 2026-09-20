@@ -76,6 +76,9 @@ Mantén alineadas las versiones en inglés y `.es.md`. Verifica comandos en `tri
 
 ## Configuración del entorno de desarrollo
 
+La instalación npm es la ruta pública para usuarios finales. Los comandos de
+checkout que aparecen abajo son para contribuidores.
+
 Consulta la [guía de desarrollo](DEVELOPER_GUIDE.es.md) para las instrucciones completas de configuración.
 
 Inicio rápido:
