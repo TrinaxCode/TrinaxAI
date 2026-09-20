@@ -177,9 +177,11 @@ export default function WatcherCard({ collections }: Props) {
 
   useEffect(() => {
     const controller = new AbortController();
+    let active = true;
     const refreshStatus = async () => {
       try {
         const status = await getWatchStatus(controller.signal);
+        if (!active) return;
         setServerJob(status.job || null);
         if (status.running) {
           setEvents(status.events_seen);
@@ -196,6 +198,7 @@ export default function WatcherCard({ collections }: Props) {
     void refreshStatus();
     const timer = serverWatching ? window.setInterval(() => void refreshStatus(), 2500) : undefined;
     return () => {
+      active = false;
       controller.abort();
       if (timer !== undefined) window.clearInterval(timer);
     };
