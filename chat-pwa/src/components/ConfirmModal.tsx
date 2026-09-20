@@ -62,7 +62,10 @@ export default function ConfirmModal({
     previousFocusRef.current = document.activeElement instanceof HTMLElement
       ? document.activeElement
       : null;
-    const timer = window.setTimeout(() => (showCancel ? cancelRef.current : confirmRef.current)?.focus(), 50);
+    const timer = window.setTimeout(() => {
+      if (dialogRef.current?.contains(document.activeElement)) return;
+      (showCancel ? cancelRef.current : confirmRef.current)?.focus();
+    }, 50);
     const handleEscape = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return;
       event.preventDefault();
