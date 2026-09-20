@@ -51,9 +51,8 @@ describe('watcher card lifecycle', () => {
 
     await user.click(screen.getByRole('button', { name: 'stop' }));
     expect(api.stopWatch).toHaveBeenCalled();
-    // A populated folder without a host path is a supported local watcher.
     await user.click(screen.getByRole('button', { name: 'start' }));
-    await waitFor(() => expect(screen.getByRole('button', { name: 'stop' })).toBeInTheDocument());
+    expect(toast.toast).toHaveBeenCalledWith('watcherPickerUnsupported', 'warning');
 
     await user.click(screen.getByRole('button', { name: 'deleteFolder project' }));
     await user.click(screen.getByRole('button', { name: 'delete' }));

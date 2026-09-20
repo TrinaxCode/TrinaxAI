@@ -65,6 +65,7 @@ export default function WatcherCard({ collections }: Props) {
   const toast = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const foldersRef = useRef<WatchedFolder[]>([]);
+  const statusVersionRef = useRef(0);
   const [folders, setFolders] = useState<WatchedFolder[]>([]);
   const [collectionId, setCollectionId] = useState(() => collections[0]?.id || 'default');
   const [running, setRunning] = useState(false);
@@ -147,11 +148,13 @@ export default function WatcherCard({ collections }: Props) {
   }, [toast, updateFolders]);
 
   const toggleWatcher = useCallback(async () => {
+    statusVersionRef.current += 1;
     if (running) {
-      if (serverWatching) await stopWatch().catch(() => undefined);
+      const shouldStopServer = serverWatching;
       setServerWatching(false);
       setServerJob(null);
       setRunning(false);
+      if (shouldStopServer) await stopWatch().catch(() => undefined);
       return;
     }
     const normalizedPath = hostPath.trim();
@@ -176,12 +179,14 @@ export default function WatcherCard({ collections }: Props) {
   }, [collectionId, hostPath, running, serverWatching, t, toast]);
 
   useEffect(() => {
+    if (!serverWatching && statusVersionRef.current > 0) return;
     const controller = new AbortController();
+    const statusVersion = statusVersionRef.current;
     let active = true;
     const refreshStatus = async () => {
       try {
         const status = await getWatchStatus(controller.signal);
-        if (!active) return;
+        if (!active || statusVersion !== statusVersionRef.current) return;
         setServerJob(status.job || null);
         if (status.running) {
           setEvents(status.events_seen);

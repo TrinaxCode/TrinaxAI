@@ -55,12 +55,13 @@ def test_persist_hardening_recurses_without_following_symlinks(tmp_path) -> None
 
     runtime_context.harden_persist_directory(str(storage))
 
-    assert stat.S_IMODE(storage.stat().st_mode) == 0o700
-    assert stat.S_IMODE(attachment_dir.stat().st_mode) == 0o700
-    assert stat.S_IMODE(nested.stat().st_mode) == 0o700
-    assert all(stat.S_IMODE(path.stat().st_mode) == 0o600 for path in (memory, attachment, index))
-    if symlink_supported:
-        assert stat.S_IMODE(external.stat().st_mode) == 0o644
+    if os.name == "posix":
+        assert stat.S_IMODE(storage.stat().st_mode) == 0o700
+        assert stat.S_IMODE(attachment_dir.stat().st_mode) == 0o700
+        assert stat.S_IMODE(nested.stat().st_mode) == 0o700
+        assert all(stat.S_IMODE(path.stat().st_mode) == 0o600 for path in (memory, attachment, index))
+        if symlink_supported:
+            assert stat.S_IMODE(external.stat().st_mode) == 0o644
 
 
 def test_runtime_initialization_hardens_persistent_storage(tmp_path, monkeypatch) -> None:
@@ -77,8 +78,9 @@ def test_runtime_initialization_hardens_persistent_storage(tmp_path, monkeypatch
 
     runtime_engine.initialize_runtime()
 
-    assert stat.S_IMODE(storage.stat().st_mode) == 0o700
-    assert stat.S_IMODE(memory.stat().st_mode) == 0o600
+    if os.name == "posix":
+        assert stat.S_IMODE(storage.stat().st_mode) == 0o700
+        assert stat.S_IMODE(memory.stat().st_mode) == 0o600
 
 
 def test_legacy_document_is_migrated_without_losing_values(tmp_path, monkeypatch) -> None:
