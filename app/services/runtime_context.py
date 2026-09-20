@@ -207,6 +207,9 @@ def harden_persist_directory(path: str) -> None:
         root_stat = os.lstat(root)
     if stat.S_ISLNK(root_stat.st_mode) or not stat.S_ISDIR(root_stat.st_mode):
         raise RuntimeError(f"Persistent storage must be a real directory: {root}")
+    if getattr(os, "fchmod", None) is None:
+        _ensure_private_directory(root)
+        return
     flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
     try:
         descriptor = os.open(root, flags)

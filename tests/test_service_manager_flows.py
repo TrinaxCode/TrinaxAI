@@ -266,7 +266,8 @@ def test_linux_autostart_escapes_systemd_special_paths(monkeypatch, tmp_path: Pa
 
     assert result.running is True
     service = (home / ".config" / "systemd" / "user" / "trinaxai.service").read_text(encoding="utf-8")
-    assert "WorkingDirectory=" + str(base_dir).replace(" ", "\\x20").replace("%", "%%") in service
+    escaped_base_dir = str(base_dir).replace("\\", "\\x5c").replace(" ", "\\x20").replace("%", "%%")
+    assert "WorkingDirectory=" + escaped_base_dir in service
 
 
 def test_supervisor_restarts_wanted_services_once(monkeypatch, tmp_path: Path) -> None:
