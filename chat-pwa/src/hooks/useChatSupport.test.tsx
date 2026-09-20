@@ -103,7 +103,7 @@ describe('document attachment hook', () => {
   it('rebuilds stored document context and safely skips missing attachments', async () => {
     const blob = new Blob(['stored text'], { type: 'text/plain' });
     api.extractDocumentText.mockResolvedValue({ text: 'stored text', truncated: false });
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(blob)));
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, blob: async () => blob }));
     const { result } = renderHook(() => useChatDocuments({ collections: [], initialCollectionId: 'default', t }));
     await expect(result.current.rebuildStoredDocumentContext({ role: 'user', content: 'prompt', documentAttachments: [
       { kind: 'document', name: 'stored.md', storageKey: 'key', mimeType: 'text/markdown' },

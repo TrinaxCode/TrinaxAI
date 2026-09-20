@@ -87,6 +87,7 @@ def _resolve_in_workspace(workspace_root: Path, rel: str) -> Path:
     it. Rejects everything else (``..`` escapes, symlinks out of the tree,
     absolute paths elsewhere) with :class:`SandboxError`.
     """
+    display_root = Path(os.path.abspath(workspace_root))
     root = workspace_root.resolve()
     raw = (rel or "").strip()
     if not raw:
@@ -111,7 +112,7 @@ def _resolve_in_workspace(workspace_root: Path, rel: str) -> Path:
     resolved = candidate.resolve()
     if resolved != root and root not in resolved.parents:
         raise SandboxError(f"path '{rel}' is outside the workspace root ({root}); access denied")
-    return resolved
+    return display_root / resolved.relative_to(root)
 
 
 def _rel(workspace_root: Path, path: Path) -> str:

@@ -148,11 +148,20 @@ def _open_private_file(path: str, flags: int) -> int:
     return descriptor
 
 
+def _try_fchmod(descriptor: int, mode: int) -> bool:
+    fchmod = getattr(os, "fchmod", None)
+    if fchmod is None:
+        return False
+    try:
+        fchmod(descriptor, mode)
+    except OSError:
+        return False
+    return True
+
+
 def _harden_private_directory_fd(descriptor: int) -> None:
     """Recursively restrict a directory tree without traversing symlinks."""
-    try:
-        os.fchmod(descriptor, PRIVATE_DIRECTORY_MODE)
-    except OSError:
+    if not _try_fchmod(descriptor, PRIVATE_DIRECTORY_MODE):
         # Windows and filesystems without POSIX modes use their native ACLs.
         return
     with os.scandir(descriptor) as entries:
@@ -181,7 +190,7 @@ def _harden_private_directory_fd(descriptor: int) -> None:
                     continue
                 try:
                     if stat.S_ISREG(os.fstat(child).st_mode):
-                        os.fchmod(child, PRIVATE_FILE_MODE)
+                        _try_fchmod(child, PRIVATE_FILE_MODE)
                 except OSError:
                     pass
                 finally:
