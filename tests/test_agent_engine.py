@@ -105,14 +105,14 @@ class SandboxTests(unittest.TestCase):
             child.mkdir()
             (child / "same.txt").write_text("child", encoding="utf-8")
 
-            self.assertEqual(_resolve_in_workspace(root, "same.txt"), root / "same.txt")
-            self.assertEqual(_resolve_in_workspace(root, "workspace/same.txt"), child / "same.txt")
+            self.assertEqual(_resolve_in_workspace(root, "same.txt"), (root / "same.txt").resolve())
+            self.assertEqual(_resolve_in_workspace(root, "workspace/same.txt"), (child / "same.txt").resolve())
 
     def test_workspace_name_prefix_stays_compatible_without_a_matching_child(self) -> None:
         with TemporaryDirectory() as tmp:
             root = Path(tmp) / "workspace"
             root.mkdir()
-            self.assertEqual(_resolve_in_workspace(root, "workspace/same.txt"), root / "same.txt")
+            self.assertEqual(_resolve_in_workspace(root, "workspace/same.txt"), (root / "same.txt").resolve())
 
 
 class ToolHandlerTests(unittest.TestCase):
