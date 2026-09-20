@@ -4,7 +4,7 @@
 
 <p align="center">
   <a href="https://github.com/TrinaxCode/TrinaxAI"><img src="https://img.shields.io/github/stars/TrinaxCode/TrinaxAI?style=flat&amp;label=%E2%98%85&amp;color=006bbd" alt="GitHub stars"></a>
-  <a href="https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.2.5"><img src="https://img.shields.io/badge/version-1.2.5-006bbd" alt="Stable release: 1.2.5"></a>
+  <a href="https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.2.6"><img src="https://img.shields.io/badge/version-1.2.6-006bbd" alt="Stable release: 1.2.6"></a>
   <a href="https://github.com/TrinaxCode/TrinaxAI/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/TrinaxCode/TrinaxAI/ci.yml?branch=main&amp;label=CI" alt="CI status"></a>
   <a href="https://github.com/TrinaxCode/TrinaxAI/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0--or--later-006bbd" alt="License: AGPL-3.0-or-later"></a>
   <img src="https://img.shields.io/badge/macOS%20%7C%20Windows%20%7C%20Linux-4493F8?style=flat-square" alt="Supported platforms: macOS, Windows, and Linux">
@@ -13,7 +13,7 @@
 <p align="center"><sub><strong>English</strong> · <a href="README.es.md">Español</a></sub></p>
 <p align="center"><sub><a href="https://www.trinaxai.app/">Website</a> · <a href="../docs/README.md">Documentation</a> · <a href="../README.md">Home</a> · <a href="../docs/CHANGELOG.md">Changelog</a></sub></p>
 
-TrinaxAI 1.2.5 frontend built with React 19, TypeScript, and Vite 6 under AGPL-3.0-or-later. It provides direct Ollama chat, cited RAG, optional web search, deep research, a tool-using agent, image analysis, documents, local voice, memory, and installable PWA behavior.
+TrinaxAI 1.2.6 frontend built with React 19, TypeScript, and Vite 6 under AGPL-3.0-or-later. It provides direct Ollama chat, cited RAG, optional web search, deep research, a tool-using agent, image analysis, documents, local voice, memory, and installable PWA behavior.
 
 [Project documentation](../docs/README.md) · [API reference](../docs/API_REFERENCE.md) · [Troubleshooting](../docs/TROUBLESHOOTING.md)
 
@@ -73,7 +73,7 @@ src/
 │   ├── chat/ChatInterfaceView.tsx chat rendering and layout
 │   ├── agent/                Agent view and shared contracts
 │   ├── ChatSidebar.tsx      sessions, folders, search and export
-│   ├── Settings.tsx         models, index, prompts, memory and statistics
+│   ├── Settings.tsx         general, search, index, prompts, memory, stats and advanced controls
 │   ├── KnowledgeBrowser.tsx indexed sources and chunks
 │   ├── Docs.tsx             in-app user guide
 │   └── PwaUpdater.tsx       update notification
@@ -138,16 +138,20 @@ Voice availability varies by OS, browser permissions, installed Python extras, a
 
 ## Pairing a browser
 
-A LAN browser must pair before it can use Ollama chat or private APIs. A short,
-single-use code can grant `chat`, `read_private`, and `web`; private reads
-include authorized RAG, synchronized history, memory context, and host-backed
-files.
+A LAN browser can choose **Set up as a new device** to receive a scoped
+chat/web-only session without importing private state, or pair before using
+private APIs. A short, single-use code can grant `chat`, `read_private`, and
+`web`; private reads include authorized RAG, synchronized history, memory
+context, and host-backed files.
 
-1. In the host PWA, open **Settings → Paired device → Generate pairing code**.
+1. In the host PWA, open **Settings → Advanced → Paired device → Generate pairing code**.
 2. On the other device, open `https://HOST-LAN-IP:3334`, choose the existing
    installation option, enter the code, name the device, and pair it.
 3. Return to the host PWA to review or revoke the device. Install the PWA from
    the browser menu if desired.
+
+The new-device option can chat and use web search, but deliberately cannot
+restore history, memory, RAG knowledge, or host files until it is paired.
 
 Before opening the LAN URL, trust the public certificate shown by `trinaxai
 network`. The host installer can trust itself, but phones and tablets need a
@@ -161,7 +165,7 @@ tokens containing retired scopes do not override this boundary. The CLI pairing
 default is `chat,read_private`.
 
 The PWA keeps new device credentials in an `HttpOnly; SameSite=Strict` cookie
-scoped to `/api/rag`, shows the active device/scopes, and can revoke itself. A
+scoped to `/api`, shows the active device/scopes, and can revoke itself. A
 legacy browser-stored bearer is sent only during the explicit `/v1/pairing/me`
 migration, then removed. The host can review or revoke any device with
 `trinaxai pair list` and `trinaxai pair revoke ID`. Pairing identifies a device,
@@ -262,8 +266,9 @@ When changing UI text, add matching Spanish and English keys in `src/i18n/transl
 - **Backend appears offline:** open `/api/rag/health` through the PWA origin, then check `trinaxai doctor`.
 - **Ollama appears offline:** check `ollama list` and `/api/ollama/api/tags` through the PWA origin.
 - **Old UI after a build:** use the update prompt or unregister the service worker and clear site data in browser development tools.
-- **LAN device cannot use a protected feature:** pair it from the host for
-  `chat`, `read_private`, or `web`. Perform indexing, Agent, model, device, and
-  system administration from `https://localhost:3334` on the host.
+- **LAN device cannot use a protected feature:** choose the new-device setup for
+  `chat`/`web`, or pair it from the host for `read_private` and synchronized
+  state. Perform indexing, Agent, model, device, and system administration from
+  `https://localhost:3334` on the host.
 - **Microphone fails:** verify browser permission and secure context, then inspect `/api/rag/v1/voice/capabilities`.
 - **HTTPS becomes HTTP:** generate/install local certificates; the gateway only enables HTTPS when certificate files exist.

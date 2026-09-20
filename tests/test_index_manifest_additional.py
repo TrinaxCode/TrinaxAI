@@ -122,7 +122,7 @@ def test_apply_file_updates_removes_only_successful_changes(monkeypatch) -> None
             removed.append((changed, deleted_keys)) or len(changed) + len(deleted_keys)
         ),
     )
-    monkeypatch.setattr(index, "insert_node_batches", lambda _index, nodes: inserted.extend(nodes))
+    monkeypatch.setattr(index, "insert_node_batches", lambda _index, nodes, **_kwargs: inserted.extend(nodes))
     result = index.apply_file_updates(
         SimpleNamespace(),
         [first, second],
@@ -158,7 +158,7 @@ def test_prepare_batch_records_chunking_failures(monkeypatch) -> None:
     monkeypatch.setattr(
         index,
         "load_docs_with_status",
-        lambda *_args: index.LoadResult(documents=[document], loaded_paths=["/good.md"]),
+        lambda *_args, **_kwargs: index.LoadResult(documents=[document], loaded_paths=["/good.md"]),
     )
     monkeypatch.setattr(index, "build_nodes", lambda _docs: (_ for _ in ()).throw(RuntimeError("bad chunk")))
     monkeypatch.setattr(

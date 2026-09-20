@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import sys
 from pathlib import Path
 from typing import Any
 
+from trinaxai_cli.i18n import normalize_lang
 from trinaxai_cli.processes import run_process_group
 from trinaxai_cli.runtime import find_install_root
 
@@ -38,7 +40,9 @@ def run_script(script_stem: str, arguments: list[str], ui: Any) -> int:
         return 1
     try:
         command = command_for(script_stem, arguments, root)
-        return run_process_group(command, cwd=root, check=False, timeout=3600).returncode
+        env = os.environ.copy()
+        env["TRINAXAI_LANG"] = normalize_lang(getattr(ui, "language", None))
+        return run_process_group(command, cwd=root, check=False, timeout=3600, env=env).returncode
     except KeyboardInterrupt:
         ui.warn(f"Interrupted; stopped {script.name} and its child processes.")
         return 130

@@ -4,7 +4,7 @@
 
 <p align="center">
   <a href="https://github.com/TrinaxCode/TrinaxAI"><img src="https://img.shields.io/github/stars/TrinaxCode/TrinaxAI?style=flat&amp;label=%E2%98%85&amp;color=006bbd" alt="GitHub stars"></a>
-  <a href="https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.2.5"><img src="https://img.shields.io/badge/version-1.2.5-006bbd" alt="Stable release: 1.2.5"></a>
+  <a href="https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.2.6"><img src="https://img.shields.io/badge/version-1.2.6-006bbd" alt="Stable release: 1.2.6"></a>
   <a href="https://github.com/TrinaxCode/TrinaxAI/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/TrinaxCode/TrinaxAI/ci.yml?branch=main&amp;label=CI" alt="CI status"></a>
   <a href="https://github.com/TrinaxCode/TrinaxAI/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0--or--later-006bbd" alt="License: AGPL-3.0-or-later"></a>
   <img src="https://img.shields.io/badge/macOS%20%7C%20Windows%20%7C%20Linux-4493F8?style=flat-square" alt="Supported platforms: macOS, Windows, and Linux">
@@ -28,7 +28,7 @@ mantenimiento destructivo.
 | No se encontró la colección seleccionada. | Abre **Configuración → Indexación → Colecciones**, elige una colección existente o crea una, selecciónala en el chat y reintenta. En CLI: `trinaxai collections list`. |
 | Un job de indexación falló o se detuvo. | Abre **Configuración → Indexación**, revisa la fase que falló y pulsa **Reintentar**. Reindexa solo después de revisar la fuente, el modelo y la memoria disponible. |
 | La PWA dice que el servicio local está desconectado. | En el host, pulsa **Encender IA** en la PWA local o ejecuta `trinaxai status` y `trinaxai doctor`. |
-| Falta un modelo. | Ejecuta `ollama list` y luego `ollama pull MODELO`, o usa la acción de modelos en **Configuración → General**. Confirma que coincida con el perfil activo. |
+| Falta un modelo. | Ejecuta `ollama list` y luego `ollama pull MODELO`, o usa la acción de modelos en **Configuración → Avanzado**. Confirma que coincida con el perfil activo. |
 | Un modelo no carga o se agotó la memoria. | Detén cargas competidoras, elige un modelo/perfil menor, reduce concurrencia o contexto y reintenta. No elimines el índice salvo que haya cambiado la configuración de embeddings. |
 | Un teléfono no puede abrir la PWA. | Ejecuta `trinaxai network refresh` en el host, abre la URL HTTPS impresa, confía en la CA pública desde el teléfono y permite solo el puerto `3334`. Mantén `3333` y `11434` cerrados a la LAN. |
 | El modo de búsqueda no encuentra la web. | Revisa el proveedor configurado y la conexión a Internet. El RAG local no necesita Internet; usa RAG cuando la respuesta deba venir de archivos indexados. |

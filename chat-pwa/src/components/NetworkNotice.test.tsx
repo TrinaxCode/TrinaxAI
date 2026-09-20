@@ -70,7 +70,7 @@ describe('NetworkNotice', () => {
     vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify(network), { status: 200 }));
     const { unmount } = render(<NetworkNotice canManageSystem />);
     await userEvent.click(await screen.findByRole('button', { name: 'close' }));
-    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole('status')).not.toBeInTheDocument());
     unmount();
 
     render(<NetworkNotice canManageSystem />);

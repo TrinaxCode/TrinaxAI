@@ -34,6 +34,7 @@ jobs:
         uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: "22.14.0"
+          registry-url: "https://registry.npmjs.org"
 
       - name: Require release signing credentials
         env:
@@ -45,6 +46,17 @@ jobs:
           set -euo pipefail
           if [[ -z "$RELEASE_SIGNING_KEY_BASE64" || -z "$RELEASE_SIGNING_KEY_PASSPHRASE" || -z "$RELEASE_SIGNING_KEY_FINGERPRINT" ]]; then
             echo "Release signing credentials are required for tagged releases" >&2
+            exit 1
+          fi
+
+      - name: Require npm publication credentials
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "$NODE_AUTH_TOKEN" ]]; then
+            echo "NPM_TOKEN is required for tagged releases" >&2
             exit 1
           fi
 
@@ -67,11 +79,13 @@ jobs:
           lock_version="$(node -p 'require("./chat-pwa/package-lock.json").version')"
           source_update_version="$(sed -n 's/^RELEASE_VERSION = "\([^"]*\)"$/\1/p' scripts/source_update.py)"
           cli_version="$(sed -n 's/^VERSION = "\([^"]*\)"$/\1/p' trinaxai_cli/app.py)"
+          npm_version="$(node -p 'require("./npm-package/package.json").version')"
           test "$expected" = "$python_version"
           test "$expected" = "$frontend_version"
           test "$expected" = "$lock_version"
           test "$expected" = "$cli_version"
           test "$expected" = "$source_update_version"
+          test "$expected" = "$npm_version"
 
       - name: Build release assets
         shell: bash
@@ -263,6 +277,15 @@ jobs:
               --certificate-identity-regexp "^https://github.com/${GITHUB_REPOSITORY}/.github/workflows/.*@refs/tags/${GITHUB_REF_NAME}$" \
               "$image" >/dev/null
           done <<< '${{ steps.container.outputs.tags }}'
+
+      - name: Publish npm CLI package
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        working-directory: npm-package
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm publish --access public --provenance
 
       - name: Publish verified release
         env:

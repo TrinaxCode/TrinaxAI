@@ -765,12 +765,17 @@ def _try_privileged_wrapper(base_dir: str, action: str) -> list[ProcessState] | 
         return [ProcessState(action, False, detail=detail)]
     if action != "reload-network":
         enabled = action in {"start-ai", "start-all"}
+        system_state = (
+            "running"
+            if action in {"start-ai", "start-all"}
+            else "stopped_by_user"
+            if action == "stop-all"
+            else _system_state(base_dir)
+        )
         _write_service_state(
             base_dir,
             ai_enabled=enabled,
-            system_state="running"
-            if action == "start-all"
-            else ("stopped_by_user" if action == "stop-all" else _system_state(base_dir)),
+            system_state=system_state,
         )
     return [ProcessState(action, action != "stop-ai", detail=(result.stdout or "ok").strip())]
 
@@ -1359,8 +1364,12 @@ def main(argv: list[str] | None = None) -> int:
         for item in stop_ai(args.base_dir):
             print(f"{item.name}: {item.detail}")
     elif args.action == "stop-all":
-        for item in stop_all_for_base(args.base_dir, start_recovery=not args.no_recovery):
+        items = stop_all_for_base(args.base_dir, start_recovery=not args.no_recovery)
+        for item in items:
             print(f"{item.name}: {item.detail}")
+        stopped = all(not item.running for item in items if item.name != "recovery")
+        recovery_ok = all(item.running for item in items if item.name == "recovery")
+        return 0 if stopped and recovery_ok else 1
     elif args.action == "status":
         items = status_all()
         if args.json:

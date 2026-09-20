@@ -96,6 +96,14 @@ def test_tool_sandbox_file_edges_and_safe_messages(tmp_path: Path) -> None:
     safe = format_tool_failure("search/tool", "api_key=secret", external=False)
     assert is_degraded_tool_result(safe)
     assert "api_key=[redacted]" in safe
+    for detail in (
+        "Authorization: Bearer very-secret-token",
+        '{"api_key":"very-secret-json"}',
+        "apiKey = very-secret-camel",
+    ):
+        redacted = format_tool_failure("search", detail, external=False)
+        assert "very-secret" not in redacted
+        assert "[redacted]" in redacted
     assert is_degraded_tool_result(normalize_tool_result("search", "error: offline", external=True))
     assert normalize_tool_result("read", "normal") == "normal"
 

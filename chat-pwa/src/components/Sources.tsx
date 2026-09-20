@@ -86,109 +86,131 @@ export default function Sources({ sources, model, project, query, onOpenInBrowse
   };
 
   return (
-    <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px]">
-      {project && (
-        <span className={isDark ? 'text-white/40' : 'text-gray-500'}>{project}</span>
-      )}
-      {model && (
-        <span className={isDark ? 'text-white/35' : 'text-gray-400'}>{model}</span>
-      )}
-      {webProviders.length > 0 && (
-        <span className={isDark ? 'text-white/35' : 'text-gray-400'}>{t('sourceWeb')}: {webProviders.join(', ')}</span>
-      )}
-      {hasSources && (
-        <button
-          type="button"
-          onClick={() => setOpen((v) => !v)}
-           className={`inline-flex items-center gap-0.5 rounded-full border px-2 py-0.5 font-medium transition-colors ${isDark ? 'border-white/[0.08] bg-white/[0.04] text-white/55 hover:border-white/20 hover:text-white/85' : 'border-gray-200 bg-white text-gray-500 shadow-sm hover:border-[#006bbd]/30 hover:text-[#006bbd]'}`}
-          aria-expanded={open}
-          aria-controls={sourcesId}
-        >
-           <MdKeyboardArrowDown size={14} className={`transition-transform ${open ? 'rotate-180' : ''}`} aria-hidden="true" />
-           {sources!.length} {sources!.length === 1 ? t('source') : t('sources')}
-        </button>
-      )}
+    <div className="mt-2">
+      {hasSources ? (
+        <div className="tc-sources-card">
+          <div className="flex items-center justify-between gap-2">
+            <span className={`inline-flex items-center gap-1.5 text-[11px] font-semibold ${isDark ? 'text-white/75' : 'text-gray-700'}`}>
+              <MdLibraryBooks size={14} className="text-[#2ac9b6]" aria-hidden="true" />
+              {t('sources')}
+            </span>
+            <button
+              type="button"
+              onClick={() => setOpen((v) => !v)}
+              className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[10px] font-medium transition-colors ${isDark ? 'border-[#2ac9b6]/25 bg-[#2ac9b6]/10 text-[#2ac9b6] hover:border-[#2ac9b6]/45' : 'border-[#00756b]/25 bg-[#00756b]/10 text-[#00756b] hover:border-[#00756b]/45'}`}
+              aria-expanded={open}
+              aria-controls={sourcesId}
+            >
+              {sources!.length} {sources!.length === 1 ? t('source') : t('sources')}
+              <MdKeyboardArrowDown size={13} className={`transition-transform ${open ? 'rotate-180' : ''}`} aria-hidden="true" />
+            </button>
+          </div>
 
-      {open && hasSources && (
-        <div id={sourcesId} className="w-full flex flex-col gap-1.5 mt-1">
-          {sources!.map((s, i) => {
-            const externalUrl = safeExternalUrl(s.url);
-            return (
-              <div
-                key={`${s.file}-${i}`}
-                className={`rounded-lg border px-2.5 py-1.5 ${isDark ? 'bg-black/40 border-white/[0.06]' : 'bg-gray-50 border-gray-200'}`}
-              >
-              <div className="flex items-center justify-between gap-2">
-                {externalUrl ? (
-                  <a
-                    href={externalUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className={`min-w-0 truncate text-[11px] hover:underline ${isDark ? 'text-[#4ea3e0]' : 'text-[#006bbd]'}`}
-                    title={externalUrl}
-                  >
-                    {s.title || externalUrl}
-                  </a>
-                ) : (
-                  <button
-                    type="button"
-                    className={`min-w-0 truncate text-left text-[11px] font-mono hover:underline ${isDark ? 'text-[#4ea3e0]' : 'text-[#006bbd]'}`}
-                    onClick={() => copyPath(s.file, i)}
-                    title={`${s.file} | ${t('clickToCopy')}`}
-                    aria-label={`${t('copy')}: ${s.file}`}
-                  >
-                    {s.file}
-                  </button>
-                )}
-                <div className="flex items-center gap-2 shrink-0">
-                  {s.score != null && (
-                    <span className={`text-[9px] ${isDark ? 'text-white/30' : 'text-gray-400'}`}>{s.score}</span>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => copyPath(externalUrl || s.file, i)}
-                    className={`inline-flex min-h-7 min-w-7 items-center justify-center rounded ${isDark ? 'text-white/25 hover:text-white/70' : 'text-gray-300 hover:text-gray-600'}`}
-                    aria-label={t('copy')}
-                    title={t('copy')}
-                  >
-                    {copiedIdx === i ? <MdCheck size={11} /> : <MdContentCopy size={11} />}
-                  </button>
-                  {externalUrl ? (
-                    <a
-                      href={externalUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className={`inline-flex min-h-7 min-w-7 items-center justify-center rounded ${isDark ? 'text-white/25 hover:text-white/70' : 'text-gray-300 hover:text-gray-600'}`}
-                      aria-label={`${t('openInBrowser')}: ${s.title || externalUrl}`}
-                      title={t('openInBrowser')}
-                    >
-                      <MdOpenInNew size={11} />
-                    </a>
-                  ) : onOpenInBrowser && (
+          {/* Kept mounted so the disclosure animates both ways; inert while
+              closed keeps the rows out of keyboard and screen-reader reach. */}
+          <div
+            id={sourcesId}
+            inert={!open}
+            aria-hidden={!open}
+            className={`grid overflow-hidden transition-[grid-template-rows,opacity] duration-300 ease-out ${open ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'}`}
+          >
+            <div className="min-h-0 overflow-hidden">
+            {sources!.map((s, i) => {
+              const externalUrl = safeExternalUrl(s.url);
+              const meta = [s.collection, s.page ? `${t('pageAbbrev')} ${s.page}` : null].filter(Boolean).join(' · ');
+              return (
+                <div key={`${s.file}-${i}`} className="tc-sources-row">
+                  <span className="tc-sources-icon" aria-hidden="true">
+                    <MdLibraryBooks size={15} />
+                  </span>
+                  <div className="min-w-0">
+                    {externalUrl ? (
+                      <a
+                        href={externalUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className={`block truncate text-[12px] font-semibold hover:underline ${isDark ? 'text-white/85' : 'text-gray-800'}`}
+                        title={externalUrl}
+                      >
+                        {s.title || externalUrl}
+                      </a>
+                    ) : (
+                      <button
+                        type="button"
+                        className={`block max-w-full truncate text-left text-[12px] font-semibold hover:underline ${isDark ? 'text-white/85' : 'text-gray-800'}`}
+                        onClick={() => copyPath(s.file, i)}
+                        title={`${s.file} | ${t('clickToCopy')}`}
+                        aria-label={`${t('copy')}: ${s.file}`}
+                      >
+                        {s.file.split('/').pop() || s.file}
+                      </button>
+                    )}
+                    <span className={`mt-0.5 block truncate font-mono text-[10px] ${isDark ? 'text-white/35' : 'text-gray-500'}`}>
+                      {s.file}{meta ? ` · ${meta}` : ''}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    {s.score != null && <span className="tc-sources-score">{s.score}</span>}
                     <button
                       type="button"
-                      onClick={() => onOpenInBrowser(s.file, s.collection_id)}
-                      className={`inline-flex min-h-7 min-w-7 items-center justify-center rounded ${isDark ? 'text-white/25 hover:text-white/70' : 'text-gray-300 hover:text-gray-600'}`}
-                      aria-label={t('openInBrowser')}
-                      title={t('openInKnowledgeBrowser')}
+                      onClick={() => copyPath(externalUrl || s.file, i)}
+                      className={`inline-flex h-7 w-7 items-center justify-center rounded-lg transition-colors ${isDark ? 'text-white/30 hover:bg-white/[0.06] hover:text-white/75' : 'text-gray-400 hover:bg-gray-100 hover:text-gray-700'}`}
+                      aria-label={t('copy')}
+                      title={t('copy')}
                     >
-                      <MdLibraryBooks size={11} />
+                      {copiedIdx === i ? <MdCheck size={12} /> : <MdContentCopy size={12} />}
                     </button>
-                  )}
+                    {externalUrl ? (
+                      <a
+                        href={externalUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className={`inline-flex h-7 w-7 items-center justify-center rounded-lg transition-colors ${isDark ? 'text-white/30 hover:bg-white/[0.06] hover:text-white/75' : 'text-gray-400 hover:bg-gray-100 hover:text-gray-700'}`}
+                        aria-label={`${t('openInBrowser')}: ${s.title || externalUrl}`}
+                        title={t('openInBrowser')}
+                      >
+                        <MdOpenInNew size={12} />
+                      </a>
+                    ) : onOpenInBrowser ? (
+                      <button
+                        type="button"
+                        onClick={() => onOpenInBrowser(s.file, s.collection_id)}
+                        className={`inline-flex h-7 w-7 items-center justify-center rounded-lg transition-colors ${isDark ? 'text-white/30 hover:bg-white/[0.06] hover:text-white/75' : 'text-gray-400 hover:bg-gray-100 hover:text-gray-700'}`}
+                        aria-label={t('openInBrowser')}
+                        title={t('openInKnowledgeBrowser')}
+                      >
+                        <MdLibraryBooks size={12} />
+                      </button>
+                    ) : null}
+                  </div>
+                  <pre className={`col-span-3 mt-1 max-h-24 overflow-y-auto whitespace-pre-wrap break-words border-t pt-2 text-[10px] font-mono ${isDark ? 'border-white/[0.06] text-white/45' : 'border-gray-200 text-gray-500'}`}>
+                    {highlight(s.snippet, terms)}
+                  </pre>
                 </div>
-              </div>
-              {(s.collection || s.page) && (
-                <div className={`mt-0.5 flex flex-wrap gap-2 text-[9px] ${isDark ? 'text-white/30' : 'text-gray-400'}`}>
-                  {s.collection && <span>{s.collection}</span>}
-                  {s.page && <span>{t('pageAbbrev')} {s.page}</span>}
-                </div>
-              )}
-              <pre className={`mt-1 text-[10px] whitespace-pre-wrap break-words max-h-24 overflow-y-auto font-mono ${isDark ? 'text-white/55' : 'text-gray-600'}`}>
-                {highlight(s.snippet, terms)}
-              </pre>
-              </div>
-            );
-          })}
+              );
+            })}
+            </div>
+          </div>
+
+          <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
+            {project && <span className={`text-[10px] ${isDark ? 'text-white/35' : 'text-gray-500'}`}>{project}</span>}
+            {webProviders.length > 0 && <span className={`text-[10px] ${isDark ? 'text-white/30' : 'text-gray-400'}`}>{t('sourceWeb')}: {webProviders.join(', ')}</span>}
+            {onOpenInBrowser && (
+              <button
+                type="button"
+                onClick={() => onOpenInBrowser(sources![0].file, sources![0].collection_id)}
+                className={`ml-auto inline-flex items-center gap-1 text-[10px] font-medium transition-colors ${isDark ? 'text-[#4ea3e0] hover:text-[#7cc0f0]' : 'text-[#006bbd] hover:text-[#004d8a]'}`}
+              >
+                <MdLibraryBooks size={12} aria-hidden="true" />
+                {t('openInKnowledgeBrowser')}
+              </button>
+            )}
+          </div>
+        </div>
+      ) : (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px]">
+          {project && <span className={isDark ? 'text-white/40' : 'text-gray-500'}>{project}</span>}
+          {webProviders.length > 0 && <span className={isDark ? 'text-white/35' : 'text-gray-400'}>{t('sourceWeb')}: {webProviders.join(', ')}</span>}
         </div>
       )}
     </div>

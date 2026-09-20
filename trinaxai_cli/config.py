@@ -21,6 +21,8 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
+from trinaxai_cli.i18n import resolve_lang, text
+
 if sys.version_info >= (3, 11):
     import tomllib  # type: ignore[import-not-found]
 else:  # pragma: no cover - project requires py>=3.10 but be defensive
@@ -126,7 +128,10 @@ class CLIConfig:
         try:
             parsed = _parse_toml(raw)
         except Exception as exc:  # noqa: BLE001 - defensive: any parse error
-            warnings.warn(f"Malformed config at {target}: {exc}; using defaults", stacklevel=2)
+            warnings.warn(
+                text("malformed_config", resolve_lang(), path=target, error=exc),
+                stacklevel=2,
+            )
             LOG.warning("Malformed config at %s: %s; using defaults", target, exc)
             return cfg
         _apply_section(cfg, parsed)

@@ -57,6 +57,7 @@ _ollama_async_chat_stream = _generation_ollama_async_chat_stream
 from .shared_runtime import (
     LOG,
     NO_INDEX_MSG,
+    NO_INDEX_MSG_ES,
     ChatRequest,
     HTTPException,
     QueryBundle,
@@ -79,7 +80,9 @@ from .shared_runtime import (
     get_response_synthesizer,
     grounded_template,
     json,
+    no_index_message,
     os,
+    request_language,
     run_in_threadpool,
     sanitize_collection_id,
     state,
@@ -102,7 +105,7 @@ NO_RELEVANT_RESULTS_MSG = "No relevant information was found in the selected col
 # probability; 0.015 keeps useful lower-ranked hits without accepting the
 # lowest near-zero candidates as evidence.
 RAG_MIN_SCORE = config._env_float("TRINAXAI_RAG_MIN_SCORE", 0.015, minimum=0.0, maximum=1.0)
-_ABSTENTION_MESSAGES = frozenset({NO_INDEX_MSG, EMPTY_COLLECTION_MSG, NO_RELEVANT_RESULTS_MSG})
+_ABSTENTION_MESSAGES = frozenset({NO_INDEX_MSG, NO_INDEX_MSG_ES, EMPTY_COLLECTION_MSG, NO_RELEVANT_RESULTS_MSG})
 _ABSTENTION_MARKERS = (
     "no se encontró",
     "no encontre",
@@ -1102,7 +1105,7 @@ async def chat(req: ChatRequest, request: Request):
     usage_nodes = []
     finish_reason = "stop"
     if _preview_spec.use_rag and state.fusion_retriever is None:
-        content, sources, model, project = NO_INDEX_MSG, [], config.LLM_MODEL, None
+        content, sources, model, project = no_index_message(request_language(request)), [], config.LLM_MODEL, None
     else:
         cancel_event = threading.Event()
         metadata_token = _PRIVATE_METADATA_ALLOWED.set(private_data_allowed)

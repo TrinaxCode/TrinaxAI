@@ -4,7 +4,7 @@
 
 <p align="center">
   <a href="https://github.com/TrinaxCode/TrinaxAI"><img src="https://img.shields.io/github/stars/TrinaxCode/TrinaxAI?style=flat&amp;label=%E2%98%85&amp;color=006bbd" alt="GitHub stars"></a>
-  <a href="https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.2.5"><img src="https://img.shields.io/badge/version-1.2.5-006bbd" alt="Stable release: 1.2.5"></a>
+  <a href="https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.2.6"><img src="https://img.shields.io/badge/version-1.2.6-006bbd" alt="Stable release: 1.2.6"></a>
   <a href="https://github.com/TrinaxCode/TrinaxAI/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/TrinaxCode/TrinaxAI/ci.yml?branch=main&amp;label=CI" alt="CI status"></a>
   <a href="https://github.com/TrinaxCode/TrinaxAI/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0--or--later-006bbd" alt="License: AGPL-3.0-or-later"></a>
   <img src="https://img.shields.io/badge/macOS%20%7C%20Windows%20%7C%20Linux-4493F8?style=flat-square" alt="Supported platforms: macOS, Windows, and Linux">
@@ -121,7 +121,7 @@ Los componentes TypeScript construidos con Tailwind CSS y framer-motion incluyen
 | `useAgentController` | Ejecución del agente, aprobaciones, historial y acciones de mensajes |
 | `AgentInterfaceView` | Renderizado del historial, controles, conversación y compositor |
 | `ChatSidebar` | Historial, carpetas, búsqueda y flujos de exportación |
-| `Settings` | Controles de modelos locales, indexación, prompts, memoria y estadísticas |
+| `Settings` | Preferencias generales, búsqueda web, indexación, prompts, memoria, estadísticas y controles avanzados del equipo |
 | `KnowledgeBrowser` | Explora chunks indexados por colección→archivo→chunk |
 | `Sources` | Tarjetas de citación con archivo, proyecto, fragmento y puntuación |
 | `OnboardingWizard` | Configuración inicial de perfil y modelos |
@@ -433,7 +433,7 @@ Estas áreas requieren cuidado extra al modificarlas:
 - `TRINAXAI_ADMIN_TOKEN` — vacío (no configurado). El acceso desde localhost funciona automáticamente.
 - El pairing concede `chat,read_private` y opcionalmente puede añadir `web`.
   El token nuevo queda solo en una cookie `HttpOnly; SameSite=Strict` con alcance
-  `/api/rag`; los valores legacy se leen únicamente durante la migración explícita
+  `/api`; los valores legacy se leen únicamente durante la migración explícita
   de `/v1/pairing/me` y después se eliminan.
 - `TRINAXAI_ALLOW_LAN_SYSTEM` — obsoleta e ignorada para autorización.
 
@@ -451,7 +451,7 @@ Estos principios guían todas las decisiones de diseño y contribución:
 1. **Local-first** — La inferencia local y el almacenamiento en el host son el valor predeterminado. La instalación/descarga de modelos y cualquier endpoint remoto configurado por la persona usuaria sí pueden usar la red.
 2. **Privacidad por defecto** — Los datos de chat, código indexado y documentos se almacenan localmente por defecto. No hay cuentas integradas; las métricas de uso locales se guardan en el host.
 3. **Sin nube obligatoria** — Ollama se ejecuta localmente. Opcional: los usuarios pueden apuntar a una instancia remota de Ollama en su propia infraestructura.
-4. **Confirmaciones para acciones peligrosas** — El reseteo de fábrica, eliminación de colecciones y apagado del sistema requieren cabeceras de confirmación explícitas o prompts interactivos.
+4. **Confirmaciones para acciones peligrosas** — El reseteo de fábrica, eliminación de colecciones y apagado del sistema requieren cabeceras de confirmación explícitas o prompts interactivos. La PWA mantiene estos controles dentro de **Configuración → Avanzado**; el reseteo exige escribir `RESTORE` y el apagado completo exige escribir `DETENER TODO`.
 5. **Seguridad por defecto** — Los backends usan loopback, las lecturas LAN
    requieren pairing con scopes, administrar el host exige loopback original
    verificado y CORS es una defensa adicional del navegador, no identidad.

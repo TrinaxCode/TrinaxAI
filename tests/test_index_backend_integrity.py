@@ -93,6 +93,10 @@ def test_sources_list_and_chunks_are_partitioned_by_source_id(monkeypatch) -> No
         ("shared.md", "alpha-root"),
         ("shared.md", "beta-root"),
     ]
+    filtered = sources_service.sources_list("default", source_id="beta-root", request=object())
+    assert [(row["file"], row["source_id"]) for row in filtered["sources"]] == [("shared.md", "beta-root")]
+    assert ("sources:list", "default", None) in state.sources_cache
+    assert ("sources:list", "default", "beta-root") in state.sources_cache
 
     chunks = sources_service.sources_chunks(
         "default",

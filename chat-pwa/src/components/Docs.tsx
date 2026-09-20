@@ -1,27 +1,12 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type MouseEvent } from 'react';
+import { MdChevronRight, MdExpandMore, MdOpenInNew } from 'react-icons/md';
 import { useI18n } from '../i18n/I18nContext';
 import { useTheme } from '../theme/ThemeContext';
 import { APP_CONFIG } from '../lib/config';
+import { formatAppRoute, type DocsSection } from '../lib/appRoute';
 import BackButton from './BackButton';
 import ChatMarkdown from './chat/ChatMarkdown';
 import './chat/chat.css';
-
-type Section =
-  | 'intro'
-  | 'about'
-  | 'install'
-  | 'config'
-  | 'models'
-  | 'indexing'
-  | 'agent'
-  | 'research'
-  | 'files'
-  | 'security'
-  | 'api'
-  | 'pwa'
-  | 'troubleshoot'
-  | 'contributing'
-  | 'community';
 
 interface DocLink {
   file: string;
@@ -30,7 +15,7 @@ interface DocLink {
 }
 
 interface DocSection {
-  id: Section;
+  id: DocsSection;
   labelEs: string;
   labelEn: string;
   summaryEs: string;
@@ -162,6 +147,10 @@ const sections: DocSection[] = [
 
 const rootDocFiles = new Set(['README.md', 'TESTING.md']);
 
+function pick(item: { labelEs: string; labelEn: string }, isEs: boolean): string {
+  return isEs ? item.labelEs : item.labelEn;
+}
+
 function localizedFile(file: string, isEs: boolean): string {
   return isEs ? file.replace(/\.md$/, '.es.md') : file;
 }
@@ -203,24 +192,57 @@ const docUrl = (file: string) => {
   return `${APP_CONFIG.repoUrl}/blob/main/${repositoryPath(file)}`;
 };
 
-export default function Docs({ onBack }: { onBack: () => void }) {
+function ArticleSkeleton({ isDark }: { isDark: boolean }) {
+  const bar = isDark ? 'bg-white/[0.07]' : 'bg-gray-200';
+  const widths = ['w-11/12', 'w-full', 'w-10/12', 'w-9/12', 'w-full', 'w-6/12'];
+  return (
+    <div className="docs-skeleton space-y-3" aria-hidden="true">
+      {widths.map((width, index) => (
+        <div key={`${width}-${index}`} className={`docs-skeleton-bar h-3.5 rounded-full ${bar} ${width}`} />
+      ))}
+    </div>
+  );
+}
+
+interface Props {
+  onBack: () => void;
+  initialSection?: DocsSection;
+  onSectionChange?: (section: DocsSection) => void;
+}
+
+export default function Docs({ onBack, initialSection = 'intro', onSectionChange }: Props) {
   const { t, lang } = useI18n();
   const { isDark } = useTheme();
-  const [active, setActive] = useState<Section>('intro');
+  const [active, setActive] = useState<DocsSection>(initialSection);
   const [documents, setDocuments] = useState<Record<string, string>>({});
   const [documentsLoading, setDocumentsLoading] = useState(true);
   const contentRef = useRef<HTMLElement>(null);
-  const selected = sections.find((section) => section.id === active) ?? sections[0];
+  const titleRef = useRef<HTMLHeadingElement>(null);
+  const focusContentRef = useRef(false);
   const isEs = lang === 'es';
+  const activeIndex = sections.findIndex((section) => section.id === active);
+  const selected = sections[activeIndex] ?? sections[0];
+  const previous = activeIndex > 0 ? sections[activeIndex - 1] : undefined;
+  const next = activeIndex >= 0 && activeIndex < sections.length - 1 ? sections[activeIndex + 1] : undefined;
+  const referenceCount = selected.links.length;
   const textMain = isDark ? 'text-white' : 'text-gray-900';
   const textSub = isDark ? 'text-white/65' : 'text-gray-600';
-  const textMuted = isDark ? 'text-white/45' : 'text-gray-500';
+  const textMuted = isDark ? 'text-white/55' : 'text-gray-500';
   const card = isDark ? 'border-white/[0.08] bg-white/[0.02]' : 'border-gray-200 bg-white';
-  const activeLink = isDark ? 'bg-[#006bbd]/15 text-[#006bbd]' : 'bg-[#006bbd]/10 text-[#006bbd]';
-  const inactiveLink = isDark ? 'text-white/50 hover:bg-white/[0.04] hover:text-white/80' : 'text-gray-500 hover:bg-gray-100 hover:text-gray-800';
+  const brandText = isDark ? 'text-[#4aa7ed]' : 'text-[#006bbd]';
+  const activeLink = isDark ? 'bg-[#4aa7ed]/15 text-[#4aa7ed]' : 'bg-[#006bbd]/10 text-[#006bbd]';
+  const inactiveLink = isDark ? 'text-white/60 hover:bg-white/[0.05] hover:text-white/90' : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900';
+  const navCardHover = isDark ? 'hover:border-white/20' : 'hover:border-gray-300';
+
+  useEffect(() => {
+    setActive(initialSection);
+  }, [initialSection]);
 
   useEffect(() => {
     contentRef.current?.scrollTo({ top: 0, left: 0 });
+    if (!focusContentRef.current) return;
+    focusContentRef.current = false;
+    titleRef.current?.focus({ preventScroll: true });
   }, [active, isEs]);
 
   useEffect(() => {
@@ -247,28 +269,68 @@ export default function Docs({ onBack }: { onBack: () => void }) {
     };
   }, [active, isEs]);
 
+  const selectSection = useCallback((section: DocsSection) => {
+    focusContentRef.current = true;
+    setActive(section);
+    onSectionChange?.(section);
+  }, [onSectionChange]);
+
+  const handleSectionLink = (event: MouseEvent<HTMLAnchorElement>, section: DocsSection) => {
+    if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    event.preventDefault();
+    selectSection(section);
+  };
+
   return (
     <div className="docs-page flex h-full min-w-0 max-w-full flex-col overflow-hidden bg-transparent">
-      <div className="page-header flex shrink-0 items-center gap-3 px-4 pb-3 pt-[env(safe-area-inset-top,0px)]">
-        <BackButton onClick={onBack} label={t('docsBack')} isDark={isDark} className="-ml-2" />
-        <span className={`text-sm font-medium ${isDark ? 'text-white/80' : 'text-gray-800'}`}>{t('docsTitle')}</span>
-        <img src="/logo-for-ai-transparent.webp" alt="TrinaxAI" translate="no" className="ml-auto h-14 w-14 rounded-full object-contain" width={56} height={56} draggable={false} />
+      <div className="page-header shrink-0 px-4 pb-3 pt-[env(safe-area-inset-top,0px)]">
+        <div className="flex items-center gap-3">
+          <BackButton onClick={onBack} label={t('docsBack')} isDark={isDark} className="-ml-2" />
+          <span className={`text-sm font-medium ${isDark ? 'text-white/80' : 'text-gray-800'}`}>{t('docsTitle')}</span>
+          <img src="/logo-for-ai-transparent.webp" alt="TrinaxAI" translate="no" className="ml-auto h-10 w-10 shrink-0 rounded-full object-contain" width={40} height={40} draggable={false} />
+        </div>
+
+        <div className="relative mt-2 md:hidden">
+          <label htmlFor="docs-section" className="sr-only">{isEs ? 'Seleccionar sección' : 'Select section'}</label>
+          <select
+            id="docs-section"
+            value={active}
+            onChange={(event) => selectSection(event.target.value as DocsSection)}
+            className={`min-h-11 w-full appearance-none rounded-xl border px-3 pr-10 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4aa7ed] ${card} ${textMain}`}
+          >
+            {sections.map((section) => <option key={section.id} value={section.id}>{pick(section, isEs)}</option>)}
+          </select>
+          <MdExpandMore size={18} aria-hidden="true" className={`pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 ${textSub}`} />
+        </div>
       </div>
 
       <div className="flex min-h-0 min-w-0 max-w-full flex-1">
-        <aside className="hidden w-44 shrink-0 overflow-y-auto px-2 py-4 md:block lg:w-52 lg:px-3">
-          <nav aria-label={isEs ? 'Secciones de documentación' : 'Documentation sections'} className="space-y-0.5">
-            {sections.map((section) => (
-              <button
-                key={section.id}
-                type="button"
-                onClick={() => setActive(section.id)}
-                aria-current={active === section.id ? 'page' : undefined}
-                className={`w-full rounded-lg px-3 py-2 text-left text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4aa7ed] ${active === section.id ? activeLink : inactiveLink}`}
-              >
-                {isEs ? section.labelEs : section.labelEn}
-              </button>
-            ))}
+        <aside className="hidden w-56 shrink-0 overflow-y-auto overscroll-contain px-2 py-4 md:block lg:w-64 lg:px-3">
+          <p className={`px-3 pb-2 text-[0.68rem] font-semibold uppercase tracking-[0.18em] ${textMuted}`}>
+            {isEs ? 'Índice' : 'Contents'}
+          </p>
+          <nav aria-label={isEs ? 'Secciones de documentación' : 'Documentation sections'}>
+            <ul className="space-y-0.5">
+              {sections.map((section, index) => {
+                const isActive = section.id === active;
+                return (
+                  <li key={section.id}>
+                    <a
+                      href={formatAppRoute({ page: 'docs', docsSection: section.id })}
+                      onClick={(event) => handleSectionLink(event, section.id)}
+                      aria-current={isActive ? 'page' : undefined}
+                      className={`group flex min-h-11 items-center gap-2.5 rounded-xl py-2 pl-3 pr-2 text-[0.8rem] font-medium leading-snug transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4aa7ed] ${isActive ? activeLink : inactiveLink}`}
+                    >
+                      <span aria-hidden="true" className={`w-5 shrink-0 text-[0.68rem] tabular-nums ${isActive ? brandText : textMuted}`}>
+                        {String(index + 1).padStart(2, '0')}
+                      </span>
+                      <span className="min-w-0 flex-1">{pick(section, isEs)}</span>
+                      <MdChevronRight size={14} aria-hidden="true" className={`shrink-0 transition-opacity ${isActive ? 'opacity-100' : 'opacity-0 group-hover:opacity-50'}`} />
+                    </a>
+                  </li>
+                );
+              })}
+            </ul>
           </nav>
         </aside>
 
@@ -277,39 +339,46 @@ export default function Docs({ onBack }: { onBack: () => void }) {
           id="docs-content"
           tabIndex={-1}
           aria-label={isEs ? 'Contenido de documentación' : 'Documentation content'}
-          className="docs-content min-w-0 max-w-full flex-1 overflow-y-auto overflow-x-hidden px-3 py-5 [overflow-wrap:anywhere] sm:px-4 sm:py-6 md:max-w-3xl"
+          className="docs-content min-w-0 max-w-full flex-1 overflow-y-auto overflow-x-hidden overscroll-contain px-3 py-5 [overflow-wrap:anywhere] sm:px-4 sm:py-6 md:max-w-3xl"
         >
-          <a href="#docs-content" className="sr-only focus:not-sr-only focus:absolute focus:z-10 focus:rounded-lg focus:bg-[#006bbd] focus:px-3 focus:py-2 focus:text-sm focus:text-white">
-            {isEs ? 'Saltar al contenido' : 'Skip to content'}
-          </a>
-          <div className="mb-5 md:hidden">
-            <label htmlFor="docs-section" className={`sr-only ${textMuted}`}>{isEs ? 'Seleccionar sección' : 'Select section'}</label>
-            <select
-              id="docs-section"
-              value={active}
-              onChange={(event) => setActive(event.target.value as Section)}
-              className={`w-full appearance-none rounded-xl border px-3 py-2.5 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4aa7ed] ${card} ${textMain}`}
-            >
-              {sections.map((section) => <option key={section.id} value={section.id}>{isEs ? section.labelEs : section.labelEn}</option>)}
-            </select>
-          </div>
+          <div key={`${active}:${lang}`} className="docs-section">
+            <div className="flex flex-wrap items-center gap-2">
+              <p className={`text-[0.68rem] font-semibold uppercase tracking-[0.18em] ${brandText}`}>
+                {isEs ? 'Guía integrada' : 'Integrated guide'}
+              </p>
+              <span className={`h-1 w-1 rounded-full ${isDark ? 'bg-white/20' : 'bg-gray-300'}`} aria-hidden="true" />
+              <span className={`text-[0.68rem] font-medium ${textMuted}`}>
+                {referenceCount === 1
+                  ? (isEs ? '1 referencia' : '1 reference')
+                  : (isEs ? `${referenceCount} referencias` : `${referenceCount} references`)}
+              </span>
+            </div>
 
-          <section className={`rounded-2xl border p-5 sm:p-6 ${card}`} aria-labelledby="docs-section-title">
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#006bbd]">{isEs ? 'Guía integrada' : 'Integrated guide'}</p>
-            <h1 id="docs-section-title" className={`mt-2 text-2xl font-bold ${textMain}`}>{isEs ? selected.labelEs : selected.labelEn}</h1>
-            <p className={`mt-3 text-sm leading-relaxed ${textSub}`}>{isEs ? selected.summaryEs : selected.summaryEn}</p>
-            <div className="mt-6 space-y-6">
+            <h1
+              id="docs-section-title"
+              ref={titleRef}
+              tabIndex={-1}
+              className={`mt-2 rounded-lg text-2xl font-semibold tracking-tight text-balance outline-none focus-visible:ring-2 focus-visible:ring-[#4aa7ed]/60 ${textMain}`}
+            >
+              {pick(selected, isEs)}
+            </h1>
+            <p className={`mt-3 max-w-prose text-sm leading-relaxed text-pretty ${textSub}`}>
+              {isEs ? selected.summaryEs : selected.summaryEn}
+            </p>
+
+            <div className="mt-7 space-y-8">
               {selected.links.map((link) => (
-                <article key={link.file} className={`rounded-xl border p-4 sm:p-5 ${card}`}>
-                  <div className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b border-current/10 pb-3">
-                    <h2 className={`text-base font-semibold ${textMain}`}>{isEs ? link.labelEs : link.labelEn}</h2>
+                <article key={link.file} className="docs-article">
+                  <div className={`mb-4 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b pb-3 ${isDark ? 'border-white/[0.07]' : 'border-gray-200'}`}>
+                    <h2 className={`text-base font-semibold tracking-tight ${textMain}`}>{pick(link, isEs)}</h2>
                     <a
                       href={docUrl(link.file)}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="text-xs font-medium text-[#006bbd] underline decoration-1 underline-offset-2 hover:text-[#4aa7ed]"
+                      className={`inline-flex min-h-8 items-center gap-1.5 rounded-lg px-2 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4aa7ed] ${brandText} ${isDark ? 'hover:bg-white/[0.06]' : 'hover:bg-[#006bbd]/10'}`}
                     >
-                      {isEs ? 'Abrir referencia' : 'Open reference'} ↗
+                      {isEs ? 'Abrir en GitHub' : 'Open on GitHub'}
+                      <MdOpenInNew size={13} aria-hidden="true" />
                     </a>
                   </div>
                   {documents[link.file] !== undefined ? (
@@ -319,22 +388,61 @@ export default function Docs({ onBack }: { onBack: () => void }) {
                       resolveLink={(href) => resolveDocumentLink(link.file, href)}
                     />
                   ) : documentsLoading ? (
-                    <p role="status" aria-live="polite" className={`text-sm ${textSub}`}>{isEs ? 'Cargando documentación…' : 'Loading documentation…'}</p>
+                    <div role="status" aria-live="polite">
+                      <span className="sr-only">{isEs ? 'Cargando documentación…' : 'Loading documentation…'}</span>
+                      <ArticleSkeleton isDark={isDark} />
+                    </div>
                   ) : (
-                    <p role="status" aria-live="polite" className={`text-sm ${textSub}`}>
-                      {isEs ? 'Esta referencia no está disponible en este build.' : 'This reference is not available in this build.'}
-                    </p>
+                    <div role="status" className={`rounded-xl border border-dashed px-4 py-3 text-sm ${card} ${textSub}`}>
+                      <p>{isEs ? 'Esta referencia no está incluida en este build de la PWA.' : 'This reference is not bundled in this build of the PWA.'}</p>
+                      <a
+                        href={docUrl(link.file)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className={`mt-1.5 inline-flex items-center gap-1 font-medium underline decoration-1 underline-offset-2 ${brandText}`}
+                      >
+                        {isEs ? 'Leerla en GitHub' : 'Read it on GitHub'}
+                        <MdOpenInNew size={13} aria-hidden="true" />
+                      </a>
+                    </div>
                   )}
                 </article>
               ))}
             </div>
-          </section>
 
-          <p className={`mt-5 text-center text-xs leading-relaxed ${textMuted}`}>
-            {isEs
-              ? 'La guía se incluye en la PWA para consultarla sin salir de la aplicación; cada enlace abre la referencia canónica del repositorio.'
-              : 'The guide is bundled into the PWA for in-app reading; each link opens the canonical repository reference.'}
-          </p>
+            <nav aria-label={isEs ? 'Navegación entre secciones' : 'Section navigation'} className="mt-10 grid gap-3 sm:grid-cols-2">
+              {previous ? (
+                <a
+                  href={formatAppRoute({ page: 'docs', docsSection: previous.id })}
+                  onClick={(event) => handleSectionLink(event, previous.id)}
+                  aria-label={`${isEs ? 'Anterior' : 'Previous'}: ${pick(previous, isEs)}`}
+                  className={`flex min-h-11 flex-col justify-center rounded-2xl border px-4 py-3 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4aa7ed] ${card} ${navCardHover}`}
+                >
+                  <span className={`text-[0.68rem] font-semibold uppercase tracking-[0.16em] ${textMuted}`}>{isEs ? 'Anterior' : 'Previous'}</span>
+                  <span className={`mt-1 text-sm font-semibold ${textMain}`}>{pick(previous, isEs)}</span>
+                </a>
+              ) : (
+                <span aria-hidden="true" className="hidden sm:block" />
+              )}
+              {next ? (
+                <a
+                  href={formatAppRoute({ page: 'docs', docsSection: next.id })}
+                  onClick={(event) => handleSectionLink(event, next.id)}
+                  aria-label={`${isEs ? 'Siguiente' : 'Next'}: ${pick(next, isEs)}`}
+                  className={`flex min-h-11 flex-col justify-center rounded-2xl border px-4 py-3 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4aa7ed] sm:items-end sm:text-right ${card} ${navCardHover}`}
+                >
+                  <span className={`text-[0.68rem] font-semibold uppercase tracking-[0.16em] ${textMuted}`}>{isEs ? 'Siguiente' : 'Next'}</span>
+                  <span className={`mt-1 text-sm font-semibold ${textMain}`}>{pick(next, isEs)}</span>
+                </a>
+              ) : null}
+            </nav>
+
+            <p className={`mt-6 text-center text-xs leading-relaxed ${textMuted}`}>
+              {isEs
+                ? 'La guía se incluye en la PWA para consultarla sin salir de la aplicación; cada enlace abre la referencia canónica del repositorio.'
+                : 'The guide is bundled into the PWA for in-app reading; each link opens the canonical repository reference.'}
+            </p>
+          </div>
         </main>
       </div>
     </div>

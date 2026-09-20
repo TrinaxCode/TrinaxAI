@@ -56,6 +56,7 @@ describe('Vite security boundary', () => {
     expect(requiredRagProxyScope('/api/rag/health')).toBeNull();
     expect(requiredRagProxyScope('/api/rag/v1/pairing/claim')).toBeNull();
     expect(requiredRagProxyScope('/api/rag/v1/pairing/me', 'DELETE')).toBeNull();
+    expect(requiredRagProxyScope('/api/rag/v1/pairing/new-device', 'POST')).toBeNull();
     expect(requiredRagProxyScope('/api/rag/v1/pairing/start', 'POST')).toBe('system');
     expect(requiredRagProxyScope('/api/rag/v1/pairing/devices', 'GET')).toBe('system');
     expect(requiredRagProxyScope('/api/rag/v1/pairing/devices/id', 'DELETE')).toBe('system');

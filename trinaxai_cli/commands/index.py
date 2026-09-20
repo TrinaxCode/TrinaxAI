@@ -12,6 +12,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from trinaxai_cli.i18n import normalize_lang
 from trinaxai_cli.processes import spawn_process_group, wait_process_group
 from trinaxai_cli.runtime import find_install_root
 
@@ -52,6 +53,7 @@ def run(args: Any, client: Any, ui: Any, config: Any) -> int:
     # Ensure the indexer resolves relative paths against the project root so
     # `local_sources/...` is always found regardless of caller's CWD.
     env["TRINAXAI_PROJECT_ROOT"] = str(project_root)
+    env["TRINAXAI_LANG"] = normalize_lang(getattr(ui, "language", None))
     env["TRINAXAI_INDEX_DIR"] = str(folder_path)
     env["TRINAXAI_COLLECTION_ID"] = collection
     env["TRINAXAI_COLLECTION_NAME"] = collection

@@ -359,21 +359,21 @@ export function useChatVoice({
     const runId = ttsRunRef.current;
     ttsSpeakingRef.current = true;
     setTtsSpeaking(true);
-    startTtsPump();
     const onComplete = () => {
       if (runId !== ttsRunRef.current) return;
       ttsSpeakingRef.current = false;
       if (ttsQueueRef.current.length || ttsSourceDoneRef.current) pumpCallSpeech();
       else setTtsSpeaking(false);
     };
-    if (detectSpeechSynthesis()) {
+    const voice = pickVoice();
+    if (detectSpeechSynthesis() && voice) {
+      startTtsPump();
       const utterance = new SpeechSynthesisUtterance(next);
       utterance.lang = voiceLang;
       utterance.rate = 1.04;
       utterance.pitch = 1;
       utterance.volume = 1;
-      const voice = pickVoice();
-      if (voice) utterance.voice = voice;
+      utterance.voice = voice;
       utterance.onend = onComplete;
       utterance.onerror = () => {
         if (runId !== ttsRunRef.current) return;
@@ -453,27 +453,25 @@ export function useChatVoice({
   }, [showVoiceToast, t, ttsSupported, voiceLang]);
 
   const speak = useCallback((text: string, onDone?: () => void, key?: string) => {
-    if (!ttsSupported || !text) {
+    if (!text) {
       onDone?.();
       return;
     }
-    if (key && ttsActiveKeyRef.current === key && (window.speechSynthesis.speaking || window.speechSynthesis.pending)) {
+    if (key && ttsActiveKeyRef.current === key && ttsSpeakingRef.current) {
       stopSpeak();
       return;
     }
     ttsCancellingRef.current = false;
     const runId = ++ttsRunRef.current;
     const clean = cleanSpeechText(text);
-    window.speechSynthesis.cancel();
+    if (ttsSupported) window.speechSynthesis.cancel();
     stopBackendSpeech();
-    window.speechSynthesis.resume();
+    if (ttsSupported) window.speechSynthesis.resume();
     ttsActiveKeyRef.current = key ?? null;
     setTtsActiveKey(key ?? null);
     ttsSpeakingRef.current = true;
     setTtsSpeaking(true);
-    startTtsPump();
     const voice = pickVoice();
-    const parts = splitSpeech(clean);
     let completed = false;
     const finish = () => {
       if (completed || runId !== ttsRunRef.current) return;
@@ -482,6 +480,25 @@ export function useChatVoice({
       clearTtsState();
       onDone?.();
     };
+    if (!ttsSupported || !voice) {
+      void speakBackend({
+        text: clean,
+        lang: voiceLang,
+        onEnded: finish,
+        onError: () => {
+          if (completed || runId !== ttsRunRef.current) return;
+          if (!ttsCancellingRef.current) showVoiceToast(t('ttsUnavailable'));
+          finish();
+        },
+      }).catch(() => {
+        if (completed || runId !== ttsRunRef.current) return;
+        if (!ttsCancellingRef.current) showVoiceToast(t('ttsUnavailable'));
+        finish();
+      });
+      return;
+    }
+    startTtsPump();
+    const parts = splitSpeech(clean);
     if (parts.length === 0) {
       finish();
       return;
@@ -509,7 +526,7 @@ export function useChatVoice({
         finish();
       }
     });
-  }, [cleanSpeechText, clearTtsState, pickVoice, showVoiceToast, splitSpeech, startTtsPump, stopSpeak, stopTtsPump, ttsSupported, voiceLang]);
+  }, [cleanSpeechText, clearTtsState, pickVoice, showVoiceToast, speakBackend, splitSpeech, startTtsPump, stopSpeak, stopTtsPump, ttsSupported, t, voiceLang]);
 
   const speakWithFallback = useCallback((text: string, onDone?: () => void) => {
     ttsRunRef.current += 1;
@@ -640,7 +657,18 @@ export function useChatVoice({
       clearSpeechTimers();
       setListening(false);
       const error = String(event?.error || 'unknown');
-      const permanent = ['not-allowed', 'service-not-allowed', 'audio-capture', 'language-not-supported'].includes(error);
+      // Safari/iOS exposes SpeechRecognition but its remote recognition service
+      // can fail with `network`. Switch to the microphone recorder instead of
+      // retrying the same unavailable native service forever.
+      if (error === 'network' && detectBackendVoice()) {
+        stopAfterError = true;
+        recognitionRunRef.current += 1;
+        try { rec.abort(); } catch { /* already ended */ }
+        recognitionRef.current = null;
+        void startBackendVoiceCapture(continuous, submit);
+        return;
+      }
+      const permanent = ['not-allowed', 'service-not-allowed', 'audio-capture', 'language-not-supported', 'network'].includes(error);
       if (permanent) {
         stopAfterError = true;
         setCallMode(false);
@@ -675,7 +703,7 @@ export function useChatVoice({
       releaseWakeLock();
       showVoiceToast(t('voiceRecognitionFailed'), 'warning');
     }
-  }, [inputRef, queueVoiceRestart, releaseWakeLock, sendTextRef, setInput, secureVoiceContext, showVoiceToast, streaming, t, voiceLang, voiceSupported]);
+  }, [inputRef, queueVoiceRestart, releaseWakeLock, sendTextRef, setInput, secureVoiceContext, showVoiceToast, startBackendVoiceCapture, streaming, t, voiceLang, voiceSupported]);
 
   useEffect(() => {
     startVoiceRef.current = voiceSupported ? startVoiceCapture : startBackendVoiceCapture;

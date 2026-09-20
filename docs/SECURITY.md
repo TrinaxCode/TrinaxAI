@@ -4,7 +4,7 @@
 
 <p align="center">
   <a href="https://github.com/TrinaxCode/TrinaxAI"><img src="https://img.shields.io/github/stars/TrinaxCode/TrinaxAI?style=flat&amp;label=%E2%98%85&amp;color=006bbd" alt="GitHub stars"></a>
-  <a href="https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.2.5"><img src="https://img.shields.io/badge/version-1.2.5-006bbd" alt="Stable release: 1.2.5"></a>
+  <a href="https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.2.6"><img src="https://img.shields.io/badge/version-1.2.6-006bbd" alt="Stable release: 1.2.6"></a>
   <a href="https://github.com/TrinaxCode/TrinaxAI/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/TrinaxCode/TrinaxAI/ci.yml?branch=main&amp;label=CI" alt="CI status"></a>
   <a href="https://github.com/TrinaxCode/TrinaxAI/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0--or--later-006bbd" alt="License: AGPL-3.0-or-later"></a>
   <img src="https://img.shields.io/badge/macOS%20%7C%20Windows%20%7C%20Linux-4493F8?style=flat-square" alt="Supported platforms: macOS, Windows, and Linux">
@@ -81,13 +81,13 @@ TrinaxAI's threat model assumes:
 ### Attack vectors considered
 
 - **LAN attacker** (same WiFi, no credential): The gateway preserves the signed
-  original IP, so a proxied client cannot inherit loopback privilege. App state,
-  attachments, sources, memory, index/system routes and the agent return `403`.
-  Only explicitly public health/resource routes remain available without a
-  credential.
+  original IP, so a proxied client cannot inherit loopback privilege. The
+  rate-limited new-device bootstrap can issue only `chat`/`web`; app state,
+  attachments, sources, memory, index/system routes and the agent still return
+  `403` without their scopes.
 - **Stolen device token:** A device token is a bearer capability limited to its
   recorded scopes. A new PWA claim keeps it only in an `HttpOnly; SameSite=Strict`
-  cookie scoped to `/api/rag`; the browser never receives a new bearer in JSON or
+  cookie scoped to `/api`; the browser never receives a new bearer in JSON or
   persists it in browser storage. FastAPI stores only a keyed hash, and
   host/admin operators can revoke it immediately. Legacy CLI bearers remain
   header-only and are never copied into a response cookie. Pair only devices you control and revoke a lost device

@@ -49,6 +49,8 @@ REQUIRED_FILES = [
     "docs/API_REFERENCE.md",
     "docs/CONFIGURATION.md",
     "chat-pwa/package.json",
+    "npm-package/package.json",
+    "npm-package/bin/trinaxai.js",
     "chat-pwa/public/manifest.en.webmanifest",
     "chat-pwa/public/manifest.es.webmanifest",
     "chat-pwa/public/offline.html",
@@ -260,6 +262,8 @@ def check_release_workflow_security(workflow: str, ci_workflow: str | None = Non
         ("draft release creation", r"gh\s+release\s+create\b"),
         ("draft release flag", r"--draft(?:\s|$)"),
         ("published release edit", r"gh\s+release\s+edit\b[^\n]*--draft=false"),
+        ("npm publication credential guard", r'if\s+\[\[\s+-z\s+"\$NODE_AUTH_TOKEN"\s+\]\];\s+then'),
+        ("npm publish", r"npm\s+publish\s+--access\s+public\s+--provenance\b"),
     )
     for marker, pattern in command_markers:
         if not re.search(rf"(?m)^\s*{pattern}", code):
@@ -277,12 +281,13 @@ def check_release_workflow_security(workflow: str, ci_workflow: str | None = Non
     signing = code.find("name: Sign and verify release assets")
     staging = code.find("name: Stage draft release with assets")
     container_signing = code.find("name: Sign and verify container images")
+    npm_publish = code.find("name: Publish npm CLI package")
     publishing = code.find("name: Publish verified release")
     verification = code.find("name: Verify published release assets")
-    if min(signing, staging, container_signing, publishing, verification) < 0 or not (
-        signing < staging < container_signing < publishing < verification
+    if min(signing, staging, container_signing, npm_publish, publishing, verification) < 0 or not (
+        signing < staging < container_signing < npm_publish < publishing < verification
     ):
-        errors.append("release must stay draft until assets and container are signed, then verify publication")
+        errors.append("release must stay draft until assets, container, and npm package are published and signed")
     if len(re.findall(r"(?m)^\s*gpg\s+--batch\s+--verify\b", code)) < 2:
         errors.append("release workflow must verify signatures with gpg --batch --verify before and after publication")
     if not re.search(r'(?m)^\s*for\s+signature\s+in\s+"\$\{signatures\[@\]\}"', code):
@@ -621,6 +626,7 @@ def check_release_contract() -> list[str]:
         "scripts/source_update.py": _single_match(
             ROOT / "scripts/source_update.py", r'^RELEASE_VERSION\s*=\s*"([^"]+)"$'
         ),
+        "npm-package/package.json": _single_match(ROOT / "npm-package/package.json", r'^\s*"version":\s*"([^"]+)"'),
     }
     missing = [name for name, version in version_sources.items() if version is None]
     if missing:

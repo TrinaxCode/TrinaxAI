@@ -66,7 +66,7 @@ async function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit, tim
   else init.signal?.addEventListener('abort', onAbort, { once: true });
   const timeout = window.setTimeout(() => controller.abort(new DOMException('Request timed out', 'TimeoutError')), timeoutMs);
   try {
-    return await fetch(input, { ...init, signal: controller.signal });
+    return await fetch(input, { ...init, credentials: 'include', signal: controller.signal });
   } finally {
     window.clearTimeout(timeout);
     init.signal?.removeEventListener('abort', onAbort);

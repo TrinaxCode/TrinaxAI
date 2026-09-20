@@ -41,7 +41,7 @@ describe('DevicePairingCard', () => {
     vi.mocked(listPairedDevices)
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([device]);
-    render(<DevicePairingCard isDark />);
+    render(<DevicePairingCard isDark canManageSystem />);
 
     await waitFor(() => expect(listPairedDevices).toHaveBeenCalledTimes(1));
     await act(async () => {
@@ -50,6 +50,13 @@ describe('DevicePairingCard', () => {
     });
 
     expect(await screen.findByText('Kitchen tablet')).toBeInTheDocument();
+  });
+
+  it('does not request host-only device management from a remote device', async () => {
+    render(<DevicePairingCard isDark />);
+
+    await act(async () => { await Promise.resolve(); });
+    expect(listPairedDevices).not.toHaveBeenCalled();
   });
 
   it('uses wake events and backs off the host-list fallback', async () => {

@@ -4,7 +4,7 @@
 
 <p align="center">
   <a href="https://github.com/TrinaxCode/TrinaxAI"><img src="https://img.shields.io/github/stars/TrinaxCode/TrinaxAI?style=flat&amp;label=%E2%98%85&amp;color=006bbd" alt="GitHub stars"></a>
-  <a href="https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.2.5"><img src="https://img.shields.io/badge/version-1.2.5-006bbd" alt="Stable release: 1.2.5"></a>
+  <a href="https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.2.6"><img src="https://img.shields.io/badge/version-1.2.6-006bbd" alt="Stable release: 1.2.6"></a>
   <a href="https://github.com/TrinaxCode/TrinaxAI/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/TrinaxCode/TrinaxAI/ci.yml?branch=main&amp;label=CI" alt="CI status"></a>
   <a href="https://github.com/TrinaxCode/TrinaxAI/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0--or--later-006bbd" alt="License: AGPL-3.0-or-later"></a>
   <img src="https://img.shields.io/badge/macOS%20%7C%20Windows%20%7C%20Linux-4493F8?style=flat-square" alt="Supported platforms: macOS, Windows, and Linux">
@@ -106,9 +106,14 @@ POST /v1/pairing/start
 El código en claro se devuelve una vez. Un cliente de LAN/VPN lo consume con
 `POST /v1/pairing/claim {"code":"ABCD-EFGH","device_name":"Teléfono"}`.
 Hay un límite de cinco intentos por cliente cada cinco minutos. La respuesta
-fija una cookie `HttpOnly; SameSite=Strict` con alcance `/api/rag` y contiene
+fija una cookie `HttpOnly; SameSite=Strict` con alcance `/api` y contiene
 metadatos del dispositivo, pero no un bearer. En disco solo quedan hashes con
 clave. Los códigos duran entre 60 y 900 segundos y son single-use.
+
+`POST /v1/pairing/new-device {"device_name":"Teléfono"}` es la alternativa de
+primer uso para un navegador LAN/VPN. Emite una cookie revocable con solo
+`chat`/`web`, por lo que puede chatear y buscar en la web sin importar historial,
+conocimiento RAG, memoria ni archivos del host.
 
 La PWA envía esa cookie automáticamente y no persiste tokens recién obtenidos
 en `localStorage` ni `sessionStorage`. Por compatibilidad, un bearer guardado por

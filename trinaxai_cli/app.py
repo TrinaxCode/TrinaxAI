@@ -23,7 +23,7 @@ from trinaxai_cli.i18n import help_text, resolve_lang, translate
 from trinaxai_cli.ui import get_console
 
 LOG = logging.getLogger("trinaxai_cli")
-VERSION = "1.2.5"
+VERSION = "1.2.6"
 
 
 # ----------------------------------------------------------------- argparse
@@ -157,9 +157,11 @@ def _build_parser(language: str | None = None) -> argparse.ArgumentParser:
     browse_sub.add_parser("list-collections", help="List all collections.")
     blf = browse_sub.add_parser("list-files", help="List files in a collection.")
     blf.add_argument("--collection", default="default")
+    blf.add_argument("--source-id", help="Filter by source id.")
     bsc = browse_sub.add_parser("show-chunks", help="Show chunks for a file.")
     bsc.add_argument("--collection", default="default")
     bsc.add_argument("--file", required=True)
+    bsc.add_argument("--source-id", help="Select a source when file paths are duplicated.")
     bsc.add_argument("--limit", type=int, default=50)
 
     res_p = sub.add_parser("research", help="Multi-pass deep research query.")

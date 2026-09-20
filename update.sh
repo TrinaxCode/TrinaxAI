@@ -12,10 +12,12 @@ for language_arg in "$@"; do
   esac
 done
 ARG_NONINTERACTIVE=0
+ARG_HELP=0
 for argument in "$@"; do
   case "$argument" in --non-interactive|--yes|-y|--dry-run|--scheduled) ARG_NONINTERACTIVE=1;; esac
+  case "$argument" in --help|-h) ARG_HELP=1;; esac
 done
-if [ -z "$LANGUAGE_EXPLICIT" ] && [ "${TRINAXAI_NONINTERACTIVE:-0}" != "1" ] && [ "$ARG_NONINTERACTIVE" != "1" ] && [ "${TRINAXAI_DRY_RUN:-0}" != "1" ] && [ -r /dev/tty ]; then
+if [ "$ARG_HELP" != "1" ] && [ -z "$LANGUAGE_EXPLICIT" ] && [ "${TRINAXAI_NONINTERACTIVE:-0}" != "1" ] && [ "$ARG_NONINTERACTIVE" != "1" ] && [ "${TRINAXAI_DRY_RUN:-0}" != "1" ] && [ -r /dev/tty ]; then
   read -r -p "Select language / Selecciona idioma [en/es, default: $LANGUAGE]: " language_reply </dev/tty || language_reply=""
   case "$(printf '%s' "$language_reply" | tr '[:upper:]' '[:lower:]')" in es*) LANGUAGE=es ;; en*) LANGUAGE=en ;; esac
   LANGUAGE_EXPLICIT=prompt
@@ -24,8 +26,7 @@ fi
 GREEN='\033[0;32m'; BLUE='\033[0;34m'
 YELLOW='\033[1;33m'; CYAN='\033[0;36m'; NC='\033[0m'; BOLD='\033[1m'
 
-if [ "$LANGUAGE" = "es" ]; then
-  tr_text_es() {
+tr_text_es() {
     case "$1" in
       'TrinaxAI - Smart Update') echo 'Actualización inteligente de TrinaxAI' ;;
       'Source Code') echo 'Código fuente' ;;
@@ -72,12 +73,44 @@ if [ "$LANGUAGE" = "es" ]; then
       'Could not create a temporary npm cache.') echo 'No se pudo crear un caché temporal de npm.' ;;
       'Update complete. Restart later with ./startup_ai.sh or trinaxai restart.') echo 'Actualización terminada. Reinicia después con ./startup_ai.sh o trinaxai restart.' ;;
       'Settings, indexes, models, and personal data were preserved.') echo 'Se conservaron la configuración, los índices, los modelos y los datos personales.' ;;
+      'Update failed; restoring the previously working source tree.') echo 'Falló la actualización; se restaurará el árbol fuente que funcionaba anteriormente.' ;;
+      'Updater failed with exit code '*'. The error is above.') echo "El actualizador falló con el código de salida ${1#Updater failed with exit code }; el error aparece arriba." ;;
+      'Press Enter to close this window...') echo 'Presiona Enter para cerrar esta ventana...' ;;
+      '--language requires a value') echo 'Se requiere un valor para --language' ;;
+      'Unknown option:'*) echo "Opción desconocida:${1#Unknown option:}" ;;
+      'No interactive terminal; using default answer for:'*) echo "No hay una terminal interactiva; se usará la respuesta predeterminada para:${1#No interactive terminal; using default answer for:}" ;;
+      'TRINAXAI_RELEASE_VERSION must be a semantic version.') echo 'TRINAXAI_RELEASE_VERSION debe ser una versión semántica.' ;;
+      'SOURCE_UPDATE_SHA256 must be a 64-character SHA-256 digest.') echo 'SOURCE_UPDATE_SHA256 debe ser un resumen SHA-256 de 64 caracteres.' ;;
+      'A SHA-256 checksum is required for a custom source archive URL.') echo 'Se requiere una suma de comprobación SHA-256 para una URL de archivo fuente personalizada.' ;;
+      'Python not found. Set TRINAXAI_PYTHON or create .venv first.') echo 'No se encontró Python. Define TRINAXAI_PYTHON o crea primero .venv.' ;;
+      'An interrupted source update was found; restoring it before continuing.') echo 'Se encontró una actualización de código fuente interrumpida; se restaurará antes de continuar.' ;;
+      'Required Ollama model is not ready:'*) echo "El modelo requerido de Ollama no está listo:${1#Required Ollama model is not ready:}" ;;
+      'TrinaxAI backend is not ready on port '*) echo "El backend de TrinaxAI no está listo en el puerto${1#TrinaxAI backend is not ready on port }" ;;
+      'TrinaxAI PWA is not ready on port '*) echo "La PWA de TrinaxAI no está lista en el puerto${1#TrinaxAI PWA is not ready on port }" ;;
+      'TrinaxAI smoke inference failed.') echo 'Falló la inferencia de prueba de TrinaxAI.' ;;
+      'curl not found; cannot run official Ollama installer.') echo 'No se encontró curl; no se puede ejecutar el instalador oficial de Ollama.' ;;
+      'HOME is unsafe or unset; Ollama data was not removed.') echo 'HOME no es seguro o no está definido; no se eliminaron los datos de Ollama.' ;;
+      'Ollama data path is a symbolic link; it was not removed.') echo 'La ruta de datos de Ollama es un enlace simbólico; no se eliminó.' ;;
+      'service_manager.py not found; cannot '*) echo "No se encontró service_manager.py; no se puede${1#service_manager.py not found; cannot}" ;;
+      'backup.sh not found; refusing an update without the requested backup.') echo 'No se encontró backup.sh; se rechaza actualizar sin la copia de seguridad solicitada.' ;;
+      'Ollama reinstall failed.') echo 'Falló la reinstalación de Ollama.' ;;
+      'Ollama repair failed.') echo 'Falló la reparación de Ollama.' ;;
+      'chat-pwa/package.json and package-lock.json are required for the PWA.') echo 'La PWA requiere chat-pwa/package.json y package-lock.json.' ;;
+      'PWA build completed without chat-pwa/dist/index.html.') echo 'La compilación de la PWA terminó sin chat-pwa/dist/index.html.' ;;
+      'npm not found; cannot rebuild the PWA.') echo 'No se encontró npm; no se puede volver a compilar la PWA.' ;;
+      'Pulling') echo 'Descargando' ;;
+      'Failed to prepare required model '*) echo "Falló la preparación del modelo requerido${1#Failed to prepare required model}" ;;
+      'Ollama is not available; required models cannot be prepared.') echo 'Ollama no está disponible; no se pueden preparar los modelos requeridos.' ;;
+      'Required Ollama models are not ready. Pull configured models and retry.') echo 'Los modelos requeridos de Ollama no están listos. Descarga los modelos configurados y vuelve a intentarlo.' ;;
+      'Model downloads skipped; model preparation is deferred.') echo 'Se omitieron las descargas de modelos; la preparación queda para después.' ;;
+      'scripts/public_readiness.py not found; audit skipped.') echo 'No se encontró scripts/public_readiness.py; se omitió la auditoría.' ;;
+      'TrinaxAI services failed to start.') echo 'No se pudieron iniciar los servicios de TrinaxAI.' ;;
+      'Restart skipped; runtime readiness check deferred.') echo 'Reinicio omitido; la comprobación de disponibilidad del entorno queda para después.' ;;
+      '✓ TrinaxAI is up to date') echo '✓ TrinaxAI está actualizado' ;;
       *) echo "$1" ;;
     esac
   }
-else
-  tr_text_en() { case "$1" in 'LAN / Red local') echo 'LAN' ;; *) echo "$1" ;; esac; }
-fi
+tr_text_en() { case "$1" in 'LAN / Red local') echo 'LAN' ;; *) echo "$1" ;; esac; }
 if [ "$LANGUAGE" = "es" ]; then tr_text() { tr_text_es "$@"; }; else tr_text() { tr_text_en "$@"; }; fi
 
 print_step() { echo -e "\n${BLUE}${BOLD}=== $(tr_text "$1") ===${NC}"; }
@@ -93,7 +126,7 @@ Actualizador de TrinaxAI
 Uso:
   ./update.sh                    Actualización guiada (pregunta opciones)
   ./update.sh --non-interactive  Actualización automática para CI/scripts
-  ./update.sh --no-backup        Omitir backup previo
+  ./update.sh --no-backup        Omitir la copia de seguridad previa
   ./update.sh --no-pull          Omitir descarga del código
   ./update.sh --models           Descargar/actualizar modelos Ollama configurados
   ./update.sh --no-models        No descargar modelos Ollama
@@ -105,7 +138,7 @@ Uso:
   ./update.sh --dry-run         Simular la actualización sin modificar nada
   ./update.sh --enable-autostart Activar arranque automático
   ./update.sh --disable-autostart Desactivar arranque automático
-  ./update.sh --no-audit         Omitir readiness audit
+  ./update.sh --no-audit         Omitir la auditoría pública de preparación
   ./update.sh --scheduled        Solo comprobar actualizaciones
   ./update.sh --help             Mostrar esta ayuda
 
@@ -156,8 +189,8 @@ pause_on_macos_failure() {
   local status=$?
   trap - EXIT
   if [ "$status" -ne 0 ] && [ "$(uname -s 2>/dev/null || echo unknown)" = "Darwin" ] && [ "${INTERACTIVE:-0}" = "1" ] && [ -r /dev/tty ]; then
-    printf '\n[!] Updater failed with exit code %s. The error is above.\n' "$status" >&2
-    read -r -p "Press Enter to close this window..." _ </dev/tty || true
+    printf '\n[!] %s\n' "$(tr_text "Updater failed with exit code $status. The error is above.")" >&2
+    read -r -p "$(tr_text 'Press Enter to close this window...')" _ </dev/tty || true
   fi
   exit "$status"
 }
@@ -222,13 +255,13 @@ while [ "$#" -gt 0 ]; do
       ;;
     --language|--lang)
       shift
-      [ "$#" -gt 0 ] || { echo "--language requires a value" >&2; exit 2; }
+      [ "$#" -gt 0 ] || { echo "$(tr_text '--language requires a value')" >&2; exit 2; }
       LANGUAGE_EXPLICIT="${1:-}"; LANGUAGE_LOWER="$(printf '%s' "$LANGUAGE_EXPLICIT" | tr '[:upper:]' '[:lower:]')"
       case "$LANGUAGE_LOWER" in es*|*_es*) LANGUAGE=es ;; *) LANGUAGE=en ;; esac
       ;;
     --language=*|--lang=*)
       LANGUAGE_EXPLICIT="${1#*=}"
-      [ -n "$LANGUAGE_EXPLICIT" ] || { echo "--language requires a value" >&2; exit 2; }
+      [ -n "$LANGUAGE_EXPLICIT" ] || { echo "$(tr_text '--language requires a value')" >&2; exit 2; }
       LANGUAGE_LOWER="$(printf '%s' "$LANGUAGE_EXPLICIT" | tr '[:upper:]' '[:lower:]')"
       case "$LANGUAGE_LOWER" in es*|*_es*) LANGUAGE=es ;; *) LANGUAGE=en ;; esac
       ;;
@@ -245,7 +278,15 @@ fi
 if [ "$LANGUAGE" = "es" ]; then tr_text() { tr_text_es "$@"; }; else tr_text() { tr_text_en "$@"; }; fi
 
 ask() {
-  local prompt="$1" reply=""
+  local prompt="$1" reply="" suffix=""
+  if [[ "$prompt" == *" [Y/n]" ]]; then
+    suffix=" [Y/n]"
+    prompt="${prompt:0:${#prompt}-${#suffix}}"
+  elif [[ "$prompt" == *" [y/N]" ]]; then
+    suffix=" [y/N]"
+    prompt="${prompt:0:${#prompt}-${#suffix}}"
+  fi
+  prompt="$(tr_text "$prompt")$suffix"
   if [ "$INTERACTIVE" != "1" ]; then
     echo ""
     return 0
@@ -281,14 +322,14 @@ cd "$ROOT"
 
 RELEASE_VERSION="${TRINAXAI_RELEASE_VERSION:-}"
 if [ -n "$RELEASE_VERSION" ] && [[ ! "$RELEASE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-  echo "[!] TRINAXAI_RELEASE_VERSION must be a semantic version." >&2
+  echo "[!] $(tr_text 'TRINAXAI_RELEASE_VERSION must be a semantic version.')" >&2
   exit 2
 fi
 SOURCE_UPDATE_URL="${TRINAXAI_UPDATE_SOURCE_URL:-}"
 SOURCE_UPDATE_SHA256="${TRINAXAI_UPDATE_SOURCE_SHA256:-${TRINAXAI_SOURCE_SHA256:-}}"
 SOURCE_UPDATE_SHA256="$(printf '%s' "$SOURCE_UPDATE_SHA256" | tr -d '[:space:]')"
 if [ -n "$SOURCE_UPDATE_SHA256" ] && [[ ! "$SOURCE_UPDATE_SHA256" =~ ^[0-9a-fA-F]{64}$ ]]; then
-  echo "[!] SOURCE_UPDATE_SHA256 must be a 64-character SHA-256 digest." >&2
+  echo "[!] $(tr_text 'SOURCE_UPDATE_SHA256 must be a 64-character SHA-256 digest.')" >&2
   exit 2
 fi
 if [ -z "$SOURCE_UPDATE_URL" ] && [ -n "$RELEASE_VERSION" ]; then
@@ -296,7 +337,7 @@ if [ -z "$SOURCE_UPDATE_URL" ] && [ -n "$RELEASE_VERSION" ]; then
 fi
 if [ -n "$SOURCE_UPDATE_URL" ] && [[ ! "$SOURCE_UPDATE_URL" =~ ^https://github\.com/TrinaxCode/TrinaxAI/releases/download/v[0-9]+\.[0-9]+\.[0-9]+/TrinaxAI-[0-9]+\.[0-9]+\.[0-9]+\.tar\.gz$ ]] &&
   [ -z "$SOURCE_UPDATE_SHA256" ]; then
-  echo "[!] A SHA-256 checksum is required for a custom source archive URL." >&2
+  echo "[!] $(tr_text 'A SHA-256 checksum is required for a custom source archive URL.')" >&2
   exit 2
 fi
 
@@ -319,7 +360,11 @@ if [ "$DRY_RUN" = "1" ]; then
   echo ""
   echo -e "${BOLD}${CYAN}$(tr_text 'Links to enter')${NC}"
   echo "  Localhost:       https://localhost:3334"
-  echo "  $(tr_text 'LAN / Red local'): https://[YOUR-LAN-IP]:3334"
+  if [ "$LANGUAGE" = "es" ]; then
+    echo "  LAN / Red local: https://[TU-IP-LAN]:3334"
+  else
+    echo "  LAN:             https://[YOUR-LAN-IP]:3334"
+  fi
   echo "  $(tr_text 'RAG health'):      https://localhost:3333/health"
   print_ok "Dry-run finished; no changes were made"
   exit 0
@@ -369,7 +414,7 @@ elif command -v python3 >/dev/null 2>&1; then
 elif command -v python >/dev/null 2>&1; then
   PYTHON_CMD=(python)
 else
-  echo "[!] Python not found. Set TRINAXAI_PYTHON or create .venv first." >&2
+  echo "[!] $(tr_text 'Python not found. Set TRINAXAI_PYTHON or create .venv first.')" >&2
   exit 1
 fi
 
@@ -478,7 +523,7 @@ verify_models() {
   local model
   for model in "${MODELS[@]}"; do
     if ! ollama_model_installed "$model"; then
-      echo "[!] Required Ollama model is not ready: $model" >&2
+      echo "[!] $(tr_text "Required Ollama model is not ready: $model")" >&2
       return 1
     fi
   done
@@ -519,17 +564,17 @@ assert_runtime_ready() {
       break
     fi
   done
-  [ -n "$rag_url" ] || { echo "[!] TrinaxAI backend is not ready on port $rag_port." >&2; return 1; }
+  [ -n "$rag_url" ] || { echo "[!] $(tr_text "TrinaxAI backend is not ready on port $rag_port.")" >&2; return 1; }
   for scheme in https http; do
     if wait_for_local_url "$scheme://127.0.0.1:$pwa_port/"; then
       pwa_url="$scheme://127.0.0.1:$pwa_port"
       break
     fi
   done
-  [ -n "$pwa_url" ] || { echo "[!] TrinaxAI PWA is not ready on port $pwa_port." >&2; return 1; }
+  [ -n "$pwa_url" ] || { echo "[!] $(tr_text "TrinaxAI PWA is not ready on port $pwa_port.")" >&2; return 1; }
   RAG_BASE_URL="$rag_url"
   if ! smoke_inference; then
-    echo "[!] TrinaxAI smoke inference failed." >&2
+    echo "[!] $(tr_text 'TrinaxAI smoke inference failed.')" >&2
     return 1
   fi
   print_ok "Backend, PWA, and smoke inference are ready"
@@ -539,7 +584,7 @@ repair_ollama() {
   if command -v curl >/dev/null 2>&1; then
     curl -fsSL https://ollama.com/install.sh | sh
   else
-    echo "[!] curl not found; cannot run official Ollama installer."
+    echo "[!] $(tr_text 'curl not found; cannot run official Ollama installer.')"
     return 1
   fi
 }
@@ -567,9 +612,9 @@ remove_ollama_app() {
     sudo pacman -Rns --noconfirm ollama 2>/dev/null || true
   fi
   if [ "${HOME:-}" = "/" ] || [ -z "${HOME:-}" ]; then
-    echo "[!] HOME is unsafe or unset; Ollama data was not removed."
+    echo "[!] $(tr_text 'HOME is unsafe or unset; Ollama data was not removed.')"
   elif [ -L "$HOME/.ollama" ]; then
-    echo "[!] Ollama data path is a symbolic link; it was not removed."
+    echo "[!] $(tr_text 'Ollama data path is a symbolic link; it was not removed.')"
   else
     rm -rf -- "$HOME/.ollama" 2>/dev/null || true
   fi
@@ -578,9 +623,10 @@ remove_ollama_app() {
 run_service_manager() {
   local action="$1"
   if [ -f "$ROOT/service_manager.py" ]; then
-    TRINAXAI_PRIVILEGED_WRAPPER=1 "${PYTHON_CMD[@]}" "$ROOT/service_manager.py" "$action" --base-dir "$ROOT" || true
+    TRINAXAI_PRIVILEGED_WRAPPER=1 "${PYTHON_CMD[@]}" "$ROOT/service_manager.py" "$action" --base-dir "$ROOT"
   else
-    echo "[!] service_manager.py not found; skipped $action."
+    echo "[!] $(tr_text "service_manager.py not found; cannot $action.")" >&2
+    return 1
   fi
 }
 
@@ -672,7 +718,7 @@ if [ "$CREATE_BACKUP" = "1" ] && [ -f "./backup.sh" ]; then
   print_step "Backup"
   bash ./backup.sh create
 elif [ "$CREATE_BACKUP" = "1" ]; then
-  echo "[!] backup.sh not found; refusing an update without the requested backup." >&2
+  echo "[!] $(tr_text 'backup.sh not found; refusing an update without the requested backup.')" >&2
   exit 1
 fi
 
@@ -684,12 +730,12 @@ fi
 if [ "$REMOVE_OLLAMA" = "1" ]; then
   remove_ollama_app
   if [ "$INSTALL_OLLAMA_AFTER_REMOVE" = "1" ]; then
-    repair_ollama || echo "[!] Ollama reinstall failed."
+    repair_ollama || echo "[!] $(tr_text 'Ollama reinstall failed.')"
   else
     PULL_MODELS=0
   fi
 elif [ "$REPAIR_OLLAMA" = "1" ]; then
-  repair_ollama || echo "[!] Ollama repair failed."
+  repair_ollama || echo "[!] $(tr_text 'Ollama repair failed.')"
 fi
 
 print_step "Python Dependencies"
@@ -708,25 +754,34 @@ if [ -f "$ROOT/scripts/generate_continue_config.py" ]; then
 fi
 
 if [ ! -d "chat-pwa" ] || [ ! -f "chat-pwa/package.json" ] || [ ! -f "chat-pwa/package-lock.json" ]; then
-  echo "[!] chat-pwa/package.json and package-lock.json are required for the PWA." >&2
+  echo "[!] $(tr_text 'chat-pwa/package.json and package-lock.json are required for the PWA.')" >&2
   exit 1
 elif [ "${#NPM_CMD[@]}" -gt 0 ]; then
   print_step "Web App"
   if ! (cd chat-pwa && run_npm_ci && "${NPM_CMD[@]}" run build); then
     if is_windows; then
-      cat >&2 <<'EOF'
+      if [ "$LANGUAGE" = "es" ]; then
+        cat >&2 <<'EOF'
+[!] La compilación de la PWA falló en Windows.
+    Si el error es "spawn EPERM" y el proyecto está en C:\Windows\System32,
+    ejecuta este script desde una ventana de Bash/PowerShell elevada o mueve la
+    aplicación a un directorio de usuario normal, como C:\Users\<you>\TrinaxAI.
+EOF
+      else
+        cat >&2 <<'EOF'
 [!] PWA build failed on Windows.
     If the error is "spawn EPERM" and the project is under C:\Windows\System32,
     run this script from an elevated Bash/PowerShell window or move the app to a
     normal user directory such as C:\Users\<you>\TrinaxAI.
 EOF
+      fi
     fi
     exit 1
   fi
-  [ -f "chat-pwa/dist/index.html" ] || { echo "[!] PWA build completed without chat-pwa/dist/index.html." >&2; exit 1; }
+  [ -f "chat-pwa/dist/index.html" ] || { echo "[!] $(tr_text 'PWA build completed without chat-pwa/dist/index.html.')" >&2; exit 1; }
   print_ok "PWA dependencies installed and production build created"
 else
-  echo "[!] npm not found; cannot rebuild the PWA." >&2
+  echo "[!] $(tr_text 'npm not found; cannot rebuild the PWA.')" >&2
   exit 1
 fi
 
@@ -737,22 +792,22 @@ if [ "$PULL_MODELS" = "1" ]; then
   fi
   if ensure_ollama_running; then
     for model in "${MODELS[@]}"; do
-      echo "Pulling $model..."
+      echo "$(tr_text 'Pulling') $model..."
       if ! ollama pull "$model" || ! ollama_model_installed "$model"; then
-        echo "[!] Failed to prepare required model $model" >&2
+        echo "[!] $(tr_text "Failed to prepare required model $model")" >&2
         exit 1
       fi
     done
   else
-    echo "[!] Ollama is not available; required models cannot be prepared." >&2
+    echo "[!] $(tr_text 'Ollama is not available; required models cannot be prepared.')" >&2
     exit 1
   fi
   if ! verify_models; then
-    echo "[!] Required Ollama models are not ready. Pull configured models and retry." >&2
+    echo "[!] $(tr_text 'Required Ollama models are not ready. Pull configured models and retry.')" >&2
     exit 1
   fi
 else
-  echo "[i] Model downloads skipped; model preparation is deferred."
+  echo "[i] $(tr_text 'Model downloads skipped; model preparation is deferred.')"
 fi
 
 case "$AUTOSTART_ACTION" in
@@ -763,14 +818,14 @@ esac
 if [ "$RUN_AUDIT" = "1" ] && [ -f "scripts/public_readiness.py" ]; then
   "${PYTHON_CMD[@]}" scripts/public_readiness.py
 elif [ "$RUN_AUDIT" = "1" ]; then
-  echo "[!] scripts/public_readiness.py not found; audit skipped."
+  echo "[!] $(tr_text 'scripts/public_readiness.py not found; audit skipped.')"
 fi
 
 if [ "$RESTART_AFTER" = "1" ]; then
   print_step "Restart"
   run_service_manager stop-all
   if ! "${PYTHON_CMD[@]}" "$ROOT/service_manager.py" start --base-dir "$ROOT"; then
-    echo "[!] TrinaxAI services failed to start." >&2
+    echo "[!] $(tr_text 'TrinaxAI services failed to start.')" >&2
     exit 1
   fi
 else
@@ -782,7 +837,7 @@ if [ "$RESTART_AFTER" = "1" ]; then
   fi
 fi
 
-echo -e "\n${GREEN}${BOLD}✓ TrinaxAI is up to date${NC}"
+echo -e "\n${GREEN}${BOLD}$(tr_text '✓ TrinaxAI is up to date')${NC}"
 print_info "Settings, indexes, models, and personal data were preserved."
 "${PYTHON_CMD[@]}" "$ROOT/scripts/source_update.py" finish --root "$ROOT"
 ROLLBACK_ACTIVE=0

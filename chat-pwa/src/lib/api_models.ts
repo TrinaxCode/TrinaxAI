@@ -185,9 +185,10 @@ export const INDEXABLE_EXTENSIONS = new Set([
   '.r', '.jl', '.m',
   '.sh', '.bash', '.zsh', '.fish', '.ps1', '.bat', '.cmd',
   '.dockerfile', '.sql', '.graphql', '.gql', '.cjs', '.mjs',
-  '.json', '.jsonl', '.ipynb', '.yml', '.yaml', '.toml', '.xml', '.ini',
-  '.cfg', '.conf', '.properties', '.env', '.csv', '.tsv',
-  '.md', '.mdx', '.txt', '.rst', '.tex', '.bib', '.log',
+  '.json', '.jsonl', '.ndjson', '.geojson', '.ipynb', '.yml', '.yaml', '.toml', '.xml', '.ini',
+  '.cfg', '.conf', '.properties', '.csv', '.tsv', '.ics', '.vcf',
+  '.md', '.mdx', '.txt', '.rst', '.tex', '.bib', '.log', '.htm', '.xhtml',
+  '.epub', '.eml', '.srt', '.vtt', '.org', '.adoc', '.asciidoc',
   '.pdf', '.doc', '.docx', '.ppt', '.pptx', '.xls', '.xlsx',
   '.odt', '.ods', '.odp', '.rtf',
 ]);

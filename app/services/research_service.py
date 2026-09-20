@@ -5,11 +5,12 @@ from __future__ import annotations
 import asyncio
 import threading
 from collections.abc import Callable
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 
 import httpx
 
 # ruff: noqa: F405
+from app.generation.presets import build_task_spec
 from app.security.admin_auth import authorize_scope
 from app.security.rate_limit import enforce_rate_limit
 from trinaxai_agent.tools import external_failure_message, format_tool_failure
@@ -18,6 +19,7 @@ from trinaxai_errors import ErrorCategory, classify_error
 from .shared_runtime import (
     LOG,
     NO_INDEX_MSG,
+    NO_INDEX_MSG_ES,
     Request,
     ResearchRequest,
     StreamingResponse,
@@ -400,9 +402,8 @@ def _research_synthesize(
                 answer,
             )
             if not re.search(r"\[\d+\]", answer):
-                answer += "\n\nFuentes consultadas: " + ", ".join(
-                    f"[{idx}]" for idx in range(1, min(max_source, 5) + 1)
-                )
+                label = "Fuentes consultadas" if language == "Spanish" else "Sources consulted"
+                answer += f"\n\n{label}: " + ", ".join(f"[{idx}]" for idx in range(1, min(max_source, 5) + 1))
         return answer
     except _ResearchCancelled:
         raise
@@ -465,21 +466,37 @@ def _research_sync(
             "error_detail": ", ".join(normalized_collections),
         }
     if state.fusion_retriever is None and not use_web:
+        no_index = NO_INDEX_MSG_ES if _research_language(req.query) == "Spanish" else NO_INDEX_MSG
         if on_token is not None:
-            on_token(NO_INDEX_MSG)
+            on_token(no_index)
         return {
-            "answer": NO_INDEX_MSG,
+            "answer": no_index,
             "sub_questions": [],
             "sources": [],
             "passes": 0,
             "model": model_name,
         }
+    # Research has its own bounded context, but use the normal generation
+    # presets for output room. 180 tokens cannot satisfy the 450-word deep
+    # research contract; 640-768 remains a practical CPU range.
+    num_ctx: int | None = None
+    num_predict: int | None = None
+    if use_web:
+        spec = build_task_spec(
+            [{"role": "user", "content": req.query}],
+            model_override=model_name,
+            has_index=False,
+            retrieval_mode="model",
+        )
+        num_ctx = min(config.NUM_CTX, 4096)
+        num_predict = max(640 if depth >= 2 else 512, min(spec.num_predict, 768 if depth >= 2 else 512))
     llm = get_llm(
         model_name,
         keep_alive=req.keep_alive,
         aggressive_quant=req.aggressive_quant,
+        num_ctx=num_ctx,
+        num_predict=num_predict,
         thinking=config.TRINAXAI_THINKING_MODE if req.think is None else bool(req.think),
-        **({"num_ctx": min(config.NUM_CTX, 3072), "num_predict": 180} if use_web else {}),
     )
     # A normal web lookup needs one search and one synthesis. For an explicit
     # deep-research request (depth > 1), plan multiple focused searches so the
@@ -534,6 +551,9 @@ def _research_sync(
         # DuckDuckGo rate-limits bursts aggressively. One broad lookup is much
         # faster and more reliable; synthesis still covers every planned facet.
         search_passes = [search_query] if configured_provider() == "duckduckgo" else sub_questions
+        # ``passes`` is client-visible search work, not the number of planned
+        # facets. DuckDuckGo intentionally runs just one provider request.
+        passes = len(search_passes)
 
         def run_search(sub_question: str):
             if cancel_event is not None and cancel_event.is_set():
@@ -544,13 +564,38 @@ def _research_sync(
                 LOG.warning("Web research pass failed for %r: %s", sub_question, exc)
                 return None, str(exc)
 
-        # Independent provider queries are network-bound. Run them together so
-        # deep research pays roughly one provider round trip instead of one per
-        # planned facet. executor.map preserves facet order for deterministic
-        # source ranking even though the requests complete out of order.
+        # Independent provider queries are network-bound. Poll futures rather
+        # than using the executor context manager: on a disconnected stream it
+        # must not wait for every in-flight HTTP timeout before returning.
+        search_outcomes: list[tuple[tuple[list[dict[str, str]], str] | None, str | None]]
         if len(search_passes) > 1:
-            with ThreadPoolExecutor(max_workers=min(4, len(search_passes))) as executor:
-                search_outcomes = list(executor.map(run_search, search_passes))
+            executor = ThreadPoolExecutor(max_workers=min(4, len(search_passes)))
+            futures = {executor.submit(run_search, question): index for index, question in enumerate(search_passes)}
+            pending_outcomes: list[tuple[tuple[list[dict[str, str]], str] | None, str | None] | None] = [None] * len(
+                search_passes
+            )
+            cancelled = False
+            try:
+                pending = set(futures)
+                while pending:
+                    if cancel_event is not None and cancel_event.is_set():
+                        cancelled = True
+                        break
+                    done, pending = wait(pending, timeout=0.1, return_when=FIRST_COMPLETED)
+                    for future in done:
+                        pending_outcomes[futures[future]] = future.result()
+            finally:
+                if cancelled:
+                    for future in futures:
+                        future.cancel()
+                executor.shutdown(wait=not cancelled, cancel_futures=cancelled)
+            if cancelled:
+                return _cancelled_result(model_name)
+            # All futures completed unless cancellation returned above.
+            completed_outcomes = [outcome for outcome in pending_outcomes if outcome is not None]
+            if len(completed_outcomes) != len(search_passes):  # defensive: a future cannot vanish silently
+                return _cancelled_result(model_name)
+            search_outcomes = completed_outcomes
         else:
             search_outcomes = [run_search(search_passes[0])]
 
@@ -642,7 +687,8 @@ def _research_sync(
             if key not in seen:
                 seen[key] = serialized
                 chunks.append(serialized)
-        passes += 1
+        if not use_web:
+            passes += 1
     answer = _research_synthesize(
         llm,
         req.query,
@@ -780,6 +826,9 @@ async def _research_stream(req: ResearchRequest):
                         "can_continue": False,
                         "max_continuations": config.MAX_CONTINUATIONS,
                     },
+                    # Streamed tokens are provisional: citations and fallback
+                    # text are normalized only after synthesis completes.
+                    "trinaxai_answer": result.get("answer", ""),
                     "trinaxai_sources": result.get("sources", []),
                     "trinaxai_research": metadata,
                 }

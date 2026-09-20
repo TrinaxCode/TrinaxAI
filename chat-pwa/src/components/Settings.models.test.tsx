@@ -1,9 +1,9 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import Settings from './Settings';
-import { deleteCollectionSources, getCollections, resetSharedAppState } from '../lib/api';
+import { deleteCollectionSources, getCollections, getIndexJob, resetSharedAppState, retryIndexJob, startFolderIndex } from '../lib/api';
 import { I18nProvider } from '../i18n/I18nContext';
 import { ThemeProvider } from '../theme/ThemeContext';
 import { ToastProvider } from './Toast';
@@ -75,8 +75,7 @@ describe('Settings model guidance', () => {
     const user = userEvent.setup();
     renderSettings();
 
-    expect(screen.queryByText('Choose models with more context')).not.toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: /Models & profile/ }));
+    await user.click(screen.getByRole('button', { name: 'Advanced' }));
 
     expect(screen.getByText('Choose models with more context')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /canirun\.ai/ })).toHaveAttribute('href', 'https://www.canirun.ai');
@@ -91,6 +90,7 @@ describe('Settings model guidance', () => {
     vi.mocked(resetSharedAppState).mockRejectedValueOnce(new Error('localhost only'));
     renderSettings();
 
+    await user.click(screen.getByRole('button', { name: 'Advanced' }));
     await user.click(screen.getByRole('button', { name: 'Factory reset TrinaxAI' }));
     await user.type(screen.getByPlaceholderText('Type RESTORE to confirm:'), 'RESTORE');
     const resetButtons = screen.getAllByRole('button', { name: 'Factory reset TrinaxAI' });
@@ -115,5 +115,44 @@ describe('Settings model guidance', () => {
 
     expect(deleteCollectionSources).toHaveBeenCalledWith('default');
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+  });
+
+  it('keeps skipped completed indexing visible and retries it', async () => {
+    vi.mocked(startFolderIndex).mockResolvedValueOnce({ job_id: 'job-1' } as never);
+    vi.mocked(getIndexJob).mockResolvedValueOnce({
+      id: 'job-1', status: 'completed', saved: 1, skipped: 1,
+      failures: [{ path: 'bad.pdf', reason: 'unreadable' }], retry_recommended: true,
+    } as never);
+    vi.mocked(retryIndexJob).mockResolvedValueOnce({
+      id: 'job-1', status: 'completed', saved: 2, skipped: 0, failures: [], retry_recommended: false,
+    } as never);
+    const user = userEvent.setup();
+    const { container } = renderSettings();
+
+    await user.click(screen.getByRole('button', { name: 'Indexing' }));
+    fireEvent.change(container.querySelector('input[type="file"]')!, {
+      target: { files: [new File(['x'], 'guide.md', { type: 'text/markdown' })] },
+    });
+    await user.click(screen.getByRole('button', { name: 'Index now' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/Some files were not indexed \(1\)|Algunos archivos no se indexaron \(1\)/);
+    expect(screen.getByText('bad.pdf: unreadable')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(retryIndexJob).toHaveBeenCalledWith('job-1', expect.any(AbortSignal));
+  });
+
+  it('switches the visible Settings language without reloading the page', async () => {
+    const user = userEvent.setup();
+    const initialUrl = window.location.href;
+    localStorage.setItem('tc-lang', 'en');
+    renderSettings();
+
+    expect(screen.getByText('Settings')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'English' }));
+
+    expect(screen.getByText('Configuración')).toBeInTheDocument();
+    expect(screen.getByText('Idioma & Tema')).toBeInTheDocument();
+    expect(localStorage.getItem('tc-lang')).toBe('es');
+    expect(window.location.href).toBe(initialUrl);
   });
 });

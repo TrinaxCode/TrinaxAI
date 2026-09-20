@@ -4,7 +4,7 @@
 
 <p align="center">
   <a href="https://github.com/TrinaxCode/TrinaxAI"><img src="https://img.shields.io/github/stars/TrinaxCode/TrinaxAI?style=flat&amp;label=%E2%98%85&amp;color=006bbd" alt="GitHub stars"></a>
-  <a href="https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.2.5"><img src="https://img.shields.io/badge/version-1.2.5-006bbd" alt="Stable release: 1.2.5"></a>
+  <a href="https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.2.6"><img src="https://img.shields.io/badge/version-1.2.6-006bbd" alt="Stable release: 1.2.6"></a>
   <a href="https://github.com/TrinaxCode/TrinaxAI/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/TrinaxCode/TrinaxAI/ci.yml?branch=main&amp;label=CI" alt="CI status"></a>
   <a href="https://github.com/TrinaxCode/TrinaxAI/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0--or--later-006bbd" alt="License: AGPL-3.0-or-later"></a>
   <img src="https://img.shields.io/badge/macOS%20%7C%20Windows%20%7C%20Linux-4493F8?style=flat-square" alt="Supported platforms: macOS, Windows, and Linux">
@@ -99,9 +99,14 @@ POST /v1/pairing/start
 The clear code is returned once. A LAN/VPN client claims it with
 `POST /v1/pairing/claim {"code":"ABCD-EFGH","device_name":"Phone"}`.
 Claim attempts are limited to five per client per five minutes. The returned
-response sets an `HttpOnly; SameSite=Strict` cookie scoped to `/api/rag` and
+response sets an `HttpOnly; SameSite=Strict` cookie scoped to `/api` and
 contains device metadata but no bearer. Only keyed hashes are persisted. Codes
 expire after 60–900 seconds and are single-use.
+
+`POST /v1/pairing/new-device {"device_name":"Phone"}` is the first-run
+alternative for a LAN/VPN browser. It issues a revocable `chat`/`web`-only
+cookie, so the device can chat and search the web without importing shared
+history, RAG knowledge, memory, or host files.
 
 The PWA sends that cookie automatically and does not persist newly claimed
 device tokens in `localStorage` or `sessionStorage`. The CLI continues to use

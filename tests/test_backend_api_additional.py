@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import stat
@@ -61,6 +62,29 @@ async def test_collection_crud_validates_uniqueness_and_default_protection(monke
     deleted = await collection_service.collections_delete("docs", object())
     assert deleted["deleted_nodes"] == 3
     assert all(item["id"] != "docs" for item in collections)
+
+
+@pytest.mark.asyncio
+async def test_collection_delete_returns_retryable_conflict_when_index_is_busy(monkeypatch) -> None:
+    collections = [
+        {"id": "default", "name": "Default", "created_at": 1, "updated_at": 1},
+        {"id": "docs", "name": "Docs", "created_at": 1, "updated_at": 1},
+    ]
+    monkeypatch.setattr(collection_service, "_authorize_system", lambda _request: None)
+    monkeypatch.setattr(collection_service, "_read_collections_unlocked", lambda: [dict(item) for item in collections])
+    monkeypatch.setattr(collection_service, "_write_collections_unlocked", lambda _items: None)
+    monkeypatch.setenv("TRINAXAI_COLLECTION_DELETE_TIMEOUT", "0.01")
+
+    async def blocked(_function, *_args):
+        await asyncio.sleep(1)
+
+    monkeypatch.setattr(collection_service, "run_in_threadpool", blocked)
+    with pytest.raises(HTTPException) as exc_info:
+        await collection_service.collections_delete("docs", object())
+
+    assert exc_info.value.status_code == 409
+    assert exc_info.value.detail["code"] == "index_busy"
+    assert any(item["id"] == "docs" for item in collections)
 
 
 @pytest.mark.asyncio

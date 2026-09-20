@@ -244,8 +244,18 @@ html.light .chip-elegant:hover {
   color: #374151;
 }
 
+/* While an answer streams, the card keeps a comfortable block instead of
+   collapsing to a sliver on the first tokens — otherwise the bubble looks like
+   it grows out of nowhere letter by letter. */
 .chat-bubble-streaming {
-  min-width: 4.75rem;
+  min-width: 18rem;
+}
+
+/* Phones do not have room for that block; let the bubble hug the text again. */
+@media (max-width: 640px) {
+  .chat-bubble-streaming {
+    min-width: 0;
+  }
 }
 
 .chat-generating-indicator {
@@ -253,27 +263,33 @@ html.light .chip-elegant:hover {
   min-height: 1.45rem;
   width: 100%;
   align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
+  justify-content: flex-start;
+  gap: 0.35rem;
   padding: 0.1rem 0.15rem;
 }
 
+/* The rotating activity labels cross-fade with a small vertical shift, so the
+   clip box needs room for that move: without the padding the text is sliced
+   while it fades in or out. The negative margin keeps the row height unchanged. */
 .chat-generating-label {
   display: block;
   min-width: 0;
+  max-width: 100%;
+  flex: 0 1 auto;
+  padding-block: 5px;
+  margin-block: -5px;
   overflow: hidden;
+  overflow-wrap: anywhere;
   color: rgba(107, 114, 128, 0.78);
   font-size: 0.75rem;
   line-height: 1.35;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: normal;
 }
 
 .chat-generating-label > span {
   display: block;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 
 html.dark .chat-generating-label {

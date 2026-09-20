@@ -20,6 +20,7 @@ from typing import Any
 import config as runtime_config
 from trinaxai_agent import DEFAULT_TOOLS, AgentEngine, Tool, format_tool_failure
 from trinaxai_cli.commands import _system
+from trinaxai_cli.i18n import text
 from trinaxai_cli.session import Session
 
 _DANGER_HINT = {
@@ -196,15 +197,16 @@ def _format_args(args: dict[str, Any]) -> str:
 
 def _preview_dangerous(ui: Any, tool: Tool, args: dict[str, Any]) -> None:
     """Show what a dangerous action will do before asking to confirm."""
+    language = getattr(ui, "language", "en")
     if tool.name == "write_file":
         content = str(args.get("content", ""))
-        ui.print(f"  - write {args.get('path', '?')} ({len(content)} chars)")
+        ui.print(text("write_preview", language, path=args.get("path", "?"), chars=len(content)))
         ui.code("\n".join(content.splitlines()[:20]) or "(empty)")
     elif tool.name == "edit_file":
-        ui.print(f"  - edit {args.get('path', '?')}")
+        ui.print(text("edit_preview", language, path=args.get("path", "?")))
         ui.code(f"- {str(args.get('old', ''))[:400]}\n+ {str(args.get('new', ''))[:400]}", "diff")
     elif tool.name == "run_command":
-        ui.print("  - run command:")
+        ui.print(text("run_command_preview", language))
         ui.code(str(args.get("command", "")), "bash")
 
 
@@ -286,7 +288,7 @@ def build_agent_engine(
     """
     root = Path(workspace or ".").expanduser().resolve()
     if not root.is_dir():
-        raise ValueError(f"workspace does not exist or is not a directory: {root}")
+        raise ValueError(text("invalid_workspace", getattr(ui, "language", "en"), path=root))
     ollama_url = _system.env_value("OLLAMA_BASE_URL") or "http://localhost:11434"
     resolved_model = model or _resolve_model(SimpleNamespace(model=model))
     resolved_ctx = num_ctx if num_ctx is not None else _resolve_num_ctx(config)
@@ -345,6 +347,8 @@ def _run_task(engine: AgentEngine, ui: Any, messages: list[dict[str, Any]], task
     answer = engine.run(messages)
     ui.print("")
     session.append("assistant", answer)
+    if getattr(engine, "completion_status", "complete") == "degraded":
+        ui.warn("Agent response is degraded: the model request failed, so the displayed answer may be incomplete.")
 
 
 def run(args: Any, client: Any, ui: Any, config: Any) -> int:

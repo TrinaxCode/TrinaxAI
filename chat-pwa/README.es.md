@@ -4,7 +4,7 @@
 
 <p align="center">
   <a href="https://github.com/TrinaxCode/TrinaxAI"><img src="https://img.shields.io/github/stars/TrinaxCode/TrinaxAI?style=flat&amp;label=%E2%98%85&amp;color=006bbd" alt="GitHub stars"></a>
-  <a href="https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.2.5"><img src="https://img.shields.io/badge/version-1.2.5-006bbd" alt="Stable release: 1.2.5"></a>
+  <a href="https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.2.6"><img src="https://img.shields.io/badge/version-1.2.6-006bbd" alt="Stable release: 1.2.6"></a>
   <a href="https://github.com/TrinaxCode/TrinaxAI/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/TrinaxCode/TrinaxAI/ci.yml?branch=main&amp;label=CI" alt="CI status"></a>
   <a href="https://github.com/TrinaxCode/TrinaxAI/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0--or--later-006bbd" alt="License: AGPL-3.0-or-later"></a>
   <img src="https://img.shields.io/badge/macOS%20%7C%20Windows%20%7C%20Linux-4493F8?style=flat-square" alt="Supported platforms: macOS, Windows, and Linux">
@@ -13,7 +13,7 @@
 <p align="center"><sub><a href="README.md">English</a> · <strong>Español</strong></sub></p>
 <p align="center"><sub><a href="https://www.trinaxai.app/">Sitio web</a> · <a href="../docs/README.es.md">Documentación</a> · <a href="../README.es.md">Inicio</a> · <a href="../docs/CHANGELOG.es.md">Cambios</a></sub></p>
 
-Frontend 1.2.5 de TrinaxAI construido con React 19, TypeScript y Vite 6, bajo licencia AGPL-3.0-or-later. Incluye chat directo con Ollama, RAG con citas, búsqueda web opcional, investigación profunda, agente con herramientas, visión, documentos, voz local, memoria y una PWA instalable.
+Frontend 1.2.6 de TrinaxAI construido con React 19, TypeScript y Vite 6, bajo licencia AGPL-3.0-or-later. Incluye chat directo con Ollama, RAG con citas, búsqueda web opcional, investigación profunda, agente con herramientas, visión, documentos, voz local, memoria y una PWA instalable.
 
 [Índice de documentación](../docs/README.es.md) · [Referencia de API](../docs/API_REFERENCE.es.md) · [Solución de problemas](../docs/TROUBLESHOOTING.es.md)
 
@@ -65,7 +65,7 @@ src/
 │   ├── chat/ChatInterfaceView.tsx renderizado y layout del chat
 │   ├── agent/                vista y contratos compartidos de Agent
 │   ├── ChatSidebar.tsx      sesiones, carpetas, búsqueda y exportación
-│   ├── Settings.tsx         modelos, índice, prompts, memoria y métricas
+│   ├── Settings.tsx         general, búsqueda, índice, prompts, memoria, métricas y avanzado
 │   ├── KnowledgeBrowser.tsx fuentes y chunks indexados
 │   └── Docs.tsx             ayuda integrada
 ├── hooks/
@@ -137,17 +137,22 @@ el respaldo local consulta `/api/rag/v1/voice/capabilities`,
 
 ## Emparejar un navegador
 
-Un navegador LAN debe vincularse antes de usar el chat Ollama o las APIs
-privadas. Un código corto de un solo uso puede conceder `chat`, `read_private`
-y `web`; las lecturas privadas incluyen RAG autorizado, historial sincronizado,
-contexto de memoria y archivos del host.
+Un navegador LAN puede elegir **Configurar como dispositivo nuevo** para recibir
+una sesión limitada a chat/búsqueda web sin importar estado privado, o vincularse
+antes de usar APIs privadas. Un código corto de un solo uso puede conceder
+`chat`, `read_private` y `web`; las lecturas privadas incluyen RAG autorizado,
+historial sincronizado, contexto de memoria y archivos del host.
 
-1. En la PWA host, abre **Configuración → Dispositivo emparejado → Generar
+1. En la PWA host, abre **Configuración → Avanzado → Dispositivo emparejado → Generar
    código de emparejamiento**.
 2. En el otro equipo abre `https://IP-LOCAL-DEL-HOST:3334`, elige la opción de
    instalación existente, introduce el código, nombra el dispositivo y confirma.
 3. Vuelve a la PWA host para revisar o revocar el equipo. Si quieres, instala la
    PWA desde el menú del navegador.
+
+La opción de dispositivo nuevo permite chatear y usar búsqueda web, pero no
+restaura historial, memoria, conocimiento RAG ni archivos del host hasta
+vincularlo.
 
 Antes de abrir la URL LAN, confía en el certificado público que muestra
 `trinaxai network`. El instalador puede confiar en él en el anfitrión, pero los
@@ -161,7 +166,7 @@ de modelos, servicios y dispositivos, y la restauración total exigen abrir
 con scopes retirados evitan esta frontera. La CLI usa `chat,read_private` por defecto.
 
 La PWA conserva las credenciales nuevas del dispositivo en una cookie
-`HttpOnly; SameSite=Strict` con alcance `/api/rag`, muestra dispositivo/scopes y
+`HttpOnly; SameSite=Strict` con alcance `/api`, muestra dispositivo/scopes y
 permite autorrevocación. Un bearer legacy guardado en el navegador solo se envía
 durante la migración explícita de `/v1/pairing/me` y después se elimina. El host
 puede revisar/revocar con `trinaxai pair list` y `trinaxai pair revoke ID`.
@@ -243,8 +248,9 @@ Al añadir texto de interfaz, incorpora claves equivalentes en español e inglé
 - **Backend offline:** abre `/api/rag/health` desde el origen de la PWA y ejecuta `trinaxai doctor`. Consulta la [guía completa de solución de problemas](../docs/TROUBLESHOOTING.es.md).
 - **Ollama offline:** comprueba `ollama list` y `/api/ollama/api/tags`.
 - **Interfaz antigua:** aplica el aviso de actualización o elimina service worker y datos del sitio.
-- **El teléfono no usa una función protegida:** empareja desde el host para
-  `chat`, `read_private` o `web`. Indexación, Agente, modelos, dispositivos y
-  administración del sistema se realizan desde `https://localhost:3334` en el host.
+- **El teléfono no usa una función protegida:** elige dispositivo nuevo para
+  `chat`/`web`, o empareja desde el host para `read_private` y estado
+  sincronizado. Indexación, Agente, modelos, dispositivos y administración del
+  sistema se realizan desde `https://localhost:3334` en el host.
 - **Micrófono:** revisa permiso, contexto seguro y `/api/rag/v1/voice/capabilities`.
 - **El gateway sirve HTTP:** instala/genera los certificados locales esperados; HTTP es fallback solo para loopback.

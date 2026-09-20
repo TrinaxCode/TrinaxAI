@@ -20,6 +20,8 @@ import time
 from pathlib import Path
 from typing import Any
 
+from trinaxai_cli.i18n import resolve_lang, text
+
 
 def _default_session_dir() -> Path:
     base = os.environ.get("XDG_DATA_HOME") or os.path.join("~", ".local", "share")
@@ -102,7 +104,7 @@ class Session:
                     records.append(json.loads(raw))
                 except json.JSONDecodeError as exc:
                     print(
-                        f"warning: skipping malformed session line in {path}: {exc}",
+                        text("malformed_session_line", resolve_lang(), path=path, error=exc),
                         file=sys.stderr,
                     )
         return records

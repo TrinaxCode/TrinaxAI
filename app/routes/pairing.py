@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 from app.security.admin_auth import (
     DEVICE_TOKEN_COOKIE,
     DEVICE_TOKEN_COOKIE_PATH,
+    LEGACY_DEVICE_TOKEN_COOKIE_PATH,
     _client_host,
     _device_token,
     _is_lan_client,
@@ -21,6 +22,7 @@ from app.security.device_auth import (
     ALL_DEVICE_SCOPES,
     DeviceRegistryError,
     claim_pairing_code,
+    create_new_device_session,
     create_pairing_code,
     device_for_token,
     list_devices,
@@ -44,6 +46,10 @@ class PairingStartRequest(BaseModel):
 class PairingClaimRequest(BaseModel):
     code: str = Field(min_length=8, max_length=16)
     device_name: str = Field(min_length=1, max_length=80)
+
+
+class NewDeviceRequest(BaseModel):
+    device_name: str = Field(default="New device", min_length=1, max_length=80)
 
 
 def _cookie_secure(request: Request) -> bool:
@@ -77,13 +83,14 @@ def _set_device_cookie(response: Response, request: Request, token: str, expires
 
 
 def _clear_device_cookie(response: Response, request: Request) -> None:
-    response.delete_cookie(
-        key=DEVICE_TOKEN_COOKIE,
-        path=DEVICE_TOKEN_COOKIE_PATH,
-        secure=_cookie_secure(request),
-        httponly=True,
-        samesite="strict",
-    )
+    for path in {DEVICE_TOKEN_COOKIE_PATH, LEGACY_DEVICE_TOKEN_COOKIE_PATH}:
+        response.delete_cookie(
+            key=DEVICE_TOKEN_COOKIE,
+            path=path,
+            secure=_cookie_secure(request),
+            httponly=True,
+            samesite="strict",
+        )
 
 
 def _enforce_claim_rate_limit(request: Request) -> None:
@@ -147,6 +154,23 @@ async def pairing_claim(req: PairingClaimRequest, request: Request, response: Re
     return {"ok": True, "device": result["device"]}
 
 
+@router.post("/new-device")
+async def pairing_new_device(req: NewDeviceRequest, request: Request, response: Response = None):
+    """Create a fresh chat/web session without syncing host-private state."""
+    response = response or Response()
+    if not _is_lan_client(_client_host(request)):
+        raise HTTPException(status_code=403, detail="New devices are only available on the local network or VPN.")
+    _enforce_claim_rate_limit(request)
+    try:
+        result = create_new_device_session(req.device_name)
+    except (PermissionError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail="The new device name is invalid.") from exc
+    except DeviceRegistryError as exc:
+        raise HTTPException(status_code=503, detail="Pairing storage is unavailable. Try again shortly.") from exc
+    _set_device_cookie(response, request, result["token"], result["device"].get("expires_at"))
+    return {"ok": True, "device": result["device"]}
+
+
 @router.get("/devices")
 async def pairing_devices(request: Request):
     authorize_scope(request, "system")
@@ -169,12 +193,16 @@ async def pairing_revoke(device_id: str, request: Request):
 
 
 @router.get("/me")
-async def pairing_me(request: Request):
+async def pairing_me(request: Request, response: Response = None):
     token = _device_token(request)
     device = device_for_token(token) if token else None
     if device is None:
         raise HTTPException(status_code=403, detail="A valid device credential is required.")
     _client_host(request)
+    # Refresh the cookie at the shared /api path so existing pairings can use
+    # both /api/rag and /api/ollama without requiring a new one-time code.
+    if response is not None and request.cookies.get(DEVICE_TOKEN_COOKIE) == token:
+        _set_device_cookie(response, request, token, device.get("expires_at"))
     return {"ok": True, "device": device}
 
 

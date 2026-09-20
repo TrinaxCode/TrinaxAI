@@ -4,7 +4,7 @@
 
 <p align="center">
   <a href="https://github.com/TrinaxCode/TrinaxAI"><img src="https://img.shields.io/github/stars/TrinaxCode/TrinaxAI?style=flat&amp;label=%E2%98%85&amp;color=006bbd" alt="GitHub stars"></a>
-  <a href="https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.2.5"><img src="https://img.shields.io/badge/version-1.2.5-006bbd" alt="Stable release: 1.2.5"></a>
+  <a href="https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.2.6"><img src="https://img.shields.io/badge/version-1.2.6-006bbd" alt="Stable release: 1.2.6"></a>
   <a href="https://github.com/TrinaxCode/TrinaxAI/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/TrinaxCode/TrinaxAI/ci.yml?branch=main&amp;label=CI" alt="CI status"></a>
   <a href="https://github.com/TrinaxCode/TrinaxAI/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0--or--later-006bbd" alt="License: AGPL-3.0-or-later"></a>
   <img src="https://img.shields.io/badge/macOS%20%7C%20Windows%20%7C%20Linux-4493F8?style=flat-square" alt="Supported platforms: macOS, Windows, and Linux">
@@ -122,7 +122,7 @@ TypeScript components built with Tailwind CSS and framer-motion include:
 | `useAgentController` | Agent execution, tool approvals, history and message actions |
 | `AgentInterfaceView` | Agent history, controls, conversation and composer rendering |
 | `ChatSidebar` | Session history, folders, search, and export workflows |
-| `Settings` | Local model, indexing, prompt, memory, and statistics controls |
+| `Settings` | General preferences, web search, indexing, prompts, memory, statistics, and advanced host controls |
 | `KnowledgeBrowser` | Explore indexed chunks by collection→file→chunk |
 | `Sources` | Citation cards with file, project, snippet, score |
 | `OnboardingWizard` | First-time profile and model setup |
@@ -436,7 +436,7 @@ These areas require extra care when modifying:
 - `TRINAXAI_ADMIN_TOKEN` — empty (not set). Localhost access works automatically.
 - Device pairing grants `chat,read_private` by default and may add only `web`.
   New clear tokens are held only in an `HttpOnly; SameSite=Strict` cookie scoped
-  to `/api/rag`; legacy CLI values remain in the device-token header and are
+  to `/api`; legacy CLI values remain in the device-token header and are
   never copied into a response cookie.
 - `TRINAXAI_ALLOW_LAN_SYSTEM` — deprecated and ignored for authorization.
 
@@ -454,7 +454,7 @@ These principles guide all design and contribution decisions:
 1. **Local-first** — Local inference and host-backed storage are the default. Network use still occurs for installation/model downloads and any endpoints a user configures remotely.
 2. **Privacy by default** — Chat data, indexed code, and documents are stored locally by default. There are no built-in accounts; local usage metrics remain on the host.
 3. **No mandatory cloud** — Ollama runs locally. Optional: users can point to a remote Ollama instance on their own infrastructure.
-4. **Confirmations for dangerous actions** — Factory reset, collection deletion, and system shutdown require explicit confirmation headers or interactive prompts.
+4. **Confirmations for dangerous actions** — Factory reset, collection deletion, and system shutdown require explicit confirmation headers or interactive prompts. The PWA keeps these controls under **Settings → Advanced**; factory reset requires typing `RESTORE`, and full shutdown requires typing `STOP ALL`.
 5. **Security by default** — Backends bind to loopback, LAN reads require scoped
    pairing, host administration requires verified original loopback, and CORS
    remains only an additional browser control rather than identity.

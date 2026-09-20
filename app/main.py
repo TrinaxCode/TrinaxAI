@@ -38,11 +38,15 @@ def _cors_origins() -> list[str]:
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
+    runtime.state.lifecycle_stopping.clear()
     runtime.initialize_runtime()
     try:
         yield
     finally:
-        lifecycle_runtime.shutdown_runtime()
+        try:
+            lifecycle_runtime.shutdown_runtime()
+        finally:
+            runtime.state.lifecycle_stopping.clear()
 
 
 def create_app() -> FastAPI:

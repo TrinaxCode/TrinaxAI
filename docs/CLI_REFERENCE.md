@@ -4,7 +4,7 @@
 
 <p align="center">
   <a href="https://github.com/TrinaxCode/TrinaxAI"><img src="https://img.shields.io/github/stars/TrinaxCode/TrinaxAI?style=flat&amp;label=%E2%98%85&amp;color=006bbd" alt="GitHub stars"></a>
-  <a href="https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.2.5"><img src="https://img.shields.io/badge/version-1.2.5-006bbd" alt="Stable release: 1.2.5"></a>
+  <a href="https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.2.6"><img src="https://img.shields.io/badge/version-1.2.6-006bbd" alt="Stable release: 1.2.6"></a>
   <a href="https://github.com/TrinaxCode/TrinaxAI/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/TrinaxCode/TrinaxAI/ci.yml?branch=main&amp;label=CI" alt="CI status"></a>
   <a href="https://github.com/TrinaxCode/TrinaxAI/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0--or--later-006bbd" alt="License: AGPL-3.0-or-later"></a>
   <img src="https://img.shields.io/badge/macOS%20%7C%20Windows%20%7C%20Linux-4493F8?style=flat-square" alt="Supported platforms: macOS, Windows, and Linux">
@@ -145,7 +145,7 @@ scope. `index`, `system`, `agent`, and `agent_yolo` are retired for paired
 devices and are rejected even when an admin credential is sent from LAN.
 
 The browser keeps new pairing credentials in an `HttpOnly; SameSite=Strict`
-cookie scoped to `/api/rag`. A packaged CLI acting as a paired remote device
+cookie scoped to `/api`. A packaged CLI acting as a paired remote device
 reads `TRINAXAI_DEVICE_TOKEN` and sends `X-TrinaxAI-Device-Token`; the API never
 copies that header into a response cookie. Point `--api-url` at the gateway RAG base, for example
 `https://host:3334/api/rag`. Do not put a token in command history or a committed
@@ -211,3 +211,7 @@ returns nonzero when a critical check fails. See the [troubleshooting guide](TRO
 and [developer guide](DEVELOPER_GUIDE.md). `update` and `uninstall` can change
 installed files or remove data; read their `--help` output before automating
 them.
+
+On a fresh installation with no user folder indexed yet, the human doctor
+report shows `Index built` as `INFO` and explains how to run `trinaxai index .`;
+this is expected setup state, not a service failure.

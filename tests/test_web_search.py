@@ -271,6 +271,23 @@ def test_successful_searches_are_cached(monkeypatch) -> None:
     assert calls == 1
 
 
+def test_search_cache_prunes_expired_and_oldest_entries(monkeypatch) -> None:
+    web._SEARCH_CACHE.clear()
+    monkeypatch.setattr(web.config, "WEB_SEARCH_CACHE_SECONDS", 10)
+    monkeypatch.setattr(web, "_SEARCH_CACHE_MAX_ENTRIES", 1)
+    web._SEARCH_CACHE.update(
+        {
+            ("expired",): (0.0, [], "duckduckgo"),
+            ("oldest",): (16.0, [], "duckduckgo"),
+            ("newest",): (17.0, [], "duckduckgo"),
+        }
+    )
+
+    web._prune_search_cache(20.0)
+
+    assert set(web._SEARCH_CACHE) == {("newest",)}
+
+
 def test_web_research_does_not_mix_local_rag_by_default(monkeypatch) -> None:
     class _LLM:
         def complete(self, prompt: str):
@@ -437,6 +454,7 @@ def test_deep_research_uses_one_broad_pass_for_duckduckgo(monkeypatch) -> None:
 
     assert searched == ["consulta amplia"]
     assert len(result["sources"]) == 1
+    assert result["passes"] == 1
 
 
 @pytest.mark.parametrize(

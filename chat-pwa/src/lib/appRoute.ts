@@ -1,10 +1,27 @@
 export type AppPage = 'chat' | 'settings' | 'docs' | 'browser' | 'agent';
-export type SettingsSection = 'general' | 'web-search' | 'indexing' | 'prompts' | 'memory' | 'stats' | 'help';
+export type SettingsSection = 'general' | 'web-search' | 'indexing' | 'prompts' | 'memory' | 'stats' | 'advanced' | 'help';
+export type DocsSection =
+  | 'intro'
+  | 'about'
+  | 'install'
+  | 'config'
+  | 'models'
+  | 'indexing'
+  | 'agent'
+  | 'research'
+  | 'files'
+  | 'security'
+  | 'api'
+  | 'pwa'
+  | 'troubleshoot'
+  | 'contributing'
+  | 'community';
 
 export interface AppRoute {
   page: AppPage;
   chatId?: string;
   settingsSection?: SettingsSection;
+  docsSection?: DocsSection;
 }
 
 const SETTINGS_SECTIONS = new Set<SettingsSection>([
@@ -14,7 +31,26 @@ const SETTINGS_SECTIONS = new Set<SettingsSection>([
   'prompts',
   'memory',
   'stats',
+  'advanced',
   'help',
+]);
+
+const DOCS_SECTIONS = new Set<DocsSection>([
+  'intro',
+  'about',
+  'install',
+  'config',
+  'models',
+  'indexing',
+  'agent',
+  'research',
+  'files',
+  'security',
+  'api',
+  'pwa',
+  'troubleshoot',
+  'contributing',
+  'community',
 ]);
 
 function safeDecode(value?: string): string | undefined {
@@ -26,9 +62,15 @@ function safeDecode(value?: string): string | undefined {
 export function parseAppRoute(hash: string): AppRoute {
   const normalized = hash.replace(/^#\/?/, '').replace(/\/$/, '');
   const [head = '', detail] = normalized.split('/');
-  if (head === 'docs') return { page: 'docs' };
+  if (head === 'docs') {
+    return DOCS_SECTIONS.has(detail as DocsSection)
+      ? { page: 'docs', docsSection: detail as DocsSection }
+      : { page: 'docs' };
+  }
   if (head === 'agent') return { page: 'agent' };
-  if (head === 'browser' || head === 'knowledge') return { page: 'browser' };
+  if (head === 'browser' || head === 'knowledge' || head === 'sources' || head === 'collections') {
+    return { page: 'browser' };
+  }
   if (head === 'indexing') return { page: 'settings', settingsSection: 'indexing' };
   if (head === 'memory') return { page: 'settings', settingsSection: 'memory' };
   if (head === 'settings') {
@@ -42,7 +84,7 @@ export function parseAppRoute(hash: string): AppRoute {
 }
 
 export function formatAppRoute(route: AppRoute): string {
-  if (route.page === 'docs') return '#/docs';
+  if (route.page === 'docs') return route.docsSection ? `#/docs/${route.docsSection}` : '#/docs';
   if (route.page === 'agent') return '#/agent';
   if (route.page === 'browser') return '#/knowledge';
   if (route.page === 'settings') return `#/settings/${route.settingsSection ?? 'general'}`;

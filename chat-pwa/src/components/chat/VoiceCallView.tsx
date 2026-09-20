@@ -1,4 +1,4 @@
-import { motion, useReducedMotion } from 'framer-motion';
+import { motion, useReducedMotion, type Variants } from 'framer-motion';
 import { MdCallEnd, MdMic, MdVolumeUp } from 'react-icons/md';
 import { useI18n } from '../../i18n/I18nContext';
 
@@ -17,16 +17,42 @@ export default function VoiceCallView({ isDark, listening, speaking, thinking, o
   const active = speaking || listening || thinking;
   const foreground = isDark ? 'text-white' : 'text-slate-900';
 
+  // The call surface mounts as one unit, so the workspace, status copy and the
+  // hang-up control settle in sequence instead of appearing all at once.
+  const container: Variants = {
+    hidden: { opacity: 0 },
+    show: {
+      opacity: 1,
+      transition: { staggerChildren: reduceMotion ? 0 : 0.08, delayChildren: reduceMotion ? 0 : 0.05 },
+    },
+  };
+  const item: Variants = {
+    hidden: { opacity: 0, y: reduceMotion ? 0 : 18, scale: reduceMotion ? 1 : 0.985 },
+    show: {
+      opacity: 1,
+      y: 0,
+      scale: 1,
+      transition: { duration: reduceMotion ? 0 : 0.36, ease: [0.16, 1, 0.3, 1] },
+    },
+  };
+  const fade: Variants = {
+    hidden: { opacity: 0 },
+    show: { opacity: 1, transition: { duration: reduceMotion ? 0 : 0.5, ease: 'easeOut' } },
+  };
+
   return (
-    <section
+    <motion.section
+      variants={container}
+      initial={reduceMotion ? false : 'hidden'}
+      animate="show"
       className={`relative flex min-h-0 flex-1 flex-col items-center justify-center overflow-hidden px-6 pb-28 pt-12 ${isDark ? 'bg-[#05080d]/70' : 'bg-[#f4f9fd]/70'}`}
       aria-label={t('voiceMode')}
     >
       {/* Subtle radial overlay for depth */}
-      <div className={`pointer-events-none absolute inset-0 ${isDark ? 'bg-[radial-gradient(circle_at_50%_38%,rgba(78,163,224,0.14),transparent_50%),radial-gradient(circle_at_18%_82%,rgba(0,107,189,0.10),transparent_35%)]' : 'bg-[radial-gradient(circle_at_50%_38%,rgba(78,163,224,0.12),transparent_50%),radial-gradient(circle_at_18%_82%,rgba(0,107,189,0.08),transparent_35%)]'}`} />
-      <div className={`pointer-events-none absolute inset-x-0 bottom-0 h-40 bg-gradient-to-t ${isDark ? 'from-black/50' : 'from-white/70'} to-transparent`} />
+      <motion.div variants={fade} className={`pointer-events-none absolute inset-0 ${isDark ? 'bg-[radial-gradient(circle_at_50%_38%,rgba(78,163,224,0.14),transparent_50%),radial-gradient(circle_at_18%_82%,rgba(0,107,189,0.10),transparent_35%)]' : 'bg-[radial-gradient(circle_at_50%_38%,rgba(78,163,224,0.12),transparent_50%),radial-gradient(circle_at_18%_82%,rgba(0,107,189,0.08),transparent_35%)]'}`} />
+      <motion.div variants={fade} className={`pointer-events-none absolute inset-x-0 bottom-0 h-40 bg-gradient-to-t ${isDark ? 'from-black/50' : 'from-white/70'} to-transparent`} />
 
-      <div className="relative z-10 flex flex-col items-center text-center">
+      <motion.div variants={item} className="relative z-10 flex flex-col items-center text-center">
         <div className="relative grid h-52 w-52 place-items-center sm:h-60 sm:w-60">
           {[1, 0.78, 0.58].map((scale, index) => (
             <motion.span
@@ -60,11 +86,11 @@ export default function VoiceCallView({ isDark, listening, speaking, thinking, o
             />
           ))}
         </div>
-      </div>
-      <button autoFocus type="button" onClick={onEnd} className="absolute bottom-[max(2rem,env(safe-area-inset-bottom))] z-10 flex min-h-14 items-center gap-3 rounded-full bg-red-500 px-6 font-semibold text-white shadow-lg shadow-red-500/25 transition hover:bg-red-600 active:scale-95" aria-label={t('exitVoiceMode')} title={t('exitVoiceMode')}>
+      </motion.div>
+      <motion.button variants={item} autoFocus type="button" onClick={onEnd} className="absolute bottom-[max(2rem,env(safe-area-inset-bottom))] z-10 flex min-h-14 items-center gap-3 rounded-full bg-red-500 px-6 font-semibold text-white shadow-lg shadow-red-500/25 transition hover:bg-red-600 active:scale-95" aria-label={t('exitVoiceMode')} title={t('exitVoiceMode')}>
         <MdCallEnd size={24} />
         <span>{t('exitVoiceMode')}</span>
-      </button>
-    </section>
+      </motion.button>
+    </motion.section>
   );
 }

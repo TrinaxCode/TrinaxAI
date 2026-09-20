@@ -4,7 +4,7 @@
 
 <p align="center">
   <a href="https://github.com/TrinaxCode/TrinaxAI"><img src="https://img.shields.io/github/stars/TrinaxCode/TrinaxAI?style=flat&amp;label=%E2%98%85&amp;color=006bbd" alt="GitHub stars"></a>
-  <a href="https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.2.5"><img src="https://img.shields.io/badge/version-1.2.5-006bbd" alt="Stable release: 1.2.5"></a>
+  <a href="https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.2.6"><img src="https://img.shields.io/badge/version-1.2.6-006bbd" alt="Stable release: 1.2.6"></a>
   <a href="https://github.com/TrinaxCode/TrinaxAI/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/TrinaxCode/TrinaxAI/ci.yml?branch=main&amp;label=CI" alt="CI status"></a>
   <a href="https://github.com/TrinaxCode/TrinaxAI/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0--or--later-006bbd" alt="License: AGPL-3.0-or-later"></a>
   <img src="https://img.shields.io/badge/macOS%20%7C%20Windows%20%7C%20Linux-4493F8?style=flat-square" alt="Supported platforms: macOS, Windows, and Linux">
@@ -13,11 +13,11 @@
 <p align="center"><sub><strong>English</strong> · <a href="NETWORK_PAIRING.es.md">Español</a></sub></p>
 <p align="center"><sub><a href="https://www.trinaxai.app/">Website</a> · <a href="README.md">Documentation</a> · <a href="../README.md">Home</a> · <a href="CHANGELOG.md">Changelog</a></sub></p>
 
-The PWA gateway is loopback-only by default. To enable intentional LAN access,
-set `TRINAXAI_PWA_HOST=0.0.0.0` in `.env` and restart TrinaxAI; FastAPI and
-Ollama remain on loopback. A device on the same Wi-Fi must trust the host
-certificate and use a one-time pairing code before it can use chat or read
-private data.
+The PWA gateway is loopback-only by default. Run `trinaxai network refresh` to
+enable intentional LAN access (`TRINAXAI_PWA_HOST=0.0.0.0`) and restart the
+gateway; FastAPI and Ollama remain on loopback. A device on the same Wi-Fi must
+trust the host certificate and either start a chat/web-only new-device session
+or use a one-time pairing code before reading private data.
 
 ## Prepare The Host
 
@@ -66,7 +66,7 @@ current LAN address; changing Wi-Fi can require a new certificate.
 
 ## Pair The Browser
 
-1. On the host, open **Settings > Paired device > Generate pairing code**.
+1. On the host, open **Settings > Advanced > Paired device > Generate pairing code**.
 2. On the phone, choose **I already have TrinaxAI on another device**.
 3. Enter the one-time code, name the device, and confirm.
 4. Review or revoke it from the host settings, or run `trinaxai pair list` and
@@ -75,6 +75,10 @@ current LAN address; changing Wi-Fi can require a new certificate.
 Pairing grants only `chat`, `read_private`, and optionally `web`. Indexing,
 configuration writes, the Agent, model management, lifecycle controls, factory
 reset, and device administration remain host-only at `https://localhost:3334`.
+
+Choosing **Set up as a new device** creates a revocable `chat`/`web` cookie
+without synchronized history or private reads. Pair it later from the host if
+the device needs RAG, memory, or synchronized chats.
 
 If installing a private CA on mobile is not acceptable, use a trusted VPN or a
 reverse proxy with a public certificate. Do not disable TLS verification and do

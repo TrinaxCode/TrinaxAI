@@ -65,6 +65,7 @@ const LEGACY_ERROR_CATEGORIES: Record<string, ErrorCategory> = {
   provider_unavailable: 'external_service_unavailable',
   system_start_failed: 'external_service_unavailable',
   web_search_unavailable: 'external_service_unavailable',
+  tool_timeout: 'tool_timeout',
   invalid_credential: 'authentication_failed',
   rate_limited: 'resource_exhausted',
   timeout: 'network_timeout',

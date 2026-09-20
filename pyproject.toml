@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "trinaxai"
-version = "1.2.5"
+version = "1.2.6"
 description = "Command-line client for a local TrinaxAI installation."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -41,6 +41,12 @@ Changelog = "https://github.com/TrinaxCode/TrinaxAI/blob/main/docs/CHANGELOG.md"
 Issues = "https://github.com/TrinaxCode/TrinaxAI/issues"
 
 [project.optional-dependencies]
+voice = [
+  "faster-whisper>=1.1.1",
+  "numpy>=2.0",
+  "pyttsx3>=2.98",
+  "soundfile>=0.12.1",
+]
 dev = [
   "pytest>=8.0",
   "pytest-cov>=7.0",

@@ -195,6 +195,22 @@ def test_start_actions_return_failure_when_a_service_does_not_start(monkeypatch,
     assert sm.main(["start-frontend", "--base-dir", str(tmp_path)]) == 1
 
 
+def test_stop_all_returns_failure_when_a_service_or_recovery_is_not_running(monkeypatch, tmp_path: Path) -> None:
+    base = ["--base-dir", str(tmp_path)]
+    monkeypatch.setattr(sm, "stop_all_for_base", lambda _base, **_kwargs: [sm.ProcessState("rag_api", True)])
+    assert sm.main(["stop-all", *base]) == 1
+
+    monkeypatch.setattr(sm, "stop_all_for_base", lambda _base, **_kwargs: [sm.ProcessState("recovery", False)])
+    assert sm.main(["stop-all", *base]) == 1
+
+    monkeypatch.setattr(
+        sm,
+        "stop_all_for_base",
+        lambda _base, **_kwargs: [sm.ProcessState("rag_api", False), sm.ProcessState("recovery", True)],
+    )
+    assert sm.main(["stop-all", *base]) == 0
+
+
 def test_privileged_wrapper_and_systemd_enable_failures(monkeypatch, tmp_path: Path) -> None:
     wrapper = tmp_path / "wrapper"
     wrapper.write_text("", encoding="utf-8")
@@ -205,8 +221,12 @@ def test_privileged_wrapper_and_systemd_enable_failures(monkeypatch, tmp_path: P
     monkeypatch.setattr(sm.os, "access", lambda *_args: True)
     monkeypatch.setattr(sm.shutil, "which", lambda _name: "/usr/bin/tool")
     monkeypatch.setattr(sm, "_write_ai_enabled", lambda *_args: None)
+    monkeypatch.setattr(sm, "_system_state", lambda _base: "stopping")
     monkeypatch.setattr(sm.subprocess, "run", lambda *_args, **_kwargs: _completed(0, stdout="ok"))
     assert sm._try_privileged_wrapper(str(tmp_path), "stop-ai")[0].running is False
+
+    assert sm._try_privileged_wrapper(str(tmp_path), "start-ai")[0].running is True
+    assert sm._read_service_state(str(tmp_path))["system_state"] == "running"
 
     monkeypatch.setattr(sm, "_run_systemctl", lambda *_args, **_kwargs: _completed(1, stderr="denied"))
     assert "failed" in sm._systemd_set_enabled("rag_api", False, stop_now=True)

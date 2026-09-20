@@ -27,6 +27,7 @@ DEVICE_TOKEN_HEADER = "X-TrinaxAI-Device-Token"
 ALL_DEVICE_SCOPES = frozenset({"chat", "read_private", "web"})
 RETIRED_DEVICE_SCOPES = frozenset({"system", "index", "agent", "agent_yolo"})
 DEFAULT_DEVICE_SCOPES = ("chat", "read_private")
+NEW_DEVICE_SCOPES = ("chat", "web")
 _CODE_ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ"
 _CODE_LENGTH = 8
 _TOKEN_RE = re.compile(r"^txd_([0-9a-f]{24})_([A-Za-z0-9_-]{40,})$")
@@ -259,6 +260,31 @@ def claim_pairing_code(code: str, device_name: str, *, now: float | None = None)
             "created_at": stamp,
             "last_seen_at": None,
             "expires_at": expires_at,
+            "revoked_at": None,
+        }
+        registry["devices"][device_id] = device
+        _write_registry(path, registry)
+    return {"token": token, "device": public_device(device)}
+
+
+def create_new_device_session(device_name: str = "New device", *, now: float | None = None) -> dict[str, Any]:
+    """Issue a chat/web-only credential without importing shared private state."""
+    name = sanitize_device_name(device_name)
+    stamp = float(time.time() if now is None else now)
+    secret = _ensure_private_secret(_secret_path())
+    path = _registry_path()
+    with _LOCK, _process_lock(path):
+        registry = _read_registry(path)
+        device_id = secrets.token_hex(12)
+        token = f"txd_{device_id}_{secrets.token_urlsafe(32)}"
+        device = {
+            "id": device_id,
+            "name": name,
+            "token_hash": _keyed_hash(secret, "device-token", token),
+            "scopes": list(validate_scopes(NEW_DEVICE_SCOPES)),
+            "created_at": stamp,
+            "last_seen_at": None,
+            "expires_at": None,
             "revoked_at": None,
         }
         registry["devices"][device_id] = device

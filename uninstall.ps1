@@ -64,7 +64,7 @@ function Get-PythonExe {
 function Invoke-Python([string[]]$PythonArgs) {
   if (-not $PythonExe) {
     $script:LastPythonExitCode = 127
-    Write-Warn "Python was not found; skipped Python command: $($PythonArgs -join ' ')"
+    Write-Warn (T "Python was not found; skipped Python command: $($PythonArgs -join ' ')" "No se encontró Python; se omitió el comando de Python: $($PythonArgs -join ' ')")
     return
   }
   if ($PythonExe -eq "py") {
@@ -74,7 +74,7 @@ function Invoke-Python([string[]]$PythonArgs) {
   }
   $script:LastPythonExitCode = $LASTEXITCODE
   if ($script:LastPythonExitCode -ne 0) {
-    Write-Warn "Python command failed with exit code $($script:LastPythonExitCode): $($PythonArgs -join ' ')"
+    Write-Warn (T "Python command failed with exit code $($script:LastPythonExitCode): $($PythonArgs -join ' ')" "El comando de Python falló con el código de salida $($script:LastPythonExitCode): $($PythonArgs -join ' ')")
   }
 }
 function Invoke-ServiceManager($Action) {
@@ -86,7 +86,7 @@ function Assert-InRepo($Path) {
   $Full = [IO.Path]::GetFullPath($Path)
   $Root = [IO.Path]::GetFullPath($Repo)
   if ($Full -eq $Root -or -not $Full.StartsWith($Root + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) {
-    throw "Refusing to remove unsafe path: $Full"
+    throw (T "Refusing to remove unsafe path: $Full" "Se rechaza eliminar una ruta insegura: $Full")
   }
   return $Full
 }
@@ -95,7 +95,7 @@ function Remove-InRepo([string[]]$RelativePaths) {
     $Target = Assert-InRepo (Join-Path $Repo $Rel)
     if (Test-Path -LiteralPath $Target) {
       Remove-Item -LiteralPath $Target -Recurse -Force
-      Write-Ok "Removed $Rel"
+      Write-Ok (T "Removed $Rel" "$Rel eliminado")
     }
   }
 }
@@ -132,7 +132,7 @@ function Remove-TrinaxAIFirewallRules {
     try {
       Get-NetFirewallRule -DisplayName $Name -ErrorAction SilentlyContinue | Remove-NetFirewallRule
     } catch {
-      Write-Warn "Could not remove firewall rule $Name"
+      Write-Warn (T "Could not remove firewall rule $Name" "No se pudo eliminar la regla del firewall $Name")
     }
   }
 }
@@ -143,7 +143,7 @@ function Remove-TrinaxAICertificates {
         Where-Object { $_.FriendlyName -eq "TrinaxAI Local HTTPS" -or $_.Subject -eq "CN=TrinaxAI Local HTTPS" } |
         Remove-Item -Force -ErrorAction SilentlyContinue
     } catch {
-      Write-Warn "Could not remove TrinaxAI certificates from $Store"
+      Write-Warn (T "Could not remove TrinaxAI certificates from $Store" "No se pudieron eliminar los certificados de TrinaxAI de $Store")
     }
   }
 }
@@ -152,12 +152,12 @@ function Invoke-ExternalWithTimeout([string]$FilePath, [string[]]$Arguments, [in
     $Proc = Start-Process -FilePath $FilePath -ArgumentList $Arguments -PassThru -WindowStyle Hidden
     if (-not $Proc.WaitForExit($TimeoutSec * 1000)) {
       Stop-Process -Id $Proc.Id -Force -ErrorAction SilentlyContinue
-      Write-Warn "$FilePath timed out after ${TimeoutSec}s."
+      Write-Warn (T "$FilePath timed out after ${TimeoutSec}s." "$FilePath agotó el tiempo de espera después de ${TimeoutSec}s.")
       return $false
     }
     return ($Proc.ExitCode -eq 0)
   } catch {
-    Write-Warn "Could not run ${FilePath}: $($_.Exception.Message)"
+    Write-Warn ((T "Could not run ${FilePath}" "No se pudo ejecutar ${FilePath}") + ": $($_.Exception.Message)")
     return $false
   }
 }
@@ -167,21 +167,21 @@ function Stop-OllamaProcesses {
       Where-Object { $_.CommandLine -and ($_.CommandLine -like "*ollama*") } |
       ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
   } catch {
-    Write-Warn "Could not enumerate Ollama processes."
+    Write-Warn (T "Could not enumerate Ollama processes." "No se pudieron enumerar los procesos de Ollama.")
   }
 }
 function Remove-KnownDirectory([string]$Path, [string]$Label) {
   if ([string]::IsNullOrWhiteSpace($Path)) { return }
   try {
-    if ($Path -notmatch '^(?:[A-Za-z]:[\\/]|\\\\)') { throw "Unsafe path: $Path" }
+    if ($Path -notmatch '^(?:[A-Za-z]:[\\/]|\\\\)') { throw (T "Unsafe path: $Path" "Ruta insegura: $Path") }
     $Full = [IO.Path]::GetFullPath($Path)
-    if ($Full -eq [IO.Path]::GetPathRoot($Full)) { throw "Unsafe path: $Full" }
+    if ($Full -eq [IO.Path]::GetPathRoot($Full)) { throw (T "Unsafe path: $Full" "Ruta insegura: $Full") }
     if (Test-Path -LiteralPath $Full) {
       Remove-Item -LiteralPath $Full -Recurse -Force
-      Write-Ok "Removed $Label"
+      Write-Ok (T "Removed $Label" "$Label eliminado")
     }
   } catch {
-    Write-Warn "Could not remove ${Label}: $($_.Exception.Message)"
+    Write-Warn ((T "Could not remove ${Label}" "No se pudo eliminar ${Label}") + ": $($_.Exception.Message)")
   }
 }
 function Read-EnvValue($Key) {
@@ -226,14 +226,14 @@ function Remove-OllamaModelsAndState {
       $Full = [IO.Path]::GetFullPath($Candidate)
       $Leaf = Split-Path -Leaf $Full.TrimEnd('\')
       if ($Leaf -ine "models") {
-        Write-Warn "Skipped unsafe Ollama model path: $Full"
+        Write-Warn (T "Skipped unsafe Ollama model path: $Full" "Se omitió la ruta insegura de modelos de Ollama: $Full")
         continue
       }
       if ($Seen.ContainsKey($Full)) { continue }
       $Seen[$Full] = $true
-      Remove-KnownDirectory $Full "Ollama models: $Full"
+      Remove-KnownDirectory $Full (T "Ollama models: $Full" "Modelos de Ollama: $Full")
     } catch {
-      Write-Warn "Skipped unsafe Ollama model path: $Candidate"
+      Write-Warn (T "Skipped unsafe Ollama model path: $Candidate" "Se omitió la ruta insegura de modelos de Ollama: $Candidate")
     }
   }
 }
@@ -251,11 +251,11 @@ function Invoke-OllamaRegistryUninstall {
         $Command = $App.QuietUninstallString
         if (-not $Command) { $Command = $App.UninstallString }
         if (-not $Command) { continue }
-        Write-Host "  Running Ollama uninstaller..."
+        Write-Host (T "  Running Ollama uninstaller..." "  Ejecutando el desinstalador de Ollama...")
         Invoke-ExternalWithTimeout "cmd.exe" @("/d", "/s", "/c", $Command) 120 | Out-Null
       }
     } catch {
-      Write-Warn "Could not use one Ollama uninstall registry entry."
+      Write-Warn (T "Could not use one Ollama uninstall registry entry." "No se pudo usar una entrada del registro para desinstalar Ollama.")
     }
   }
 }
@@ -266,10 +266,10 @@ function Remove-OllamaApp {
   }
   Invoke-OllamaRegistryUninstall
   Stop-OllamaProcesses
-  Remove-KnownDirectory (Join-Path $env:LOCALAPPDATA "Programs\Ollama") "Ollama app"
-  Remove-KnownDirectory (Join-Path $env:LOCALAPPDATA "Ollama") "Ollama local app data"
-  Remove-KnownDirectory (Join-Path $env:APPDATA "Ollama") "Ollama roaming app data"
-  Remove-KnownDirectory (Join-Path $env:ProgramFiles "Ollama") "Ollama Program Files app"
+  Remove-KnownDirectory (Join-Path $env:LOCALAPPDATA "Programs\Ollama") (T "Ollama app" "aplicación de Ollama")
+  Remove-KnownDirectory (Join-Path $env:LOCALAPPDATA "Ollama") (T "Ollama local app data" "datos locales de la aplicación Ollama")
+  Remove-KnownDirectory (Join-Path $env:APPDATA "Ollama") (T "Ollama roaming app data" "datos móviles de la aplicación Ollama")
+  Remove-KnownDirectory (Join-Path $env:ProgramFiles "Ollama") (T "Ollama Program Files app" "aplicación Ollama de Archivos de programa")
 }
 
 $Repo = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -278,9 +278,9 @@ $PythonExe = Get-PythonExe
 
 Write-Host ""
 Write-Host "+========================================+" -ForegroundColor Blue
-Write-Host "|       TrinaxAI - Clean Uninstaller     |" -ForegroundColor Blue
+Write-Host (T "|       TrinaxAI - Clean Uninstaller     |" "|   TrinaxAI - Desinstalador limpio      |") -ForegroundColor Blue
 Write-Host "+========================================+" -ForegroundColor Blue
-Write-Host " Protected: source code, indexes, and Ollama models" -ForegroundColor Cyan
+Write-Host (T " Protected: source code, indexes, and Ollama models" " Protegidos: código fuente, índices y modelos de Ollama") -ForegroundColor Cyan
 
 if ($DryRun) {
   Write-Host (T "DRY-RUN: nothing will be stopped, removed, or changed." "SIMULACIÓN: no se detendrá, borrará ni modificará nada.") -ForegroundColor Yellow
@@ -295,8 +295,8 @@ if ($DryRun) {
   Write-Host (T "  Would remove configured models/app only when explicitly requested" "  Solo se eliminarían los modelos o la aplicación configurados si se solicita explícitamente")
   Write-Host ""
   Write-Host (T "Links to enter" "Enlaces de acceso") -ForegroundColor Cyan
-  Write-Host "  Localhost:       https://localhost:3334"
-  Write-Host "  LAN:             https://[YOUR-LAN-IP]:3334"
+  Write-Host (T "  Localhost:       https://localhost:3334" "  Localhost:       https://localhost:3334")
+  Write-Host (T "  LAN:             https://[YOUR-LAN-IP]:3334" "  LAN / Red local: https://[TU-IP-LAN]:3334")
   Write-Host (T "  RAG health:      https://localhost:3333/health" "  Salud de RAG:    https://localhost:3333/health")
   Write-Ok (T "Dry-run finished; no changes were made" "Simulación terminada; no se hicieron cambios")
   exit 0
@@ -355,24 +355,24 @@ foreach ($Model in @("qwen3-embedding:0.6b", "qwen3-embedding:4b")) {
 }
 
 if ($StopServices) {
-  Write-Step "1/4 Services"
+  Write-Step (T "1/4 Services" "1/4 Servicios")
   Invoke-ServiceManager "stop-all"
 }
 
-Write-Step "Automatic updates"
+Write-Step (T "Automatic updates" "Actualizaciones automáticas")
 if ((Test-Path (Join-Path $Repo "scripts\auto_update.py")) -and $PythonExe) {
   Invoke-Python @((Join-Path $Repo "scripts\auto_update.py"), "disable", "--base-dir", $Repo)
 } elseif (Test-Cmd "schtasks") {
   & schtasks /Delete /F /TN "TrinaxAI Weekly Update" 2>$null
 }
-Write-Ok "Weekly update task removed"
+Write-Ok (T "Weekly update task removed" "Tarea semanal de actualización eliminada")
 
 if ($DisableAutostart) {
-  Write-Step "2/4 Autostart"
+  Write-Step (T "2/4 Autostart" "2/4 Inicio automático")
   Invoke-ServiceManager "disable-autostart"
 }
 
-Write-Step "3/4 Runtime files"
+Write-Step (T "3/4 Runtime files" "3/4 Archivos de ejecución")
 $Targets = New-Object System.Collections.Generic.List[string]
 if ($RemoveVenv) { $Targets.Add(".venv") | Out-Null }
 if ($RemoveFrontend) {
@@ -389,16 +389,16 @@ if ($RemoveRuntimeCerts) { $Targets.Add("chat-pwa\certs") | Out-Null }
 if ($RemoveApp) {
   if ((Test-Path (Join-Path $Repo ".trinaxai-managed")) -and (Test-Path (Join-Path $Repo "scripts\source_update.py"))) {
     Invoke-Python @((Join-Path $Repo "scripts\source_update.py"), "remove", "--root", $Repo)
-    if ($script:LastPythonExitCode -eq 0) { Write-Ok "Managed TrinaxAI application files removed" }
-    else { Write-Warn "Managed TrinaxAI application files could not be removed completely." }
+    if ($script:LastPythonExitCode -eq 0) { Write-Ok (T "Managed TrinaxAI application files removed" "Archivos de la aplicación administrada de TrinaxAI eliminados") }
+    else { Write-Warn (T "Managed TrinaxAI application files could not be removed completely." "No se pudieron eliminar por completo los archivos de la aplicación administrada de TrinaxAI.") }
   } else {
-    Write-Warn "Application source was kept because this is not a managed installation."
+    Write-Warn (T "Application source was kept because this is not a managed installation." "Se conservó el código fuente de la aplicación porque no es una instalación administrada.")
   }
 }
 Remove-InRepo $Targets.ToArray()
 if ($RemoveVenv) {
   Remove-UserPath (Join-Path $Repo ".venv\Scripts")
-  Write-Ok "Removed TrinaxAI CLI directory from the user PATH"
+  Write-Ok (T "Removed TrinaxAI CLI directory from the user PATH" "Directorio de la CLI de TrinaxAI eliminado del PATH del usuario")
 }
 
 if ($RemoveFirewallRules) {
@@ -409,23 +409,23 @@ if ($RemoveRuntimeCerts) {
 }
 
 if ($RemoveOllamaModels) {
-  Write-Step "4/4 Ollama models"
+  Write-Step (T "4/4 Ollama models" "4/4 Modelos de Ollama")
   $Ollama = Get-OllamaCommand
   if ($Ollama) {
     foreach ($Model in $ModelsToRemove) {
-      Write-Host "  Removing $Model..."
+      Write-Host (T "  Removing $Model..." "  Eliminando $Model...")
       & $Ollama rm $Model 2>$null
-      if ($LASTEXITCODE -ne 0) { Write-Warn "Could not remove configured model $Model." }
+      if ($LASTEXITCODE -ne 0) { Write-Warn (T "Could not remove configured model $Model." "No se pudo eliminar el modelo configurado $Model.") }
     }
   } else {
-    Write-Warn "Ollama not found; model removal skipped."
+    Write-Warn (T "Ollama not found; model removal skipped." "No se encontró Ollama; se omitió la eliminación de modelos.")
   }
   if ($RemoveOllamaApp) { Remove-OllamaModelsAndState }
 }
 
 if ($RemoveOllamaApp) {
-  Write-Step "Ollama application"
+  Write-Step (T "Ollama application" "Aplicación Ollama")
   Remove-OllamaApp
 }
 
-Write-Ok "TrinaxAI uninstall finished"
+Write-Ok (T "TrinaxAI uninstall finished" "Desinstalación de TrinaxAI terminada")

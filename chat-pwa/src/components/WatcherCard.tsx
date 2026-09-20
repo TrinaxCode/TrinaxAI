@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { motion } from 'framer-motion';
+import { AnimatePresence, motion } from 'framer-motion';
 import { MdDelete, MdFolder, MdRefresh, MdSync, MdVisibility, MdVisibilityOff } from 'react-icons/md';
 import { useI18n } from '../i18n/I18nContext';
 import { useTheme } from '../theme/ThemeContext';
@@ -266,22 +266,66 @@ export default function WatcherCard({ collections }: Props) {
         <p className={`text-[10px] ${muted}`}>{t('watcherHostPathDesc')}</p>
       </div>
 
-      {visibleFolders.length > 0 && <div className="space-y-1.5">
-        {visibleFolders.map((folder) => <motion.div key={folder.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} className={`flex items-center gap-2 rounded-lg border px-2.5 py-2 text-xs ${field}`}>
-          <MdFolder size={15} className="shrink-0 opacity-70" /><span className="min-w-0 flex-1 truncate" title={folder.name}>{folder.name}</span><span className={`text-[10px] ${muted}`}>{folder.files?.length || 0}</span>
-          <button onClick={() => setPendingRemoveFolder(folder)} className="p-1 text-red-400 hover:text-red-300" aria-label={`${t('deleteFolder')} ${folder.name}`} title={t('deleteFolder')}><MdDelete size={15} /></button>
-        </motion.div>)}
-      </div>}
+      <AnimatePresence initial={false}>
+        {visibleFolders.length > 0 && (
+          <motion.div
+            key="watcher-folders"
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+            className="space-y-1.5 overflow-hidden"
+          >
+            {visibleFolders.map((folder) => <motion.div key={folder.id} layout initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0, height: 0 }} className={`flex items-center gap-2 rounded-lg border px-2.5 py-2 text-xs ${field}`}>
+              <MdFolder size={15} className="shrink-0 opacity-70" /><span className="min-w-0 flex-1 truncate" title={folder.name}>{folder.name}</span><span className={`text-[10px] ${muted}`}>{folder.files?.length || 0}</span>
+              <button onClick={() => setPendingRemoveFolder(folder)} className="p-1 text-red-400 hover:text-red-300" aria-label={`${t('deleteFolder')} ${folder.name}`} title={t('deleteFolder')}><MdDelete size={15} /></button>
+            </motion.div>)}
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <p className={`text-[11px] ${muted} flex items-center gap-1.5`}><MdRefresh size={12} className="opacity-60" />{t('watcherChooseFolders')}</p>
-      {running && <p className={`text-[11px] ${muted} flex items-center gap-1.5`}><MdSync size={12} className="opacity-60" />{t('watcherAutoReindexDesc')}</p>}
-      {serverJob && serverJob.status !== 'idle' && <p className={`text-[11px] ${muted}`} aria-live="polite">
-        {t('watcherIndexStatus').replace('{status}', serverJob.status)}
-        {serverJob.pending_events > 0 ? ` | ${t('watcherPendingEvents').replace('{count}', String(serverJob.pending_events))}` : ''}
-      </p>}
-      {serverJob?.last_error && <p className="text-[11px] text-red-400" role="alert">
-        {t('watcherLastError').replace('{error}', serverJob.last_error.slice(0, 500))}
-      </p>}
+      <AnimatePresence initial={false}>
+        {running && (
+          <motion.p
+            key="watcher-running"
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+            className={`text-[11px] ${muted} flex items-center gap-1.5 overflow-hidden`}
+          >
+            <MdSync size={12} className="opacity-60" />{t('watcherAutoReindexDesc')}
+          </motion.p>
+        )}
+        {serverJob && serverJob.status !== 'idle' && (
+          <motion.p
+            key="watcher-status"
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+            className={`text-[11px] ${muted} overflow-hidden`}
+            aria-live="polite"
+          >
+            {t('watcherIndexStatus').replace('{status}', serverJob.status)}
+            {serverJob.pending_events > 0 ? ` | ${t('watcherPendingEvents').replace('{count}', String(serverJob.pending_events))}` : ''}
+          </motion.p>
+        )}
+        {serverJob?.last_error && (
+          <motion.p
+            key="watcher-error"
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+            className="overflow-hidden text-[11px] text-red-400"
+            role="alert"
+          >
+            {t('watcherLastError').replace('{error}', serverJob.last_error.slice(0, 500))}
+          </motion.p>
+        )}
+      </AnimatePresence>
       <ConfirmModal
         open={Boolean(pendingRemoveFolder)}
         title={t('deleteFolder')}

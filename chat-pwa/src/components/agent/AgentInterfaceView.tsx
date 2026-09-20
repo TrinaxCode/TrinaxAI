@@ -1,5 +1,5 @@
 import { useState, type ChangeEventHandler, type Dispatch, type RefObject, type SetStateAction } from 'react';
-import { AnimatePresence, motion } from 'framer-motion';
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { MdAdd, MdBuild, MdCheck, MdClose, MdContentCopy, MdDelete, MdEdit, MdFolder, MdHistory, MdImage, MdMic, MdPublic, MdRefresh, MdScience, MdSearch, MdSend, MdSmartToy, MdStop, MdStorage, MdUploadFile } from 'react-icons/md';
 import type { AgentSession } from '../../hooks/useAgentHistory';
 import type { AgentModelMode, AgentStep, AgentTurn, AttachedAgentDocument } from './agentTypes';
@@ -10,6 +10,7 @@ import BackButton from '../BackButton';
 import ChatMarkdown from '../chat/ChatMarkdown';
 import ComposerLayout from '../chat/ComposerLayout';
 import ConfirmModal from '../ConfirmModal';
+import '../chat/chat-modern.css';
 
 export interface AgentHistoryView {
   sessions: AgentSession[];
@@ -178,6 +179,12 @@ export function AgentInterfaceView({
   const subtle = isDark ? 'text-white/50' : 'text-gray-500';
   const cardBg = isDark ? 'bg-white/[0.04] border-white/[0.08]' : 'bg-gray-50 border-gray-200';
   const [pendingDeleteSession, setPendingDeleteSession] = useState<AgentSession | null>(null);
+  const prefersReducedMotion = useReducedMotion();
+  // Real model reported by the backend for the latest turn, so the header never
+  // shows a stale or guessed label.
+  const activeModelName = [...turns].reverse().find((turn) => turn.role === 'assistant' && turn.model)?.model ?? '';
+  // The locale provider keeps <html lang> in sync with the interface language.
+  const locale = typeof document !== 'undefined' ? document.documentElement.lang || 'en' : 'en';
 
   return (
     <div className={`agent-page relative flex h-full min-h-0 w-full overflow-hidden ${surface}`}>
@@ -217,23 +224,31 @@ export function AgentInterfaceView({
               {filteredSessions.length === 0 ? (
                 <p className={`px-2 py-6 text-center text-xs ${subtle}`}>{t('agentNoHistory')}</p>
               ) : (
-                filteredSessions.map((session) => (
-                  <div
-                    key={session.id}
-                    className={`group flex items-center gap-1 rounded-lg px-2 py-2 text-sm ${session.id === history.activeId ? (isDark ? 'bg-white/10' : 'bg-gray-100') : isDark ? 'hover:bg-white/[0.05]' : 'hover:bg-gray-50'}`}
-                  >
-                    <button onClick={() => openSession(session.id)} className="min-w-0 flex-1 truncate text-left">
-                      {session.title || t('agentUntitled')}
-                    </button>
-                    <button
-                      onClick={() => setPendingDeleteSession(session)}
-                      className={`shrink-0 rounded p-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 ${isDark ? 'text-white/40 hover:text-red-400' : 'text-gray-500 hover:text-red-600'}`}
-                      aria-label={t('delete')}
+                filteredSessions.map((session) => {
+                  const active = session.id === history.activeId;
+                  return (
+                    <div
+                      key={session.id}
+                      data-agent-session
+                      className={`group relative my-0.5 flex items-center gap-1 rounded-lg px-2 py-2 text-sm transition-colors ${active ? (isDark ? 'bg-white/10' : 'bg-gray-100') : isDark ? 'hover:bg-white/[0.05]' : 'hover:bg-gray-50'}`}
                     >
-                      <MdDelete size={15} />
-                    </button>
-                  </div>
-                ))
+                      {active && <span aria-hidden="true" className="agent-session-indicator" />}
+                      <button onClick={() => openSession(session.id)} aria-current={active ? 'page' : undefined} className="min-w-0 flex-1 text-left">
+                        <span className="block truncate">{session.title || t('agentUntitled')}</span>
+                        <span className={`mt-0.5 block truncate text-[10px] ${subtle}`}>
+                          {session.turns.length} · {new Date(session.updatedAt).toLocaleDateString(locale === 'es' ? 'es-ES' : 'en-US', { day: 'numeric', month: 'short' })}
+                        </span>
+                      </button>
+                      <button
+                        onClick={() => setPendingDeleteSession(session)}
+                        className={`hover-reveal shrink-0 rounded p-1 transition-opacity ${isDark ? 'text-white/40 hover:text-red-400' : 'text-gray-500 hover:text-red-600'}`}
+                        aria-label={t('delete')}
+                      >
+                        <MdDelete size={15} />
+                      </button>
+                    </div>
+                  );
+                })
               )}
             </div>
           </aside>
@@ -269,7 +284,7 @@ export function AgentInterfaceView({
                 type="button"
                 onClick={() => setKnowledgeSearch((value) => !value)}
                 disabled={running}
-                className={`flex h-9 w-9 items-center justify-center rounded-lg transition-colors disabled:opacity-40 ${knowledgeSearch ? 'bg-[#006bbd] text-white' : isDark ? 'text-white/55 hover:bg-white/[0.06] hover:text-white' : 'text-gray-500 hover:bg-gray-100 hover:text-gray-800'}`}
+                className={`flex h-9 w-9 items-center justify-center rounded-lg transition-colors disabled:opacity-40 ${knowledgeSearch ? '' : isDark ? 'text-white/55 hover:bg-white/[0.06] hover:text-white' : 'text-gray-500 hover:bg-gray-100 hover:text-gray-800'}`}
                 aria-label={knowledgeSearch ? t('agentRagOn') : t('agentRagOff')}
                 title={t('agentRag')}
                 aria-pressed={knowledgeSearch}
@@ -280,7 +295,7 @@ export function AgentInterfaceView({
                 type="button"
                 onClick={() => setWebSearch((value) => !value)}
                 disabled={running}
-                className={`flex h-9 w-9 items-center justify-center rounded-lg transition-colors disabled:opacity-40 ${webSearch ? 'bg-[#006bbd] text-white' : isDark ? 'text-white/55 hover:bg-white/[0.06] hover:text-white' : 'text-gray-500 hover:bg-gray-100 hover:text-gray-800'}`}
+                className={`flex h-9 w-9 items-center justify-center rounded-lg transition-colors disabled:opacity-40 ${webSearch ? '' : isDark ? 'text-white/55 hover:bg-white/[0.06] hover:text-white' : 'text-gray-500 hover:bg-gray-100 hover:text-gray-800'}`}
                 aria-label={webSearch ? t('agentWebSearchOn') : t('agentWebSearchOff')}
                 title={t('agentWebSearch')}
                 aria-pressed={webSearch}
@@ -291,7 +306,7 @@ export function AgentInterfaceView({
                 type="button"
                 onClick={() => setDeepResearch((value) => !value)}
                 disabled={running}
-                className={`flex h-9 w-9 items-center justify-center rounded-lg transition-colors disabled:opacity-40 ${deepResearch ? 'bg-[#006bbd] text-white' : isDark ? 'text-white/55 hover:bg-white/[0.06] hover:text-white' : 'text-gray-500 hover:bg-gray-100 hover:text-gray-800'}`}
+                className={`flex h-9 w-9 items-center justify-center rounded-lg transition-colors disabled:opacity-40 ${deepResearch ? '' : isDark ? 'text-white/55 hover:bg-white/[0.06] hover:text-white' : 'text-gray-500 hover:bg-gray-100 hover:text-gray-800'}`}
                 aria-label={t('agentDeepResearch')}
                 title={t('agentDeepResearch')}
                 aria-pressed={deepResearch}
@@ -304,7 +319,7 @@ export function AgentInterfaceView({
               <button
                 type="button"
                 onClick={() => setMobileToolsOpen((open) => !open)}
-                className={`grid min-h-10 min-w-10 place-items-center rounded-xl transition-colors ${mobileToolsOpen ? 'bg-[#006bbd]/20 text-[#006bbd] ring-1 ring-[#006bbd]/40' : isDark ? 'text-white/65 hover:bg-white/[0.06] hover:text-white' : 'text-gray-600 hover:bg-gray-100 hover:text-gray-800'}`}
+                className={`grid min-h-10 min-w-10 place-items-center rounded-xl transition-colors ${mobileToolsOpen ? '' : isDark ? 'text-white/65 hover:bg-white/[0.06] hover:text-white' : 'text-gray-600 hover:bg-gray-100 hover:text-gray-800'}`}
                 aria-label={t('agentTools')}
                 aria-expanded={mobileToolsOpen}
                 title={t('agentTools')}
@@ -326,7 +341,7 @@ export function AgentInterfaceView({
                         type="button"
                         onClick={() => { setKnowledgeSearch((value) => !value); setMobileToolsOpen(false); }}
                         disabled={running}
-                        className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition-colors disabled:opacity-40 ${knowledgeSearch ? 'bg-[#006bbd]/15 text-[#4ea3e0]' : isDark ? 'text-white/75 hover:bg-white/[0.06]' : 'text-gray-700 hover:bg-gray-100'}`}
+                        className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition-colors disabled:opacity-40 ${knowledgeSearch ? isDark ? 'text-white/75' : 'text-gray-700' : isDark ? 'text-white/75 hover:bg-white/[0.06]' : 'text-gray-700 hover:bg-gray-100'}`}
                         aria-label={knowledgeSearch ? t('agentRagOn') : t('agentRagOff')}
                         aria-pressed={knowledgeSearch}
                       >
@@ -338,7 +353,7 @@ export function AgentInterfaceView({
                         type="button"
                         onClick={() => { setWebSearch((value) => !value); setMobileToolsOpen(false); }}
                         disabled={running}
-                        className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition-colors disabled:opacity-40 ${webSearch ? 'bg-[#006bbd]/15 text-[#4ea3e0]' : isDark ? 'text-white/75 hover:bg-white/[0.06]' : 'text-gray-700 hover:bg-gray-100'}`}
+                        className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition-colors disabled:opacity-40 ${webSearch ? isDark ? 'text-white/75' : 'text-gray-700' : isDark ? 'text-white/75 hover:bg-white/[0.06]' : 'text-gray-700 hover:bg-gray-100'}`}
                         aria-label={webSearch ? t('agentWebSearchOn') : t('agentWebSearchOff')}
                         aria-pressed={webSearch}
                       >
@@ -350,7 +365,7 @@ export function AgentInterfaceView({
                         type="button"
                         onClick={() => { setDeepResearch((value) => !value); setMobileToolsOpen(false); }}
                         disabled={running}
-                        className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition-colors disabled:opacity-40 ${deepResearch ? 'bg-[#006bbd]/15 text-[#4ea3e0]' : isDark ? 'text-white/75 hover:bg-white/[0.06]' : 'text-gray-700 hover:bg-gray-100'}`}
+                        className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition-colors disabled:opacity-40 ${deepResearch ? isDark ? 'text-white/75' : 'text-gray-700' : isDark ? 'text-white/75 hover:bg-white/[0.06]' : 'text-gray-700 hover:bg-gray-100'}`}
                         aria-label={t('agentDeepResearch')}
                         aria-pressed={deepResearch}
                       >
@@ -392,6 +407,15 @@ export function AgentInterfaceView({
               <option value="deep">{t('agentModelDeep')}</option>
               <option value="fast">{t('agentModelFast')}</option>
             </select>
+            {activeModelName && (
+              <span
+                data-agent-model
+                title={`${t('agentModel')}: ${activeModelName}`}
+                className={`hidden max-w-40 truncate rounded-lg border px-2 py-1 font-mono text-[10px] leading-4 md:inline-block ${isDark ? 'border-[#168de2]/25 bg-[#168de2]/10 text-[#7cc0f0]' : 'border-[#006bbd]/20 bg-[#006bbd]/[0.06] text-[#006bbd]'}`}
+              >
+                {activeModelName}
+              </span>
+            )}
           </div>
           <button
             onClick={startNewSession}
@@ -407,28 +431,31 @@ export function AgentInterfaceView({
         <div className={`flex shrink-0 items-center gap-2 border-b px-3 py-2 text-xs backdrop-blur-xl ${isDark ? 'border-white/[0.06] bg-black/30' : 'border-gray-200 bg-white/40'}`}>
           <button
             onClick={() => setPickerOpen(true)}
-            className={`flex shrink-0 items-center gap-1.5 rounded-lg border px-2 py-1 font-medium transition-colors ${isDark ? 'border-white/10 text-white/70 hover:bg-white/[0.06]' : 'border-gray-200 text-gray-600 hover:bg-gray-100'}`}
+            aria-label={t('agentPickFolder')}
+            className={`grid h-8 w-8 shrink-0 place-items-center rounded-lg border transition-colors ${isDark ? 'border-white/10 text-[#4ea3e0] hover:bg-white/[0.06]' : 'border-gray-200 text-[#006bbd] hover:bg-gray-100'}`}
             title={t('agentPickFolder')}
           >
-            <MdFolder size={14} className="text-[#006bbd]" />
-            {t('agentPickFolder')}
+            <MdFolder size={15} />
           </button>
-          <input
-            aria-label={t('agentWorkspaceRootLabel')}
-            value={workspace}
-            onChange={(e) => setWorkspace(e.target.value)}
-            onBlur={(e) => persistWorkspace(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') { persistWorkspace((e.target as HTMLInputElement).value); (e.target as HTMLInputElement).blur(); } }}
-            spellCheck={false}
-            className={`min-w-0 flex-1 rounded-md border bg-transparent px-2 py-1 font-mono text-xs outline-none ${isDark ? 'border-white/10 text-white/80 focus:border-[#006bbd]/50' : 'border-gray-200 text-gray-700 focus:border-[#006bbd]/50'}`}
-          />
+          <div className={`flex min-w-0 flex-1 items-center gap-1.5 rounded-lg border px-2 py-1 transition-colors ${isDark ? 'border-white/10 bg-white/[0.03] focus-within:border-[#006bbd]/50' : 'border-gray-200 bg-white/70 focus-within:border-[#006bbd]/50'}`}>
+            <MdFolder size={13} className={`shrink-0 ${subtle}`} aria-hidden="true" />
+            <input
+              aria-label={t('agentWorkspaceRootLabel')}
+              value={workspace}
+              onChange={(e) => setWorkspace(e.target.value)}
+              onBlur={(e) => persistWorkspace(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') { persistWorkspace((e.target as HTMLInputElement).value); (e.target as HTMLInputElement).blur(); } }}
+              spellCheck={false}
+              className={`min-w-0 flex-1 bg-transparent font-mono text-xs outline-none ${isDark ? 'text-white/80' : 'text-gray-700'}`}
+            />
+          </div>
         </div>
 
         {/* Conversation */}
         <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-3 py-4 sm:px-4">
           {turns.length === 0 ? (
             <div className={`agent-empty-state flex h-full flex-col items-center justify-center gap-5 px-6 text-center ${subtle}`}>
-              <MdSmartToy size={76} className="agent-empty-avatar animate-agent-avatar animate-float" />
+              <MdSmartToy size={76} className="agent-empty-avatar animate-agent-avatar animate-float text-[#168de2]" />
               <p className="max-w-sm text-sm leading-relaxed">{t('agentEmptyHint')}</p>
               <div className="flex max-w-lg flex-wrap justify-center gap-2">
                 {[
@@ -448,7 +475,7 @@ export function AgentInterfaceView({
               </div>
             </div>
           ) : (
-            <div className="mx-auto flex max-w-3xl flex-col gap-4">
+            <div className="tc-agent-shell mx-auto flex max-w-3xl flex-col gap-4">
               {turns.map((turn, idx) => (
                 <div key={idx} className={`animate-fade-up ${turn.role === 'user' ? 'flex justify-end' : 'flex justify-start'}`}>
                   {turn.role === 'user' ? (
@@ -494,7 +521,7 @@ export function AgentInterfaceView({
                             {turn.content}
                           </div>
                         )}
-                        <div className="flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+                        <div className="hover-reveal flex items-center gap-1 transition-opacity">
                           <button
                             onClick={() => startEdit(idx)}
                             disabled={running}
@@ -514,7 +541,7 @@ export function AgentInterfaceView({
                       </div>
                     )
                     ) : (
-                      <div className="group w-full min-w-0">
+                      <div className="tc-agent-reply group w-full min-w-0">
                         {running && idx === turns.length - 1 && (agentActivity || analyzingImage) && (
                           <AgentThinkingDisclosure
                             activity={analyzingImage ? t('agentAnalyzingImage') : agentActivity || t('agentWorking')}
@@ -538,7 +565,7 @@ export function AgentInterfaceView({
                         </div>
                       )}
                       {turn.content && !(running && idx === turns.length - 1) && (
-                        <div className="mt-1 flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+                        <div className="hover-reveal mt-1 flex items-center gap-1 transition-opacity">
                           <button
                             onClick={() => copyText(turn.content, `a-${idx}`)}
                             className={`rounded-md p-1 transition-colors ${copiedKey === `a-${idx}` ? 'bg-[#006bbd]/10 text-[#006bbd]' : isDark ? 'text-white/30 hover:bg-white/[0.06] hover:text-white/70' : 'text-gray-400 hover:bg-gray-100 hover:text-gray-600'}`}
@@ -575,8 +602,15 @@ export function AgentInterfaceView({
         {/* Composer */}
         <div className="shrink-0 px-2 pt-2 sm:px-4" style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 0.75rem)' }}>
           <div className="mx-auto flex w-full max-w-5xl flex-col gap-2">
-            {attachedImage && (
-              <div className="relative inline-block w-max">
+            <AnimatePresence initial={false}>
+              {attachedImage && (
+                <motion.div
+                  initial={prefersReducedMotion ? false : { opacity: 0, scale: 0.82, y: 8 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  exit={prefersReducedMotion ? { opacity: 1 } : { opacity: 0, scale: 0.82, y: 8 }}
+                  transition={{ duration: prefersReducedMotion ? 0 : 0.2, ease: [0.16, 1, 0.3, 1] }}
+                  className="relative inline-block w-max"
+                >
                 <img src={attachedImage} alt={t('agentAttachImage')} className="h-20 w-auto rounded-lg border border-white/10 object-cover" width={160} height={80} />
                 <button
                   onClick={() => { setAttachedImage(null); setImageError(''); }}
@@ -585,18 +619,38 @@ export function AgentInterfaceView({
                 >
                   <MdClose size={14} />
                 </button>
-              </div>
-            )}
-            {attachedDocs.length > 0 && (
-              <div className={`grid max-h-44 grid-cols-1 gap-2 overflow-y-auto rounded-xl border p-2 sm:grid-cols-2 ${isDark ? 'border-white/[0.08] bg-white/[0.03]' : 'border-gray-200 bg-gray-50'}`}>
-                {attachedDocs.map((document) => (
-                  <div key={document.name} className={`min-w-0 rounded-lg px-2.5 py-2 text-[11px] ${isDark ? 'bg-white/[0.06] text-white/60' : 'bg-white text-gray-600'}`}>
+                </motion.div>
+              )}
+            </AnimatePresence>
+            <AnimatePresence initial={false}>
+              {attachedDocs.length > 0 && (
+                <motion.div
+                  layout
+                  initial={prefersReducedMotion ? false : { opacity: 0, height: 0, y: 8 }}
+                  animate={{ opacity: 1, height: 'auto', y: 0 }}
+                  exit={prefersReducedMotion ? { opacity: 1 } : { opacity: 0, height: 0, y: 8 }}
+                  transition={{ duration: prefersReducedMotion ? 0 : 0.22, ease: [0.16, 1, 0.3, 1] }}
+                  className={`grid max-h-44 grid-cols-1 gap-2 overflow-y-auto rounded-xl border p-2 sm:grid-cols-2 ${isDark ? 'border-white/[0.08] bg-white/[0.03]' : 'border-gray-200 bg-gray-50'}`}
+                >
+                  <AnimatePresence initial={false}>
+                    {attachedDocs.map((document) => (
+                      <motion.div
+                        layout
+                        key={document.name}
+                        initial={prefersReducedMotion ? false : { opacity: 0, scale: 0.94, y: 6 }}
+                        animate={{ opacity: 1, scale: 1, y: 0 }}
+                        exit={prefersReducedMotion ? { opacity: 1 } : { opacity: 0, scale: 0.94, y: 6 }}
+                        transition={{ duration: prefersReducedMotion ? 0 : 0.18, ease: [0.16, 1, 0.3, 1] }}
+                        className={`min-w-0 rounded-lg px-2.5 py-2 text-[11px] ${isDark ? 'bg-white/[0.06] text-white/60' : 'bg-white text-gray-600'}`}
+                      >
                     <div className="flex min-w-0 items-center gap-1.5"><MdUploadFile size={14} className="shrink-0" /><span className="truncate font-medium">{document.name}</span>{document.truncated && <span className="text-amber-400">{t('truncated')}</span>}<button type="button" onClick={() => setAttachedDocs((current) => current.filter((item) => item.name !== document.name))} className="ml-auto shrink-0 text-current/60 hover:text-current" aria-label={t('removeDocument')}><MdClose size={13} /></button></div>
                     <p className="mt-1 line-clamp-3 whitespace-pre-wrap text-[10px] leading-relaxed opacity-70">{document.content.slice(0, 180)}</p>
-                  </div>
-                ))}
-              </div>
-            )}
+                      </motion.div>
+                    ))}
+                  </AnimatePresence>
+                </motion.div>
+              )}
+            </AnimatePresence>
             {imageError && <p role="alert" className="text-xs text-red-400">{imageError}</p>}
 
             <input ref={imageInputRef} type="file" accept={IMAGE_FILE_ACCEPT} aria-label={t('agentAttachImage')} className="hidden" onChange={onPickImage} />
@@ -615,7 +669,7 @@ export function AgentInterfaceView({
               closeLabel={t('closeExpandedComposer')}
               leftActions={(
                 <div ref={attachmentMenuRef} className="relative grid h-11 w-11 shrink-0 place-items-center">
-                  <button type="button" onClick={() => setAttachmentMenuOpen((open) => !open)} disabled={running} className={`grid h-11 w-11 place-items-center rounded-xl transition-colors disabled:opacity-40 ${isDark ? 'bg-white/[0.06] text-white/55 hover:bg-white/[0.1] hover:text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200 hover:text-gray-700'}`} aria-label={`${t('agentAttachImage')} / ${t('attachDocument')}`} aria-expanded={attachmentMenuOpen}><MdAdd size={20} /></button>
+                  <button type="button" onClick={() => setAttachmentMenuOpen((open) => !open)} disabled={running} className={`grid h-11 w-11 place-items-center rounded-xl transition-colors disabled:opacity-40 ${isDark ? 'text-white/55 hover:text-white' : 'text-gray-500 hover:text-gray-700'}`} aria-label={`${t('agentAttachImage')} / ${t('attachDocument')}`} aria-expanded={attachmentMenuOpen}><MdAdd size={20} /></button>
                   <AnimatePresence>
                     {attachmentMenuOpen && <motion.div initial={{ opacity: 0, y: 8, scale: 0.96 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 8, scale: 0.96 }} transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }} className={`absolute bottom-full left-0 z-40 mb-2 min-w-44 overflow-hidden rounded-xl border p-1 shadow-xl ${isDark ? 'border-white/[0.08] bg-[#151515]' : 'border-gray-200 bg-white'}`}>
                       <button type="button" onClick={() => { setAttachmentMenuOpen(false); imageInputRef.current?.click(); }} className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm ${isDark ? 'text-white/75 hover:bg-white/[0.08]' : 'text-gray-700 hover:bg-gray-100'}`}><MdImage size={18} /> {t('agentAttachImage')}</button>
@@ -627,9 +681,9 @@ export function AgentInterfaceView({
               rightActions={(
                 <>
                   <AnimatePresence initial={false}>
-                    {dictationAvailable && !running && <motion.button type="button" initial={{ opacity: 0, scale: 0.72, width: 0 }} animate={{ opacity: 1, scale: 1, width: 42 }} exit={{ opacity: 0, scale: 0.72, width: 0 }} transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }} onClick={toggleDictation} className={`flex h-[42px] shrink-0 items-center justify-center overflow-hidden rounded-xl transition-colors ${listening ? 'animate-pulse bg-red-500/30 text-red-400' : isDark ? 'bg-white/[0.06] text-white/55 hover:bg-white/[0.1] hover:text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200 hover:text-gray-700'}`} aria-label={listening ? t('agentExitVoiceMode') : t('agentVoiceMode')} title={listening ? t('agentExitVoiceMode') : t('agentVoiceMode')} aria-pressed={listening}><MdMic size={19} /></motion.button>}
+                    {dictationAvailable && !running && <motion.button type="button" initial={{ opacity: 0, scale: 0.72, width: 0 }} animate={{ opacity: 1, scale: 1, width: 42 }} exit={{ opacity: 0, scale: 0.72, width: 0 }} transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }} onClick={toggleDictation} className={`flex h-[42px] shrink-0 items-center justify-center overflow-hidden rounded-xl transition-colors ${isDark ? 'text-white/55 hover:text-white' : 'text-gray-500 hover:text-gray-700'}`} aria-label={listening ? t('agentExitVoiceMode') : t('agentVoiceMode')} title={listening ? t('agentExitVoiceMode') : t('agentVoiceMode')} aria-pressed={listening}><MdMic size={19} /></motion.button>}
                   </AnimatePresence>
-                  {running ? <button onClick={stop} className="flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-xl bg-red-500/90 text-white transition-colors hover:bg-red-500" aria-label={t('agentStop')}><MdStop size={20} /></button> : <button onClick={() => void send()} disabled={!input.trim() && !attachedImage && attachedDocs.length === 0} className="flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-xl bg-[#006bbd] text-white transition-colors hover:bg-[#0059a0] disabled:cursor-not-allowed disabled:opacity-40" aria-label={t('agentSend')} title={t('agentSend')}><MdSend size={19} /></button>}
+                  {running ? <button onClick={stop} className="composer-action-primary flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-xl bg-red-500/90 text-white transition-colors hover:bg-red-500" aria-label={t('agentStop')}><MdStop size={20} /></button> : <button onClick={() => void send()} disabled={!input.trim() && !attachedImage && attachedDocs.length === 0} className="composer-action-primary flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-xl bg-[#006bbd] text-white transition-colors hover:bg-[#0059a0] disabled:cursor-not-allowed disabled:opacity-40" aria-label={t('agentSend')} title={t('agentSend')}><MdSend size={19} /></button>}
                 </>
               )}
             />
@@ -714,16 +768,17 @@ interface AgentYoloButtonProps {
 
 function AgentYoloButton({ enabled, disabled, onChange, isDark, t, mobile = false }: AgentYoloButtonProps) {
   return (
-    <div className={mobile ? 'w-full' : ''}>
+    <div className={mobile ? 'w-full' : 'contents'}>
       <button
         type="button"
         role="switch"
+        data-yolo-switch={mobile ? 'mobile' : 'header'}
         aria-checked={enabled}
         aria-label={enabled ? t('agentYoloModeOn') : t('agentYoloModeOff')}
         title={enabled ? t('agentYoloModeOn') : t('agentYoloModeOff')}
         onClick={() => onChange(!enabled)}
         disabled={disabled}
-        className={`${mobile ? 'flex w-full items-center px-2.5 py-2 text-left' : 'flex min-h-10 items-center px-2 py-1 sm:min-h-0'} rounded-lg text-[10px] font-bold uppercase tracking-wide transition-[background-color,color,transform] active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500/70 disabled:opacity-40 ${enabled ? 'bg-red-500/15 text-red-500 hover:bg-red-500/25' : isDark ? 'text-white/40 hover:bg-white/[0.06] hover:text-white/75' : 'text-gray-400 hover:bg-gray-100 hover:text-gray-700'}`}
+        className={`${mobile ? 'flex w-full items-center px-2.5 py-2 text-left' : 'flex min-h-10 items-center px-2 py-1 sm:min-h-0'} rounded-lg text-[10px] font-bold uppercase tracking-wide transition-[background-color,color,transform] active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500/70 disabled:opacity-40 ${enabled ? 'bg-transparent text-red-500 hover:bg-red-500/10' : isDark ? 'text-white/40 hover:bg-white/[0.06] hover:text-white/75' : 'text-gray-400 hover:bg-gray-100 hover:text-gray-700'}`}
       >
         {t('agentYoloMode')}
       </button>
@@ -752,7 +807,7 @@ function AgentStepCard({ step, isDark, cardBg, subtle, onApprove, t }: StepCardP
   const dangerKey = DANGEROUS_HINT[step.tool];
 
   return (
-    <div className={`mb-1.5 animate-fade-up rounded-xl border px-3 py-2 text-xs ${cardBg}`}>
+    <div className={`tc-agent-step mb-1.5 animate-fade-up rounded-xl border px-3 py-2 text-xs ${cardBg}`}>
       <div className="flex items-center gap-2">
         {statusIcon}
         <span className={`font-mono font-semibold ${isDark ? 'text-white/80' : 'text-gray-700'}`}>{step.tool}</span>

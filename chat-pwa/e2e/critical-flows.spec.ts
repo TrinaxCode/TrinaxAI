@@ -251,10 +251,12 @@ test('honors server capabilities for stop-all and LAN scope gates', async ({ pag
     stopRequests += 1;
     return route.fulfill({ json: { ok: true } });
   });
-  await page.goto('/#/settings/general');
+  await page.goto('/#/settings/advanced');
   const stopButton = page.getByRole('button', { name: 'Stop all TrinaxAI' });
   await stopButton.click();
-  await page.getByRole('dialog').getByRole('button', { name: 'Stop all TrinaxAI' }).click();
+  const stopDialog = page.getByRole('dialog', { name: 'Shut down TrinaxAI completely?' });
+  await stopDialog.getByRole('textbox').fill('STOP ALL');
+  await stopDialog.getByRole('button', { name: 'Stop all TrinaxAI' }).click();
   await expect.poll(() => stopRequests).toBe(1);
 
   await page.unroute('**/api/network');

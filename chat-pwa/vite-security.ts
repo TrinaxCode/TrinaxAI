@@ -63,7 +63,7 @@ export function requiredOllamaProxyScope(pathname: string): 'chat' | 'system' {
 export function requiredRagProxyScope(pathname: string, method = 'GET'): string | null {
   const verb = method.toUpperCase();
   if (pathname === '/api/rag/health' || pathname === '/api/rag/resources') return null;
-  if (pathname === '/api/rag/v1/pairing/claim' || pathname === '/api/rag/v1/pairing/me') return null;
+  if (pathname === '/api/rag/v1/pairing/claim' || pathname === '/api/rag/v1/pairing/me' || pathname === '/api/rag/v1/pairing/new-device') return null;
   if (pathname === '/api/rag/v1/pairing/start' || pathname === '/api/rag/v1/pairing/devices') return 'system';
   if (pathname.startsWith('/api/rag/v1/pairing/devices/')) return 'system';
   if (pathname.startsWith('/api/rag/v1/agent')) return 'system';

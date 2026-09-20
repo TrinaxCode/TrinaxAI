@@ -1,6 +1,6 @@
 import { APP_CONFIG } from './config';
 import type { ChatSession } from './api';
-import { clearRevokedDeviceSession, systemRequestHeaders } from './authHeaders';
+import { systemRequestHeaders } from './authHeaders';
 
 const SYNC_EVENT = 'trinaxai:shared-state-updated';
 const SYNC_INTERVAL_MS = 8000;
@@ -287,10 +287,11 @@ function parseResetTime(raw: string | undefined): number {
 
 async function fetchRemoteState(signal?: AbortSignal): Promise<RemoteState | null> {
   const headers = systemRequestHeaders(remoteStateEtag ? { 'If-None-Match': remoteStateEtag } : undefined);
-  const response = await fetch(`${APP_CONFIG.ragBase}/app-state`, { signal, headers });
+  const response = await fetch(`${APP_CONFIG.ragBase}/app-state`, { signal, credentials: 'include', headers });
   if (response.status === 304) return null;
   if (response.status === 401 || response.status === 403) {
-    clearRevokedDeviceSession();
+    // A valid chat/web-only new-device session is expected to lack read_private;
+    // the revocation monitor checks /pairing/me before clearing credentials.
     throw new SharedStateAuthorizationError(`Shared state read denied: ${response.status}`);
   }
   if (!response.ok) throw new Error(`Shared state read failed: ${response.status}`);
@@ -404,6 +405,7 @@ async function pushOperations(
 ): Promise<PushSuccess | PushConflict> {
   const response = await fetch(`${APP_CONFIG.ragBase}/app-state`, {
     method: 'PUT',
+    credentials: 'include',
     headers: systemRequestHeaders({
       'Content-Type': 'application/json',
       'If-Match': etagForRevision(baseRevision),
@@ -418,7 +420,6 @@ async function pushOperations(
   });
   const data = await response.json().catch(() => ({}));
   if (response.status === 401 || response.status === 403) {
-    clearRevokedDeviceSession();
     throw new SharedStateAuthorizationError(`Shared state write denied: ${response.status}`);
   }
   if (response.status === 409) {

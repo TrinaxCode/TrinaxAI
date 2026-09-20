@@ -11,6 +11,7 @@ interface ComposerLayoutProps {
   onKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
   placeholder: string;
   name?: string;
+  ariaKeyShortcuts?: string;
   inputRef: RefObject<HTMLTextAreaElement | null>;
   disabled?: boolean;
   isDark: boolean;
@@ -35,6 +36,7 @@ export default function ComposerLayout({
   onKeyDown,
   placeholder,
   name,
+  ariaKeyShortcuts,
   inputRef,
   disabled = false,
   isDark,
@@ -143,9 +145,10 @@ export default function ComposerLayout({
       rows={1}
       placeholder={placeholder}
       aria-label={placeholder}
+      aria-keyshortcuts={ariaKeyShortcuts}
       name={name}
       disabled={disabled}
-      className={`block w-full resize-none overflow-y-hidden break-words bg-transparent text-sm leading-6 outline-none ${expandedEditor ? 'h-full min-h-0 flex-1 px-3 py-2' : stacked ? 'min-h-[42px] max-h-[360px] px-3 py-2' : 'h-6 min-h-6 max-h-6 px-0 py-0 leading-6'} ${!expandedEditor && canExpand ? 'pr-14' : ''} ${isDark ? 'text-white placeholder:text-white/30' : 'text-gray-800 placeholder:text-gray-400'}`}
+      className={`block w-full resize-none overflow-y-hidden break-words bg-transparent text-sm leading-6 outline-none ${expandedEditor ? 'h-full min-h-0 flex-1 px-3 py-2' : stacked ? 'min-h-[42px] max-h-[360px] px-3 py-2' : 'h-6 min-h-6 max-h-6 px-0 py-0 leading-6'} ${!expandedEditor && canExpand ? 'pr-14' : ''} ${isDark ? 'text-white/70 placeholder-white/25' : 'text-gray-700 placeholder-gray-400'}`}
       style={{ maxHeight: expandedEditor ? 'none' : stacked ? `${MAX_HEIGHT}px` : '24px' }}
     />
   );
@@ -177,12 +180,24 @@ export default function ComposerLayout({
 
   return (
     <>
-      <div ref={shellRef} className="composer-shell relative z-30 w-full">
+      <div ref={shellRef} className="composer-shell relative z-30 w-full" data-composer-root>
         {floatingContent}
         <div className={`composer-surface rounded-2xl border transition-[background-color,border-color,height] duration-200 ${stacked ? 'grid grid-cols-1 gap-2 px-2 py-2 sm:px-3' : 'grid h-[52px] grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 px-2 py-1 sm:px-3'} ${isDark ? 'border-white/[0.08] bg-white/[0.04] focus-within:border-[#006bbd]/40' : 'border-gray-200 bg-gray-100 focus-within:border-[#006bbd]/40'}`}>
           {!stacked && <div ref={leftSlotRef} className="flex min-w-0 items-center">{leftActions}</div>}
           <div className={`relative min-w-0 ${stacked ? 'w-full' : 'w-full'}`}>
-            {canExpand && <div className="absolute right-1 top-1 z-10">{expandButton}</div>}
+            <AnimatePresence>
+              {canExpand && (
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.82 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.82 }}
+                  transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
+                  className="absolute right-1 top-1 z-10"
+                >
+                  {expandButton}
+                </motion.div>
+              )}
+            </AnimatePresence>
             {editorSurface(inputRef)}
           </div>
           {!stacked && <div ref={rightSlotRef} className="flex shrink-0 items-center gap-2">{rightActions}</div>}

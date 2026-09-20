@@ -11,7 +11,7 @@ from starlette.testclient import TestClient
 
 from app.main import create_app
 from app.routes import pairing as pairing_routes
-from app.routes.pairing import PairingClaimRequest
+from app.routes.pairing import NewDeviceRequest, PairingClaimRequest
 from app.security import admin_auth
 from app.security.admin_auth import DEVICE_TOKEN_COOKIE, DEVICE_TOKEN_COOKIE_PATH
 from app.security.device_auth import (
@@ -23,6 +23,7 @@ from app.security.device_auth import (
     _write_registry,
     authenticate_device_token,
     claim_pairing_code,
+    create_new_device_session,
     create_pairing_code,
     device_for_token,
     list_devices,
@@ -91,6 +92,35 @@ def test_registry_never_persists_clear_codes_or_tokens_and_claim_is_single_use(p
     assert authenticate_device_token(token, "system", now=102) is None
     with pytest.raises(PermissionError):
         claim_pairing_code(code, "Second tablet", now=102)
+
+
+def test_new_device_session_is_chat_web_only_and_revocable(pairing_store: Path) -> None:
+    created = create_new_device_session("Fresh phone", now=100)
+    token = created["token"]
+    assert created["device"]["scopes"] == ["chat", "web"]
+    assert authenticate_device_token(token, "chat", now=101) is not None
+    assert authenticate_device_token(token, "web", now=101) is not None
+    assert authenticate_device_token(token, "read_private", now=101) is None
+    assert revoke_device(created["device"]["id"], now=102)["revoked_at"] == 102
+
+
+@pytest.mark.asyncio
+async def test_new_device_endpoint_issues_cookie_without_private_scope(pairing_store: Path) -> None:
+    response = Response()
+    result = await pairing_routes.pairing_new_device(
+        NewDeviceRequest(device_name="Fresh phone"),
+        _request("/v1/pairing/new-device", client="192.168.1.44"),
+        response,
+    )
+    assert result["device"]["scopes"] == ["chat", "web"]
+    assert f"Path={DEVICE_TOKEN_COOKIE_PATH}" in response.headers["set-cookie"]
+    with pytest.raises(HTTPException) as denied:
+        await pairing_routes.pairing_new_device(
+            NewDeviceRequest(device_name="Public client"),
+            _request("/v1/pairing/new-device", client="8.8.8.8"),
+            Response(),
+        )
+    assert denied.value.status_code == 403
 
 
 def test_expired_code_and_device_revocation_fail_closed(pairing_store: Path) -> None:
@@ -196,6 +226,51 @@ def test_remote_pairing_claim_and_revocation_endpoint(pairing_store: Path, monke
 
     document = json.loads(pairing_store.read_text(encoding="utf-8"))
     assert document["pairing_codes"] == {}
+
+
+def test_browser_device_cookie_covers_both_chat_proxy_paths() -> None:
+    assert DEVICE_TOKEN_COOKIE_PATH == "/api"
+    assert "/api/rag".startswith(DEVICE_TOKEN_COOKIE_PATH)
+    assert "/api/ollama".startswith(DEVICE_TOKEN_COOKIE_PATH)
+
+
+@pytest.mark.asyncio
+async def test_pairing_me_migrates_legacy_cookie_scope(pairing_store: Path) -> None:
+    claimed = claim_pairing_code(create_pairing_code(["chat"], now=100)["code"], "Legacy phone", now=101)
+    response = Response()
+
+    result = await pairing_routes.pairing_me(
+        _request(
+            "/v1/pairing/me",
+            cookie=f"{DEVICE_TOKEN_COOKIE}={claimed['token']}",
+        ),
+        response,
+    )
+
+    assert result["device"]["name"] == "Legacy phone"
+    assert f"Path={DEVICE_TOKEN_COOKIE_PATH}" in response.headers["set-cookie"]
+
+
+def test_lifespan_clears_stopping_state_when_runtime_initialization_is_replaced(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.services import shared_runtime, system_service
+    from app.services.engine_state import state
+
+    was_stopping = state.lifecycle_stopping.is_set()
+    try:
+        state.lifecycle_stopping.set()
+        monkeypatch.setattr(shared_runtime, "initialize_runtime", lambda: None)
+        monkeypatch.setattr(system_service, "shutdown_runtime", state.lifecycle_stopping.set)
+
+        with TestClient(create_app()):
+            assert not state.lifecycle_stopping.is_set()
+        assert not state.lifecycle_stopping.is_set()
+    finally:
+        if was_stopping:
+            state.lifecycle_stopping.set()
+        else:
+            state.lifecycle_stopping.clear()
 
 
 def test_http_only_cookie_authorizes_scoped_protected_route(pairing_store: Path) -> None:

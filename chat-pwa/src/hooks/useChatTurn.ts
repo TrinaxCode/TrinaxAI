@@ -5,7 +5,7 @@ import { compactAgentContext, newHandoffId, persistTurnDecision, type AgentHando
 import type { ActivityKind } from '../components/chat/activityMessages';
 import type { TranslationKey } from '../i18n/translations';
 import type { Lang } from '../i18n/translations';
-import type { ExternalStream, SendOptions, SendResult } from './useStreamChat';
+import { FIRST_TOKEN_TIMEOUT_MS, type ExternalStream, type SendOptions, type SendResult } from './useStreamChat';
 
 type Translate = (key: TranslationKey) => string;
 
@@ -153,7 +153,8 @@ export function useChatTurn({
 
     if (researchRequested && !hasImage) {
       startActivity('web');
-      if (!isLocalHostBrowser() || !deviceSessionHasScope('web')) {
+      const researchScope = webSearchRequested ? 'web' : 'read_private';
+      if (!isLocalHostBrowser() && !deviceSessionHasScope(researchScope)) {
         stopActivity();
         onWebSearchBlocked?.();
         if (viaVoice && continueCall && callModeRef.current) queueVoiceRestart(800);
@@ -166,7 +167,7 @@ export function useChatTurn({
       const timeoutId = window.setTimeout(() => {
         timedOut = true;
         controller.abort();
-      }, 90_000);
+      }, FIRST_TOKEN_TIMEOUT_MS);
       let externalStream: ExternalStream | null = null;
       try {
         const priorMessages = persistedMessages.slice(0, -1);

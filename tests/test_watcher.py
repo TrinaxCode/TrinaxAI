@@ -277,9 +277,8 @@ def test_watch_lifecycle_seeds_mirror_and_stops_worker(tmp_path, monkeypatch) ->
     assert result["status"] == "started"
     assert status["running"] is True
     assert status["job"]["status"] == "idle"
-    assert (local_sources / "collections" / "docs" / "watch-source" / "notes.txt").read_text(
-        encoding="utf-8"
-    ) == "knowledge"
+    seeded = list((local_sources / "collections" / "docs" / "watch-source").rglob("notes.txt"))
+    assert len(seeded) == 1 and seeded[0].read_text(encoding="utf-8") == "knowledge"
     assert stopped == {"status": "stopped"}
     with watcher_service.state.watcher["lock"]:
         assert watcher_service.state.watcher["observer"] is None

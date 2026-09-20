@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # TrinaxAI — One-Command Installer (Linux/macOS/Windows Bash)
 # Linux/macOS release-pinned install (this script is copied into each stable release):
-#   version="1.2.5"
+#   version="1.2.6"
 #   base="https://github.com/TrinaxCode/TrinaxAI/releases/download/v${version}"
 #   installer="$(mktemp)"; manifest="$(mktemp)"
 #   curl --fail --location --output "$installer" "${base}/TrinaxAI-${version}-installer.sh"
@@ -31,16 +31,17 @@ for language_arg in "$@"; do
   esac
 done
 ARG_NONINTERACTIVE=0
+ARG_HELP=0
 for argument in "$@"; do
   case "$argument" in --non-interactive|--yes|-y|--dry-run) ARG_NONINTERACTIVE=1;; esac
+  case "$argument" in --help|-h) ARG_HELP=1;; esac
 done
-if [ -z "$LANGUAGE_EXPLICIT" ] && [ "${TRINAXAI_NONINTERACTIVE:-0}" != "1" ] && [ "$ARG_NONINTERACTIVE" != "1" ] && [ "${TRINAXAI_DRY_RUN:-0}" != "1" ] && [ -r /dev/tty ]; then
+if [ "$ARG_HELP" != "1" ] && [ -z "$LANGUAGE_EXPLICIT" ] && [ "${TRINAXAI_NONINTERACTIVE:-0}" != "1" ] && [ "$ARG_NONINTERACTIVE" != "1" ] && [ "${TRINAXAI_DRY_RUN:-0}" != "1" ] && [ -r /dev/tty ]; then
   read -r -p "Select language / Selecciona idioma [en/es, default: $LANGUAGE]: " language_reply </dev/tty || language_reply=""
   case "$(printf '%s' "$language_reply" | tr '[:upper:]' '[:lower:]')" in es*) LANGUAGE=es ;; en*) LANGUAGE=en ;; esac
   LANGUAGE_EXPLICIT=prompt
 fi
-if [ "$LANGUAGE" = "es" ]; then
-  tr_text_es() {
+tr_text_es() {
     case "$1" in
       title) echo 'Instalador de TrinaxAI en un comando' ;;
       'TrinaxAI - Local AI Assistant') echo 'TrinaxAI - Asistente de IA local' ;;
@@ -54,7 +55,7 @@ if [ "$LANGUAGE" = "es" ]; then
       '--install-dir requires a path') echo 'Se requiere una ruta para --install-dir' ;;
       'Unknown option:'*) echo "Opción desconocida:${1#Unknown option:}" ;;
       'Privacy') echo 'Privacidad' ;;
-      'Local-first; web search and downloads use the network') echo 'Local-first; la búsqueda web y las descargas usan Internet' ;;
+      'Local-first; web search and downloads use the network') echo 'Prioridad local; la búsqueda web y las descargas usan Internet' ;;
       'Detected RAM') echo 'RAM detectada' ;;
       'Recommended profile') echo 'Perfil recomendado' ;;
       '  1) 8gb     About 8GB RAM') echo '  1) 8gb     Aproximadamente 8 GB de RAM' ;;
@@ -125,14 +126,19 @@ if [ "$LANGUAGE" = "es" ]; then
       'Could not generate HTTPS certificate.') echo 'No se pudo generar el certificado HTTPS.' ;;
       'HTTPS certificate generated') echo 'Certificado HTTPS generado' ;;
       'HTTPS certificate trusted in macOS login keychain') echo 'Certificado HTTPS confiado en el llavero de inicio de sesión de macOS' ;;
+      'Could not auto-trust the certificate. Add '*) echo "No se pudo confiar automáticamente en el certificado. Añade${1#Could not auto-trust the certificate. Add}" ;;
+      'Could not auto-trust the certificate. Import '*) echo "No se pudo confiar automáticamente en el certificado. Importa${1#Could not auto-trust the certificate. Import}" ;;
       'Could not auto-trust the certificate.'*) echo "No se pudo confiar automáticamente en el certificado.${1#Could not auto-trust the certificate.}" ;;
       'HTTPS certificate trusted in system CA store') echo 'Certificado HTTPS confiado en el almacén de CA del sistema' ;;
+      'No supported CA trust updater found. Import '*) echo "No se encontró un actualizador de confianza CA compatible. Importa${1#No supported CA trust updater found. Import}" ;;
       'No supported CA trust updater found.'*) echo "No se encontró un actualizador de confianza CA compatible.${1#No supported CA trust updater found.}" ;;
       'Installing packages (Python, Node.js, npm, curl, unzip)...') echo 'Instalando paquetes (Python, Node.js, npm, curl, unzip)...' ;;
       'Distro packages did not provide Node.js 22+; downloading the official archive...') echo 'Los paquetes de la distribución no proporcionaron Node.js 22+; se descargará el archivo oficial...' ;;
       'Node.js 22+ installed from a SHA-256-verified archive') echo 'Node.js 22+ instalado desde un archivo verificado con SHA-256' ;;
+      'npm was not installed. Node.js may be missing or installed from NodeSource.') echo 'npm no se instaló. Puede faltar Node.js o estar instalado desde NodeSource.' ;;
       'npm was not installed.'*) echo "npm no se instaló.${1#npm was not installed.}" ;;
       Install\ Node.js\ 22+\ with\ npm\ from\ *) echo "Instala Node.js 22+ con npm desde ${1#Install Node.js 22+ with npm from }" ;;
+      'Unknown Linux package manager. Install Python 3.10+, pip, venv, Node.js 22+, npm, curl, unzip manually.') echo 'Gestor de paquetes de Linux desconocido. Instala manualmente Python 3.10+, pip, venv, Node.js 22+, npm y curl, unzip.' ;;
       'Unknown Linux package manager.'*) echo "Gestor de paquetes de Linux desconocido.${1#Unknown Linux package manager.}" ;;
       'Installation directory must be an absolute path:'*) echo "El directorio de instalación debe ser una ruta absoluta:${1#Installation directory must be an absolute path:}" ;;
       'Linux dependencies ready') echo 'Dependencias de Linux listas' ;;
@@ -140,10 +146,12 @@ if [ "$LANGUAGE" = "es" ]; then
       'macOS dependencies ready') echo 'Dependencias de macOS listas' ;;
       'Windows detected. Please ensure you have:') echo 'Windows detectado. Asegúrate de tener:' ;;
       'Python 3.10 or newer was not found.') echo 'No se encontró Python 3.10 o posterior.' ;;
+      'Node.js 22 or newer is required. Install an active Node.js LTS release and run the installer again.') echo 'Se requiere Node.js 22 o posterior. Instala una versión LTS activa de Node.js y vuelve a ejecutar el instalador.' ;;
       'Node.js 22 or newer is required.'*) echo "Se requiere Node.js 22 o posterior.${1#Node.js 22 or newer is required.}" ;;
+      'npm was not found next to Node.js. Install the complete Node.js distribution and retry.') echo 'No se encontró npm junto a Node.js. Instala la distribución completa de Node.js y vuelve a intentarlo.' ;;
       'npm was not found next to Node.js.'*) echo "No se encontró npm junto a Node.js.${1#npm was not found next to Node.js.}" ;;
       'Runtime versions ready:'*) echo "Versiones del entorno listas:${1#Runtime versions ready:}" ;;
-      'Unknown TRINAXAI_PROFILE='*) echo "TRINAXAI_PROFILE desconocido; se usará el perfil automático" ;;
+      'Unknown TRINAXAI_PROFILE='*) profile_value="${1#Unknown TRINAXAI_PROFILE=}"; echo "TRINAXAI_PROFILE desconocido=${profile_value%%; using *}; se usará ${profile_value#*; using }" ;;
       'Automatic setup selected: profile='*) echo "Configuración automática seleccionada: perfil=${1#Automatic setup selected: profile=}" ;;
       'Could not generate admin token.'*) echo "No se pudo generar el token de administrador.${1#Could not generate admin token.}" ;;
       'Admin token generated and saved to .env') echo 'Token de administrador generado y guardado en .env' ;;
@@ -173,8 +181,8 @@ if [ "$LANGUAGE" = "es" ]; then
       Node.js\ not\ found.\ Install\ from\ *) echo "No se encontró Node.js. Instálalo desde ${1#Node.js not found. Install from }" ;;
       'The PWA needs Node.js 22+ to build and serve') echo 'La PWA necesita Node.js 22+ para compilarse y servirse' ;;
       'chat-pwa/ directory not found') echo 'No se encontró el directorio chat-pwa/' ;;
-      Only\ *GB\ free.*) echo "Solo queda ${1#Only }; las descargas de modelos pueden fallar; libera espacio antes de descargar modelos grandes." ;;
-      Vision\ model\ *\ will\ download\ on\ first\ image\ analysis.) echo "El modelo de visión ${1#Vision model }; se descargará al analizar la primera imagen." ;;
+      Only\ *GB\ free.*) disk_value="${1#Only }"; echo "Solo quedan ${disk_value%% free.*} libres. Las descargas de modelos pueden fallar; libera espacio antes de descargar modelos grandes." ;;
+      Vision\ model\ *\ will\ download\ on\ first\ image\ analysis.) vision_value="${1#Vision model }"; echo "El modelo de visión ${vision_value%% will download on first image analysis.} se descargará al analizar la primera imagen." ;;
       'Ollama is not available yet; skipping model downloads.'*) echo "Ollama aún no está disponible; se omiten las descargas de modelos. TrinaxAI se instalará de todos modos." ;;
       'After installing/starting Ollama, run:'*) echo "Después de instalar/iniciar Ollama, ejecuta:${1#After installing/starting Ollama, run:}" ;;
       'Skipping model download.'*) echo "Se omite la descarga de modelos. Puedes descargarlos después con:${1#Skipping model download.}" ;;
@@ -183,21 +191,111 @@ if [ "$LANGUAGE" = "es" ]; then
       'Starting TrinaxAI services...') echo 'Iniciando servicios de TrinaxAI...' ;;
       'Supervisor returned a non-zero status; checking the RAG API directly.') echo 'El supervisor devolvió un estado distinto de cero; se comprobará la API RAG directamente.' ;;
       'TrinaxAI and the RAG API are ready') echo 'TrinaxAI y la API RAG están listas' ;;
+      'Backend, PWA, and smoke inference are ready') echo 'Backend, PWA e inferencia de prueba están listas' ;;
       'TrinaxAI did not answer on the health endpoint yet.'*) echo "TrinaxAI aún no responde en el endpoint de salud.${1#TrinaxAI did not answer on the health endpoint yet.}" ;;
+      'Start skipped. Run '*) echo "Inicio omitido. Ejecuta${1#Start skipped. Run}" ;;
       'Start skipped.'*) echo "Inicio omitido.${1#Start skipped.}" ;;
       'Enabling safe weekly updates from GitHub...') echo 'Activando actualizaciones semanales seguras desde GitHub...' ;;
       'Automatic updates enabled (weekly)') echo 'Actualizaciones automáticas activadas (semanales)' ;;
+      'Could not enable the weekly task. Run: '*) echo "No se pudo activar la tarea semanal. Ejecuta:${1#Could not enable the weekly task. Run:}" ;;
       'Could not enable the weekly task.'*) echo "No se pudo activar la tarea semanal.${1#Could not enable the weekly task.}" ;;
       'Auto-start enabled') echo 'Inicio automático activado' ;;
+      'Could not enable auto-start automatically. Use: '*) echo "No se pudo activar el inicio automático. Usa:${1#Could not enable auto-start automatically. Use:}" ;;
       'Could not enable auto-start automatically.'*) echo "No se pudo activar el inicio automático.${1#Could not enable auto-start automatically.}" ;;
       'Auto-start skipped because TrinaxAI was not started. Enable it after starting TrinaxAI.') echo 'El inicio automático se omitió porque TrinaxAI no se inició. Actívalo después de iniciar TrinaxAI.' ;;
+      'Auto-start skipped. Enable it later in PWA Settings.') echo 'Inicio automático omitido. Actívalo después en Configuración de la PWA.' ;;
       'Auto-start skipped.'*) echo "Inicio automático omitido.${1#Auto-start skipped.}" ;;
+      '--profile requires a value') echo 'Se requiere un valor para --profile' ;;
+      '--language requires a value') echo 'Se requiere un valor para --language' ;;
+      'No interactive terminal; using default answer for:'*) echo "No hay una terminal interactiva; se usará la respuesta predeterminada para:${1#No interactive terminal; using default answer for:}" ;;
+      'Setup mode: Normal recommended or Advanced manual?') echo 'Modo de configuración: ¿Normal recomendado o Avanzado manual?' ;;
+      'Choose profile') echo 'Elige el perfil' ;;
+      'General chat model') echo 'Modelo de chat general' ;;
+      'Code model') echo 'Modelo de código' ;;
+      'Deep analysis model') echo 'Modelo de análisis profundo' ;;
+      'Fast model') echo 'Modelo rápido' ;;
+      'Embedding model for RAG') echo 'Modelo de embeddings para RAG' ;;
+      'Vision/image model') echo 'Modelo de visión/imágenes' ;;
+      'Required Ollama model is not ready:'*) echo "El modelo requerido de Ollama no está listo:${1#Required Ollama model is not ready:}" ;;
+      'TrinaxAI backend is not ready on port '*) echo "El backend de TrinaxAI no está listo en el puerto${1#TrinaxAI backend is not ready on port }" ;;
+      'TrinaxAI PWA is not ready on port '*) echo "La PWA de TrinaxAI no está lista en el puerto${1#TrinaxAI PWA is not ready on port }" ;;
+      'TrinaxAI smoke inference failed.') echo 'Falló la inferencia de prueba de TrinaxAI.' ;;
+      'No official Node.js 22 binary is available for Linux architecture:'*) echo "No hay un binario oficial de Node.js 22 para la arquitectura Linux:${1#No official Node.js 22 binary is available for Linux architecture:}" ;;
+      'Could not resolve a current Node.js 22 release from nodejs.org.') echo 'No se pudo determinar una versión actual de Node.js 22 desde nodejs.org.' ;;
+      'nodejs.org returned an invalid Node.js version:'*) echo "nodejs.org devolvió una versión de Node.js no válida:${1#nodejs.org returned an invalid Node.js version:}" ;;
+      'Node.js 22 checksum manifest has no valid entry for '*) echo "El manifiesto de sumas de Node.js 22 no tiene una entrada válida para${1#Node.js 22 checksum manifest has no valid entry for }" ;;
+      'sha256sum, shasum, or openssl is required to verify Node.js.') echo 'Se requiere sha256sum, shasum u openssl para verificar Node.js.' ;;
+      'The Node.js archive failed SHA-256 verification.') echo 'El archivo de Node.js no superó la verificación SHA-256.' ;;
+      'The Node.js archive was incomplete.') echo 'El archivo de Node.js estaba incompleto.' ;;
+      'System dependencies already available') echo 'Las dependencias del sistema ya están disponibles' ;;
+      'Homebrew is required but was not found. Install Homebrew and run the installer again.') echo 'Se requiere Homebrew, pero no se encontró. Instala Homebrew y vuelve a ejecutar el instalador.' ;;
+      'macOS dependencies could not be installed.') echo 'No se pudieron instalar las dependencias de macOS.' ;;
+      '  • Python 3.10+ from '*) echo "  • Python 3.10+ desde${1#  • Python 3.10+ from }" ;;
+      '  • WSL2 recommended for full functionality') echo '  • Se recomienda WSL2 para disfrutar de toda la funcionalidad' ;;
+      'Installer failed with exit code '*'. The error is above.') echo "El instalador falló con el código de salida ${1#Installer failed with exit code }; el error aparece arriba." ;;
+      'Press Enter to close this window...') echo 'Presiona Enter para cerrar esta ventana...' ;;
+      'Refusing an unsafe installation directory:'*) echo "Se rechaza un directorio de instalación inseguro:${1#Refusing an unsafe installation directory:}" ;;
+      'Installation directory must not be a symbolic link:'*) echo "El directorio de instalación no puede ser un enlace simbólico:${1#Installation directory must not be a symbolic link:}" ;;
+      'Installation directory is not a directory:'*) echo "El directorio de instalación no es un directorio:${1#Installation directory is not a directory:}" ;;
+      'Downloaded source package is empty.') echo 'El paquete fuente descargado está vacío.' ;;
+      'Downloaded source package is not a valid gzip-compressed tar archive.') echo 'El paquete fuente descargado no es un archivo tar comprimido con gzip válido.' ;;
+      'Downloaded source package contains duplicate paths.') echo 'El paquete fuente descargado contiene rutas duplicadas.' ;;
+      'Downloaded source package contains an unsafe path:'*) echo "El paquete fuente descargado contiene una ruta insegura:${1#Downloaded source package contains an unsafe path:}" ;;
+      'Downloaded source package must contain one source directory.') echo 'El paquete fuente descargado debe contener un solo directorio fuente.' ;;
+      'Downloaded source package contains runtime data:'*) echo "El paquete fuente descargado contiene datos de ejecución:${1#Downloaded source package contains runtime data:}" ;;
+      'Downloaded source package has an unexpected root directory.') echo 'El paquete fuente descargado tiene un directorio raíz inesperado.' ;;
+      'Downloaded source package is missing pyproject.toml.') echo 'Al paquete fuente descargado le falta pyproject.toml.' ;;
+      'Downloaded source package metadata could not be inspected.') echo 'No se pudieron inspeccionar los metadatos del paquete fuente descargado.' ;;
+      'Downloaded source package contains an unsafe link or file type.') echo 'El paquete fuente descargado contiene un enlace o tipo de archivo inseguro.' ;;
+      'Downloaded source package has no usable source directory.') echo 'El paquete fuente descargado no tiene un directorio fuente utilizable.' ;;
+      '0/6 Downloading TrinaxAI') echo '0/6 Descargando TrinaxAI' ;;
+      'Install directory exists but is not a TrinaxAI installation:'*) echo "El directorio de instalación existe, pero no es una instalación de TrinaxAI:${1#Install directory exists but is not a TrinaxAI installation:}" ;;
+      'Choose another location with --install-dir PATH.') echo 'Elige otra ubicación con --install-dir PATH.' ;;
+      'Existing TrinaxAI installation found at '*) echo "Se encontró una instalación existente de TrinaxAI en${1#Existing TrinaxAI installation found at }" ;;
+      'TRINAXAI_RELEASE_VERSION must be a semantic version.') echo 'TRINAXAI_RELEASE_VERSION debe ser una versión semántica.' ;;
+      'Source package URL must use HTTPS.') echo 'La URL del paquete fuente debe usar HTTPS.' ;;
+      'TRINAXAI_SOURCE_URL requires TRINAXAI_SOURCE_SHA256.') echo 'TRINAXAI_SOURCE_URL requiere TRINAXAI_SOURCE_SHA256.' ;;
+      'Could not obtain a valid SHA-256 for the source package.') echo 'No se pudo obtener un SHA-256 válido para el paquete fuente.' ;;
+      'sha256sum or shasum is required to verify the source package.') echo 'Se requiere sha256sum o shasum para verificar el paquete fuente.' ;;
+      'The source package failed SHA-256 verification.') echo 'El paquete fuente no superó la verificación SHA-256.' ;;
+      'Could not detect hardware or calculate the recommended profile.') echo 'No se pudo detectar el hardware ni calcular el perfil recomendado.' ;;
+      'Could not calculate model recommendations for profile='*) echo "No se pudieron calcular las recomendaciones de modelos para el perfil ${1#Could not calculate model recommendations for profile=}" ;;
+      'Use recommended Ollama models, or configure your own?') echo '¿Usar los modelos recomendados de Ollama o configurar modelos propios?' ;;
+      'Continue configuration generated for profile='*) echo "Configuración de Continue generada para el perfil ${1#Continue configuration generated for profile=}" ;;
+      'Refusing to write .env through a symbolic link.') echo 'Se rechaza escribir .env a través de un enlace simbólico.' ;;
+      '.env already exists; preserving the existing configuration') echo 'Ya existe .env; se conserva la configuración existente' ;;
+      'Ollama is not ready on http://localhost:11434.') echo 'Ollama no está listo en http://localhost:11434.' ;;
+      'Ollama is not installed. Download it from: '*) echo "Ollama no está instalado. Descárgalo desde:${1#Ollama is not installed. Download it from:}" ;;
+      'Ollama API ready') echo 'API de Ollama lista' ;;
+      'Ollama installation completed without a usable ollama command.') echo 'La instalación de Ollama terminó sin un comando ollama utilizable.' ;;
+      'PWA dependency installation failed.') echo 'Falló la instalación de dependencias de la PWA.' ;;
+      'PWA build failed - retry with:'*) echo "Falló la compilación de la PWA; reintenta con:${1#PWA build failed - retry with:}" ;;
+      'PWA build completed without dist/index.html') echo 'La compilación de la PWA terminó sin dist/index.html' ;;
+      'PWA build ready') echo 'Compilación de la PWA lista' ;;
+      'Node.js 22+ and npm are required to build the PWA. Install them from '*) echo "Se necesitan Node.js 22+ y npm para compilar la PWA. Instálalos desde${1#Node.js 22+ and npm are required to build the PWA. Install them from }" ;;
+      'chat-pwa/package.json and package-lock.json are required for the PWA.') echo 'La PWA requiere chat-pwa/package.json y package-lock.json.' ;;
+      'TrinaxAI works best with these models:') echo 'TrinaxAI funciona mejor con estos modelos:' ;;
+      'General chat:') echo 'Chat general:' ;;
+      'Code/router:') echo 'Código/router:' ;;
+      'Deep analysis:') echo 'Análisis profundo:' ;;
+      'Embeddings:') echo 'Embeddings:' ;;
+      'Vision (lazy):') echo 'Visión (bajo demanda):' ;;
+      'Pulling') echo 'Descargando' ;;
+      'Ollama is not available; required models cannot be prepared.') echo 'Ollama no está disponible; no se pueden preparar los modelos requeridos.' ;;
+      'Required Ollama models are not ready. Re-run without --no-models or pull the configured models.') echo 'Los modelos requeridos de Ollama no están listos. Vuelve a ejecutar sin --no-models o descarga los modelos configurados.' ;;
+      'Required Ollama models are not ready.'*) echo "Los modelos requeridos de Ollama no están listos.${1#Required Ollama models are not ready.}" ;;
+      'Download the configured Ollama models now? Choose N to defer model downloads.') echo '¿Descargar ahora los modelos configurados de Ollama? Elige N para dejar las descargas para después.' ;;
+      'Model pull failed:') echo 'Falló la descarga del modelo:' ;;
+      'Start TrinaxAI now after install?') echo '¿Iniciar TrinaxAI después de instalar?' ;;
+      'TrinaxAI services failed to start.') echo 'No se pudieron iniciar los servicios de TrinaxAI.' ;;
+      'Start TrinaxAI automatically when your computer turns on?') echo '¿Iniciar TrinaxAI automáticamente al encender el equipo?' ;;
+      'You can change this later in the PWA Settings page.') echo 'Puedes cambiar esto después en la página Configuración de la PWA.' ;;
+      'Enable auto-start on boot?') echo '¿Activar el inicio automático al arrancar?' ;;
+      'Settings, indexes, models, and personal data were preserved.') echo 'Se conservaron la configuración, los índices, los modelos y los datos personales.' ;;
       *) echo "$1" ;;
     esac
   }
-else
-  tr_text_en() { case "$1" in title) echo 'TrinaxAI One-Command Installer' ;; usage) echo 'Usage:' ;; guided) echo 'Guided install (asks optional choices)' ;; automatic) echo 'Automatic install for CI/scripts' ;; skip_models) echo 'Skip model downloads; prepare them later' ;; help) echo 'Show this help' ;; 'LAN / Red local') echo 'LAN' ;; *) echo "$1" ;; esac; }
-fi
+tr_text_en() { case "$1" in title) echo 'TrinaxAI One-Command Installer' ;; usage) echo 'Usage:' ;; guided) echo 'Guided install (asks optional choices)' ;; automatic) echo 'Automatic install for CI/scripts' ;; skip_models) echo 'Skip model downloads; prepare them later' ;; help) echo 'Show this help' ;; 'LAN / Red local') echo 'LAN' ;; *) echo "$1" ;; esac; }
 if [ "$LANGUAGE" = "es" ]; then
   tr_text() { tr_text_es "$@"; }
 else
@@ -314,12 +412,12 @@ while [ "$#" -gt 0 ]; do
     --lan-system) LEGACY_LAN_SYSTEM_REQUEST=1;;
     --profile)
       shift
-      [ "$#" -gt 0 ] || { echo "--profile requires a value" >&2; exit 2; }
+      [ "$#" -gt 0 ] || { echo "$(tr_text '--profile requires a value')" >&2; exit 2; }
       PROFILE_OVERRIDE="${1:-}"
       ;;
     --profile=*)
       PROFILE_OVERRIDE="${1#*=}"
-      [ -n "$PROFILE_OVERRIDE" ] || { echo "--profile requires a value" >&2; exit 2; }
+      [ -n "$PROFILE_OVERRIDE" ] || { echo "$(tr_text '--profile requires a value')" >&2; exit 2; }
       ;;
     --install-dir)
       shift
@@ -332,14 +430,14 @@ while [ "$#" -gt 0 ]; do
       ;;
     --language|--lang)
       shift
-      [ "$#" -gt 0 ] || { echo "--language requires a value" >&2; exit 2; }
+      [ "$#" -gt 0 ] || { echo "$(tr_text '--language requires a value')" >&2; exit 2; }
       LANGUAGE_EXPLICIT="${1:-}"
       LANGUAGE_LOWER="$(printf '%s' "$LANGUAGE_EXPLICIT" | tr '[:upper:]' '[:lower:]')"
       case "$LANGUAGE_LOWER" in es*|*_es*) LANGUAGE=es ;; *) LANGUAGE=en ;; esac
       ;;
     --language=*|--lang=*)
       LANGUAGE_EXPLICIT="${1#*=}"
-      [ -n "$LANGUAGE_EXPLICIT" ] || { echo "--language requires a value" >&2; exit 2; }
+      [ -n "$LANGUAGE_EXPLICIT" ] || { echo "$(tr_text '--language requires a value')" >&2; exit 2; }
       LANGUAGE_LOWER="$(printf '%s' "$LANGUAGE_EXPLICIT" | tr '[:upper:]' '[:lower:]')"
       case "$LANGUAGE_LOWER" in es*|*_es*) LANGUAGE=es ;; *) LANGUAGE=en ;; esac
       ;;
@@ -350,6 +448,11 @@ while [ "$#" -gt 0 ]; do
   esac
   shift
 done
+
+case "$PROFILE_OVERRIDE" in
+  ""|8gb|16gb|32gb|64gb) ;;
+  *) echo "Invalid --profile: $PROFILE_OVERRIDE (expected 8gb, 16gb, 32gb, or 64gb)" >&2; exit 2;;
+esac
 
 if [ -z "$LANGUAGE_EXPLICIT" ] && [ "$INTERACTIVE" = "1" ] && [ -r /dev/tty ]; then
   language_reply=""
@@ -413,7 +516,15 @@ as_root() {
   fi
 }
 ask() {
-  local prompt="$(tr_text "$1")" reply=""
+  local prompt="$1" reply="" suffix=""
+  if [[ "$prompt" == *" [Y/n]" ]]; then
+    suffix=" [Y/n]"
+    prompt="${prompt:0:${#prompt}-${#suffix}}"
+  elif [[ "$prompt" == *" [y/N]" ]]; then
+    suffix=" [y/N]"
+    prompt="${prompt:0:${#prompt}-${#suffix}}"
+  fi
+  prompt="$(tr_text "$prompt")$suffix"
   if [ "${INTERACTIVE:-1}" != "1" ]; then
     echo ""
     return 0
@@ -423,7 +534,7 @@ ask() {
   elif [ -t 0 ]; then
     read -r -p "$(echo -e "${GREEN}[?]${NC} $prompt ")" reply || reply=""
   else
-    echo -e "${YELLOW}[!]${NC} No interactive terminal; using default answer for: $prompt" >&2
+    echo -e "${YELLOW}[!]${NC} $(tr_text "No interactive terminal; using default answer for: $prompt")" >&2
   fi
   echo "$reply"
 }
@@ -804,8 +915,8 @@ pause_on_macos_failure() {
   local status=$?
   trap - EXIT
   if [ "$status" -ne 0 ] && [ "$OS" = "macos" ] && [ "${INTERACTIVE:-0}" = "1" ] && [ -r /dev/tty ]; then
-    printf '\n[!] Installer failed with exit code %s. The error is above.\n' "$status" >&2
-    read -r -p "Press Enter to close this window..." _ </dev/tty || true
+    printf '\n[!] %s\n' "$(tr_text "Installer failed with exit code $status. The error is above.")" >&2
+    read -r -p "$(tr_text 'Press Enter to close this window...')" _ </dev/tty || true
   fi
   exit "$status"
 }
@@ -984,7 +1095,11 @@ run_dry_run() {
   echo ""
   echo -e "${BOLD}${CYAN}$(tr_text 'Links to enter')${NC}"
   echo "  Localhost:       https://localhost:3334"
-  echo "  $(tr_text 'LAN / Red local'): https://[YOUR-LAN-IP]:3334"
+  if [ "$LANGUAGE" = "es" ]; then
+    echo "  LAN / Red local: https://[TU-IP-LAN]:3334"
+  else
+    echo "  LAN:             https://[YOUR-LAN-IP]:3334"
+  fi
   echo "  $(tr_text 'RAG health'):      https://localhost:3333/health"
   echo ""
   print_ok "Dry-run finished; no changes were made"
@@ -1046,7 +1161,7 @@ if [ -z "$SCRIPT_DIR" ] || [ ! -f "$SCRIPT_DIR/rag_api.py" ] || [ ! -f "$SCRIPT_
     mkdir -p "$(dirname "$REPO_DIR")"
     temp_dir="$(mktemp -d "${TMPDIR:-/tmp}/trinaxai.XXXXXX")"
     trap 'rm -rf -- "$temp_dir"' EXIT
-    release_version="${TRINAXAI_RELEASE_VERSION:-1.2.5}"
+    release_version="${TRINAXAI_RELEASE_VERSION:-1.2.6}"
     if [ -n "$release_version" ] && [[ ! "$release_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
       print_err "TRINAXAI_RELEASE_VERSION must be a semantic version."
       exit 2
@@ -1447,12 +1562,12 @@ fi
 configured_models
 
 echo ""
-echo -e "${YELLOW}TrinaxAI works best with these models:${NC}"
-echo "  General chat:   $MODEL_GENERAL"
-echo "  Code/router:    $MODEL_CODE"
-echo "  Deep analysis:  $MODEL_DEEP"
-echo "  Embeddings:     $EMBED_MODEL"
-echo "  Vision (lazy):  $VISION_MODEL"
+echo -e "${YELLOW}$(tr_text 'TrinaxAI works best with these models:')${NC}"
+echo "  $(tr_text 'General chat:')   $MODEL_GENERAL"
+echo "  $(tr_text 'Code/router:')    $MODEL_CODE"
+echo "  $(tr_text 'Deep analysis:')  $MODEL_DEEP"
+echo "  $(tr_text 'Embeddings:')     $EMBED_MODEL"
+echo "  $(tr_text 'Vision (lazy):')  $VISION_MODEL"
 echo ""
 
 if [ "$INSTALL_MODELS" = "1" ]; then
@@ -1466,9 +1581,9 @@ fi
 if [ "$INSTALL_MODELS" = "1" ]; then
   if ensure_ollama_running; then
     for model in "${MODELS[@]}"; do
-      echo "  Pulling $model..."
+      echo "  $(tr_text 'Pulling') $model..."
       if ! ollama pull "$model" || ! ollama_model_installed "$model"; then
-        print_err "$model failed"
+        print_err "$(tr_text 'Model pull failed:') $model"
         exit 1
       fi
       print_ok "$model"
@@ -1512,8 +1627,8 @@ fi
 
 if [ "$START_NOW" = "1" ] && [ "$ENABLE_AUTOSTART" = "1" ]; then
   echo ""
-  echo -e "${YELLOW}Start TrinaxAI automatically when your computer turns on?${NC}"
-  echo "You can change this later in the PWA Settings page."
+  echo -e "${YELLOW}$(tr_text 'Start TrinaxAI automatically when your computer turns on?')${NC}"
+  echo "$(tr_text 'You can change this later in the PWA Settings page.')"
   if ask_yes_no "Enable auto-start on boot?" y; then
     ENABLE_AUTOSTART=1
   else
@@ -1548,7 +1663,11 @@ if [ "$START_NOW" = "1" ]; then
   if [ -n "${LAN_IP:-}" ]; then
     echo -e "  ${BLUE}$(tr_text 'LAN / Red local'):${NC} https://${LAN_IP}:3334"
   else
-    echo -e "  ${BLUE}$(tr_text 'LAN / Red local'):${NC} https://[YOUR-LAN-IP]:3334"
+    if [ "$LANGUAGE" = "es" ]; then
+      echo -e "  ${BLUE}LAN / Red local:${NC} https://[TU-IP-LAN]:3334"
+    else
+      echo -e "  ${BLUE}LAN:${NC}             https://[YOUR-LAN-IP]:3334"
+    fi
   fi
   echo -e "  ${BLUE}$(tr_text 'RAG health'):${NC}    https://localhost:3333/health"
   echo -e "  ${BLUE}$(tr_text 'Ollama API'):${NC}    http://localhost:11434"

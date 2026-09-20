@@ -64,6 +64,20 @@ def test_agent_setup_task_failure_and_eof_are_safe(monkeypatch) -> None:
     assert agent.run(SimpleNamespace(prompt=None, session="test"), None, ui, object()) == 0
 
 
+def test_agent_cli_marks_degraded_model_fallback(monkeypatch) -> None:
+    engine = SimpleNamespace(
+        workspace_root=Path("."), model="model", completion_status="degraded", run=lambda _messages: "fallback"
+    )
+    monkeypatch.setattr(agent, "_build_engine", lambda *_args: engine)
+    monkeypatch.setattr(agent, "Session", _Session)
+    ui = MagicMock()
+
+    assert agent.run(SimpleNamespace(prompt="task", session="test"), None, ui, object()) == 0
+    ui.warn.assert_called_once_with(
+        "Agent response is degraded: the model request failed, so the displayed answer may be incomplete."
+    )
+
+
 def test_memory_commands_cover_success_validation_and_backend_failure() -> None:
     client = MagicMock()
     ui = MagicMock()

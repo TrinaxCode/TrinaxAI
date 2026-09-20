@@ -33,6 +33,12 @@ class CLIParserTests(unittest.TestCase):
         self.assertEqual(args.command, "index")
         self.assertEqual(args.path, ".")
 
+    def test_browse_accepts_source_id(self) -> None:
+        files = _build_parser().parse_args(["browse", "list-files", "--source-id", "source-1"])
+        chunks = _build_parser().parse_args(["browse", "show-chunks", "--file", "guide.md", "--source-id", "source-1"])
+        self.assertEqual(files.source_id, "source-1")
+        self.assertEqual(chunks.source_id, "source-1")
+
     def test_export_accepts_pdf_and_word_formats(self) -> None:
         pdf = _build_parser().parse_args(["export", "--format", "pdf"])
         word = _build_parser().parse_args(["export", "--format", "word"])

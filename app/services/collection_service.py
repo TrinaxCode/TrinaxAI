@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 # ruff: noqa: F405
 from .shared_runtime import (
     CollectionCreateRequest,
@@ -100,7 +102,25 @@ async def collections_delete(collection_id: str, request: Request):
         collections = _read_collections_unlocked()
         if not any(item["id"] == collection_id for item in collections):
             raise HTTPException(status_code=404, detail="Collection not found.")
-    deleted_nodes = await run_in_threadpool(_delete_collection_nodes, collection_id)
+    try:
+        deleted_nodes = await asyncio.wait_for(
+            run_in_threadpool(_delete_collection_nodes, collection_id),
+            timeout=config._env_float(
+                "TRINAXAI_COLLECTION_DELETE_TIMEOUT",
+                5.0,
+                minimum=0.1,
+                maximum=120.0,
+            ),
+        )
+    except (asyncio.TimeoutError, TimeoutError) as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "index_busy",
+                "message": "The collection index is busy; retry the deletion shortly.",
+                "retryable": True,
+            },
+        ) from exc
     with state.collections_lock:
         collections = _read_collections_unlocked()
         _write_collections_unlocked([item for item in collections if item["id"] != collection_id])

@@ -4,7 +4,7 @@
 
 <p align="center">
   <a href="https://github.com/TrinaxCode/TrinaxAI"><img src="https://img.shields.io/github/stars/TrinaxCode/TrinaxAI?style=flat&amp;label=%E2%98%85&amp;color=006bbd" alt="GitHub stars"></a>
-  <a href="https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.2.5"><img src="https://img.shields.io/badge/version-1.2.5-006bbd" alt="Stable release: 1.2.5"></a>
+  <a href="https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.2.6"><img src="https://img.shields.io/badge/version-1.2.6-006bbd" alt="Stable release: 1.2.6"></a>
   <a href="https://github.com/TrinaxCode/TrinaxAI/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/TrinaxCode/TrinaxAI/ci.yml?branch=main&amp;label=CI" alt="CI status"></a>
   <a href="https://github.com/TrinaxCode/TrinaxAI/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0--or--later-006bbd" alt="License: AGPL-3.0-or-later"></a>
   <img src="https://img.shields.io/badge/macOS%20%7C%20Windows%20%7C%20Linux-4493F8?style=flat-square" alt="Supported platforms: macOS, Windows, and Linux">
@@ -126,7 +126,7 @@ iniciales son `chat,read_private`; `web` es el único scope adicional opcional.
 vinculados y se rechazan incluso con credencial admin enviada desde LAN.
 
 El navegador guarda las credenciales nuevas de pairing en una cookie
-`HttpOnly; SameSite=Strict` con alcance `/api/rag`; solo un bearer legacy se lee
+`HttpOnly; SameSite=Strict` con alcance `/api`; solo un bearer legacy se lee
 del almacenamiento web durante la migración explícita de `/v1/pairing/me`. Una
 CLI empaquetada que actúa como dispositivo remoto emparejado lee
 `TRINAXAI_DEVICE_TOKEN` y envía
@@ -244,3 +244,8 @@ problemas](TROUBLESHOOTING.es.md) y la [guía de desarrollo](DEVELOPER_GUIDE.es.
 salida de `--help` antes de automatizarlos. El comando reservado `trinaxai mcp`
 termina con código `2` y no inicia un servidor MCP en esta versión; usa la API
 HTTP o los comandos de CLI disponibles.
+
+En una instalación nueva sin una carpeta del usuario indexada, el informe
+humano de `doctor` muestra `Index built` como `INFO` e indica cómo ejecutar
+`trinaxai index .`; es un estado normal de configuración, no un fallo del
+servicio.

@@ -18,12 +18,15 @@ if TYPE_CHECKING:
     from llama_index.core.schema import Document
 
 import config
+from trinaxai_cli.i18n import resolve_lang
+from trinaxai_cli.i18n import text as _text
 from trinaxai_core import sanitize_collection_id, source_id_for_root
 
 EXTRACTOR_EXTS = {".pdf", ".docx"}
 TEXT_ENCODINGS = ("utf-8-sig", "utf-8", "cp1252", "latin-1")
 _TEXT_SAMPLE_BYTES = 8192
 _EPUB_TEXT_LIMIT = 20 * 1024 * 1024
+_HTML_SOURCE_FALLBACK_LIMIT = 64 * 1024
 _SENSITIVE_NAMES = {".env", ".netrc", ".npmrc", ".pypirc", "credentials.json", "secrets.json", "id_rsa", "id_ed25519"}
 _SENSITIVE_EXTENSIONS = {".key", ".pem", ".p12", ".pfx"}
 COLLECTION_ID = sanitize_collection_id(
@@ -68,7 +71,15 @@ def _html_to_text(value: str) -> str:
     parser = _HTMLTextExtractor()
     parser.feed(value)
     parser.close()
-    return parser.text()
+    text = parser.text()
+    if text:
+        return text
+    # SPAs commonly contain only a mount element and scripts. Keep a bounded,
+    # inert source representation so they can be searched without running JS.
+    source = value.replace("\x00", "").strip()
+    if not source:
+        return ""
+    return "[HTML source fallback: no visible text]\n" + source[:_HTML_SOURCE_FALLBACK_LIMIT]
 
 
 @dataclass(frozen=True)
@@ -126,9 +137,19 @@ def default_source_context() -> SourceContext:
     return SourceContext.create(config.PROJECTS_DIRS[0])
 
 
-def collect_files(root: str) -> list[str]:
-    """Walk ``root`` while pruning dependencies, hidden folders and secrets."""
-    allowed = {extension.lower() for extension in config.REQUIRED_EXTS}
+def _is_sensitive_filename(filename: str) -> bool:
+    lower_name = filename.lower()
+    return (
+        lower_name in _SENSITIVE_NAMES
+        or lower_name.startswith(".env.")
+        or os.path.splitext(lower_name)[1] in _SENSITIVE_EXTENSIONS
+    )
+
+
+def is_indexable_file(path: str) -> bool:
+    """Return whether the discovery policy accepts one regular file."""
+    filename = os.path.basename(path)
+    lower_name = filename.lower()
     allowed_names = {
         "dockerfile",
         "makefile",
@@ -139,6 +160,23 @@ def collect_files(root: str) -> list[str]:
         "gemfile",
         "procfile",
     }
+    if _is_sensitive_filename(filename) or (filename.startswith(".") and lower_name not in allowed_names):
+        return False
+    if os.path.islink(path):
+        return False
+    try:
+        if os.path.getsize(path) > config.max_file_bytes(path):
+            return False
+    except OSError:
+        return False
+    extension = os.path.splitext(lower_name)[1]
+    if extension in config.LARGE_DOCUMENT_EXTENSIONS:
+        return True
+    return is_probably_text_file(path)
+
+
+def collect_files(root: str) -> list[str]:
+    """Walk ``root`` while pruning dependencies, hidden folders and secrets."""
     files: list[str] = []
     skipped_big = 0
     file_count = 0
@@ -151,35 +189,23 @@ def collect_files(root: str) -> list[str]:
             and not directory.endswith((".egg-info", ".dist-info"))
         ]
         for filename in filenames:
-            lower_name = filename.lower()
-            if (
-                lower_name in _SENSITIVE_NAMES
-                or lower_name.startswith(".env.")
-                or os.path.splitext(lower_name)[1] in _SENSITIVE_EXTENSIONS
-            ):
-                continue
-            if filename.startswith(".") and filename.lower() not in allowed_names:
-                continue
             full_path = os.path.join(dirpath, filename)
-            if os.path.islink(full_path):
-                continue
             try:
                 if os.path.getsize(full_path) > config.max_file_bytes(full_path):
                     skipped_big += 1
                     continue
             except OSError:
                 continue
-            known_type = filename.lower() in allowed_names or os.path.splitext(filename)[1].lower() in allowed
-            if not known_type and not is_probably_text_file(full_path):
+            if not is_indexable_file(full_path):
                 continue
             files.append(full_path)
             file_count += 1
             if file_count % 5000 == 0:
-                print(f"   📂 {file_count} archivos encontrados...", flush=True)
+                print(_text("idx_files_found_progress", resolve_lang(), count=file_count), flush=True)
     if file_count >= 5000:
-        print(f"   📂 {file_count} archivos encontrados en total")
+        print(_text("idx_files_found_total", resolve_lang(), count=file_count))
     if skipped_big:
-        print(f"   ⏭️  {skipped_big} archivos omitidos por tamaño (sobre el límite configurado para su tipo de archivo)")
+        print(_text("idx_skipped_big", resolve_lang(), count=skipped_big))
     return files
 
 

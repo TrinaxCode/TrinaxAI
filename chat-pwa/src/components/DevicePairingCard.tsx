@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
 import { MdCheck, MdContentCopy, MdDevices, MdLink, MdLinkOff } from 'react-icons/md';
 
 import { useI18n } from '../i18n/I18nContext';
@@ -70,6 +71,7 @@ export default function DevicePairingCard({
   const [repairOpen, setRepairOpen] = useState(false);
 
   const loadManagedDevices = async (): Promise<boolean> => {
+    if (!isLocalAuthority) return false;
     try {
       setManagedDevices(await listPairedDevices());
       setCanManageDevices(true);
@@ -93,7 +95,7 @@ export default function DevicePairingCard({
     let retryTimer: number | undefined;
     let requestInFlight = false;
     const refresh = async () => {
-      if (!active || document.hidden || requestInFlight) return;
+      if (!isLocalAuthority || !active || document.hidden || requestInFlight) return;
       requestInFlight = true;
       const succeeded = await loadManagedDevices();
       requestInFlight = false;
@@ -111,10 +113,12 @@ export default function DevicePairingCard({
       retryDelay = MANAGED_DEVICE_RETRY_DELAY_MS;
       void refresh();
     };
-    void refresh();
-    window.addEventListener('focus', onWake);
-    window.addEventListener('online', onWake);
-    document.addEventListener('visibilitychange', onWake);
+    if (isLocalAuthority) {
+      void refresh();
+      window.addEventListener('focus', onWake);
+      window.addEventListener('online', onWake);
+      document.addEventListener('visibilitychange', onWake);
+    }
     return () => {
       active = false;
       window.clearTimeout(retryTimer);
@@ -268,10 +272,21 @@ export default function DevicePairingCard({
           </div>
         </div>
       )}
-      {error && <div role="alert" className="text-[10px] text-red-400">
-        <p>{error}</p>
-        <button type="button" onClick={() => setRepairOpen(true)} className="mt-1 text-[#006bbd] underline underline-offset-2">{t('fixError')}</button>
-      </div>}
+      <AnimatePresence initial={false}>
+        {error && (
+          <motion.div
+            role="alert"
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+            className="overflow-hidden text-[10px] text-red-400"
+          >
+            <p>{error}</p>
+            <button type="button" onClick={() => setRepairOpen(true)} className="mt-1 text-[#006bbd] underline underline-offset-2">{t('fixError')}</button>
+          </motion.div>
+        )}
+      </AnimatePresence>
       <ConfirmModal
         open={pendingRevokeId !== null}
         title={t('deviceRevokeConfirmTitle')}

@@ -4,7 +4,7 @@
 
 <p align="center">
   <a href="https://github.com/TrinaxCode/TrinaxAI"><img src="https://img.shields.io/github/stars/TrinaxCode/TrinaxAI?style=flat&amp;label=%E2%98%85&amp;color=006bbd" alt="GitHub stars"></a>
-  <a href="https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.2.5"><img src="https://img.shields.io/badge/version-1.2.5-006bbd" alt="Stable release: 1.2.5"></a>
+  <a href="https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.2.6"><img src="https://img.shields.io/badge/version-1.2.6-006bbd" alt="Stable release: 1.2.6"></a>
   <a href="https://github.com/TrinaxCode/TrinaxAI/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/TrinaxCode/TrinaxAI/ci.yml?branch=main&amp;label=CI" alt="CI status"></a>
   <a href="https://github.com/TrinaxCode/TrinaxAI/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0--or--later-006bbd" alt="License: AGPL-3.0-or-later"></a>
   <img src="https://img.shields.io/badge/macOS%20%7C%20Windows%20%7C%20Linux-4493F8?style=flat-square" alt="Supported platforms: macOS, Windows, and Linux">
@@ -20,7 +20,31 @@ chat, cited RAG, optional web research, a sandboxed coding agent, a CLI, and an
 installable PWA. Inference and indexed data stay on the configured host unless
 you explicitly choose a remote service.
 
+## Screenshots
+
+These repository captures show the daily loop in the dark PWA UI:
+
+| Flow | English | Español |
+| --- | --- | --- |
+| Chat with citations | [Open](docs/assets/screenshots/chat-citations-en.png) | [Abrir](docs/assets/screenshots/chat-citations-es.png) |
+| Indexing job | [Open](docs/assets/screenshots/indexing-job-en.png) | [Abrir](docs/assets/screenshots/indexing-job-es.png) |
+| Pairing | [Open](docs/assets/screenshots/pairing-en.png) | [Abrir](docs/assets/screenshots/pairing-es.png) |
+| Agent approval | [Open](docs/assets/screenshots/agent-approval-en.png) | [Abrir](docs/assets/screenshots/agent-approval-es.png) |
+
 ## Quick start
+
+### npm CLI
+
+Install the short cross-platform launcher with npm, then let it download and
+verify the matching official release installer:
+
+```bash
+npm install --global trinaxai@latest
+trinaxai setup
+```
+
+The npm package is only the launcher; the existing verified release installer
+still performs the full backend, PWA, Ollama, and model setup.
 
 ### Fast install — Linux and macOS
 
@@ -34,7 +58,7 @@ model profile, verifies the source archive checksum, builds the PWA, checks
 Ollama and the required models, runs a smoke inference, and starts the app.
 
 ```bash
-set -e; version="1.2.5"; base="https://github.com/TrinaxCode/TrinaxAI/releases/download/v${version}"; installer="$(mktemp)"; trap 'rm -f "$installer"' EXIT; curl -fsSL "$base/TrinaxAI-${version}-installer.sh" -o "$installer"; expected="$(curl -fsSL "$base/SHA256SUMS" | awk -v asset="TrinaxAI-${version}-installer.sh" '$2 == asset || $2 == "*" asset { print $1; exit }')"; actual="$( (shasum -a 256 "$installer" 2>/dev/null || sha256sum "$installer") | awk '{print $1}' )"; test "$expected" = "$actual"; bash "$installer"
+set -e; version="1.2.6"; base="https://github.com/TrinaxCode/TrinaxAI/releases/download/v${version}"; installer="$(mktemp)"; trap 'rm -f "$installer"' EXIT; curl -fsSL "$base/TrinaxAI-${version}-installer.sh" -o "$installer"; expected="$(curl -fsSL "$base/SHA256SUMS" | awk -v asset="TrinaxAI-${version}-installer.sh" '$2 == asset || $2 == "*" asset { print $1; exit }')"; actual="$( (shasum -a 256 "$installer" 2>/dev/null || sha256sum "$installer") | awk '{print $1}' )"; test "$expected" = "$actual"; bash "$installer"
 ```
 
 ### Fast install — Windows PowerShell
@@ -46,7 +70,7 @@ SHA-256 before execution.
 
 ```powershell
 $ErrorActionPreference = "Stop"
-$version = "1.2.5"
+$version = "1.2.6"
 $base = "https://github.com/TrinaxCode/TrinaxAI/releases/download/v$version"
 $installer = Join-Path $env:TEMP "TrinaxAI-$version-installer.ps1"
 $manifest = Join-Path $env:TEMP "TrinaxAI-$version-SHA256SUMS"
@@ -162,6 +186,9 @@ Keep ports `3333` and `11434` private, keep `storage/.proxy_secret` protected,
 and use a VPN instead of opening the host to the public Internet. Read the
 [security guide](docs/SECURITY.md), [pairing guide](docs/NETWORK_PAIRING.md),
 and [release-signing guide](docs/RELEASE_SIGNING.md).
+
+For security vulnerabilities, email `trinaxcode@gmail.com`; do not open a
+public issue. See the [security guide](docs/SECURITY.md) for the full process.
 
 ## Supported platforms
 

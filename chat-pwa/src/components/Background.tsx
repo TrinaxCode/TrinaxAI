@@ -145,7 +145,7 @@ const Background = memo(function Background({ isDark, active = true }: Backgroun
   return (
     <canvas
       ref={canvasRef}
-      className="fixed inset-0 w-full h-full pointer-events-none"
+      className="background-waves fixed inset-0 w-full h-full pointer-events-none"
       style={{ zIndex: 0 }}
       aria-hidden="true"
     />

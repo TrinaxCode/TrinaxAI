@@ -99,7 +99,13 @@ def _resolve_in_workspace(workspace_root: Path, rel: str) -> Path:
         # child directory. This also handles Windows' case-insensitive names.
         parts = candidate.parts
         if parts and parts[0].casefold() == root.name.casefold():
-            candidate = Path(*parts[1:]) or Path(".")
+            # Prefer a real child named like the workspace over the legacy
+            # model-prefix convention.  Otherwise ``workspace/file`` could
+            # never address ``<workspace>/workspace/file``.  If that child
+            # does not exist, retain the convenient legacy interpretation.
+            written = root / candidate
+            if not written.exists() and not (root / parts[0]).is_dir():
+                candidate = Path(*parts[1:]) or Path(".")
         candidate = root / candidate
     # ``resolve`` collapses ``..`` and follows symlinks so we compare real paths.
     resolved = candidate.resolve()
@@ -176,7 +182,18 @@ def format_tool_failure(tool_name: str, detail: object, *, external: bool = Fals
     reason = str(detail).strip()
     if reason.lower().startswith("error:"):
         reason = reason[6:].strip()
-    reason = re.sub(r"(?i)(api[_-]?key|token|password|secret)=\S+", r"\1=[redacted]", reason)
+    # Tool errors may echo request headers or JSON payloads. Keep the error
+    # useful while never feeding credentials back into a model or UI.
+    reason = re.sub(
+        r"(?i)(authorization\s*[:=]\s*bearer\s+)([^\s,;]+)",
+        r"\1[redacted]",
+        reason,
+    )
+    reason = re.sub(
+        r"(?i)(\b(?:api[_-]?key|token|password|secret)\b[\"']?\s*[:=]\s*)(?:\"[^\"]*\"|'[^']*'|[^\s,;}\]]+)",
+        r"\1[redacted]",
+        reason,
+    )
     reason = _truncate(reason or "The tool returned no usable result.", 600)
     return (
         f"{_DEGRADED_TOOL_MARKER} tool={safe_name}]\n"

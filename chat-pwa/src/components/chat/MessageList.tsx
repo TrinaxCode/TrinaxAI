@@ -485,7 +485,7 @@ export default function MessageList({
                     </button>
                   )}
                 </div>
-                <div className="mt-1 flex items-center gap-2">
+                <div className="chat-actions mt-1 flex w-full items-center gap-2">
                   {message.completionStatus === 'pending' && (
                     <span role="status" className="text-[11px] text-amber-600">{message.canContinue && (message.maxContinuations === undefined || (message.continuationCount || 0) < message.maxContinuations) ? t('completionPending') : t('completionLimitReached')}</span>
                   )}
@@ -521,6 +521,7 @@ export default function MessageList({
                       {ttsActiveKey === `msg-${index}` ? <MdStop size={15} /> : <MdVolumeUp size={15} />}
                     </button>
                   )}
+                  {message.model && <span className="chat-model-label">{message.model}</span>}
                 </div>
                 <Sources
                   sources={message.sources}
@@ -565,7 +566,7 @@ export default function MessageList({
                   ) : null}
                   {displayContent(message) && <p className="chat-plain-text min-w-0 max-w-full whitespace-pre-wrap">{displayContent(message)}</p>}
                 </div>
-                <div className="mt-1 flex items-center gap-1">
+                <div className="chat-actions mt-1 flex items-center gap-1">
                   <button onClick={() => onStartEdit(index)} className={`rounded-md p-1 transition-colors ${isDark ? 'text-white/35 hover:bg-white/[0.06] hover:text-white/75' : 'text-gray-500 hover:bg-gray-100 hover:text-gray-700'}`} title={t('clickToEdit')} aria-label={t('clickToEdit')}><MdEdit size={15} /></button>
                   <button
                     onClick={() => onCopy(displayContent(message), `msg-copy-${index}`)}

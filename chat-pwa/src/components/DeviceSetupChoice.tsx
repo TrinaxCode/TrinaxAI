@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { motion } from 'framer-motion';
 import { MdAddCircleOutline, MdDevices } from 'react-icons/md';
 
 import { useI18n } from '../i18n/I18nContext';
@@ -7,7 +8,7 @@ import DevicePairingCard from './DevicePairingCard';
 import BackButton from './BackButton';
 
 interface Props {
-  onNewDevice: () => void;
+  onNewDevice: () => void | Promise<void>;
   preferExisting?: boolean;
 }
 
@@ -16,6 +17,8 @@ export default function DeviceSetupChoice({ onNewDevice, preferExisting = false 
   const { t } = useI18n();
   const { isDark } = useTheme();
   const [mode, setMode] = useState<'choose' | 'existing'>(preferExisting ? 'existing' : 'choose');
+  const [newDeviceBusy, setNewDeviceBusy] = useState(false);
+  const [newDeviceError, setNewDeviceError] = useState(false);
   const previousMode = useRef(mode);
   const existingButtonRef = useRef<HTMLButtonElement>(null);
   const backButtonRef = useRef<HTMLButtonElement>(null);
@@ -29,8 +32,27 @@ export default function DeviceSetupChoice({ onNewDevice, preferExisting = false 
     }
   }, [mode]);
 
+  const handleNewDevice = async () => {
+    setNewDeviceBusy(true);
+    setNewDeviceError(false);
+    try {
+      await onNewDevice();
+    } catch {
+      setNewDeviceError(true);
+    } finally {
+      setNewDeviceBusy(false);
+    }
+  };
+
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center overflow-y-auto p-4" role="main">
+    <motion.div
+      className="fixed inset-0 z-[60] flex items-center justify-center overflow-y-auto p-4"
+      role="main"
+      initial={{ opacity: 0, scale: 0.985 }}
+      animate={{ opacity: 1, scale: 1 }}
+      exit={{ opacity: 0, scale: 0.985 }}
+      transition={{ duration: 0.24, ease: [0.16, 1, 0.3, 1] }}
+    >
       <section className={`w-full max-w-md rounded-3xl border p-6 shadow-2xl ${card}`}>
         {mode === 'choose' ? (
           <>
@@ -59,7 +81,9 @@ export default function DeviceSetupChoice({ onNewDevice, preferExisting = false 
               </button>
               <button
                 type="button"
-                onClick={onNewDevice}
+                onClick={() => void handleNewDevice()}
+                disabled={newDeviceBusy}
+                aria-busy={newDeviceBusy}
                 className={`group flex min-h-16 items-center gap-3 rounded-2xl border p-4 text-left transition-[background-color,border-color,transform] hover:bg-[#006bbd]/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4aa7ed] active:scale-[0.99] ${isDark ? 'border-white/[0.1]' : 'border-gray-200'}`}
               >
                 <MdAddCircleOutline size={23} className="shrink-0 text-[#4aa7ed]" aria-hidden="true" />
@@ -68,6 +92,7 @@ export default function DeviceSetupChoice({ onNewDevice, preferExisting = false 
                   <small className={`mt-1 block leading-relaxed ${muted}`}>{t('deviceSetupNewHint')}</small>
                 </span>
               </button>
+              {newDeviceError && <p role="alert" className="text-sm text-red-400">{t('deviceSetupNewError')}</p>}
             </div>
           </>
         ) : (
@@ -80,6 +105,6 @@ export default function DeviceSetupChoice({ onNewDevice, preferExisting = false 
           </>
         )}
       </section>
-    </div>
+    </motion.div>
   );
 }

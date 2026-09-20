@@ -42,21 +42,55 @@ def _tls_context(key: Path, cert: Path) -> ssl.SSLContext:
     return context
 
 
-def _page(token: str, *, error: str = "", effective_url: str = "http://localhost:3334/") -> bytes:
+_COPY: dict[str, dict[str, str]] = {
+    "en": {
+        "title": "TrinaxAI is off",
+        "status": "TrinaxAI is currently off. Do you want to start the whole system?",
+        "local_only": "Only available on this computer:",
+        "start": "Start TrinaxAI",
+        "starting": "Starting TrinaxAI...",
+        "start_failed": "TrinaxAI could not be started. Try again.",
+        "request_failed": "The start request could not be sent. Try again.",
+    },
+    "es": {
+        "title": "TrinaxAI est&aacute; apagado",
+        "status": "TrinaxAI se encuentra apagado en este momento. &iquest;Deseas activar todo el sistema?",
+        "local_only": "Solo disponible en este equipo:",
+        "start": "Activar TrinaxAI",
+        "starting": "Iniciando TrinaxAI...",
+        "start_failed": "No se pudo iniciar TrinaxAI. Intenta de nuevo.",
+        "request_failed": "No se pudo solicitar el arranque. Intenta de nuevo.",
+    },
+}
+
+
+def _safe_lang(value: str | None) -> str:
+    return "es" if str(value or "").lower().split(",", 1)[0].strip().startswith("es") else "en"
+
+
+def _page(
+    token: str,
+    *,
+    error: str = "",
+    effective_url: str = "http://localhost:3334/",
+    lang: str = "en",
+) -> bytes:
+    copy = _COPY[_safe_lang(lang)]
     message = f'<p class="error">{html.escape(error)}</p>' if error else ""
     return f"""<!doctype html>
-<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>TrinaxAI est&aacute; apagado</title><style>
+<html lang="{_safe_lang(lang)}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{copy["title"]}</title><style>
 *{{box-sizing:border-box}}body{{margin:0;min-height:100vh;display:grid;place-items:center;background:#050b12;color:#eef7ff;font:16px system-ui,sans-serif;padding:24px}}
 main{{width:min(460px,100%);padding:38px;border:1px solid #1d4665;border-radius:24px;background:#0b1722;box-shadow:0 20px 70px #0008;text-align:center}}
 .mark{{font-size:42px;color:#42c6a5}}h1{{margin:12px 0 8px;font-size:27px}}p{{color:#a9c0d1;line-height:1.55}}button{{margin-top:18px;border:0;border-radius:12px;padding:13px 24px;background:#0879c9;color:white;font-weight:700;font-size:15px;cursor:pointer}}button:disabled{{opacity:.6;cursor:wait}}.error{{color:#ff9b9b}}
-</style></head><body><main><div class="mark">&#9670;</div><h1>TrinaxAI est&aacute; apagado</h1>
-<p id="status">TrinaxAI se encuentra apagado en este momento. &iquest;Deseas activar todo el sistema?</p>
-<p>Solo disponible en este equipo: <code>{html.escape(effective_url)}</code><br>Only available on this computer.</p>{message}
-<button id="start" type="button">Activar TrinaxAI</button></main><script>
+</style></head><body><main><div class="mark">&#9670;</div><h1>{copy["title"]}</h1>
+<p id="status">{copy["status"]}</p>
+<p>{copy["local_only"]} <code>{html.escape(effective_url)}</code></p>{message}
+<button id="start" type="button">{copy["start"]}</button></main><script>
 const token={json.dumps(token)};const button=document.getElementById('start');const status=document.getElementById('status');
-button.onclick=async()=>{{button.disabled=true;status.textContent='Iniciando TrinaxAI...';try{{const r=await fetch('/api/recovery/start',{{method:'POST',headers:{{'X-Recovery-Token':token,'Content-Type':'application/json'}},body:'{{}}',cache:'no-store'}});if(!r.ok)throw new Error('start_failed');
-let attempts=0;const check=async()=>{{try{{const h=await fetch('/api/network',{{cache:'no-store'}});if(h.ok){{location.reload();return}}}}catch{{}}if(++attempts<80)setTimeout(check,750);else{{status.textContent='No se pudo iniciar TrinaxAI. Intenta de nuevo.';button.disabled=false}}}};setTimeout(check,500)}}catch{{status.textContent='No se pudo solicitar el arranque. Intenta de nuevo.';button.disabled=false}}}};
+const copy={json.dumps({key: copy[key] for key in ("starting", "start_failed", "request_failed")}, ensure_ascii=False)};
+button.onclick=async()=>{{button.disabled=true;status.textContent=copy.starting;try{{const r=await fetch('/api/recovery/start',{{method:'POST',headers:{{'X-Recovery-Token':token,'Content-Type':'application/json'}},body:'{{}}',cache:'no-store'}});if(!r.ok)throw new Error('start_failed');
+let attempts=0;const check=async()=>{{try{{const h=await fetch('/api/network',{{cache:'no-store'}});if(h.ok){{location.reload();return}}}}catch{{}}if(++attempts<80)setTimeout(check,750);else{{status.textContent=copy.start_failed;button.disabled=false}}}};setTimeout(check,500)}}catch{{status.textContent=copy.request_failed;button.disabled=false}}}};
 </script></body></html>""".encode("utf-8")
 
 
@@ -99,6 +133,7 @@ class RecoveryHandler(http.server.BaseHTTPRequestHandler):
                 _page(
                     self.server.recovery_token,
                     effective_url=f"{scheme}://localhost:{self.server.server_port}/",
+                    lang=self.headers.get("Accept-Language", ""),
                 ),
             )
         else:

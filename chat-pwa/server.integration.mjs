@@ -129,7 +129,7 @@ test('production gateway preserves credentials, replaces proxy identity, and rej
     received = { path: req.url, headers: req.headers };
     res.writeHead(200, {
       'Content-Type': 'application/json',
-      'Set-Cookie': 'trinaxai-device-token=backend-cookie; Path=/api/rag; HttpOnly; SameSite=Strict',
+      'Set-Cookie': 'trinaxai-device-token=backend-cookie; Path=/api; HttpOnly; SameSite=Strict',
     });
     res.end('{"ok":true}');
   });
@@ -175,7 +175,7 @@ test('production gateway preserves credentials, replaces proxy identity, and rej
     assert.equal(received.headers['x-trinaxai-proxy'], 'v1');
     assert.notEqual(received.headers['x-trinaxai-proxy-signature'], undefined);
     assert.match(response.headers.get('set-cookie') || '', /HttpOnly/);
-    assert.match(response.headers.get('set-cookie') || '', /Path=\/api\/rag/);
+    assert.match(response.headers.get('set-cookie') || '', /Path=\/api/);
 
     const encodedPath = await fetch(`http://127.0.0.1:${gatewayPort}/api/rag/private%20file?value=1`, {
       headers: { 'X-Admin-Token': 'test-admin-token', 'X-TrinaxAI-Device-Token': 'device-credential' },

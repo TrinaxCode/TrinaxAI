@@ -46,8 +46,17 @@ import {
   userFacingErrorDetails,
   visionSystemPrompt,
 } from './api';
+import { validateIndexJobStatus } from './api_http';
 
 describe('api helpers', () => {
+  it('preserves actionable index failures from the backend', () => {
+    const job = validateIndexJobStatus({
+      id: 'job-1', status: 'completed', failures: [{ path: 'bad.pdf', reason: 'unreadable' }], retry_recommended: true,
+    });
+
+    expect(job.failures).toEqual([{ path: 'bad.pdf', reason: 'unreadable' }]);
+    expect(job.retry_recommended).toBe(true);
+  });
   it('defaults the shared thinking preference on and honors its stored value', () => {
     localStorage.removeItem('tc-thinking-mode');
     expect(thinkingModeEnabled()).toBe(true);
@@ -248,7 +257,7 @@ describe('api helpers', () => {
     const sse = [
       'data: {"choices":[{"delta":{"content":"Primero "}}]}\n\n',
       'data: {"choices":[{"delta":{"content":"segundo"}}]}\n\n',
-      'data: {"trinaxai_sources":[{"file":"https://example.test","url":"https://example.test","title":"Artículo","project":"","snippet":"evidence","score":null}],"trinaxai_research":{"passes":1,"web_search":true,"web_provider":"duckduckgo","search_query":"consulta fuente oficial"}}\n\n',
+      'data: {"trinaxai_finish":{"reason":"stop","status":"complete"},"trinaxai_answer":"Primero segundo [1].","trinaxai_sources":[{"file":"https://example.test","url":"https://example.test","title":"Artículo","project":"","snippet":"evidence","score":null}],"trinaxai_research":{"passes":1,"web_search":true,"web_provider":"duckduckgo","search_query":"consulta fuente oficial"}}\n\n',
       'data: [DONE]\n\n',
     ].join('');
     const tokens: string[] = [];
@@ -266,7 +275,7 @@ describe('api helpers', () => {
     vi.stubGlobal('fetch', fetchMock);
     try {
       await expect(runResearch('consulta', { webSearch: true, onToken: (token) => tokens.push(token) })).resolves.toMatchObject({
-        answer: 'Primero segundo',
+        answer: 'Primero segundo [1].',
         sources: [{ title: 'Artículo' }],
         search_query: 'consulta fuente oficial',
       });
@@ -357,6 +366,7 @@ describe('api helpers', () => {
     try {
       await expect(streamRag([{ role: 'user', content: 'hola' }], vi.fn())).resolves.toBe('ok');
       expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toMatchObject({ mode: 'knowledge' });
+      expect(fetchMock.mock.calls[0][1].credentials).toBe('include');
 
       await expect(streamRag(
         [{ role: 'user', content: 'que archivos hay en el rag' }],
@@ -707,6 +717,19 @@ def mystery(A):
     ];
     expect(indexableFilesFrom(files).map((file) => file.name)).toEqual([
       'deck.pptx', 'legacy.ppt', 'budget.xlsx', 'notes.odt',
+    ]);
+  });
+
+  it('matches backend indexable document formats without accepting secrets or arbitrary binaries', () => {
+    const files = [
+      'page.htm', 'page.xhtml', 'book.epub', 'message.eml', 'records.ndjson',
+      'map.geojson', 'event.ics', 'contact.vcf', 'captions.srt', 'notes.adoc',
+      '.env', 'credentials', 'credentials.json', 'private-key.json', 'id_rsa', 'private.key', 'archive.zip', 'image.png',
+    ].map((name) => new File(['demo'], name));
+
+    expect(indexableFilesFrom(files).map((file) => file.name)).toEqual([
+      'page.htm', 'page.xhtml', 'book.epub', 'message.eml', 'records.ndjson',
+      'map.geojson', 'event.ics', 'contact.vcf', 'captions.srt', 'notes.adoc',
     ]);
   });
 

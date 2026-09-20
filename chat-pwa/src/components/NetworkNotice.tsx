@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
 import { MdClose, MdContentCopy, MdDeleteOutline, MdLan, MdOpenInNew, MdRefresh } from 'react-icons/md';
 import { systemFetch } from '../lib/authHeaders';
 import { wipeRevokedDeviceData } from '../lib/deviceWipe';
@@ -110,15 +111,21 @@ export default function NetworkNotice({ canManageSystem }: { canManageSystem: bo
     }
   };
 
-  if (!offline && !readyUrl && !info?.needsRefresh) return null;
-  if (!readyUrl && dismissed === signature) return null;
+  const noticeActive = (offline || Boolean(readyUrl) || Boolean(info?.needsRefresh))
+    && (Boolean(readyUrl) || dismissed !== signature);
   const command = info?.refreshCommand || 'trinaxai network refresh';
 
   return (
     <>
-    <aside
+    <AnimatePresence>
+      {noticeActive && (
+    <motion.aside
       role="status"
       aria-live="polite"
+      initial={{ opacity: 0, y: 20, scale: 0.97 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      exit={{ opacity: 0, y: 20, scale: 0.97 }}
+      transition={{ duration: 0.26, ease: [0.16, 1, 0.3, 1] }}
       className={`fixed inset-x-3 bottom-[calc(env(safe-area-inset-bottom,0px)+6rem)] z-[65] mx-auto max-w-xl rounded-2xl border p-4 shadow-2xl backdrop-blur-xl ${
         isDark ? 'border-amber-300/25 bg-[#111827]/95 text-white' : 'border-amber-500/30 bg-white/95 text-gray-900'
       }`}
@@ -177,7 +184,9 @@ export default function NetworkNotice({ canManageSystem }: { canManageSystem: bo
           <MdClose size={18} />
         </button>
       </div>
-    </aside>
+    </motion.aside>
+      )}
+    </AnimatePresence>
     <ConfirmModal
       open={confirmRemoveOld}
       title={t('networkRemoveOld')}

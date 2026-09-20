@@ -42,7 +42,7 @@ def _research_iter_nodes(collection: str | None = None):
         yield node_id, node
 
 
-def sources_list(collection: str | None = None, request: Request = None):
+def sources_list(collection: str | None = None, request: Request = None, source_id: str | None = None):
     """List source files in a collection with chunk counts and a preview snippet.
 
     Response: ``{"collection": str, "sources": [{"file", "source_id",
@@ -50,7 +50,8 @@ def sources_list(collection: str | None = None, request: Request = None):
     """
     _authorize_system(request)
     target = (collection or "").strip() or config.DEFAULT_COLLECTION_ID
-    cache_key = ("sources:list", target)
+    target_source_id = (source_id or "").strip() or None
+    cache_key = ("sources:list", target, target_source_id)
     cached = _cache_get(
         state.sources_cache,
         state.sources_cache_lock,
@@ -66,6 +67,8 @@ def sources_list(collection: str | None = None, request: Request = None):
         meta = getattr(node, "metadata", {}) or {}
         rel = _public_rel_path(meta)
         source_id = str(meta.get("source_id") or "").strip() or None
+        if target_source_id is not None and source_id != target_source_id:
+            continue
         text = node.get_content() if hasattr(node, "get_content") else str(node)
         size = len(text.encode("utf-8"))
         mtime = float(meta.get("mtime") or meta.get("file_mtime") or 0.0)

@@ -40,6 +40,11 @@ describe('SSE stream parser', () => {
     expect(result.meta?.sources?.[0].file).toBe('a.py');
   });
 
+  it('parses the backend-validated research answer separately from live tokens', () => {
+    expect(parseRagSseLine('data: {"trinaxai_finish":{"reason":"stop"},"trinaxai_answer":"Respuesta limpia","trinaxai_sources":[]}'))
+      .toMatchObject({ finalAnswer: 'Respuesta limpia', meta: { finishReason: 'stop', sources: [] } });
+  });
+
   it('parses retrieval decisions from preview and final metadata', () => {
     expect(parseRagSseLine('data: {"trinaxai":{"model":"qwen","project":null,"mode":"knowledge","rag_used":true,"collections":["docs"]}}')).toEqual({
       meta: {

@@ -4,7 +4,7 @@
 
 <p align="center">
   <a href="https://github.com/TrinaxCode/TrinaxAI"><img src="https://img.shields.io/github/stars/TrinaxCode/TrinaxAI?style=flat&amp;label=%E2%98%85&amp;color=006bbd" alt="GitHub stars"></a>
-  <a href="https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.2.5"><img src="https://img.shields.io/badge/version-1.2.5-006bbd" alt="Stable release: 1.2.5"></a>
+  <a href="https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.2.6"><img src="https://img.shields.io/badge/version-1.2.6-006bbd" alt="Stable release: 1.2.6"></a>
   <a href="https://github.com/TrinaxCode/TrinaxAI/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/TrinaxCode/TrinaxAI/ci.yml?branch=main&amp;label=CI" alt="CI status"></a>
   <a href="https://github.com/TrinaxCode/TrinaxAI/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0--or--later-006bbd" alt="License: AGPL-3.0-or-later"></a>
   <img src="https://img.shields.io/badge/macOS%20%7C%20Windows%20%7C%20Linux-4493F8?style=flat-square" alt="Supported platforms: macOS, Windows, and Linux">
@@ -27,7 +27,7 @@ Back it up before any destructive maintenance.
 | The selected collection was not found. | Open **Settings → Indexing → Collections**, choose an existing collection or create one, select it in chat, then retry. The CLI equivalent is `trinaxai collections list`. |
 | An indexing job failed or stopped. | Open **Settings → Indexing**, inspect the failed phase, and select **Retry**. Reindex only after checking the source, model, and available memory. |
 | The PWA says the local service is offline. | On the host, select **Start AI** in the local PWA or run `trinaxai status` and `trinaxai doctor`. |
-| A model is missing. | Run `ollama list`, then `ollama pull MODEL`, or use the model action in **Settings → General**. Confirm that the selected model matches the active profile. |
+| A model is missing. | Run `ollama list`, then `ollama pull MODEL`, or use the model action in **Settings → Advanced**. Confirm that the selected model matches the active profile. |
 | A model will not load, or memory is exhausted. | Stop competing workloads, choose a smaller model/profile, lower concurrency or context, and retry. Do not remove the index unless the error says the embedding configuration changed. |
 | A phone cannot open the PWA. | Run `trinaxai network refresh` on the host, open the printed HTTPS URL, trust the public CA on the phone, and allow only gateway port `3334`. Keep `3333` and `11434` closed to the LAN. |
 | Search mode cannot find the web. | Check the configured provider and Internet connection. Local RAG does not require Internet; use RAG when the answer should come from indexed files. |

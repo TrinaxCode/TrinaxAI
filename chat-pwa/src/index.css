@@ -368,6 +368,38 @@ html.dark .docs-page .page-header {
   transform: translateY(-1px);
 }
 
+/* Active header tools read as a blue icon instead of a filled square, so the
+   header stays calm and the state is carried by colour. Chat mirrors the agent
+   header, so both toolbars toggle the same way. */
+.page-header button[aria-pressed="true"],
+.chat-header [data-header-tools] button[aria-pressed="true"],
+.page-header button[aria-expanded="true"],
+.chat-header button[aria-expanded="true"] {
+  background-color: transparent !important;
+  box-shadow: none !important;
+}
+
+.page-header button[aria-pressed="true"]:hover,
+.chat-header [data-header-tools] button[aria-pressed="true"]:hover,
+.page-header button[aria-expanded="true"]:hover,
+.chat-header button[aria-expanded="true"]:hover {
+  background-color: transparent !important;
+}
+
+.page-header button[aria-pressed="true"] svg,
+.chat-header [data-header-tools] button[aria-pressed="true"] svg,
+.page-header button[aria-expanded="true"] svg,
+.chat-header button[aria-expanded="true"] svg {
+  color: #168de2 !important;
+}
+
+html.light .page-header button[aria-pressed="true"] svg,
+html.light .chat-header [data-header-tools] button[aria-pressed="true"] svg,
+html.light .page-header button[aria-expanded="true"] svg,
+html.light .chat-header button[aria-expanded="true"] svg {
+  color: #006bbd !important;
+}
+
 .page-header button:active,
 .chat-header button:active,
 .composer-surface button:active {
@@ -377,7 +409,7 @@ html.dark .docs-page .page-header {
 .settings-page .settings-scroll > section > div,
 .settings-page .settings-scroll > div > section > div,
 .settings-page .settings-scroll > div > div,
-.docs-page .docs-content > div > *,
+.docs-page .docs-section,
 .agent-page .agent-empty-state {
   animation: page-item-enter 0.55s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
@@ -390,21 +422,19 @@ html.dark .docs-page .page-header {
 .settings-page .settings-scroll > div > section:nth-child(4) > div { animation-delay: 210ms; }
 
 .settings-page section > div,
-.docs-page .docs-content > div > div,
+.docs-page .docs-article,
 .browser-page .browser-panel,
 .agent-page .agent-empty-state {
-  transition: border-color 0.35s ease, background-color 0.35s ease, box-shadow 0.35s ease, transform 0.35s ease;
+  transition: border-color 0.35s ease, background-color 0.35s ease;
 }
 
 .settings-page section > div:hover,
-.docs-page .docs-content > div > div:hover,
 .browser-page .browser-panel:hover {
   transform: translateY(-1px);
   box-shadow: 0 12px 28px rgba(15, 23, 42, 0.06);
 }
 
 html.dark .settings-page section > div:hover,
-html.dark .docs-page .docs-content > div > div:hover,
 html.dark .browser-page .browser-panel:hover {
   box-shadow: 0 14px 34px rgba(0, 0, 0, 0.22);
 }
@@ -438,11 +468,6 @@ html.dark .browser-page .browser-panel:hover {
 
 .composer-surface {
   position: relative;
-  box-shadow: 0 8px 28px rgba(15, 23, 42, 0.05);
-}
-
-html.dark .composer-surface {
-  box-shadow: 0 10px 34px rgba(0, 0, 0, 0.26);
 }
 
 .sidebar-surface {
@@ -466,6 +491,19 @@ html.dark .sidebar-surface {
 /* ============================================
    Custom Animations
    ============================================ */
+
+/* Keep the waves moving on the compositor while lazy-loaded UI briefly uses
+   the main thread for JavaScript parsing. */
+@keyframes background-waves-drift {
+  from { transform: translate3d(-0.4%, 0, 0) scale(1.01); }
+  to   { transform: translate3d(0.4%, -0.15%, 0) scale(1.01); }
+}
+
+.background-waves {
+  transform-origin: center;
+  will-change: transform;
+  animation: background-waves-drift 12s ease-in-out infinite alternate;
+}
 
 /* TrinaxAI brand title — smooth color wave (dark mode) */
 @keyframes brand-shift {
@@ -622,6 +660,19 @@ html.light .animate-brand {
   animation: agent-avatar-in 0.6s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
+/* Toast countdown — the strip that shows how long a notice stays on screen.
+   Runs on the compositor and pauses in lockstep with the hover/focus hold. */
+@keyframes toast-countdown {
+  from { transform: scaleX(1); }
+  to   { transform: scaleX(0); }
+}
+
+.toast-countdown {
+  transform-origin: left center;
+  animation: toast-countdown linear forwards;
+  will-change: transform;
+}
+
 /* Modal (folder picker) — scale + fade entrance / exit */
 @keyframes modal-in {
   from { opacity: 0; transform: translateY(10px) scale(0.96); }
@@ -749,6 +800,7 @@ html.light .prose code:not(pre code) {
   width: max-content;
   min-width: min(100%, 36rem);
   border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
 }
 
 .docs-content code {
@@ -769,6 +821,17 @@ html.light .prose code:not(pre code) {
   .docs-content table {
     min-width: 32rem;
   }
+}
+
+/* Docs skeleton placeholder while a reference loads */
+.docs-skeleton-bar {
+  animation: docs-skeleton-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes docs-skeleton-pulse {
+  0%,
+  100% { opacity: 0.5; }
+  50% { opacity: 1; }
 }
 
 /* ============================================
@@ -833,7 +896,8 @@ html.light .prose code:not(pre code) {
   .settings-page .settings-scroll > section > div,
   .settings-page .settings-scroll > div > section > div,
   .settings-page .settings-scroll > div > div,
-  .docs-page .docs-content > div > *,
+  .docs-page .docs-section,
+  .docs-skeleton-bar,
   .agent-page .agent-empty-state {
     animation: none !important;
   }
@@ -847,5 +911,27 @@ html.light .prose code:not(pre code) {
   }
   .hover\:bg-gray-100:hover {
     background-color: transparent;
+  }
+}
+
+/* Controls that stay hidden until their row is hovered must not capture taps
+   while invisible: they are inert until revealed. Touch screens have no hover,
+   so there the control stays visible instead of becoming unreachable. */
+.hover-reveal {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.group:hover .hover-reveal,
+.group:focus-within .hover-reveal,
+.hover-reveal:focus-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+@media (hover: none), (pointer: coarse) {
+  .hover-reveal {
+    opacity: 1;
+    pointer-events: auto;
   }
 }

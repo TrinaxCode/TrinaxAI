@@ -36,7 +36,7 @@ def test_manifest_exposes_only_cli_and_development_dependencies() -> None:
         "rich>=13.0",
     ]
     optional = manifest.split("[project.optional-dependencies]", 1)[1].split("\n[", 1)[0]
-    assert re.findall(r"(?m)^([A-Za-z0-9_-]+)\s*=", optional) == ["dev"]
+    assert re.findall(r"(?m)^([A-Za-z0-9_-]+)\s*=", optional) == ["voice", "dev"]
     assert "Development Status :: 5 - Production/Stable" in manifest
     assert "Development Status :: 4 - Beta" not in manifest
 
@@ -134,7 +134,7 @@ for command in pkgutil.iter_modules(trinaxai_cli.commands.__path__):
     importlib.import_module(f"trinaxai_cli.commands.{command.name}")
 
 metadata = next(importlib.metadata.distributions(path=[target])).metadata
-assert metadata.get_all("Provides-Extra") == ["dev"]
+assert metadata.get_all("Provides-Extra") == ["voice", "dev"]
 assert "Development Status :: 5 - Production/Stable" in metadata.get_all("Classifier")
 assert "Development Status :: 4 - Beta" not in metadata.get_all("Classifier")
 

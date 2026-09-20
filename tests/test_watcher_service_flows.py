@@ -76,6 +76,26 @@ def test_watcher_event_hooks_group_nested_roots_and_ignore_runtime(monkeypatch, 
     handler.shutdown()
 
 
+def test_watcher_ignores_trinaxai_runtime_tree_inside_broad_watch_root(monkeypatch, tmp_path: Path) -> None:
+    checkout = tmp_path / "Insider" / "ai-rag"
+    local_sources = checkout / "local_sources"
+    storage = checkout / "storage"
+    checkout.mkdir(parents=True)
+    local_sources.mkdir()
+    storage.mkdir()
+    monkeypatch.setattr(watcher_service.config, "BASE_DIR", str(checkout))
+    monkeypatch.setattr(watcher_service.config, "LOCAL_SOURCES_DIR", str(local_sources))
+    monkeypatch.setattr(watcher_service.config, "PERSIST_DIR", str(storage))
+    handler = watcher_service._watch_Handler([str(tmp_path)])
+    try:
+        assert handler._ignored(str(checkout / "local_sources" / "collections" / "upload" / "page.html")) is True
+        assert handler._ignored(str(checkout / "storage" / "index_jobs.json")) is True
+        assert handler._ignored(str(checkout / "chat-pwa" / "dist" / "assets" / "app.js")) is True
+        assert handler._ignored(str(tmp_path / "customer" / "page.html")) is False
+    finally:
+        handler.shutdown()
+
+
 def test_watch_start_reports_missing_dependency_invalid_paths_and_existing_observer(
     monkeypatch, tmp_path: Path
 ) -> None:
@@ -116,18 +136,39 @@ def test_seed_watch_mirror_skips_hidden_symlink_and_runtime_content(monkeypatch,
     source.mkdir()
     (source / "keep.txt").write_text("keep", encoding="utf-8")
     (source / ".secret").write_text("hidden", encoding="utf-8")
+    (source / "credentials.json").write_text("credentials", encoding="utf-8")
+    (source / ".env.production").write_text("secret", encoding="utf-8")
+    (source / "archive.zip").write_bytes(b"PK\x03\x04")
+    (source / "binary.txt").write_bytes(b"\x00\x01\x02\xff")
+    (source / "too-big.txt").write_text("too big", encoding="utf-8")
+    (source / "slides.pptx").write_bytes(b"presentation")
     (source / "link").symlink_to(source / "keep.txt")
+    dependency = source / "node_modules"
+    dependency.mkdir()
+    (dependency / "package.js").write_text("dependency", encoding="utf-8")
     storage = source / "storage"
     storage.mkdir()
     (storage / "state.json").write_text("state", encoding="utf-8")
     monkeypatch.setattr(watcher_service.config, "PERSIST_DIR", str(storage))
     monkeypatch.setattr(watcher_service.config, "LOCAL_SOURCES_DIR", str(source / "local"))
+    monkeypatch.setattr(
+        watcher_service.config,
+        "max_file_bytes",
+        lambda path: 1 if Path(path).name == "too-big.txt" else 1024,
+    )
 
     watcher_service._seed_watch_mirror(str(source), str(target))
 
     assert (target / "keep.txt").read_text(encoding="utf-8") == "keep"
     assert not (target / ".secret").exists()
+    assert not (target / "credentials.json").exists()
+    assert not (target / ".env.production").exists()
+    assert not (target / "archive.zip").exists()
+    assert not (target / "binary.txt").exists()
+    assert not (target / "too-big.txt").exists()
+    assert (target / "slides.pptx").exists()
     assert not (target / "link").exists()
+    assert not (target / "node_modules").exists()
     assert not (target / "storage").exists()
 
 
@@ -198,6 +239,10 @@ def test_handler_queue_mirror_and_batch_processing(monkeypatch, tmp_path: Path) 
         assert (mirror / "folder" / "note.txt").read_text(encoding="utf-8") == "new"
         assert results[0]["TRINAXAI_COLLECTION_ID"] == "docs"
 
+        changed.write_bytes(b"\x00\x01\x02\xff")
+        handler._sync_mirror(str(source), str(mirror), [str(changed)])
+        assert not (mirror / "folder" / "note.txt").exists()
+
         changed.unlink()
         handler._sync_mirror(str(source), str(mirror), [str(changed)])
         assert not (mirror / "folder").exists()
@@ -242,20 +287,28 @@ def test_prepare_watch_targets_for_managed_and_external_roots(monkeypatch, tmp_p
     collections = tmp_path / "collections"
     managed = collections / "managed"
     external = tmp_path / "external"
+    other_external = tmp_path / "other-external"
     managed.mkdir(parents=True)
     external.mkdir()
+    other_external.mkdir()
     (external / "note.txt").write_text("note", encoding="utf-8")
+    (other_external / "note.txt").write_text("other", encoding="utf-8")
     monkeypatch.setattr(watcher_service.config, "LOCAL_SOURCES_DIR", str(tmp_path))
     monkeypatch.setattr(
         watcher_service,
         "_read_collections_unlocked",
         lambda: [{"id": "managed", "name": "Managed"}, {"id": "docs", "name": "Docs"}],
     )
-    req = watcher_service.WatchStartRequest(paths=[str(managed), str(external)], collection="docs")
-    mirrors, ids, names = watcher_service._prepare_watch_targets(req, [str(managed), str(external)])
+    req = watcher_service.WatchStartRequest(paths=[str(managed), str(external), str(other_external)], collection="docs")
+    mirrors, ids, names = watcher_service._prepare_watch_targets(
+        req, [str(managed), str(external), str(other_external)]
+    )
     assert mirrors[str(managed)] == str(managed)
     assert ids[str(managed)] == "managed" and names[str(managed)] == "Managed"
     assert Path(mirrors[str(external)], "note.txt").exists()
+    assert mirrors[str(external)] != mirrors[str(other_external)]
+    assert Path(mirrors[str(external)], "note.txt").read_text(encoding="utf-8") == "note"
+    assert Path(mirrors[str(other_external)], "note.txt").read_text(encoding="utf-8") == "other"
     assert ids[str(external)] == "docs"
 
 

@@ -261,6 +261,7 @@ def initialize_runtime() -> None:
     """Initialize heavyweight model/index resources during application startup."""
     runtime = _runtime()
     runtime.state.lifecycle_stopping.clear()
+    runtime.harden_persist_directory(runtime.config.PERSIST_DIR)
     try:
         runtime.Settings.embed_model = runtime.config.make_embed()
     except Exception:

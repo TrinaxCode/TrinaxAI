@@ -4,7 +4,7 @@
 
 <p align="center">
   <a href="https://github.com/TrinaxCode/TrinaxAI"><img src="https://img.shields.io/github/stars/TrinaxCode/TrinaxAI?style=flat&amp;label=%E2%98%85&amp;color=006bbd" alt="GitHub stars"></a>
-  <a href="https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.2.5"><img src="https://img.shields.io/badge/version-1.2.5-006bbd" alt="Stable release: 1.2.5"></a>
+  <a href="https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.2.6"><img src="https://img.shields.io/badge/version-1.2.6-006bbd" alt="Release estable: 1.2.6"></a>
   <a href="https://github.com/TrinaxCode/TrinaxAI/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/TrinaxCode/TrinaxAI/ci.yml?branch=main&amp;label=CI" alt="CI status"></a>
   <a href="https://github.com/TrinaxCode/TrinaxAI/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0--or--later-006bbd" alt="License: AGPL-3.0-or-later"></a>
   <img src="https://img.shields.io/badge/macOS%20%7C%20Windows%20%7C%20Linux-4493F8?style=flat-square" alt="Supported platforms: macOS, Windows, and Linux">
@@ -17,6 +17,22 @@ Todos los cambios importantes de TrinaxAI se documentan aquí. El proyecto sigue
 el formato de [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Sin publicar]
+
+## [1.2.6] — 2026-09-20
+
+### Añadido
+
+- Se añadió el lanzador npm verificado: `npm install --global trinaxai@latest` seguido de `trinaxai setup`.
+- Se añadió un flujo para vincular un dispositivo nuevo en LAN y más cobertura de regresión para release y UI.
+
+### Cambiado
+
+- Se actualizaron las superficies de Chat y Agent, el traspaso de documentos, la voz, el feedback de indexación y la documentación bilingüe.
+- La publicación valida y publica la CLI npm antes de hacer público el release de GitHub.
+
+### Corregido
+
+- Se reforzaron las cookies de dispositivos, los servicios de ciclo de vida, el runtime de investigación/RAG, los instaladores, las actualizaciones y los límites de búsqueda web.
 
 ## [1.2.5] — 2026-09-13
 

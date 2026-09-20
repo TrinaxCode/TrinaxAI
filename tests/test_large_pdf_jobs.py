@@ -72,9 +72,10 @@ def test_structured_job_progress_is_exact_and_stage_specific() -> None:
     changes = system_service._progress_changes(event)
     assert changes["phase"] == "extracting"
     assert changes["pages_processed"] == 80
-    assert changes["progress"] == 42
+    assert changes["progress"] == 39
     assert changes["progress_exact"] is True
-    assert system_service._line_progress("ordinary log line", 42) == (42, "indexing")
+    # Unknown lines keep the current phase and never move the bar.
+    assert system_service._line_progress("ordinary log line", 42) == (42, "")
 
 
 def test_job_state_persists_for_frontend_reconnection(tmp_path, monkeypatch) -> None:
@@ -181,10 +182,10 @@ def test_index_job_helpers_bound_untrusted_names_output_and_progress(monkeypatch
             state.index_jobs = previous
         state.index_active_job_id = previous_active
 
-    assert system_service._line_progress("Troceando documento", 10) == (45, "chunking")
-    assert system_service._line_progress("Embeddings lote 2/4", 10) == (76, "embedding")
-    assert system_service._line_progress("Persistiendo índice", 10) == (88, "saving_index")
-    assert system_service._line_progress("Completado", 10) == (96, "finishing")
+    assert system_service._line_progress("Troceando documento", 10) == (10, "chunking")
+    assert system_service._line_progress("Embeddings lote 2/4", 10) == (77, "embedding")
+    assert system_service._line_progress("Persistiendo índice", 10) == (92, "saving_index")
+    assert system_service._line_progress("Completado", 10) == (97, "finishing")
     assert system_service._structured_progress("TRINAXAI_PROGRESS not-json") is None
 
 

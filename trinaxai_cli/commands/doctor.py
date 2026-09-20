@@ -106,6 +106,7 @@ def _ollama_api_ok(base_url: str = "http://127.0.0.1:11434") -> bool:
 
 def run(args: Any, client: Any, ui: Any, config: Any) -> int:
     checks: list[dict[str, Any]] = []
+    json_output = bool(getattr(args, "json", False))
     # A health check probes a possibly-dead backend on purpose, and issues
     # several GETs that _send retries once each. At the shared 30s timeout a
     # single unreachable endpoint can outlast the whole diagnosis, so shorten
@@ -117,8 +118,18 @@ def run(args: Any, client: Any, ui: Any, config: Any) -> int:
     if client_timeout > 5.0:
         client.timeout = 5.0
 
-    def add(name: str, ok: bool, detail: str, *, critical: bool = False) -> None:
-        checks.append({"check": name, "ok": ok, "critical": critical, "detail": detail})
+    def add(
+        name: str,
+        ok: bool,
+        detail: str,
+        *,
+        critical: bool = False,
+        status: str | None = None,
+    ) -> None:
+        check = {"check": name, "ok": ok, "critical": critical, "detail": detail}
+        if status is not None:
+            check["status"] = status
+        checks.append(check)
 
     add("Python package", True, "CLI import works", critical=True)
     root = _system.project_root()
@@ -197,7 +208,15 @@ def run(args: Any, client: Any, ui: Any, config: Any) -> int:
         projects = health.get("projects", []) or []
         collections = health.get("collections", []) or []
         add("RAG API", True, client.base_url, critical=True)
-        add("Index built", indexed, "ready" if indexed else "run: trinaxai index .")
+        add(
+            "Index built",
+            indexed,
+            "ready" if indexed else "run: trinaxai index .",
+            # A fresh install is healthy but intentionally has no user files
+            # yet. Keep the machine-readable `ok` value honest while avoiding
+            # a misleading red failure in the human diagnostic table.
+            status="OK" if indexed else "INFO",
+        )
         add("Projects", True, str(len(projects)))
         add("Collections", True, ", ".join(c.get("id", "") for c in collections[:5]) or "none")
         try:
@@ -211,7 +230,7 @@ def run(args: Any, client: Any, ui: Any, config: Any) -> int:
             pass
         try:
             mem = client.memory_summary()
-            if mem.get("summary"):
+            if mem.get("summary") and not json_output:
                 ui.panel(mem.get("summary", ""), title="Memory summary")
         except Exception:
             pass
@@ -219,14 +238,17 @@ def run(args: Any, client: Any, ui: Any, config: Any) -> int:
         add("RAG API", False, f"{exc}; run: trinaxai start", critical=True)
 
     healthy = all(check["ok"] for check in checks if check["critical"])
-    if bool(getattr(args, "json", False)):
+    if json_output:
         # Rich may hard-wrap long strings, which would corrupt JSON inside
         # quoted values. Machine output bypasses presentation formatting.
         sys.stdout.write(
             json.dumps({"healthy": healthy, "checks": checks}, ensure_ascii=False, separators=(",", ":")) + "\n"
         )
     else:
-        rows = [[check["check"], "OK" if check["ok"] else "FAIL", check["detail"]] for check in checks]
+        rows = [
+            [check["check"], check.get("status") or ("OK" if check["ok"] else "FAIL"), check["detail"]]
+            for check in checks
+        ]
         ui.table(["check", "status", "detail"], rows, title="TrinaxAI doctor")
     if bool(getattr(args, "strict", False)):
         return 0 if healthy else 1

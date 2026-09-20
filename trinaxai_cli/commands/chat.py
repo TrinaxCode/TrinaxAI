@@ -18,6 +18,7 @@ from typing import Any
 from trinaxai_cli.commands import _system
 from trinaxai_cli.commands import chat_slash as _slash
 from trinaxai_cli.commands.chat_state import ChatState
+from trinaxai_cli.i18n import text
 from trinaxai_cli.session import Session
 
 # Compatibility exports: these helpers lived in this module before the
@@ -455,7 +456,7 @@ def _render_research(ui: Any, res: dict[str, Any], *, web: bool) -> str:
         ui.info(f"{len(sources)} source(s):")
         for src in sources[:8]:
             label = src.get("file") or src.get("url") or src.get("title") or "?"
-            page = f" p. {src['page']}" if src.get("page") else ""
+            page = f" {text('page_abbrev', getattr(ui, 'language', 'en'))} {src['page']}" if src.get("page") else ""
             ui.info(f"  - {label}{page}")
     return answer or "(no answer)"
 
@@ -569,8 +570,8 @@ def _handle_cd(user: str, state: ChatState, ui: Any) -> bool:
         return False
     try:
         parts = shlex.split(stripped)
-    except ValueError as exc:
-        ui.error(f"cd: {exc}")
+    except ValueError:
+        ui.error(text("cd_invalid_quoting", getattr(ui, "language", "en")))
         return True
     if not parts or parts[0] != "cd":
         return False

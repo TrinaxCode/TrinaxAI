@@ -94,6 +94,50 @@ describe('assistant message bubble', () => {
     await expectNoA11yViolations(document.body);
   });
 
+  it('keeps the message actions attached to the bubble without a clock', () => {
+    renderList([
+      { id: 'm1', role: 'user', content: 'Pregunta' },
+      { id: 'm2', role: 'assistant', content: 'Respuesta', model: 'qwen3:14b' },
+    ]);
+
+    expect(document.querySelectorAll('.chat-message-time')).toHaveLength(0);
+    const actionRows = [...document.querySelectorAll('.chat-actions')];
+    expect(actionRows).toHaveLength(2);
+    actionRows.forEach((row) => {
+      expect(row.closest('.chat-bubble-wrap')?.querySelector('.chat-bubble')).not.toBeNull();
+    });
+    expect(document.querySelector('.chat-model-label')?.closest('.chat-actions')).not.toBeNull();
+  });
+
+  it('shows the TrinaxAI avatar on every assistant message', () => {
+    renderList([
+      { id: 'a1', role: 'assistant', content: 'Primera respuesta' },
+      { id: 'a2', role: 'assistant', content: 'Segunda respuesta' },
+      { id: 'u1', role: 'user', content: 'Pregunta' },
+      { id: 'a3', role: 'assistant', content: 'Tercera respuesta' },
+    ]);
+
+    expect(document.querySelectorAll('.chat-assistant-avatar')).toHaveLength(3);
+    expect(screen.getByText('Primera respuesta')).toBeInTheDocument();
+    expect(screen.getByText('Segunda respuesta')).toBeInTheDocument();
+    expect(screen.getByText('Tercera respuesta')).toBeInTheDocument();
+  });
+
+  it('keeps the model label hidden until the reader hovers the message', () => {
+    renderList([
+      { id: 'm1', role: 'user', content: 'Pregunta' },
+      { id: 'm2', role: 'assistant', content: 'Respuesta', model: 'qwen3:14b' },
+      { id: 'm3', role: 'assistant', content: 'Sin modelo registrado' },
+    ]);
+
+    const labels = [...document.querySelectorAll('.chat-model-label')];
+    expect(labels).toHaveLength(1);
+    expect(labels[0].textContent).toBe('qwen3:14b');
+    // It lives inside the assistant bubble wrapper, at the end of the action row.
+    expect(labels[0].closest('.chat-bubble-wrap')).not.toBeNull();
+    expect(labels[0].closest('.chat-actions')).not.toBeNull();
+  });
+
   it('shows the activity copy and small dots without exposing reasoning text', () => {
     const activity = 'TrinaxAI is analyzing your request';
     renderList([], { streaming: true, activityLabel: activity });

@@ -264,6 +264,7 @@ describe('versioned shared state synchronization', () => {
   });
 
   it('stops polling after authorization is denied until credentials change', async () => {
+    sessionStorage.setItem('trinaxai-device-scopes', JSON.stringify(['chat', 'web']));
     const fetchMock = vi.fn().mockResolvedValue(mockResponse({ status: 403 }));
     vi.stubGlobal('fetch', fetchMock);
 
@@ -271,5 +272,6 @@ describe('versioned shared state synchronization', () => {
     await syncSharedStateOnce(1000, true);
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(sessionStorage.getItem('trinaxai-device-scopes')).toBe(JSON.stringify(['chat', 'web']));
   });
 });

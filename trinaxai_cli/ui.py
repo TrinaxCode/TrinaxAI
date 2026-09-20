@@ -228,14 +228,14 @@ class Console:
 
     # --------------------------------------------------------------- spinner
     @contextmanager
-    def spinner(self, text: str) -> Iterator[None]:
-        text = translate(text, self.language)
+    def spinner(self, label: str) -> Iterator[None]:
+        message = translate(label, self.language)
         progress: Any = None
         if _RICH and _rich_progress_cls is not None:
             try:
                 progress = _rich_progress_cls(
                     _rich_spinner_column_cls(),
-                    _rich_text_column_cls(text),
+                    _rich_text_column_cls(message),
                     transient=True,
                     console=self._rich_console,
                 )
@@ -253,11 +253,11 @@ class Console:
                 finally:
                     progress.stop()
             return
-        print(f"... {text}")
+        print(f"... {message}")
         try:
             yield
         finally:
-            print("    done")
+            print(f"    {text('spinner_done', self.language)}")
 
     @contextmanager
     def thinking(self, text: str = "TrinaxAI is thinking...") -> Iterator[Callable[[], None]]:
@@ -329,11 +329,12 @@ class Console:
         ``EOFError``/``KeyboardInterrupt`` so the REPL loop can exit on Ctrl-D.
         """
         hint = f" ({mode})" if mode else ""
+        you = text("you_label", self.language)
         if _PROMPT_TOOLKIT and sys.stdin.isatty() and sys.stdout.isatty():
             if self._chat_session is None:
                 self._chat_session = PromptSession(history=InMemoryHistory())
             completer = SlashCommandCompleter(slash_commands)
-            label = f"● You{hint}  "
+            label = f"● {you}{hint}  "
             try:
                 return self._chat_session.prompt(
                     HTML(f"<b><ansigreen>{label}</ansigreen></b>"),
@@ -352,9 +353,9 @@ class Console:
 
                 self._rich_console.print("")
                 if self._color_enabled:
-                    question = f"[bold {branding.USER_ACCENT}]● You[/][dim]{hint}[/dim]"
+                    question = f"[bold {branding.USER_ACCENT}]● {you}[/][dim]{hint}[/dim]"
                 else:
-                    question = f"● You{hint}"
+                    question = f"● {you}{hint}"
                 prompt_obj = _rich_prompt_cls(question, console=self._rich_console)
                 prompt_obj.prompt_suffix = "  "
                 return prompt_obj()
@@ -363,7 +364,7 @@ class Console:
             except Exception:
                 pass
         print("")
-        return input(f"● You{hint}  ").strip()
+        return input(f"● {you}{hint}  ").strip()
 
     def assistant_label(self, name: str = "TrinaxAI") -> None:
         """Print the blue ``● TrinaxAI`` speaker label on its own line.

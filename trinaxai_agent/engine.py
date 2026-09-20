@@ -135,6 +135,9 @@ class AgentEngine:
     _active_response: Any | None = field(init=False, default=None, repr=False)
     _response_lock: threading.Lock = field(init=False, default_factory=threading.Lock, repr=False)
     _last_call_key: tuple[str, str] | None = field(init=False, default=None, repr=False)
+    # Public, additive run outcome for callers that need to distinguish a
+    # useful local fallback from a model-complete answer.
+    completion_status: str = field(init=False, default="complete")
 
     def __post_init__(self) -> None:
         self.workspace_root = Path(self.workspace_root).expanduser().resolve()
@@ -162,6 +165,11 @@ class AgentEngine:
         is mutated in place so the caller keeps full history across turns. The
         system message is injected only for the request, never stored.
         """
+        # A reused engine represents multiple CLI turns. The repeat guard is
+        # deliberately scoped to one run so a valid call in the next turn is
+        # not mistaken for an in-run loop.
+        self._last_call_key = None
+        self.completion_status = "complete"
         final_answer = ""
         degraded_results: list[str] = []
         nudged = False
@@ -197,6 +205,7 @@ class AgentEngine:
             except AgentCancelled:
                 raise
             except Exception as exc:  # noqa: BLE001 - return a useful local-first degradation
+                self.completion_status = "degraded"
                 answer = format_tool_failure("model", exc)
                 if self.on_token:
                     self.on_token(answer)
@@ -299,7 +308,7 @@ class AgentEngine:
         return final_content
 
     def cancel(self) -> None:
-        """Interrupt an in-flight Ollama stream from another thread."""
+        """Interrupt an in-flight Ollama request from another thread."""
         with self._response_lock:
             response = self._active_response
         if response is not None:
@@ -351,7 +360,7 @@ class AgentEngine:
         candidate = draft
         try:
             with self._inference_scope():
-                data = self._post(f"{self.ollama_url.rstrip('/')}/api/chat", payload)
+                data = self._post_with_cancellation(f"{self.ollama_url.rstrip('/')}/api/chat", payload)
             if not data.get("error"):
                 verified = str((data.get("message") or {}).get("content") or "").strip()
                 if _is_final_answer(verified, used_tools=True):
@@ -484,7 +493,7 @@ class AgentEngine:
         }
         with self._inference_scope():
             if not payload["stream"]:
-                data = self._post(f"{self.ollama_url.rstrip('/')}/api/chat", payload)
+                data = self._post_with_cancellation(f"{self.ollama_url.rstrip('/')}/api/chat", payload)
                 if data.get("error"):
                     raise RuntimeError(str(data["error"]))
                 return data.get("message") or {}
@@ -572,7 +581,7 @@ class AgentEngine:
             self._raise_if_cancelled()
             # Fall back to a single blocking request (also covers the retry path).
             fallback = {**payload, "stream": False}
-            data = self._post(url, fallback)
+            data = self._post_with_cancellation(url, fallback)
             if data.get("error"):
                 raise RuntimeError(str(data["error"])) from exc
             return data.get("message") or {}
@@ -596,8 +605,28 @@ class AgentEngine:
             message["tool_calls"] = tool_calls
         return message
 
+    def _post_with_cancellation(self, url: str, payload: dict[str, Any]) -> dict[str, Any]:
+        """Use the standard request path while exposing its response to ``cancel``.
+
+        Subclasses in integrations override ``_post(url, payload)``; keep their
+        two-argument contract intact while the built-in urllib path is
+        cancellable.
+        """
+        if type(self)._post is AgentEngine._post:
+            return self._post(url, payload, on_response=self._set_active_response)
+        return self._post(url, payload)
+
+    def _set_active_response(self, response: Any | None) -> None:
+        with self._response_lock:
+            self._active_response = response
+
     @staticmethod
-    def _post(url: str, payload: dict[str, Any]) -> dict[str, Any]:
+    def _post(
+        url: str,
+        payload: dict[str, Any],
+        *,
+        on_response: Callable[[Any | None], None] | None = None,
+    ) -> dict[str, Any]:
         # urllib keeps the engine dependency-free so it can run in the backend
         # threadpool without importing httpx.
         import time
@@ -613,7 +642,13 @@ class AgentEngine:
             try:
                 # ollama_url is restricted to HTTP(S) with a host in __post_init__.
                 with urllib.request.urlopen(req, timeout=600) as response:  # nosec B310
-                    return json.loads(response.read().decode("utf-8"))
+                    if on_response is not None:
+                        on_response(response)
+                    try:
+                        return json.loads(response.read().decode("utf-8"))
+                    finally:
+                        if on_response is not None:
+                            on_response(None)
             except urllib.error.HTTPError as exc:
                 last_exc = exc
                 if exc.code >= 500 and attempt < 2:

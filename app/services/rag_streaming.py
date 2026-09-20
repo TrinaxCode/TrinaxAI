@@ -68,6 +68,7 @@ def generate_stream(
     retrieval_mode: str = "auto",
     request_id: str | None = None,
     thinking: bool = True,
+    language: str | None = None,
 ):
     started = time.perf_counter()
     completed = False
@@ -97,6 +98,7 @@ def generate_stream(
                 retrieval_mode=retrieval_mode,
             )
             if preview_spec.use_rag and service.state.fusion_retriever is None:
+                no_index = service.no_index_message(language)
                 payload = {
                     "model": preview_spec.model,
                     "project": preview_project,
@@ -108,10 +110,10 @@ def generate_stream(
                     "request_id": request_id,
                 }
                 yield _sse({"trinaxai": payload})
-                yield _sse({"choices": [{"delta": {"content": service.NO_INDEX_MSG}}]})
+                yield _sse({"choices": [{"delta": {"content": no_index}}]})
                 yield _sse(
                     {
-                        "trinaxai_finish": _completion_metadata("stop", service.NO_INDEX_MSG),
+                        "trinaxai_finish": _completion_metadata("stop", no_index),
                         "trinaxai_sources": [],
                         "trinaxai_retrieval": {**payload, "result_count": 0},
                     }
@@ -220,6 +222,7 @@ async def _run_rag_stream_async(
     retrieval_mode: str = "auto",
     thinking: bool = True,
     on_thinking: Callable[[str], None] | None = None,
+    language: str | None = None,
 ):
     """Prepare a stream without entering Ollama through a worker thread."""
     (
@@ -403,6 +406,7 @@ async def async_generate_stream(
         thinking_parts.append(part)
 
     slot_acquired = False
+    language = service.request_language(request)
     try:
         await service._acquire_model_slot_async()
         slot_acquired = True
@@ -416,6 +420,7 @@ async def async_generate_stream(
                 retrieval_mode=retrieval_mode,
             )
             if preview_spec.use_rag and service.state.fusion_retriever is None:
+                no_index = service.no_index_message(language)
                 payload = {
                     "model": preview_spec.model,
                     "project": preview_project,
@@ -427,10 +432,10 @@ async def async_generate_stream(
                     "request_id": request_id,
                 }
                 yield _sse({"trinaxai": payload})
-                yield _sse({"choices": [{"delta": {"content": service.NO_INDEX_MSG}}]})
+                yield _sse({"choices": [{"delta": {"content": no_index}}]})
                 yield _sse(
                     {
-                        "trinaxai_finish": service._completion_metadata("stop", service.NO_INDEX_MSG),
+                        "trinaxai_finish": service._completion_metadata("stop", no_index),
                         "trinaxai_sources": [],
                         "trinaxai_retrieval": {**payload, "result_count": 0},
                     }
@@ -461,6 +466,7 @@ async def async_generate_stream(
                 retrieval_mode=retrieval_mode,
                 thinking=thinking,
                 on_thinking=on_thinking,
+                language=language,
             )
             if selected_model != preview_model or project != preview_project:
                 yield _sse({"trinaxai": {"model": selected_model, "project": project}})

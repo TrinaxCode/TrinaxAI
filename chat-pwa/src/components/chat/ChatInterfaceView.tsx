@@ -1,3 +1,4 @@
+import { AnimatePresence, motion } from 'framer-motion';
 import { MdVisibilityOff } from 'react-icons/md';
 import type { ChatController } from '../../hooks/useChatController';
 import AttachmentPreview from './AttachmentPreview';
@@ -8,6 +9,9 @@ import MessageList from './MessageList';
 import SpeakingIndicator from './SpeakingIndicator';
 import VoiceCallView from './VoiceCallView';
 import './chat.css';
+import './chat-modern.css';
+
+const SECTION_SWAP = { duration: 0.28, ease: [0.16, 1, 0.3, 1] as const };
 
 export function ChatInterfaceView({ controller }: { controller: ChatController }) {
   const {
@@ -122,139 +126,172 @@ export function ChatInterfaceView({ controller }: { controller: ChatController }
       onDrop={handleDrop}
       onDragEnd={clearDragActive}
     >
-      {dragActive && !callMode && (
-        <div role="status" className={`pointer-events-none absolute inset-3 z-[70] grid place-items-center rounded-2xl border-2 border-dashed ${isDark ? 'border-[#4ea3e0] bg-[#006bbd]/20 text-white' : 'border-[#006bbd] bg-white/85 text-[#004d8a]'}`}>
-          <span className="rounded-lg px-4 py-2 text-sm font-medium shadow-lg">{t('dropFilesHere')}</span>
-        </div>
-      )}
-      {!callMode && (
-        <ChatHeader
-          engine={engine}
-          temporary={temporary}
-          isDark={isDark}
-           messageCount={messages.length}
-           researchMode={researchMode}
-          webSearchMode={webSearchMode}
-          webSearchAvailable={webSearchAvailable === true}
-          exportMenuOpen={exportMenuOpen}
-          onMenuToggle={onMenuToggle}
-          onEngineChange={onEngineChange}
-           onResearchModeChange={setResearchMode}
-            onWebSearchModeChange={handleWebSearchModeChange}
-          onExportMenuChange={setExportMenuOpen}
-          onExportMarkdown={exportMarkdown}
-          onExportPdf={exportPdf}
-          onExportWord={exportWord}
-          onOpenAgent={onNavigate ? () => onNavigate('agent') : undefined}
-        />
-      )}
-
-      {callMode ? (
-        <VoiceCallView
-          isDark={isDark}
-          listening={listening}
-          speaking={ttsSpeaking}
-          thinking={busy}
-          onEnd={toggleVoice}
-        />
-      ) : <>
-      {temporary && messages.length === 0 && (
-        <div className="shrink-0 px-3 pt-3 sm:px-5">
-          <div
+      <AnimatePresence>
+        {dragActive && !callMode && (
+          <motion.div
+            key="drop-overlay"
             role="status"
-            className={`mx-auto flex max-w-xl items-start gap-2.5 rounded-xl border px-3.5 py-2.5 text-xs shadow-sm ${isDark ? 'border-amber-300/25 bg-amber-300/[0.10] text-amber-100/90 shadow-black/20' : 'border-amber-400/45 bg-amber-50 text-amber-900/80 shadow-amber-900/5'}`}
+            initial={{ opacity: 0, scale: 0.985 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.985 }}
+            transition={{ duration: 0.18, ease: 'easeOut' }}
+            className={`pointer-events-none absolute inset-3 z-[70] grid place-items-center rounded-2xl border-2 border-dashed ${isDark ? 'border-[#4ea3e0] bg-[#006bbd]/20 text-white' : 'border-[#006bbd] bg-white/85 text-[#004d8a]'}`}
           >
-            <MdVisibilityOff size={17} className="mt-0.5 shrink-0" />
-            <span><strong>{t('temporaryChat')}.</strong> {t('temporaryChatDescription')}</span>
-          </div>
-        </div>
-      )}
+            <span className="rounded-lg px-4 py-2 text-sm font-medium shadow-lg">{t('dropFilesHere')}</span>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
-      {messages.length === 0 && !streaming && (
-        <EmptyChat
-          isDark={isDark}
-          motd={motd}
-          rotation={quickChipRotation}
-          chips={displayChips}
-        />
-      )}
+      {/* Call mode replaces the conversation with the voice surface, so both
+          sides animate in and out instead of popping between states. */}
+      <AnimatePresence mode="wait" initial={false}>
+        {callMode ? (
+          <motion.div
+            key="voice-call"
+            data-voice-call
+            className="flex min-h-0 flex-1 flex-col"
+            initial={{ opacity: 0, y: 24, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 24, scale: 0.98 }}
+            transition={SECTION_SWAP}
+          >
+            <VoiceCallView
+              isDark={isDark}
+              listening={listening}
+              speaking={ttsSpeaking}
+              thinking={busy}
+              onEnd={toggleVoice}
+            />
+          </motion.div>
+        ) : (
+          <motion.div
+            key="chat-flow"
+            data-chat-flow
+            className="flex min-h-0 flex-1 flex-col"
+            initial={{ opacity: 0, y: -16 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -16 }}
+            transition={SECTION_SWAP}
+          >
+            <ChatHeader
+              engine={engine}
+              temporary={temporary}
+              isDark={isDark}
+              messageCount={messages.length}
+              researchMode={researchMode}
+              webSearchMode={webSearchMode}
+              webSearchAvailable={webSearchAvailable === true}
+              exportMenuOpen={exportMenuOpen}
+              onMenuToggle={onMenuToggle}
+              onEngineChange={onEngineChange}
+              onResearchModeChange={setResearchMode}
+              onWebSearchModeChange={handleWebSearchModeChange}
+              onExportMenuChange={setExportMenuOpen}
+              onExportMarkdown={exportMarkdown}
+              onExportPdf={exportPdf}
+              onExportWord={exportWord}
+              onOpenAgent={onNavigate ? () => onNavigate('agent') : undefined}
+            />
 
-      <MessageList
-        messages={messages}
-        streaming={busy}
-        activityLabel={activityLabel}
-        streamedText={streamedText}
-        isDark={isDark}
-        userDisplayName={userDisplayName}
-        messagesRef={messagesRef}
-        editInputRef={editInputRef}
-        editingIndex={editingIndex}
-        editingText={editingText}
-        copiedKey={copiedKey}
-        ttsSupported={ttsSupported}
-        ttsActiveKey={ttsActiveKey}
-        showScrollButton={showScrollButton}
-        activeCollections={activeCollectionsForRequest}
-        onScroll={updateScrollState}
-        onEditingTextChange={setEditingText}
-        onCancelEdit={() => setEditingIndex(null)}
-        onSaveEdit={saveEdit}
-        onStartEdit={startEdit}
-        onRegenerate={regenerateFrom}
-        onContinue={continueResponse}
-        onCopy={copyMessage}
-        onSpeak={(text, key) => speak(text, undefined, key)}
-        onStopSpeak={stopSpeak}
-        onOpenAttachment={openStoredAttachment}
-        onOpenBrowser={onNavigate ? openInBrowser : undefined}
-        onOpenIndexing={onNavigate ? () => onNavigate('indexing') : undefined}
-        onScrollToBottom={() => scrollToBottom('smooth')}
-      />
+            {temporary && messages.length === 0 && (
+              <div className="shrink-0 px-3 pt-3 sm:px-5">
+                <div
+                  role="status"
+                  className={`mx-auto flex max-w-xl items-start gap-2.5 rounded-xl border px-3.5 py-2.5 text-xs shadow-sm ${isDark ? 'border-amber-300/25 bg-amber-300/[0.10] text-amber-100/90 shadow-black/20' : 'border-amber-400/45 bg-amber-50 text-amber-900/80 shadow-amber-900/5'}`}
+                >
+                  <MdVisibilityOff size={17} className="mt-0.5 shrink-0" />
+                  <span><strong>{t('temporaryChat')}.</strong> {t('temporaryChatDescription')}</span>
+                </div>
+              </div>
+            )}
 
-      <SpeakingIndicator speaking={ttsSpeaking} />
+            {messages.length === 0 && !streaming && (
+              <EmptyChat
+                isDark={isDark}
+                motd={motd}
+                rotation={quickChipRotation}
+                chips={displayChips}
+              />
+            )}
 
-      <ChatComposer
-        engine={engine}
-        isDark={isDark}
-        collections={collections}
-        activeCollectionIds={activeCollectionIds}
-        docUploadStatus={docUploadStatus}
-        docConvertProgress={docConvertProgress}
-        attachedDocs={attachedDocs}
-        docIndexCollectionId={docIndexCollectionId}
-         attachedImages={attachedImages}
-        imageError={imageError}
-        streaming={busy}
-        attachmentMenuOpen={attachmentMenuOpen}
-        slashOpen={slashOpen}
-        slashFilter={slashFilter}
-        prompts={customPrompts.current}
-        input={input}
-        placeholder={placeholder}
-        voiceSupported={voiceSupported}
-        callMode={callMode}
-        listening={listening}
-        inputRef={inputRef}
-        fileInputRef={fileInputRef}
-        docInputRef={docInputRef}
-        attachmentMenuRef={attachmentMenuRef}
-        onToggleCollection={toggleCollection}
-        onDocIndexCollectionChange={setDocIndexCollectionId}
-        onIndexAttachedDocs={indexAttachedDocs}
-        onClearDocs={clearAttachedDocs}
-         onRemoveImage={(index) => setAttachedImages((current) => current.filter((_, itemIndex) => itemIndex !== index))}
-        onPickImage={onPickImage}
-        onPickDocs={onPickDocs}
-        onAttachmentMenuChange={setAttachmentMenuOpen}
-        onPromptSelect={handlePromptSelect}
-        onInputChange={handleInputChange}
-        onKeyDown={handleKeyDown}
-        onToggleCall={toggleVoice}
-        onToggleDictation={toggleDictation}
-        onStop={handleStop}
-        onSend={handleSend}
-      />
-      </>}
+            <MessageList
+              messages={messages}
+              streaming={busy}
+              activityLabel={activityLabel}
+              streamedText={streamedText}
+              isDark={isDark}
+              userDisplayName={userDisplayName}
+              messagesRef={messagesRef}
+              editInputRef={editInputRef}
+              editingIndex={editingIndex}
+              editingText={editingText}
+              copiedKey={copiedKey}
+              ttsSupported={ttsSupported}
+              ttsActiveKey={ttsActiveKey}
+              showScrollButton={showScrollButton}
+              activeCollections={activeCollectionsForRequest}
+              onScroll={updateScrollState}
+              onEditingTextChange={setEditingText}
+              onCancelEdit={() => setEditingIndex(null)}
+              onSaveEdit={saveEdit}
+              onStartEdit={startEdit}
+              onRegenerate={regenerateFrom}
+              onContinue={continueResponse}
+              onCopy={copyMessage}
+              onSpeak={(text, key) => speak(text, undefined, key)}
+              onStopSpeak={stopSpeak}
+              onOpenAttachment={openStoredAttachment}
+              onOpenBrowser={onNavigate ? openInBrowser : undefined}
+              onOpenIndexing={onNavigate ? () => onNavigate('indexing') : undefined}
+              onScrollToBottom={() => scrollToBottom('smooth')}
+            />
+
+            <SpeakingIndicator speaking={ttsSpeaking} />
+
+            <ChatComposer
+              engine={engine}
+              isDark={isDark}
+              collections={collections}
+              activeCollectionIds={activeCollectionIds}
+              docUploadStatus={docUploadStatus}
+              docConvertProgress={docConvertProgress}
+              attachedDocs={attachedDocs}
+              docIndexCollectionId={docIndexCollectionId}
+              attachedImages={attachedImages}
+              imageError={imageError}
+              streaming={busy}
+              attachmentMenuOpen={attachmentMenuOpen}
+              slashOpen={slashOpen}
+              slashFilter={slashFilter}
+              prompts={customPrompts.current}
+              input={input}
+              placeholder={placeholder}
+              voiceSupported={voiceSupported}
+              callMode={callMode}
+              listening={listening}
+              inputRef={inputRef}
+              fileInputRef={fileInputRef}
+              docInputRef={docInputRef}
+              attachmentMenuRef={attachmentMenuRef}
+              onToggleCollection={toggleCollection}
+              onDocIndexCollectionChange={setDocIndexCollectionId}
+              onIndexAttachedDocs={indexAttachedDocs}
+              onClearDocs={clearAttachedDocs}
+              onRemoveImage={(index) => setAttachedImages((current) => current.filter((_, itemIndex) => itemIndex !== index))}
+              onPickImage={onPickImage}
+              onPickDocs={onPickDocs}
+              onAttachmentMenuChange={setAttachmentMenuOpen}
+              onPromptSelect={handlePromptSelect}
+              onInputChange={handleInputChange}
+              onKeyDown={handleKeyDown}
+              onToggleCall={toggleVoice}
+              onToggleDictation={toggleDictation}
+              onStop={handleStop}
+              onSend={handleSend}
+            />
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <AttachmentPreview
         preview={previewAttachment}

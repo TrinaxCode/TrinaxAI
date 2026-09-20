@@ -68,7 +68,10 @@ def test_update_env_replaces_stale_network_without_touching_secrets(tmp_path: Pa
     monkeypatch.setattr(network.socket, "gethostname", lambda: "trinax")
     env = tmp_path / ".env"
     env.write_text(
-        "TRINAXAI_ADMIN_TOKEN=keep-me\nTRINAXAI_CORS_ORIGINS=https://old-router.local:3334\n", encoding="utf-8"
+        "TRINAXAI_ADMIN_TOKEN=keep-me\n"
+        "TRINAXAI_PWA_HOST=127.0.0.1\n"
+        "TRINAXAI_CORS_ORIGINS=https://old-router.local:3334\n",
+        encoding="utf-8",
     )
     env.chmod(0o600)
     # Windows ignores POSIX mode bits, so assert the mode is preserved rather
@@ -79,6 +82,7 @@ def test_update_env_replaces_stale_network_without_touching_secrets(tmp_path: Pa
     assert "TRINAXAI_ADMIN_TOKEN=keep-me" in updated
     assert "old-router.local" not in updated
     assert "192.168.0.18" in updated
+    assert "TRINAXAI_PWA_HOST=0.0.0.0" in updated
     assert env.stat().st_mode == mode_before
 
 
@@ -86,7 +90,9 @@ def test_update_env_appends_missing_origin_and_rejects_missing_file(tmp_path: Pa
     env = tmp_path / ".env"
     env.write_text("TRINAXAI_ADMIN_TOKEN=keep-me\n", encoding="utf-8")
     network.update_env(tmp_path, ["192.168.0.18"])
-    assert "TRINAXAI_CORS_ORIGINS=" in env.read_text(encoding="utf-8")
+    updated = env.read_text(encoding="utf-8")
+    assert "TRINAXAI_CORS_ORIGINS=" in updated
+    assert "TRINAXAI_PWA_HOST=0.0.0.0" in updated
     with pytest.raises(FileNotFoundError):
         network.update_env(tmp_path / "missing", [])
 

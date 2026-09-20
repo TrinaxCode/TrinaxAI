@@ -56,7 +56,7 @@ async function ollamaFetch(input: RequestInfo | URL, init?: RequestInit): Promis
 
 async function ragFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
   try {
-    return await fetch(input, init);
+    return await fetch(input, { ...init, credentials: 'include' });
   } catch (error) {
     if (error instanceof ApiError || isAbortError(error)) throw error;
     throw new ApiError('', 503, 'rag_unavailable');
@@ -175,6 +175,7 @@ function parseCompletionMeta(value: unknown): StreamMeta {
 
 export function parseRagSseLine(line: string): {
   token?: string;
+  finalAnswer?: string;
   thinking?: string;
   thinkingDurationMs?: number;
   meta?: StreamMeta;
@@ -211,6 +212,7 @@ export function parseRagSseLine(line: string): {
       const meta = parseCompletionMeta(parsed.trinaxai_finish);
       if (Object.prototype.hasOwnProperty.call(parsed, 'trinaxai_sources')) {
         return {
+          ...(typeof parsed.trinaxai_answer === 'string' ? { finalAnswer: parsed.trinaxai_answer } : {}),
           meta: {
             ...meta,
             sources: parsed.trinaxai_sources as Source[],
@@ -226,6 +228,7 @@ export function parseRagSseLine(line: string): {
     }
     if (Object.prototype.hasOwnProperty.call(parsed, 'trinaxai_sources')) {
       return {
+        ...(typeof parsed.trinaxai_answer === 'string' ? { finalAnswer: parsed.trinaxai_answer } : {}),
         meta: {
           sources: parsed.trinaxai_sources as Source[],
           ...parseRetrievalMeta(parsed.trinaxai_retrieval),

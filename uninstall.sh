@@ -12,10 +12,12 @@ for language_arg in "$@"; do
   esac
 done
 ARG_NONINTERACTIVE=0
+ARG_HELP=0
 for argument in "$@"; do
   case "$argument" in --non-interactive|--yes|-y|--dry-run) ARG_NONINTERACTIVE=1;; esac
+  case "$argument" in --help|-h) ARG_HELP=1;; esac
 done
-if [ -z "$LANGUAGE_EXPLICIT" ] && [ "${TRINAXAI_NONINTERACTIVE:-0}" != "1" ] && [ "$ARG_NONINTERACTIVE" != "1" ] && [ "${TRINAXAI_DRY_RUN:-0}" != "1" ] && [ -r /dev/tty ]; then
+if [ "$ARG_HELP" != "1" ] && [ -z "$LANGUAGE_EXPLICIT" ] && [ "${TRINAXAI_NONINTERACTIVE:-0}" != "1" ] && [ "$ARG_NONINTERACTIVE" != "1" ] && [ "${TRINAXAI_DRY_RUN:-0}" != "1" ] && [ -r /dev/tty ]; then
   read -r -p "Select language / Selecciona idioma [en/es, default: $LANGUAGE]: " language_reply </dev/tty || language_reply=""
   case "$(printf '%s' "$language_reply" | tr '[:upper:]' '[:lower:]')" in es*) LANGUAGE=es ;; en*) LANGUAGE=en ;; esac
   LANGUAGE_EXPLICIT=prompt
@@ -23,8 +25,7 @@ fi
 
 GREEN='\033[0;32m'; BLUE='\033[0;34m'
 YELLOW='\033[1;33m'; CYAN='\033[0;36m'; NC='\033[0m'; BOLD='\033[1m'
-if [ "$LANGUAGE" = "es" ]; then
-  tr_text_es() {
+tr_text_es() {
     case "$1" in
       'TrinaxAI - Clean Uninstaller') echo 'Desinstalador limpio de TrinaxAI' ;;
       'Services and autostart') echo 'Servicios e inicio automático' ;;
@@ -62,12 +63,25 @@ if [ "$LANGUAGE" = "es" ]; then
       'Managed TrinaxAI application files removed') echo 'Archivos gestionados de TrinaxAI eliminados' ;;
       'Application source was kept because this is not a managed installation.') echo 'Se conservó el código de la aplicación porque no es una instalación gestionada.' ;;
       'TrinaxAI uninstall finished.') echo 'Desinstalación de TrinaxAI terminada.' ;;
+      'Uninstaller failed with exit code '*'. The error is above.') echo "El desinstalador falló con el código de salida ${1#Uninstaller failed with exit code }; el error aparece arriba." ;;
+      'Press Enter to close this window...') echo 'Presiona Enter para cerrar esta ventana...' ;;
+      '--language requires a value') echo 'Se requiere un valor para --language' ;;
+      'Unknown option:'*) echo "Opción desconocida:${1#Unknown option:}" ;;
+      'No interactive terminal; using default answer for:'*) echo "No hay una terminal interactiva; se usará la respuesta predeterminada para:${1#No interactive terminal; using default answer for:}" ;;
+      'Refusing to remove a symbolic-link target:'*) echo "Se rechaza eliminar el destino de un enlace simbólico:${1#Refusing to remove a symbolic-link target:}" ;;
+      'Refusing to remove project root:'*) echo "Se rechaza eliminar la raíz del proyecto:${1#Refusing to remove project root:}" ;;
+      'Refusing to remove path outside project:'*) echo "Se rechaza eliminar una ruta fuera del proyecto:${1#Refusing to remove path outside project:}" ;;
+      'Removed TrinaxAI PATH entry from '*) echo "Se eliminó la entrada de TrinaxAI del PATH:${1#Removed TrinaxAI PATH entry from }" ;;
+      'Protected by default: source code, indexes, and Ollama models') echo 'Protegidos por defecto: código fuente, índices y modelos de Ollama' ;;
+      'Type UNINSTALL to continue:') echo 'Escribe UNINSTALL para continuar:' ;;
+      'Removed CLI launcher: '*) echo "Se eliminó el lanzador de la CLI:${1#Removed CLI launcher: }" ;;
+      'Ollama not found; model removal skipped.') echo 'No se encontró Ollama; se omitió la eliminación de modelos.' ;;
+      'HOME is unsafe or unset; Ollama data was not removed.') echo 'HOME no es seguro o no está definido; no se eliminaron los datos de Ollama.' ;;
+      'Ollama data path is a symbolic link; it was not removed.') echo 'La ruta de datos de Ollama es un enlace simbólico; no se eliminó.' ;;
       *) echo "$1" ;;
     esac
   }
-else
-  tr_text_en() { case "$1" in 'LAN / Red local') echo 'LAN' ;; *) echo "$1" ;; esac; }
-fi
+tr_text_en() { case "$1" in 'LAN / Red local') echo 'LAN' ;; *) echo "$1" ;; esac; }
 if [ "$LANGUAGE" = "es" ]; then tr_text() { tr_text_es "$@"; }; else tr_text() { tr_text_en "$@"; }; fi
 
 print_step() { echo -e "\n${BLUE}${BOLD}=== $(tr_text "$1") ===${NC}"; }
@@ -141,8 +155,8 @@ pause_on_macos_failure() {
   local status=$?
   trap - EXIT
   if [ "$status" -ne 0 ] && [ "$(uname -s 2>/dev/null || echo unknown)" = "Darwin" ] && [ "${INTERACTIVE:-0}" = "1" ] && [ -r /dev/tty ]; then
-    printf '\n[!] Uninstaller failed with exit code %s. The error is above.\n' "$status" >&2
-    read -r -p "Press Enter to close this window..." _ </dev/tty || true
+    printf '\n[!] %s\n' "$(tr_text "Uninstaller failed with exit code $status. The error is above.")" >&2
+    read -r -p "$(tr_text 'Press Enter to close this window...')" _ </dev/tty || true
   fi
   exit "$status"
 }
@@ -189,18 +203,18 @@ while [ "$#" -gt 0 ]; do
     --dry-run) DRY_RUN=1; INTERACTIVE=0; NONINTERACTIVE=1; CONFIRM_UNINSTALL=1;;
     --language|--lang)
       shift
-      [ "$#" -gt 0 ] || { echo "--language requires a value" >&2; exit 2; }
+      [ "$#" -gt 0 ] || { echo "$(tr_text '--language requires a value')" >&2; exit 2; }
       LANGUAGE_EXPLICIT="${1:-}"
       LANGUAGE_LOWER="$(printf '%s' "$LANGUAGE_EXPLICIT" | tr '[:upper:]' '[:lower:]')"
       case "$LANGUAGE_LOWER" in es*|*_es*) LANGUAGE=es ;; *) LANGUAGE=en ;; esac
       ;;
     --language=*|--lang=*)
       LANGUAGE_EXPLICIT="${1#*=}"
-      [ -n "$LANGUAGE_EXPLICIT" ] || { echo "--language requires a value" >&2; exit 2; }
+      [ -n "$LANGUAGE_EXPLICIT" ] || { echo "$(tr_text '--language requires a value')" >&2; exit 2; }
       LANGUAGE_LOWER="$(printf '%s' "$LANGUAGE_EXPLICIT" | tr '[:upper:]' '[:lower:]')"
       case "$LANGUAGE_LOWER" in es*|*_es*) LANGUAGE=es ;; *) LANGUAGE=en ;; esac
       ;;
-    *) echo "Unknown option: $1" >&2; usage 2;;
+    *) echo "$(tr_text "Unknown option: $1")" >&2; usage 2;;
   esac
   shift
 done
@@ -213,7 +227,15 @@ fi
 if [ "$LANGUAGE" = "es" ]; then tr_text() { tr_text_es "$@"; }; else tr_text() { tr_text_en "$@"; }; fi
 
 ask() {
-  local prompt="$1" reply=""
+  local prompt="$1" reply="" suffix=""
+  if [[ "$prompt" == *" [Y/n]" ]]; then
+    suffix=" [Y/n]"
+    prompt="${prompt:0:${#prompt}-${#suffix}}"
+  elif [[ "$prompt" == *" [y/N]" ]]; then
+    suffix=" [y/N]"
+    prompt="${prompt:0:${#prompt}-${#suffix}}"
+  fi
+  prompt="$(tr_text "$prompt")$suffix"
   if [ "$INTERACTIVE" != "1" ]; then
     echo ""
     return 0
@@ -223,7 +245,7 @@ ask() {
   elif [ -t 0 ]; then
     read -r -p "[?] $prompt " reply || reply=""
   else
-    echo "[!] No interactive terminal; using default answer for: $prompt" >&2
+    echo "[!] $(tr_text "No interactive terminal; using default answer for: $prompt")" >&2
   fi
   echo "$reply"
 }
@@ -261,7 +283,11 @@ if [ "$DRY_RUN" = "1" ]; then
   echo ""
   echo -e "${BOLD}${CYAN}$(tr_text 'Links to enter')${NC}"
   echo "  Localhost:       https://localhost:3334"
-  echo "  $(tr_text 'LAN / Red local'): https://[YOUR-LAN-IP]:3334"
+  if [ "$LANGUAGE" = "es" ]; then
+    echo "  LAN / Red local: https://[TU-IP-LAN]:3334"
+  else
+    echo "  LAN:             https://[YOUR-LAN-IP]:3334"
+  fi
   echo "  $(tr_text 'RAG health'):      https://localhost:3333/health"
   print_ok "Dry-run finished; no changes were made"
   exit 0
@@ -326,15 +352,15 @@ safe_remove() {
   root_abs="$(abs_path "$ROOT")"
   for target in "$@"; do
     if [ -L "$target" ]; then
-      echo "Refusing to remove a symbolic-link target: $target" >&2
+      echo "$(tr_text "Refusing to remove a symbolic-link target: $target")" >&2
       exit 1
     fi
     [ -e "$target" ] || continue
     abs="$(abs_path "$target")"
     case "$abs" in
-      "$root_abs") echo "Refusing to remove project root: $abs" >&2; exit 1 ;;
+      "$root_abs") echo "$(tr_text "Refusing to remove project root: $abs")" >&2; exit 1 ;;
       "$root_abs"/*) ;;
-      *) echo "Refusing to remove path outside project: $abs" >&2; exit 1 ;;
+      *) echo "$(tr_text "Refusing to remove path outside project: $abs")" >&2; exit 1 ;;
     esac
     if is_windows && command -v powershell.exe >/dev/null 2>&1; then
       win_path="$(cygpath -w "$abs" 2>/dev/null || printf '%s' "$abs")"
@@ -387,13 +413,13 @@ remove_cli_path_block() {
     ' "$profile" > "$tmp"
     cat "$tmp" > "$profile"
     rm -f "$tmp"
-    echo "[OK] Removed TrinaxAI PATH entry from $profile"
+    echo "[OK] $(tr_text "Removed TrinaxAI PATH entry from $profile")"
   done
 }
 
 echo -e "\n${BLUE}${BOLD}=== $(tr_text 'TrinaxAI - Clean Uninstaller') ===${NC}"
 echo -e "  ${CYAN}$(tr_text 'Location:')${NC} $ROOT"
-echo -e "  ${GREEN}$(tr_text 'Protected by default:')${NC} source code, indexes, and Ollama models"
+echo -e "  ${GREEN}$(tr_text 'Protected by default: source code, indexes, and Ollama models')${NC}"
 echo ""
 
 if [ "$INTERACTIVE" = "1" ]; then
@@ -519,7 +545,7 @@ if [ -L "$CLI_LINK" ]; then
   case "$LINK_TARGET" in
     "$ROOT/.venv/bin/trinaxai"|"$ROOT/.venv/Scripts/trinaxai"|"$ROOT/.venv/Scripts/trinaxai.exe")
       rm -f "$CLI_LINK"
-      echo "[OK] Removed CLI launcher: $CLI_LINK"
+      echo "[OK] $(tr_text "Removed CLI launcher: $CLI_LINK")"
       ;;
   esac
 fi
@@ -532,7 +558,7 @@ if [ "$REMOVE_MODELS" = "1" ] && command -v ollama >/dev/null 2>&1; then
     ollama rm "$model" 2>/dev/null || true
   done
 elif [ "$REMOVE_MODELS" = "1" ]; then
-  echo "[!] Ollama not found; model removal skipped."
+  echo "[!] $(tr_text 'Ollama not found; model removal skipped.')"
 fi
 
 if [ "$REMOVE_OLLAMA" = "1" ]; then

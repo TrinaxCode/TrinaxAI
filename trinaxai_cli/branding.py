@@ -21,6 +21,8 @@ import os
 import sys
 from typing import Any
 
+from trinaxai_cli.i18n import text
+
 # Big block letters for "TrinaxAI". Kept as a raw string so the alignment is
 # obvious in source. ~72 cols wide, safe for an 80-col terminal.
 BANNER_ART = r"""
@@ -107,7 +109,7 @@ def render_banner(ui: Any, *, subtitle: str | None = None) -> None:
     lines = banner_lines()
     rich_console = getattr(ui, "_rich_console", None)
     color_enabled = getattr(ui, "_color_enabled", False)
-    tag = TAGLINE if subtitle is None else subtitle
+    tag = text("brand_tagline", getattr(ui, "language", "en")) if subtitle is None else subtitle
 
     if rich_console is not None and color_enabled:
         try:

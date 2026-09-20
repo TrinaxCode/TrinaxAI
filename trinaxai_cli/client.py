@@ -311,11 +311,20 @@ class TrinaxAPIClient:
         return int((self._delete(f"/collections/{quote(cid, safe='')}") or {}).get("deleted_nodes") or 0)
 
     # ── Sources / Browse ──
-    def list_sources(self, collection: str) -> dict[str, Any]:
-        return self._get("/v1/sources", [("collection", collection)])
+    def list_sources(self, collection: str, source_id: str | None = None) -> dict[str, Any]:
+        params = [("collection", collection)]
+        if source_id:
+            params.append(("source_id", source_id))
+        return self._get("/v1/sources", params)
 
     def list_chunks(
-        self, collection: str, file: str, limit: int = 50, offset: int = 0, q: str | None = None
+        self,
+        collection: str,
+        file: str,
+        limit: int = 50,
+        offset: int = 0,
+        q: str | None = None,
+        source_id: str | None = None,
     ) -> dict[str, Any]:
         from urllib.parse import quote
 
@@ -325,6 +334,8 @@ class TrinaxAPIClient:
         params: list[tuple[str, str]] = [("limit", str(limit)), ("offset", str(offset))]
         if q:
             params.append(("q", q))
+        if source_id:
+            params.append(("source_id", source_id))
         return self._get(path, params)
 
     # ── Watcher ──

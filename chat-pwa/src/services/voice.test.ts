@@ -52,6 +52,7 @@ describe('voice API routes', () => {
     expect(fetchMock.mock.calls[0]?.[0]).toEqual(
       expect.stringMatching(/\/v1\/voice\/capabilities$/),
     );
+    expect(fetchMock.mock.calls[0]?.[1]?.credentials).toBe('include');
   });
 
   it('rejects failed capabilities responses instead of accepting an HTTP error body', async () => {
@@ -97,6 +98,7 @@ describe('voice API routes', () => {
     await transcribeAudio(new Blob(['audio'], { type: mimeType }), 'es-MX');
 
     expect(fetchMock.mock.calls[0]?.[0]).toEqual(expect.stringMatching(/\/v1\/voice\/stt$/));
+    expect(fetchMock.mock.calls[0]?.[1]?.credentials).toBe('include');
     const form = fetchMock.mock.calls[0]?.[1]?.body as FormData;
     expect(form.get('file')).toMatchObject({ name: `recording.${extension}` });
     expect(form.get('lang')).toBe('es');

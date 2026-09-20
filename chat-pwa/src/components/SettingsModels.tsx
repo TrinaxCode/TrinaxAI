@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from 'react';
-import { MdKeyboardArrowDown, MdKeyboardArrowRight, MdTune } from 'react-icons/md';
 
 import { useI18n } from '../i18n/I18nContext';
 import {
@@ -48,7 +47,6 @@ export default function SettingsModels({
 }: Props) {
   const { t } = useI18n();
   const toast = useToast();
-  const [expanded, setExpanded] = useState(false);
   const [pulling, setPulling] = useState(false);
   const [pullProgress, setPullProgress] = useState<{ model: string; percent: number } | null>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -110,22 +108,16 @@ export default function SettingsModels({
 
   return (
     <section className="min-w-0 max-w-full overflow-hidden">
-      <button
-        type="button"
-        onClick={() => setExpanded((value) => !value)}
-        aria-expanded={expanded}
-        className={`mb-3 flex w-full items-center text-xs font-medium uppercase tracking-widest ${textHeading} hover:opacity-80`}
-      >
-        <span className="inline-flex min-w-0 items-center gap-2">
-          <MdTune size={16} aria-hidden="true" />
-          <span className="truncate">{t('modelCustomize')}</span>
-          {expanded
-            ? <MdKeyboardArrowDown aria-hidden="true" size={19} className={isDark ? 'text-white' : 'text-black'} />
-            : <MdKeyboardArrowRight aria-hidden="true" size={19} className={isDark ? 'text-white' : 'text-black'} />}
-        </span>
-      </button>
-      {expanded && (
-        <div className="space-y-2 min-w-0 max-w-full">
+      <div className={`mb-3 flex items-center gap-2 text-xs font-medium uppercase tracking-widest ${textHeading}`}>
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
+          <path d="M4 6h6M14 6h6M4 12h2M10 12h10M4 18h10M18 18h2" />
+          <circle cx="12" cy="6" r="2" />
+          <circle cx="8" cy="12" r="2" />
+          <circle cx="16" cy="18" r="2" />
+        </svg>
+        <span className="truncate">{t('modelCustomize')}</span>
+      </div>
+      <div className="space-y-2 min-w-0 max-w-full">
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
             {(['8gb', '16gb', '32gb', '64gb'] as const).map((preset) => (
               <button key={preset} type="button" onClick={() => setModelPreset(preset)} className={`min-w-0 rounded-lg px-2 py-2 text-[11px] font-medium break-words ${btnBase}`}>
@@ -211,8 +203,7 @@ export default function SettingsModels({
             <div className="space-y-1"><div className="flex items-center justify-between gap-2"><span className={`min-w-0 break-words text-xs ${textLabel}`}>{t('keepModelsLoaded')}</span><span className={`text-[10px] font-mono ${textHeading}`}>{getKeepAlive()}</span></div><input type="range" aria-label={t('keepModelsLoaded')} min="0" max="60" step="5" value={parseInt(getKeepAlive().replace(/[^0-9]/g, '') || '0', 10)} onChange={(event) => setLocalSetting('tc-keep-alive', event.target.value === '0' ? '0s' : `${event.target.value}m`)} className="w-full accent-[#006bbd]" /><div className={`flex justify-between text-[9px] ${textHeading}`}><span>{t('keepAliveOff')}</span><span>30m</span><span>60m</span></div></div>
             <button type="button" onClick={() => void unloadModels()} className={`w-full rounded-lg py-2 text-xs font-medium ${btnBase}`}>{t('unloadAllModelsNow')}</button>
           </div>
-        </div>
-      )}
+      </div>
     </section>
   );
 }

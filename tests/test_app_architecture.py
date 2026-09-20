@@ -41,6 +41,7 @@ EXPECTED_OPERATIONS = {
     ("GET", "/v1/memory/summary"),
     ("POST", "/v1/pairing/start"),
     ("POST", "/v1/pairing/claim"),
+    ("POST", "/v1/pairing/new-device"),
     ("GET", "/v1/pairing/devices"),
     ("DELETE", "/v1/pairing/devices/{device_id}"),
     ("GET", "/v1/pairing/me"),

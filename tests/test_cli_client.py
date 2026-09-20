@@ -113,8 +113,8 @@ def test_client_methods_preserve_api_paths_bodies_and_encoding() -> None:
     assert client.create_collection("New") == {"id": "new"}
     assert client.rename_collection("docs", "Renamed")["name"] == "Renamed"
     assert client.delete_collection("docs/id") == 2
-    assert client.list_sources("docs") == {"sources": []}
-    assert client.list_chunks("docs/id", "folder/file name.md", q="needle") == {"chunks": []}
+    assert client.list_sources("docs", source_id="source-1") == {"sources": []}
+    assert client.list_chunks("docs/id", "folder/file name.md", q="needle", source_id="source-1") == {"chunks": []}
     assert client.watch_start(["/project"], "docs")["ok"] is True
     assert client.watch_stop()["ok"] is True
     assert client.watch_status() == {"running": True}
@@ -131,8 +131,9 @@ def test_client_methods_preserve_api_paths_bodies_and_encoding() -> None:
     client._delete.assert_any_call("/collections/docs%2Fid")
     client._get.assert_any_call(
         "/v1/sources/docs%2Fid/folder/file%20name.md/chunks",
-        [("limit", "50"), ("offset", "0"), ("q", "needle")],
+        [("limit", "50"), ("offset", "0"), ("q", "needle"), ("source_id", "source-1")],
     )
+    client._get.assert_any_call("/v1/sources", [("collection", "docs"), ("source_id", "source-1")])
     research_call = client._post.call_args_list[-1]
     assert research_call.args[0] == "/v1/research"
     assert research_call.args[1]["web_search"] is True

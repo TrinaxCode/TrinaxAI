@@ -113,14 +113,17 @@ export default function ChatSidebar({
       className="group"
     >
       <div
-        className={`w-full flex items-center gap-2.5 rounded-xl text-left text-sm transition-colors ${session.id === activeId ? activeBg : `${inactiveText} ${hoverBg}`}`}
+        data-session-row
+        data-active={session.id === activeId ? 'true' : undefined}
+        className={`sidebar-session-row w-full flex items-center gap-2.5 rounded-xl text-left text-sm transition-colors ${session.id === activeId ? activeBg : `${inactiveText} ${hoverBg}`}`}
       >
+        {session.id === activeId && <span aria-hidden="true" className="sidebar-active-indicator" />}
         <button
           type="button"
           onClick={() => onSelect(session.id)}
           aria-label={session.title}
           aria-current={session.id === activeId ? 'page' : undefined}
-          className="flex min-w-0 flex-1 items-center gap-2.5 px-3 py-2.5 text-left text-sm"
+          className={`flex min-w-0 flex-1 items-center gap-2.5 py-2.5 pl-3.5 pr-3 text-left text-sm ${session.id === activeId ? 'pl-4' : ''}`}
         >
           <MdChat size={16} className="shrink-0 opacity-60" />
           <span className="min-w-0 flex-1">
@@ -131,7 +134,7 @@ export default function ChatSidebar({
         <div className="relative flex shrink-0 items-center gap-0">
           <button
             onClick={(event) => { event.stopPropagation(); setFolderMenuId((current) => current === session.id ? null : session.id); }}
-            className={`grid h-8 w-8 min-h-0 min-w-0 place-items-center rounded-md p-1 opacity-0 transition-[background-color,color,opacity] group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 ${isDark ? 'text-white/35 hover:bg-white/[0.08] hover:text-white' : 'text-gray-400 hover:bg-gray-100 hover:text-gray-700'}`}
+            className={`hover-reveal grid h-8 w-8 min-h-0 min-w-0 place-items-center rounded-md p-1 transition-[background-color,color,opacity] ${isDark ? 'text-white/35 hover:bg-white/[0.08] hover:text-white' : 'text-gray-400 hover:bg-gray-100 hover:text-gray-700'}`}
             aria-label={t('moveChatToFolder')}
             title={t('moveChatToFolder')}
           >
@@ -149,7 +152,7 @@ export default function ChatSidebar({
               </motion.div>
             )}
           </AnimatePresence>
-          <button onClick={(e) => { e.stopPropagation(); setDeleteId(session.id); }} className="grid h-8 w-8 place-items-center rounded-md p-1 dark:text-white/20 text-gray-400 hover:text-red-500 dark:hover:text-red-400 hover:bg-red-400/10 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 transition-[background-color,color,opacity]" aria-label={`${t('delete')} ${session.title}`}><MdDelete size={14} /></button>
+          <button onClick={(e) => { e.stopPropagation(); setDeleteId(session.id); }} className="hover-reveal grid h-8 w-8 place-items-center rounded-md p-1 dark:text-white/20 text-gray-400 hover:text-red-500 dark:hover:text-red-400 hover:bg-red-400/10 transition-[background-color,color,opacity]" aria-label={`${t('delete')} ${session.title}`}><MdDelete size={14} /></button>
         </div>
       </div>
     </motion.div>
@@ -283,11 +286,19 @@ export default function ChatSidebar({
             );
             })}
 
-            {filteredSessions.length === 0 && (
-              <p className={`text-center ${emptyText} text-xs py-8 px-4`}>
-                {query.trim() ? t('noChatResults') : t('noChats')}
-              </p>
-            )}
+            <AnimatePresence initial={false}>
+              {filteredSessions.length === 0 && (
+                <motion.p
+                  initial={{ opacity: 0, y: 6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: 6 }}
+                  transition={{ duration: 0.18, ease: 'easeOut' }}
+                  className={`text-center ${emptyText} text-xs py-8 px-4`}
+                >
+                  {query.trim() ? t('noChatResults') : t('noChats')}
+                </motion.p>
+              )}
+            </AnimatePresence>
           </div>
         </div>
 

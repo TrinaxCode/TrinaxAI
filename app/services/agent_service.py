@@ -827,9 +827,15 @@ def _run_engine_worker(
     session["engine"] = engine
     try:
         answer = engine.run(messages)
+        completion_status = getattr(engine, "completion_status", "complete")
         _queue_event(
             session,
-            {"type": "done", "answer": answer, "finish_reason": "stop", "completion_status": "complete"},
+            {
+                "type": "done",
+                "answer": answer,
+                "finish_reason": "stop",
+                "completion_status": completion_status,
+            },
             terminal=True,
         )
     except AgentCancelled:

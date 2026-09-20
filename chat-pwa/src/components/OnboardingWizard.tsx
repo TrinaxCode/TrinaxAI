@@ -4,7 +4,7 @@ import { MdContentCopy, MdCheck, MdStop } from 'react-icons/md';
 import { useI18n } from '../i18n/I18nContext';
 import { useTheme } from '../theme/ThemeContext';
 import { APP_CONFIG } from '../lib/config';
-import { MODEL_PRESETS, cancelIndexJob, checkStatus, folderLabelFromFiles, getIndexJob, indexableFilesFrom, startFolderIndex, type IndexJobStatus, type ModelPreset } from '../lib/api';
+import { MODEL_PRESETS, cancelIndexJob, checkStatus, folderLabelFromFiles, getIndexJob, indexableFilesFrom, retryIndexJob, startFolderIndex, type IndexJobStatus, type ModelPreset } from '../lib/api';
 import { systemFetch } from '../lib/authHeaders';
 import { syncSharedStateOnce } from '../lib/sharedState';
 import BackButton from './BackButton';
@@ -198,14 +198,14 @@ export default function OnboardingWizard({ onComplete, canConfigureSystem }: Pro
 
   // Auto-advance to next step after successful indexing
   useEffect(() => {
-    if (!indexing && indexJob?.status === 'completed' && step === 5) {
+    if (!indexing && indexJob?.status === 'completed' && !indexJob.skipped && !indexJob.failures.length && !indexJob.retry_recommended && step === 5) {
       const timer = setTimeout(() => {
         setIndexJob(null);
         setStep(6);
       }, 2500);
       return () => clearTimeout(timer);
     }
-  }, [indexing, indexJob?.status, indexJob?.id, step]);
+  }, [indexing, indexJob?.status, indexJob?.id, indexJob?.skipped, indexJob?.failures.length, indexJob?.retry_recommended, step]);
 
   const cancelIndex = useCallback(async () => {
     indexAbortRef.current?.abort();
@@ -214,6 +214,25 @@ export default function OnboardingWizard({ onComplete, canConfigureSystem }: Pro
       if (cancelled) setIndexJob(cancelled);
     }
     setIndexing(false);
+  }, [indexJob]);
+
+  const retryIndex = useCallback(async () => {
+    if (!indexJob) return;
+    setIndexing(true);
+    const controller = new AbortController();
+    indexAbortRef.current = controller;
+    try {
+      let job = await retryIndexJob(indexJob.id, controller.signal);
+      setIndexJob(job);
+      while (!controller.signal.aborted && !['completed', 'failed', 'cancelled'].includes(job.status)) {
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+        job = await getIndexJob(job.id, controller.signal);
+        setIndexJob(job);
+      }
+    } finally {
+      setIndexing(false);
+      indexAbortRef.current = null;
+    }
   }, [indexJob]);
 
   const modelKeys = [
@@ -235,6 +254,7 @@ export default function OnboardingWizard({ onComplete, canConfigureSystem }: Pro
   const selectedCard = 'border-[#006bbd] bg-[#006bbd]/5 ring-1 ring-[#006bbd]/30';
   const stepDot = (s: Step) => step === s ? 'bg-[#006bbd] w-3' : (step > s ? 'bg-[#006bbd]/40' : (isDark ? 'bg-white/[0.15]' : 'bg-gray-300'));
   const indexProgress = Math.max(uploadProgress, indexJob?.progress ?? 0);
+  const indexProgressExact = uploadProgress > 0 ? true : Boolean(indexJob?.progress_exact ?? true);
 
   return (
     <motion.div
@@ -430,16 +450,14 @@ export default function OnboardingWizard({ onComplete, canConfigureSystem }: Pro
                     <div className="space-y-2 text-xs">
                       <details className={`p-2 rounded-lg ${cardBg}`}>
                         <summary className="font-medium cursor-pointer">{t('platformLinux')}</summary>
-                        <div className="mt-1 flex items-center gap-2">
-                          <pre className="flex-1 p-2 rounded text-[11px] bg-black/20 overflow-x-auto">curl -fsSL https://ollama.com/install.sh | sh</pre>
-                          <button
-                            onClick={(e) => { e.stopPropagation(); copyToClipboard('curl -fsSL https://ollama.com/install.sh | sh', 'linux'); }}
-                            className={`shrink-0 p-1.5 rounded-md transition-colors ${copiedCmd === 'linux' ? 'text-green-400 bg-green-400/10' : isDark ? 'text-white/30 hover:text-white/70 hover:bg-white/[0.06]' : 'text-gray-400 hover:text-gray-700 hover:bg-gray-100'}`}
-                            title={t('copy')}
-                          >
-                            {copiedCmd === 'linux' ? <MdCheck size={14} /> : <MdContentCopy size={14} />}
-                          </button>
-                        </div>
+                        <a
+                          href="https://ollama.com/download/linux"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="mt-1 block rounded-lg bg-black/20 p-2 text-[11px] text-[#4ea3e0] underline underline-offset-2"
+                        >
+                          {t('ollamaLinuxDownload')}
+                        </a>
                       </details>
                       <details className={`p-2 rounded-lg ${cardBg}`}>
                         <summary className="font-medium cursor-pointer">{t('platformMac')}</summary>
@@ -499,17 +517,20 @@ export default function OnboardingWizard({ onComplete, canConfigureSystem }: Pro
                       <>
                         <div className="flex items-center justify-between text-xs">
                           <span className={textSub}>{indexJob?.phase ? t('indexing') : t('loading')}</span>
-                          <span className={`font-semibold tabular-nums ${textMain}`}>{indexProgress}%</span>
+                          <span className={`font-semibold tabular-nums ${textMain}`}>
+                            {indexProgress}%{!indexProgressExact && <span className="ml-1.5 text-[10px] font-normal uppercase tracking-wide">{t('indexApprox')}</span>}
+                          </span>
                         </div>
                         <div
-                          className={`h-2.5 w-full overflow-hidden rounded-full ${isDark ? 'bg-white/[0.08]' : 'bg-gray-200'}`}
+                          className="tc-index-track"
                           role="progressbar"
                           aria-valuemin={0}
                           aria-valuemax={100}
                           aria-valuenow={indexProgress}
+                          aria-valuetext={`${indexProgress}%${indexProgressExact ? '' : ` ${t('indexApprox')}`}`}
                           aria-label={t('indexing')}
                         >
-                          <div className="h-full rounded-full bg-gradient-to-r from-[#006bbd] via-[#138bd1] to-[#42c6a5] shadow-[0_0_10px_rgba(0,107,189,.35)] transition-[width] duration-500" style={{ width: `${Math.min(100, indexProgress)}%` }} />
+                          <div className={`tc-index-fill${indexProgressExact ? '' : ' tc-index-fill--live'}`} style={{ width: `${Math.min(100, indexProgress)}%` }} />
                         </div>
                         <div className={`text-[11px] ${textSub}`}>
                           {t('indexFiles')}: {indexJob?.files_processed || indexJob?.saved || 0} / {indexJob?.files_total || selectedFolderCount}
@@ -520,11 +541,27 @@ export default function OnboardingWizard({ onComplete, canConfigureSystem }: Pro
                         </button>
                       </>
                     ) : indexJob?.status === 'completed' ? (
+                      <div className="space-y-2">
                       <div className="flex items-center gap-2 text-sm">
                         <MdCheck className="text-green-400" size={16} aria-hidden="true" />
                         <span className={`font-medium ${textMain}`}>{t('indexComplete')}</span>
                         <span className={textSub}>({indexJob.saved} {t('indexFiles').toLowerCase()})</span>
                       </div>
+                      {(indexJob.skipped > 0 || indexJob.failures.length > 0 || indexJob.retry_recommended) && (
+                        <div role="alert" className="flex flex-wrap items-center gap-2 text-xs text-amber-400">
+                          <span>{indexJob.skipped || indexJob.failures.length ? `${t('indexSkipped')}: ${indexJob.skipped || indexJob.failures.length}. Some files were not indexed.` : 'Indexing needs attention.'}</span>
+                          <button type="button" onClick={retryIndex} className="rounded-lg bg-amber-400/15 px-3 py-1.5 font-semibold text-amber-300">{t('retry')}</button>
+                        </div>
+                      )}
+                      {indexJob.failures.slice(0, 3).map((failure) => <p key={`${failure.path}:${failure.reason}`} className={`text-[11px] ${textSub}`}>{failure.path}: {failure.reason}</p>)}
+                      </div>
+                    ) : indexJob?.status === 'failed' ? (
+                      <div role="alert" className="flex flex-wrap items-center gap-2 text-sm text-red-400">
+                        <span>{indexJob.error || 'Indexing failed.'}</span>
+                        <button type="button" onClick={retryIndex} className="rounded-lg bg-red-400/15 px-3 py-1.5 text-xs font-semibold text-red-300">{t('retry')}</button>
+                      </div>
+                    ) : indexJob?.status === 'cancelled' ? (
+                      <div role="status" className={`text-sm ${textSub}`}>{t('indexCancelled')}</div>
                     ) : null}
                   </div>
                 )}

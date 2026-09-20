@@ -97,14 +97,21 @@ def update_env(root: Path, addresses: list[str]) -> None:
         raise FileNotFoundError(f"Missing TrinaxAI environment file: {path}")
     lines = path.read_text(encoding="utf-8").splitlines()
     replacement = f"TRINAXAI_CORS_ORIGINS={cors_origins(addresses)}"
+    host_replacement = "TRINAXAI_PWA_HOST=0.0.0.0"
     updated = False
+    host_updated = False
     for index, raw in enumerate(lines):
-        if raw.startswith("TRINAXAI_CORS_ORIGINS="):
+        if raw.startswith("TRINAXAI_CORS_ORIGINS=") and not updated:
             lines[index] = replacement
             updated = True
-            break
+        if raw.startswith("TRINAXAI_PWA_HOST="):
+            # The network refresh explicitly enables LAN access; the API stays loopback-bound.
+            lines[index] = host_replacement
+            host_updated = True
     if not updated:
         lines.append(replacement)
+    if not host_updated:
+        lines.append(host_replacement)
     temporary = path.with_suffix(".env.tmp")
     temporary.write_text("\n".join(lines) + "\n", encoding="utf-8")
     os.chmod(temporary, path.stat().st_mode & 0o777)

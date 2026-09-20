@@ -5,7 +5,11 @@ from __future__ import annotations
 import signal
 from dataclasses import dataclass
 
+from trinaxai_core import source_id_for_root
+from trinaxai_index_documents import _SENSITIVE_EXTENSIONS, _SENSITIVE_NAMES, is_indexable_file
+
 # ruff: noqa: F405
+from .app_state_service import _read_app_state
 from .shared_runtime import (
     LOG,
     Any,
@@ -324,6 +328,18 @@ class _watch_Handler(_WDFileSystemEventHandler):
             try:
                 if destination == changed_abs:
                     continue
+                if not _watch_mirror_path_allowed(relative) or (
+                    os.path.lexists(changed_abs)
+                    and not os.path.isdir(changed_abs)
+                    and not is_indexable_file(changed_abs)
+                ):
+                    if os.path.lexists(destination):
+                        if os.path.isdir(destination) and not os.path.islink(destination):
+                            shutil.rmtree(destination)
+                        else:
+                            os.remove(destination)
+                        self._remove_empty_parents(os.path.dirname(destination), target_abs)
+                    continue
                 if os.path.lexists(changed_abs):
                     changed_real = os.path.realpath(changed_abs)
                     if os.path.islink(changed_abs) or os.path.commonpath([changed_real, root_real]) != root_real:
@@ -380,6 +396,14 @@ class _watch_Handler(_WDFileSystemEventHandler):
                 "TRINAXAI_COLLECTION_NAME": collection_name,
                 "TRINAXAI_INDEX_APPEND": "0",
             }
+            try:
+                synced_lang = str(_read_app_state().get("tc-lang") or "").strip().lower()
+            except Exception:  # noqa: BLE001 - app state is best-effort for log language
+                synced_lang = ""
+            if synced_lang.startswith("es"):
+                env["TRINAXAI_LANG"] = "es"
+            elif synced_lang.startswith("en"):
+                env["TRINAXAI_LANG"] = "en"
             with state.watcher["lock"]:
                 if state.watcher.get("handler") in (None, self):
                     state.watcher.update(
@@ -507,7 +531,11 @@ class _watch_Handler(_WDFileSystemEventHandler):
     def _ignored(self, path: str) -> bool:
         """Ignore generated mirrors and runtime state inside a source root."""
         absolute = os.path.abspath(path)
-        ignored_roots = [config.LOCAL_SOURCES_DIR, config.PERSIST_DIR]
+        # A broad watch root (for example ~/Documents) can contain the
+        # TrinaxAI checkout itself.  Its uploads, mirrors, build output, and
+        # runtime state are generated inputs, not user source files; observing
+        # them can recursively launch a second indexer against the same lock.
+        ignored_roots = [config.BASE_DIR, config.LOCAL_SOURCES_DIR, config.PERSIST_DIR]
         for ignored_root in ignored_roots:
             if not ignored_root:
                 continue
@@ -575,7 +603,8 @@ def _seed_watch_mirror(source_root: str, target_root: str) -> None:
         dirnames[:] = [
             name
             for name in dirnames
-            if not name.startswith(".")
+            if name not in config.EXCLUDE_DIR_NAMES
+            and not name.startswith(".")
             and not os.path.islink(os.path.join(dirpath, name))
             and os.path.abspath(os.path.join(dirpath, name)) != local_sources
             and not os.path.abspath(os.path.join(dirpath, name)).startswith(local_sources + os.sep)
@@ -587,12 +616,29 @@ def _seed_watch_mirror(source_root: str, target_root: str) -> None:
         os.makedirs(destination_dir, exist_ok=True)
         for filename in filenames:
             source_file = os.path.join(dirpath, filename)
-            if filename.startswith(".") or os.path.islink(source_file):
+            relative_file = os.path.relpath(source_file, source_root)
+            if not _watch_mirror_path_allowed(relative_file) or not is_indexable_file(source_file):
                 continue
             try:
                 shutil.copy2(source_file, os.path.join(destination_dir, filename))
             except OSError as exc:
                 LOG.warning("Could not seed watcher mirror %s: %s", source_file, exc)
+
+
+def _watch_mirror_path_allowed(relative_path: str) -> bool:
+    """Keep dependency and credential files out of watcher mirrors."""
+    parts = os.path.normpath(relative_path).split(os.sep)
+    if not parts or any(part in {"", ".", ".."} for part in parts):
+        return False
+    if any(part.startswith(".") or part in config.EXCLUDE_DIR_NAMES for part in parts[:-1]):
+        return False
+    filename = parts[-1].lower()
+    return not (
+        filename.startswith(".")
+        or filename in _SENSITIVE_NAMES
+        or filename.startswith(".env.")
+        or os.path.splitext(filename)[1] in _SENSITIVE_EXTENSIONS
+    )
 
 
 def _prepare_watch_targets(
@@ -614,7 +660,7 @@ def _prepare_watch_targets(
             collection_name = collection_name_by_id.get(collection_id, config.DEFAULT_COLLECTION_NAME)
             target_root = source_root
         else:
-            target_root = os.path.join(collections_root, collection_id, "watch-source")
+            target_root = os.path.join(collections_root, collection_id, "watch-source", source_id_for_root(source_root))
             os.makedirs(target_root, exist_ok=True)
             with state.watcher["lock"]:
                 state.watcher["active_root"] = source_root

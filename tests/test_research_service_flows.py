@@ -129,6 +129,22 @@ def test_research_synthesis_uses_localized_fallback_and_valid_citations_only() -
     assert local == "Fuente ALFA-7319."
 
 
+@pytest.mark.parametrize(
+    ("query", "label"),
+    [("What is verified?", "Sources consulted"), ("¿Qué se verificó?", "Fuentes consultadas")],
+)
+def test_research_synthesis_localizes_missing_citation_label(query: str, label: str) -> None:
+    answer = research._research_synthesize(
+        SimpleNamespace(complete=lambda _prompt: SimpleNamespace(text="Verified fact.")),
+        query,
+        [query],
+        [{"id": "one", "text": "Verified fact", "metadata": {"title": "Source"}, "score": 0.9}],
+        web_search=True,
+    )
+
+    assert answer == f"Verified fact.\n\n{label}: [1]"
+
+
 def test_research_synthesis_streams_tokens_closes_stream_and_adds_missing_citations() -> None:
     closed: list[bool] = []
 
@@ -153,6 +169,35 @@ def test_research_synthesis_streams_tokens_closes_stream_and_adds_missing_citati
     assert answer == "Fact [1]"
     assert tokens == ["Fact ", "[1]"]
     assert closed == [True]
+
+
+def test_deep_web_research_uses_preset_budget_not_legacy_180_tokens(monkeypatch) -> None:
+    observed: dict = {}
+    monkeypatch.setattr(research.state, "fusion_retriever", None)
+    monkeypatch.setattr(research, "configured_provider", lambda: "duckduckgo")
+    monkeypatch.setattr(research, "_research_decompose", lambda *_args: ["facet"])
+    monkeypatch.setattr(
+        research,
+        "get_llm",
+        lambda _model, **kwargs: (
+            observed.update(kwargs) or SimpleNamespace(complete=lambda _prompt: SimpleNamespace(text="Answer [1]."))
+        ),
+    )
+    monkeypatch.setattr(
+        research,
+        "search_web",
+        lambda *_args, **_kwargs: (
+            [{"title": "Source", "url": "https://example.com", "snippet": "Fact"}],
+            "duckduckgo",
+        ),
+    )
+    monkeypatch.setattr(research, "read_web_results", lambda rows, **_kwargs: rows)
+
+    research._research_sync(ResearchRequest(query="Investigate this", web_search=True, depth=3))
+
+    assert observed["num_predict"] >= 640
+    assert observed["num_predict"] != 180
+    assert observed["num_ctx"] <= 4096
 
 
 def test_research_synthesis_handles_empty_and_cancelled_streams() -> None:
@@ -249,6 +294,44 @@ def test_research_sync_stops_after_model_setup_when_cancelled(monkeypatch) -> No
 
     result = research._research_sync(ResearchRequest(query="question"), cancel_event=event)
 
+    assert result["cancelled"] is True
+
+
+def test_research_cancel_does_not_wait_for_inflight_searches(monkeypatch) -> None:
+    cancel_event = research.threading.Event()
+    started = research.threading.Event()
+    release = research.threading.Event()
+    result: dict = {}
+
+    class _LLM:
+        def complete(self, _prompt: str):
+            return SimpleNamespace(text='["first", "second"]')
+
+    def blocking_search(*_args, **_kwargs):
+        started.set()
+        release.wait(2)
+        return [], "brave"
+
+    monkeypatch.setattr(research.state, "fusion_retriever", None)
+    monkeypatch.setattr(research, "get_llm", lambda *_args, **_kwargs: _LLM())
+    monkeypatch.setattr(research, "configured_provider", lambda: "brave")
+    monkeypatch.setattr(research, "search_web", blocking_search)
+
+    worker = research.threading.Thread(
+        target=lambda: result.update(
+            research._research_sync(
+                ResearchRequest(query="Investigate this", web_search=True, depth=2), cancel_event=cancel_event
+            )
+        )
+    )
+    worker.start()
+    assert started.wait(1)
+    cancel_event.set()
+    worker.join(0.5)
+    release.set()
+    worker.join(1)
+
+    assert not worker.is_alive()
     assert result["cancelled"] is True
 
 
@@ -567,6 +650,7 @@ async def test_research_stream_emits_tokens_sources_metadata_and_done(monkeypatc
     assert payloads[0]["choices"][0]["delta"]["content"] == "Primero "
     assert payloads[1]["choices"][0]["delta"]["content"] == "segundo"
     assert payloads[2]["trinaxai_sources"][0]["title"] == "Artículo"
+    assert payloads[2]["trinaxai_answer"] == "Primero segundo"
     assert payloads[2]["trinaxai_research"]["web_provider"] == "duckduckgo"
     assert payloads[2]["trinaxai_research"]["search_query"] == "current official source"
     assert payloads[2]["trinaxai_finish"] == {

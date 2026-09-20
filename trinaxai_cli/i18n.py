@@ -70,6 +70,16 @@ MESSAGES: dict[str, tuple[str, str]] = {
     "file_path_required": ("File path required (use --file).", "Indica la ruta del archivo (usa --file)."),
     "service_start": ("Starting TrinaxAI services...", "Iniciando los servicios de TrinaxAI..."),
     "service_stop": ("Stopping TrinaxAI services...", "Deteniendo los servicios de TrinaxAI..."),
+    "stop_all_target": (
+        "all TrinaxAI services including the PWA",
+        "todos los servicios de TrinaxAI, incluida la PWA",
+    ),
+    "stop_ai_target": ("AI services", "los servicios de IA"),
+    "stop_confirm": ("Stop {target}?", "¿Detener {target}?"),
+    "stopping": ("Stopping {target}...", "Deteniendo {target}..."),
+    "service_manager": ("Service manager", "Administrador de servicios"),
+    "not_found_value": ("(not found)", "(no encontrado)"),
+    "unset_value": ("(unset)", "(no definido)"),
     "cancelled_lower": ("cancelled.", "cancelado."),
     "memory_text_prompt": ("Memory text", "Texto de memoria"),
     "memory_id_prompt": ("Memory id (or prefix)", "ID de memoria (o prefijo)"),
@@ -99,6 +109,29 @@ MESSAGES: dict[str, tuple[str, str]] = {
     "models_title": ("TrinaxAI models", "Modelos de TrinaxAI"),
     "config_title": ("TrinaxAI config", "Configuración de TrinaxAI"),
     "doctor_title": ("TrinaxAI doctor", "Doctor de TrinaxAI"),
+    "python_package": ("Python package", "Paquete de Python"),
+    "cli_import_works": ("CLI import works", "La importación de la CLI funciona"),
+    "install_root_label": ("Install root", "Raíz de instalación"),
+    "ollama_command": ("Ollama command", "Comando de Ollama"),
+    "services": ("Services", "Servicios"),
+    "frontend_mode": ("Frontend mode", "Modo del frontend"),
+    "backend_bind": ("Backend bind", "Vinculación del backend"),
+    "rag_api": ("RAG API", "API RAG"),
+    "index_built": ("Index built", "Índice construido"),
+    "projects": ("Projects", "Proyectos"),
+    "usage_stats": ("Usage stats", "Estadísticas de uso"),
+    "ok_upper": ("OK", "CORRECTO"),
+    "fail_upper": ("FAIL", "FALLÓ"),
+    "ready": ("ready", "listo"),
+    "none": ("none", "ninguno"),
+    "no_service_status": ("no service status", "sin estado de servicios"),
+    "running_api_detected": ("running API detected", "API activa detectada"),
+    "install_start_ollama": ("install/start Ollama", "instala/inicia Ollama"),
+    "loopback_or_enforced": ("loopback or enforced", "loopback o forzado"),
+    "unsafe_non_loopback_listener": (
+        "unsafe non-loopback listener",
+        "escucha no segura fuera de loopback",
+    ),
     "memory_summary_title": ("Memory summary", "Resumen de memoria"),
     "current_summary_title": ("Current summary", "Resumen actual"),
     "subquestions_title": ("Sub-questions", "Subpreguntas"),
@@ -132,6 +165,167 @@ MESSAGES: dict[str, tuple[str, str]] = {
     "index_action": ("Index", "Indexación"),
     "load_session": ("Load session", "Cargar sesión"),
     "write_export": ("Write export", "Escribir exportación"),
+    # ── Actions shown through ui.failure / agent turns ──
+    "brand_tagline": (
+        "Local-first AI in your terminal | chat | search | research | agent",
+        "IA local-first en tu terminal | chat | búsqueda | investigación | agente",
+    ),
+    "action_agent": ("Agent", "Agente"),
+    "action_memory": ("Memory", "Memoria"),
+    "action_collections": ("Collections", "Colecciones"),
+    "action_model_listing": ("Model listing", "Listado de modelos"),
+    "action_network_refresh": ("Network refresh", "Renovación de red"),
+    "action_service_manager": ("Service manager", "Administrador de servicios"),
+    # ── Chat / agent runtime messages ──
+    "agent_degraded": (
+        "Agent response is degraded: the model request failed, so the displayed answer may be incomplete.",
+        "La respuesta del agente está degradada: la solicitud al modelo falló, así que la respuesta mostrada puede estar incompleta.",
+    ),
+    "chat_file_requires_prompt": (
+        "chat --file requires --prompt because interactive attachment turns are not supported",
+        "chat --file requiere --prompt porque los turnos interactivos con archivos adjuntos no son compatibles",
+    ),
+    "file_attachments_ollama_only": (
+        "file attachments use direct Ollama; omit --engine rag and --collections",
+        "los archivos adjuntos usan Ollama directo; omite --engine rag y --collections",
+    ),
+    "web_provider_hint": (
+        "Configure a web provider with TRINAXAI_WEB_SEARCH_PROVIDER (brave/searxng).",
+        "Configura un proveedor web con TRINAXAI_WEB_SEARCH_PROVIDER (brave/searxng).",
+    ),
+    "thinking_usage": (
+        "Use /thinking on, /thinking off, or /thinking toggle.",
+        "Usa /thinking on, /thinking off o /thinking toggle.",
+    ),
+    "thinking_enabled": (
+        "Thinking mode enabled. Reasoning is still skipped for simple turns.",
+        "Modo de razonamiento activado. El razonamiento se sigue omitiendo en los turnos simples.",
+    ),
+    "thinking_disabled": (
+        "Thinking mode disabled. Provider reasoning will not run.",
+        "Modo de razonamiento desactivado. El razonamiento del proveedor no se ejecutará.",
+    ),
+    "no_answer": ("(no answer)", "(sin respuesta)"),
+    "run_command_preview": ("  - run command:", "  - ejecutar comando:"),
+    "write_preview": ("  - write {path} ({chars} chars)", "  - escribir {path} ({chars} caracteres)"),
+    "edit_preview": ("  - edit {path}", "  - editar {path}"),
+    "network_refresh_confirm": (
+        "Refresh HTTPS and allow the current local network?",
+        "¿Renovar HTTPS y permitir la red local actual?",
+    ),
+    "interrupted_title": ("Interrupted.", "Interrumpido."),
+    "you_label": ("You", "Tú"),
+    "spinner_done": ("done", "listo"),
+    "page_abbrev": ("p.", "pág."),
+    "cd_invalid_quoting": ("cd: unbalanced quotes in the path", "cd: comillas desbalanceadas en la ruta"),
+    "malformed_config": (
+        "Malformed config at {path}: {error}; using defaults",
+        "Configuración inválida en {path}: {error}; se usarán los valores predeterminados",
+    ),
+    "malformed_session_line": (
+        "warning: skipping malformed session line in {path}: {error}",
+        "aviso: se omite una línea de sesión con formato inválido en {path}: {error}",
+    ),
+    # ── Document indexer output (index.py, trinaxai_index_*) ──
+    "idx_banner": ("\n🧠 TrinaxAI — Document Indexer", "\n🧠 TrinaxAI — Indexador de Documentos"),
+    "idx_dir_not_found": ("❌ Directory not found: {path}", "❌ Directorio no encontrado: {path}"),
+    "idx_lock_wait": ("🔒 Waiting for exclusive index lock...", "🔒 Esperando turno exclusivo del índice..."),
+    "idx_restored_generation": (
+        "🛟 Previous generation restored after an interrupted indexing run.",
+        "🛟 Se restauró la generación anterior tras una indexación interrumpida.",
+    ),
+    "idx_confirmed_generation": (
+        "🧹 A previously published generation was confirmed and its transaction cleaned up.",
+        "🧹 Se confirmó una generación ya publicada y se limpió su transacción.",
+    ),
+    "idx_scanning": ("📂 Scanning: {path}", "📂 Recorriendo: {path}"),
+    "idx_candidates": ("   └─ {count} candidate files", "   └─ {count} archivos candidatos"),
+    "idx_embeddings_batch": ("🔨 Embeddings batch {done}/{total}...", "🔨 Embeddings lote {done}/{total}..."),
+    "idx_read_error": (
+        "   ⚠️  Error reading {name}, will retry: {error}",
+        "   ⚠️  Error leyendo {name}, se reintentará: {error}",
+    ),
+    "idx_no_text": (
+        "   ⚠️  {name} contains no extractable text; will retry",
+        "   ⚠️  {name} no contiene texto extraíble; se reintentará",
+    ),
+    "idx_ast_failed": (
+        "   ⚠️  AST failed on {name} ({language}): {error} — falling back to text splitting",
+        "   ⚠️  AST falló en {name} ({language}): {error} — troceo por texto",
+    ),
+    "idx_split_summary": (
+        "   └─ {code} via AST, {prose} via text ({fallback} with fallback) → {chunks} chunks",
+        "   └─ {code} por AST, {prose} por texto ({fallback} con fallback) → {chunks} chunks",
+    ),
+    "idx_batch_loaded": (
+        "   📦 Batch {batch}: {documents} documents, {files} files",
+        "   📦 Lote {batch}: {documents} documentos, {files} archivos",
+    ),
+    "idx_split_error": (
+        "   ⚠️  Error splitting {name}, will retry: {error}",
+        "   ⚠️  Error troceando {name}, se reintentará: {error}",
+    ),
+    "idx_up_to_date": (
+        "\n✅ Everything up to date — nothing to index.",
+        "\n✅ Todo al día — no hay cambios que indexar.",
+    ),
+    "idx_incremental": (
+        "\n🔄 Incremental: {new} new, {changed} modified, {deleted} removed",
+        "\n🔄 Incremental: {new} nuevos, {changed} modificados, {deleted} eliminados",
+    ),
+    "idx_loading_existing": ("📥 Loading existing index...", "📥 Cargando índice existente..."),
+    "idx_stale_removed": ("   🗑️  {count} stale chunks removed", "   🗑️  {count} chunks obsoletos eliminados"),
+    "idx_kept_state": (
+        "   ⚠️  {count} files kept their previous state and will be retried",
+        "   ⚠️  {count} archivos conservaron su estado anterior y se reintentarán",
+    ),
+    "idx_publishing": (
+        "💾 Publishing atomic index generation...",
+        "💾 Publicando generación atómica del índice...",
+    ),
+    "idx_manifest_recovery": (
+        "\n🛟 Existing index without a valid manifest — safe recovery",
+        "\n🛟 Índice existente sin manifiesto válido — recuperación segura",
+    ),
+    "idx_publishing_recovered": (
+        "💾 Publishing recovered index generation...",
+        "💾 Publicando generación recuperada del índice...",
+    ),
+    "idx_retry_count": (
+        "   ⚠️  {count} files were kept and will be retried",
+        "   ⚠️  {count} archivos se conservaron y se reintentarán",
+    ),
+    "idx_first_run": ("\n🆕 Full index (first run)", "\n🆕 Indexado completo (primera vez)"),
+    "idx_no_documents": ("❌ No documents found to index.", "❌ No se encontraron documentos para indexar."),
+    "idx_chunking": (
+        "✂️  Splitting (language-aware chunking)...",
+        "✂️  Troceando (chunking consciente del lenguaje)...",
+    ),
+    "idx_no_chunks": ("❌ Could not generate chunks to index.", "❌ No se pudieron generar chunks para indexar."),
+    "idx_publishing_first": (
+        "💾 Publishing first atomic index generation...",
+        "💾 Publicando primera generación atómica del índice...",
+    ),
+    "idx_not_marked": (
+        "   ⚠️  {count} files were not marked and will be retried",
+        "   ⚠️  {count} archivos no se marcaron y se reintentarán",
+    ),
+    "idx_completed": ("\n✅ Indexing completed", "\n✅ Indexado completado"),
+    "idx_collection_line": ("📚 Collection: {name} ({id})", "📚 Colección: {name} ({id})"),
+    "idx_source_line": ("🗂️  Source: {project} ({id})", "🗂️  Fuente: {project} ({id})"),
+    "idx_files_in_index": ("📦 {path}  ·  {count} files in the index", "📦 {path}  ·  {count} archivos en el índice"),
+    "idx_error": ("❌ {error}", "❌ {error}"),
+    "idx_publish_failed": (
+        "❌ Could not publish/recover the index: {error}",
+        "❌ No se pudo publicar/recuperar el índice: {error}",
+    ),
+    "idx_chunking_changes": ("✂️  Splitting changes...", "✂️  Troceando cambios..."),
+    "idx_files_found_progress": ("   📂 {count} files found...", "   📂 {count} archivos encontrados..."),
+    "idx_files_found_total": ("   📂 {count} files found in total", "   📂 {count} archivos encontrados en total"),
+    "idx_skipped_big": (
+        "   ⏭️  {count} files skipped by size (above the configured limit for their file type)",
+        "   ⏭️  {count} archivos omitidos por tamaño (sobre el límite configurado para su tipo de archivo)",
+    ),
 }
 
 
@@ -167,6 +361,13 @@ def translate(message: Any, lang: str = "en") -> Any:
             return pair[1] if normalize_lang(lang) == "es" else pair[0]
     if normalize_lang(lang) != "es":
         return message
+    status_translated = re.sub(
+        r"=(running|stopped)\b",
+        lambda match: "=" + ("activo" if match.group(1) == "running" else "detenido"),
+        normalized,
+    )
+    if status_translated != normalized:
+        return status_translated
     patterns: tuple[tuple[str, str], ...] = (
         (r"^No files in collection '(.+)'\.$", r"No hay archivos en la colección '\1'."),
         (
@@ -218,8 +419,33 @@ def translate(message: Any, lang: str = "en") -> Any:
             r"^Use the TrinaxAI HTTP API or CLI commands directly for now\.$",
             "Por ahora, usa directamente la API HTTP o los comandos de la CLI de TrinaxAI.",
         ),
+        (
+            r"^Stop all TrinaxAI services including the PWA\?$",
+            "¿Detener todos los servicios de TrinaxAI, incluida la PWA?",
+        ),
+        (r"^Stop AI services\?$", "¿Detener los servicios de IA?"),
+        (
+            r"^Stopping all TrinaxAI services including the PWA\.\.\.$",
+            "Deteniendo todos los servicios de TrinaxAI, incluida la PWA...",
+        ),
+        (r"^Stopping AI services\.\.\.$", "Deteniendo los servicios de IA..."),
         (r"^Stop (.+)\?$", r"¿Detener \1?"),
         (r"^Restart TrinaxAI AI services\?$", "¿Reiniciar los servicios de IA de TrinaxAI?"),
+        (r"^Command '(.+)'$", r"Comando '\1'"),
+        (
+            r"^command '(.+)' not yet implemented \(no run\(\) function\)\.$",
+            r"el comando '\1' aún no está implementado (no hay función run()).",
+        ),
+        (
+            r"^TrinaxAI could not complete '(.+)'\. Other commands remain available; try again or use --verbose\.$",
+            r"TrinaxAI no pudo completar '\1'. Los demás comandos siguen disponibles; inténtalo de nuevo o usa --verbose.",
+        ),
+        (r"^CA file not found: (.+)$", r"No se encuentra el archivo CA: \1"),
+        (
+            r"^api\.verify_tls=false is not supported; use --ca-file or TRINAXAI_CA_FILE$",
+            "api.verify_tls=false no es compatible; usa --ca-file o TRINAXAI_CA_FILE",
+        ),
+        (r"^Run (update|uninstall)(\.sh|\.ps1)$", r"Ejecutar \1\2"),
         (
             r"^Copied (.+) note\(s\) from '(.+)' into collection '(.+)' \(skipped: (.+)\)\.$",
             r"Se copiaron \1 nota(s) de '\2' a la colección '\3' (omitidas: \4).",
@@ -322,6 +548,11 @@ def translate(message: Any, lang: str = "en") -> Any:
             r"^Interrupted; stopped (.+) and its child processes\.$",
             r"Interrumpido; se detuvieron \1 y sus procesos secundarios.",
         ),
+        (r"^expected=(.+), actual=unavailable$", r"esperado=\1, actual=no disponible"),
+        (r"^expected=(.+), actual=(.+)$", r"esperado=\1, actual=\2"),
+        (r"^(.+); run: trinaxai start$", r"\1; ejecuta: trinaxai start"),
+        (r"^run: trinaxai index \.?$", "ejecuta: trinaxai index ."),
+        (r"^messages=(.+) tokens=(.+)$", r"mensajes=\1 tokens=\2"),
         (r"^Provide either --collection-id or --name, not both\.$", "Indica --collection-id o --name, no ambos."),
         (
             r"^Delete collection '(.+)' and its indexed files\?$",
@@ -362,6 +593,92 @@ def translate(message: Any, lang: str = "en") -> Any:
         ),
         (r"^Watcher: (.+) \| watching: (.+)$", r"Watcher: \1 | vigilando: \2"),
         (r"^Indexer: (.+) \| queued: (.+)$", r"Indexador: \1 | en cola: \2"),
+        (r"^Passes: (.+) \| Model: (.+)$", r"Pasadas: \1 | Modelo: \2"),
+        (r"^Run ([A-Za-z0-9_.-]+\.(?:sh|ps1))$", r"Ejecutar \1"),
+        (r"^workspace does not exist or is not a directory: (.+)$", r"el workspace no existe o no es una carpeta: \1"),
+        (
+            r"^Indexing (.+) into collection '(.+)' \(append=(.+)\)\.\.\.$",
+            r"Indexando \1 en la colección '\2' (append=\3)...",
+        ),
+        (r"^Saved session: (.+)$", r"Sesión guardada: \1"),
+        (r"^Collection not found: (.+)$", r"Colección no encontrada: \1"),
+        (
+            r"^Thinking preference changed for this session but could not be saved: (.+)$",
+            r"La preferencia de razonamiento cambió en esta sesión, pero no se pudo guardar: \1",
+        ),
+        (
+            r"^Unsupported export format\. Choose one of: (.+)\.$",
+            r"Formato de exportación no compatible. Elige uno de: \1.",
+        ),
+        (r"^Invalid output path: (.+)$", r"Ruta de salida inválida: \1"),
+        (r"^file: (.+)$", r"archivo: \1"),
+        (r"^Analyze attached file: (.+)$", r"Analizar archivo adjunto: \1"),
+        (r"^Load session '(.+)'$", r"Cargar sesión '\1'"),
+        (r"^Write '(.+)'$", r"Escribir '\1'"),
+        (r"^Browse (.+)$", r"Explorar \1"),
+        (r"^Collections (.+)$", r"Colecciones \1"),
+        (r"^Memory (.+)$", r"Memoria \1"),
+        (r"^Watch (.+)$", r"Vigilar \1"),
+        (r"^Pair (.+)$", r"Emparejar \1"),
+        (r"^Import (.+)$", r"Importar \1"),
+        (
+            r"^Agent workspace: (.+) \| model: (.+)\s+\(yolo: auto-approve\)$",
+            r"Workspace del agente: \1 | modelo: \2 (yolo: aprobación automática)",
+        ),
+        (r"^Agent workspace: (.+) \| model: (.+)$", r"Workspace del agente: \1 | modelo: \2"),
+        (
+            r"^Model: (.+) \| Mode: (.+) \| isolated general chat$",
+            r"Modelo: \1 | Modo: \2 | chat general aislado",
+        ),
+        (
+            r"^Model: (.+) \| Mode: (.+) \| RAG collection: (.+)$",
+            r"Modelo: \1 | Modo: \2 | Colección RAG: \3",
+        ),
+        (
+            r"^(.+) could not be completed\. Try again; other commands remain available\.$",
+            r"\1 no se pudo completar. Inténtalo de nuevo; los demás comandos siguen disponibles.",
+        ),
+        (
+            r"^Malformed config at (.+): (.+); using defaults$",
+            r"Configuración inválida en \1: \2; se usarán los valores predeterminados",
+        ),
+        (
+            r"^warning: skipping malformed session line in (.+): (.+)$",
+            r"aviso: se omite una línea de sesión con formato inválido en \1: \2",
+        ),
+        # ── service_manager.py output surfaced by `trinaxai start|stop|status` ──
+        (r"^(.+): running (.+)$", r"\1: activo \2"),
+        (r"^(.+): running$", r"\1: activo"),
+        (r"^(.+): stopped (.+)$", r"\1: detenido \2"),
+        (r"^(.+): stopped$", r"\1: detenido"),
+        (r"^(.+): failed: (.+)$", r"\1: falló: \2"),
+        (r"^(.+): not found$", r"\1: no encontrado"),
+        (r"^started via systemd \((.+)\)$", r"iniciado vía systemd (\1)"),
+        (r"^active \(systemd: (.+)\)$", r"activo (systemd: \1)"),
+        (r"^loaded (.+)$", r"cargado \1"),
+        (r"^pid (.+) \((.+)\)$", r"pid \1 (\2)"),
+        (r"^pgrep/tasklist unavailable$", "pgrep/tasklist no disponible"),
+        (r"^stopped matching processes$", "procesos coincidentes detenidos"),
+        (r"^started directly \(pid (.+)\)$", r"iniciado directamente (pid \1)"),
+        (r"^failed: (.+)$", r"falló: \1"),
+        (r"^privileged wrapper failed: (.+)$", r"falló el wrapper con privilegios: \1"),
+        (r"^already running$", "ya está activo"),
+        (r"^already stopped$", "ya está detenido"),
+        (r"^not running$", "no está activo"),
+        (r"^listening on (.+)$", r"escuchando en \1"),
+        (
+            r"^TrinaxAI supervisor watching services every (.+)s$",
+            r"Supervisor de TrinaxAI vigilando los servicios cada \1s",
+        ),
+        (r"^\[lifecycle\] startup requested$", "[lifecycle] inicio solicitado"),
+        (r"^\[lifecycle\] startup failed$", "[lifecycle] falló el inicio"),
+        (r"^\[lifecycle\] system running$", "[lifecycle] sistema en ejecución"),
+        (r"^\[lifecycle\] shutdown requested by local user$", "[lifecycle] apagado solicitado por el usuario local"),
+        (
+            r"^\[lifecycle\] recovery server requested on loopback$",
+            "[lifecycle] servidor de recuperación solicitado en loopback",
+        ),
+        (r"^\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\] restarted (.+)$", r"[\1] reiniciado \2"),
     )
     for pattern, replacement in patterns:
         matched = re.match(pattern, normalized)
@@ -375,6 +692,12 @@ def help_text(value: str, lang: str = "en") -> str:
     if normalize_lang(lang) != "es":
         return re.sub(r"(?m)^\s*mcp\s+==SUPPRESS==\s*$\n?", "", value)
     replacements = {
+        "usage:": "uso:",
+        "positional arguments:": "argumentos posicionales:",
+        "optional arguments:": "argumentos opcionales:",
+        "options:": "opciones:",
+        "COMMAND": "COMANDO",
+        "ACTION": "ACCIÓN",
         "TrinaxAI CLI - local-first terminal assistant.": "CLI de TrinaxAI - asistente de terminal local-first.",
         "The default command opens a unified REPL that auto-routes between chat, web search, deep research, the private local coding agent and RAG.": "El comando predeterminado abre un REPL unificado que enruta entre chat, búsqueda web, investigación profunda, agente local privado y RAG.",
         "RAG API base URL (overrides config).": "URL base de la API RAG (sobrescribe la configuración).",
@@ -382,7 +705,13 @@ def help_text(value: str, lang: str = "en") -> str:
         "Disable ANSI colour output.": "Desactivar la salida de color ANSI.",
         "Verbose (DEBUG) logging.": "Registro detallado (DEBUG).",
         "Unified REPL (chat | web | research | agent | RAG) or single prompt.": "REPL unificado (chat | web | investigación | agente | RAG) o una sola pregunta.",
+        "Attach one local image or text/document file to the prompt.": "Adjuntar una imagen o archivo de texto/documento local a la pregunta.",
+        "Chat engine. General uses Ollama without indexed-document context.": "Motor de chat. General usa Ollama sin contexto de documentos indexados.",
+        "Allow efficient reasoning on demanding turns.": "Permitir razonamiento eficiente en turnos exigentes.",
+        "Disable provider reasoning for this chat.": "Desactivar el razonamiento del proveedor para este chat.",
         "Ask one question and exit.": "Hacer una pregunta y salir.",
+        "Analyze one local image or document.": "Analizar una imagen o documento local.",
+        "Disable provider reasoning for this request.": "Desactivar el razonamiento del proveedor para esta pregunta.",
         "Run a single task and exit.": "Ejecutar una tarea y salir.",
         "List all collections.": "Listar todas las colecciones.",
         "List files in a collection.": "Listar archivos de una colección.",
@@ -391,9 +720,13 @@ def help_text(value: str, lang: str = "en") -> str:
         "Index a folder into the local RAG store.": "Indexar una carpeta en el almacén RAG local.",
         "Browse collections, files and chunks.": "Explorar colecciones, archivos y chunks.",
         "Multi-pass deep research query.": "Consulta de investigación profunda multipaso.",
+        "Persist the research turn in a named session for later export.": "Guardar el turno de investigación en una sesión con nombre para exportarlo después.",
+        "Allow efficient reasoning during research.": "Permitir razonamiento eficiente durante la investigación.",
+        "Disable provider reasoning during research.": "Desactivar el razonamiento del proveedor durante la investigación.",
         "Show local service status.": "Mostrar el estado de los servicios locales.",
         "Start TrinaxAI local services.": "Iniciar los servicios locales de TrinaxAI.",
         "Stop AI services and keep them off after reboot.": "Detener los servicios de IA y mantenerlos apagados tras reiniciar.",
+        "Also stop the PWA frontend.": "Detener también el frontend PWA.",
         "Restart TrinaxAI local services.": "Reiniciar los servicios locales de TrinaxAI.",
         "Show or refresh local-network access.": "Mostrar o renovar el acceso de red local.",
         "Renew HTTPS and allow the current LAN.": "Renovar HTTPS y permitir la LAN actual.",
@@ -414,6 +747,7 @@ def help_text(value: str, lang: str = "en") -> str:
         "Update code, dependencies and the PWA.": "Actualizar código, dependencias y la PWA.",
         "Guided, safe TrinaxAI uninstaller.": "Desinstalador guiado y seguro de TrinaxAI.",
         "Export a saved session.": "Exportar una sesión guardada.",
+        "Export format: md, pdf, or Word (docx).": "Formato de exportación: md, pdf o Word (docx).",
         "Import an Obsidian vault into a collection.": "Importar un vault de Obsidian a una colección.",
         "File watcher daemon control.": "Control del daemon de vigilancia de archivos.",
         "Start the watcher.": "Iniciar el watcher.",
@@ -435,9 +769,6 @@ def help_text(value: str, lang: str = "en") -> str:
         "Path to config TOML (overrides $TRINAXAI_CONFIG and XDG search).": "Ruta al TOML de configuración (sobrescribe $TRINAXAI_CONFIG y la búsqueda XDG).",
         "Full TrinaxAI installation directory (overrides auto-discovery).": "Directorio completo de instalación de TrinaxAI (sobrescribe la detección automática).",
         "Run a single prompt and exit.": "Ejecutar una pregunta y salir.",
-        "Session name. A unique name is created when omitted.": "Nombre de sesión. Se crea un nombre único si se omite.",
-        "Comma-separated collection ids.": "IDs de colecciones separados por comas.",
-        "Chat engine. General uses Ollama without indexed-document context.": "Motor de chat. General usa Ollama sin contexto de documentos indexados.",
         "Agent workspace root for /agent turns (default: current dir).": "Raíz del workspace del agente para turnos /agent (por defecto: carpeta actual).",
         "Question to send, or omit it to read UTF-8 text from stdin.": "Pregunta que enviar; omítela para leer texto UTF-8 desde stdin.",
         "Directory the agent operates in (default: current dir).": "Directorio donde opera el agente (por defecto: carpeta actual).",
@@ -464,6 +795,12 @@ def help_text(value: str, lang: str = "en") -> str:
         "Comma-separated tags.": "Tags separados por comas.",
         "Memory id or prefix.": "ID o prefijo de memoria.",
         "Exact collection name (must be unique).": "Nombre exacto de colección (debe ser único).",
+        "Session name. A unique name is created when omitted.": "Nombre de sesión. Se crea uno único si se omite.",
+        "Comma-separated collection ids.": "IDs de colección separados por comas.",
+        "Filter by source id.": "Filtrar por ID de fuente.",
+        "Select a source when file paths are duplicated.": "Selecciona una fuente cuando haya rutas de archivo duplicadas.",
+        "Device id shown by 'trinaxai pair list'.": "ID del dispositivo que muestra 'trinaxai pair list'.",
+        "Collection name.": "Nombre de colección.",
     }
     for source, target in replacements.items():
         value = value.replace(source, target)

@@ -14,7 +14,7 @@ import type { ChatMessage, Source, StreamMeta } from './api_types';
 
 async function researchFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
   try {
-    return await fetch(input, init);
+    return await fetch(input, { ...init, credentials: 'include' });
   } catch (error) {
     if (error instanceof ApiError || (error instanceof DOMException && error.name === 'AbortError')) throw error;
     throw new ApiError('', 503, 'rag_unavailable');
@@ -164,6 +164,7 @@ export async function runResearch(
       throw apiErrorFromPayload(response.status, detail);
     }
     let answer = '';
+    let finalAnswer: string | undefined;
     let sources: Source[] = [];
     let researchMeta: ResearchStreamMeta = {};
     let completionMeta: StreamMeta = {};
@@ -178,12 +179,15 @@ export async function runResearch(
         answer += event.token;
         opts.onToken?.(event.token, answer);
       }
+      if (event.finalAnswer !== undefined) finalAnswer = event.finalAnswer;
       if (event.meta?.sources) sources = event.meta.sources;
       if (event.researchMeta) researchMeta = { ...researchMeta, ...event.researchMeta };
     }, 'rag_unavailable');
     if (!sawDone && !signal?.aborted) throw new ApiError('The research stream ended before completion.', 502, 'stream_incomplete');
     const result: ResearchResult = {
-      answer: answer.trim(),
+      // New backends provide their post-synthesis validation result here.
+      // Older streams did not, so retain the accumulated-token fallback.
+      answer: (finalAnswer ?? answer).trim(),
       sub_questions: researchMeta.sub_questions || [],
       sources,
       passes: researchMeta.passes || 0,

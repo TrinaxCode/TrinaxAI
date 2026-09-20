@@ -13,7 +13,7 @@ export async function apiJson<T>(url: string, init?: RequestInit): Promise<T> {
   for (let attempt = 0; attempt < (safeToRetry ? 2 : 1); attempt += 1) {
     let response: Response;
     try {
-      response = await fetch(url, { ...init, headers: systemRequestHeaders(init?.headers) });
+      response = await fetch(url, { ...init, credentials: 'include', headers: systemRequestHeaders(init?.headers) });
     } catch (err) {
       if (err instanceof DOMException && err.name === 'AbortError') throw err;
       const failure = new ApiError('', 0);
@@ -127,5 +127,11 @@ export function validateIndexJobStatus(value: unknown): IndexJobStatus {
     batches_processed: typeof value.batches_processed === 'number' ? value.batches_processed : 0,
     progress_exact: Boolean(value.progress_exact),
     recent_activity: typeof value.recent_activity === 'string' ? value.recent_activity : undefined,
+    failures: Array.isArray(value.failures) ? value.failures.flatMap((failure) => (
+      isRecord(failure) && typeof failure.path === 'string' && typeof failure.reason === 'string'
+        ? [{ path: failure.path, reason: failure.reason }]
+        : []
+    )) : [],
+    retry_recommended: Boolean(value.retry_recommended),
   };
 }

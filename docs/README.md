@@ -4,7 +4,7 @@
 
 <p align="center">
   <a href="https://github.com/TrinaxCode/TrinaxAI"><img src="https://img.shields.io/github/stars/TrinaxCode/TrinaxAI?style=flat&amp;label=%E2%98%85&amp;color=006bbd" alt="GitHub stars"></a>
-  <a href="https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.2.5"><img src="https://img.shields.io/badge/version-1.2.5-006bbd" alt="Stable release: 1.2.5"></a>
+  <a href="https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.2.6"><img src="https://img.shields.io/badge/version-1.2.6-006bbd" alt="Stable release: 1.2.6"></a>
   <a href="https://github.com/TrinaxCode/TrinaxAI/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/TrinaxCode/TrinaxAI/ci.yml?branch=main&amp;label=CI" alt="CI status"></a>
   <a href="https://github.com/TrinaxCode/TrinaxAI/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0--or--later-006bbd" alt="License: AGPL-3.0-or-later"></a>
   <img src="https://img.shields.io/badge/macOS%20%7C%20Windows%20%7C%20Linux-4493F8?style=flat-square" alt="Supported platforms: macOS, Windows, and Linux">
@@ -13,11 +13,18 @@
 <p align="center"><sub><strong>English</strong> · <a href="README.es.md">Español</a></sub></p>
 <p align="center"><sub><a href="https://www.trinaxai.app/">Website</a> · <a href="README.md">Documentation</a> · <a href="../README.md">Home</a> · <a href="CHANGELOG.md">Changelog</a></sub></p>
 
-This directory is the entry point for the technical and operational documentation of **TrinaxAI 1.2.5**, the current Production/Stable release under **AGPL-3.0-or-later**. It documents the release branch. For critical settings and endpoints, also verify `.env.example`, `chat-pwa/package.json`, and FastAPI's generated OpenAPI specification.
+This directory is the entry point for the technical and operational documentation of **TrinaxAI 1.2.6**, the current Production/Stable release under **AGPL-3.0-or-later**. It documents the release branch. For critical settings and endpoints, also verify `.env.example`, `chat-pwa/package.json`, and FastAPI's generated OpenAPI specification.
 
-For the product overview, screenshots and benchmarks, see the official website: **[trinaxai.app](https://www.trinaxai.app/)**.
+For the product overview and benchmarks, see the official website: **[trinaxai.app](https://www.trinaxai.app/)**. Repository screenshots of the daily loop are available here:
 
-> Release status: `v1.2.5` is the current Production/Stable release. Its source archives, installers, wheel, checksums, and detached signatures are published on GitHub. Installers are pinned and never fall back to `main`.
+| Flow | Capture |
+| --- | --- |
+| Chat with citations | [PNG](assets/screenshots/chat-citations-en.png) |
+| Indexing job | [PNG](assets/screenshots/indexing-job-en.png) |
+| Pairing | [PNG](assets/screenshots/pairing-en.png) |
+| Agent approval | [PNG](assets/screenshots/agent-approval-en.png) |
+
+> Release status: `v1.2.6` is the current Production/Stable release. Its source archives, installers, wheel, checksums, and detached signatures are published on GitHub. Installers are pinned and never fall back to `main`.
 
 ## Current capabilities
 
@@ -38,14 +45,14 @@ Use the release-pinned commands below. They verify the installer SHA-256 before
 execution on both Unix and Windows.
 
 ```bash
-set -e; version="1.2.5"; base="https://github.com/TrinaxCode/TrinaxAI/releases/download/v${version}"; installer="$(mktemp)"; trap 'rm -f "$installer"' EXIT; curl -fsSL "$base/TrinaxAI-${version}-installer.sh" -o "$installer"; expected="$(curl -fsSL "$base/SHA256SUMS" | awk -v asset="TrinaxAI-${version}-installer.sh" '$2 == asset || $2 == "*" asset { print $1; exit }')"; actual="$( (shasum -a 256 "$installer" 2>/dev/null || sha256sum "$installer") | awk '{print $1}' )"; test "$expected" = "$actual"; bash "$installer"
+set -e; version="1.2.6"; base="https://github.com/TrinaxCode/TrinaxAI/releases/download/v${version}"; installer="$(mktemp)"; trap 'rm -f "$installer"' EXIT; curl -fsSL "$base/TrinaxAI-${version}-installer.sh" -o "$installer"; expected="$(curl -fsSL "$base/SHA256SUMS" | awk -v asset="TrinaxAI-${version}-installer.sh" '$2 == asset || $2 == "*" asset { print $1; exit }')"; actual="$( (shasum -a 256 "$installer" 2>/dev/null || sha256sum "$installer") | awk '{print $1}' )"; test "$expected" = "$actual"; bash "$installer"
 ```
 
 On Windows PowerShell, use the same review-before-execute flow with a release-pinned installer:
 
 ```powershell
 $ErrorActionPreference = "Stop"
-$version = "1.2.5"
+$version = "1.2.6"
 $base = "https://github.com/TrinaxCode/TrinaxAI/releases/download/v$version"
 $installer = Join-Path $env:TEMP "TrinaxAI-$version-installer.ps1"
 $manifest = Join-Path $env:TEMP "TrinaxAI-$version-SHA256SUMS"

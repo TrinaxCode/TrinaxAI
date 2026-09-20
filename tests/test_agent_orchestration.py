@@ -130,6 +130,36 @@ def test_agent_worker_emits_tool_activity_tokens_and_completion(monkeypatch, tmp
     agent_service._drop_session(session_id)
 
 
+def test_agent_worker_reports_degraded_model_fallback(monkeypatch, tmp_path) -> None:
+    class Engine:
+        completion_status = "degraded"
+
+        def __init__(self, **_kwargs):
+            pass
+
+        def run(self, _messages):
+            return "Useful fallback after Ollama failure"
+
+        def cancel(self):
+            return None
+
+    session_id, session = agent_service._register_session()
+    monkeypatch.setattr(agent_service, "AgentEngine", Engine)
+    try:
+        agent_service._run_engine_worker(
+            session, AgentRequest(messages=[{"role": "user", "content": "inspect"}]), tmp_path, "test-model"
+        )
+        done = session["queue"].get_nowait()
+        assert done == {
+            "type": "done",
+            "answer": "Useful fallback after Ollama failure",
+            "finish_reason": "stop",
+            "completion_status": "degraded",
+        }
+    finally:
+        agent_service._drop_session(session_id)
+
+
 def test_terminal_done_survives_a_full_session_queue(monkeypatch) -> None:
     monkeypatch.setattr(agent_service, "_AGENT_QUEUE_MAXSIZE", 4)
     session_id, session = agent_service._register_session()

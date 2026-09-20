@@ -71,10 +71,15 @@ def test_index_splitter_caches_and_batches(monkeypatch):
     monkeypatch.setattr(llama_core, "VectorStoreIndex", Vector)
     monkeypatch.setattr(index, "INDEX_NODE_BATCH_SIZE", 2)
     progress = []
-    monkeypatch.setattr(index, "_emit_embed_progress", lambda done, total: progress.append((done, total)))
+    monkeypatch.setattr(
+        index,
+        "_emit_embed_progress",
+        lambda done, total, started=False, files=None: progress.append((done, total)),
+    )
     result = index.insert_node_batches(None, [1, 2, 3], initialize=True, storage_context="storage")
     assert result.batches == [[1, 2], [3]]
-    assert progress == [(1, 2), (2, 2)]
+    # The start event fires before the first batch so the UI can flip its label.
+    assert progress == [(0, 2), (1, 2), (2, 2)]
     existing = Vector([0])
     assert index.insert_node_batches(existing, [4], initialize=False) is existing
     assert existing.batches[-1] == [4]

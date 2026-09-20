@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, useCallback, useRef } from 'react';
-import { motion } from 'framer-motion';
+import { AnimatePresence, motion } from 'framer-motion';
 import { MdSearch, MdFolder, MdDescription, MdContentCopy, MdCheck, MdClose, MdFolderOpen, MdDelete, MdDeleteSweep, MdChevronRight } from 'react-icons/md';
 import { useTheme } from '../theme/ThemeContext';
 import { useI18n } from '../i18n/I18nContext';
@@ -9,6 +9,7 @@ import { getCollections, getCollectionSources, getFileChunks, deleteCollectionSo
 import BackButton from './BackButton';
 import ConfirmModal from './ConfirmModal';
 import ErrorRepairModal from './ErrorRepairModal';
+import './chat/chat-modern.css';
 
 interface Props {
   onBack: () => void;
@@ -332,7 +333,7 @@ export default function KnowledgeBrowser({ onBack, canManageSystem = false, init
                 });
               }}
               disabled={deletingFile === sourceIdentity(s.file, s.source_id)}
-              className="shrink-0 p-2 mr-1 rounded-lg opacity-0 group-hover:opacity-100
+              className="hover-reveal shrink-0 p-2 mr-1 rounded-lg
                          text-red-400/70 hover:text-red-400 hover:bg-red-400/10
                          disabled:opacity-30 transition-[background-color,color,border-color,opacity,transform]"
               aria-label={`${t('delete')} ${s.file}`}
@@ -425,9 +426,9 @@ export default function KnowledgeBrowser({ onBack, canManageSystem = false, init
       </div>
 
       {/* ── Desktop: 3-column layout (sm+) ── */}
-      <div className="hidden sm:flex flex-1 min-h-0">
+      <div className="hidden sm:flex flex-1 min-h-0 gap-3 p-3">
         {/* Collections column */}
-        <aside className={`browser-panel w-44 sm:w-52 shrink-0 border-r ${border} overflow-y-auto`}>
+        <aside className={`browser-panel tc-browser-panel w-44 sm:w-52 shrink-0 overflow-y-auto`}>
           <div className={`px-3 py-2 text-[10px] uppercase tracking-widest ${muted}`}>{t('collectionsLabel')}</div>
           {renderStatus(loadingCollections, collectionsError, () => loadCollections())}
           {!loadingCollections && !collectionsError && collections.length === 0 && <p className={`px-3 py-4 text-xs ${muted}`}>{t('noCollections')}</p>}
@@ -445,7 +446,7 @@ export default function KnowledgeBrowser({ onBack, canManageSystem = false, init
         </aside>
 
         {/* Files column */}
-        <div className={`browser-panel w-56 sm:w-72 shrink-0 border-r ${border} flex flex-col min-h-0`}>
+        <div className={`browser-panel tc-browser-panel w-56 sm:w-72 shrink-0 flex flex-col min-h-0`}>
           <div className={`px-3 py-2 flex items-center gap-2 border-b ${border} ${panelBg}`}>
             <MdSearch size={14} className={muted} />
             <input
@@ -480,14 +481,22 @@ export default function KnowledgeBrowser({ onBack, canManageSystem = false, init
         </div>
 
         {/* Chunks column */}
-        <div className="flex-1 flex flex-col min-h-0 min-w-0">{renderChunkPanel(false)}</div>
+        <div className="tc-browser-panel flex-1 flex flex-col min-h-0 min-w-0">{renderChunkPanel(false)}</div>
       </div>
 
       {/* ── Mobile: single-panel with bottom tab bar (below sm) ── */}
-      <div className="flex sm:hidden flex-1 flex-col min-h-0 min-w-0">
+      <div className="relative flex sm:hidden flex-1 flex-col min-h-0 min-w-0">
+        <AnimatePresence mode="popLayout" initial={false}>
         {/* Panel: Collections */}
         {mobileView === 'collections' && (
-          <div className="flex-1 flex flex-col min-h-0">
+          <motion.div
+            key="collections"
+            className="flex-1 flex flex-col min-h-0"
+            initial={{ opacity: 0, x: -18 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -18 }}
+            transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+          >
             <div className={`px-3 py-2 text-[10px] uppercase tracking-widest ${muted} shrink-0`}>{t('collectionsLabel')}</div>
             <div className="flex-1 overflow-y-auto">
               {renderStatus(loadingCollections, collectionsError, () => loadCollections())}
@@ -507,12 +516,19 @@ export default function KnowledgeBrowser({ onBack, canManageSystem = false, init
                 </button>
               ))}
             </div>
-          </div>
+          </motion.div>
         )}
 
         {/* Panel: Files */}
         {mobileView === 'files' && (
-          <div className="flex-1 flex flex-col min-h-0">
+          <motion.div
+            key="files"
+            className="flex-1 flex flex-col min-h-0"
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: 20 }}
+            transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+          >
             <div className={`shrink-0 flex items-center gap-2 px-2 py-2 border-b ${border} ${panelBg}`}>
               <BackButton
                 onClick={() => { setMobileView('collections'); setActiveFile(null); setActiveSourceId(null); }}
@@ -554,12 +570,19 @@ export default function KnowledgeBrowser({ onBack, canManageSystem = false, init
               )}
             </div>
             {renderFileList(true)}
-          </div>
+          </motion.div>
         )}
 
         {/* Panel: Chunks */}
         {mobileView === 'chunks' && (
-          <div className="flex-1 flex flex-col min-h-0 min-w-0">
+          <motion.div
+            key="chunks"
+            className="flex-1 flex flex-col min-h-0 min-w-0"
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: 20 }}
+            transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+          >
             <div className={`shrink-0 flex items-center gap-2 px-2 py-2 border-b ${border} ${panelBg}`}>
               <BackButton
                 onClick={() => { setMobileView('files'); }}
@@ -572,8 +595,9 @@ export default function KnowledgeBrowser({ onBack, canManageSystem = false, init
               </span>
             </div>
             {renderChunkPanel(true)}
-          </div>
+          </motion.div>
         )}
+        </AnimatePresence>
 
         {/* Mobile bottom tab bar */}
         <div role="tablist" className={`shrink-0 flex border-t ${border} ${panelBg}`} style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}>

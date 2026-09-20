@@ -66,7 +66,10 @@ SAFE_DEFAULT_ORIGIN_REGEX = r"https?://(?:localhost|127\.0\.0\.1|\[::1\]):(?:333
 ADMIN_TOKEN: str = os.getenv("TRINAXAI_ADMIN_TOKEN", "")
 
 DEVICE_TOKEN_COOKIE = "trinaxai-device-token"
-DEVICE_TOKEN_COOKIE_PATH = "/api/rag"
+# The browser uses the same scoped credential for RAG and Ollama proxy calls.
+# Keep it under /api so it never travels with static frontend requests.
+DEVICE_TOKEN_COOKIE_PATH = "/api"
+LEGACY_DEVICE_TOKEN_COOKIE_PATH = "/api/rag"
 
 # Retained only so old configuration readers do not break.  This value no
 # longer grants authority: host administration is always loopback-only.

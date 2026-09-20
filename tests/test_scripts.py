@@ -111,6 +111,60 @@ def test_backup_is_private_and_restore_rejects_links(tmp_path: Path) -> None:
     assert "unsafe entry type" in restored.stderr.lower()
 
 
+def test_lifecycle_scripts_preserve_path_and_surface_service_manager_failures() -> None:
+    for script_name in ("install.ps1", "update.ps1"):
+        script = (ROOT / script_name).read_text(encoding="utf-8")
+        assert "@($env:Path, $MachinePath, $UserPath) + $ExtraPaths" in script
+        assert "HashSet[string]" in script
+
+    updater = (ROOT / "update.sh").read_text(encoding="utf-8")
+    assert 'service_manager.py" "$action" --base-dir "$ROOT" || true' not in updater
+    assert "service_manager.py not found; cannot $action." in updater
+    assert "return 1" in updater[updater.index("run_service_manager() {") : updater.index("sync_repository() {")]
+
+
+@pytest.mark.skipif(os.name == "nt", reason="Bash scripts are validated on POSIX runners")
+def test_lifecycle_help_is_quiet_and_dry_run_rejects_invalid_profile() -> None:
+    for script in ("install.sh", "update.sh", "uninstall.sh"):
+        result = subprocess.run(
+            ["bash", str(ROOT / script), "--help"],
+            cwd=ROOT,
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert result.returncode == 0, result.stderr
+        assert result.stderr == ""
+    invalid = subprocess.run(
+        ["bash", str(ROOT / "install.sh"), "--dry-run", "--profile", "7gb"],
+        cwd=ROOT,
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert invalid.returncode == 2
+    assert "Invalid --profile" in invalid.stderr
+
+
+@pytest.mark.skipif(os.name == "nt", reason="Bash scripts are validated on POSIX runners")
+def test_backups_created_in_the_same_second_have_distinct_names(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    shutil.copy2(ROOT / "backup.sh", repo / "backup.sh")
+    (repo / ".env").write_text("TEST=value\n", encoding="utf-8")
+    backup_dir = tmp_path / "backups"
+    command = ["bash", str(repo / "backup.sh"), "create"]
+    env = {**os.environ, "TRINAXAI_BACKUP_DIR": str(backup_dir), "TRINAXAI_BACKUP_QUIESCE": "0"}
+    first = subprocess.run(command, cwd=repo, env=env, capture_output=True, text=True, check=False)
+    second = subprocess.run(command, cwd=repo, env=env, capture_output=True, text=True, check=False)
+    assert first.returncode == second.returncode == 0
+    assert first.stdout.strip() != second.stdout.strip()
+    assert Path(first.stdout.strip()).is_file()
+    assert Path(second.stdout.strip()).is_file()
+
+
 def test_backup_quiesces_services_and_takes_index_lock() -> None:
     script = (ROOT / "backup.sh").read_text(encoding="utf-8")
     helper = (ROOT / "scripts" / "with_index_lock.py").read_text(encoding="utf-8")

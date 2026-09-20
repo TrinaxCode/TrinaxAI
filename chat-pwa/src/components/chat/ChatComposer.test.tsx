@@ -81,12 +81,13 @@ describe('ChatComposer RAG context bar', () => {
     const { container } = renderComposer('rag', onToggleCollection);
     const bar = container.querySelector('.chat-active-collections');
 
-    expect(bar).toHaveClass('absolute', 'bottom-full');
+    expect(bar).toHaveClass('absolute', 'bottom-full', 'pointer-events-none');
     expect(bar).not.toHaveClass('bg-[#151515]/95', 'bg-white/95', 'backdrop-blur-xl', 'shadow-lg');
     expect(bar?.parentElement).toHaveClass('relative');
     expect(bar?.nextElementSibling).toHaveClass('relative', 'w-full', 'z-30');
 
     const general = screen.getByRole('button', { name: 'General' });
+    expect(general).toHaveClass('pointer-events-auto');
     expect(general).toHaveAttribute('aria-pressed', 'true');
     await userEvent.click(general);
     expect(onToggleCollection).toHaveBeenCalledWith('default');
@@ -97,5 +98,27 @@ describe('ChatComposer RAG context bar', () => {
 
     expect(container.querySelector('.chat-active-collections')).toBeNull();
     expect(screen.queryByRole('button', { name: 'General' })).toBeNull();
+  });
+
+  it('does not print a keyboard-hint row under the input', () => {
+    const { container } = renderComposer('ollama');
+
+    expect(container.querySelectorAll('kbd')).toHaveLength(0);
+  });
+
+  it('focuses the composer with the "/" shortcut and keeps typing untouched', async () => {
+    const user = userEvent.setup();
+    const { container } = renderComposer('ollama');
+    const textarea = container.querySelector('textarea') as HTMLTextAreaElement;
+
+    expect(textarea).toHaveAttribute('aria-keyshortcuts', '/ Meta+K Control+K');
+    expect(textarea).not.toHaveFocus();
+
+    await user.keyboard('/');
+    expect(textarea).toHaveFocus();
+
+    // Once focused, typing keeps flowing into the composer.
+    await user.type(textarea, 'hola');
+    expect(textarea).toHaveFocus();
   });
 });

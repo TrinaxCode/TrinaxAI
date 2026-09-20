@@ -32,17 +32,26 @@ def ui() -> MagicMock:
 def test_browse_lists_collections_files_and_bounded_chunks(ui) -> None:
     client = MagicMock()
     client.list_collections.return_value = [{"id": "docs", "name": "Docs"}]
-    client.list_sources.return_value = {"sources": [{"file": "guide.md", "chunks": 2, "size": 10, "mtime": 20}]}
+    client.list_sources.return_value = {
+        "sources": [{"source_id": "source-1", "file": "guide.md", "chunks": 2, "size": 10, "mtime": 20}]
+    }
     client.list_chunks.return_value = {
         "chunks": [{"text": "x" * 1201, "score": 0.9}],
         "total": 1,
     }
 
     assert browse.run(SimpleNamespace(browse_command="list"), client, ui, None) == 0
-    assert browse.run(SimpleNamespace(browse_command="list-files", collection="docs"), client, ui, None) == 0
     assert (
         browse.run(
-            SimpleNamespace(browse_command="show-chunks", collection="docs", file="guide.md", limit=2),
+            SimpleNamespace(browse_command="list-files", collection="docs", source_id="source-1"), client, ui, None
+        )
+        == 0
+    )
+    assert (
+        browse.run(
+            SimpleNamespace(
+                browse_command="show-chunks", collection="docs", file="guide.md", limit=2, source_id="source-1"
+            ),
             client,
             ui,
             None,
@@ -50,7 +59,8 @@ def test_browse_lists_collections_files_and_bounded_chunks(ui) -> None:
         == 0
     )
 
-    client.list_chunks.assert_called_once_with("docs", "guide.md", limit=2)
+    client.list_sources.assert_called_once_with("docs", source_id="source-1")
+    client.list_chunks.assert_called_once_with("docs", "guide.md", limit=2, source_id="source-1")
     assert ui.panel.call_args.args[0].endswith("…")
 
 

@@ -4,7 +4,7 @@
 
 <p align="center">
   <a href="https://github.com/TrinaxCode/TrinaxAI"><img src="https://img.shields.io/github/stars/TrinaxCode/TrinaxAI?style=flat&amp;label=%E2%98%85&amp;color=006bbd" alt="GitHub stars"></a>
-  <a href="https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.2.5"><img src="https://img.shields.io/badge/version-1.2.5-006bbd" alt="Stable release: 1.2.5"></a>
+  <a href="https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.2.6"><img src="https://img.shields.io/badge/version-1.2.6-006bbd" alt="Stable release: 1.2.6"></a>
   <a href="https://github.com/TrinaxCode/TrinaxAI/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/TrinaxCode/TrinaxAI/ci.yml?branch=main&amp;label=CI" alt="CI status"></a>
   <a href="https://github.com/TrinaxCode/TrinaxAI/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0--or--later-006bbd" alt="License: AGPL-3.0-or-later"></a>
   <img src="https://img.shields.io/badge/macOS%20%7C%20Windows%20%7C%20Linux-4493F8?style=flat-square" alt="Supported platforms: macOS, Windows, and Linux">
@@ -15,7 +15,7 @@
 
 These checks cover the URL-based lifecycle scripts, CLI behavior, and real-machine tests. Dry-run never downloads the source package or Ollama, installs packages, starts services, changes PATH, edits launch agents, or removes files.
 
-> Release status: `v1.2.5` is Production/Stable. Its GitHub Release assets are published and the release-pinned installers never fall back to `main`.
+> Release status: `v1.2.6` is Production/Stable. Its GitHub Release assets are published and the release-pinned installers never fall back to `main`.
 
 ## URL installer smoke test
 
@@ -25,7 +25,7 @@ Test the normal user journey on a clean machine with the published stable releas
    Linux/macOS:
    ```bash
    set -eu
-   version="1.2.5"
+   version="1.2.6"
    base="https://github.com/TrinaxCode/TrinaxAI/releases/download/v${version}"
    installer="$(mktemp)"
    manifest="$(mktemp)"
@@ -41,7 +41,7 @@ Test the normal user journey on a clean machine with the published stable releas
    Windows PowerShell:
    ```powershell
    $ErrorActionPreference = "Stop"
-   $version = "1.2.5"
+   $version = "1.2.6"
    $base = "https://github.com/TrinaxCode/TrinaxAI/releases/download/v$version"
    $installer = Join-Path $env:TEMP "TrinaxAI-$version-installer.ps1"
    $manifest = Join-Path $env:TEMP "TrinaxAI-$version-SHA256SUMS"
@@ -84,13 +84,28 @@ Set-ExecutionPolicy -Scope Process Bypass
 
 The output must contain the localized access-links label: `Links to enter` in English or `Enlaces de acceso` in Spanish. The Windows install simulation also prints the official Ollama fallback instructions.
 
+When a Windows host is not available, the PowerShell dry-run suite can still
+be exercised with the official PowerShell container:
+
+```bash
+docker run --rm --user root \
+  -v "$PWD:/workspace" -w /workspace \
+  mcr.microsoft.com/powershell:7.4-ubuntu-22.04 \
+  pwsh -NoProfile -ExecutionPolicy Bypass -File ./test-installers.ps1
+```
+
+This validates the current checkout's PowerShell parsing, dry-run behavior, and
+paths containing spaces. It does not emulate Windows APIs or Windows
+PowerShell 5.1; the authoritative Windows check is the `windows-2025` job in
+`.github/workflows/test-installers.yml`.
+
 ## Advanced script test: macOS real machine
 
 Use a normal user account with Homebrew available or allow the installer to offer Homebrew installation. Review the script before running a network installer.
 
 ```bash
 set -eu
-version="1.2.5"
+version="1.2.6"
 base="https://github.com/TrinaxCode/TrinaxAI/releases/download/v${version}"
 installer="$(mktemp)"
 manifest="$(mktemp)"
@@ -122,7 +137,7 @@ Run PowerShell as the user who will run TrinaxAI. The installer may request Admi
 ```powershell
 $ErrorActionPreference = "Stop"
 Set-ExecutionPolicy -Scope Process Bypass
-$version = "1.2.5"
+$version = "1.2.6"
 $base = "https://github.com/TrinaxCode/TrinaxAI/releases/download/v$version"
 $installer = Join-Path $env:TEMP "TrinaxAI-$version-installer.ps1"
 $manifest = Join-Path $env:TEMP "TrinaxAI-$version-SHA256SUMS"
@@ -143,7 +158,7 @@ For a safe simulation from a downloaded script:
 
 ```powershell
 $ErrorActionPreference = "Stop"
-$version = "1.2.5"
+$version = "1.2.6"
 $base = "https://github.com/TrinaxCode/TrinaxAI/releases/download/v$version"
 $installer = Join-Path $env:TEMP "TrinaxAI-$version-installer.ps1"
 $manifest = Join-Path $env:TEMP "TrinaxAI-$version-SHA256SUMS"

@@ -37,6 +37,8 @@ if sys.platform == "win32" and hasattr(sys.stdout, "buffer"):
     sys.stdout = codecs.getwriter("utf-8")(sys.stdout.buffer, "replace")  # type: ignore[assignment]
 
 import config
+from trinaxai_cli.i18n import resolve_lang
+from trinaxai_cli.i18n import text as _text
 from trinaxai_core import (
     exclusive_process_lock,
 )
@@ -118,6 +120,8 @@ from trinaxai_index_storage import (
 
 MANIFEST_SCHEMA_VERSION = 2
 FINGERPRINT_ALGORITHM = "blake2b-256"
+_FAILURE_SUMMARY_LIMIT = 20
+_FAILURE_REASON_LIMIT = 180
 _HASH_BLOCK_BYTES = 1024 * 1024
 
 INDEX_BATCH_SIZE = config._env_int("TRINAXAI_INDEX_BATCH_SIZE", 100, minimum=1, maximum=1000)
@@ -157,6 +161,11 @@ _load_pptx_document = _documents_load_pptx_document
 _load_xlsx_document = _documents_load_xlsx_document
 _load_rtf_document = _documents_load_rtf_document
 _load_odf_document = _documents_load_odf_document
+
+
+def _t(key: str, **values: Any) -> str:
+    """Render one indexer message in the language selected for this run."""
+    return _text(key, resolve_lang(), **values)
 
 
 def _load_file_documents(path: str) -> list[Document]:
@@ -221,6 +230,7 @@ def _pipeline_version() -> str:
 # Cache de CodeSplitters por lenguaje (crearlos es caro).
 _code_splitters: dict[str, object] = {}
 _prose_splitter = None
+_prose_splitter_class = None
 _embed_configured = False
 
 
@@ -248,14 +258,17 @@ def _code_splitter(language: str):
 
 
 def _sentence_splitter():
-    global _prose_splitter
-    if _prose_splitter is None:
-        from llama_index.core.node_parser import SentenceSplitter
+    global _prose_splitter, _prose_splitter_class
+    from llama_index.core.node_parser import SentenceSplitter
 
+    # Keep the cache correct when integrations/tests replace the parser class
+    # at runtime; otherwise a stale parser can leak into later indexing runs.
+    if _prose_splitter is None or _prose_splitter_class is not SentenceSplitter:
         _prose_splitter = SentenceSplitter(
             chunk_size=config.CHUNK_SIZE,
             chunk_overlap=config.CHUNK_OVERLAP,
         )
+        _prose_splitter_class = SentenceSplitter
     return _prose_splitter
 
 
@@ -270,32 +283,61 @@ def total_batches(items: list[str], batch_size: int = INDEX_BATCH_SIZE) -> int:
     return (len(items) + batch_size - 1) // batch_size if items else 0
 
 
-def _emit_embed_progress(done: int, total: int) -> None:
+def _emit_embed_progress(
+    done: int,
+    total: int,
+    started: bool = False,
+    files: tuple[int, int] | None = None,
+) -> None:
     """Emit a machine-parseable, newline-terminated embedding-progress line.
 
     tqdm's ``show_progress`` bar uses carriage returns, so the supervising
     ``system_service`` process never sees a new stdout line and the UI bar stalls
     at the first "embedding" hit. Printing one real line per batch (with an
     explicit ``N/M``) lets the supervisor map progress proportionally.
+
+    ``started`` fires before the first batch is embedded so the UI can switch its
+    phase label immediately instead of waiting for a full batch, and ``files``
+    carries the run-level file counters so the supervisor only maps the
+    embedding span once every file has been chunked (streaming runs read, chunk
+    and embed in the same pass).
     """
     if total <= 0:
         return
-    print(f"🔨 Embeddings lote {done}/{total}...", flush=True)
-    emit_progress("embedding", batches_processed=done, batches_total=total, determinate=True)
+    if not started:
+        print(_t("idx_embeddings_batch", done=done, total=total), flush=True)
+    payload: dict[str, object] = {
+        "batches_processed": done,
+        "batches_total": total,
+        "determinate": not started,
+    }
+    if files and files[1] > 0:
+        payload["files_processed"], payload["files_total"] = files
+    emit_progress("embedding", **payload)
 
 
-def insert_node_batches(index, nodes: list, *, initialize: bool = False, storage_context=None):
+def insert_node_batches(
+    index,
+    nodes: list,
+    *,
+    initialize: bool = False,
+    storage_context=None,
+    on_embed_progress=None,
+):
     """Insert bounded batches; progress advances only after a completed batch."""
     from llama_index.core import VectorStoreIndex
 
     batches_total = total_batches(nodes, INDEX_NODE_BATCH_SIZE)
+    report = on_embed_progress or _emit_embed_progress
+    if batches_total:
+        report(0, batches_total, True)
     current = index
     for batch_number, batch in enumerate(iter_batches(nodes, INDEX_NODE_BATCH_SIZE), start=1):
         if current is None and initialize:
             current = VectorStoreIndex(batch, storage_context=storage_context, show_progress=False)
         else:
             current.insert_nodes(batch, show_progress=False)
-        _emit_embed_progress(batch_number, batches_total)
+        report(batch_number, batches_total, False)
     return current
 
 
@@ -313,13 +355,64 @@ class PreparedBatch:
     failures: dict[str, str] = field(default_factory=dict)
 
 
-def load_docs_with_status(paths: list[str], context: SourceContext | None = None) -> LoadResult:
+def _safe_failure_path(path: str, context: SourceContext) -> str:
+    try:
+        safe_path = context.relative_path(path)
+    except ValueError:
+        safe_path = os.path.basename(os.path.normpath(path)).replace("\\", "/")
+    return "".join(char if char.isprintable() else "_" for char in safe_path)[:240] or "unknown"
+
+
+def _safe_failure_reason(reason: str) -> str:
+    normalized = " ".join(str(reason).split())[:_FAILURE_REASON_LIMIT]
+    if "no extractable text" in normalized:
+        return "no extractable text"
+    if "OCR may be required" in normalized:
+        return "OCR may be required"
+    if "chunking produced no nodes" in normalized:
+        return "chunking produced no nodes"
+    if "LibreOffice" in normalized:
+        return "LibreOffice conversion is required"
+    return "document processing failed"
+
+
+def emit_failure_summary(failures: dict[str, str], context: SourceContext) -> None:
+    """Publish one bounded, machine-readable retry warning for partial runs."""
+    if not failures:
+        return
+    details = [
+        {
+            "path": _safe_failure_path(path, context),
+            "reason": _safe_failure_reason(reason),
+        }
+        for path, reason in sorted(failures.items())[:_FAILURE_SUMMARY_LIMIT]
+    ]
+    emit_progress(
+        "warning",
+        skipped=len(failures),
+        failures=details,
+        failures_truncated=len(failures) > len(details),
+        retry_recommended=True,
+        determinate=True,
+    )
+
+
+def load_docs_with_status(
+    paths: list[str],
+    context: SourceContext | None = None,
+    *,
+    files_offset: int = 0,
+    on_file_read=None,
+) -> LoadResult:
     """Carga documentos y les pone metadata limpia (proyecto, ruta, archivo).
 
     - doc.id_ = ruta relativa (ID estable → permite borrado/reinserción
       incremental por archivo).
     - Procesa en batches de 100 para no saturar la memoria con directorios
       muy grandes.
+    - ``on_file_read(files_done)`` reporta cada archivo en cuanto se lee (éxito o
+      fallo) para que la barra avance archivo a archivo en lugar de quedarse
+      quieta hasta terminar el lote completo.
     """
     result = LoadResult()
     source_context = context or _default_source_context()
@@ -333,15 +426,17 @@ def load_docs_with_status(paths: list[str], context: SourceContext | None = None
                 if executor is not None and len(batch) > 1
                 else [_load_file_documents_result(path) for path in batch]
             )
-            for fp, group, error in loaded_results:
+            for position, (fp, group, error) in enumerate(loaded_results, start=1):
+                if on_file_read is not None:
+                    on_file_read(files_offset + position)
                 if error is not None:
                     result.failures[fp] = str(error)[:300]
-                    print(f"   ⚠️  Error leyendo {os.path.basename(fp)}, se reintentará: {error}")
+                    print(_t("idx_read_error", name=os.path.basename(fp), error=error))
                     continue
                 group = [document for document in group if str(document.text or "").strip()]
                 if not group:
                     result.failures[fp] = "no extractable text"
-                    print(f"   ⚠️  {os.path.basename(fp)} no contiene texto extraíble; se reintentará")
+                    print(_t("idx_no_text", name=os.path.basename(fp)))
                     continue
                 rel = source_context.relative_path(fp)
                 document_id = source_context.source_key_for_relative(rel)
@@ -396,7 +491,12 @@ def build_nodes(documents: list[Document]) -> list[BaseNode]:
                 code_count += 1
             except Exception as e:
                 print(
-                    f"   ⚠️  AST falló en {os.path.basename(file_path)} ({language}): {str(e)[:50]} — troceo por texto"
+                    _t(
+                        "idx_ast_failed",
+                        name=os.path.basename(file_path),
+                        language=language,
+                        error=str(e)[:50],
+                    )
                 )
                 fallback += 1
         if not doc_nodes:
@@ -407,7 +507,15 @@ def build_nodes(documents: list[Document]) -> list[BaseNode]:
             fallback += 1
         nodes.extend(doc_nodes)
 
-    print(f"   └─ {code_count} por AST, {prose_count} por texto ({fallback} con fallback) → {len(nodes)} chunks")
+    print(
+        _t(
+            "idx_split_summary",
+            code=code_count,
+            prose=prose_count,
+            fallback=fallback,
+            chunks=len(nodes),
+        )
+    )
     return nodes
 
 
@@ -416,17 +524,33 @@ def prepare_batch(
     *,
     batch_number: int = 1,
     context: SourceContext | None = None,
+    files_offset: int = 0,
+    on_file_read=None,
+    on_file_chunked=None,
 ) -> PreparedBatch:
     source_context = context or _default_source_context()
-    loaded = load_docs_with_status(paths, source_context)
+    loaded = load_docs_with_status(
+        paths,
+        source_context,
+        files_offset=files_offset,
+        on_file_read=on_file_read,
+    )
     prepared = PreparedBatch(failures=dict(loaded.failures))
     if not loaded.documents:
         return prepared
-    print(f"   📦 Lote {batch_number}: {len(loaded.documents)} documentos, {len(paths)} archivos")
+    print(
+        _t(
+            "idx_batch_loaded",
+            batch=batch_number,
+            documents=len(loaded.documents),
+            files=len(paths),
+        )
+    )
     documents_by_path: dict[str, list[Document]] = {}
     for document in loaded.documents:
         documents_by_path.setdefault(str(document.metadata.get("source_key") or ""), []).append(document)
     path_by_key = {source_context.source_key(path): path for path in loaded.loaded_paths}
+    position_by_path = {path: position for position, path in enumerate(paths, start=1)}
     for source_key, documents in documents_by_path.items():
         path = path_by_key.get(source_key)
         if not path:
@@ -435,13 +559,15 @@ def prepare_batch(
             nodes = build_nodes(documents)
         except Exception as exc:
             prepared.failures[path] = str(exc)[:300]
-            print(f"   ⚠️  Error troceando {os.path.basename(path)}, se reintentará: {exc}")
+            print(_t("idx_split_error", name=os.path.basename(path), error=exc))
             continue
         if not nodes:
             prepared.failures[path] = "chunking produced no nodes"
             continue
         prepared.nodes.extend(nodes)
         prepared.indexed_paths.add(path)
+        if on_file_chunked is not None:
+            on_file_chunked(files_offset + position_by_path.get(path, 1), len(nodes))
     return prepared
 
 
@@ -527,11 +653,11 @@ def run_incremental(
     source_context = context or _default_source_context()
     new_files, changed, deleted = diff_manifest(old_state, new_state, rel_to_path, source_context)
     if not (new_files or changed or deleted):
-        print("\n✅ Todo al día — no hay cambios que indexar.")
+        print(_t("idx_up_to_date"))
         return 0
 
-    print(f"\n🔄 Incremental: {len(new_files)} nuevos, {len(changed)} modificados, {len(deleted)} eliminados")
-    print("📥 Cargando índice existente...")
+    print(_t("idx_incremental", new=len(new_files), changed=len(changed), deleted=len(deleted)))
+    print(_t("idx_loading_existing"))
     sc = storage_context_for_persist_dir(config.PERSIST_DIR)
     index = load_index_from_storage(sc)
 
@@ -543,9 +669,9 @@ def run_incremental(
         context=source_context,
     )
     if update.removed_nodes:
-        print(f"   🗑️  {update.removed_nodes} chunks obsoletos eliminados")
+        print(_t("idx_stale_removed", count=update.removed_nodes))
     if update.failures:
-        print(f"   ⚠️  {len(update.failures)} archivos conservaron su estado anterior y se reintentarán")
+        print(_t("idx_kept_state", count=len(update.failures)))
     effective_state = _state_after_failures(old_state, new_state, set(update.failures), source_context)
     merged_state = _merge_final_state(
         old_state,
@@ -553,7 +679,7 @@ def run_incremental(
         incremental=True,
         context=source_context,
     )
-    print("💾 Publicando generación atómica del índice...")
+    print(_t("idx_publishing"))
     publish_index_generation(
         index,
         _manifest_for_storage(merged_state),
@@ -561,6 +687,7 @@ def run_incremental(
         manifest_path=config.MANIFEST_PATH,
     )
     final_count = len(merged_state)
+    emit_failure_summary(update.failures, source_context)
     print_summary(final_count, source_context)
     return 0
 
@@ -591,7 +718,7 @@ def run_manifest_recovery(
     """Recover a missing/corrupt manifest without replacing other collections."""
     from llama_index.core import load_index_from_storage
 
-    print("\n🛟 Índice existente sin manifiesto válido — recuperación segura")
+    print(_t("idx_manifest_recovery"))
     storage_context = storage_context_for_persist_dir(config.PERSIST_DIR)
     existing = load_index_from_storage(storage_context)
     source_context = context or _default_source_context()
@@ -636,7 +763,7 @@ def run_manifest_recovery(
                     }
                 )
             recovered[key] = recovered_entry
-    print("💾 Publicando generación recuperada del índice...")
+    print(_t("idx_publishing_recovered"))
     publish_index_generation(
         existing,
         _manifest_for_storage(recovered),
@@ -644,7 +771,8 @@ def run_manifest_recovery(
         manifest_path=config.MANIFEST_PATH,
     )
     if update.failures:
-        print(f"   ⚠️  {len(update.failures)} archivos se conservaron y se reintentarán")
+        print(_t("idx_retry_count", count=len(update.failures)))
+    emit_failure_summary(update.failures, source_context)
     print_summary(len(recovered), source_context)
     return 0
 
@@ -655,11 +783,11 @@ def run_full_index(
     context: SourceContext | None = None,
 ) -> int:
     source_context = context or _default_source_context()
-    print("\n🆕 Indexado completo (primera vez)")
+    print(_t("idx_first_run"))
     if not paths:
-        print("❌ No se encontraron documentos para indexar.")
+        print(_t("idx_no_documents"))
         return 1
-    print("✂️  Troceando (chunking consciente del lenguaje)...")
+    print(_t("idx_chunking"))
     index = None
     storage_context = new_storage_context(config.PERSIST_DIR)
     total_nodes = 0
@@ -667,22 +795,46 @@ def run_full_index(
     failures: dict[str, str] = {}
     files_total = len(paths)
     files_processed = 0
+    chunks_in_batch = 0
+
+    def report_read(files_done: int) -> None:
+        emit_progress(
+            "extracting",
+            files_total=files_total,
+            files_processed=files_done,
+            determinate=True,
+        )
+
+    def report_chunked(files_done: int, chunks_in_file: int) -> None:
+        # Running count for the batch in progress; ``total_nodes`` is the
+        # authoritative total once the batch closes.
+        nonlocal chunks_in_batch
+        chunks_in_batch += chunks_in_file
+        emit_progress(
+            "chunking",
+            files_total=files_total,
+            files_processed=files_done,
+            chunks_generated=total_nodes + chunks_in_batch,
+            determinate=True,
+        )
+
+    def report_embed(done: int, total: int, started: bool) -> None:
+        _emit_embed_progress(done, total, started, files=(files_processed, files_total))
+
     for batch_number, batch in enumerate(iter_batches(paths), start=1):
-        prepared = prepare_batch(batch, batch_number=batch_number, context=source_context)
+        prepared = prepare_batch(
+            batch,
+            batch_number=batch_number,
+            context=source_context,
+            files_offset=files_processed,
+            on_file_read=report_read,
+            on_file_chunked=report_chunked,
+        )
         failures.update(prepared.failures)
         files_processed += len(batch)
         nodes = prepared.nodes
-        if not nodes:
-            emit_progress(
-                "chunking",
-                files_total=files_total,
-                files_processed=files_processed,
-                chunks_generated=total_nodes,
-                determinate=True,
-            )
-            continue
-        indexed_paths.update(prepared.indexed_paths)
         total_nodes += len(nodes)
+        chunks_in_batch = 0
         emit_progress(
             "chunking",
             files_total=files_total,
@@ -690,21 +842,26 @@ def run_full_index(
             chunks_generated=total_nodes,
             determinate=True,
         )
+        if not nodes:
+            continue
+        indexed_paths.update(prepared.indexed_paths)
         index = insert_node_batches(
             index,
             nodes,
             initialize=index is None,
             storage_context=storage_context,
+            on_embed_progress=report_embed,
         )
     if index is None:
-        print("❌ No se pudieron generar chunks para indexar.")
+        emit_failure_summary(failures, source_context)
+        print(_t("idx_no_chunks"))
         return 1
     successful_state = {
         source_context.source_key(path): new_state[source_context.source_key(path)]
         for path in indexed_paths
         if source_context.source_key(path) in new_state
     }
-    print("💾 Publicando primera generación atómica del índice...")
+    print(_t("idx_publishing_first"))
     publish_index_generation(
         index,
         _manifest_for_storage(successful_state),
@@ -713,45 +870,46 @@ def run_full_index(
     )
     final_count = len(successful_state)
     if failures:
-        print(f"   ⚠️  {len(failures)} archivos no se marcaron y se reintentarán")
+        print(_t("idx_not_marked", count=len(failures)))
+    emit_failure_summary(failures, source_context)
     print_summary(final_count, source_context)
     return 0
 
 
 def print_summary(final_count: int, context: SourceContext | None = None) -> None:
     source_context = context or _default_source_context()
-    print("\n✅ Indexado completado")
-    print(f"📚 Colección: {source_context.collection_name} ({source_context.collection_id})")
-    print(f"🗂️  Fuente: {source_context.project_name} ({source_context.source_id})")
-    print(f"📦 {config.PERSIST_DIR}  ·  {final_count} archivos en el índice")
+    print(_t("idx_completed"))
+    print(_t("idx_collection_line", name=source_context.collection_name, id=source_context.collection_id))
+    print(_t("idx_source_line", project=source_context.project_name, id=source_context.source_id))
+    print(_t("idx_files_in_index", path=config.PERSIST_DIR, count=final_count))
     print("═" * 45)
 
 
 def run_index(root: str | None = None) -> int:
     root = root or config.PROJECTS_DIRS[0]
     source_context = SourceContext.create(root)
-    print("\n🧠 TrinaxAI — Indexador de Documentos")
+    print(_t("idx_banner"))
     print("═" * 45)
     if not os.path.isdir(root):
-        print(f"❌ Directorio no encontrado: {root}")
+        print(_t("idx_dir_not_found", path=root))
         return 1
     lock_timeout = config._env_int("TRINAXAI_INDEX_LOCK_TIMEOUT", 3600, minimum=1, maximum=86400)
     lock_path = os.path.join(config.PERSIST_DIR, ".indexing.lock")
-    print("🔒 Esperando turno exclusivo del índice...", flush=True)
+    print(_t("idx_lock_wait"), flush=True)
     try:
         with exclusive_process_lock(lock_path, timeout=lock_timeout):
             recovery = recover_interrupted_transaction(config.PERSIST_DIR, config.MANIFEST_PATH)
             if recovery == "rolled_back":
-                print("🛟 Se restauró la generación anterior tras una indexación interrumpida.")
+                print(_t("idx_restored_generation"))
             elif recovery == "committed":
-                print("🧹 Se confirmó una generación ya publicada y se limpió su transacción.")
+                print(_t("idx_confirmed_generation"))
             ensure_embed_settings()
-            print(f"📂 Recorriendo: {source_context.root}")
+            print(_t("idx_scanning", path=source_context.root))
             paths = collect_files(source_context.root)
             rel_to_path = {source_context.source_key(p): p for p in paths}
             old_state = read_manifest(source_context)
             new_state = current_state(paths, source_context)
-            print(f"   └─ {len(paths)} archivos candidatos")
+            print(_t("idx_candidates", count=len(paths)))
 
             index_exists = os.path.exists(os.path.join(config.PERSIST_DIR, "docstore.json"))
             if index_exists and old_state:
@@ -760,10 +918,10 @@ def run_index(root: str | None = None) -> int:
                 return run_manifest_recovery(new_state, rel_to_path, source_context)
             return run_full_index(paths, new_state, source_context)
     except TimeoutError as exc:
-        print(f"❌ {exc}")
+        print(_t("idx_error", error=exc))
         return 2
     except (OSError, RuntimeError, ValueError) as exc:
-        print(f"❌ No se pudo publicar/recuperar el índice: {exc}")
+        print(_t("idx_publish_failed", error=exc))
         return 3
 
 

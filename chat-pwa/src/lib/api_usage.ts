@@ -25,6 +25,7 @@ export function recordUsage(engine: ChatEngine | 'ollama-vision', model: string,
   if (!answer.trim()) return;
   void fetch(`${RAG_BASE}/v1/usage`, {
     method: 'POST',
+    credentials: 'include',
     headers: systemRequestHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify({
       engine,

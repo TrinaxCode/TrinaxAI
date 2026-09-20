@@ -16,7 +16,9 @@ export default defineConfig({
       provider: 'v8',
       reporter: ['text', 'json-summary', 'lcov'],
       include: ['src/**/*.{ts,tsx}'],
-      exclude: ['src/**/*.test.{ts,tsx}', 'src/test/**'],
+      // The PWA entrypoint imports Vite's virtual service-worker module and is
+      // covered by the production build/E2E gates, not V8 unit remapping.
+      exclude: ['src/**/*.test.{ts,tsx}', 'src/test/**', 'src/main.tsx'],
       // Keep the measured baseline from regressing while the untested UI is retired.
       thresholds: {
         statements: 60,

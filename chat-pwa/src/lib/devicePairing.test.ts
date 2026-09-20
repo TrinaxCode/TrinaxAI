@@ -5,6 +5,7 @@ import * as authHeaders from './authHeaders';
 import {
   claimDevice,
   createPairingCode,
+  createNewDeviceSession,
   getCurrentPairedDevice,
   revokeCurrentPairedDevice,
   startDeviceRevocationMonitor,
@@ -61,6 +62,19 @@ describe('device pairing client', () => {
       scopes: ['chat', 'read_private', 'web'],
       ttl_seconds: 300,
     });
+  });
+
+  it('creates a chat/web-only session for an unsynced new device', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ ok: true, device: { ...device, scopes: ['chat', 'web'] } }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(createNewDeviceSession('Phone')).resolves.toMatchObject({ scopes: ['chat', 'web'] });
+    expect(fetchMock.mock.calls[0][0]).toContain('/v1/pairing/new-device');
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ device_name: 'Phone' });
+    expect(fetchMock.mock.calls[0][1]?.credentials).toBe('include');
   });
 
   it('removes revoked or rejected credentials from the session', async () => {

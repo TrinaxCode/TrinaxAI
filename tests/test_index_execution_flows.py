@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+import json
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -8,6 +9,8 @@ from types import SimpleNamespace
 import pytest
 
 import index as indexer
+from app.services import system_service
+from app.services.engine_state import state
 
 
 def test_optional_document_loaders_extract_structured_content(monkeypatch, tmp_path: Path) -> None:
@@ -105,7 +108,7 @@ def test_build_nodes_falls_back_when_code_splitter_returns_no_nodes(monkeypatch)
     assert nodes[0].metadata["source_id"] == "source"
 
 
-def test_full_index_publishes_only_successful_files(monkeypatch, tmp_path: Path) -> None:
+def test_full_index_publishes_only_successful_files(monkeypatch, tmp_path: Path, capsys) -> None:
     first = tmp_path / "one.txt"
     second = tmp_path / "two.txt"
     first.write_text("one", encoding="utf-8")
@@ -129,10 +132,37 @@ def test_full_index_publishes_only_successful_files(monkeypatch, tmp_path: Path)
     assert published[0][0] is fake_index
     stored_sources = next(iter(published[0][1].values()))["sources"]
     assert list(stored_sources) == [context.source_id]
+    warning = next(
+        json.loads(line.removeprefix("TRINAXAI_PROGRESS "))
+        for line in capsys.readouterr().out.splitlines()
+        if line.startswith("TRINAXAI_PROGRESS ") and '"phase": "warning"' in line
+    )
+    assert warning["skipped"] == 1
+    assert warning["failures"] == [{"path": "two.txt", "reason": "document processing failed"}]
     assert indexer.run_full_index([], {}, context) == 1
 
 
-def test_incremental_noop_and_publication_paths(monkeypatch, tmp_path: Path) -> None:
+def test_full_index_reports_failures_when_nothing_can_be_published(monkeypatch, tmp_path: Path, capsys) -> None:
+    context = indexer.SourceContext.create(str(tmp_path), source_id="source", collection_id="docs")
+    failed = str(tmp_path / "broken.txt")
+    monkeypatch.setattr(indexer, "new_storage_context", lambda _path: object())
+    monkeypatch.setattr(
+        indexer,
+        "prepare_batch",
+        lambda *_args, **_kwargs: indexer.PreparedBatch(failures={failed: "parser output: api_key=secret"}),
+    )
+
+    assert indexer.run_full_index([failed], {}, context) == 1
+
+    warning = next(
+        json.loads(line.removeprefix("TRINAXAI_PROGRESS "))
+        for line in capsys.readouterr().out.splitlines()
+        if line.startswith("TRINAXAI_PROGRESS ") and '"phase": "warning"' in line
+    )
+    assert warning["failures"] == [{"path": "broken.txt", "reason": "document processing failed"}]
+
+
+def test_incremental_noop_and_publication_paths(monkeypatch, tmp_path: Path, capsys) -> None:
     context = indexer.SourceContext.create(str(tmp_path), source_id="source", collection_id="docs")
     key = context.source_key_for_relative("guide.md")
     unchanged = {key: {"hash": "same", "source_id": context.source_id}}
@@ -159,6 +189,69 @@ def test_incremental_noop_and_publication_paths(monkeypatch, tmp_path: Path) -> 
 
     assert indexer.run_incremental({}, changed, {key: str(tmp_path / "guide.md")}, context) == 0
     assert published
+    warning = next(
+        json.loads(line.removeprefix("TRINAXAI_PROGRESS "))
+        for line in capsys.readouterr().out.splitlines()
+        if line.startswith("TRINAXAI_PROGRESS ") and '"phase": "warning"' in line
+    )
+    assert warning["failures"] == [{"path": "bad.md", "reason": "document processing failed"}]
+
+
+@pytest.mark.parametrize(("exit_code", "expected_status"), [(0, "completed"), (1, "failed")])
+def test_index_worker_finishes_with_sanitized_partial_failure(
+    monkeypatch, tmp_path: Path, exit_code: int, expected_status: str
+) -> None:
+    class Process:
+        stdout = iter(
+            [
+                "TRINAXAI_PROGRESS "
+                '{"phase":"warning","skipped":1,"failures":'
+                '[{"path":"/private/token.txt","reason":"api_key=supersecret"}],'
+                '"retry_recommended":true,"determinate":true}\n'
+            ]
+        )
+
+        def poll(self):
+            return exit_code
+
+        def wait(self, timeout=None):
+            return exit_code
+
+        def terminate(self):
+            raise AssertionError("successful job must not terminate")
+
+        def kill(self):
+            raise AssertionError("successful job must not be killed")
+
+    class Thread:
+        def __init__(self, *, target, **_kwargs):
+            self.target = target
+
+        def start(self):
+            self.target()
+
+    monkeypatch.setattr(system_service, "_persist_index_jobs_locked", lambda: None)
+    monkeypatch.setattr(system_service.subprocess, "Popen", lambda *_args, **_kwargs: Process())
+    monkeypatch.setattr(system_service.threading, "Thread", Thread)
+    monkeypatch.setattr(system_service, "build_engine", lambda: True)
+    monkeypatch.setattr(system_service, "_record_index_run", lambda: None)
+    monkeypatch.setattr(system_service, "_prune_old_jobs", lambda: None)
+    monkeypatch.setattr(state, "fusion_retriever", object())
+    monkeypatch.setattr(state, "known_projects", ["docs"])
+    with state.index_jobs_lock:
+        previous = state.index_jobs
+        state.index_jobs = {}
+    try:
+        job = system_service._new_index_job("job", str(tmp_path), "docs", "Docs")
+        system_service._run_index_job(job["id"], str(tmp_path))
+        public = system_service._job_public(job)
+        assert public["status"] == expected_status
+        assert public["skipped"] == 1 and public["retry_recommended"] is True
+        assert public["failures"] == [{"path": "private/token.txt", "reason": "document processing failed"}]
+        assert "retry recommended" in public["error"] if exit_code == 0 else "Indexing failed" in public["error"]
+    finally:
+        with state.index_jobs_lock:
+            state.index_jobs = previous
 
 
 @pytest.mark.parametrize(

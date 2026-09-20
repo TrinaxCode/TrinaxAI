@@ -35,19 +35,19 @@ if ([string]::IsNullOrWhiteSpace($Language)) { $Language = if ($env:TRINAXAI_LAN
 function T($English, $Spanish) { if ($Language -eq 'es') { return $Spanish }; return $English }
 
 $ReleaseVersion = if (-not [string]::IsNullOrWhiteSpace($env:TRINAXAI_RELEASE_VERSION)) { $env:TRINAXAI_RELEASE_VERSION } else { "" }
-if ($ReleaseVersion -and $ReleaseVersion -notmatch '^[0-9]+\.[0-9]+\.[0-9]+$') { throw "Invalid TrinaxAI release version: $ReleaseVersion" }
+if ($ReleaseVersion -and $ReleaseVersion -notmatch '^[0-9]+\.[0-9]+\.[0-9]+$') { throw (T "Invalid TrinaxAI release version: $ReleaseVersion" "Versión de lanzamiento de TrinaxAI no válida: $ReleaseVersion") }
 $SourceUpdateUrl = if (-not [string]::IsNullOrWhiteSpace($env:TRINAXAI_UPDATE_SOURCE_URL)) { $env:TRINAXAI_UPDATE_SOURCE_URL } else { "" }
 $SourceUpdateSha256 = if (-not [string]::IsNullOrWhiteSpace($env:TRINAXAI_UPDATE_SOURCE_SHA256)) { $env:TRINAXAI_UPDATE_SOURCE_SHA256 } else { $env:TRINAXAI_SOURCE_SHA256 }
 if ($SourceUpdateSha256) { $SourceUpdateSha256 = $SourceUpdateSha256.Trim() }
 if ($SourceUpdateSha256 -and $SourceUpdateSha256 -notmatch '^[0-9a-fA-F]{64}$') {
-  throw "Source archive checksum must be a SHA-256 digest."
+  throw (T "Source archive checksum must be a SHA-256 digest." "La suma de comprobación del archivo fuente debe ser un resumen SHA-256.")
 }
 if ([string]::IsNullOrWhiteSpace($SourceUpdateUrl) -and $ReleaseVersion) {
   $SourceUpdateUrl = "https://github.com/TrinaxCode/TrinaxAI/releases/download/v$ReleaseVersion/TrinaxAI-$ReleaseVersion.tar.gz"
 }
 $IsReleaseSourceUrl = $SourceUpdateUrl -match '^https://github\.com/TrinaxCode/TrinaxAI/releases/download/v[0-9]+\.[0-9]+\.[0-9]+/TrinaxAI-[0-9]+\.[0-9]+\.[0-9]+\.tar\.gz$'
 if ($SourceUpdateUrl -and -not $IsReleaseSourceUrl -and [string]::IsNullOrWhiteSpace($SourceUpdateSha256)) {
-  throw "TRINAXAI_UPDATE_SOURCE_URL requires a matching SHA-256 checksum."
+  throw (T "TRINAXAI_UPDATE_SOURCE_URL requires a matching SHA-256 checksum." "TRINAXAI_UPDATE_SOURCE_URL requiere una suma de comprobación SHA-256 coincidente.")
 }
 
 if (-not $Interactive -and -not $NonInteractive -and -not $DryRun -and -not $Scheduled -and $env:TRINAXAI_INTERACTIVE -ne "0") {
@@ -71,13 +71,21 @@ function Update-ProcessPath {
     (Join-Path $env:LOCALAPPDATA "Programs\Ollama"),
     (Join-Path $env:ProgramFiles "Ollama")
   ) | Where-Object { $_ -and (Test-Path -LiteralPath $_) }
-  $env:Path = (@($MachinePath, $UserPath) + $ExtraPaths) -join ";"
+  $Seen = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+  $Paths = [Collections.Generic.List[string]]::new()
+  foreach ($PathList in (@($env:Path, $MachinePath, $UserPath) + $ExtraPaths)) {
+    foreach ($Entry in @([string]$PathList -split ";")) {
+      $Entry = $Entry.Trim()
+      if ($Entry -and $Seen.Add($Entry)) { $Paths.Add($Entry) }
+    }
+  }
+  $env:Path = $Paths -join ";"
 }
 function Invoke-NativeChecked([string]$FilePath, [string[]]$Arguments, [string]$Label) {
   & $FilePath @Arguments
   $ExitCode = $LASTEXITCODE
   if ($ExitCode -ne 0) {
-    throw "$Label failed with exit code $ExitCode."
+    throw (T "$Label failed with exit code $ExitCode." "$Label falló con el código de salida $ExitCode.")
   }
 }
 function Read-YesNo($Prompt, [bool]$DefaultYes = $true) {
@@ -102,7 +110,7 @@ function Invoke-Python([string[]]$PythonArgs) {
   }
   $ExitCode = $LASTEXITCODE
   if ($ExitCode -ne 0) {
-    throw "Python command failed with exit code ${ExitCode}: $PythonExe $($PythonArgs -join ' ')"
+    throw (T "Python command failed with exit code ${ExitCode}: $PythonExe $($PythonArgs -join ' ')" "El comando de Python falló con el código de salida ${ExitCode}: $PythonExe $($PythonArgs -join ' ')")
   }
 }
 function Get-OllamaCommand {
@@ -191,19 +199,19 @@ function Assert-RuntimeReady {
   $RagPort = if ($RagPortText) { [int]$RagPortText } else { 3333 }
   $PwaPort = if ($PwaPortText) { [int]$PwaPortText } else { 3334 }
   $RagBase = Wait-LocalUrl $RagPort "/health"
-  if (-not $RagBase) { throw "TrinaxAI backend is not ready on port $RagPort." }
+  if (-not $RagBase) { throw (T "TrinaxAI backend is not ready on port $RagPort." "El backend de TrinaxAI no está listo en el puerto $RagPort.") }
   $PwaBase = Wait-LocalUrl $PwaPort
-  if (-not $PwaBase) { throw "TrinaxAI PWA is not ready on port $PwaPort." }
+  if (-not $PwaBase) { throw (T "TrinaxAI PWA is not ready on port $PwaPort." "La PWA de TrinaxAI no está lista en el puerto $PwaPort.") }
   $Body = @{ messages = @(@{ role = "user"; content = "Reply with the single word OK." }); stream = $false; mode = "model"; think = $false } | ConvertTo-Json -Compress
   try {
     $Response = Invoke-LocalWebRequest "$RagBase/v1/chat/completions" "POST" $Body
     $Payload = $Response.Content | ConvertFrom-Json
     $Content = $Payload.choices[0].message.content
-    if ([string]::IsNullOrWhiteSpace([string]$Content)) { throw "empty response" }
+    if ([string]::IsNullOrWhiteSpace([string]$Content)) { throw (T "empty response" "respuesta vacía") }
   } catch {
-    throw "TrinaxAI smoke inference failed: $($_.Exception.Message)"
+    throw ((T "TrinaxAI smoke inference failed" "La inferencia de prueba de TrinaxAI falló") + ": $($_.Exception.Message)")
   }
-  Write-Ok "Backend, PWA, and smoke inference are ready"
+  Write-Ok (T "Backend, PWA, and smoke inference are ready" "El backend, la PWA y la inferencia de prueba están listos")
 }
 function Stop-OllamaProcesses {
   try {
@@ -211,7 +219,7 @@ function Stop-OllamaProcesses {
       Where-Object { $_.CommandLine -and ($_.CommandLine -like "*ollama*") } |
       ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
   } catch {
-    Write-Warn "Could not enumerate Ollama processes."
+    Write-Warn (T "Could not enumerate Ollama processes." "No se pudieron enumerar los procesos de Ollama.")
   }
 }
 function Invoke-ExternalWithTimeout([string]$FilePath, [string[]]$Arguments, [int]$TimeoutSec = 90) {
@@ -219,17 +227,17 @@ function Invoke-ExternalWithTimeout([string]$FilePath, [string[]]$Arguments, [in
     $Proc = Start-Process -FilePath $FilePath -ArgumentList $Arguments -PassThru -WindowStyle Hidden
     if (-not $Proc.WaitForExit($TimeoutSec * 1000)) {
       Stop-Process -Id $Proc.Id -Force -ErrorAction SilentlyContinue
-      Write-Warn "$FilePath timed out after ${TimeoutSec}s."
+      Write-Warn (T "$FilePath timed out after ${TimeoutSec}s." "$FilePath agotó el tiempo de espera después de ${TimeoutSec}s.")
       return $false
     }
     return ($Proc.ExitCode -eq 0)
   } catch {
-    Write-Warn "Could not run ${FilePath}: $($_.Exception.Message)"
+    Write-Warn ((T "Could not run ${FilePath}" "No se pudo ejecutar ${FilePath}") + ": $($_.Exception.Message)")
     return $false
   }
 }
 function Install-OllamaOfficial {
-  Write-Host "  Installing Ollama with: irm https://ollama.com/install.ps1 | iex"
+  Write-Host (T "  Installing Ollama with: irm https://ollama.com/install.ps1 | iex" "  Instalando Ollama con: irm https://ollama.com/install.ps1 | iex")
   try {
     $PowerShellExe = (Get-Command powershell.exe -ErrorAction SilentlyContinue).Source
     if (-not $PowerShellExe) { $PowerShellExe = "powershell.exe" }
@@ -240,36 +248,36 @@ function Install-OllamaOfficial {
     Update-ProcessPath
     return [bool](Get-OllamaCommand)
   } catch {
-    Write-Warn "Official Ollama install command failed: $($_.Exception.Message)"
+    Write-Warn ((T "Official Ollama install command failed" "El comando oficial de instalación de Ollama falló") + ": $($_.Exception.Message)")
     return $false
   }
 }
 function Remove-KnownDirectory([string]$Path, [string]$Label) {
   if ([string]::IsNullOrWhiteSpace($Path)) { return }
   try {
-    if ($Path -notmatch '^(?:[A-Za-z]:[\\/]|\\\\)') { throw "Unsafe path: $Path" }
+    if ($Path -notmatch '^(?:[A-Za-z]:[\\/]|\\\\)') { throw (T "Unsafe path: $Path" "Ruta insegura: $Path") }
     $Full = [IO.Path]::GetFullPath($Path)
-    if ($Full -eq [IO.Path]::GetPathRoot($Full)) { throw "Unsafe path: $Full" }
+    if ($Full -eq [IO.Path]::GetPathRoot($Full)) { throw (T "Unsafe path: $Full" "Ruta insegura: $Full") }
     if (Test-Path -LiteralPath $Full) {
       Remove-Item -LiteralPath $Full -Recurse -Force
-      Write-Ok "Removed $Label"
+      Write-Ok (T "Removed $Label" "$Label eliminado")
     }
   } catch {
-    Write-Warn "Could not remove ${Label}: $($_.Exception.Message)"
+    Write-Warn ((T "Could not remove ${Label}" "No se pudo eliminar ${Label}") + ": $($_.Exception.Message)")
   }
 }
 function Remove-OllamaApp {
   Stop-OllamaProcesses
   if (Test-Cmd "winget") {
     if (-not (Invoke-ExternalWithTimeout "winget" @("uninstall", "--id", "Ollama.Ollama", "--silent", "--accept-source-agreements") 120)) {
-      Write-Warn "winget could not remove the Ollama package; continuing with known application paths."
+      Write-Warn (T "winget could not remove the Ollama package; continuing with known application paths." "winget no pudo eliminar el paquete de Ollama; se continuará con las rutas conocidas de la aplicación.")
     }
   }
   Stop-OllamaProcesses
-  Remove-KnownDirectory (Join-Path $env:LOCALAPPDATA "Programs\Ollama") "Ollama app"
-  Remove-KnownDirectory (Join-Path $env:LOCALAPPDATA "Ollama") "Ollama local app data"
-  Remove-KnownDirectory (Join-Path $env:APPDATA "Ollama") "Ollama roaming app data"
-  Remove-KnownDirectory (Join-Path $env:ProgramFiles "Ollama") "Ollama Program Files app"
+  Remove-KnownDirectory (Join-Path $env:LOCALAPPDATA "Programs\Ollama") (T "Ollama app" "aplicación de Ollama")
+  Remove-KnownDirectory (Join-Path $env:LOCALAPPDATA "Ollama") (T "Ollama local app data" "datos locales de la aplicación Ollama")
+  Remove-KnownDirectory (Join-Path $env:APPDATA "Ollama") (T "Ollama roaming app data" "datos móviles de la aplicación Ollama")
+  Remove-KnownDirectory (Join-Path $env:ProgramFiles "Ollama") (T "Ollama Program Files app" "aplicación Ollama de Archivos de programa")
 }
 function Read-EnvValue($Key) {
   $EnvPath = Join-Path $Repo ".env"
@@ -304,9 +312,9 @@ function Remove-ConfiguredModels {
   $Ollama = Get-OllamaCommand
   if ($Ollama) {
     foreach ($Model in Get-ConfiguredModels) {
-      Write-Host "  Removing $Model..."
+      Write-Host (T "  Removing $Model..." "  Eliminando $Model...")
       & $Ollama rm $Model 2>$null
-      if ($LASTEXITCODE -ne 0) { Write-Warn "Could not remove configured model $Model." }
+      if ($LASTEXITCODE -ne 0) { Write-Warn (T "Could not remove configured model $Model." "No se pudo eliminar el modelo configurado $Model.") }
     }
   }
 }
@@ -322,45 +330,45 @@ function New-TrinaxAIBackup {
     Where-Object { Test-Path (Join-Path $Repo $_) } |
     ForEach-Object { Join-Path $Repo $_ }
   if ($Items.Count -eq 0) {
-    Write-Warn "No runtime files found to back up."
+    Write-Warn (T "No runtime files found to back up." "No se encontraron archivos de ejecución para respaldar.")
     return
   }
 
-  if (-not $PythonExe) { throw "Python is required to pause services before backup." }
+  if (-not $PythonExe) { throw (T "Python is required to pause services before backup." "Se requiere Python para pausar los servicios antes del respaldo.") }
   $Status = Get-TrinaxAIServiceStatus
   $ApiWasRunning = Test-TrinaxAIRagApiRunning $Status
   try {
     if ($ApiWasRunning) {
       Invoke-ServiceManager "stop-ai"
       if (Test-TrinaxAIRagApiRunning (Get-TrinaxAIServiceStatus)) {
-        throw "The TrinaxAI RAG API is still running; backup was not created."
+        throw (T "The TrinaxAI RAG API is still running; backup was not created." "La API RAG de TrinaxAI sigue en ejecución; no se creó el respaldo.")
       }
     }
     Compress-Archive -Path $Items -DestinationPath $ZipPath -Force
     if (Test-Cmd "icacls") {
       & icacls $ZipPath /inheritance:r /grant:r "${env:USERNAME}:F" | Out-Null
     }
-    Write-Ok "Backup created: $ZipPath"
+    Write-Ok (T "Backup created: $ZipPath" "Respaldo creado: $ZipPath")
   } finally {
     if ($ApiWasRunning) {
       Invoke-ServiceManager "start-ai"
       if (-not (Test-TrinaxAIRagApiRunning (Get-TrinaxAIServiceStatus))) {
-        throw "The TrinaxAI RAG API could not be restored after backup."
+        throw (T "The TrinaxAI RAG API could not be restored after backup." "No se pudo restaurar la API RAG de TrinaxAI después del respaldo.")
       }
     }
   }
 }
 function Invoke-ServiceManager($Action) {
-  if (-not $PythonExe) { Write-Warn "Python not found; skipped service_manager $Action."; return }
+  if (-not $PythonExe) { Write-Warn (T "Python not found; skipped service_manager $Action." "No se encontró Python; se omitió service_manager $Action."); return }
   Invoke-Python @((Join-Path $Repo "service_manager.py"), $Action, "--base-dir", $Repo)
 }
 function Get-TrinaxAIServiceStatus {
   $Output = @(Invoke-Python @((Join-Path $Repo "service_manager.py"), "status", "--json", "--base-dir", $Repo) 2>$null)
-  if ($Output.Count -eq 0) { throw "The service manager returned no status." }
+  if ($Output.Count -eq 0) { throw (T "The service manager returned no status." "El gestor de servicios no devolvió ningún estado.") }
   try {
     return (($Output -join [Environment]::NewLine) | ConvertFrom-Json)
   } catch {
-    throw "The service manager returned invalid status JSON: $($_.Exception.Message)"
+    throw ((T "The service manager returned invalid status JSON" "El gestor de servicios devolvió un JSON de estado no válido") + ": $($_.Exception.Message)")
   }
 }
 function Test-TrinaxAIRagApiRunning($Status) {
@@ -370,27 +378,27 @@ function Test-TrinaxAIRagApiRunning($Status) {
 
 function Sync-TrinaxRepository {
   if (-not (Test-Path -LiteralPath (Join-Path $Repo ".trinaxai-managed") -PathType Leaf)) {
-    throw "This is not a managed TrinaxAI installation; source update stopped safely."
+    throw (T "This is not a managed TrinaxAI installation; source update stopped safely." "Esta no es una instalación administrada de TrinaxAI; la actualización del código fuente se detuvo de forma segura.")
   }
   if (-not (Test-Path -LiteralPath (Join-Path $Repo "scripts\source_update.py") -PathType Leaf)) {
-    throw "The safe source updater is missing; source update stopped safely."
+    throw (T "The safe source updater is missing; source update stopped safely." "Falta el actualizador seguro del código fuente; la actualización se detuvo de forma segura.")
   }
-  Write-Info "Downloading the latest TrinaxAI source package from GitHub..."
+  Write-Info (T "Downloading the latest TrinaxAI source package from GitHub..." "Descargando el paquete fuente más reciente de TrinaxAI desde GitHub...")
   $SourceArgs = @((Join-Path $Repo "scripts\source_update.py"), "update", "--root", $Repo)
   if ($SourceUpdateUrl) { $SourceArgs += @("--url", $SourceUpdateUrl) }
   if ($SourceUpdateSha256) { $SourceArgs += @("--sha256", $SourceUpdateSha256) }
   Invoke-Python $SourceArgs
   $script:RollbackActive = $true
-  Write-Ok "Source package updated"
+  Write-Ok (T "Source package updated" "Paquete fuente actualizado")
 }
 
 function Restore-FailedUpdate {
   if (-not $script:RollbackActive) { return }
-  Write-Warn "Update failed; restoring the previously working source tree."
+  Write-Warn (T "Update failed; restoring the previously working source tree." "La actualización falló; se restaurará el árbol de código fuente que funcionaba anteriormente.")
   try {
     Invoke-Python @((Join-Path $Repo "scripts\source_update.py"), "rollback", "--root", $Repo)
   } catch {
-    Write-Warn "Automatic source rollback failed: $($_.Exception.Message)"
+    Write-Warn ((T "Automatic source rollback failed" "Falló la reversión automática del código fuente") + ": $($_.Exception.Message)")
   }
 }
 
@@ -415,8 +423,8 @@ if ($DryRun) {
   Write-Info (T "Would restart TrinaxAI if requested" "Se reiniciaría TrinaxAI si se solicita")
   Write-Host ""
   Write-Host (T "Links to enter" "Enlaces de acceso") -ForegroundColor Cyan
-  Write-Host "  Localhost:       https://localhost:3334"
-  Write-Host "  LAN:             https://[YOUR-LAN-IP]:3334"
+  Write-Host (T "  Localhost:       https://localhost:3334" "  Localhost:       https://localhost:3334")
+  Write-Host (T "  LAN:             https://[YOUR-LAN-IP]:3334" "  LAN / Red local: https://[TU-IP-LAN]:3334")
   Write-Host (T "  RAG health:      https://localhost:3333/health" "  Salud de RAG:    https://localhost:3333/health")
   Write-Ok (T "Dry-run finished; no changes were made" "Simulación terminada; no se hicieron cambios")
   exit 0
@@ -431,10 +439,10 @@ trap {
 
 Write-Host ""
 Write-Host "+========================================+" -ForegroundColor Blue
-Write-Host "|          TrinaxAI - Smart Update       |" -ForegroundColor Blue
+Write-Host (T "|          TrinaxAI - Smart Update       |" "|       TrinaxAI - Actualización inteligente |") -ForegroundColor Blue
 Write-Host "+========================================+" -ForegroundColor Blue
-if ($Scheduled) { Write-Info "Weekly update check (no remote code execution)" }
-else { Write-Info "Your data and settings stay untouched" }
+if ($Scheduled) { Write-Info (T "Weekly update check (no remote code execution)" "Comprobación semanal de actualización (sin ejecución de código remoto)") }
+else { Write-Info (T "Your data and settings stay untouched" "Tus datos y configuraciones no se modificarán") }
 
 $CreateBackup = -not $NoBackup
 $PullCode = -not $NoPull
@@ -476,7 +484,7 @@ if (-not $NonInteractive -and ($Interactive -or $env:TRINAXAI_INTERACTIVE -eq "1
 }
 
 if (-not $PythonExe) {
-  Write-Warn "Python was not found. Run install.ps1 first."
+  Write-Warn (T "Python was not found. Run install.ps1 first." "No se encontró Python. Ejecuta primero install.ps1.")
   exit 1
 }
 
@@ -486,29 +494,29 @@ if ($Scheduled) {
 }
 
 if ($CreateBackup) {
-  Write-Step "1/7 Backup"
+  Write-Step (T "1/7 Backup" "1/7 Respaldo")
   New-TrinaxAIBackup
 }
 
 if ($PullCode) {
-  Write-Step "2/7 Source"
+  Write-Step (T "2/7 Source" "2/7 Código fuente")
   Sync-TrinaxRepository
 }
 
 if ($RemoveOllamaApp) {
-  Write-Step "Ollama application"
+  Write-Step (T "Ollama application" "Aplicación Ollama")
   Remove-OllamaApp
   if ($InstallOllamaAfterRemove) {
-    if (Install-OllamaOfficial) { Write-Ok "Ollama installed" } else { Write-Warn "Ollama reinstall failed." }
+    if (Install-OllamaOfficial) { Write-Ok (T "Ollama installed" "Ollama instalado") } else { Write-Warn (T "Ollama reinstall failed." "Falló la reinstalación de Ollama.") }
   } else {
     $PullModels = $false
   }
 } elseif ($RepairOllamaNow) {
-  Write-Step "Ollama repair"
-  if (Install-OllamaOfficial) { Write-Ok "Ollama installed" } else { Write-Warn "Ollama repair failed." }
+  Write-Step (T "Ollama repair" "Reparación de Ollama")
+  if (Install-OllamaOfficial) { Write-Ok (T "Ollama installed" "Ollama instalado") } else { Write-Warn (T "Ollama repair failed." "Falló la reparación de Ollama.") }
 }
 
-Write-Step "3/7 Python dependencies"
+Write-Step (T "3/7 Python dependencies" "3/7 Dependencias de Python")
 Invoke-Python @("-m", "pip", "install", "--upgrade", "pip")
 $RequirementsFile = if (Test-Path "requirements.lock") { "requirements.lock" } else { "requirements.txt" }
 if ($RequirementsFile -eq "requirements.lock") {
@@ -517,28 +525,28 @@ if ($RequirementsFile -eq "requirements.lock") {
   Invoke-Python @("-m", "pip", "install", "-r", $RequirementsFile)
 }
 Invoke-Python @("-m", "pip", "install", "-e", ".")
-Write-Ok "Python dependencies updated"
+Write-Ok (T "Python dependencies updated" "Dependencias de Python actualizadas")
 if (Test-Path "scripts\generate_continue_config.py") {
   Invoke-Python @((Join-Path $Repo "scripts\generate_continue_config.py"), "--root", $Repo, "--install-user-config")
-  Write-Ok "Continue configuration regenerated"
+  Write-Ok (T "Continue configuration regenerated" "Configuración de Continue regenerada")
 }
 
-Write-Step "4/7 PWA frontend"
+Write-Step (T "4/7 PWA frontend" "4/7 Frontend PWA")
 if (-not (Test-Path "chat-pwa\package.json") -or -not (Test-Path "chat-pwa\package-lock.json")) {
-  throw "chat-pwa/package.json and package-lock.json are required for the PWA."
+  throw (T "chat-pwa/package.json and package-lock.json are required for the PWA." "La PWA requiere chat-pwa/package.json y package-lock.json.")
 }
-if (-not (Test-Cmd "npm")) { throw "npm is required to build the PWA." }
+if (-not (Test-Cmd "npm")) { throw (T "npm is required to build the PWA." "Se requiere npm para compilar la PWA.") }
 Push-Location "chat-pwa"
 try {
-  Invoke-NativeChecked "npm" @("ci") "npm ci"
-  Invoke-NativeChecked "npm" @("run", "build") "npm run build"
+  Invoke-NativeChecked "npm" @("ci") (T "npm ci" "npm ci")
+  Invoke-NativeChecked "npm" @("run", "build") (T "npm run build" "npm run build")
 } finally {
   Pop-Location
 }
-if (-not (Test-Path "chat-pwa\dist\index.html")) { throw "PWA build completed without chat-pwa/dist/index.html." }
-Write-Ok "PWA rebuilt"
+if (-not (Test-Path "chat-pwa\dist\index.html")) { throw (T "PWA build completed without chat-pwa/dist/index.html." "La compilación de la PWA terminó sin chat-pwa/dist/index.html.") }
+Write-Ok (T "PWA rebuilt" "PWA recompilada")
 
-Write-Step "5/7 Ollama models"
+Write-Step (T "5/7 Ollama models" "5/7 Modelos de Ollama")
 $ConfiguredModels = @(Get-ConfiguredModels)
 if ($RemoveModelsFirst -and $PullModels) {
   Remove-ConfiguredModels
@@ -546,45 +554,45 @@ if ($RemoveModelsFirst -and $PullModels) {
 $Ollama = $null
 if ($PullModels) {
   $Ollama = Ensure-OllamaRunning
-  if (-not $Ollama) { throw "Ollama API is not ready." }
+  if (-not $Ollama) { throw (T "Ollama API is not ready." "La API de Ollama no está lista.") }
 }
 if ($PullModels) {
   foreach ($Model in $ConfiguredModels) {
-    Write-Host "  Pulling $Model..."
-    Invoke-NativeChecked $Ollama @("pull", $Model) "ollama pull $Model"
+    Write-Host (T "  Pulling $Model..." "  Descargando $Model...")
+    Invoke-NativeChecked $Ollama @("pull", $Model) (T "ollama pull $Model" "ollama pull $Model")
   }
 } else {
-  Write-Warn "Model downloads skipped; model preparation is deferred."
+  Write-Warn (T "Model downloads skipped; model preparation is deferred." "Se omitieron las descargas de modelos; la preparación de modelos queda pendiente.")
 }
 if ($PullModels) {
   foreach ($Model in $ConfiguredModels) {
-    if (-not (Test-OllamaModel $Ollama $Model)) { throw "Required Ollama model is not ready: $Model" }
+    if (-not (Test-OllamaModel $Ollama $Model)) { throw (T "Required Ollama model is not ready: $Model" "El modelo de Ollama requerido no está listo: $Model") }
   }
-  Write-Ok "Models ready"
+  Write-Ok (T "Models ready" "Modelos listos")
 }
 
-Write-Step "6/7 Autostart and audit"
+Write-Step (T "6/7 Autostart and audit" "6/7 Inicio automático y auditoría")
 if ($AutostartAction) {
   Invoke-ServiceManager $AutostartAction
 }
 if ($RunAudit -and (Test-Path "scripts\public_readiness.py")) {
   Invoke-Python @("scripts\public_readiness.py")
 } elseif ($RunAudit) {
-  Write-Warn "scripts\public_readiness.py not found; audit skipped."
+  Write-Warn (T "scripts\public_readiness.py not found; audit skipped." "No se encontró scripts\public_readiness.py; se omitió la auditoría.")
 }
 
-Write-Step "7/7 Restart"
+Write-Step (T "7/7 Restart" "7/7 Reinicio")
 if ($RestartAfter) {
   Invoke-ServiceManager "stop-all"
   Invoke-ServiceManager "start"
-  Write-Ok "TrinaxAI restarted"
+  Write-Ok (T "TrinaxAI restarted" "TrinaxAI reiniciado")
 } else {
-  Write-Warn "Restart skipped; runtime readiness check deferred."
+  Write-Warn (T "Restart skipped; runtime readiness check deferred." "Se omitió el reinicio; la comprobación de preparación queda pendiente.")
   $RestartAfter = $false
 }
 if ($RestartAfter) { Assert-RuntimeReady }
 
 Invoke-Python @((Join-Path $Repo "scripts\source_update.py"), "finish", "--root", $Repo)
 $script:RollbackActive = $false
-Write-Ok "TrinaxAI update finished"
-Write-Info "Settings, indexes, models, and personal data were preserved."
+Write-Ok (T "TrinaxAI update finished" "Actualización de TrinaxAI terminada")
+Write-Info (T "Settings, indexes, models, and personal data were preserved." "Se conservaron las configuraciones, los índices, los modelos y los datos personales.")

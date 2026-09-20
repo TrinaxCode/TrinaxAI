@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
-import { motion } from 'framer-motion';
+import { AnimatePresence, motion } from 'framer-motion';
 import { MdRefresh, MdDelete, MdStorage } from 'react-icons/md';
 import { useI18n } from '../i18n/I18nContext';
 import { useTheme } from '../theme/ThemeContext';
@@ -168,12 +168,16 @@ export default function RecentIndexes() {
     <section className={`rounded-xl border p-4 space-y-2 ${cardBg}`}>
       <div className={`text-sm font-medium ${label}`}>{t('recentIndexesTitle')}</div>
       <div className="space-y-1.5">
+        <AnimatePresence initial={false}>
         {items.map((it) => (
           <motion.div
             key={recentKey(it)}
+            layout
             initial={{ opacity: 0, y: 2 }}
             animate={{ opacity: 1, y: 0 }}
-            className={`flex items-center gap-2 rounded-lg border px-3 py-2 ${isDark ? 'bg-black/30 border-white/[0.06]' : 'bg-white border-gray-200'}`}
+            exit={{ opacity: 0, y: -6, height: 0, marginBottom: 0 }}
+            transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+            className={`flex items-center gap-2 overflow-hidden rounded-lg border px-3 py-2 ${isDark ? 'bg-black/30 border-white/[0.06]' : 'bg-white border-gray-200'}`}
           >
             <MdStorage size={14} className={`shrink-0 ${muted}`} />
             <div className="flex-1 min-w-0">
@@ -204,6 +208,7 @@ export default function RecentIndexes() {
             </button>
           </motion.div>
         ))}
+        </AnimatePresence>
       </div>
       <ConfirmModal
         open={deleteKey !== null}

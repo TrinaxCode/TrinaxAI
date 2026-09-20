@@ -10,6 +10,7 @@ import logging
 import os
 import re
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -87,10 +88,30 @@ if sys.platform == "win32" and hasattr(sys.stdout, "buffer"):
 LOG = logging.getLogger("trinaxai.rag_api")
 
 NO_INDEX_MSG = (
+    "No index yet. Run `python index.py` to index your projects folder and "
+    "reload from Settings or with POST /system/reload."
+)
+
+NO_INDEX_MSG_ES = (
     "Aún no hay índice. Ejecuta `python index.py` para indexar "
     "tu carpeta de proyectos y luego recarga desde Configuración o con "
     "POST /system/reload."
 )
+
+
+def no_index_message(language: str | None = None) -> str:
+    """Return the no-index notice in the language requested by the client."""
+    return NO_INDEX_MSG_ES if str(language or "").lower().startswith("es") else NO_INDEX_MSG
+
+
+def request_language(request: Any = None) -> str:
+    """Return ``es``/``en`` for an incoming request, defaulting to English."""
+    try:
+        value = str(request.headers.get("accept-language", "")).lower()
+    except Exception:  # noqa: BLE001 - a missing request must not break a turn
+        return "en"
+    return "es" if value.split(",", 1)[0].strip().startswith("es") else "en"
+
 
 _SAFE_SEGMENT = re.compile(r"[^A-Za-z0-9._ -]+")
 
@@ -125,6 +146,69 @@ def _open_private_file(path: str, flags: int) -> int:
     descriptor = os.open(path, flags | getattr(os, "O_BINARY", 0), PRIVATE_FILE_MODE)
     _ensure_private_file(path)
     return descriptor
+
+
+def _harden_private_directory_fd(descriptor: int) -> None:
+    """Recursively restrict a directory tree without traversing symlinks."""
+    try:
+        os.fchmod(descriptor, PRIVATE_DIRECTORY_MODE)
+    except OSError:
+        # Windows and filesystems without POSIX modes use their native ACLs.
+        return
+    with os.scandir(descriptor) as entries:
+        for entry in entries:
+            try:
+                entry_stat = os.stat(entry.name, dir_fd=descriptor, follow_symlinks=False)
+            except OSError:
+                continue
+            flags = os.O_RDONLY | getattr(os, "O_BINARY", 0)
+            if stat.S_ISDIR(entry_stat.st_mode):
+                flags |= getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
+                try:
+                    child = os.open(entry.name, flags, dir_fd=descriptor)
+                except OSError:
+                    continue
+                try:
+                    if stat.S_ISDIR(os.fstat(child).st_mode):
+                        _harden_private_directory_fd(child)
+                finally:
+                    os.close(child)
+            elif stat.S_ISREG(entry_stat.st_mode):
+                flags |= getattr(os, "O_NOFOLLOW", 0)
+                try:
+                    child = os.open(entry.name, flags, dir_fd=descriptor)
+                except OSError:
+                    continue
+                try:
+                    if stat.S_ISREG(os.fstat(child).st_mode):
+                        os.fchmod(child, PRIVATE_FILE_MODE)
+                except OSError:
+                    pass
+                finally:
+                    os.close(child)
+
+
+def harden_persist_directory(path: str) -> None:
+    """Ensure persisted local data is private, without touching symlink targets."""
+    root = os.path.abspath(path)
+    try:
+        root_stat = os.lstat(root)
+    except FileNotFoundError:
+        os.makedirs(root, mode=PRIVATE_DIRECTORY_MODE, exist_ok=True)
+        root_stat = os.lstat(root)
+    if stat.S_ISLNK(root_stat.st_mode) or not stat.S_ISDIR(root_stat.st_mode):
+        raise RuntimeError(f"Persistent storage must be a real directory: {root}")
+    flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        descriptor = os.open(root, flags)
+    except OSError as exc:
+        raise RuntimeError(f"Could not secure persistent storage: {root}") from exc
+    try:
+        if not stat.S_ISDIR(os.fstat(descriptor).st_mode):
+            raise RuntimeError(f"Persistent storage must be a directory: {root}")
+        _harden_private_directory_fd(descriptor)
+    finally:
+        os.close(descriptor)
 
 
 APP_STATE_MAX_BYTES = config._env_int("TRINAXAI_APP_STATE_MAX_BYTES", 6 * 1024 * 1024, minimum=1024)

@@ -113,7 +113,7 @@ export default function ChatHeader({
       </div>
 
       <div className="ml-auto flex shrink-0 items-center gap-0 sm:gap-1 md:gap-1.5">
-        <div className="hidden items-center gap-0 sm:flex">
+        <div data-header-tools className="hidden items-center gap-0 sm:flex">
           <div ref={exportMenuRef} className="relative">
             <button
               onClick={() => onExportMenuChange(!exportMenuOpen)}
@@ -159,18 +159,20 @@ export default function ChatHeader({
           </div>
           <button
             onClick={() => onResearchModeChange(!researchMode)}
-            className={`flex min-h-10 min-w-10 items-center justify-center rounded-xl transition-colors ${researchMode ? 'animate-soft-pulse bg-[#006bbd]/20 text-[#006bbd] ring-1 ring-[#006bbd]/40' : isDark ? 'text-white/55 hover:bg-white/[0.06] hover:text-white' : 'text-gray-600 hover:bg-gray-100 hover:text-gray-800'}`}
+            className={`flex min-h-10 min-w-10 items-center justify-center rounded-xl transition-colors ${researchMode ? '' : isDark ? 'text-white/55 hover:bg-white/[0.06] hover:text-white' : 'text-gray-600 hover:bg-gray-100 hover:text-gray-800'}`}
             aria-label={t('toggleDeepResearch')}
             title={t('deepResearchTitle')}
+            aria-pressed={researchMode}
           >
             <MdScience size={17} />
           </button>
           {webSearchAvailable && (
             <button
               onClick={() => onWebSearchModeChange(!webSearchMode)}
-              className={`flex min-h-10 min-w-10 items-center justify-center rounded-xl transition-colors ${webSearchMode ? 'animate-soft-pulse bg-[#006bbd]/20 text-[#006bbd] ring-1 ring-[#006bbd]/40' : isDark ? 'text-white/55 hover:bg-white/[0.06] hover:text-white' : 'text-gray-600 hover:bg-gray-100 hover:text-gray-800'}`}
+              className={`flex min-h-10 min-w-10 items-center justify-center rounded-xl transition-colors ${webSearchMode ? '' : isDark ? 'text-white/55 hover:bg-white/[0.06] hover:text-white' : 'text-gray-600 hover:bg-gray-100 hover:text-gray-800'}`}
               aria-label={t('toggleWebSearch')}
               title={t('webSearchTitle')}
+              aria-pressed={webSearchMode}
             >
               <MdPublic size={18} />
             </button>
@@ -190,7 +192,7 @@ export default function ChatHeader({
           <button
             type="button"
             onClick={() => setMobileToolsOpen((open) => !open)}
-            className={`grid min-h-11 min-w-11 place-items-center rounded-xl transition-colors ${mobileToolsOpen ? 'bg-[#006bbd]/20 text-[#006bbd] ring-1 ring-[#006bbd]/40' : isDark ? 'text-white/65 hover:bg-white/[0.06] hover:text-white' : 'text-gray-600 hover:bg-gray-100 hover:text-gray-800'}`}
+            className={`grid min-h-11 min-w-11 place-items-center rounded-xl transition-colors ${mobileToolsOpen ? '' : isDark ? 'text-white/65 hover:bg-white/[0.06] hover:text-white' : 'text-gray-600 hover:bg-gray-100 hover:text-gray-800'}`}
             aria-label={t('tools')}
             aria-expanded={mobileToolsOpen}
             title={t('tools')}
@@ -206,12 +208,13 @@ export default function ChatHeader({
                   animate={{ opacity: 1, scale: 1, y: 0 }}
                   exit={{ opacity: 0, scale: 0.94, y: -6 }}
                   transition={{ duration: 0.15 }}
+                    data-header-tools
                     className={`fixed z-50 mt-1.5 w-[min(15rem,calc(100vw-1rem))] max-w-[calc(100vw-1rem)] overflow-y-auto overflow-x-hidden rounded-xl border p-1 shadow-lg backdrop-blur-xl ${isDark ? 'border-white/[0.08] bg-[#1a1a1a]/95 shadow-black/40' : 'border-gray-200 bg-white/95 shadow-gray-200/80'}`}
                     style={{ top: 'calc(env(safe-area-inset-top, 0px) + 44px)', right: 'max(0.5rem, env(safe-area-inset-right, 0px))', maxHeight: 'calc(100dvh - env(safe-area-inset-top, 0px) - 3.5rem)' }}
                 >
                   <button
                     onClick={() => { onResearchModeChange(!researchMode); setMobileToolsOpen(false); }}
-                     className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition-colors ${researchMode ? 'bg-[#006bbd]/15 text-[#4ea3e0]' : isDark ? 'text-white/75 hover:bg-white/[0.06]' : 'text-gray-700 hover:bg-gray-100'}`}
+                     className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition-colors ${researchMode ? isDark ? 'text-white/75' : 'text-gray-700' : isDark ? 'text-white/75 hover:bg-white/[0.06]' : 'text-gray-700 hover:bg-gray-100'}`}
                     aria-label={t('toggleDeepResearch')}
                     aria-pressed={researchMode}
                   >
@@ -222,7 +225,7 @@ export default function ChatHeader({
                   {webSearchAvailable && (
                     <button
                       onClick={() => { onWebSearchModeChange(!webSearchMode); setMobileToolsOpen(false); }}
-                      className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition-colors ${webSearchMode ? 'bg-[#006bbd]/15 text-[#4ea3e0]' : isDark ? 'text-white/75 hover:bg-white/[0.06]' : 'text-gray-700 hover:bg-gray-100'}`}
+                      className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition-colors ${webSearchMode ? isDark ? 'text-white/75' : 'text-gray-700' : isDark ? 'text-white/75 hover:bg-white/[0.06]' : 'text-gray-700 hover:bg-gray-100'}`}
                       aria-label={t('toggleWebSearch')}
                       aria-pressed={webSearchMode}
                     >

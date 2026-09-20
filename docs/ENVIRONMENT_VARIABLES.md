@@ -4,7 +4,7 @@
 
 <p align="center">
   <a href="https://github.com/TrinaxCode/TrinaxAI"><img src="https://img.shields.io/github/stars/TrinaxCode/TrinaxAI?style=flat&amp;label=%E2%98%85&amp;color=006bbd" alt="GitHub stars"></a>
-  <a href="https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.2.5"><img src="https://img.shields.io/badge/version-1.2.5-006bbd" alt="Stable release: 1.2.5"></a>
+  <a href="https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.2.6"><img src="https://img.shields.io/badge/version-1.2.6-006bbd" alt="Stable release: 1.2.6"></a>
   <a href="https://github.com/TrinaxCode/TrinaxAI/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/TrinaxCode/TrinaxAI/ci.yml?branch=main&amp;label=CI" alt="CI status"></a>
   <a href="https://github.com/TrinaxCode/TrinaxAI/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0--or--later-006bbd" alt="License: AGPL-3.0-or-later"></a>
   <img src="https://img.shields.io/badge/macOS%20%7C%20Windows%20%7C%20Linux-4493F8?style=flat-square" alt="Supported platforms: macOS, Windows, and Linux">
@@ -145,6 +145,7 @@ Ollama also consumes `OLLAMA_BASE_URL` (backend endpoint), `OLLAMA_HOST`
 | `TRINAXAI_WEB_SEARCH_TIMEOUT` | `15` | Search request timeout in seconds. |
 | `TRINAXAI_WEB_SEARCH_MAX_RESULTS` | `6` | Maximum results returned per search. |
 | `TRINAXAI_WEB_SEARCH_CACHE_SECONDS` | `300` | In-memory result-cache lifetime. |
+| `TRINAXAI_WEB_SEARCH_CACHE_MAX_ENTRIES` | `256` | Maximum number of unexpired search-result entries kept in memory. |
 
 ## Retrieval, indexing, and persisted files
 
@@ -154,6 +155,7 @@ Ollama also consumes `OLLAMA_BASE_URL` (backend endpoint), `OLLAMA_HOST`
 | `TRINAXAI_INDEX_DIR` | repository `local_sources/` | Directory indexed recursively; empty or unset uses this repository-local folder. |
 | `TRINAXAI_COLLECTION_ID` | `default` | Collection identifier passed to the indexer. |
 | `TRINAXAI_COLLECTION_NAME` | `General` | Human-readable collection name passed to the indexer. |
+| `TRINAXAI_COLLECTION_DELETE_TIMEOUT` | `5` | Maximum seconds the API waits for a collection index lock before returning a retryable busy response. |
 | `TRINAXAI_DEFAULT_COLLECTION_ID` | `default` | Default collection accepted by the pure runtime validator. |
 | `TRINAXAI_INDEX_APPEND` | `0` | Keeps entries whose source files disappeared when enabled. |
 | `TRINAXAI_INDEX_BATCH_SIZE` | `100` | Files loaded per indexing batch. |
@@ -301,7 +303,7 @@ runtime.
 | `TRINAXAI_UPDATE_REPAIR_OLLAMA` | `0` | Reinstalls or repairs Ollama during update. |
 | `TRINAXAI_UPDATE_RESTART` | auto/prompted | Restarts services after update when enabled. |
 | `TRINAXAI_UPDATE_AUDIT` | `1` | Runs the post-update readiness audit. |
-| `TRINAXAI_RELEASE_VERSION` | `1.2.5` | **Installer:** semantic GitHub release version used for the versioned source archive. The installer never falls back to `main`. |
+| `TRINAXAI_RELEASE_VERSION` | `1.2.6` | **Installer:** semantic GitHub release version used for the versioned source archive. The installer never falls back to `main`. |
 | `TRINAXAI_SOURCE_URL` | pinned GitHub release archive | **Install source:** HTTPS archive URL used for a custom source package. |
 | `TRINAXAI_SOURCE_SHA256` | unset | **Installer:** SHA-256 for a custom source archive URL; required with `TRINAXAI_SOURCE_URL`. |
 | `TRINAXAI_UPDATE_SOURCE_URL` | pinned GitHub release archive | **Updater:** HTTPS source archive URL used for an update. |

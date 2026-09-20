@@ -59,7 +59,7 @@ def test_system_dispatch_and_shutdown_state_edges(monkeypatch, tmp_path: Path) -
     assert system_service._external_indexer_pid() is None
     assert (
         system_service._progress_changes({"phase": "chunking", "files_total": 2, "files_processed": 1})["progress"]
-        == 60
+        == 55
     )
 
 

@@ -1,0 +1,558 @@
+/* Modern chat surfaces for TrinaxAI.
+   Presentation only — no behaviour contracts live here.
+   Targets the ChatGPT / Claude / Grok language: assistant answers read as
+   clean prose, user turns stay as compact bubbles, actions stay quiet until
+   hover, and the composer is one integrated bar. */
+
+:root {
+  --tc-frame-border: rgba(22, 141, 226, 0.28);
+  --tc-frame-border-soft: rgba(22, 141, 226, 0.18);
+  --tc-frame-surface: rgba(10, 16, 24, 0.55);
+  --tc-frame-surface-soft: rgba(255, 255, 255, 0.035);
+  --tc-frame-shadow: 0 18px 40px rgba(0, 0, 0, 0.28);
+  --tc-read-width: 52rem;
+  --tc-index-card-bg: linear-gradient(180deg, rgba(0, 107, 189, 0.12), rgba(0, 107, 189, 0.03));
+  --tc-index-track: rgba(0, 107, 189, 0.16);
+  --tc-index-fill-from: #006bbd;
+  --tc-index-fill-to: #2f9bf0;
+  --tc-index-fill-glow: 0 0 10px rgba(0, 107, 189, 0.45);
+}
+
+html.light {
+  --tc-frame-border: rgba(0, 107, 189, 0.24);
+  --tc-frame-border-soft: rgba(0, 107, 189, 0.14);
+  --tc-frame-surface: rgba(255, 255, 255, 0.86);
+  --tc-frame-surface-soft: rgba(0, 107, 189, 0.04);
+  --tc-frame-shadow: 0 16px 34px rgba(15, 42, 70, 0.10);
+  --tc-index-card-bg: linear-gradient(180deg, rgba(0, 107, 189, 0.07), rgba(0, 107, 189, 0.02));
+  --tc-index-track: #e8eef5;
+  --tc-index-fill-glow: 0 0 8px rgba(0, 107, 189, 0.22);
+}
+
+/* ============================================
+   Sidebar — calmer session rows with a clear active indicator.
+   Keeps the existing palette and width; only the interaction polish changes.
+   ============================================ */
+
+.sidebar-surface .sidebar-session-row,
+.sidebar-surface [data-session-row] {
+  position: relative;
+  border-radius: 0.75rem;
+  transition:
+    background-color 0.22s ease,
+    transform 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.sidebar-surface .sidebar-session-row:hover,
+.sidebar-surface [data-session-row]:hover {
+  transform: translateX(2px);
+}
+
+.sidebar-surface .sidebar-active-indicator {
+  position: absolute;
+  left: 0;
+  top: 0.55rem;
+  bottom: 0.55rem;
+  width: 2px;
+  border-radius: 9999px;
+  background: #168de2;
+}
+
+html.light .sidebar-surface .sidebar-active-indicator {
+  background: #006bbd;
+}
+
+.sidebar-surface .sidebar-search input {
+  transition: background-color 0.22s ease;
+}
+
+/* Agent history drawer rows keep the same active language as the chat sidebar. */
+.agent-page [data-agent-session] {
+  position: relative;
+}
+
+.agent-page .agent-session-indicator {
+  position: absolute;
+  left: 0;
+  top: 0.5rem;
+  bottom: 0.5rem;
+  width: 2px;
+  border-radius: 9999px;
+  background: #168de2;
+}
+
+html.light .agent-page .agent-session-indicator {
+  background: #006bbd;
+}
+
+/* ============================================
+   Conversation rhythm — denser rows on a wider reading column.
+   ============================================ */
+
+.chat-messages {
+  padding-top: 1.4rem;
+  padding-bottom: 1.4rem;
+}
+
+.chat-bubble-wrap {
+  max-width: min(100%, var(--tc-read-width));
+  animation: tc-row-in 0.32s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* ============================================
+   Assistant answers — the same card language as the user turn, drawn in the
+   composer's quiet surface so both voices read as bubbles.
+   ============================================ */
+
+.chat-bubble.chat-bubble-assistant,
+.chat-bubble.chat-bubble-assistant-dark,
+.chat-bubble.chat-bubble-assistant-light {
+  background: rgba(10, 16, 24, 0.72);
+  border: 1px solid rgba(22, 141, 226, 0.22);
+  animation: tc-surface-in 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
+  transition: background-color 0.25s ease;
+}
+
+html.light .chat-bubble.chat-bubble-assistant,
+html.light .chat-bubble.chat-bubble-assistant-dark,
+html.light .chat-bubble.chat-bubble-assistant-light {
+  background: rgba(255, 255, 255, 0.92);
+}
+
+.chat-bubble-assistant-dark {
+  color: rgba(237, 244, 251, 0.93);
+}
+
+.chat-bubble-assistant-light {
+  color: #26313e;
+}
+
+/* Message bubbles keep a flat framed surface: no drop shadows. */
+.chat-bubble,
+.chat-bubble-wrap,
+.chat-bubble-assistant,
+.chat-bubble-assistant-dark,
+.chat-bubble-assistant-light {
+  box-shadow: none;
+}
+
+html.dark .chat-assistant-avatar {
+  background: #030507;
+}
+
+html.light .chat-assistant-avatar {
+  background: #ffffff;
+}
+
+/* Empty state keeps its original TrinaxAI hero: no added ring or halo. */
+
+.chat-empty-motd {
+  text-wrap: balance;
+  max-width: 30rem;
+}
+
+/* User turns keep the brand bubble; in light mode it softens to a calmer
+   surface so long conversations do not read as a wall of saturated blue. */
+html.light .chat-bubble.bg-\[\#006bbd\] {
+  background: #0b74c4;
+}
+
+/* ============================================
+   Message meta — actions sit against the bubble and stay quiet until hover.
+   ============================================ */
+
+/* The model that produced an answer stays hidden until the reader looks at the
+   message, then appears at the end of the action row. */
+.chat-model-label {
+  margin-left: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.56rem;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  color: rgba(203, 213, 225, 0.5);
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+html.light .chat-model-label {
+  color: rgba(71, 85, 105, 0.65);
+}
+
+.chat-row:hover .chat-model-label,
+.chat-row:focus-within .chat-model-label {
+  opacity: 1;
+}
+
+/* Keep the action row quiet until the message is hovered or focused. While it
+   is invisible it must not capture taps, or a tap right under a bubble fires an
+   action nobody can see. Touch screens have no hover, so there the actions stay
+   visible instead of becoming unreachable. */
+.chat-row .chat-actions {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+}
+
+.chat-row:hover .chat-actions,
+.chat-row:focus-within .chat-actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+@media (hover: none), (pointer: coarse) {
+  .chat-row .chat-actions {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
+/* ============================================
+   Composer — one integrated bar.
+   ============================================ */
+
+.composer-shell {
+  padding-bottom: 0.75rem;
+}
+
+.composer-surface {
+  border-radius: 1.5rem;
+  border-width: 1px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.22);
+  transition:
+    border-color 0.3s ease,
+    box-shadow 0.3s ease,
+    background-color 0.3s ease;
+}
+
+/* Dark mode keeps the bar clearly above the black page with a flat, slightly
+   translucent grey surface: no gradient and no blue halo. */
+html.dark .composer-surface {
+  border-color: rgba(255, 255, 255, 0.10);
+  background: rgba(148, 163, 184, 0.22);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+}
+
+html.light .composer-surface {
+  border-color: rgba(0, 107, 189, 0.22);
+  background: rgba(255, 255, 255, 0.92);
+}
+
+.composer-surface:focus-within {
+  border-color: rgba(22, 141, 226, 0.55);
+  box-shadow:
+    0 10px 30px rgba(0, 0, 0, 0.22),
+    0 0 0 3px rgba(22, 141, 226, 0.14);
+}
+
+html.dark .composer-surface:focus-within {
+  border-color: rgba(22, 141, 226, 0.55);
+  box-shadow:
+    0 10px 30px rgba(0, 0, 0, 0.45),
+    0 0 0 3px rgba(22, 141, 226, 0.16);
+}
+
+html.light .composer-surface:focus-within {
+  box-shadow:
+    0 10px 26px rgba(15, 42, 70, 0.12),
+    0 0 0 3px rgba(0, 107, 189, 0.12);
+}
+
+/* Toolbar controls stay icon-only: state is carried by the SVG colour. */
+.composer-surface > div:first-child button,
+.composer-surface > div:last-child button {
+  border-radius: 9999px;
+  transition:
+    background-color 0.2s ease,
+    color 0.2s ease;
+}
+
+/* Only the quiet controls go transparent. The primary action (call, send,
+   stop) keeps the fill its own classes declare — otherwise a white icon lands
+   on the near-white light surface and the control disappears. */
+.composer-surface > div:first-child button:not(.composer-action-primary),
+.composer-surface > div:last-child button:not(.composer-action-primary) {
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.composer-surface > div:first-child button:hover:not(:disabled):not(.composer-action-primary),
+.composer-surface > div:last-child button:hover:not(:disabled):not(.composer-action-primary) {
+  background: transparent !important;
+}
+
+html.light .composer-surface > div:first-child button:hover:not(:disabled):not(.composer-action-primary),
+html.light .composer-surface > div:last-child button:hover:not(:disabled):not(.composer-action-primary) {
+  background: transparent !important;
+}
+
+.composer-surface > div:first-child button[aria-expanded="true"] svg,
+.composer-surface > div:last-child button[aria-expanded="true"] svg,
+.composer-surface > div:first-child button[aria-pressed="true"] svg,
+.composer-surface > div:last-child button[aria-pressed="true"] svg {
+  color: #168de2 !important;
+}
+
+html.light .composer-surface > div:first-child button[aria-expanded="true"] svg,
+html.light .composer-surface > div:last-child button[aria-expanded="true"] svg,
+html.light .composer-surface > div:first-child button[aria-pressed="true"] svg,
+html.light .composer-surface > div:last-child button[aria-pressed="true"] svg {
+  color: #006bbd !important;
+}
+
+/* ============================================
+   Sources card — the "2 local sources" panel.
+   ============================================ */
+
+.tc-sources-card {
+  width: 100%;
+  border: 1px solid var(--tc-frame-border-soft);
+  border-radius: 1rem;
+  background: var(--tc-frame-surface);
+  padding: 0.85rem 1rem 0.75rem;
+  animation: tc-surface-in 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
+  transition: border-color 0.25s ease;
+}
+
+.tc-sources-card .tc-sources-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  padding: 0.55rem 0;
+}
+
+.tc-sources-card .tc-sources-row + .tc-sources-row {
+  border-top: 1px solid var(--tc-frame-border-soft);
+}
+
+.tc-sources-card > div[id][hidden] + div {
+  margin-top: 0.5rem;
+}
+
+.tc-sources-card > div[id] {
+  padding-top: 0.15rem;
+}
+
+.tc-sources-icon {
+  display: grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 0.6rem;
+  background: rgba(42, 201, 182, 0.14);
+  color: #2ac9b6;
+  flex: 0 0 auto;
+  transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+html.light .tc-sources-icon {
+  background: rgba(0, 143, 131, 0.12);
+  color: #00756b;
+}
+
+.tc-sources-score {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.72rem;
+  letter-spacing: 0.02em;
+  color: #2ac9b6;
+}
+
+html.light .tc-sources-score {
+  color: #00756b;
+}
+
+.tc-sources-card:hover {
+  border-color: var(--tc-frame-border);
+}
+
+.tc-sources-card:hover .tc-sources-icon {
+  transform: scale(1.06) rotate(-3deg);
+}
+
+/* ============================================
+   Knowledge browser — framed panels.
+   ============================================ */
+
+.browser-page .tc-browser-panel {
+  border: 1px solid var(--tc-frame-border-soft);
+  border-radius: 1rem;
+  background: var(--tc-frame-surface);
+  overflow: hidden;
+}
+
+.browser-page .browser-file-row {
+  transition:
+    background-color 0.25s ease,
+    border-color 0.25s ease,
+    transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.browser-page .browser-file-row:hover {
+  border-color: var(--tc-frame-border-soft);
+  transform: translateX(2px);
+}
+
+/* ============================================
+   Agent — activity timeline + approval cards.
+   ============================================ */
+
+.tc-agent-shell {
+  border: 1px solid var(--tc-frame-border-soft);
+  border-radius: 1.1rem;
+  background: var(--tc-frame-surface);
+  padding: 1rem 1.05rem;
+  animation: tc-surface-in 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.tc-agent-step {
+  border: 1px solid var(--tc-frame-border-soft);
+  border-radius: 0.95rem;
+  background: var(--tc-frame-surface-soft);
+  transition:
+    border-color 0.25s ease,
+    transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.tc-agent-step:hover {
+  border-color: var(--tc-frame-border);
+  transform: translateY(-1px);
+}
+
+.tc-agent-reply {
+  border: 1px solid var(--tc-frame-border-soft);
+  border-radius: 1rem;
+  background: var(--tc-frame-surface);
+  padding: 0.85rem 1rem;
+  animation: tc-surface-in 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.tc-agent-reply:hover {
+  border-color: var(--tc-frame-border);
+}
+
+/* ============================================
+   Indexing — job card + metrics.
+   ============================================ */
+
+.tc-index-card {
+  border: 1px solid var(--tc-frame-border-soft);
+  border-radius: 1.1rem;
+  background: var(--tc-index-card-bg);
+  padding: 1.1rem 1.2rem;
+  animation: tc-surface-in 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.tc-index-track {
+  height: 0.625rem;
+  width: 100%;
+  overflow: hidden;
+  border-radius: 9999px;
+  background: var(--tc-index-track);
+}
+
+.tc-index-fill {
+  height: 100%;
+  border-radius: 9999px;
+  background-image: linear-gradient(90deg, var(--tc-index-fill-from), var(--tc-index-fill-to));
+  box-shadow: var(--tc-index-fill-glow);
+  transition: width 0.55s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* A batch in flight cannot move the exact percentage yet (embeddings report
+   once per completed node batch). The sheen says "working" without inventing a
+   number the counters do not support. */
+.tc-index-fill--live {
+  background-image:
+    linear-gradient(90deg, var(--tc-index-fill-from), var(--tc-index-fill-to)),
+    linear-gradient(
+      100deg,
+      rgba(255, 255, 255, 0) 30%,
+      rgba(255, 255, 255, 0.5) 50%,
+      rgba(255, 255, 255, 0) 70%
+    );
+  background-size:
+    100% 100%,
+    220% 100%;
+  background-repeat: no-repeat;
+  animation: tc-index-sheen 1.9s linear infinite;
+}
+
+.tc-index-metric {
+  border: 1px solid var(--tc-frame-border-soft);
+  border-radius: 0.8rem;
+  background: var(--tc-frame-surface-soft);
+  padding: 0.6rem 0.75rem;
+  transition:
+    border-color 0.25s ease,
+    background-color 0.25s ease;
+}
+
+.tc-index-metric:hover {
+  border-color: var(--tc-frame-border);
+  background: var(--tc-frame-surface);
+}
+
+/* ============================================
+   Motion — entrance + ambient accents.
+   ============================================ */
+
+@keyframes tc-row-in {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 10px, 0) scale(0.995);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@keyframes tc-surface-in {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 12px, 0) scale(0.99);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@keyframes tc-index-sheen {
+  from {
+    background-position:
+      0 0,
+      200% 0;
+  }
+  to {
+    background-position:
+      0 0,
+      -120% 0;
+  }
+}
+
+/* Ambient motion belongs to the empty-chat hero (.animate-glow in index.css).
+   Conversation avatars stay still so the answer keeps the focus. */
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-bubble-wrap,
+  .chat-bubble-assistant,
+  .tc-sources-card,
+  .tc-agent-shell,
+  .tc-agent-reply,
+  .tc-index-card {
+    animation: none !important;
+  }
+
+  .tc-index-fill,
+  .tc-index-fill--live {
+    animation: none !important;
+    transition: none !important;
+  }
+
+  .tc-agent-step:hover,
+  .tc-index-metric:hover,
+  .browser-page .browser-file-row:hover {
+    transform: none;
+  }
+}

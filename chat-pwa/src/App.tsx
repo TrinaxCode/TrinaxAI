@@ -11,13 +11,14 @@ import { onSharedStateUpdated, startSharedStateSync, syncSharedStateOnce } from 
 import type { ChatEngine, ChatMessage, ChatSession } from './lib/api';
 import type { AgentHandoff } from './components/chat/modeRouter';
 import { DEVICE_ACCESS_REVOKED_EVENT, deviceSessionHasScope } from './lib/authHeaders';
-import { startDeviceRevocationMonitor } from './lib/devicePairing';
+import { createNewDeviceSession, startDeviceRevocationMonitor } from './lib/devicePairing';
 import { wipeRevokedDeviceData } from './lib/deviceWipe';
 import {
   formatAppRoute,
   parseAppRoute,
   type AppPage,
   type AppRoute,
+  type DocsSection,
   type SettingsSection,
 } from './lib/appRoute';
 
@@ -47,6 +48,7 @@ export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [page, setPage] = useState<AppPage>(initialRoute.page);
   const [settingsSection, setSettingsSection] = useState<SettingsSection>(initialRoute.settingsSection ?? 'general');
+  const [docsSection, setDocsSection] = useState<DocsSection>(initialRoute.docsSection ?? 'intro');
   const [routeChatId, setRouteChatId] = useState<string | undefined>(initialRoute.chatId);
   const [pendingAgentRequest, setPendingAgentRequest] = useState<AgentHandoff | null>(null);
   const [sharedReady, setSharedReady] = useState(false);
@@ -62,6 +64,7 @@ export default function App() {
   const applyRoute = useCallback((route: AppRoute) => {
     setPage(route.page);
     if (route.settingsSection) setSettingsSection(route.settingsSection);
+    if (route.docsSection) setDocsSection(route.docsSection);
     setRouteChatId(route.chatId);
     setSidebarOpen(false);
   }, []);
@@ -336,14 +339,14 @@ export default function App() {
       return;
     }
     if (target === 'docs') {
-      navigate({ page: 'docs' });
+      navigate({ page: 'docs', docsSection });
       return;
     }
     navigate({
       page: 'settings',
       settingsSection: target === 'memory' ? 'memory' : target === 'indexing' ? 'indexing' : 'general',
     });
-  }, [navigate]);
+  }, [navigate, docsSection]);
 
   const handleAgentHandoff = useCallback((handoff: AgentHandoff) => {
     setSidebarOpen(false);
@@ -360,6 +363,11 @@ export default function App() {
     setChatAnimKey((k) => k + 1);
     navigate({ page: 'chat', chatId: lastChatIdRef.current });
   }, [navigate, page]);
+
+  const handleSettingsSectionChange = useCallback((section: SettingsSection) => {
+    setSettingsSection(section);
+    navigate({ page: 'settings', settingsSection: section }, true);
+  }, [navigate]);
 
   const protectedFeature = page === 'browser' && !deviceSessionHasScope('read_private')
     ? 'knowledge'
@@ -392,30 +400,48 @@ export default function App() {
         <NetworkNotice canManageSystem={canManageSystem} />
       )}
 
-      {/* Onboarding Wizard (first time only) */}
-      {showOnboarding && (
-        <Suspense fallback={null}>
-          <OnboardingWizard
-            onComplete={handleOnboardingComplete}
-            canConfigureSystem={canManageSystem}
-          />
-        </Suspense>
-      )}
-      {showDeviceSetup && !showOnboarding && (
-        <Suspense fallback={null}>
-          <DeviceSetupChoice
-            preferExisting={false}
-            onNewDevice={() => { setShowDeviceSetup(false); setShowOnboarding(true); }}
-          />
-        </Suspense>
-      )}
-      {blockedFeature && (
-        <div className="fixed inset-0 z-[70]">
+      {/* First-run surfaces animate out as well as in, so the handoff to the
+          main shell reads as a transition instead of a hard swap. */}
+      <AnimatePresence>
+        {showOnboarding && (
           <Suspense fallback={null}>
-            <PermissionNotice feature={blockedFeature} remoteWebSearch={blockedFeature === 'web'} onBack={() => { setEngine('ollama'); setBlockedFeature(null); }} />
+            <OnboardingWizard
+              onComplete={handleOnboardingComplete}
+              canConfigureSystem={canManageSystem}
+            />
           </Suspense>
-        </div>
-      )}
+        )}
+      </AnimatePresence>
+      <AnimatePresence>
+        {showDeviceSetup && !showOnboarding && (
+          <Suspense fallback={null}>
+            <DeviceSetupChoice
+              preferExisting={false}
+              onNewDevice={async () => {
+                await createNewDeviceSession();
+                setShowDeviceSetup(false);
+                setShowOnboarding(true);
+              }}
+            />
+          </Suspense>
+        )}
+      </AnimatePresence>
+      <AnimatePresence>
+        {blockedFeature && (
+          <motion.div
+            key="permission-notice"
+            className="fixed inset-0 z-[70]"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2, ease: 'easeOut' }}
+          >
+            <Suspense fallback={null}>
+              <PermissionNotice feature={blockedFeature} remoteWebSearch={blockedFeature === 'web'} onBack={() => { setEngine('ollama'); setBlockedFeature(null); }} />
+            </Suspense>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Main app enters as soon as local state and first-run gates are ready. */}
       {sharedReady && installationState !== 'checking' && !showOnboarding && !showDeviceSetup && (
@@ -550,15 +576,20 @@ export default function App() {
                     <Settings
                       key="settings"
                       onBack={handleBackToChat}
-                      onOpenDocs={() => navigate({ page: 'docs' })}
+                      onOpenDocs={() => navigate({ page: 'docs', docsSection })}
                       initialSection={settingsSection}
-                      onSectionChange={setSettingsSection}
+                      onSectionChange={handleSettingsSectionChange}
                       canManageSystem={canManageSystem}
                     />
                   </Suspense>
                 ) : page === 'docs' ? (
                   <Suspense fallback={<div className="h-full flex items-center justify-center text-black/20 dark:text-white/20 text-sm">{t('loading')}</div>}>
-                    <Docs key="docs" onBack={handleBackToChat} />
+                    <Docs
+                      key="docs"
+                      onBack={handleBackToChat}
+                      initialSection={docsSection}
+                      onSectionChange={(section) => navigate({ page: 'docs', docsSection: section })}
+                    />
                   </Suspense>
                 ) : page === 'browser' ? (
                   <Suspense fallback={<div className="h-full flex items-center justify-center text-black/20 dark:text-white/20 text-sm">{t('loading')}</div>}>

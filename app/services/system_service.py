@@ -10,7 +10,9 @@ import httpx
 
 # ruff: noqa: F405
 from trinaxai_core import _process_is_alive
+from trinaxai_index_documents import _SENSITIVE_EXTENSIONS, _SENSITIVE_NAMES
 
+from .app_state_service import _read_app_state
 from .shared_runtime import (
     _SAFE_SEGMENT,
     LOG,
@@ -106,6 +108,11 @@ def _safe_rel_path(filename: str) -> str | None:
         return None
     # Metadata and API responses use POSIX separators on every platform.
     return "/".join(parts)
+
+
+def _is_sensitive_upload(filename: str) -> bool:
+    name = filename.replace("\\", "/").rsplit("/", 1)[-1].lower()
+    return name in _SENSITIVE_NAMES or name.startswith(".env.") or os.path.splitext(name)[1] in _SENSITIVE_EXTENSIONS
 
 
 def _safe_label(label: str) -> str:
@@ -238,6 +245,8 @@ def _new_index_job(
         "progress": 2,
         "saved": 0,
         "skipped": 0,
+        "failures": [],
+        "retry_recommended": False,
         "bytes": 0,
         "output": "",
         "error": "",
@@ -289,7 +298,11 @@ def _append_index_output(job_id: str, text: str) -> None:
             return
         job["output"] = (job.get("output", "") + text)[-8000:]
         job["updated_at"] = time.time()
-        job["recent_activity"] = text.strip()[-300:]
+        activity = text.strip()
+        # Machine-readable progress lines are telemetry, not user-facing
+        # activity; the last human log line is what belongs in the UI.
+        if activity and not activity.startswith("TRINAXAI_PROGRESS "):
+            job["recent_activity"] = activity[-300:]
         _persist_index_jobs_locked()
 
 
@@ -322,6 +335,8 @@ def _job_public(job: dict) -> dict:
         "elapsed_seconds": int(elapsed),
         "saved": job.get("saved", 0),
         "skipped": job.get("skipped", 0),
+        "failures": job.get("failures", []),
+        "retry_recommended": bool(job.get("retry_recommended")),
         "bytes": job.get("bytes", 0),
         "indexed": bool(job.get("indexed")),
         "projects": job.get("projects", []),
@@ -345,34 +360,53 @@ def _job_public(job: dict) -> dict:
     }
 
 
-# index.py emits one "Embeddings lote N/M..." line per batch (see
-# _emit_embed_progress). Embeddings dominate wall-clock, so we map that N/M
-# across the bulk of the bar (65→88) instead of jumping to a flat 65 and
-# stalling there while tqdm redraws a carriage-return bar the supervisor cannot
-# see.
-_EMBED_BATCH_RE = re.compile(r"lote\s+(\d+)\s*/\s*(\d+)")
-_EMBED_PROGRESS_START = 65
-_EMBED_PROGRESS_END = 88
+# Each phase owns a slice of the bar sized by the wall-clock it really takes:
+# reading and chunking now report once per file, and embeddings (which dominate
+# a run) own the widest span. Every value comes from a real counter — files
+# read, files chunked or embedding batches done — never from a timer.
+_READ_PROGRESS_START, _READ_PROGRESS_END = 30, 48
+_CHUNK_PROGRESS_START, _CHUNK_PROGRESS_END = 48, 62
+_EMBED_PROGRESS_START, _EMBED_PROGRESS_END = 62, 92
+_PUBLISH_PROGRESS = 92
+_FINISH_PROGRESS = 97
+
+# index.py emits one "Embeddings lote N/M..." (Spanish) or
+# "Embeddings batch N/M..." (English) line per batch (see
+# _emit_embed_progress). tqdm's carriage-return bar never reaches this process,
+# so that N/M is the only signal for the embedding phase.
+_EMBED_BATCH_RE = re.compile(r"(?:lote|batch)\s+(\d+)\s*/\s*(\d+)")
+
+# The first-run banner ("Indexado completo (primera vez)" / "Full index (first
+# run)") also contains the stem "complet", so completion must be matched as a
+# finished action: matching the bare stem jumped the bar to ~97% the moment a
+# fresh index started.
+_COMPLETION_RE = re.compile(r"completad[oa]|completed|finalizad[oa]|finished|\bdone\b")
+
+
+def _scaled_progress(start: int, end: int, done: int, total: int) -> int:
+    """Map a real ``done/total`` pair onto its slice of the bar."""
+    return start + int((end - start) * min(max(done, 0), total) / total)
 
 
 def _line_progress(line: str, current: int) -> tuple[int, str]:
     lower = line.lower()
-    if "troceando" in lower or "chunk" in lower:
-        return max(current, 45), "chunking"
+    if "troceando" in lower or "splitting" in lower or "chunk" in lower:
+        return current, "chunking"
     batch_match = _EMBED_BATCH_RE.search(lower)
-    if batch_match and "lote" in lower:
+    if batch_match:
         done, total = int(batch_match.group(1)), int(batch_match.group(2))
         if total > 0:
-            span = _EMBED_PROGRESS_END - _EMBED_PROGRESS_START
-            mapped = _EMBED_PROGRESS_START + int(span * min(done, total) / total)
+            mapped = _scaled_progress(_EMBED_PROGRESS_START, _EMBED_PROGRESS_END, done, total)
             return max(current, mapped), "embedding"
     if "embedding" in lower or "embed" in lower or "indexando" in lower:
-        return max(current, _EMBED_PROGRESS_START), "embedding"
-    if "persist" in lower or "guard" in lower or "publicando" in lower:
-        return max(current, 88), "saving_index"
-    if "complet" in lower or "done" in lower:
-        return max(current, 96), "finishing"
-    return current, "indexing"
+        return current, "embedding"
+    if "persist" in lower or "guard" in lower or "publishing" in lower or "publicando" in lower:
+        return max(current, _PUBLISH_PROGRESS), "saving_index"
+    if _COMPLETION_RE.search(lower):
+        return max(current, _FINISH_PROGRESS), "finishing"
+    # An unrecognised line says nothing about the phase: keep whatever the
+    # structured events already advertised instead of downgrading the label.
+    return current, ""
 
 
 def _structured_progress(line: str) -> dict | None:
@@ -388,7 +422,7 @@ def _structured_progress(line: str) -> dict | None:
 
 def _progress_changes(event: dict) -> dict:
     phase = event["phase"]
-    changes = {"phase": phase, "progress_exact": bool(event.get("determinate")), "recent_activity": phase}
+    changes = {"phase": phase, "progress_exact": bool(event.get("determinate"))}
     for key in (
         "pages_total",
         "pages_processed",
@@ -401,14 +435,67 @@ def _progress_changes(event: dict) -> dict:
         if isinstance(event.get(key), int):
             changes[key] = max(0, event[key])
     if phase == "extracting" and changes.get("pages_total"):
-        changes["progress"] = 30 + int(25 * changes.get("pages_processed", 0) / changes["pages_total"])
+        changes["progress"] = _scaled_progress(
+            _READ_PROGRESS_START,
+            _READ_PROGRESS_END,
+            changes.get("pages_processed", 0),
+            changes["pages_total"],
+        )
+    elif phase == "extracting" and changes.get("files_total"):
+        changes["progress"] = _scaled_progress(
+            _READ_PROGRESS_START,
+            _READ_PROGRESS_END,
+            changes.get("files_processed", 0),
+            changes["files_total"],
+        )
     elif phase == "chunking" and changes.get("files_total"):
-        changes["progress"] = 55 + int(10 * changes.get("files_processed", 0) / changes["files_total"])
+        changes["progress"] = _scaled_progress(
+            _CHUNK_PROGRESS_START,
+            _CHUNK_PROGRESS_END,
+            changes.get("files_processed", 0),
+            changes["files_total"],
+        )
     elif phase == "chunking":
-        changes["progress"] = 60
+        # No file counters yet: the label is honest, the number cannot be.
         changes["progress_exact"] = False
     elif phase == "embedding" and changes.get("batches_total"):
-        changes["progress"] = 65 + int(23 * changes.get("batches_processed", 0) / changes["batches_total"])
+        # Streaming runs read, chunk and embed in the same pass. The embedding
+        # span is only meaningful once every file has been chunked; before that
+        # the file counter owns the bar, so the percentage never runs ahead of
+        # work that is still pending.
+        files_total = changes.get("files_total")
+        files_done = changes.get("files_processed")
+        if not files_total or (files_done is not None and files_done >= files_total):
+            changes["progress"] = _scaled_progress(
+                _EMBED_PROGRESS_START,
+                _EMBED_PROGRESS_END,
+                changes.get("batches_processed", 0),
+                changes["batches_total"],
+            )
+    elif phase == "warning":
+        skipped = event.get("skipped")
+        failures = event.get("failures")
+        if isinstance(skipped, int) and skipped > 0:
+            changes["skipped"] = skipped
+            changes["error"] = f"Indexing completed with {skipped} skipped file(s); retry recommended."
+            changes["recent_activity"] = changes["error"]
+        if isinstance(failures, list):
+            details = []
+            for item in failures[:20]:
+                if not isinstance(item, dict):
+                    continue
+                path = _safe_rel_path(str(item.get("path") or "")) or "unknown"
+                reason = str(item.get("reason") or "")
+                if reason not in {
+                    "no extractable text",
+                    "OCR may be required",
+                    "chunking produced no nodes",
+                    "LibreOffice conversion is required",
+                }:
+                    reason = "document processing failed"
+                details.append({"path": path, "reason": reason})
+            changes["failures"] = details
+        changes["retry_recommended"] = bool(event.get("retry_recommended"))
     return changes
 
 
@@ -434,6 +521,14 @@ def _run_index_job(
         "TRINAXAI_INDEX_APPEND": "1" if append_only else "0",
         "TRINAXAI_AGGRESSIVE_QUANT": "1" if aggressive_quant else "0",
     }
+    try:
+        synced_lang = str(_read_app_state().get("tc-lang") or "").strip().lower()
+    except Exception:  # noqa: BLE001 - app state is best-effort for log language
+        synced_lang = ""
+    if synced_lang.startswith("es"):
+        env["TRINAXAI_LANG"] = "es"
+    elif synced_lang.startswith("en"):
+        env["TRINAXAI_LANG"] = "en"
     if embed_model:
         env["TRINAXAI_EMBED"] = embed_model
     update(status="indexing", phase="starting", progress=30, started_at=time.time())
@@ -502,10 +597,29 @@ def _run_index_job(
                     changes = _progress_changes(event)
                     if "progress" in changes:
                         changes["progress"] = max(current, changes["progress"])
+                    if "files_processed" in changes:
+                        # Files are counted per run. Reading a batch finishes
+                        # before that batch is chunked, so the chunking events
+                        # report earlier positions; the visible counter must not
+                        # walk backwards because of it.
+                        changes["files_processed"] = max(
+                            int((job or {}).get("files_processed") or 0),
+                            changes["files_processed"],
+                        )
+                    if "skipped" in changes:
+                        changes["skipped"] = int((job or {}).get("skipped", 0)) + changes["skipped"]
                     update(**changes)
                 else:
                     progress, phase = _line_progress(line, current)
-                    update(progress=progress, phase=phase, progress_exact=False)
+                    plain_changes: dict = {}
+                    if progress != current:
+                        # Only a line that actually moves the bar is an estimate.
+                        plain_changes["progress"] = progress
+                        plain_changes["progress_exact"] = False
+                    if phase:
+                        plain_changes["phase"] = phase
+                    if plain_changes:
+                        update(**plain_changes)
         code = process.wait(timeout=20)
         if timeout_error:
             update(status="failed", phase="timeout", error=timeout_error, progress=100, finished_at=time.time())
@@ -564,12 +678,19 @@ def _run_index_job(
     _prune_old_jobs()
     if ok:
         _record_index_run()
+    with state.index_jobs_lock:
+        completed_job = state.index_jobs.get(job_id) or {}
+        skipped = int(completed_job.get("skipped", 0))
+        retry_recommended = bool(completed_job.get("retry_recommended"))
+    warning = f"Indexing completed with {skipped} skipped file(s); retry recommended." if skipped else ""
     update(
         status="completed" if ok else "failed",
         phase="completed" if ok else "reload_failed",
         progress=100,
         indexed=state.fusion_retriever is not None,
         projects=state.known_projects,
+        error=warning if ok and retry_recommended else "",
+        recent_activity=warning or ("Indexing completed" if ok else "Index reload failed"),
         finished_at=time.time(),
     )
     _release_index_slot(job_id, run_token)
@@ -745,14 +866,22 @@ async def system_index_upload(
     safe_label = _safe_label(label)
     safe_watch_id = _safe_label(watch_id) if watch_id.strip() else ""
     collections_root = os.path.realpath(os.path.join(config.LOCAL_SOURCES_DIR, "collections"))
-    target = os.path.realpath(
+    mirror_target = os.path.realpath(
         os.path.join(
             collections_root,
             collection["id"],
             "watchers" if safe_watch_id else "",
-            f"{safe_label}-{safe_watch_id}" if safe_watch_id else f"{safe_label}-{stamp}",
+            f"{safe_label}-{safe_watch_id}" if safe_watch_id else f"{safe_label}-{stamp}-{uuid.uuid4().hex}",
         )
     )
+    # Save watcher uploads off to the side until deduplication succeeds: the
+    # stable mirror may be live and must never be deleted for a duplicate.
+    target = (
+        os.path.join(os.path.dirname(mirror_target), f".{os.path.basename(mirror_target)}-{uuid.uuid4().hex}.upload")
+        if safe_watch_id
+        else mirror_target
+    )
+    target = os.path.realpath(target)
     try:
         if os.path.commonpath([target, collections_root]) != collections_root:
             raise ValueError("unsafe upload path")
@@ -767,6 +896,10 @@ async def system_index_upload(
     incoming_paths: set[str] = set()
     upload_digest = hashlib.sha256()
     for upload in files:
+        if _is_sensitive_upload(upload.filename or ""):
+            skipped += 1
+            await upload.close()
+            continue
         rel = _safe_rel_path(upload.filename or "")
         if not rel:
             skipped += 1
@@ -828,6 +961,7 @@ async def system_index_upload(
         shutil.rmtree(target, ignore_errors=True)
         _update_index_job(
             job["id"],
+            skipped=skipped,
             status="failed",
             phase="empty",
             error="No indexable files were saved.",
@@ -875,18 +1009,28 @@ async def system_index_upload(
     if safe_watch_id:
         # A watched folder is a mirror, so files deleted on the user's machine
         # must also disappear from local_sources before incremental indexing.
+        os.makedirs(mirror_target, exist_ok=True)
         for dirpath, _, filenames in os.walk(target):
+            relative_dir = os.path.relpath(dirpath, target)
+            destination_dir = mirror_target if relative_dir == "." else os.path.join(mirror_target, relative_dir)
+            os.makedirs(destination_dir, exist_ok=True)
+            for filename in filenames:
+                shutil.copy2(os.path.join(dirpath, filename), os.path.join(destination_dir, filename))
+        for dirpath, _, filenames in os.walk(mirror_target):
             for filename in filenames:
                 absolute = os.path.join(dirpath, filename)
-                relative = os.path.normpath(os.path.relpath(absolute, target))
+                relative = os.path.normpath(os.path.relpath(absolute, mirror_target))
                 if relative not in incoming_paths:
                     try:
                         os.remove(absolute)
                     except OSError:
                         pass
+        shutil.rmtree(target, ignore_errors=True)
+        target = mirror_target
 
     _update_index_job(
         job["id"],
+        path=target,
         saved=saved,
         skipped=skipped,
         bytes=total_bytes,
@@ -1014,7 +1158,7 @@ async def system_retry_index_job(request: Request, job_id: str):
         job = state.index_jobs.get(job_id)
         if not job:
             raise HTTPException(status_code=404, detail="Index job not found.")
-        if job.get("status") not in {"failed", "cancelled"}:
+        if job.get("status") not in {"failed", "cancelled"} and not job.get("retry_recommended"):
             raise HTTPException(status_code=409, detail="Only failed or cancelled jobs can be retried.")
         if _process_alive(job.get("process")):
             raise HTTPException(status_code=409, detail="The previous indexer is still running.")
@@ -1027,6 +1171,9 @@ async def system_retry_index_job(request: Request, job_id: str):
             progress=30,
             error="",
             output="",
+            skipped=0,
+            failures=[],
+            retry_recommended=False,
             cancel_requested=False,
             finished_at=None,
             pages_processed=0,

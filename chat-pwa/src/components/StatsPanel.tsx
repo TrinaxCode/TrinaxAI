@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { motion } from 'framer-motion';
+import { AnimatePresence, motion } from 'framer-motion';
 import { MdRefresh } from 'react-icons/md';
 import { useI18n } from '../i18n/I18nContext';
 import { useTheme } from '../theme/ThemeContext';
@@ -70,25 +70,47 @@ export default function StatsPanel() {
         </button>
       </div>
 
+      <AnimatePresence mode="wait" initial={false}>
       {!stats ? (
         loading ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 animate-pulse">
+          <motion.div
+            key="stats-loading"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.16 }}
+            className="grid grid-cols-1 sm:grid-cols-2 gap-3 animate-pulse"
+          >
             {[1,2,3,4].map((i) => (
               <div key={i} className={`min-w-0 rounded-xl border p-3 ${cardBg}`}>
                 <div className={`h-3 w-16 rounded ${isDark ? 'bg-white/[0.08]' : 'bg-gray-200'}`} />
                 <div className={`mt-2 h-6 w-20 rounded ${isDark ? 'bg-white/[0.06]' : 'bg-gray-200'}`} />
               </div>
             ))}
-          </div>
+          </motion.div>
         ) : (
-          <p className={`text-[11px] ${muted}`}>
+          <motion.p
+            key="stats-empty"
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+            className={`text-[11px] ${muted}`}
+          >
             {loadError
               ? t('statsUnavailableOffline')
               : t('loading')}
-          </p>
+          </motion.p>
         )
       ) : (
-        <>
+        <motion.div
+          key="stats-content"
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -12 }}
+          transition={{ duration: 0.26, ease: [0.16, 1, 0.3, 1] }}
+          className="space-y-4"
+        >
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <StatCard label={t('statsTotalMessages')} value={fmtNumber(stats.messages_total)} cardBg={cardBg} valueCls={value} labelCls={muted} />
             <StatCard label={t('statsEstimatedTokens')} value={fmtNumber(stats.tokens_estimated)} cardBg={cardBg} valueCls={value} labelCls={muted} />
@@ -119,8 +141,9 @@ export default function StatsPanel() {
               <BarList items={Object.entries(stats.messages_by_engine).map(([k, v]) => ({ key: k, count: v }))} total={stats.messages_total} isDark={isDark} />
             </div>
           )}
-        </>
+        </motion.div>
       )}
+      </AnimatePresence>
     </section>
   );
 }

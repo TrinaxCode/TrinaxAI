@@ -192,12 +192,32 @@ describe('AgentInterface handoff', () => {
     const yoloButton = screen.getByRole('switch', { name: 'YOLO mode enabled' });
     expect(yoloButton).toHaveAttribute('aria-checked', 'true');
     expect(yoloButton).toHaveClass('text-red-500');
+    // Enabled YOLO is red text only: no filled red square behind the label.
+    expect(yoloButton).toHaveClass('bg-transparent');
+    expect(yoloButton.className).not.toMatch(/(^|\s)bg-red-500\/\d+/);
+    expect(yoloButton).toHaveAttribute('data-yolo-switch', 'header');
     expect(localStorage.getItem('tc-agent-yolo-mode')).toBe('1');
 
     fireEvent.change(container.querySelector('textarea[name="agent-prompt"]') as HTMLTextAreaElement, { target: { value: 'Ejecuta la tarea' } });
     fireEvent.click(screen.getByRole('button', { name: /Enviar|Send/ }));
     await waitFor(() => expect(apiMocks.runAgent).toHaveBeenCalledOnce());
     expect(apiMocks.runAgent.mock.calls[0][2]).toEqual(expect.objectContaining({ yolo: true }));
+  });
+
+  it('keeps the send control filled so its icon stays visible in light mode', () => {
+    render(
+      <ThemeProvider>
+        <I18nProvider>
+          <AgentInterface onBack={vi.fn()} />
+        </I18nProvider>
+      </ThemeProvider>,
+    );
+
+    const send = screen.getByRole('button', { name: /^(Send|Enviar)$/ });
+    // `composer-action-primary` opts out of the composer's transparent-pill
+    // override; without it a white icon disappears on the light surface.
+    expect(send).toHaveClass('composer-action-primary');
+    expect(send).toHaveClass('bg-[#006bbd]');
   });
 
   it('does not enable yolo when its warning is cancelled', () => {
@@ -338,8 +358,13 @@ describe('AgentInterface handoff', () => {
     const sentMessages = apiMocks.runAgent.mock.calls[0][0];
     expect(sentMessages.at(-1).content).toContain('[Documento adjunto temporal: reporte.txt]');
     expect(sentMessages.at(-1).content).toContain('Contenido verificable del reporte');
-    expect(screen.getByText('reporte.txt')).toBeInTheDocument();
+    expect(screen.getAllByText('reporte.txt')).not.toHaveLength(0);
     expect(await screen.findByText('Documento analizado')).toBeInTheDocument();
+
+    // The header exposes the real model reported by the backend for the turn.
+    const modelChip = container.querySelector('[data-agent-model]');
+    expect(modelChip).not.toBeNull();
+    expect(modelChip?.textContent).toBe('qwen3.5:4b');
 
     fireEvent.change(container.querySelector('textarea') as HTMLTextAreaElement, { target: { value: '¿Qué decía el reporte?' } });
     fireEvent.click(screen.getByRole('button', { name: /Enviar|Send/ }));

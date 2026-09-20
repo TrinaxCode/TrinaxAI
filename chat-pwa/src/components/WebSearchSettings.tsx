@@ -3,6 +3,7 @@ import { useI18n } from '../i18n/I18nContext';
 import { useTheme } from '../theme/ThemeContext';
 import ConfirmModal from './ConfirmModal';
 import ErrorRepairModal from './ErrorRepairModal';
+import PermissionNotice from './PermissionNotice';
 import {
   deleteWebSearchCredential,
   getWebSearchSettings,
@@ -26,7 +27,7 @@ function rememberedProvider(): Provider {
   try { return validProvider(localStorage.getItem(WEB_SEARCH_PROVIDER_KEY) || undefined); } catch { return 'auto'; }
 }
 
-export default function WebSearchSettings({ canManageSystem }: { canManageSystem: boolean }) {
+export default function WebSearchSettings({ canManageSystem, onBack }: { canManageSystem: boolean; onBack?: () => void }) {
   const { t } = useI18n();
   const { isDark } = useTheme();
   const [settings, setSettings] = useState<Settings | null>(null);
@@ -104,7 +105,11 @@ export default function WebSearchSettings({ canManageSystem }: { canManageSystem
     finally { setBusy(false); }
   };
 
-  if (!canManageSystem) return <p role="alert">{t('webSearchSystemPermission')}</p>;
+  if (!canManageSystem) return (
+    <div className="fixed inset-0 z-[70]">
+      <PermissionNotice feature="web" remoteWebSearch onBack={onBack ?? (() => undefined)} />
+    </div>
+  );
   const repairModal = (
     <ErrorRepairModal
       open={repairOpen}

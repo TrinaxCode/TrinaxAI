@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import threading
 import unittest
 import urllib.error
 import zipfile
@@ -94,6 +95,24 @@ class SandboxTests(unittest.TestCase):
             root = Path(tmp)
             with self.assertRaises(SandboxError):
                 _resolve_in_workspace(root, "/etc/passwd")
+
+    def test_workspace_name_child_is_not_reinterpreted_as_a_root_prefix(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp) / "workspace"
+            root.mkdir()
+            (root / "same.txt").write_text("root", encoding="utf-8")
+            child = root / "workspace"
+            child.mkdir()
+            (child / "same.txt").write_text("child", encoding="utf-8")
+
+            self.assertEqual(_resolve_in_workspace(root, "same.txt"), root / "same.txt")
+            self.assertEqual(_resolve_in_workspace(root, "workspace/same.txt"), child / "same.txt")
+
+    def test_workspace_name_prefix_stays_compatible_without_a_matching_child(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp) / "workspace"
+            root.mkdir()
+            self.assertEqual(_resolve_in_workspace(root, "workspace/same.txt"), root / "same.txt")
 
 
 class ToolHandlerTests(unittest.TestCase):
@@ -274,6 +293,38 @@ class EngineConfirmationTests(unittest.TestCase):
             engine.cancel()
 
             response.close.assert_called_once_with()
+
+    def test_cancel_closes_active_non_stream_response(self) -> None:
+        with TemporaryDirectory() as tmp:
+            entered = threading.Event()
+            released = threading.Event()
+            closed = threading.Event()
+
+            class Response:
+                def __enter__(self):
+                    return self
+
+                def __exit__(self, *_args):
+                    return False
+
+                def read(self):
+                    entered.set()
+                    released.wait(1)
+                    return b'{"message":{"content":"done"}}'
+
+                def close(self):
+                    closed.set()
+                    released.set()
+
+            engine = self._engine(Path(tmp), confirm=lambda tool, args: False)
+            with patch("urllib.request.urlopen", return_value=Response()):
+                worker = threading.Thread(target=lambda: engine._chat([{"role": "user", "content": "hi"}]))
+                worker.start()
+                assert entered.wait(1)
+                engine.cancel()
+                assert closed.wait(1)
+                worker.join(1)
+            assert not worker.is_alive()
 
     def test_denied_dangerous_action_is_not_executed(self) -> None:
         with TemporaryDirectory() as tmp:
@@ -471,6 +522,41 @@ class EngineReliabilityTests(unittest.TestCase):
             repeated = engine._execute_call(call)
             self.assertIn("repeated without new progress", repeated)
             self.assertEqual(calls, ["read"])
+
+    def test_identical_tool_call_runs_again_in_a_later_turn(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            calls: list[str] = []
+            tool = Tool(
+                name="read_file",
+                description="read",
+                parameters={"type": "object", "properties": {}},
+                handler=lambda _root, **_args: calls.append("read") or "data",
+                dangerous=False,
+            )
+            call = self._read_call("a.txt")
+            engine = _ScriptedEngine(
+                root,
+                replies=[call, {"content": "first answer"}, call, {"content": "second answer"}],
+                tools=(tool,),
+            )
+
+            self.assertEqual(engine.run([{"role": "user", "content": "first"}]), "first answer")
+            self.assertEqual(engine.run([{"role": "user", "content": "second"}]), "second answer")
+            self.assertEqual(calls, ["read", "read"])
+
+    def test_model_failure_marks_run_degraded(self) -> None:
+        with TemporaryDirectory() as tmp:
+
+            class FailingEngine(_ScriptedEngine):
+                def _chat(self, _messages):  # type: ignore[override]
+                    raise RuntimeError("Ollama offline")
+
+            engine = FailingEngine(Path(tmp), replies=[])
+            answer = engine.run([{"role": "user", "content": "hi"}])
+
+            self.assertIn("What happened:", answer)
+            self.assertEqual(engine.completion_status, "degraded")
 
     def test_stream_parser_emits_content_and_collects_tools(self) -> None:
         with TemporaryDirectory() as tmp:

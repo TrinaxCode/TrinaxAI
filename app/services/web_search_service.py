@@ -30,6 +30,10 @@ LOG = logging.getLogger("trinaxai.web_search")
 
 _SEARCH_CACHE: dict[tuple[Any, ...], tuple[float, list[dict[str, str]], str]] = {}
 _SEARCH_CACHE_LOCK = threading.Lock()
+# Keep the in-process cache bounded even when callers issue unique queries.
+# The environment override is intentionally local to this optional cache so it
+# does not alter the existing provider settings contract.
+_SEARCH_CACHE_MAX_ENTRIES = config._env_int("TRINAXAI_WEB_SEARCH_CACHE_MAX_ENTRIES", 256, minimum=0, maximum=10_000)
 
 # Page reads deliberately do not use httpx's normal resolver: resolving once
 # and connecting by hostname leaves a DNS-rebinding window between validation
@@ -44,6 +48,47 @@ _PAGE_FETCH_MAX_RESULTS = 8
 _PAGE_FETCH_DEFAULT_RESULTS = 3
 _SEARXNG_LOCAL_PORT = 8080
 _SEARXNG_LOCAL_HOSTNAMES = frozenset({"localhost"})
+# Official project and standards-body roots whose provenance is unambiguous.
+# Keep this explicit: a generic .org domain is not evidence of authority.
+_PRIMARY_PUBLISHER_DOMAINS = frozenset({"python.org", "ietf.org", "w3.org", "iso.org"})
+# Common query words carry no topic signal. Keep this small and explicit so a
+# query with no matching terms still falls back to the provider's full result
+# set instead of silently hiding potentially useful synonyms.
+_SEARCH_STOPWORDS = frozenset(
+    {
+        "a",
+        "an",
+        "and",
+        "are",
+        "as",
+        "at",
+        "by",
+        "con",
+        "cómo",
+        "de",
+        "del",
+        "en",
+        "for",
+        "from",
+        "how",
+        "is",
+        "la",
+        "las",
+        "los",
+        "of",
+        "on",
+        "para",
+        "por",
+        "qué",
+        "que",
+        "the",
+        "to",
+        "un",
+        "una",
+        "with",
+        "y",
+    }
+)
 _PAGE_HEADERS = {
     "Accept": "text/html,application/xhtml+xml,text/plain;q=0.8",
     "Accept-Encoding": "identity",
@@ -90,7 +135,7 @@ def _safe_result(title: Any, url: Any, snippet: Any) -> dict[str, str] | None:
 
 
 def _source_authority(url: str) -> str:
-    """Classify only unambiguous government publishers as primary.
+    """Classify only unambiguous government and official publishers as primary.
 
     A hostname containing a query token or a title saying "official" is not
     evidence of provenance.  Most pages therefore remain secondary; callers
@@ -100,27 +145,66 @@ def _source_authority(url: str) -> str:
     labels = host.split(".")
     government_suffix = bool(labels) and labels[-1] in {"gov", "mil"}
     country_government_suffix = len(labels) >= 2 and len(labels[-1]) == 2 and labels[-2] in {"gov", "gob", "mil"}
-    return "primary" if government_suffix or country_government_suffix else "secondary"
+    official_publisher = any(host == domain or host.endswith(f".{domain}") for domain in _PRIMARY_PUBLISHER_DOMAINS)
+    return "primary" if government_suffix or country_government_suffix or official_publisher else "secondary"
+
+
+def _prune_search_cache(now: float) -> None:
+    """Remove expired entries, then oldest entries, while holding the cache lock."""
+    ttl = config.WEB_SEARCH_CACHE_SECONDS
+    if ttl <= 0 or _SEARCH_CACHE_MAX_ENTRIES <= 0:
+        _SEARCH_CACHE.clear()
+        return
+    for key, cached in list(_SEARCH_CACHE.items()):
+        if now - cached[0] > ttl:
+            _SEARCH_CACHE.pop(key, None)
+    overflow = len(_SEARCH_CACHE) - _SEARCH_CACHE_MAX_ENTRIES
+    if overflow > 0:
+        # The key tie-breaker makes a same-timestamp purge reproducible.
+        for key, _ in sorted(_SEARCH_CACHE.items(), key=lambda item: (item[1][0], repr(item[0])))[:overflow]:
+            _SEARCH_CACHE.pop(key, None)
+
+
+def _search_terms(value: str) -> set[str]:
+    return {
+        token.casefold()
+        for token in re.findall(r"[^\W_]+", value or "", flags=re.UNICODE)
+        if token.casefold() not in _SEARCH_STOPWORDS
+    }
+
+
+def _result_relevance(result: dict[str, str], query_terms: set[str]) -> int:
+    if not query_terms:
+        return 0
+    haystack = " ".join((result.get("title", ""), result.get("snippet", ""), result.get("url", "")))
+    return len(query_terms & _search_terms(haystack))
 
 
 def _rank_results(results: list[dict[str, str]], query: str) -> list[dict[str, str]]:
-    """Put conservatively identified primary publishers first."""
-    del query  # Kept in the signature for compatibility with older callers.
+    """Rank topical matches before authority, conservatively filtering noise."""
+    query_terms = _search_terms(query)
+    relevance = [_result_relevance(result, query_terms) for result in results]
+    if query_terms and any(relevance):
+        # A provider can return a distractor for a distinctive product name.
+        # Keep only candidates with at least one exact topic token in that case.
+        candidates = [(result, score) for result, score in zip(results, relevance, strict=True) if score]
+    else:
+        candidates = list(zip(results, relevance, strict=True))
 
     def authority_score(result: dict[str, str]) -> int:
         return 1 if _source_authority(result["url"]) == "primary" else 0
 
     ranked = []
-    for result in results:
+    for result, score in candidates:
         annotated = dict(result)
         annotated["authority"] = _source_authority(result["url"])
-        ranked.append(annotated)
+        ranked.append((score, annotated))
 
-    def authority(item: tuple[int, dict[str, str]]) -> tuple[int, int]:
-        index, result = item
-        return (-authority_score(result), index)
+    def ranking(item: tuple[int, tuple[int, dict[str, str]]]) -> tuple[int, int, int]:
+        index, (score, result) = item
+        return (-score, -authority_score(result), index)
 
-    return [result for _, result in sorted(enumerate(ranked), key=authority)]
+    return [result for _, (_, result) in sorted(enumerate(ranked), key=ranking)]
 
 
 class PageFetchError(RuntimeError):
@@ -490,7 +574,7 @@ def fetch_web_page(url: str) -> dict[str, str]:
                 raise PageFetchError("page is not readable HTML/text")
             encoding = (response.headers.get("Content-Encoding") or "identity").casefold().strip()
             if encoding not in {"", "identity"}:
-                raise PageFetchError("compressed response was not requested")
+                raise PageFetchError("compressed response is unsupported")
             body = _read_limited_body(response, connection, _PAGE_FETCH_MAX_BYTES, deadline)
             charset_match = re.search(r"charset\s*=\s*[\"']?([a-z0-9._-]+)", content_type)
             charset = charset_match.group(1) if charset_match else "utf-8"
@@ -765,8 +849,9 @@ def search_web(
         bool(config.WEB_SEARCH_BRAVE_API_KEY),
         config.WEB_SEARCH_SEARXNG_URL,
     )
-    if config.WEB_SEARCH_CACHE_SECONDS > 0:
-        with _SEARCH_CACHE_LOCK:
+    with _SEARCH_CACHE_LOCK:
+        _prune_search_cache(time.monotonic())
+        if config.WEB_SEARCH_CACHE_SECONDS > 0:
             cached = _SEARCH_CACHE.get(cache_key)
             if cached and time.monotonic() - cached[0] <= config.WEB_SEARCH_CACHE_SECONDS:
                 return [dict(item) for item in cached[1]], cached[2]
@@ -821,11 +906,13 @@ def search_web(
             results = _rank_results(results, clean_query)
             if config.WEB_SEARCH_CACHE_SECONDS > 0:
                 with _SEARCH_CACHE_LOCK:
+                    _prune_search_cache(time.monotonic())
                     _SEARCH_CACHE[cache_key] = (
                         time.monotonic(),
                         [dict(item) for item in results],
                         provider,
                     )
+                    _prune_search_cache(time.monotonic())
             return results, provider
         failures.append(f"{provider}: no results")
 

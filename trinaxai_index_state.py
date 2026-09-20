@@ -8,6 +8,8 @@ import os
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+from trinaxai_cli.i18n import resolve_lang
+from trinaxai_cli.i18n import text as _text
 from trinaxai_core import sanitize_collection_id
 from trinaxai_index_documents import SourceContext
 from trinaxai_index_storage import atomic_write_json
@@ -292,11 +294,44 @@ def apply_file_updates(
         )
     if not paths:
         return result
-    print("✂️  Troceando cambios...")
+    print(_text("idx_chunking_changes", resolve_lang()))
     files_total = len(paths)
     files_processed = 0
+    chunks_in_batch = 0
+
+    def report_read(files_done: int) -> None:
+        runtime.emit_progress(
+            "extracting",
+            files_total=files_total,
+            files_processed=files_done,
+            determinate=True,
+        )
+
+    def report_chunked(files_done: int, chunks_in_file: int) -> None:
+        # Running count for the batch in progress; ``result.total_nodes`` is the
+        # authoritative total once the batch closes.
+        nonlocal chunks_in_batch
+        chunks_in_batch += chunks_in_file
+        runtime.emit_progress(
+            "chunking",
+            files_total=files_total,
+            files_processed=files_done,
+            chunks_generated=result.total_nodes + chunks_in_batch,
+            determinate=True,
+        )
+
+    def report_embed(done: int, total: int, started: bool) -> None:
+        runtime._emit_embed_progress(done, total, started, files=(files_processed, files_total))
+
     for batch_number, batch in enumerate(runtime.iter_batches(paths), start=1):
-        prepared = runtime.prepare_batch(batch, batch_number=batch_number, context=context)
+        prepared = runtime.prepare_batch(
+            batch,
+            batch_number=batch_number,
+            context=context,
+            files_offset=files_processed,
+            on_file_read=report_read,
+            on_file_chunked=report_chunked,
+        )
         result.failures.update(prepared.failures)
         files_processed += len(batch)
         successful_changes = sorted(prepared.indexed_paths & changed)
@@ -306,16 +341,8 @@ def apply_file_updates(
                 if context
                 else runtime.remove_obsolete_nodes(index, successful_changes, [])
             )
-        if not prepared.nodes:
-            runtime.emit_progress(
-                "chunking",
-                files_total=files_total,
-                files_processed=files_processed,
-                chunks_generated=result.total_nodes,
-                determinate=True,
-            )
-            continue
         result.total_nodes += len(prepared.nodes)
+        chunks_in_batch = 0
         runtime.emit_progress(
             "chunking",
             files_total=files_total,
@@ -323,7 +350,9 @@ def apply_file_updates(
             chunks_generated=result.total_nodes,
             determinate=True,
         )
-        runtime.insert_node_batches(index, prepared.nodes)
+        if not prepared.nodes:
+            continue
+        runtime.insert_node_batches(index, prepared.nodes, on_embed_progress=report_embed)
         result.indexed_paths.update(prepared.indexed_paths)
     return result
 

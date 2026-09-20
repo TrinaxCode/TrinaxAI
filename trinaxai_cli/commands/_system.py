@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from trinaxai_cli.i18n import translate
 from trinaxai_cli.processes import run_process_group
 from trinaxai_cli.runtime import find_install_root
 from trinaxai_core import normalize_http_base_url
@@ -45,13 +46,18 @@ def run_service_action(action: str, ui: Any, *, timeout: int = 120) -> int:
 
     output = (proc.stdout or "").strip()
     error = (proc.stderr or "").strip()
+    language = getattr(ui, "language", "en")
     if output:
-        ui.print(output)
+        ui.print("\n".join(translate(line, language) for line in output.splitlines()))
     if proc.returncode != 0:
-        ui.error(error or f"service action failed: {action}")
+        ui.error(
+            "\n".join(translate(line, language) for line in error.splitlines())
+            if error
+            else translate(f"service action failed: {action}", language)
+        )
         return proc.returncode or 1
     if error:
-        ui.warn(error)
+        ui.warn("\n".join(translate(line, language) for line in error.splitlines()))
     return 0
 
 

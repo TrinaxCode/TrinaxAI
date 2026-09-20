@@ -21,7 +21,7 @@
 TrinaxAI - Windows one-command installer
 Run in PowerShell:
   $ErrorActionPreference = "Stop"
-  $version = "1.2.5"; $base = "https://github.com/TrinaxCode/TrinaxAI/releases/download/v$version"
+  $version = "1.2.6"; $base = "https://github.com/TrinaxCode/TrinaxAI/releases/download/v$version"
   $installer = Join-Path $env:TEMP "TrinaxAI-$version-installer.ps1"; $manifest = Join-Path $env:TEMP "TrinaxAI-$version-SHA256SUMS"
   Invoke-WebRequest -Uri "$base/TrinaxAI-$version-installer.ps1" -OutFile $installer; Invoke-WebRequest -Uri "$base/SHA256SUMS" -OutFile $manifest
   $line = Get-Content -LiteralPath $manifest | Where-Object { $fields = $_ -split '\s+'; $fields.Count -ge 2 -and (($fields[1] -replace '^\*', '') -eq "TrinaxAI-$version-installer.ps1") } | Select-Object -First 1; $expected = if ($line) { ($line -split '\s+')[0] } else { "" }
@@ -35,8 +35,8 @@ Run in PowerShell:
 $ErrorActionPreference = "Stop"
 if ([string]::IsNullOrWhiteSpace($Language)) { $Language = if ($env:TRINAXAI_LANG -match '^es') { 'es' } elseif ((Get-Culture).Name -match '^es') { 'es' } else { 'en' } }
 function T($English, $Spanish) { if ($Language -eq 'es') { return $Spanish }; return $English }
-$ReleaseVersion = if (-not [string]::IsNullOrWhiteSpace($env:TRINAXAI_RELEASE_VERSION)) { $env:TRINAXAI_RELEASE_VERSION } else { "1.2.5" }
-if ($ReleaseVersion -notmatch '^[0-9]+\.[0-9]+\.[0-9]+$') { throw "Invalid TrinaxAI release version: $ReleaseVersion" }
+$ReleaseVersion = if (-not [string]::IsNullOrWhiteSpace($env:TRINAXAI_RELEASE_VERSION)) { $env:TRINAXAI_RELEASE_VERSION } else { "1.2.6" }
+if ($ReleaseVersion -notmatch '^[0-9]+\.[0-9]+\.[0-9]+$') { throw (T "Invalid TrinaxAI release version: $ReleaseVersion" "Versión de lanzamiento de TrinaxAI no válida: $ReleaseVersion") }
 $DefaultSourceArchiveName = "TrinaxAI-$ReleaseVersion.zip"
 $DefaultSourceArchiveUrl = "https://github.com/TrinaxCode/TrinaxAI/releases/download/v$ReleaseVersion/$DefaultSourceArchiveName"
 
@@ -68,7 +68,15 @@ function Update-ProcessPath {
     (Join-Path $env:LOCALAPPDATA "Programs\Ollama"),
     (Join-Path $env:ProgramFiles "Ollama")
   ) | Where-Object { $_ -and (Test-Path $_) }
-  $env:Path = (@($MachinePath, $UserPath) + $ExtraPaths) -join ";"
+  $Seen = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+  $Paths = [Collections.Generic.List[string]]::new()
+  foreach ($PathList in (@($env:Path, $MachinePath, $UserPath) + $ExtraPaths)) {
+    foreach ($Entry in @([string]$PathList -split ";")) {
+      $Entry = $Entry.Trim()
+      if ($Entry -and $Seen.Add($Entry)) { $Paths.Add($Entry) }
+    }
+  }
+  $env:Path = $Paths -join ";"
 }
 function Set-EnvFileValue($Path, $Key, $Value) {
   $Line = "$Key=$Value"
@@ -127,7 +135,7 @@ function Invoke-Python($PythonCommand, [string[]]$PythonArgs) {
   & $Exe @InvocationArgs
   $ExitCode = $LASTEXITCODE
   if ($ExitCode -ne 0) {
-    throw "Python command failed with exit code ${ExitCode}: $Exe $($PythonArgs -join ' ')"
+    throw (T "Python command failed with exit code ${ExitCode}: $Exe $($PythonArgs -join ' ')" "El comando de Python falló con el código de salida ${ExitCode}: $Exe $($PythonArgs -join ' ')")
   }
 }
 function Normalize-Profile($Value, $Fallback) {
@@ -163,10 +171,10 @@ function Read-YesNo($Prompt, [bool]$DefaultYes = $true) {
 function Install-WingetPackage($Id, $Name) {
   if (-not (Test-Cmd winget)) { return $false }
   if (Test-Cmd $Name) { return $true }
-  Write-Host "  Installing $Id with winget..."
+  Write-Host (T "  Installing $Id with winget..." "  Instalando $Id con winget...")
   winget install --id $Id --silent --accept-package-agreements --accept-source-agreements
   if ($LASTEXITCODE -ne 0) {
-    Write-Warn "winget could not install $Id automatically."
+    Write-Warn (T "winget could not install $Id automatically." "winget no pudo instalar $Id automáticamente.")
     return $false
   }
   Update-ProcessPath
@@ -195,15 +203,15 @@ function Invoke-DownloadFile($Url, $OutFile) {
     Invoke-WebRequest -Uri $Url -OutFile $OutFile -UseBasicParsing -TimeoutSec 120
     return $true
   } catch {
-    Write-Warn "Download failed: $Url"
-    Write-Warn $_.Exception.Message
+    Write-Warn (T "Download failed: $Url" "Error al descargar: $Url")
+    Write-Warn ((T "Details" "Detalles") + ": " + $_.Exception.Message)
     return $false
   }
 }
 function Invoke-NativeChecked([string]$FilePath, [string[]]$Arguments, [string]$Label) {
   & $FilePath @Arguments
   $ExitCode = $LASTEXITCODE
-  if ($ExitCode -ne 0) { throw "$Label failed with exit code $ExitCode." }
+  if ($ExitCode -ne 0) { throw (T "$Label failed with exit code $ExitCode." "$Label falló con el código de salida $ExitCode.") }
 }
 function Get-HardwareRecommendations($PythonCommand, [string]$RequestedProfile) {
   $Code = @'
@@ -234,35 +242,35 @@ print(json.dumps({
   $InvocationArgs = @($PythonCommand.Args) + @("-c", $Code, $RequestedProfile)
   $Output = & $PythonCommand.Exe @InvocationArgs 2>$null
   if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace(($Output -join ""))) {
-    throw "Could not detect hardware or calculate model recommendations."
+    throw (T "Could not detect hardware or calculate model recommendations." "No se pudo detectar el hardware ni calcular las recomendaciones de modelos.")
   }
   try {
     return (($Output -join "`n") | ConvertFrom-Json)
   } catch {
-    throw "Could not parse hardware recommendations: $($_.Exception.Message)"
+    throw ((T "Could not parse hardware recommendations" "No se pudieron analizar las recomendaciones de hardware") + ": $($_.Exception.Message)")
   }
 }
 function Get-ValidatedRemoteArchiveUrl([string]$Url) {
   $Parsed = $null
   if (-not [Uri]::TryCreate($Url, [UriKind]::Absolute, [ref]$Parsed)) {
-    throw "Source archive URL is not absolute: $Url"
+    throw (T "Source archive URL is not absolute: $Url" "La URL del archivo fuente no es absoluta: $Url")
   }
   if ($Parsed.Scheme -ne "https" -or $Parsed.UserInfo -or $Parsed.Query -or $Parsed.Fragment) {
-    throw "Source archive URL must be a plain HTTPS URL without credentials or query data."
+    throw (T "Source archive URL must be a plain HTTPS URL without credentials or query data." "La URL del archivo fuente debe ser una URL HTTPS simple, sin credenciales ni datos de consulta.")
   }
   return $Parsed.AbsoluteUri
 }
 function Get-SourceChecksum([string]$ManifestUrl, [string]$ArchiveName) {
   $Manifest = Join-Path $env:TEMP ("trinaxai-checksums-" + [guid]::NewGuid().ToString("N"))
   try {
-    if (-not (Invoke-DownloadFile $ManifestUrl $Manifest)) { throw "Could not download release checksums." }
+    if (-not (Invoke-DownloadFile $ManifestUrl $Manifest)) { throw (T "Could not download release checksums." "No se pudieron descargar las sumas de comprobación de la versión.") }
     $Line = Get-Content -LiteralPath $Manifest | Where-Object {
       $Fields = $_ -split '\s+'
       $Fields.Count -ge 2 -and (($Fields[1] -replace '^\*', '') -eq $ArchiveName)
     } | Select-Object -First 1
-    if (-not $Line) { throw "Release checksum is missing for $ArchiveName." }
+    if (-not $Line) { throw (T "Release checksum is missing for $ArchiveName." "Falta la suma de comprobación de la versión para $ArchiveName.") }
     $Hash = ($Line -split '\s+')[0]
-    if ($Hash -notmatch '^[0-9a-fA-F]{64}$') { throw "Release checksum is invalid for $ArchiveName." }
+    if ($Hash -notmatch '^[0-9a-fA-F]{64}$') { throw (T "Release checksum is invalid for $ArchiveName." "La suma de comprobación de la versión no es válida para $ArchiveName.") }
     return $Hash.ToLowerInvariant()
   } finally {
     Remove-Item -LiteralPath $Manifest -Force -ErrorAction SilentlyContinue
@@ -277,19 +285,19 @@ function Test-ZipArchiveEntries([string]$ArchivePath) {
     foreach ($Entry in $Zip.Entries) {
       $Name = $Entry.FullName.Replace('\', '/')
       if ([string]::IsNullOrWhiteSpace($Name) -or $Name.StartsWith('/') -or $Name -match '^[A-Za-z]:' -or $Name -match '(^|/)\.\.(/|$)' -or $Name -match '[\x00-\x1F]') {
-        throw "Unsafe ZIP archive entry: $Name"
+        throw (T "Unsafe ZIP archive entry: $Name" "Entrada insegura en el archivo ZIP: $Name")
       }
       $Parts = $Name.Split('/') | Where-Object { $_ }
       if ($Parts.Count -eq 0) { continue }
       if (-not $Root) { $Root = $Parts[0] }
-      if ($Parts[0] -ne $Root) { throw "ZIP archive contains multiple roots." }
+      if ($Parts[0] -ne $Root) { throw (T "ZIP archive contains multiple roots." "El archivo ZIP contiene varias raíces.") }
       if (-not $Name.EndsWith('/')) {
         $TotalBytes += [int64]$Entry.Length
-        if ($TotalBytes -gt 2GB) { throw "ZIP archive is too large." }
+        if ($TotalBytes -gt 2GB) { throw (T "ZIP archive is too large." "El archivo ZIP es demasiado grande.") }
       }
     }
     if (-not $Root -or -not ($Zip.Entries | Where-Object { $_.FullName -eq "$Root/pyproject.toml" })) {
-      throw "ZIP archive does not contain a TrinaxAI source root."
+      throw (T "ZIP archive does not contain a TrinaxAI source root." "El archivo ZIP no contiene una raíz de código fuente de TrinaxAI.")
     }
     return $Root
   } finally {
@@ -306,18 +314,18 @@ function Install-RemoteRepository([string]$Target) {
   $ExpectedChecksum = if ($SourceSha256) { $SourceSha256 } elseif ($env:TRINAXAI_SOURCE_SHA256) { $env:TRINAXAI_SOURCE_SHA256 } else { $null }
   if ($ExpectedChecksum) { $ExpectedChecksum = $ExpectedChecksum.Trim() }
   if (-not $ExpectedChecksum -and $RequestedSourceUrl -ne $DefaultSourceArchiveUrl) {
-    throw "TRINAXAI_SOURCE_URL or -SourceUrl requires a matching SHA-256 checksum."
+    throw (T "TRINAXAI_SOURCE_URL or -SourceUrl requires a matching SHA-256 checksum." "TRINAXAI_SOURCE_URL o -SourceUrl requieren una suma de comprobación SHA-256 coincidente.")
   }
   if (-not $ExpectedChecksum -and $ReleaseVersion) {
     $ExpectedChecksum = Get-SourceChecksum "https://github.com/TrinaxCode/TrinaxAI/releases/download/v$ReleaseVersion/SHA256SUMS" $DefaultSourceArchiveName
   }
-  if ($ExpectedChecksum -and $ExpectedChecksum -notmatch '^[0-9a-fA-F]{64}$') { throw "Source archive checksum must be a SHA-256 digest." }
+  if ($ExpectedChecksum -and $ExpectedChecksum -notmatch '^[0-9a-fA-F]{64}$') { throw (T "Source archive checksum must be a SHA-256 digest." "La suma de comprobación del archivo fuente debe ser un resumen SHA-256.") }
   try {
     New-Item -ItemType Directory -Force -Path $TempRoot | Out-Null
-    if (-not (Invoke-DownloadFile $SourceArchiveUrl $Archive)) { throw "Could not download TrinaxAI source archive." }
+    if (-not (Invoke-DownloadFile $SourceArchiveUrl $Archive)) { throw (T "Could not download TrinaxAI source archive." "No se pudo descargar el archivo fuente de TrinaxAI.") }
     if ($ExpectedChecksum) {
       $ActualChecksum = (Get-FileHash -Algorithm SHA256 -LiteralPath $Archive).Hash.ToLowerInvariant()
-      if ($ActualChecksum -ne $ExpectedChecksum.ToLowerInvariant()) { throw "Source archive checksum mismatch." }
+      if ($ActualChecksum -ne $ExpectedChecksum.ToLowerInvariant()) { throw (T "Source archive checksum mismatch." "La suma de comprobación del archivo fuente no coincide.") }
     }
     $Root = Test-ZipArchiveEntries $Archive
     $Extracted = Join-Path $TempRoot "extracted"
@@ -333,7 +341,7 @@ function Merge-EnvFileDefaults([string]$Path, [string[]]$Defaults) {
   $Existing = @()
   if (Test-Path -LiteralPath $Path -PathType Leaf) {
     $Item = Get-Item -LiteralPath $Path
-    if (($Item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { throw "Refusing to follow a symbolic-link .env file." }
+    if (($Item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { throw (T "Refusing to follow a symbolic-link .env file." "Se rechaza seguir un archivo .env que sea un enlace simbólico.") }
     $Existing = @(Get-Content -LiteralPath $Path)
   }
   $Keys = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
@@ -355,16 +363,16 @@ function Test-OllamaInstallerSignature($InstallerPath) {
   try {
     $Signature = Get-AuthenticodeSignature -FilePath $InstallerPath
     if ($Signature.Status -ne "Valid") {
-      Write-Warn "Ollama installer signature is not valid: $($Signature.Status)"
+      Write-Warn (T "Ollama installer signature is not valid: $($Signature.Status)" "La firma del instalador de Ollama no es válida: $($Signature.Status)")
       return $false
     }
     if ($Signature.SignerCertificate.Subject -notmatch "(^|, )O=Ollama Inc\.(,|$)") {
-      Write-Warn "Ollama installer signer was not expected: $($Signature.SignerCertificate.Subject)"
+      Write-Warn (T "Ollama installer signer was not expected: $($Signature.SignerCertificate.Subject)" "El firmante del instalador de Ollama no es el esperado: $($Signature.SignerCertificate.Subject)")
       return $false
     }
     return $true
   } catch {
-    Write-Warn "Could not verify Ollama installer signature: $($_.Exception.Message)"
+    Write-Warn ((T "Could not verify Ollama installer signature" "No se pudo verificar la firma del instalador de Ollama") + ": $($_.Exception.Message)")
     return $false
   }
 }
@@ -373,7 +381,7 @@ function Install-OllamaOfficial {
 
   $TempDir = Join-Path $env:TEMP "trinaxai-install"
   Write-Host (T "The official Ollama installer will open automatically." "Se ha abierto el instalador oficial de Ollama.")
-  Write-Host "  Installing Ollama with the official PowerShell installer..."
+  Write-Host (T "  Installing Ollama with the official PowerShell installer..." "  Instalando Ollama con el instalador oficial de PowerShell...")
   try {
     $PowerShellExe = (Get-Command powershell.exe -ErrorAction SilentlyContinue).Source
     if (-not $PowerShellExe) { $PowerShellExe = "powershell.exe" }
@@ -383,13 +391,13 @@ function Install-OllamaOfficial {
     if ($LASTEXITCODE -eq 0 -and (Get-OllamaCommand)) {
       return $true
     }
-    Write-Warn "The official Ollama install command finished but ollama.exe was not found yet."
+    Write-Warn (T "The official Ollama install command finished but ollama.exe was not found yet." "El comando oficial de instalación de Ollama terminó, pero aún no se encontró ollama.exe.")
   } catch {
-    Write-Warn "Official Ollama install command failed: $($_.Exception.Message)"
+    Write-Warn ((T "Official Ollama install command failed" "El comando oficial de instalación de Ollama falló") + ": $($_.Exception.Message)")
   }
 
   $Installer = Join-Path $TempDir "OllamaSetup.exe"
-  Write-Host "  Downloading OllamaSetup.exe directly..."
+  Write-Host (T "  Downloading OllamaSetup.exe directly..." "  Descargando OllamaSetup.exe directamente...")
   if (-not (Invoke-DownloadFile "https://ollama.com/download/OllamaSetup.exe" $Installer)) {
     return $false
   }
@@ -400,49 +408,49 @@ function Install-OllamaOfficial {
     $Args = "/VERYSILENT /NORESTART /SUPPRESSMSGBOXES"
     $Proc = Start-Process -FilePath $Installer -ArgumentList $Args -Wait -PassThru
     if ($Proc.ExitCode -ne 0) {
-      Write-Warn "Ollama installer exited with code $($Proc.ExitCode)."
+      Write-Warn (T "Ollama installer exited with code $($Proc.ExitCode)." "El instalador de Ollama terminó con el código $($Proc.ExitCode).")
       return $false
     }
     Update-ProcessPath
     return [bool](Get-OllamaCommand)
   } catch {
-    Write-Warn "Could not run Ollama installer automatically: $($_.Exception.Message)"
+    Write-Warn ((T "Could not run Ollama installer automatically" "No se pudo ejecutar automáticamente el instalador de Ollama") + ": $($_.Exception.Message)")
     return $false
   }
 }
 function Require-Ollama {
   if (Get-OllamaCommand) {
-    Write-Ok "Ollama found"
+    Write-Ok (T "Ollama found" "Ollama encontrado")
     return
   }
   if (Install-OllamaOfficial) {
-    Write-Ok "Ollama installed"
+    Write-Ok (T "Ollama installed" "Ollama instalado")
     return
   }
   if (Install-WingetPackage "Ollama.Ollama" "ollama") {
     Update-ProcessPath
     if (Get-OllamaCommand) {
-      Write-Ok "Ollama installed"
+      Write-Ok (T "Ollama installed" "Ollama instalado")
       return
     }
   }
-  Write-Warn "Ollama was not found and could not be installed automatically."
-  Write-Warn "Check your internet connection and re-run install.ps1. Recommended command: irm https://ollama.com/install.ps1 | iex"
+  Write-Warn (T "Ollama was not found and could not be installed automatically." "No se encontró Ollama y no se pudo instalar automáticamente.")
+  Write-Warn (T "Check your internet connection and re-run install.ps1. Recommended command: irm https://ollama.com/install.ps1 | iex" "Comprueba tu conexión a Internet y vuelve a ejecutar install.ps1. Comando recomendado: irm https://ollama.com/install.ps1 | iex")
   exit 1
 }
 function Require-Command($Command, $WingetId, $InstallName, $ManualUrl) {
   if (Test-Cmd $Command) {
-    Write-Ok "$InstallName found"
+    Write-Ok (T "$InstallName found" "$InstallName encontrado")
     return
   }
   if (Install-WingetPackage $WingetId $Command) {
     if (Test-Cmd $Command) {
-      Write-Ok "$InstallName installed"
+      Write-Ok (T "$InstallName installed" "$InstallName instalado")
       return
     }
   }
-  Write-Warn "$InstallName was not found and could not be installed automatically."
-  Write-Warn "Install it manually from $ManualUrl, reopen PowerShell, and re-run install.ps1."
+  Write-Warn (T "$InstallName was not found and could not be installed automatically." "No se encontró $InstallName y no se pudo instalar automáticamente.")
+  Write-Warn (T "Install it manually from $ManualUrl, reopen PowerShell, and re-run install.ps1." "Instálalo manualmente desde $ManualUrl, vuelve a abrir PowerShell y ejecuta install.ps1 de nuevo.")
   exit 1
 }
 function Add-UserPath($PathToAdd) {
@@ -479,7 +487,7 @@ function Ensure-OllamaRunning {
   $OllamaExe = Get-OllamaCommand
   if (-not $OllamaExe) { return $false }
   if (Test-OllamaReady) { return $true }
-  Write-Host "  Starting Ollama..."
+  Write-Host (T "  Starting Ollama..." "  Iniciando Ollama...")
   try {
     Start-Process -FilePath $OllamaExe -ArgumentList "serve" -WindowStyle Hidden | Out-Null
   } catch {
@@ -575,19 +583,19 @@ function Assert-RuntimeReady {
   $RagPort = if ($RagPortText) { [int]$RagPortText } else { 3333 }
   $PwaPort = if ($PwaPortText) { [int]$PwaPortText } else { 3334 }
   $RagBase = Wait-LocalUrl $RagPort "/health"
-  if (-not $RagBase) { throw "TrinaxAI backend is not ready on port $RagPort." }
+  if (-not $RagBase) { throw (T "TrinaxAI backend is not ready on port $RagPort." "El backend de TrinaxAI no está listo en el puerto $RagPort.") }
   $PwaBase = Wait-LocalUrl $PwaPort
-  if (-not $PwaBase) { throw "TrinaxAI PWA is not ready on port $PwaPort." }
+  if (-not $PwaBase) { throw (T "TrinaxAI PWA is not ready on port $PwaPort." "La PWA de TrinaxAI no está lista en el puerto $PwaPort.") }
   $Body = @{ messages = @(@{ role = "user"; content = "Reply with the single word OK." }); stream = $false; mode = "model"; think = $false } | ConvertTo-Json -Compress
   try {
     $Response = Invoke-LocalWebRequest "$RagBase/v1/chat/completions" "POST" $Body
     $Payload = $Response.Content | ConvertFrom-Json
     $Content = $Payload.choices[0].message.content
-    if ([string]::IsNullOrWhiteSpace([string]$Content)) { throw "empty response" }
+    if ([string]::IsNullOrWhiteSpace([string]$Content)) { throw (T "empty response" "respuesta vacía") }
   } catch {
-    throw "TrinaxAI smoke inference failed: $($_.Exception.Message)"
+    throw ((T "TrinaxAI smoke inference failed" "La inferencia de prueba de TrinaxAI falló") + ": $($_.Exception.Message)")
   }
-  Write-Ok "Backend, PWA, and smoke inference are ready"
+  Write-Ok (T "Backend, PWA, and smoke inference are ready" "El backend, la PWA y la inferencia de prueba están listos")
 }
 function Ensure-TrinaxAICertificate($Repo, $LanIp) {
   $CertDir = Join-Path $Repo "chat-pwa\certs"
@@ -598,10 +606,10 @@ function Ensure-TrinaxAICertificate($Repo, $LanIp) {
   $PfxPath = Join-Path $CertDir "trinaxai-local.pfx"
   $Passphrase = "trinaxai-local"
   if ((Test-Path $KeyPath) -and (Test-Path $CertPath) -and (Test-Path $PfxPath)) {
-    Write-Ok "HTTPS certificate found"
+    Write-Ok (T "HTTPS certificate found" "Certificado HTTPS encontrado")
     return
   }
-  Write-Host "  Creating trusted HTTPS certificate for TrinaxAI..."
+  Write-Host (T "  Creating trusted HTTPS certificate for TrinaxAI..." "  Creando un certificado HTTPS de confianza para TrinaxAI...")
   $OpenSsl = Get-OpenSslCommand
   if ($OpenSsl) {
     try {
@@ -613,19 +621,19 @@ function Ensure-TrinaxAICertificate($Repo, $LanIp) {
         -out $CertPath `
         -subj "/CN=TrinaxAI Local HTTPS" `
         -addext $San | Out-Null
-      if ($LASTEXITCODE -ne 0) { throw "openssl certificate generation failed" }
+      if ($LASTEXITCODE -ne 0) { throw (T "openssl certificate generation failed" "Falló la generación del certificado con openssl") }
       Copy-Item -Force $CertPath $CrtPath
       & $OpenSsl pkcs12 -export -out $PfxPath -inkey $KeyPath -in $CertPath -passout "pass:$Passphrase" | Out-Null
-      if ($LASTEXITCODE -ne 0) { throw "openssl pfx export failed" }
+      if ($LASTEXITCODE -ne 0) { throw (T "openssl pfx export failed" "Falló la exportación PFX con openssl") }
       try {
         Import-Certificate -FilePath $CertPath -CertStoreLocation Cert:\CurrentUser\Root | Out-Null
-        Write-Ok "Trusted HTTPS certificate installed"
+        Write-Ok (T "Trusted HTTPS certificate installed" "Certificado HTTPS de confianza instalado")
       } catch {
-        Write-Warn "Certificate generated but could not be trusted automatically: $($_.Exception.Message)"
+        Write-Warn ((T "Certificate generated but could not be trusted automatically" "Se generó el certificado, pero no se pudo establecer la confianza automáticamente") + ": $($_.Exception.Message)")
       }
       return
     } catch {
-      Write-Warn "OpenSSL certificate generation failed: $($_.Exception.Message)"
+      Write-Warn ((T "OpenSSL certificate generation failed" "Falló la generación del certificado con OpenSSL") + ": $($_.Exception.Message)")
       Remove-Item -Force -ErrorAction SilentlyContinue $KeyPath, $CertPath, $CrtPath, $PfxPath
     }
   }
@@ -650,11 +658,11 @@ function Ensure-TrinaxAICertificate($Repo, $LanIp) {
     $RootStore.Close()
     $SecurePass = ConvertTo-SecureString -String $Passphrase -Force -AsPlainText
     Export-PfxCertificate -Cert $Cert -FilePath $PfxPath -Password $SecurePass | Out-Null
-    Write-Ok "Trusted HTTPS certificate installed for frontend"
-    Write-Warn "PEM files were not generated. RAG API will use HTTP behind the local PWA proxy."
+    Write-Ok (T "Trusted HTTPS certificate installed for frontend" "Certificado HTTPS de confianza instalado para el frontend")
+    Write-Warn (T "PEM files were not generated. RAG API will use HTTP behind the local PWA proxy." "No se generaron archivos PEM. La API RAG usará HTTP detrás del proxy PWA local.")
   } catch {
-    Write-Warn "Could not create a trusted HTTPS certificate automatically: $($_.Exception.Message)"
-    Write-Warn "TrinaxAI will still run, but your browser may show 'Not secure' until you trust a local certificate."
+    Write-Warn ((T "Could not create a trusted HTTPS certificate automatically" "No se pudo crear automáticamente un certificado HTTPS de confianza") + ": $($_.Exception.Message)")
+    Write-Warn (T "TrinaxAI will still run, but your browser may show 'Not secure' until you trust a local certificate." "TrinaxAI seguirá funcionando, pero el navegador puede mostrar 'No seguro' hasta que confíes en un certificado local.")
   }
 }
 function Sync-RagTransportFromCertificate($Repo) {
@@ -666,22 +674,22 @@ function Sync-RagTransportFromCertificate($Repo) {
     Set-EnvFileValue $EnvPath "TRINAXAI_RAG_TARGET" "https://127.0.0.1:3333"
     Set-EnvFileValue $EnvPath "VITE_TRINAXAI_RAG_TARGET" "https://127.0.0.1:3333"
     Set-EnvFileValue $EnvPath "TRINAXAI_HEALTH_URL" "https://localhost:3333"
-    Write-Ok "RAG API configured for HTTPS"
+    Write-Ok (T "RAG API configured for HTTPS" "API RAG configurada para HTTPS")
   } else {
     Set-EnvFileValue $EnvPath "TRINAXAI_RAG_HTTPS" "0"
     Set-EnvFileValue $EnvPath "TRINAXAI_RAG_TARGET" "http://127.0.0.1:3333"
     Set-EnvFileValue $EnvPath "VITE_TRINAXAI_RAG_TARGET" "http://127.0.0.1:3333"
     Set-EnvFileValue $EnvPath "TRINAXAI_HEALTH_URL" "http://localhost:3333"
-    Write-Warn "RAG API configured for HTTP because PEM certificate files are unavailable."
+    Write-Warn (T "RAG API configured for HTTP because PEM certificate files are unavailable." "API RAG configurada para HTTP porque no hay archivos de certificado PEM disponibles.")
   }
 }
 function Enable-TrinaxAIFirewallRules {
   if (-not (Get-Command New-NetFirewallRule -ErrorAction SilentlyContinue)) {
-    Write-Warn "Windows Firewall cmdlets not available; skipping firewall rules."
+    Write-Warn (T "Windows Firewall cmdlets not available; skipping firewall rules." "Los cmdlets del Firewall de Windows no están disponibles; se omitirán las reglas del firewall.")
     return
   }
   if (-not (Test-IsAdmin)) {
-    Write-Warn "Not running as Administrator. If LAN IP does not open, allow TCP 3333 and 3334 on Private networks."
+    Write-Warn (T "Not running as Administrator. If LAN IP does not open, allow TCP 3333 and 3334 on Private networks." "No se está ejecutando como administrador. Si la IP LAN no se abre, permite TCP 3333 y 3334 en redes privadas.")
     return
   }
   $Rules = @(
@@ -695,17 +703,17 @@ function Enable-TrinaxAIFirewallRules {
         New-NetFirewallRule -DisplayName $Rule.Name -Direction Inbound -Action Allow -Protocol TCP -LocalPort $Rule.Port -Profile Private | Out-Null
       }
     } catch {
-      Write-Warn "Could not configure firewall rule $($Rule.Name): $($_.Exception.Message)"
+      Write-Warn ((T "Could not configure firewall rule $($Rule.Name)" "No se pudo configurar la regla del firewall $($Rule.Name)") + ": $($_.Exception.Message)")
     }
   }
-  Write-Ok "Windows Firewall rules configured for Private networks"
+  Write-Ok (T "Windows Firewall rules configured for Private networks" "Reglas del Firewall de Windows configuradas para redes privadas")
 }
 
 Write-Host ""
 Write-Host "==========================================" -ForegroundColor Blue
-Write-Host " TrinaxAI - Local AI Assistant for Windows " -ForegroundColor Blue
+Write-Host (T " TrinaxAI - Local AI Assistant for Windows " " TrinaxAI - Asistente de IA local para Windows ") -ForegroundColor Blue
 Write-Host "==========================================" -ForegroundColor Blue
-Write-Host " Privacy: local-first. Inference and data stay on this machine unless you enable a remote service; downloads use the network." -ForegroundColor Cyan
+Write-Host (T " Privacy: local-first. Inference and data stay on this machine unless you enable a remote service; downloads use the network." " Privacidad: local primero. La inferencia y los datos permanecen en este equipo salvo que actives un servicio remoto; las descargas usan la red.") -ForegroundColor Cyan
 
 $ScriptPath = $MyInvocation.MyCommand.Path
 $LocalRepo = if ($ScriptPath) { Split-Path -Parent $ScriptPath } else { "" }
@@ -720,8 +728,8 @@ if ($DryRun) {
   Write-Host (T "Would use installation directory:" "Se usaría el directorio de instalación:") $InstallDir
   Write-Host ""
   Write-Host (T "Links to enter" "Enlaces de acceso") -ForegroundColor Cyan
-  Write-Host "  Localhost:       https://localhost:3334"
-  Write-Host "  LAN:             https://[YOUR-LAN-IP]:3334"
+  Write-Host (T "  Localhost:       https://localhost:3334" "  Localhost:       https://localhost:3334")
+  Write-Host (T "  LAN:             https://[YOUR-LAN-IP]:3334" "  LAN / Red local: https://[TU-IP-LAN]:3334")
   Write-Host (T "  RAG health:      https://localhost:3333/health" "  Salud de RAG:    https://localhost:3333/health")
   Write-Ok (T "Dry-run finished; no changes were made" "Simulación terminada; no se hicieron cambios")
   exit 0
@@ -734,7 +742,7 @@ if ($LocalRepo -and $InstallDirWasProvided) {
 
 # Support the remote flow after downloading the script to a local file. Verify
 # the exact release asset before executing it:
-#   $version = "1.2.5"; $base = "https://github.com/TrinaxCode/TrinaxAI/releases/download/v$version"
+#   $version = "1.2.6"; $base = "https://github.com/TrinaxCode/TrinaxAI/releases/download/v$version"
 #   $p = Join-Path $env:TEMP "TrinaxAI-$version-installer.ps1"; $m = Join-Path $env:TEMP "TrinaxAI-$version-SHA256SUMS"
 #   Invoke-WebRequest -Uri "$base/TrinaxAI-$version-installer.ps1" -OutFile $p; Invoke-WebRequest -Uri "$base/SHA256SUMS" -OutFile $m
 #   $line = Get-Content -LiteralPath $m | Where-Object { $fields = $_ -split '\s+'; $fields.Count -ge 2 -and (($fields[1] -replace '^\*', '') -eq "TrinaxAI-$version-installer.ps1") } | Select-Object -First 1; $expected = if ($line) { ($line -split '\s+')[0] } else { "" }
@@ -747,10 +755,10 @@ if (
 ) {
   $Repo = [IO.Path]::GetFullPath($InstallDir)
   if ((Test-Path $Repo) -and -not (Test-Path (Join-Path $Repo "pyproject.toml"))) {
-    throw "Install directory exists but is not a TrinaxAI installation: $Repo"
+    throw (T "Install directory exists but is not a TrinaxAI installation: $Repo" "El directorio de instalación ya existe, pero no es una instalación de TrinaxAI: $Repo")
   }
   if (-not (Test-Path (Join-Path $Repo "pyproject.toml"))) {
-    Write-Step "0/6 Download TrinaxAI"
+    Write-Step (T "0/6 Download TrinaxAI" "0/6 Descargar TrinaxAI")
     Install-RemoteRepository -Target $Repo
   }
   $Forward = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", (Join-Path $Repo "install.ps1"), "-InstallDir", $Repo)
@@ -773,38 +781,38 @@ if (
 $Repo = $LocalRepo
 Set-Location $Repo
 
-Write-Step "1/6 Dependencies"
+Write-Step (T "1/6 Dependencies" "1/6 Dependencias")
 Update-ProcessPath
 if (Test-Cmd winget) {
   $PythonCommand = Get-PythonCommand
   if ($null -eq $PythonCommand) {
-    Write-Host "  Installing Python.Python.3.12 with winget..."
+    Write-Host (T "  Installing Python.Python.3.12 with winget..." "  Instalando Python.Python.3.12 con winget...")
     winget install --id Python.Python.3.12 --silent --accept-package-agreements --accept-source-agreements
     if ($LASTEXITCODE -ne 0) {
-      Write-Warn "winget could not install Python automatically."
-      Write-Warn "Install Python 3.12 from https://python.org, reopen PowerShell, and re-run install.ps1."
+      Write-Warn (T "winget could not install Python automatically." "winget no pudo instalar Python automáticamente.")
+      Write-Warn (T "Install Python 3.12 from https://python.org, reopen PowerShell, and re-run install.ps1." "Instala Python 3.12 desde https://python.org, vuelve a abrir PowerShell y ejecuta install.ps1 de nuevo.")
       exit 1
     }
     Update-ProcessPath
     $PythonCommand = Get-PythonCommand
   }
 } else {
-  Write-Warn "winget was not found. Automatic dependency installation is not available on this Windows image."
+  Write-Warn (T "winget was not found. Automatic dependency installation is not available on this Windows image." "No se encontró winget. La instalación automática de dependencias no está disponible en esta imagen de Windows.")
   $PythonCommand = Get-PythonCommand
 }
 if ($null -eq $PythonCommand) {
-  Write-Warn "Python 3.10+ was not found or only the Microsoft Store alias is available."
-  Write-Warn "Install Python from winget/python.org, reopen PowerShell, and re-run install.ps1."
-  Write-Warn "Recommended command:"
+  Write-Warn (T "Python 3.10+ was not found or only the Microsoft Store alias is available." "No se encontró Python 3.10+ o solo está disponible el alias de Microsoft Store.")
+  Write-Warn (T "Install Python from winget/python.org, reopen PowerShell, and re-run install.ps1." "Instala Python desde winget/python.org, vuelve a abrir PowerShell y ejecuta install.ps1 de nuevo.")
+  Write-Warn (T "Recommended command:" "Comando recomendado:")
   Write-Warn "  winget install --id Python.Python.3.12 --source winget"
   exit 1
 }
 $PythonExe = Invoke-Python -PythonCommand $PythonCommand -PythonArgs @("-c", "import sys; print(sys.executable)")
-Write-Ok "Python found: $($PythonExe | Select-Object -First 1)"
+Write-Ok (T "Python found: $($PythonExe | Select-Object -First 1)" "Python encontrado: $($PythonExe | Select-Object -First 1)")
 Require-Command "node" "OpenJS.NodeJS.LTS" "Node.js" "https://nodejs.org"
 $NodeMajor = [int](& node -p "process.versions.node.split('.')[0]")
 if ($NodeMajor -lt 22) {
-  Write-Warn "Node.js 22 or newer is required. Install an active Node.js LTS release and re-run the script."
+  Write-Warn (T "Node.js 22 or newer is required. Install an active Node.js LTS release and re-run the script." "Se requiere Node.js 22 o posterior. Instala una versión LTS activa de Node.js y ejecuta el script de nuevo.")
   exit 1
 }
 Require-Ollama
@@ -815,9 +823,9 @@ $AutoProfile = [string]$Hardware.detected_profile
 if (-not $Profile) { $Profile = if ($env:TRINAXAI_PROFILE) { $env:TRINAXAI_PROFILE } else { $AutoProfile } }
 $Profile = Normalize-Profile $Profile $AutoProfile
 
-Write-Step "1/6 Hardware profile"
-Write-Host "  Detected RAM: $RamGb GB" -ForegroundColor Cyan
-Write-Host "  Recommended profile: $AutoProfile" -ForegroundColor Green
+Write-Step (T "1/6 Hardware profile" "1/6 Perfil de hardware")
+Write-Host (T "  Detected RAM: $RamGb GB" "  RAM detectada: $RamGb GB") -ForegroundColor Cyan
+Write-Host (T "  Recommended profile: $AutoProfile" "  Perfil recomendado: $AutoProfile") -ForegroundColor Green
 Write-Host ""
 $Mode = ""
 if (-not $NonInteractive) { $Mode = Read-Host (T "Setup mode: Normal recommended or Advanced manual? [N/a]" "Modo de configuración: ¿Normal recomendado o Avanzado manual? [N/a]") }
@@ -840,7 +848,7 @@ if ((-not $NonInteractive) -and $Mode -match "^[Aa]") {
     "low" { $Profile = "8gb" }
   }
 } else {
-  Write-Ok "Automatic setup selected: profile=$Profile"
+  Write-Ok (T "Automatic setup selected: profile=$Profile" "Configuración automática seleccionada: perfil=$Profile")
 }
 
 $Hardware = Get-HardwareRecommendations -PythonCommand $PythonCommand -RequestedProfile $Profile
@@ -857,20 +865,20 @@ $EmbedKeepAlive = [string]$Hardware.embed_keep_alive
 $VisionModel = $ModelGeneral
 
 Write-Host ""
-Write-Host "Model roles TrinaxAI needs:" -ForegroundColor Cyan
-Write-Host "  General chat: conversation and everyday questions"
-Write-Host "  Code/deep: code, reasoning, refactors, project analysis"
-Write-Host "  Embeddings: RAG indexing and semantic search"
-Write-Host "  Vision: image and screenshot analysis"
+Write-Host (T "Model roles TrinaxAI needs:" "Roles de modelo que TrinaxAI necesita:") -ForegroundColor Cyan
+Write-Host (T "  General chat: conversation and everyday questions" "  Chat general: conversación y preguntas cotidianas")
+Write-Host (T "  Code/deep: code, reasoning, refactors, project analysis" "  Código/profundo: código, razonamiento, refactorizaciones y análisis de proyectos")
+Write-Host (T "  Embeddings: RAG indexing and semantic search" "  Embeddings: indexación RAG y búsqueda semántica")
+Write-Host (T "  Vision: image and screenshot analysis" "  Visión: análisis de imágenes y capturas de pantalla")
 if (-not $NonInteractive) {
-  $ModelMode = Read-Host "Use recommended Ollama models, or configure your own? [R/o]"
+  $ModelMode = Read-Host (T "Use recommended Ollama models, or configure your own? [R/o]" "¿Usar los modelos Ollama recomendados o configurar los tuyos? [R/o]")
   if ($ModelMode -match "^[Oo]") {
-    $ModelGeneral = Read-ModelValue "General chat model" $ModelGeneral
-    $ModelCode = Read-ModelValue "Code model" $ModelCode
-    $ModelDeep = Read-ModelValue "Deep analysis model" $ModelDeep
-    $ModelFast = Read-ModelValue "Fast model" $ModelFast
-    $EmbedModel = Read-ModelValue "Embedding model for RAG" $EmbedModel
-    $VisionModel = Read-ModelValue "Vision/image model" $VisionModel
+    $ModelGeneral = Read-ModelValue (T "General chat model" "Modelo de chat general") $ModelGeneral
+    $ModelCode = Read-ModelValue (T "Code model" "Modelo de código") $ModelCode
+    $ModelDeep = Read-ModelValue (T "Deep analysis model" "Modelo de análisis profundo") $ModelDeep
+    $ModelFast = Read-ModelValue (T "Fast model" "Modelo rápido") $ModelFast
+    $EmbedModel = Read-ModelValue (T "Embedding model for RAG" "Modelo de embeddings para RAG") $EmbedModel
+    $VisionModel = Read-ModelValue (T "Vision/image model" "Modelo de visión/imágenes") $VisionModel
   }
 }
 
@@ -929,7 +937,7 @@ if ($Profile -eq "64gb") {
 }
 Merge-EnvFileDefaults -Path ".env" -Defaults $EnvLines
 Set-EnvFileValue ".env" "TRINAXAI_ALLOW_LAN_SYSTEM" "0"
-Write-Ok ".env written with profile=$Profile"
+Write-Ok (T ".env written with profile=$Profile" ".env escrito con el perfil=$Profile")
 
 Ensure-TrinaxAICertificate -Repo $Repo -LanIp $LanIp
 Sync-RagTransportFromCertificate -Repo $Repo
@@ -937,52 +945,52 @@ Enable-TrinaxAIFirewallRules
 
 $FreeGb = [math]::Round((Get-PSDrive -Name ((Get-Location).Path.Substring(0,1))).Free / 1GB)
 if ($FreeGb -lt 12) {
-  Write-Warn "Only $FreeGb GB free on this drive. Model downloads may fail."
+  Write-Warn (T "Only $FreeGb GB free on this drive. Model downloads may fail." "Solo hay $FreeGb GB libres en esta unidad. Las descargas de modelos podrían fallar.")
 }
 
-Write-Step "3/6 Python environment"
+Write-Step (T "3/6 Python environment" "3/6 Entorno de Python")
 if (-not (Test-Path ".venv\Scripts\python.exe")) {
   if (Test-Path ".venv") {
-    Write-Warn "Existing .venv is incomplete. Recreating it."
+    Write-Warn (T "Existing .venv is incomplete. Recreating it." ".venv existente incompleto. Se volverá a crear.")
     Remove-Item -Recurse -Force ".venv"
   }
   Invoke-Python -PythonCommand $PythonCommand -PythonArgs @("-m", "venv", ".venv")
 }
 if (-not (Test-Path ".venv\Scripts\python.exe")) {
-  Write-Warn "Could not create .venv\Scripts\python.exe. Reopen PowerShell after Python installation and re-run install.ps1."
+  Write-Warn (T "Could not create .venv\Scripts\python.exe. Reopen PowerShell after Python installation and re-run install.ps1." "No se pudo crear .venv\Scripts\python.exe. Vuelve a abrir PowerShell después de instalar Python y ejecuta install.ps1 de nuevo.")
   exit 1
 }
 $VenvPython = Join-Path $Repo ".venv\Scripts\python.exe"
-Invoke-NativeChecked $VenvPython @("-m", "pip", "install", "--upgrade", "pip") "pip upgrade"
+Invoke-NativeChecked $VenvPython @("-m", "pip", "install", "--upgrade", "pip") (T "pip upgrade" "actualización de pip")
 $RequirementsFile = if (Test-Path "requirements.lock") { "requirements.lock" } else { "requirements.txt" }
 if ($RequirementsFile -eq "requirements.lock") {
-  Invoke-NativeChecked $VenvPython @("-m", "pip", "install", "--require-hashes", "-r", $RequirementsFile) "locked Python dependencies"
+  Invoke-NativeChecked $VenvPython @("-m", "pip", "install", "--require-hashes", "-r", $RequirementsFile) (T "locked Python dependencies" "dependencias de Python bloqueadas")
 } else {
-  Invoke-NativeChecked $VenvPython @("-m", "pip", "install", "-r", $RequirementsFile) "Python dependencies"
+  Invoke-NativeChecked $VenvPython @("-m", "pip", "install", "-r", $RequirementsFile) (T "Python dependencies" "dependencias de Python")
 }
-Invoke-NativeChecked $VenvPython @("-m", "pip", "install", "-e", ".") "TrinaxAI editable install"
+Invoke-NativeChecked $VenvPython @("-m", "pip", "install", "-e", ".") (T "TrinaxAI editable install" "instalación editable de TrinaxAI")
 $VenvScripts = Join-Path $Repo ".venv\Scripts"
 Add-UserPath $VenvScripts
-Write-Ok "Python packages installed"
-Write-Ok "TrinaxAI CLI installed: .\.venv\Scripts\trinaxai.exe"
-Write-Ok "CLI path configured for this user: $VenvScripts"
+Write-Ok (T "Python packages installed" "Paquetes de Python instalados")
+Write-Ok (T "TrinaxAI CLI installed: .\.venv\Scripts\trinaxai.exe" "CLI de TrinaxAI instalada: .\.venv\Scripts\trinaxai.exe")
+Write-Ok (T "CLI path configured for this user: $VenvScripts" "Ruta de la CLI configurada para este usuario: $VenvScripts")
 
-Write-Step "4/6 PWA frontend"
+Write-Step (T "4/6 PWA frontend" "4/6 Frontend PWA")
 if (-not (Test-Path "chat-pwa\package.json") -or -not (Test-Path "chat-pwa\package-lock.json")) {
-  throw "chat-pwa/package.json and package-lock.json are required for the PWA."
+  throw (T "chat-pwa/package.json and package-lock.json are required for the PWA." "La PWA requiere chat-pwa/package.json y package-lock.json.")
 }
-if (-not (Test-Cmd npm)) { throw "npm is required to build the PWA." }
+if (-not (Test-Cmd npm)) { throw (T "npm is required to build the PWA." "Se requiere npm para compilar la PWA.") }
 Push-Location "chat-pwa"
 try {
-  Invoke-NativeChecked "npm" @("ci") "npm ci"
-  Invoke-NativeChecked "npm" @("run", "build") "npm run build"
+  Invoke-NativeChecked "npm" @("ci") (T "npm ci" "npm ci")
+  Invoke-NativeChecked "npm" @("run", "build") (T "npm run build" "npm run build")
 } finally {
   Pop-Location
 }
-if (-not (Test-Path "chat-pwa\dist\index.html")) { throw "PWA build completed without chat-pwa/dist/index.html." }
-Write-Ok "PWA ready"
+if (-not (Test-Path "chat-pwa\dist\index.html")) { throw (T "PWA build completed without chat-pwa/dist/index.html." "La compilación de la PWA terminó sin chat-pwa/dist/index.html.") }
+Write-Ok (T "PWA ready" "PWA lista")
 
-Write-Step "5/6 AI models"
+Write-Step (T "5/6 AI models" "5/6 Modelos de IA")
 $Models = @(Get-ConfiguredModels)
 Write-Host "  $(T 'General chat' 'Chat general'): $ModelGeneral"
 Write-Host "  $(T 'Code' 'Código'):         $ModelCode"
@@ -993,37 +1001,37 @@ if (-not $NonInteractive) {
   $SkipModels = Read-Host (T "Download these configured Ollama models now? Choose N to defer model downloads. [Y/n]" "¿Descargar ahora estos modelos Ollama configurados? Elige N para dejar las descargas para después. [Y/n]")
   if ($SkipModels -match "^[Nn]") {
     $NoModels = $true
-    Write-Warn "Model downloads skipped; model preparation is deferred."
+    Write-Warn (T "Model downloads skipped; model preparation is deferred." "Se omitieron las descargas de modelos; la preparación de modelos queda pendiente.")
   }
 }
-if (-not (Ensure-OllamaRunning)) { throw "Ollama API is not ready." }
+if (-not (Ensure-OllamaRunning)) { throw (T "Ollama API is not ready." "La API de Ollama no está lista.") }
 $OllamaExe = Get-OllamaCommand
-if (-not $OllamaExe) { throw "Ollama executable is not available." }
+if (-not $OllamaExe) { throw (T "Ollama executable is not available." "El ejecutable de Ollama no está disponible.") }
 if (-not $NoModels) {
   foreach ($Model in $Models) {
-    Write-Host "  Pulling $Model..."
-    Invoke-NativeChecked $OllamaExe @("pull", $Model) "ollama pull $Model"
+    Write-Host (T "  Pulling $Model..." "  Descargando $Model...")
+    Invoke-NativeChecked $OllamaExe @("pull", $Model) (T "ollama pull $Model" "ollama pull $Model")
   }
 } else {
-  Write-Warn "Model downloads skipped; model preparation is deferred."
+  Write-Warn (T "Model downloads skipped; model preparation is deferred." "Se omitieron las descargas de modelos; la preparación de modelos queda pendiente.")
 }
 if (-not $NoModels) {
   foreach ($Model in $Models) {
-    if (-not (Test-OllamaModel $OllamaExe $Model)) { throw "Required Ollama model is not ready: $Model" }
+    if (-not (Test-OllamaModel $OllamaExe $Model)) { throw (T "Required Ollama model is not ready: $Model" "El modelo de Ollama requerido no está listo: $Model") }
   }
-  Write-Ok "Models ready"
+  Write-Ok (T "Models ready" "Modelos listos")
 }
-Write-Host "  Vision model $VisionModel will download on first image analysis."
+Write-Host (T "  Vision model $VisionModel will download on first image analysis." "  El modelo de visión $VisionModel se descargará al analizar la primera imagen.")
 
-Write-Step "6/6 Start"
+Write-Step (T "6/6 Start" "6/6 Inicio")
 if (-not $NoStart) {
   if (Read-YesNo (T "Start TrinaxAI now after install?" "¿Iniciar TrinaxAI ahora al terminar?" ) $true) {
-    Invoke-NativeChecked ".\.venv\Scripts\python.exe" @("service_manager.py", "start", "--base-dir", $Repo) "TrinaxAI services"
-    Write-Ok "TrinaxAI started"
+    Invoke-NativeChecked ".\.venv\Scripts\python.exe" @("service_manager.py", "start", "--base-dir", $Repo) (T "TrinaxAI services" "servicios de TrinaxAI")
+    Write-Ok (T "TrinaxAI started" "TrinaxAI iniciado")
     Assert-RuntimeReady
   } else {
     $NoStart = $true
-    Write-Warn "Start skipped. Run .\.venv\Scripts\trinaxai.exe start when ready."
+    Write-Warn (T "Start skipped. Run .\.venv\Scripts\trinaxai.exe start when ready." "Se omitió el inicio. Ejecuta .\.venv\Scripts\trinaxai.exe start cuando estés listo.")
   }
 }
 if (-not $NoStart -and -not $NoAutostart) {
@@ -1032,16 +1040,16 @@ if (-not $NoStart -and -not $NoAutostart) {
   }
 }
 if (-not $NoStart -and -not $NoAutostart) {
-  Invoke-NativeChecked $VenvPython @("service_manager.py", "enable-autostart", "--base-dir", $Repo) "TrinaxAI auto-start"
-  Write-Ok "Auto-start enabled"
+  Invoke-NativeChecked $VenvPython @("service_manager.py", "enable-autostart", "--base-dir", $Repo) (T "TrinaxAI auto-start" "inicio automático de TrinaxAI")
+  Write-Ok (T "Auto-start enabled" "Inicio automático activado")
 } elseif ($NoStart) {
   Write-Warn (T "Auto-start skipped because TrinaxAI was not started. Enable it after starting TrinaxAI." "El inicio automático se omitió porque TrinaxAI no se inició. Actívalo después de iniciar TrinaxAI.")
 }
 if (-not $NoAutoUpdate -and (Test-Path "scripts\auto_update.py")) {
-  Write-Host "  Enabling safe weekly updates from GitHub..." -ForegroundColor Cyan
+  Write-Host (T "  Enabling safe weekly updates from GitHub..." "  Activando actualizaciones semanales seguras desde GitHub...") -ForegroundColor Cyan
   & ".\.venv\Scripts\python.exe" "scripts\auto_update.py" "enable" "--base-dir" $Repo
-  if ($LASTEXITCODE -eq 0) { Write-Ok "Automatic updates enabled (weekly)" }
-  else { Write-Warn "Could not enable the weekly update task." }
+  if ($LASTEXITCODE -eq 0) { Write-Ok (T "Automatic updates enabled (weekly)" "Actualizaciones automáticas activadas (semanales)") }
+  else { Write-Warn (T "Could not enable the weekly update task." "No se pudo activar la tarea semanal de actualización.") }
 }
 if ($NoStart) {
   Write-Warn (T "Installation prepared; TrinaxAI is not running." "Instalación preparada; TrinaxAI no está en ejecución.")
@@ -1053,10 +1061,10 @@ if ($NoStart) {
   Write-Host "  https://localhost:3334"
   if ($LanIp) { Write-Host "  https://$($LanIp):3334" }
 }
-Write-Host "CLI:" -ForegroundColor Cyan
+Write-Host (T "CLI:" "CLI:") -ForegroundColor Cyan
 Write-Host "  trinaxai"
-Write-Host "Updates:" -ForegroundColor Cyan
-Write-Host "  Automatic check every week"
+Write-Host (T "Updates:" "Actualizaciones:") -ForegroundColor Cyan
+Write-Host (T "  Automatic check every week" "  Comprobación automática cada semana")
 Write-Host ""
-Write-Host "  Sensitive system administration remains localhost-only." -ForegroundColor Yellow
+Write-Host (T "  Sensitive system administration remains localhost-only." "  La administración sensible del sistema permanece disponible solo en localhost.") -ForegroundColor Yellow
 Write-Host ""

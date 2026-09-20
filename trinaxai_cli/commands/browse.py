@@ -18,15 +18,17 @@ def run(args: Any, client: Any, ui: Any, config: Any) -> int:
 
         if sub == "list-files":
             collection = getattr(args, "collection", None) or "default"
-            data = client.list_sources(collection)
+            source_id = getattr(args, "source_id", None)
+            data = client.list_sources(collection, source_id=source_id)
             sources = data.get("sources", []) or []
             if not sources:
                 ui.info(f"No files in collection '{collection}'.")
                 return 0
             ui.table(
-                ["file", "chunks", "size", "mtime"],
+                ["source_id", "file", "chunks", "size", "mtime"],
                 [
                     [
+                        s.get("source_id", s.get("id", "")),
                         s.get("file", ""),
                         s.get("chunks", 0),
                         s.get("size", 0),
@@ -44,7 +46,12 @@ def run(args: Any, client: Any, ui: Any, config: Any) -> int:
             if not file:
                 ui.error("File path required (use --file).")
                 return 1
-            data = client.list_chunks(collection, file, limit=int(getattr(args, "limit", 50) or 50))
+            data = client.list_chunks(
+                collection,
+                file,
+                limit=int(getattr(args, "limit", 50) or 50),
+                source_id=getattr(args, "source_id", None),
+            )
             chunks = data.get("chunks", []) or []
             if not chunks:
                 ui.info("No chunks.")

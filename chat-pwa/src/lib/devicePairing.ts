@@ -164,6 +164,21 @@ export async function claimDevice(code: string, deviceName: string): Promise<Pai
   return device;
 }
 
+export async function createNewDeviceSession(deviceName = 'New device'): Promise<PairedDevice> {
+  const response = await pairingFetch(`${APP_CONFIG.ragBase}/v1/pairing/new-device`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ device_name: deviceName }),
+  });
+  const payload = await responseJson(response);
+  if (!payload.device) throw new Error('New-device response did not include device metadata.');
+  const device = payload.device as PairedDevice;
+  clearLegacyDeviceToken();
+  setDeviceSessionScopes(device.scopes);
+  window.dispatchEvent(new Event('trinaxai-device-auth-changed'));
+  return device;
+}
+
 export async function getCurrentPairedDevice(): Promise<PairedDevice | null> {
   const token = legacyDeviceToken();
   const hadSession = hasDeviceCredential();

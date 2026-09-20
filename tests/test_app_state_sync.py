@@ -9,7 +9,8 @@ import stat
 from starlette.testclient import TestClient
 
 import rag_api
-from app.services import app_state_service
+from app.services import app_state_service, runtime_context, runtime_engine, shared_runtime
+from app.services.engine_state import state
 
 
 def _client(tmp_path, monkeypatch) -> tuple[TestClient, object]:
@@ -29,6 +30,55 @@ def _put(client: TestClient, revision: int, operations: list[dict], device: str 
             "operations": operations,
         },
     )
+
+
+def test_persist_hardening_recurses_without_following_symlinks(tmp_path) -> None:
+    storage = tmp_path / "storage"
+    attachment_dir = storage / "chat_attachments"
+    nested = storage / "index"
+    attachment_dir.mkdir(parents=True, mode=0o755)
+    nested.mkdir(mode=0o755)
+    memory = storage / "user_memory.json"
+    attachment = attachment_dir / "legacy.bin"
+    index = nested / "docstore.json"
+    external = tmp_path / "outside.json"
+    for path in (memory, attachment, index, external):
+        path.write_text("test", encoding="utf-8")
+        path.chmod(0o644)
+    storage.chmod(0o755)
+    try:
+        (storage / "outside-link").symlink_to(external)
+    except OSError:
+        symlink_supported = False
+    else:
+        symlink_supported = True
+
+    runtime_context.harden_persist_directory(str(storage))
+
+    assert stat.S_IMODE(storage.stat().st_mode) == 0o700
+    assert stat.S_IMODE(attachment_dir.stat().st_mode) == 0o700
+    assert stat.S_IMODE(nested.stat().st_mode) == 0o700
+    assert all(stat.S_IMODE(path.stat().st_mode) == 0o600 for path in (memory, attachment, index))
+    if symlink_supported:
+        assert stat.S_IMODE(external.stat().st_mode) == 0o644
+
+
+def test_runtime_initialization_hardens_persistent_storage(tmp_path, monkeypatch) -> None:
+    storage = tmp_path / "storage"
+    storage.mkdir(mode=0o755)
+    memory = storage / "user_memory.json"
+    memory.write_text("test", encoding="utf-8")
+    memory.chmod(0o644)
+    monkeypatch.setattr(shared_runtime.config, "PERSIST_DIR", str(storage))
+    monkeypatch.setattr(shared_runtime.config, "make_embed", lambda: "embed")
+    monkeypatch.setattr(shared_runtime.config, "make_reranker", lambda: None)
+    monkeypatch.setattr(shared_runtime, "build_engine", lambda: True)
+    monkeypatch.setattr(state, "reranker", None)
+
+    runtime_engine.initialize_runtime()
+
+    assert stat.S_IMODE(storage.stat().st_mode) == 0o700
+    assert stat.S_IMODE(memory.stat().st_mode) == 0o600
 
 
 def test_legacy_document_is_migrated_without_losing_values(tmp_path, monkeypatch) -> None:

@@ -4,7 +4,7 @@
 
 <p align="center">
   <a href="https://github.com/TrinaxCode/TrinaxAI"><img src="https://img.shields.io/github/stars/TrinaxCode/TrinaxAI?style=flat&amp;label=%E2%98%85&amp;color=006bbd" alt="Estrellas en GitHub"></a>
-  <a href="https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.2.5"><img src="https://img.shields.io/badge/version-1.2.5-006bbd" alt="Release estable: 1.2.5"></a>
+  <a href="https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.2.6"><img src="https://img.shields.io/badge/version-1.2.6-006bbd" alt="Release estable: 1.2.6"></a>
   <a href="https://github.com/TrinaxCode/TrinaxAI/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/TrinaxCode/TrinaxAI/ci.yml?branch=main&amp;label=CI" alt="Estado de CI"></a>
   <a href="https://github.com/TrinaxCode/TrinaxAI/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0--or--later-006bbd" alt="Licencia AGPL-3.0-or-later"></a>
   <img src="https://img.shields.io/badge/macOS%20%7C%20Windows%20%7C%20Linux-4493F8?style=flat-square" alt="Plataformas: macOS, Windows y Linux">
@@ -20,7 +20,31 @@ citas, investigación web opcional, un agente de código con sandbox, una CLI y
 una PWA instalable. La inferencia y los datos indexados permanecen en el equipo
 configurado salvo que elijas explícitamente un servicio remoto.
 
+## Capturas
+
+Estas capturas del repositorio muestran el loop diario en la PWA con interfaz oscura:
+
+| Flujo | English | Español |
+| --- | --- | --- |
+| Chat con citas | [Abrir](docs/assets/screenshots/chat-citations-en.png) | [Abrir](docs/assets/screenshots/chat-citations-es.png) |
+| Trabajo de indexación | [Abrir](docs/assets/screenshots/indexing-job-en.png) | [Abrir](docs/assets/screenshots/indexing-job-es.png) |
+| Pairing | [Abrir](docs/assets/screenshots/pairing-en.png) | [Abrir](docs/assets/screenshots/pairing-es.png) |
+| Aprobación del agente | [Abrir](docs/assets/screenshots/agent-approval-en.png) | [Abrir](docs/assets/screenshots/agent-approval-es.png) |
+
 ## Inicio rápido
+
+### CLI de npm
+
+Instala el lanzador multiplataforma corto con npm y deja que descargue y
+verifique el instalador oficial del release correspondiente:
+
+```bash
+npm install --global trinaxai@latest
+trinaxai setup
+```
+
+El paquete npm solo contiene el lanzador; el instalador verificado existente
+sigue preparando el backend, la PWA, Ollama y los modelos.
 
 ### Instalación rápida — Linux y macOS
 
@@ -34,7 +58,7 @@ verifica el checksum del paquete fuente, compila la PWA, comprueba Ollama y los
 modelos necesarios, ejecuta una inferencia de smoke test e inicia la app.
 
 ```bash
-set -e; version="1.2.5"; base="https://github.com/TrinaxCode/TrinaxAI/releases/download/v${version}"; installer="$(mktemp)"; trap 'rm -f "$installer"' EXIT; curl -fsSL "$base/TrinaxAI-${version}-installer.sh" -o "$installer"; expected="$(curl -fsSL "$base/SHA256SUMS" | awk -v asset="TrinaxAI-${version}-installer.sh" '$2 == asset || $2 == "*" asset { print $1; exit }')"; actual="$( (shasum -a 256 "$installer" 2>/dev/null || sha256sum "$installer") | awk '{print $1}' )"; test "$expected" = "$actual"; bash "$installer"
+set -e; version="1.2.6"; base="https://github.com/TrinaxCode/TrinaxAI/releases/download/v${version}"; installer="$(mktemp)"; trap 'rm -f "$installer"' EXIT; curl -fsSL "$base/TrinaxAI-${version}-installer.sh" -o "$installer"; expected="$(curl -fsSL "$base/SHA256SUMS" | awk -v asset="TrinaxAI-${version}-installer.sh" '$2 == asset || $2 == "*" asset { print $1; exit }')"; actual="$( (shasum -a 256 "$installer" 2>/dev/null || sha256sum "$installer") | awk '{print $1}' )"; test "$expected" = "$actual"; bash "$installer"
 ```
 
 ### Instalación rápida — Windows PowerShell
@@ -46,7 +70,7 @@ SHA-256 del instalador antes de ejecutarlo.
 
 ```powershell
 $ErrorActionPreference = "Stop"
-$version = "1.2.5"
+$version = "1.2.6"
 $base = "https://github.com/TrinaxCode/TrinaxAI/releases/download/v$version"
 $installer = Join-Path $env:TEMP "TrinaxAI-$version-installer.ps1"
 $manifest = Join-Path $env:TEMP "TrinaxAI-$version-SHA256SUMS"
@@ -163,6 +187,10 @@ Mantén privados los puertos `3333` y `11434`, protege
 `storage/.proxy_secret` y usa una VPN en vez de abrir el equipo a Internet.
 Consulta [seguridad](docs/SECURITY.es.md), [emparejamiento](docs/NETWORK_PAIRING.es.md)
 y [firma de releases](docs/RELEASE_SIGNING.es.md).
+
+Para reportar vulnerabilidades de seguridad, escribe a `trinaxcode@gmail.com`;
+no abras un issue público. Consulta la [política de seguridad](docs/SECURITY.es.md)
+para el proceso completo.
 
 ## Plataformas compatibles
 

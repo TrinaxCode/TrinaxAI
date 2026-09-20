@@ -16,6 +16,7 @@ venv/
 coverage.xml
 coverage.json
 htmlcov/
+rag-eval-report.json
 
 # Node / PWA
 /node_modules/

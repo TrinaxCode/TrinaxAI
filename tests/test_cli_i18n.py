@@ -5,6 +5,11 @@ def test_common_cli_messages_are_localized() -> None:
     assert translate("No collections.", "es") == "No hay colecciones."
     assert translate("Watching 2 path(s) - 3 events", "es") == "Vigilando 2 ruta(s) - 3 eventos"
     assert translate("Exported 2 record(s) → /tmp/session.md", "es") == "Exportados 2 registro(s) -> /tmp/session.md"
+    assert (
+        translate("Stopping all TrinaxAI services including the PWA...", "es")
+        == "Deteniendo todos los servicios de TrinaxAI, incluida la PWA..."
+    )
+    assert translate("service action failed: stop-all", "es") == "Falló la acción del servicio: stop-all"
 
 
 def test_slash_help_has_both_languages() -> None:

@@ -70,6 +70,8 @@ export interface IndexJobStatus {
   batches_processed: number;
   progress_exact: boolean;
   recent_activity?: string;
+  failures: Array<{ path: string; reason: string }>;
+  retry_recommended: boolean;
 }
 
 export interface Collection {
@@ -96,6 +98,7 @@ export function folderLabelFromFiles(files: FileList | File[]): string {
 function isIndexableFile(file: File): boolean {
   const rel = ((file as File & { webkitRelativePath?: string }).webkitRelativePath || file.name || '').toLowerCase();
   const filename = rel.split('/').pop() || rel;
+  if (/^(?:\.env(?:\.|$)|credentials?(?:\.|$)|(?:api[-_]?key|private[-_]?key|secret)(?:\.|$)|id_(?:rsa|dsa|ecdsa|ed25519)(?:\.|$))/.test(filename)) return false;
   if (INDEXABLE_FILENAMES.has(filename)) return true;
   const dot = filename.lastIndexOf('.');
   if (dot < 0) return false;

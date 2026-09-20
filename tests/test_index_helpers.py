@@ -81,6 +81,21 @@ def test_collect_files_accepts_unknown_text_but_rejects_binary(tmp_path) -> None
     assert binary.name not in names
 
 
+def test_collect_files_rejects_binary_disguised_as_text(tmp_path) -> None:
+    supported = (".html", ".css", ".js", ".ts", ".json", ".md", ".txt")
+    for extension in supported:
+        (tmp_path / f"page{extension}").write_text("readable content", encoding="utf-8")
+    (tmp_path / "binary.txt").write_bytes(b"\x00\x01\x02\xff")
+    (tmp_path / "document.pdf").write_bytes(b"not yet parsed")
+    (tmp_path / "slides.pptx").write_bytes(b"not yet parsed")
+
+    names = {Path(path).name for path in index.collect_files(str(tmp_path))}
+
+    assert {f"page{extension}" for extension in supported} <= names
+    assert {"document.pdf", "slides.pptx"} <= names
+    assert "binary.txt" not in names
+
+
 def test_document_content_extractors_cover_web_notebooks_email_and_epub(tmp_path) -> None:
     html = tmp_path / "page.html"
     html.write_text("<h1>Manual</h1><script>ignore me</script><p>Useful HTML text</p>", encoding="utf-8")
@@ -100,6 +115,17 @@ def test_document_content_extractors_cover_web_notebooks_email_and_epub(tmp_path
     assert "Notebook insight" in index._load_file_documents(str(notebook))[0].text
     assert "Email body insight" in index._load_file_documents(str(email))[0].text
     assert "EPUB insight" in index._load_file_documents(str(epub))[0].text
+
+
+def test_spa_html_falls_back_to_bounded_inert_source() -> None:
+    spa = '<html><body><div id="root"></div><script>window.appName = "Searchable SPA"</script></body></html>'
+
+    text = index._html_to_text(spa)
+
+    assert text.startswith("[HTML source fallback: no visible text]")
+    assert 'id="root"' in text
+    assert "Searchable SPA" in text
+    assert index._html_to_text("<p>Visible text</p><script>ignore me</script>") == "Visible text"
 
 
 def test_decode_text_bytes_falls_back_past_windows_charmap() -> None:

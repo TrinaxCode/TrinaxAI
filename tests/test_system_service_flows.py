@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from io import BytesIO
 from pathlib import Path
@@ -63,6 +64,143 @@ async def test_index_upload_saves_files_and_queues_background_index(tmp_path, mo
     assert Path(result["path"], "manual_.md").read_text(encoding="utf-8") == "release guide"
     assert started[0][0] is system_service._run_index_job
     assert isolated_jobs[result["job_id"]]["phase"] == "queued"
+
+
+@pytest.mark.asyncio
+async def test_index_upload_skips_sensitive_files(tmp_path, monkeypatch, isolated_jobs) -> None:
+    monkeypatch.setattr(system_service, "_authorize_system", lambda _request: None)
+    monkeypatch.setattr(system_service.config, "LOCAL_SOURCES_DIR", str(tmp_path))
+    monkeypatch.setattr(system_service, "_ensure_collection", lambda _cid: {"id": "docs", "name": "Docs"})
+    monkeypatch.setattr(system_service, "_dispatch_next_index_job", lambda: None)
+
+    result = await system_service.system_index_upload(
+        object(),
+        label="import",
+        collection_id="docs",
+        embed_model="",
+        aggressive_quant=False,
+        watch_id="",
+        files=[
+            UploadFile(filename="guide.html", file=BytesIO(b"<h1>Guide</h1>")),
+            UploadFile(filename=".ENV.local", file=BytesIO(b"TOKEN=secret")),
+            UploadFile(filename="Credentials.JSON", file=BytesIO(b"{}")),
+            UploadFile(filename="ID_RSA", file=BytesIO(b"private key")),
+            UploadFile(filename="certificate.PEM", file=BytesIO(b"certificate")),
+        ],
+    )
+
+    target = Path(result["path"])
+    assert result["saved"] == 1
+    assert result["skipped"] == 4
+    assert (target / "guide.html").read_bytes() == b"<h1>Guide</h1>"
+    assert not any(
+        path.name.lower() in {".env.local", "credentials.json", "id_rsa", "certificate.pem"}
+        for path in target.rglob("*")
+    )
+
+
+@pytest.mark.asyncio
+async def test_index_upload_watch_mirror_removes_sensitive_files(tmp_path, monkeypatch, isolated_jobs) -> None:
+    monkeypatch.setattr(system_service, "_authorize_system", lambda _request: None)
+    monkeypatch.setattr(system_service.config, "LOCAL_SOURCES_DIR", str(tmp_path))
+    monkeypatch.setattr(system_service, "_ensure_collection", lambda _cid: {"id": "docs", "name": "Docs"})
+    monkeypatch.setattr(system_service, "_dispatch_next_index_job", lambda: None)
+
+    initial = await system_service.system_index_upload(
+        object(),
+        label="sync",
+        collection_id="docs",
+        embed_model="",
+        aggressive_quant=False,
+        watch_id="watch",
+        files=[UploadFile(filename="old.txt", file=BytesIO(b"old"))],
+    )
+    mirror = Path(initial["path"])
+    (mirror / "secrets.json").write_text('{"token":"secret"}', encoding="utf-8")
+
+    result = await system_service.system_index_upload(
+        object(),
+        label="sync",
+        collection_id="docs",
+        embed_model="",
+        aggressive_quant=False,
+        watch_id="watch",
+        files=[
+            UploadFile(filename="styles.css", file=BytesIO(b"body {}")),
+            UploadFile(filename="deploy.P12", file=BytesIO(b"certificate")),
+        ],
+    )
+
+    assert result["saved"] == 1
+    assert result["skipped"] == 1
+    assert (mirror / "styles.css").read_bytes() == b"body {}"
+    assert not (mirror / "secrets.json").exists()
+    assert not (mirror / "deploy.P12").exists()
+
+
+@pytest.mark.asyncio
+async def test_index_upload_uses_unique_paths_and_preserves_duplicate_watch_mirror(
+    tmp_path, monkeypatch, isolated_jobs
+) -> None:
+    monkeypatch.setattr(system_service, "_authorize_system", lambda _request: None)
+    monkeypatch.setattr(system_service.config, "LOCAL_SOURCES_DIR", str(tmp_path / "sources"))
+    monkeypatch.setattr(system_service, "_ensure_collection", lambda _cid: {"id": "docs", "name": "Docs"})
+    dispatched_paths = []
+
+    def dispatch() -> None:
+        dispatched_paths.extend(job["path"] for job in isolated_jobs.values() if job.get("status") == "queued")
+
+    monkeypatch.setattr(system_service, "_dispatch_next_index_job", dispatch)
+    monkeypatch.setattr(system_service.time, "strftime", lambda _format: "20260101-000000")
+
+    first = await system_service.system_index_upload(
+        object(),
+        label="import",
+        collection_id="docs",
+        embed_model="",
+        aggressive_quant=False,
+        watch_id="",
+        files=[UploadFile(filename="one.txt", file=BytesIO(b"one"))],
+    )
+    second = await system_service.system_index_upload(
+        object(),
+        label="import",
+        collection_id="docs",
+        embed_model="",
+        aggressive_quant=False,
+        watch_id="",
+        files=[UploadFile(filename="two.txt", file=BytesIO(b"two"))],
+    )
+    assert first["path"] != second["path"]
+    assert Path(first["path"], "one.txt").read_bytes() == b"one"
+    assert Path(second["path"], "two.txt").read_bytes() == b"two"
+
+    watched = await system_service.system_index_upload(
+        object(),
+        label="sync",
+        collection_id="docs",
+        embed_model="",
+        aggressive_quant=False,
+        watch_id="watch",
+        files=[UploadFile(filename="fresh.txt", file=BytesIO(b"fresh"))],
+    )
+    mirror = Path(watched["path"])
+    assert isolated_jobs[watched["job_id"]]["path"] == str(mirror)
+    assert dispatched_paths[-1] == str(mirror)
+    (mirror / "live.txt").write_text("keep", encoding="utf-8")
+    digest = hashlib.sha256(b"fresh.txt" + b"same").hexdigest()
+    isolated_jobs["existing"] = {"id": "existing", "dedupe_key": f"docs:{digest}", "status": "completed"}
+    duplicate = await system_service.system_index_upload(
+        object(),
+        label="sync",
+        collection_id="docs",
+        embed_model="",
+        aggressive_quant=False,
+        watch_id="watch",
+        files=[UploadFile(filename="fresh.txt", file=BytesIO(b"same"))],
+    )
+    assert duplicate["duplicate"] is True
+    assert (mirror / "live.txt").read_text(encoding="utf-8") == "keep"
 
 
 @pytest.mark.asyncio
@@ -281,7 +419,7 @@ def test_index_job_persistence_restore_prune_and_public_helpers(tmp_path, monkey
         system_service._progress_changes(
             {"phase": "embedding", "determinate": True, "batches_total": 4, "batches_processed": 2}
         )["progress"]
-        == 76
+        == 77
     )
 
 
@@ -314,18 +452,18 @@ def test_collection_and_job_mutation_helpers(monkeypatch, isolated_jobs) -> None
 
 
 @pytest.mark.parametrize(
-    ("line", "minimum", "phase"),
+    ("line", "expected", "phase"),
     [
-        ("chunking documents", 45, "chunking"),
-        ("Embeddings lote 2/4", 76, "embedding"),
-        ("embedding started", 65, "embedding"),
-        ("persisting index", 88, "saving_index"),
-        ("completed", 96, "finishing"),
-        ("other", 7, "indexing"),
+        ("chunking documents", 7, "chunking"),
+        ("Embeddings lote 2/4", 77, "embedding"),
+        ("embedding started", 7, "embedding"),
+        ("persisting index", 92, "saving_index"),
+        ("completed", 97, "finishing"),
+        ("other", 7, ""),
     ],
 )
-def test_line_progress_states(line: str, minimum: int, phase: str) -> None:
-    assert system_service._line_progress(line, 7) == (minimum, phase)
+def test_line_progress_states(line: str, expected: int, phase: str) -> None:
+    assert system_service._line_progress(line, 7) == (expected, phase)
 
 
 def test_run_index_job_handles_cancellation_failure_and_missing_stdout(monkeypatch, isolated_jobs) -> None:

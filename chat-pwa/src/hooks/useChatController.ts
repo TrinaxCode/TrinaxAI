@@ -15,7 +15,7 @@ import { sanitizeExportFilename, serializeChatExport } from '../lib/chatExport';
 import type { AgentHandoff } from '../components/chat/modeRouter';
 import { localizedBuiltins, QUICK_CHIP_POOL } from '../components/chat/commands';
 import type { BuiltinKind, ChatPrompt, QuickChipDef } from '../components/chat/types';
-import { isLocalHostBrowser } from '../lib/authHeaders';
+import { deviceSessionHasScope, isLocalHostBrowser } from '../lib/authHeaders';
 import { useChatVoice, type ChatSendOptions } from './useChatVoice';
 import { useChatDocuments } from './useChatDocuments';
 import { useChatAttachments } from './useChatAttachments';
@@ -133,12 +133,12 @@ export function useChatController({
     voiceLang,
   });
   useEffect(() => {
-    if (callMode) return undefined;
+    if (callMode || isMobile) return undefined;
     const frame = window.requestAnimationFrame(() => {
       inputRef.current?.focus({ preventScroll: true });
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [callMode]);
+  }, [callMode, isMobile]);
   const handleStop = useCallback(() => {
     audioManager.play(callModeRef.current ? 'call-exit' : 'cancel');
     stopVoice();
@@ -431,7 +431,7 @@ export function useChatController({
   });
   useEffect(() => { try { localStorage.setItem('tc-research-mode', researchMode ? '1' : '0'); } catch { /* ignore */ } }, [researchMode]);
   const [webSearchMode, setWebSearchMode] = useState<boolean>(() => {
-    try { return isLocalHostBrowser() && localStorage.getItem('tc-web-search-mode') === '1'; } catch { return false; }
+    try { return localStorage.getItem('tc-web-search-mode') === '1'; } catch { return false; }
   });
   const [webSearchAvailable, setWebSearchAvailable] = useState<boolean | null>(null);
   useEffect(() => { try { localStorage.setItem('tc-web-search-mode', webSearchMode ? '1' : '0'); } catch { /* ignore */ } }, [webSearchMode]);
@@ -458,7 +458,7 @@ export function useChatController({
     };
   }, []);
   const handleWebSearchModeChange = useCallback((enabled: boolean) => {
-    if (enabled && !isLocalHostBrowser()) {
+    if (enabled && !isLocalHostBrowser() && !deviceSessionHasScope('web')) {
       onWebSearchBlocked?.();
       return;
     }

@@ -42,6 +42,51 @@ def test_result_validation_authority_and_ranking() -> None:
     assert web._source_authority("https://service.gob.mx") == "primary"
 
 
+def test_result_ranking_drops_distinctive_topic_distractors() -> None:
+    ranked = web._rank_results(
+        [
+            {
+                "title": "Ensayo triaxial de suelos",
+                "url": "https://example.com/ensayo-triaxial",
+                "snippet": "Procedimiento de laboratorio.",
+            },
+            {
+                "title": "TrinaxAI local assistant",
+                "url": "https://trinaxcode.example/trinaxai",
+                "snippet": "Local-first AI assistant.",
+            },
+        ],
+        "TrinaxAI",
+    )
+
+    assert [row["title"] for row in ranked] == ["TrinaxAI local assistant"]
+
+
+def test_result_ranking_keeps_provider_results_when_no_topic_matches() -> None:
+    results = [
+        {"title": "First result", "url": "https://example.com/one", "snippet": "A synonym."},
+        {"title": "Second result", "url": "https://example.com/two", "snippet": "Another synonym."},
+    ]
+
+    assert web._rank_results(results, "unmatched topic") == [
+        {**results[0], "authority": "secondary"},
+        {**results[1], "authority": "secondary"},
+    ]
+
+
+@pytest.mark.parametrize(
+    ("url", "authority"),
+    [
+        ("https://python.org/downloads/", "primary"),
+        ("https://docs.python.org/3/", "primary"),
+        ("https://python.org.example.test/", "secondary"),
+        ("https://example.org/python.org/", "secondary"),
+    ],
+)
+def test_source_authority_allows_known_publishers_not_lookalikes(url: str, authority: str) -> None:
+    assert web._source_authority(url) == authority
+
+
 def test_public_address_and_target_normalization(monkeypatch) -> None:
     assert not web._is_public_address("not-an-ip")
     assert not web._is_public_address("::ffff:127.0.0.1")
@@ -132,7 +177,7 @@ def test_page_reader_rejects_status_media_encoding_and_short_text(monkeypatch) -
                 200,
                 {"Content-Type": "text/html", "Content-Encoding": "gzip"},
             ),
-            "compressed",
+            "compressed response is unsupported",
         ),
     ]:
         monkeypatch.setattr(web, "_open_pinned_response", lambda *_args, page=page, **_kwargs: (page, connection))

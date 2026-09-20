@@ -23,6 +23,9 @@ vi.mock('../i18n/I18nContext', async () => {
     webSearchSystemPermission: 'Perform this action from localhost on the host.',
     webSearchResetButton: 'Reset',
     webSearchConnectionSuccess: 'Connection successful: {provider}',
+    remoteWebSearchNoticeTitle: 'Web search is unavailable here',
+    remoteWebSearchNoticeMessage: 'To configure web search, access TrinaxAI from localhost on the main computer.',
+    remoteWebSearchNoticeButton: 'Understood',
   } as Record<string, string>)[key] || key }) };
 });
 vi.mock('../theme/ThemeContext', () => ({ useTheme: () => ({ isDark: false }) }));
@@ -60,9 +63,10 @@ describe('WebSearchSettings', () => {
     expect(await screen.findByText('Connection successful: duckduckgo')).toBeInTheDocument();
   });
 
-  it('blocks the form without host capability', () => {
+  it('shows the shared permission modal without host capability', () => {
     render(<WebSearchSettings canManageSystem={false} />);
-    expect(screen.getByRole('alert')).toHaveTextContent('localhost');
+    expect(screen.getByRole('heading', { name: 'Web search is unavailable here' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Understood' })).toBeInTheDocument();
   });
 
   it('aborts the connection test when saving changed credentials fails', async () => {

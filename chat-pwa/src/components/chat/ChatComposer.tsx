@@ -1,6 +1,6 @@
 import type { ChangeEvent, KeyboardEvent, RefObject } from 'react';
-import { useId } from 'react';
-import { AnimatePresence, motion } from 'framer-motion';
+import { useEffect, useId } from 'react';
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { MdAdd, MdClose, MdImage, MdMic, MdPhone, MdSend, MdStop, MdUploadFile } from 'react-icons/md';
 import type { ChatEngine, Collection } from '../../lib/api';
 import { useI18n } from '../../i18n/I18nContext';
@@ -95,6 +95,7 @@ export default function ChatComposer({
   const { t, lang } = useI18n();
   const attachmentMenuId = useId();
   const documentCollectionId = useId();
+  const prefersReducedMotion = useReducedMotion();
   const filteredPrompts = prompts.filter((prompt) => prompt.name.includes(slashFilter));
   const canSend = Boolean(input.trim() || attachedImages.length > 0 || attachedDocs.length > 0);
   const showCallButton = !canSend;
@@ -102,13 +103,38 @@ export default function ChatComposer({
   // stopped manually, even after text has been recognized into the input.
   const showDictationButton = !callMode;
 
+  // Keyboard shortcut: "/" or Cmd/Ctrl+K focuses the composer, so the
+  // conversation keeps a fast keyboard path like the rest of the UI.
+  useEffect(() => {
+    if (callMode) return undefined;
+    const focusComposer = (event: globalThis.KeyboardEvent) => {
+      const target = event.target instanceof HTMLElement ? event.target : null;
+      const typing = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable);
+      const isShortcut = (event.key === '/' && !event.metaKey && !event.ctrlKey && !event.altKey)
+        || ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k');
+      if (!isShortcut || typing || event.defaultPrevented) return;
+      event.preventDefault();
+      inputRef.current?.focus();
+    };
+    document.addEventListener('keydown', focusComposer);
+    return () => document.removeEventListener('keydown', focusComposer);
+  }, [callMode, inputRef]);
+
   return (
     <div
       className="shrink-0 px-2 pt-2 sm:px-4"
       style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 12px)' }}
     >
-      {(docUploadStatus || docConvertProgress) && (
-        <div className={`mb-2 rounded-xl border px-3 py-2 ${isDark ? 'border-white/[0.08] bg-white/[0.03]' : 'border-gray-200 bg-gray-50'}`} role="status">
+      <AnimatePresence initial={false}>
+        {(docUploadStatus || docConvertProgress) && (
+          <motion.div
+            initial={prefersReducedMotion ? false : { opacity: 0, height: 0, y: 8 }}
+            animate={{ opacity: 1, height: 'auto', y: 0 }}
+            exit={prefersReducedMotion ? { opacity: 1 } : { opacity: 0, height: 0, y: 8 }}
+            transition={{ duration: prefersReducedMotion ? 0 : 0.2, ease: [0.16, 1, 0.3, 1] }}
+            className={`mb-2 overflow-hidden rounded-xl border px-3 py-2 ${isDark ? 'border-white/[0.08] bg-white/[0.03]' : 'border-gray-200 bg-gray-50'}`}
+            role="status"
+          >
           {docUploadStatus && <p className={`text-xs ${isDark ? 'text-white/55' : 'text-gray-600'}`}>{docUploadStatus}</p>}
           {docConvertProgress && (
             <div className="mt-2">
@@ -124,19 +150,38 @@ export default function ChatComposer({
               </div>
             </div>
           )}
-        </div>
-      )}
+          </motion.div>
+        )}
+      </AnimatePresence>
 
-      {attachedDocs.length > 0 && (
-        <div className={`mb-2 space-y-2 rounded-xl border px-3 py-2 ${isDark ? 'border-white/[0.08] bg-white/[0.03]' : 'border-gray-200 bg-gray-50'}`}>
+      <AnimatePresence initial={false}>
+        {attachedDocs.length > 0 && (
+          <motion.div
+            layout
+            initial={prefersReducedMotion ? false : { opacity: 0, height: 0, y: 8 }}
+            animate={{ opacity: 1, height: 'auto', y: 0 }}
+            exit={prefersReducedMotion ? { opacity: 1 } : { opacity: 0, height: 0, y: 8 }}
+            transition={{ duration: prefersReducedMotion ? 0 : 0.22, ease: [0.16, 1, 0.3, 1] }}
+            className={`mb-2 space-y-2 overflow-hidden rounded-xl border px-3 py-2 ${isDark ? 'border-white/[0.08] bg-white/[0.03]' : 'border-gray-200 bg-gray-50'}`}
+          >
           <div className="flex flex-wrap items-center gap-2">
-            {attachedDocs.map((document) => (
-              <span key={document.name} className={`inline-flex max-w-full items-center gap-1.5 rounded-lg px-2 py-1 text-[11px] ${isDark ? 'bg-white/[0.06] text-white/60' : 'bg-white text-gray-600'}`}>
+            <AnimatePresence initial={false}>
+              {attachedDocs.map((document) => (
+                <motion.span
+                  layout
+                  key={document.name}
+                  initial={prefersReducedMotion ? false : { opacity: 0, scale: 0.88, y: 6 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  exit={prefersReducedMotion ? { opacity: 1 } : { opacity: 0, scale: 0.88, y: 6 }}
+                  transition={{ duration: prefersReducedMotion ? 0 : 0.18, ease: [0.16, 1, 0.3, 1] }}
+                  className={`inline-flex max-w-full items-center gap-1.5 rounded-lg px-2 py-1 text-[11px] ${isDark ? 'bg-white/[0.06] text-white/60' : 'bg-white text-gray-600'}`}
+                >
                 <MdUploadFile size={14} />
                 <span className="max-w-48 truncate">{document.name}</span>
                 {document.truncated && <span className="text-amber-400">{t('truncated')}</span>}
-              </span>
-            ))}
+                </motion.span>
+              ))}
+            </AnimatePresence>
             <button onClick={onClearDocs} className={`ml-auto rounded-md p-1 ${isDark ? 'text-white/35 hover:bg-white/[0.06] hover:text-white' : 'text-gray-400 hover:bg-gray-100 hover:text-gray-700'}`} aria-label={t('removeDocument')} title={t('removeDocument')}><MdClose size={16} /></button>
           </div>
           {engine === 'rag' && (
@@ -154,68 +199,107 @@ export default function ChatComposer({
               <button onClick={onIndexAttachedDocs} className="rounded-lg bg-[#006bbd]/15 px-2.5 py-1 text-[11px] font-medium text-[#4ea3e0] hover:bg-[#006bbd]/25">{t('indexAttachedNow')}</button>
             </div>
           )}
-        </div>
-      )}
+          </motion.div>
+        )}
+      </AnimatePresence>
 
-      {attachedImages.length > 0 && (
-        <div className="mb-2 flex flex-wrap gap-2">
-          {attachedImages.map((image, index) => (
-            <div key={`${image.file.name}-${index}`} className="relative">
+      <AnimatePresence initial={false}>
+        {attachedImages.length > 0 && (
+          <motion.div
+            layout
+            initial={prefersReducedMotion ? false : { opacity: 0, height: 0, y: 8 }}
+            animate={{ opacity: 1, height: 'auto', y: 0 }}
+            exit={prefersReducedMotion ? { opacity: 1 } : { opacity: 0, height: 0, y: 8 }}
+            transition={{ duration: prefersReducedMotion ? 0 : 0.22, ease: [0.16, 1, 0.3, 1] }}
+            className="mb-2 flex flex-wrap gap-2 overflow-hidden"
+          >
+            <AnimatePresence initial={false}>
+              {attachedImages.map((image, index) => (
+                <motion.div
+                  layout
+                  key={`${image.file.name}-${index}`}
+                  initial={prefersReducedMotion ? false : { opacity: 0, scale: 0.82, y: 8 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  exit={prefersReducedMotion ? { opacity: 1 } : { opacity: 0, scale: 0.82, y: 8 }}
+                  transition={{ duration: prefersReducedMotion ? 0 : 0.2, ease: [0.16, 1, 0.3, 1] }}
+                  className="relative"
+                >
               <img src={image.dataUrl} alt={`${t('attachedImage')} ${index + 1}`} className="h-20 w-auto rounded-lg border border-white/[0.1] object-cover" width={160} height={80} />
               <button onClick={() => onRemoveImage(index)} className="absolute -right-2 -top-2 rounded-full border border-white/20 bg-black/80 p-0.5 text-white/80 hover:text-white" aria-label={`${t('removeImage')} ${index + 1}`}><MdClose size={14} /></button>
-            </div>
-          ))}
-        </div>
-      )}
+                </motion.div>
+              ))}
+            </AnimatePresence>
+          </motion.div>
+        )}
+      </AnimatePresence>
       {imageError && <p className="mb-2 text-xs text-red-300/90">{imageError}</p>}
       <input ref={fileInputRef} type="file" accept={IMAGE_FILE_ACCEPT} aria-label={t('attachImage')} multiple className="hidden" onChange={onPickImage} />
       <input ref={docInputRef} type="file" accept={DOCUMENT_FILE_ACCEPT} aria-label={t('attachDocument')} multiple className="hidden" onChange={onPickDocs} />
 
       <div className="relative">
-        {engine === 'rag' && collections.length > 0 && (
-          <div className={`chat-active-collections absolute bottom-full left-0 right-0 z-20 mb-2 flex items-center gap-2 overflow-x-auto rounded-xl px-2 py-1.5 ${isDark ? 'text-white/70' : 'text-gray-600'}`}>
-            <span className={`shrink-0 text-[10px] uppercase tracking-wider ${isDark ? 'text-white/35' : 'text-gray-400'}`}>{t('activeCollections')}</span>
-            {collections.map((collection) => {
-              const active = activeCollectionIds.includes(collection.id);
-              return (
-                <button
-                  key={collection.id}
-                  onClick={() => onToggleCollection(collection.id)}
-                  className={`max-w-36 shrink-0 truncate rounded-full border px-3 py-1 text-[11px] font-medium transition-[background-color,color,border-color,transform] active:scale-95 ${active ? 'animate-soft-pulse border-[#006bbd]/50 text-[#006bbd]' : isDark ? 'border-white/[0.08] bg-white/[0.03] text-white/45 hover:text-white/75' : 'border-gray-200 bg-gray-50 text-gray-500 hover:text-gray-800'}`}
-                  title={collection.name}
-                  aria-pressed={active}
-                >
-                  {collection.name}
-                </button>
-              );
-            })}
-          </div>
-        )}
+        <AnimatePresence>
+          {engine === 'rag' && collections.length > 0 && (
+            <motion.div
+              initial={{ opacity: 0, y: 10, scale: 0.985 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 10, scale: 0.985 }}
+              transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+              className={`chat-active-collections pointer-events-none absolute bottom-full left-0 right-0 z-20 mb-2 flex items-center gap-2 overflow-x-auto rounded-xl px-2 py-1.5 ${isDark ? 'text-white/70' : 'text-gray-600'}`}
+            >
+              <span className={`shrink-0 text-[10px] uppercase tracking-wider ${isDark ? 'text-white/35' : 'text-gray-400'}`}>{t('activeCollections')}</span>
+              {collections.map((collection) => {
+                const active = activeCollectionIds.includes(collection.id);
+                return (
+                  <button
+                    key={collection.id}
+                    onClick={() => onToggleCollection(collection.id)}
+                    className={`pointer-events-auto max-w-36 shrink-0 truncate rounded-full border px-3 py-1 text-[11px] font-medium transition-[background-color,color,border-color,transform] active:scale-95 ${active ? 'animate-soft-pulse border-[#006bbd]/50 text-[#006bbd]' : isDark ? 'border-white/[0.08] bg-white/[0.03] text-white/45 hover:text-white/75' : 'border-gray-200 bg-gray-50 text-gray-500 hover:text-gray-800'}`}
+                    title={collection.name}
+                    aria-pressed={active}
+                  >
+                    {collection.name}
+                  </button>
+                );
+              })}
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         <ComposerLayout
         value={input}
         onChange={onInputChange}
         onKeyDown={onKeyDown}
         placeholder={placeholder}
+        ariaKeyShortcuts="/ Meta+K Control+K"
         inputRef={inputRef}
         disabled={streaming}
         isDark={isDark}
         expandLabel={t('expandComposer')}
         closeLabel={t('closeExpandedComposer')}
-        floatingContent={slashOpen && filteredPrompts.length > 0 && (
-          <div className={`absolute bottom-full left-0 right-0 z-30 mb-2 max-h-48 overflow-y-auto rounded-xl ${isDark ? 'border-white/[0.08] bg-black/95' : 'border-gray-200 bg-white shadow-lg'}`}>
-            {filteredPrompts.map((prompt) => (
-              <button key={prompt.name} onClick={() => onPromptSelect(prompt)} className={`flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm ${isDark ? 'text-white/60 hover:bg-white/[0.04] hover:text-white' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'}`}>
-                <span className="font-mono text-[10px] text-[#006bbd]">/{prompt.name}</span>
-                {prompt.builtin && <span className="rounded bg-[#006bbd]/15 px-1 py-0.5 text-[8px] font-bold uppercase tracking-wider text-[#006bbd]">{t('builtInCommand')}</span>}
-                <span className="truncate">{prompt.builtin ? getBuiltinHint(prompt.name, lang) : `${(prompt.text || '').slice(0, 50)}...`}</span>
-              </button>
-            ))}
-          </div>
+        floatingContent={(
+          <AnimatePresence>
+            {slashOpen && filteredPrompts.length > 0 && (
+              <motion.div
+                initial={{ opacity: 0, y: 10, scale: 0.985 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: 10, scale: 0.985 }}
+                transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
+                className={`absolute bottom-full left-0 right-0 z-30 mb-2 max-h-48 overflow-y-auto rounded-xl ${isDark ? 'border-white/[0.08] bg-black/95' : 'border-gray-200 bg-white shadow-lg'}`}
+              >
+                {filteredPrompts.map((prompt) => (
+                  <button key={prompt.name} onClick={() => onPromptSelect(prompt)} className={`flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm ${isDark ? 'text-white/60 hover:bg-white/[0.04] hover:text-white' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'}`}>
+                    <span className="font-mono text-[10px] text-[#006bbd]">/{prompt.name}</span>
+                    {prompt.builtin && <span className="rounded bg-[#006bbd]/15 px-1 py-0.5 text-[8px] font-bold uppercase tracking-wider text-[#006bbd]">{t('builtInCommand')}</span>}
+                    <span className="truncate">{prompt.builtin ? getBuiltinHint(prompt.name, lang) : `${(prompt.text || '').slice(0, 50)}...`}</span>
+                  </button>
+                ))}
+              </motion.div>
+            )}
+          </AnimatePresence>
         )}
         leftActions={!streaming && (
           <div ref={attachmentMenuRef} className="relative grid h-11 w-11 shrink-0 place-items-center">
-            <button type="button" onClick={() => onAttachmentMenuChange(!attachmentMenuOpen)} className={`grid h-11 w-11 place-items-center rounded-xl transition-colors ${isDark ? 'bg-white/[0.06] text-white/55 hover:bg-white/[0.1] hover:text-white' : 'bg-gray-200 text-gray-500 hover:bg-gray-300 hover:text-gray-700'}`} aria-label={`${t('attachImage')} / ${t('attachDocument')}`} aria-expanded={attachmentMenuOpen} aria-controls={attachmentMenuId}><MdAdd size={18} /></button>
+            <button type="button" onClick={() => onAttachmentMenuChange(!attachmentMenuOpen)} className={`grid h-11 w-11 place-items-center rounded-xl transition-colors ${isDark ? 'text-white/55 hover:text-white' : 'text-gray-500 hover:text-gray-700'}`} aria-label={`${t('attachImage')} / ${t('attachDocument')}`} aria-expanded={attachmentMenuOpen} aria-controls={attachmentMenuId}><MdAdd size={18} /></button>
             <AnimatePresence>
               {attachmentMenuOpen && <motion.div id={attachmentMenuId} role="menu" initial={{ opacity: 0, y: 8, scale: 0.96 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 8, scale: 0.96 }} transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }} className={`absolute bottom-full left-0 z-40 mb-2 min-w-44 overflow-hidden rounded-xl border p-1 shadow-xl ${isDark ? 'border-white/[0.08] bg-[#151515]' : 'border-gray-200 bg-white'}`}>
                 <button type="button" role="menuitem" onClick={() => { onAttachmentMenuChange(false); fileInputRef.current?.click(); }} className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm ${isDark ? 'text-white/75 hover:bg-white/[0.08]' : 'text-gray-700 hover:bg-gray-100'}`}><MdImage size={18} /> {t('attachImage')}</button>
@@ -227,9 +311,9 @@ export default function ChatComposer({
         rightActions={(
           <>
             <AnimatePresence initial={false}>
-              {!streaming && showDictationButton && <motion.button type="button" initial={{ opacity: 0, scale: 0.72, width: 0 }} animate={{ opacity: 1, scale: 1, width: 44 }} exit={{ opacity: 0, scale: 0.72, width: 0 }} transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }} onClick={onToggleDictation} className={`grid h-11 shrink-0 place-items-center overflow-hidden rounded-xl transition-colors ${!voiceSupported ? isDark ? 'bg-white/[0.03] text-white/25 hover:text-white/45' : 'bg-gray-100 text-gray-300 hover:text-gray-500' : listening ? 'animate-pulse bg-red-500/30 text-red-400' : isDark ? 'bg-white/[0.06] text-white/50 hover:bg-white/[0.1] hover:text-white' : 'bg-gray-200 text-gray-500 hover:bg-gray-300 hover:text-gray-700'}`} aria-label={!voiceSupported ? t('dictationUnavailable') : listening ? t('stopDictation') : t('startDictation')} title={!voiceSupported ? t('dictationUnavailable') : listening ? t('stopDictation') : t('startDictation')}><MdMic size={18} /></motion.button>}
+              {!streaming && showDictationButton && <motion.button type="button" initial={{ opacity: 0, scale: 0.72, width: 0 }} animate={{ opacity: 1, scale: 1, width: 44 }} exit={{ opacity: 0, scale: 0.72, width: 0 }} transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }} onClick={onToggleDictation} className={`grid h-11 shrink-0 place-items-center overflow-hidden rounded-xl transition-colors ${!voiceSupported ? isDark ? 'text-white/25 hover:text-white/45' : 'text-gray-300 hover:text-gray-500' : isDark ? 'text-white/50 hover:text-white' : 'text-gray-500 hover:text-gray-700'}`} aria-label={!voiceSupported ? t('dictationUnavailable') : listening ? t('stopDictation') : t('startDictation')} title={!voiceSupported ? t('dictationUnavailable') : listening ? t('stopDictation') : t('startDictation')} aria-pressed={listening}><MdMic size={18} /></motion.button>}
             </AnimatePresence>
-            {streaming ? <button onClick={onStop} className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-red-500/20 text-red-400 transition-colors hover:bg-red-500/30" aria-label={t('stop')}><MdStop size={18} /></button> : <button onClick={showCallButton ? onToggleCall : onSend} className={`grid h-11 w-11 shrink-0 place-items-center rounded-xl text-white transition-[background-color,transform] duration-200 ${showCallButton ? callMode ? 'bg-red-500/80 hover:bg-red-500' : 'bg-[#006bbd] hover:bg-[#0059a0]' : 'bg-[#006bbd] hover:bg-[#0059a0] animate-soft-pulse'}`} aria-label={showCallButton ? (callMode ? t('exitVoiceMode') : t('voiceMode')) : t('send')} title={showCallButton ? (callMode ? t('exitVoiceMode') : t('voiceMode')) : t('send')}><AnimatePresence mode="wait" initial={false}><motion.span key={showCallButton ? 'phone' : 'send'} initial={{ opacity: 0, rotate: -18, scale: 0.7 }} animate={{ opacity: 1, rotate: 0, scale: 1 }} exit={{ opacity: 0, rotate: 18, scale: 0.7 }} transition={{ duration: 0.16 }}>{showCallButton ? <MdPhone size={18} /> : <MdSend size={18} />}</motion.span></AnimatePresence></button>}
+            {streaming ? <button onClick={onStop} className="composer-action-primary grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-red-500/20 text-red-400 transition-colors hover:bg-red-500/30" aria-label={t('stop')}><MdStop size={18} /></button> : <button onClick={showCallButton ? onToggleCall : onSend} className={`composer-action-primary grid h-11 w-11 shrink-0 place-items-center rounded-xl text-white transition-[background-color,transform] duration-200 ${showCallButton ? callMode ? 'bg-red-500/80 hover:bg-red-500' : 'bg-[#006bbd] hover:bg-[#0059a0]' : 'bg-[#006bbd] hover:bg-[#0059a0] animate-soft-pulse'}`} aria-label={showCallButton ? (callMode ? t('exitVoiceMode') : t('voiceMode')) : t('send')} title={showCallButton ? (callMode ? t('exitVoiceMode') : t('voiceMode')) : t('send')}><AnimatePresence mode="wait" initial={false}><motion.span key={showCallButton ? 'phone' : 'send'} initial={{ opacity: 0, rotate: -18, scale: 0.7 }} animate={{ opacity: 1, rotate: 0, scale: 1 }} exit={{ opacity: 0, rotate: 18, scale: 0.7 }} transition={{ duration: 0.16 }}>{showCallButton ? <MdPhone size={18} /> : <MdSend size={18} />}</motion.span></AnimatePresence></button>}
           </>
         )}
         />

@@ -1,0 +1,29 @@
+{
+  "name": "trinaxai",
+  "version": "1.2.6",
+  "description": "Verified installer and command-line launcher for TrinaxAI.",
+  "license": "AGPL-3.0-or-later",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/TrinaxCode/TrinaxAI.git",
+    "directory": "npm-package"
+  },
+  "homepage": "https://www.trinaxai.app/",
+  "bugs": "https://github.com/TrinaxCode/TrinaxAI/issues",
+  "engines": {
+    "node": ">=18"
+  },
+  "bin": {
+    "trinaxai": "bin/trinaxai.js"
+  },
+  "files": [
+    "bin",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "node test/cli.test.js"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
