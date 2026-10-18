@@ -10,12 +10,15 @@ import pytest
 
 from app.services import runtime_context
 
+posix_only = pytest.mark.skipif(os.name == "nt", reason="POSIX permission modes and fchmod")
+
 
 def test_request_language_defaults_to_english_without_a_request() -> None:
     assert runtime_context.request_language(None) == "en"
     assert runtime_context.request_language(SimpleNamespace(headers={"accept-language": "es-MX,en"})) == "es"
 
 
+@posix_only
 def test_try_fchmod_reports_unsupported_and_failing_platforms(monkeypatch) -> None:
     monkeypatch.delattr(os, "fchmod", raising=False)
     assert runtime_context._try_fchmod(0, 0o700) is False
@@ -27,6 +30,7 @@ def test_try_fchmod_reports_unsupported_and_failing_platforms(monkeypatch) -> No
     assert runtime_context._try_fchmod(0, 0o700) is False
 
 
+@posix_only
 def test_harden_creates_missing_root_and_restricts_tree_without_following_links(tmp_path) -> None:
     root = tmp_path / "storage"
     runtime_context.harden_persist_directory(str(root))
@@ -50,6 +54,7 @@ def test_harden_creates_missing_root_and_restricts_tree_without_following_links(
     assert stat.S_IMODE(outside.stat().st_mode) == 0o644
 
 
+@posix_only
 def test_harden_rejects_links_files_and_unopenable_roots(tmp_path, monkeypatch) -> None:
     real = tmp_path / "real"
     real.mkdir()
@@ -71,6 +76,7 @@ def test_harden_rejects_links_files_and_unopenable_roots(tmp_path, monkeypatch) 
         runtime_context.harden_persist_directory(str(real))
 
 
+@posix_only
 def test_harden_falls_back_to_directory_mode_without_fchmod(tmp_path, monkeypatch) -> None:
     root = tmp_path / "plain"
     root.mkdir()
