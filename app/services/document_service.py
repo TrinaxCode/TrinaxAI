@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import pathlib
 import zipfile
 
 # ruff: noqa: F405
@@ -276,7 +277,17 @@ def _convert_office_bytes(data: bytes, source_ext: str, target_ext: str) -> byte
             stream.write(data)
         try:
             result = subprocess.run(
-                [executable, "--headless", "--convert-to", target_ext.lstrip("."), "--outdir", directory, source],
+                [
+                    executable,
+                    # Private profile per call: concurrent soffice runs sharing one profile abort without converting.
+                    f"-env:UserInstallation={pathlib.Path(directory, 'profile').as_uri()}",
+                    "--headless",
+                    "--convert-to",
+                    target_ext.lstrip("."),
+                    "--outdir",
+                    directory,
+                    source,
+                ],
                 capture_output=True,
                 text=True,
                 timeout=90,

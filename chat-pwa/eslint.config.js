@@ -6,6 +6,7 @@ export default [
   {
     ignores: [
       'dist/**',
+      '.e2e-dist-*/**',
       'server-dist/**',
       'node_modules/**',
       'coverage/**',

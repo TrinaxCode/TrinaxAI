@@ -700,6 +700,7 @@ export default defineConfig({
     proxy: proxyConfig(),
   },
   build: {
+    cssTarget: ['chrome111', 'safari16.4', 'firefox128'],
     // Parallel E2E agents use one checkout. Give each gateway its own output
     // tree so one build cannot delete another gateway's live frontend.
     outDir: process.env.TRINAXAI_PWA_DIST || 'dist',

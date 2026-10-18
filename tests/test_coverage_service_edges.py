@@ -268,7 +268,9 @@ def test_memory_storage_and_selection_edges(monkeypatch, tmp_path: Path) -> None
         "_memory_load",
         lambda: {"memories": [{"text": "first"}, {"text": ""}, {"text": "second"}]},
     )
-    monkeypatch.setattr(memory_service, "get_llm", lambda _model: SimpleNamespace(complete=lambda _prompt: "summary"))
+    monkeypatch.setattr(
+        memory_service, "get_llm", lambda _model, **_kwargs: SimpleNamespace(complete=lambda _prompt: "summary")
+    )
     refreshed = memory_service._memory_refresh_sync(memory_service.MemoryRefreshRequest())
     assert refreshed["count"] == 3
     assert json.loads((tmp_path / "user_memory_summary.json").read_text(encoding="utf-8"))["summary"] == "summary"

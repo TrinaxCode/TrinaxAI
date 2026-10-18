@@ -102,7 +102,7 @@ export function useAgentController({
   const claimedRequestRef = useRef<string | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const historyCloseTimerRef = useRef<number | null>(null);
-  const historyDialogRef = useRef<HTMLElement | null>(null);
+  const historyDialogRef = useRef<HTMLDivElement | null>(null);
   const historyCloseButtonRef = useRef<HTMLButtonElement | null>(null);
   const mobileToolsRef = useRef<HTMLDivElement | null>(null);
   const mainContentRef = useRef<HTMLDivElement | null>(null);

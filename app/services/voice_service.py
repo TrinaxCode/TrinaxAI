@@ -9,10 +9,13 @@ API startup is not slowed down when voice is not used.
 
 from __future__ import annotations
 
+import io
 import logging
 import os
+import re
 import tempfile
 import threading
+import wave
 from typing import Any
 
 import config
@@ -76,7 +79,11 @@ def _write_temp_audio(data: bytes, filename: str | None) -> str:
         raise ValueError(f"Audio too large: {len(data)} bytes")
     suffix = _suffix_from_filename(filename)
     with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
-        tmp.write(data)
+        try:
+            tmp.write(data)
+        except OSError:
+            _cleanup_temp(tmp.name)
+            raise
         return tmp.name
 
 
@@ -129,7 +136,7 @@ def tts_available_backends() -> list[str]:
     except ImportError:
         pass
     try:
-        import piper_tts  # noqa: F401
+        import piper  # noqa: F401  (the piper-tts distribution installs the `piper` module)
 
         backends.append("piper")
     except ImportError:
@@ -166,7 +173,10 @@ def _pick_pyttsx3_voice(engine: Any, lang: str) -> str | None:
         voice_id = getattr(v, "id", "").lower()
         voice_languages = getattr(v, "languages", []) or []
         voice_languages = [str(language).lower() for language in voice_languages]
-        if base in voice_id or base in voice_languages:
+        # Match the language code as a whole token: a bare substring hits "voices"/"synthesis" for "es".
+        if re.search(rf"(?<![a-z]){re.escape(base)}(?![a-z])", voice_id) or any(
+            re.match(rf"\W*{re.escape(base)}(?![a-z])", language) for language in voice_languages
+        ):
             return v.id
     return None
 
@@ -196,21 +206,31 @@ def _tts_pyttsx3(text: str, lang: str) -> tuple[bytes, str]:
         engine.stop()
 
 
+def _find_piper_model(model_dir: str, lang: str) -> str | None:
+    """First ``<lang>*.onnx`` voice under *model_dir* (Piper ships voices as .onnx + .onnx.json)."""
+    base = lang.lower()[:2]
+    for name in sorted(os.listdir(model_dir)) if os.path.isdir(model_dir) else []:
+        if name.lower().startswith(base) and name.endswith(".onnx"):
+            return os.path.join(model_dir, name)
+    return None
+
+
 def _tts_piper(text: str, lang: str) -> tuple[bytes, str]:
     """Synthesize speech with Piper (lightweight ONNX TTS)."""
-    import piper_tts
+    from piper import PiperVoice
 
     if len(text) > config.VOICE_TTS_MAX_CHARS:
         text = text[: config.VOICE_TTS_MAX_CHARS]
 
     # Piper voice models live in storage/piper or are configured via env.
     model_dir = os.path.join(config.PERSIST_DIR, "piper")
-    model_path = os.getenv("TRINAXAI_PIPER_MODEL") or piper_tts.find_model(model_dir, lang)
+    model_path = os.getenv("TRINAXAI_PIPER_MODEL") or _find_piper_model(model_dir, lang)
     if not model_path or not os.path.exists(model_path):
         raise RuntimeError(f"Piper model not found for language {lang}")
-    synthesizer = piper_tts.PiperVoice(model_path)
-    audio = synthesizer.synthesize(text)
-    return audio, "audio/wav"
+    buffer = io.BytesIO()
+    with wave.open(buffer, "wb") as wav_file:
+        PiperVoice.load(model_path).synthesize_wav(text, wav_file)
+    return buffer.getvalue(), "audio/wav"
 
 
 def _tts_coqui(text: str, lang: str) -> tuple[bytes, str]:
@@ -220,10 +240,9 @@ def _tts_coqui(text: str, lang: str) -> tuple[bytes, str]:
     if len(text) > config.VOICE_TTS_MAX_CHARS:
         text = text[: config.VOICE_TTS_MAX_CHARS]
 
-    model_name = os.getenv("TRINAXAI_COQUI_MODEL", "tts_models/es/mai/tacotron2-DDC")
-    if not model_name:
-        # Fall back to English model if no specific model is configured.
-        model_name = "tts_models/en/ljspeech/tacotron2-DDC"
+    model_name = os.getenv("TRINAXAI_COQUI_MODEL") or (
+        "tts_models/es/mai/tacotron2-DDC" if lang.lower().startswith("es") else "tts_models/en/ljspeech/tacotron2-DDC"
+    )
     tts = TTS(model_name)
     with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
         out_path = tmp.name

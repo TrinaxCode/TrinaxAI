@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, useCallback, useRef } from 'react';
-import { AnimatePresence, motion } from 'framer-motion';
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { MdSearch, MdFolder, MdDescription, MdContentCopy, MdCheck, MdClose, MdFolderOpen, MdDelete, MdDeleteSweep, MdChevronRight } from 'react-icons/md';
 import { useTheme } from '../theme/ThemeContext';
 import { useI18n } from '../i18n/I18nContext';
@@ -38,6 +38,7 @@ function formatBytes(n: number): string {
 export default function KnowledgeBrowser({ onBack, canManageSystem = false, initialCollection, initialFile }: Props) {
   const { isDark } = useTheme();
   const { t } = useI18n();
+  const prefersReducedMotion = useReducedMotion();
   const toast = useToast();
   const [collections, setCollections] = useState<Collection[]>([]);
   const [loadingCollections, setLoadingCollections] = useState(false);
@@ -259,25 +260,26 @@ export default function KnowledgeBrowser({ onBack, canManageSystem = false, init
     }
   }, [activeCollectionId, refreshSources, t, toast]);
 
-  const bg = isDark ? 'bg-black/70 text-white' : 'bg-white/70 text-gray-900';
+  const bg = isDark ? 'text-white' : 'text-gray-900';
   const border = isDark ? 'border-white/[0.06]' : 'border-gray-200';
   const panelBg = isDark ? 'bg-white/[0.02]' : 'bg-gray-50';
   const hover = isDark ? 'hover:bg-white/[0.04]' : 'hover:bg-gray-100';
-  const muted = isDark ? 'text-white/45' : 'text-gray-500';
+  const muted = isDark ? 'text-white/65' : 'text-gray-600';
   const selected = isDark ? 'bg-[#006bbd]/15 text-white' : 'bg-[#006bbd]/10 text-gray-900';
-  const placeholder = isDark ? 'placeholder-white/25' : 'placeholder-gray-400';
+  const placeholder = isDark ? 'placeholder-white/55' : 'placeholder-gray-600';
+  const accent = isDark ? 'text-[#4aa7ed]' : 'text-[#005a9e]';
   const inputStyle = isDark
     ? 'bg-white/[0.03] border-white/[0.06] text-white/80'
     : 'bg-white border-gray-200 text-gray-800';
 
   const renderStatus = (loading: boolean, error: string | null, retry: () => void) => (
     <>
-      {loading && <p aria-live="polite" className={`px-3 py-2 text-xs ${muted}`}>{t('loading')}</p>}
+      {loading && <p aria-live="polite" className={`px-3 py-2 text-sm ${muted}`}>{t('loading')}</p>}
       {error && (
-        <div role="alert" aria-live="polite" className="px-3 py-2 text-xs">
+        <div role="alert" aria-live="polite" className="px-3 py-2 text-sm">
           <p className={muted}>{error}</p>
-          <button type="button" onClick={() => setRepairError({ message: error, retry })} className="mt-1 text-[#006bbd] underline underline-offset-2">{t('fixError')}</button>
-          <button type="button" onClick={retry} className="ml-3 mt-1 text-[#006bbd] underline underline-offset-2">{t('retry')}</button>
+          <button type="button" onClick={() => setRepairError({ message: error, retry })} className={`mt-1 min-h-11 rounded-lg underline underline-offset-2 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-[#4aa7ed] ${accent}`}>{t('fixError')}</button>
+          <button type="button" onClick={retry} className={`ml-3 mt-1 min-h-11 rounded-lg underline underline-offset-2 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-[#4aa7ed] ${accent}`}>{t('retry')}</button>
         </div>
       )}
     </>
@@ -290,7 +292,7 @@ export default function KnowledgeBrowser({ onBack, canManageSystem = false, init
       {!loadingSources && !sourcesError && filteredSources.length === 0 ? (
         <div className="flex flex-col items-center justify-center gap-2 px-4 py-8 text-center">
           <MdFolderOpen size={32} className={`opacity-25 ${isDark ? 'text-white' : 'text-gray-900'}`} />
-          <p className={`text-xs ${muted}`}>{sources.length === 0 ? t('noIndexedFiles') : t('noMatches')}</p>
+          <p className={`text-sm ${muted}`}>{sources.length === 0 ? t('noIndexedFiles') : t('noMatches')}</p>
         </div>
       ) : filteredSources.length > 0 && (
         filteredSources.map((s) => (
@@ -304,14 +306,14 @@ export default function KnowledgeBrowser({ onBack, canManageSystem = false, init
                 setActiveSourceId(s.source_id || null);
                 if (compact) setMobileView('chunks');
               }}
-              className={`flex-1 min-w-0 text-left px-3 py-2 ${activeFile === s.file && activeSourceId === (s.source_id || null) ? selected : `${muted} ${hover}`}`}
-              aria-selected={activeFile === s.file && activeSourceId === (s.source_id || null)}
+              className={`min-h-12 min-w-0 flex-1 px-3 py-2 text-left ${activeFile === s.file && activeSourceId === (s.source_id || null) ? selected : `${muted} ${hover}`}`}
+              aria-current={activeFile === s.file && activeSourceId === (s.source_id || null) ? 'true' : undefined}
             >
               <div className="flex items-center gap-2 min-w-0">
                 <MdDescription size={14} className="shrink-0 opacity-70" />
-                <span className={`text-xs truncate ${isDark ? 'text-white/80' : 'text-gray-800'}`}>{s.file}</span>
+                <span title={s.file} className={`truncate text-sm ${isDark ? 'text-white/80' : 'text-gray-800'}`}>{s.file}</span>
               </div>
-              <div className={`mt-1 text-[10px] ${muted} flex items-center gap-2`}>
+              <div className={`mt-1 flex items-center gap-2 text-xs ${muted}`}>
                 <span>{s.chunks} {t('chunksUnit')}</span>
                 <span>|</span>
                 <span>{formatBytes(s.size)}</span>
@@ -333,13 +335,13 @@ export default function KnowledgeBrowser({ onBack, canManageSystem = false, init
                 });
               }}
               disabled={deletingFile === sourceIdentity(s.file, s.source_id)}
-              className="hover-reveal shrink-0 p-2 mr-1 rounded-lg
-                         text-red-400/70 hover:text-red-400 hover:bg-red-400/10
-                         disabled:opacity-30 transition-[background-color,color,border-color,opacity,transform]"
+              className={`hover-reveal mr-1 grid h-11 w-11 shrink-0 place-items-center rounded-lg
+                         hover:bg-red-400/10 disabled:opacity-30 transition-[background-color,color,border-color,opacity,transform] focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-[#4aa7ed]
+                         ${isDark ? 'text-red-400 hover:text-red-300' : 'text-red-700 hover:text-red-800'}`}
               aria-label={`${t('delete')} ${s.file}`}
               title={t('delete')}
             >
-              <MdDelete size={14} />
+              <MdDelete size={16} />
             </button>}
           </div>
         ))
@@ -353,7 +355,7 @@ export default function KnowledgeBrowser({ onBack, canManageSystem = false, init
       {!activeFile ? (
         <div className={`flex-1 flex flex-col items-center justify-center gap-3 text-sm ${muted}`}>
           <MdDescription size={36} className="opacity-20" />
-          <span className="text-xs">{t('selectFilePrompt')}</span>
+          <span>{t('selectFilePrompt')}</span>
         </div>
       ) : (
         <>
@@ -361,20 +363,20 @@ export default function KnowledgeBrowser({ onBack, canManageSystem = false, init
             {!compact && (
               <div className="flex items-center gap-2 min-w-0">
                 <MdDescription size={16} className={`shrink-0 ${muted}`} />
-                <span className={`text-sm font-mono truncate ${isDark ? 'text-white/80' : 'text-gray-800'}`}>{activeFile}</span>
+                <span title={activeFile} className={`text-sm font-mono truncate ${isDark ? 'text-white/80' : 'text-gray-800'}`}>{activeFile}</span>
               </div>
             )}
-            <div className={`${compact ? 'text-[10px]' : 'mt-1 text-[11px]'} ${muted}`}>
+            <div className={`${compact ? '' : 'mt-1'} text-xs ${muted}`}>
               {chunkTotal} {t('chunksTotal')}
             </div>
-            <div className={`mt-2 flex items-center gap-2 rounded-lg border px-2 py-1.5 ${inputStyle}`}>
+            <div className={`mt-2 flex min-h-11 items-center gap-2 rounded-lg border px-2 py-1.5 ${inputStyle}`}>
               <MdSearch size={14} className={muted} />
               <input
                 value={chunkQuery}
                 onChange={(e) => setChunkQuery(e.target.value)}
                 placeholder={t('searchChunks')}
                 aria-label={t('searchChunks')}
-                className={`min-w-0 flex-1 rounded bg-transparent text-xs ${placeholder} focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4aa7ed] ${isDark ? 'text-white/80' : 'text-gray-800'}`}
+                className={`min-w-0 flex-1 rounded bg-transparent text-base md:text-sm ${placeholder} focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-[#4aa7ed] ${isDark ? 'text-white/80' : 'text-gray-800'}`}
               />
             </div>
           </div>
@@ -383,29 +385,29 @@ export default function KnowledgeBrowser({ onBack, canManageSystem = false, init
             {!loadingChunks && !chunksError && filteredChunks.length === 0 ? (
               <div className="flex flex-col items-center justify-center gap-2 py-8 text-center">
                 <MdSearch size={28} className={`opacity-25 ${isDark ? 'text-white' : 'text-gray-900'}`} />
-                <p className={`text-xs ${muted}`}>{chunks.length === 0 ? t('noChunks') : t('noMatches')}</p>
+                <p className={`text-sm ${muted}`}>{chunks.length === 0 ? t('noChunks') : t('noMatches')}</p>
               </div>
             ) : filteredChunks.length > 0 && (
               filteredChunks.map((chunk, idx) => (
                 <motion.div
                   key={chunk.id}
-                  initial={{ opacity: 0, y: 4 }}
+                  initial={prefersReducedMotion ? false : { opacity: 0, y: 4 }}
                   animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.18 }}
+                  transition={{ duration: prefersReducedMotion ? 0 : 0.18 }}
                   className={`rounded-xl border ${border} p-3 ${panelBg}`}
                 >
                   <div className="flex items-center justify-between gap-2 mb-2">
-                    <span className={`text-[10px] font-mono ${muted}`}>#{idx + 1}{chunk.metadata?.page ? ` | ${t('pageAbbrev')}${chunk.metadata.page}` : ''}</span>
+                    <span className={`font-mono text-xs ${muted}`}>#{idx + 1}{chunk.metadata?.page ? ` | ${t('pageAbbrev')}${chunk.metadata.page}` : ''}</span>
                     <button
                       onClick={() => copyChunk(chunk.text, chunk.id)}
-                      className={`p-1 rounded ${muted} ${hover}`}
+                      className={`grid h-11 w-11 place-items-center rounded-lg focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-[#4aa7ed] ${muted} ${hover}`}
                       aria-label={t('copyChunk')}
                       title={t('copy')}
                     >
                       {copiedChunkId === chunk.id ? <MdCheck size={14} /> : <MdContentCopy size={14} />}
                     </button>
                   </div>
-                  <pre className={`whitespace-pre-wrap break-words text-xs leading-relaxed ${isDark ? 'text-white/80' : 'text-gray-800'} font-mono`}>
+                  <pre className={`whitespace-pre-wrap break-words font-mono text-sm leading-relaxed ${isDark ? 'text-white/80' : 'text-gray-800'}`}>
                     {highlightText(chunk.text, chunkQuery)}
                   </pre>
                 </motion.div>
@@ -417,27 +419,41 @@ export default function KnowledgeBrowser({ onBack, canManageSystem = false, init
     </>
   );
 
+  const emptyCollections = (
+    <div className="mx-auto flex min-h-0 w-full max-w-sm flex-1 flex-col items-center justify-center gap-4 px-6 pb-8 text-center">
+      <span className={`grid h-16 w-16 place-items-center rounded-2xl border ${isDark ? 'border-sky-400/20 bg-sky-400/[0.08] text-sky-400' : 'border-sky-200 bg-sky-50 text-[#006bbd]'}`} aria-hidden="true">
+        <MdFolderOpen size={30} />
+      </span>
+      <div>
+        <h2 className={`text-lg font-semibold ${isDark ? 'text-white/90' : 'text-slate-800'}`}>{t('noCollections')}</h2>
+        <p className={`mt-2 text-sm leading-relaxed ${isDark ? 'text-white/60' : 'text-slate-600'}`}>{t(canManageSystem ? 'noCollectionsHint' : 'noCollectionsRemoteHint')}</p>
+      </div>
+      {canManageSystem && <a href="#/settings/indexing" className="inline-flex min-h-11 items-center justify-center rounded-xl bg-[#006bbd] px-4 text-sm font-medium text-white hover:bg-[#0059a0]">{t('openIndexing')}</a>}
+    </div>
+  );
+
   return (
     <div className={`browser-page h-full flex flex-col min-w-0 ${bg}`}>
       {/* Header */}
       <div className={`page-header shrink-0 flex items-center gap-3 px-4 pt-[env(safe-area-inset-top,0px)] pb-3 border-b ${border}`}>
         <BackButton onClick={onBack} label={t('back')} isDark={isDark} className="-ml-2" />
-        <h1 className="text-sm font-medium">{t('knowledgeBrowser')}</h1>
+        <h1 className="text-lg font-semibold">{t('knowledgeBrowser')}</h1>
       </div>
 
-      {/* ── Desktop: 3-column layout (sm+) ── */}
-      <div className="hidden sm:flex flex-1 min-h-0 gap-3 p-3">
+      {/* ── Desktop: 3-column layout (md+) ── */}
+      <div className="hidden md:flex flex-1 min-h-0 gap-3 p-3">
+        {!loadingCollections && !collectionsError && collections.length === 0 ? emptyCollections : <>
         {/* Collections column */}
-        <aside className={`browser-panel tc-browser-panel w-44 sm:w-52 shrink-0 overflow-y-auto`}>
-          <div className={`px-3 py-2 text-[10px] uppercase tracking-widest ${muted}`}>{t('collectionsLabel')}</div>
+        <aside className="browser-panel tc-browser-panel w-40 xl:w-52 shrink-0 overflow-y-auto">
+          <div className={`px-3 py-2 text-xs font-semibold uppercase tracking-wider ${muted}`}>{t('collectionsLabel')}</div>
           {renderStatus(loadingCollections, collectionsError, () => loadCollections())}
           {!loadingCollections && !collectionsError && collections.length === 0 && <p className={`px-3 py-4 text-xs ${muted}`}>{t('noCollections')}</p>}
           {collections.map((col) => (
             <button
               key={col.id}
               onClick={() => { setActiveCollectionId(col.id); setActiveFile(null); setActiveSourceId(null); }}
-              className={`w-full text-left flex items-center gap-2 px-3 py-2 text-sm ${col.id === activeCollectionId ? selected : `${muted} ${hover}`}`}
-              aria-selected={col.id === activeCollectionId}
+              className={`flex min-h-11 w-full items-center gap-2 px-3 py-2 text-left text-sm ${col.id === activeCollectionId ? selected : `${muted} ${hover}`}`}
+              aria-current={col.id === activeCollectionId ? 'true' : undefined}
             >
               <MdFolder size={14} className="shrink-0 opacity-70" />
               <span className="truncate">{col.name}</span>
@@ -446,8 +462,8 @@ export default function KnowledgeBrowser({ onBack, canManageSystem = false, init
         </aside>
 
         {/* Files column */}
-        <div className={`browser-panel tc-browser-panel w-56 sm:w-72 shrink-0 flex flex-col min-h-0`}>
-          <div className={`px-3 py-2 flex items-center gap-2 border-b ${border} ${panelBg}`}>
+        <div className="browser-panel tc-browser-panel w-56 xl:w-72 shrink-0 flex flex-col min-h-0">
+          <div className={`flex min-h-11 items-center gap-2 border-b px-3 py-2 ${border} ${panelBg}`}>
             <MdSearch size={14} className={muted} />
             <input
               value={fileQuery}
@@ -456,10 +472,10 @@ export default function KnowledgeBrowser({ onBack, canManageSystem = false, init
               aria-label={t('searchFiles')}
               name="knowledge-file-search"
               autoComplete="off"
-              className={`min-w-0 flex-1 rounded bg-transparent text-sm ${placeholder} focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4aa7ed] ${isDark ? 'text-white/80' : 'text-gray-800'}`}
+              className={`min-w-0 flex-1 rounded bg-transparent text-sm ${placeholder} focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-[#4aa7ed] ${isDark ? 'text-white/80' : 'text-gray-800'}`}
             />
             {fileQuery && (
-              <button onClick={() => setFileQuery('')} className={`p-0.5 rounded ${muted} ${hover}`} aria-label={t('clearFilter')}>
+              <button onClick={() => setFileQuery('')} className={`grid h-11 w-11 place-items-center rounded-lg focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-[#4aa7ed] ${muted} ${hover}`} aria-label={t('clearFilter')}>
                 <MdClose size={14} />
               </button>
             )}
@@ -469,7 +485,7 @@ export default function KnowledgeBrowser({ onBack, canManageSystem = false, init
                   setConfirmDeleteAll(true);
                 }}
                 disabled={deletingFile === '__all__'}
-                className={`p-0.5 rounded ${muted} ${hover} disabled:opacity-30`}
+                className={`grid h-11 w-11 place-items-center rounded-lg focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-[#4aa7ed] ${muted} ${hover} disabled:opacity-30`}
                 aria-label={t('deleteAllSources')}
                 title={t('deleteAllSources')}
               >
@@ -482,31 +498,32 @@ export default function KnowledgeBrowser({ onBack, canManageSystem = false, init
 
         {/* Chunks column */}
         <div className="tc-browser-panel flex-1 flex flex-col min-h-0 min-w-0">{renderChunkPanel(false)}</div>
+        </>}
       </div>
 
-      {/* ── Mobile: single-panel with bottom tab bar (below sm) ── */}
-      <div className="relative flex sm:hidden flex-1 flex-col min-h-0 min-w-0">
+      {/* ── Compact: single-panel with bottom tab bar (below md) ── */}
+      <div className="relative flex md:hidden flex-1 flex-col min-h-0 min-w-0">
         <AnimatePresence mode="popLayout" initial={false}>
         {/* Panel: Collections */}
         {mobileView === 'collections' && (
           <motion.div
             key="collections"
             className="flex-1 flex flex-col min-h-0"
-            initial={{ opacity: 0, x: -18 }}
+            initial={prefersReducedMotion ? false : { opacity: 0, x: -18 }}
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: -18 }}
-            transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+            transition={{ duration: prefersReducedMotion ? 0 : 0.22, ease: [0.16, 1, 0.3, 1] }}
           >
-            <div className={`px-3 py-2 text-[10px] uppercase tracking-widest ${muted} shrink-0`}>{t('collectionsLabel')}</div>
-            <div className="flex-1 overflow-y-auto">
+            <div className={`px-3 py-2 text-xs font-semibold uppercase tracking-wider ${muted} shrink-0`}>{t('collectionsLabel')}</div>
+            <div className="flex flex-1 flex-col overflow-y-auto">
               {renderStatus(loadingCollections, collectionsError, () => loadCollections())}
-              {!loadingCollections && !collectionsError && collections.length === 0 && <p className={`px-3 py-4 text-xs ${muted}`}>{t('noCollections')}</p>}
+              {!loadingCollections && !collectionsError && collections.length === 0 && emptyCollections}
               {collections.map((col) => (
                 <button
                   key={col.id}
                   onClick={() => { setActiveCollectionId(col.id); setActiveFile(null); setActiveSourceId(null); setMobileView('files'); }}
                   className={`w-full flex items-center justify-between gap-2 px-4 py-3 border-b ${border} ${col.id === activeCollectionId ? selected : `${muted} ${hover}`}`}
-                  aria-selected={col.id === activeCollectionId}
+                  aria-current={col.id === activeCollectionId ? 'true' : undefined}
                 >
                   <div className="flex items-center gap-2 min-w-0">
                     <MdFolder size={16} className="shrink-0 opacity-70" />
@@ -524,10 +541,10 @@ export default function KnowledgeBrowser({ onBack, canManageSystem = false, init
           <motion.div
             key="files"
             className="flex-1 flex flex-col min-h-0"
-            initial={{ opacity: 0, x: 20 }}
+            initial={prefersReducedMotion ? false : { opacity: 0, x: 20 }}
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: 20 }}
-            transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+            transition={{ duration: prefersReducedMotion ? 0 : 0.22, ease: [0.16, 1, 0.3, 1] }}
           >
             <div className={`shrink-0 flex items-center gap-2 px-2 py-2 border-b ${border} ${panelBg}`}>
               <BackButton
@@ -536,7 +553,7 @@ export default function KnowledgeBrowser({ onBack, canManageSystem = false, init
                 isDark={isDark}
                 className="-ml-2"
               />
-              <span className={`text-xs font-medium truncate ${isDark ? 'text-white/80' : 'text-gray-800'}`}>
+              <span className={`text-sm font-medium truncate ${isDark ? 'text-white/80' : 'text-gray-800'}`}>
                 {collections.find((c) => c.id === activeCollectionId)?.name || activeCollectionId}
               </span>
               {canManageSystem && sources.length > 0 && (
@@ -545,14 +562,14 @@ export default function KnowledgeBrowser({ onBack, canManageSystem = false, init
                     setConfirmDeleteAll(true);
                   }}
                   disabled={deletingFile === '__all__'}
-                  className={`ml-auto p-1.5 rounded-lg ${muted} ${hover} disabled:opacity-30`}
+                  className={`ml-auto grid h-11 w-11 place-items-center rounded-lg focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-[#4aa7ed] ${muted} ${hover} disabled:opacity-30`}
                   aria-label={t('deleteAllSources')}
                 >
                   <MdDeleteSweep size={16} />
                 </button>
               )}
             </div>
-            <div className={`px-3 py-2 flex items-center gap-2 border-b ${border}`}>
+            <div className={`flex min-h-11 items-center gap-2 border-b px-3 py-2 ${border}`}>
               <MdSearch size={14} className={muted} />
               <input
                 value={fileQuery}
@@ -561,10 +578,10 @@ export default function KnowledgeBrowser({ onBack, canManageSystem = false, init
                 aria-label={t('searchFiles')}
                 name="knowledge-mobile-file-search"
                 autoComplete="off"
-                className={`min-w-0 flex-1 rounded bg-transparent text-sm ${placeholder} focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4aa7ed] ${isDark ? 'text-white/80' : 'text-gray-800'}`}
+                className={`min-w-0 flex-1 rounded bg-transparent text-base ${placeholder} focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-[#4aa7ed] ${isDark ? 'text-white/80' : 'text-gray-800'}`}
               />
               {fileQuery && (
-                <button onClick={() => setFileQuery('')} className={`p-0.5 rounded ${muted} ${hover}`} aria-label={t('clearFilter')}>
+                <button onClick={() => setFileQuery('')} className={`grid h-11 w-11 place-items-center rounded-lg focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-[#4aa7ed] ${muted} ${hover}`} aria-label={t('clearFilter')}>
                   <MdClose size={14} />
                 </button>
               )}
@@ -578,10 +595,10 @@ export default function KnowledgeBrowser({ onBack, canManageSystem = false, init
           <motion.div
             key="chunks"
             className="flex-1 flex flex-col min-h-0 min-w-0"
-            initial={{ opacity: 0, x: 20 }}
+            initial={prefersReducedMotion ? false : { opacity: 0, x: 20 }}
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: 20 }}
-            transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+            transition={{ duration: prefersReducedMotion ? 0 : 0.22, ease: [0.16, 1, 0.3, 1] }}
           >
             <div className={`shrink-0 flex items-center gap-2 px-2 py-2 border-b ${border} ${panelBg}`}>
               <BackButton
@@ -590,7 +607,7 @@ export default function KnowledgeBrowser({ onBack, canManageSystem = false, init
                 isDark={isDark}
                 className="-ml-2"
               />
-              <span className={`text-xs font-mono font-medium truncate ${isDark ? 'text-white/80' : 'text-gray-800'}`}>
+              <span title={activeFile || undefined} className={`text-sm font-mono font-medium truncate ${isDark ? 'text-white/80' : 'text-gray-800'}`}>
                 {activeFile?.split('/').pop() || activeFile}
               </span>
             </div>
@@ -613,9 +630,9 @@ export default function KnowledgeBrowser({ onBack, canManageSystem = false, init
                 disabled={disabled}
                 aria-label={labels[view]}
                 aria-selected={mobileView === view}
-                className={`flex-1 flex flex-col items-center justify-center gap-0.5 py-2 text-[10px] font-medium transition-colors ${
+                className={`flex min-h-14 flex-1 flex-col items-center justify-center gap-0.5 py-2 text-xs font-medium transition-colors ${
                   mobileView === view
-                    ? 'text-[#006bbd]'
+                    ? accent
                     : disabled ? 'opacity-30' : muted
                 }`}
               >

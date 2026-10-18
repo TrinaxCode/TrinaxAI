@@ -278,6 +278,12 @@ class _watch_Handler(_WDFileSystemEventHandler):
                 self._busy_event.set()
             try:
                 self._process_batch(pending)
+            except Exception as exc:  # noqa: BLE001 - e.g. ENOSPC must not kill the worker thread
+                LOG.exception("Watcher batch failed; worker keeps running")
+                with state.watcher["lock"]:
+                    if state.watcher.get("handler") in (None, self):
+                        state.watcher.update({"job_status": "failed", "last_error": str(exc)})
+                        state.watcher["runs_failed"] = int(state.watcher.get("runs_failed", 0)) + 1
             finally:
                 self._busy_event.clear()
 

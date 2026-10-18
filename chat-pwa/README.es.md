@@ -4,7 +4,7 @@
 
 <p align="center">
   <a href="https://github.com/TrinaxCode/TrinaxAI"><img src="https://img.shields.io/github/stars/TrinaxCode/TrinaxAI?style=flat&amp;label=%E2%98%85&amp;color=006bbd" alt="GitHub stars"></a>
-  <a href="https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.2.6"><img src="https://img.shields.io/badge/version-1.2.6-006bbd" alt="Stable release: 1.2.6"></a>
+  <a href="https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.3.0"><img src="https://img.shields.io/badge/version-1.3.0-006bbd" alt="Stable release: 1.3.0"></a>
   <a href="https://github.com/TrinaxCode/TrinaxAI/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/TrinaxCode/TrinaxAI/ci.yml?branch=main&amp;label=CI" alt="CI status"></a>
   <a href="https://github.com/TrinaxCode/TrinaxAI/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0--or--later-006bbd" alt="License: AGPL-3.0-or-later"></a>
   <img src="https://img.shields.io/badge/macOS%20%7C%20Windows%20%7C%20Linux-4493F8?style=flat-square" alt="Supported platforms: macOS, Windows, and Linux">
@@ -13,7 +13,7 @@
 <p align="center"><sub><a href="README.md">English</a> · <strong>Español</strong></sub></p>
 <p align="center"><sub><a href="https://www.trinaxai.app/">Sitio web</a> · <a href="../docs/README.es.md">Documentación</a> · <a href="../README.es.md">Inicio</a> · <a href="../docs/CHANGELOG.es.md">Cambios</a></sub></p>
 
-Frontend 1.2.6 de TrinaxAI construido con React 19, TypeScript y Vite 6, bajo licencia AGPL-3.0-or-later. Incluye chat directo con Ollama, RAG con citas, búsqueda web opcional, investigación profunda, agente con herramientas, visión, documentos, voz local, memoria y una PWA instalable.
+Frontend 1.3.0 de TrinaxAI construido con React 19, TypeScript, Tailwind CSS 4 y Vite 6, bajo licencia AGPL-3.0-or-later. Incluye chat directo con Ollama, RAG con citas, búsqueda web opcional, investigación profunda, agente con herramientas, visión, documentos, voz local, memoria y una PWA instalable.
 
 [Índice de documentación](../docs/README.es.md) · [Referencia de API](../docs/API_REFERENCE.es.md) · [Solución de problemas](../docs/TROUBLESHOOTING.es.md)
 
@@ -31,6 +31,7 @@ El navegador usa rutas `/api/*` del mismo origen. FastAPI atiende RAG, coleccion
 ## Desarrollo rápido
 
 Necesitas Node.js 22 o superior y npm; se recomienda una versión LTS activa. Ollama aporta la inferencia y el backend Python las funciones RAG.
+Los estilos de Tailwind CSS 4 requieren Chrome 111+, Safari 16.4+ o Firefox 128+.
 
 ```bash
 cd chat-pwa
@@ -48,6 +49,9 @@ npm run dev
 | `npm run check:bundle` | Comprueba el presupuesto del bundle frontend generado. |
 | `npm run lint` | Ejecuta ESLint. |
 | `npx tsc --noEmit` | Verifica tipos sin construir. |
+
+Los límites del bundle son 350 KiB por archivo JavaScript, 1536 KiB de
+JavaScript total, 132 KiB de CSS y 4096 KiB para todos los archivos del build.
 
 El servidor de desarrollo escucha en loopback por defecto. Para una prueba LAN
 intencional, establece `TRINAXAI_PWA_HOST=0.0.0.0`, usa HTTPS y vincula cada

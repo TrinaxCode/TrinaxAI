@@ -70,6 +70,7 @@ describe('ChatHeader', () => {
 
     expect(onOpenAgent).toHaveBeenCalledOnce();
     expect(button).not.toHaveAttribute('aria-pressed');
+    expect(screen.getByRole('heading', { level: 1, name: 'TrinaxAI' })).toBeInTheDocument();
     expect(screen.getByRole('navigation')).toHaveClass('bg-transparent');
   });
 

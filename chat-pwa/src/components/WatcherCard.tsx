@@ -148,15 +148,25 @@ export default function WatcherCard({ collections }: Props) {
   }, [toast, updateFolders]);
 
   const toggleWatcher = useCallback(async () => {
-    statusVersionRef.current += 1;
     if (running) {
-      const shouldStopServer = serverWatching;
+      if (serverWatching) {
+        setBusy(true);
+        try {
+          await stopWatch();
+        } catch (error) {
+          toast.toast(userFacingError(error, 'external_service_unavailable'), 'error');
+          return;
+        } finally {
+          setBusy(false);
+        }
+      }
+      statusVersionRef.current += 1;
       setServerWatching(false);
       setServerJob(null);
       setRunning(false);
-      if (shouldStopServer) await stopWatch().catch(() => undefined);
       return;
     }
+    statusVersionRef.current += 1;
     const normalizedPath = hostPath.trim();
     if (normalizedPath) {
       setBusy(true);
@@ -235,9 +245,9 @@ export default function WatcherCard({ collections }: Props) {
   }, [running, syncFolder, t, toast]);
 
   const cardBg = isDark ? 'bg-white/[0.03] border-white/[0.06]' : 'bg-gray-50 border-gray-200';
-  const muted = isDark ? 'text-white/45' : 'text-gray-500';
+  const muted = isDark ? 'text-white/65' : 'text-gray-600';
   const label = isDark ? 'text-white/80' : 'text-gray-800';
-  const field = isDark ? 'bg-black/20 border-white/[0.08] text-white/80' : 'bg-white border-gray-200 text-gray-800';
+  const field = isDark ? 'bg-black/20 border-white/[0.08] text-white/90 placeholder-white/55' : 'bg-white border-gray-200 text-gray-800 placeholder-gray-600';
   const visibleFolders = folders.filter((folder) => folder.collectionId === collectionId);
 
   return (
@@ -245,17 +255,20 @@ export default function WatcherCard({ collections }: Props) {
       <input ref={fileInputRef} type="file" className="hidden" onChange={onInputChange} {...{ webkitdirectory: '', directory: '' }} />
       <div className="flex items-center justify-between gap-3">
         <div>
-          <div className={`text-sm font-medium ${label}`}>{t('watcherTitle')}</div>
-          <div className={`text-[11px] ${muted} mt-0.5`}>{running ? t('watcherActive').replace('{count}', String(events)) : t('watcherInactive')}</div>
+          <h2 className={`text-base font-semibold ${label}`}>{t('watcherTitle')}</h2>
+          <div role="status" className={`mt-1 flex items-center gap-1.5 text-sm ${muted}`}>
+            <span aria-hidden="true" className={`h-1.5 w-1.5 shrink-0 rounded-full ${running ? 'bg-emerald-400' : isDark ? 'bg-white/40' : 'bg-gray-400'}`} />
+            {running ? t('watcherActive').replace('{count}', String(events)) : t('watcherInactive')}
+          </div>
         </div>
-        <button onClick={() => void toggleWatcher()} disabled={busy || (folders.length === 0 && !hostPath.trim())} className={`px-3 py-1.5 rounded-lg text-xs font-medium disabled:opacity-30 transition-colors flex items-center gap-1.5 ${running ? 'bg-red-500/10 border border-red-500/20 text-red-400 hover:bg-red-500/20' : 'bg-[#006bbd] text-white hover:bg-[#0059a0]'}`}>
+        <button onClick={() => void toggleWatcher()} disabled={busy || (!running && folders.length === 0 && !hostPath.trim())} className={`flex min-h-11 shrink-0 items-center gap-1.5 rounded-lg px-3 text-sm font-medium transition-colors disabled:opacity-50 ${running ? `border bg-red-500/10 hover:bg-red-500/20 ${isDark ? 'border-red-400/20 text-red-400' : 'border-red-700/20 text-red-700'}` : 'bg-[#006bbd] text-white hover:bg-[#0059a0]'}`}>
           {running ? <><MdVisibilityOff size={14} /> {t('stop')}</> : <><MdVisibility size={14} /> {t('start')}</>}
         </button>
       </div>
 
-      <div className="flex gap-2">
-        <button onClick={() => void chooseFolder()} disabled={busy} className="rounded-lg bg-[#006bbd] px-3 py-2 text-xs font-medium text-white hover:bg-[#0059a0] disabled:opacity-50 flex items-center gap-1.5"><MdFolder size={15} />{t('watcherAddFolder')}</button>
-        <select value={collectionId} onChange={(event) => setCollectionId(event.target.value)} aria-label={t('collectionsLabel')} name="watcher-collection" className={`min-w-0 flex-1 rounded-lg border px-3 py-2 text-xs outline-none ${field}`}>
+      <div className="flex flex-col gap-2 sm:flex-row">
+        <button onClick={() => void chooseFolder()} disabled={busy} className="flex min-h-11 items-center justify-center gap-1.5 rounded-lg bg-[#006bbd] px-3 text-sm font-medium text-white hover:bg-[#0059a0] disabled:opacity-50"><MdFolder size={15} />{t('watcherAddFolder')}</button>
+        <select value={collectionId} onChange={(event) => setCollectionId(event.target.value)} aria-label={t('collectionsLabel')} name="watcher-collection" className={`min-h-11 min-w-0 flex-1 rounded-lg border px-3 py-2 text-base outline-hidden sm:text-sm ${field}`}>
           {(collections.length ? collections : [{ id: 'default', name: t('generalCollection') }]).map((collection) => <option key={collection.id} value={collection.id}>{collection.name} ({folders.filter((folder) => folder.collectionId === collection.id).length})</option>)}
         </select>
       </div>
@@ -269,9 +282,9 @@ export default function WatcherCard({ collections }: Props) {
           aria-label={t('watcherHostPath')}
           name="watcher-host-path"
           autoComplete="off"
-          className={`w-full rounded-lg border px-3 py-2 text-xs outline-none ${field}`}
+          className={`min-h-11 w-full rounded-lg border px-3 py-2 text-base outline-hidden sm:text-sm ${field}`}
         />
-        <p className={`text-[10px] ${muted}`}>{t('watcherHostPathDesc')}</p>
+        <p className={`text-sm ${muted}`}>{t('watcherHostPathDesc')}</p>
       </div>
 
       <AnimatePresence initial={false}>
@@ -284,15 +297,15 @@ export default function WatcherCard({ collections }: Props) {
             transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
             className="space-y-1.5 overflow-hidden"
           >
-            {visibleFolders.map((folder) => <motion.div key={folder.id} layout initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0, height: 0 }} className={`flex items-center gap-2 rounded-lg border px-2.5 py-2 text-xs ${field}`}>
-              <MdFolder size={15} className="shrink-0 opacity-70" /><span className="min-w-0 flex-1 truncate" title={folder.name}>{folder.name}</span><span className={`text-[10px] ${muted}`}>{folder.files?.length || 0}</span>
-              <button onClick={() => setPendingRemoveFolder(folder)} className="p-1 text-red-400 hover:text-red-300" aria-label={`${t('deleteFolder')} ${folder.name}`} title={t('deleteFolder')}><MdDelete size={15} /></button>
+            {visibleFolders.map((folder) => <motion.div key={folder.id} layout initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0, height: 0 }} className={`flex min-h-12 items-center gap-2 rounded-lg border px-2.5 py-1 text-sm ${field}`}>
+              <MdFolder size={15} className="shrink-0 opacity-70" /><span className="min-w-0 flex-1 truncate" title={folder.name}>{folder.name}</span><span className={`text-xs ${muted}`}>{folder.files?.length || 0}</span>
+              <button onClick={() => setPendingRemoveFolder(folder)} className={`grid h-11 w-11 shrink-0 place-items-center rounded-lg ${isDark ? 'text-red-400 hover:text-red-300' : 'text-red-700 hover:text-red-800'}`} aria-label={`${t('deleteFolder')} ${folder.name}`} title={t('deleteFolder')}><MdDelete size={15} /></button>
             </motion.div>)}
           </motion.div>
         )}
       </AnimatePresence>
 
-      <p className={`text-[11px] ${muted} flex items-center gap-1.5`}><MdRefresh size={12} className="opacity-60" />{t('watcherChooseFolders')}</p>
+      <p className={`flex items-center gap-1.5 text-sm ${muted}`}><MdRefresh size={12} className="opacity-60" />{t('watcherChooseFolders')}</p>
       <AnimatePresence initial={false}>
         {running && (
           <motion.p
@@ -301,7 +314,7 @@ export default function WatcherCard({ collections }: Props) {
             animate={{ opacity: 1, height: 'auto' }}
             exit={{ opacity: 0, height: 0 }}
             transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-            className={`text-[11px] ${muted} flex items-center gap-1.5 overflow-hidden`}
+            className={`flex items-center gap-1.5 overflow-hidden text-sm ${muted}`}
           >
             <MdSync size={12} className="opacity-60" />{t('watcherAutoReindexDesc')}
           </motion.p>
@@ -313,7 +326,7 @@ export default function WatcherCard({ collections }: Props) {
             animate={{ opacity: 1, height: 'auto' }}
             exit={{ opacity: 0, height: 0 }}
             transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-            className={`text-[11px] ${muted} overflow-hidden`}
+            className={`overflow-hidden text-sm ${muted}`}
             aria-live="polite"
           >
             {t('watcherIndexStatus').replace('{status}', serverJob.status)}
@@ -327,7 +340,7 @@ export default function WatcherCard({ collections }: Props) {
             animate={{ opacity: 1, height: 'auto' }}
             exit={{ opacity: 0, height: 0 }}
             transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-            className="overflow-hidden text-[11px] text-red-400"
+            className={`overflow-hidden text-sm ${isDark ? 'text-red-400' : 'text-red-700'}`}
             role="alert"
           >
             {t('watcherLastError').replace('{error}', serverJob.last_error.slice(0, 500))}

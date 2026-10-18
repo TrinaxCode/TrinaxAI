@@ -180,8 +180,20 @@ def _read_app_state_document() -> tuple[dict[str, Any], bool]:
         _ensure_private_file(APP_STATE_PATH)
         with open(APP_STATE_PATH, encoding="utf-8") as f:
             raw = json.load(f)
-    except (OSError, ValueError):
+    except FileNotFoundError:
         return {"schema_version": _APP_STATE_SCHEMA_VERSION, "revision": 0, "values": {}}, False
+    except ValueError:
+        # Keep the unreadable file for recovery instead of overwriting it with an empty store.
+        try:
+            os.replace(APP_STATE_PATH, f"{APP_STATE_PATH}.corrupt-{int(time.time())}")
+        except OSError:
+            raise HTTPException(status_code=503, detail="Shared app state is unreadable.") from None
+        LOG.warning("Quarantined corrupt app state file %s", APP_STATE_PATH)
+        return {"schema_version": _APP_STATE_SCHEMA_VERSION, "revision": 0, "values": {}}, False
+    except OSError as exc:
+        # A transient read error must not look like an empty store: the next PUT would wipe saved chats.
+        LOG.warning("Could not read app state: %s", exc)
+        raise HTTPException(status_code=503, detail="Shared app state is temporarily unreadable.") from exc
 
     if isinstance(raw, dict) and raw.get("schema_version") == _APP_STATE_SCHEMA_VERSION:
         revision = raw.get("revision", 0)
@@ -204,7 +216,10 @@ def _read_app_state_document() -> tuple[dict[str, Any], bool]:
 
 def _read_app_state() -> dict[str, str]:
     """Compatibility helper used by services that only need current values."""
-    document, _legacy = _read_app_state_document()
+    try:
+        document, _legacy = _read_app_state_document()
+    except HTTPException:
+        return {}
     return dict(document["values"])
 
 

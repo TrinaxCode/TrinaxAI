@@ -6,6 +6,7 @@ import json
 import os
 import stat
 
+import pytest
 from starlette.testclient import TestClient
 
 import rag_api
@@ -62,6 +63,32 @@ def test_persist_hardening_recurses_without_following_symlinks(tmp_path) -> None
         assert all(stat.S_IMODE(path.stat().st_mode) == 0o600 for path in (memory, attachment, index))
         if symlink_supported:
             assert stat.S_IMODE(external.stat().st_mode) == 0o644
+
+
+def test_persist_hardening_rejects_a_symlinked_storage_root(tmp_path) -> None:
+    actual = tmp_path / "actual"
+    actual.mkdir()
+    marker = actual / "keep.txt"
+    marker.write_text("untouched", encoding="utf-8")
+    link = tmp_path / "storage"
+    try:
+        link.symlink_to(actual, target_is_directory=True)
+    except OSError:
+        pytest.skip("Directory symlinks are unavailable on this host")
+
+    with pytest.raises(RuntimeError, match="must be a real directory"):
+        runtime_context.harden_persist_directory(str(link))
+    assert marker.read_text(encoding="utf-8") == "untouched"
+
+
+def test_persist_hardening_creates_private_storage_on_first_start(tmp_path) -> None:
+    storage = tmp_path / "new-storage"
+
+    runtime_context.harden_persist_directory(str(storage))
+
+    assert storage.is_dir()
+    if os.name == "posix":
+        assert stat.S_IMODE(storage.stat().st_mode) == 0o700
 
 
 def test_runtime_initialization_hardens_persistent_storage(tmp_path, monkeypatch) -> None:
@@ -208,3 +235,49 @@ def test_reset_revision_never_reuses_a_pre_reset_revision(tmp_path, monkeypatch)
 
     assert document["revision"] == 8
     assert document["values"] == {"tc-reset-at": "123"}
+
+
+def test_unreadable_state_does_not_look_empty(tmp_path, monkeypatch) -> None:
+    client, state_path = _client(tmp_path, monkeypatch)
+    assert _put(client, 0, [{"op": "set", "key": "tc-chat-sessions", "value": "[1]"}]).status_code == 200
+    real_open = open
+
+    def flaky(path, *args, **kwargs):
+        if str(path) == str(state_path):
+            raise OSError(5, "Input/output error")
+        return real_open(path, *args, **kwargs)
+
+    monkeypatch.setattr("builtins.open", flaky)
+    assert client.get("/app-state").status_code == 503
+    assert _put(client, 0, [{"op": "set", "key": "tc-lang", "value": "es"}]).status_code == 503
+    monkeypatch.undo()
+    assert json.loads(state_path.read_text())["values"] == {"tc-chat-sessions": "[1]"}
+
+
+def test_corrupt_state_is_quarantined_not_overwritten(tmp_path, monkeypatch) -> None:
+    client, state_path = _client(tmp_path, monkeypatch)
+    state_path.write_text("{broken", encoding="utf-8")
+    assert client.get("/app-state").json()["revision"] == 0
+    assert list(tmp_path.glob("app_state.json.corrupt-*"))
+
+
+def test_corrupt_state_that_cannot_be_quarantined_is_unavailable(tmp_path, monkeypatch) -> None:
+    client, state_path = _client(tmp_path, monkeypatch)
+    state_path.write_text("{broken", encoding="utf-8")
+
+    def refuse(*_args, **_kwargs):
+        raise OSError(30, "Read-only file system")
+
+    monkeypatch.setattr(app_state_service.os, "replace", refuse)
+    assert client.get("/app-state").status_code == 503
+    assert state_path.read_text(encoding="utf-8") == "{broken"
+
+
+def test_compat_reader_returns_empty_when_state_is_unreadable(tmp_path, monkeypatch) -> None:
+    _client(tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        app_state_service,
+        "_read_app_state_document",
+        lambda: (_ for _ in ()).throw(app_state_service.HTTPException(status_code=503, detail="x")),
+    )
+    assert app_state_service._read_app_state() == {}

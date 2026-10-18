@@ -4,7 +4,7 @@
 
 <p align="center">
   <a href="https://github.com/TrinaxCode/TrinaxAI"><img src="https://img.shields.io/github/stars/TrinaxCode/TrinaxAI?style=flat&amp;label=%E2%98%85&amp;color=006bbd" alt="GitHub stars"></a>
-  <a href="https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.2.6"><img src="https://img.shields.io/badge/version-1.2.6-006bbd" alt="Stable release: 1.2.6"></a>
+  <a href="https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.3.0"><img src="https://img.shields.io/badge/version-1.3.0-006bbd" alt="Stable release: 1.3.0"></a>
   <a href="https://github.com/TrinaxCode/TrinaxAI/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/TrinaxCode/TrinaxAI/ci.yml?branch=main&amp;label=CI" alt="CI status"></a>
   <a href="https://github.com/TrinaxCode/TrinaxAI/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0--or--later-006bbd" alt="License: AGPL-3.0-or-later"></a>
   <img src="https://img.shields.io/badge/macOS%20%7C%20Windows%20%7C%20Linux-4493F8?style=flat-square" alt="Supported platforms: macOS, Windows, and Linux">
@@ -37,7 +37,7 @@ reúne todas las variables `TRINAXAI_*` y `VITE_TRINAXAI_*` admitidas.
 |---|---:|---|
 | `TRINAXAI_PROFILE` | autodetectado | `8gb`, `16gb`, `32gb`, `64gb`; se deriva de CPU/RAM/GPU y puede sobrescribirse. |
 | `TRINAXAI_PERFORMANCE_MODE` | `fast` | `fast`, `balanced`, `quality`; cambia recuperación y chunking. |
-| `TRINAXAI_THINKING_MODE` | `1` | Valor predeterminado del backend cuando un cliente no envía `think`; `0` desactiva el razonamiento. |
+| `TRINAXAI_THINKING_MODE` | `1` | Valor predeterminado del backend cuando un cliente no envía `think`; `0` desactiva el razonamiento. La investigación web de profundidad 1 lo desactiva por defecto para reservar la salida del modelo a la respuesta; `think` explícito prevalece. |
 | `TRINAXAI_NUM_CTX` | según perfil | Ventana de contexto del LLM. |
 | `TRINAXAI_NUM_THREAD` | `8` | Hilos CPU por solicitud. |
 | `TRINAXAI_KEEP_ALIVE` | según perfil/modo | Tiempo que el modelo de chat permanece cargado (`0s`, `15m`, etc.). |

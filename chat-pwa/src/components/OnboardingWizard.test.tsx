@@ -40,17 +40,23 @@ describe('OnboardingWizard permissions', () => {
     );
 
     expect(screen.getByText('Which language do you prefer?')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 1, name: 'Welcome to TrinaxAI' })).not.toHaveClass('sr-only');
     await expectNoA11yViolations(document.body);
+    const wizard = screen.getByRole('main');
+    wizard.scrollTop = 100;
     await user.click(screen.getByRole('button', { name: 'Next' }));
+    expect(wizard.scrollTop).toBe(0);
     expect(await screen.findByText('Light or dark mode?')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 1, name: 'Welcome to TrinaxAI' })).toHaveClass('sr-only');
 
     await user.click(screen.getByRole('button', { name: 'Next' }));
-    expect(screen.queryByRole('heading', { name: 'What should TrinaxAI call you?' })).not.toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'What should TrinaxAI call you?' })).toBeInTheDocument();
     expect(await screen.findByRole('textbox', { name: 'What should TrinaxAI call you?' })).toBeInTheDocument();
     await user.type(screen.getByRole('textbox'), 'Ana');
     await user.click(screen.getByRole('button', { name: 'Next' }));
 
     expect(await screen.findByText("That's it!")).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 1, name: 'Welcome to TrinaxAI' })).not.toHaveClass('sr-only');
     expect(screen.getByText('Ana')).toBeInTheDocument();
     expect(screen.getByText(/Theme:/)).toBeInTheDocument();
     expect(screen.getByText(/Language:/)).toBeInTheDocument();
@@ -118,6 +124,8 @@ describe('OnboardingWizard permissions', () => {
     await user.click(screen.getByRole('button', { name: 'Next' }));
     await user.click(await screen.findByRole('button', { name: /Choose my own models/ }));
     const modelInput = screen.getByRole('textbox');
+    expect(modelInput).toHaveAccessibleName();
+    await expectNoA11yViolations(document.body);
     await user.clear(modelInput);
     await user.type(modelInput, 'custom-chat:latest');
 

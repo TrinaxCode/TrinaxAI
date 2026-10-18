@@ -3,12 +3,13 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import DevicePairingCard from './DevicePairingCard';
-import { claimDevice, getCurrentPairedDevice, listPairedDevices, revokeCurrentPairedDevice } from '../lib/devicePairing';
+import { claimDevice, createPairingCode, getCurrentPairedDevice, listPairedDevices, revokeCurrentPairedDevice } from '../lib/devicePairing';
 
 vi.mock('../i18n/I18nContext', () => ({ useI18n: () => ({ t: (key: string) => key }) }));
 vi.mock('../theme/ThemeContext', () => ({ useTheme: () => ({ isDark: true }) }));
 vi.mock('../lib/devicePairing', () => ({
   claimDevice: vi.fn(),
+  createPairingCode: vi.fn(),
   getCurrentPairedDevice: vi.fn(),
   listPairedDevices: vi.fn(),
   revokeCurrentPairedDevice: vi.fn(),
@@ -33,6 +34,7 @@ describe('DevicePairingCard', () => {
   beforeEach(() => {
     vi.mocked(getCurrentPairedDevice).mockResolvedValue(null);
     vi.mocked(claimDevice).mockResolvedValue(device);
+    vi.mocked(createPairingCode).mockResolvedValue({ code: 'ABCD-EFGH', expires_at: 1, scopes: ['chat'] });
     vi.mocked(listPairedDevices).mockResolvedValue([]);
     vi.mocked(revokeCurrentPairedDevice).mockResolvedValue();
   });
@@ -57,6 +59,22 @@ describe('DevicePairingCard', () => {
 
     await act(async () => { await Promise.resolve(); });
     expect(listPairedDevices).not.toHaveBeenCalled();
+  });
+
+  it('leaves the generated code visible when clipboard access is unavailable', async () => {
+    const clipboard = Object.getOwnPropertyDescriptor(navigator, 'clipboard');
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: undefined });
+    try {
+      render(<DevicePairingCard isDark canManageSystem />);
+      const generate = await screen.findByRole('button', { name: 'devicePairingGenerate' });
+      await userEvent.click(generate);
+
+      expect(await screen.findByText('ABCD-EFGH')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'copy' })).toBeDisabled();
+    } finally {
+      if (clipboard) Object.defineProperty(navigator, 'clipboard', clipboard);
+      else delete (navigator as Navigator & { clipboard?: Clipboard }).clipboard;
+    }
   });
 
   it('uses wake events and backs off the host-list fallback', async () => {

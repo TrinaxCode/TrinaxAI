@@ -52,6 +52,11 @@ def run(args: Any, client: Any, ui: Any, config: Any) -> int:
                 ui.info("Cancelled.")
                 return 0
             n = client.delete_collection(cid)
+            if cid == config.active_collection or cid in config.collections:
+                config.collections = [item for item in config.collections if item != cid] or ["default"]
+                if config.active_collection == cid:
+                    config.active_collection = config.collections[0]
+                config.save()
             ui.success(f"Deleted '{cid}' (nodes removed: {n})")
             return 0
         if action == "use":

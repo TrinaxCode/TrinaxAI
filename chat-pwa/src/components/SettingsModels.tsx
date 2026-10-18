@@ -95,20 +95,30 @@ export default function SettingsModels({
     let unloaded = 0;
     for (const model of models) {
       try {
-        await systemFetch(`${APP_CONFIG.ollamaBase}/api/generate`, {
+        const response = await systemFetch(`${APP_CONFIG.ollamaBase}/api/generate`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ model, keep_alive: 0, prompt: '' }),
         });
-        unloaded++;
+        if (response.ok) unloaded++;
       } catch { /* best effort: another model can still be unloaded */ }
     }
-    toast.toast(t('modelsUnloaded').replace('{ok}', String(unloaded)).replace('{total}', String(models.length)), 'info');
+    toast.toast(t('modelsUnloaded').replace('{ok}', String(unloaded)).replace('{total}', String(models.length)), unloaded === models.length ? 'info' : 'warning');
+  };
+
+  const copyModelGuide = async () => {
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error('Clipboard unavailable');
+      await navigator.clipboard.writeText(t('modelPromptText'));
+      toast.toast(t('modelPromptCopied'), 'success');
+    } catch {
+      toast.toast(t('modelPromptCopyFailed'), 'error');
+    }
   };
 
   return (
     <section className="min-w-0 max-w-full overflow-hidden">
-      <div className={`mb-3 flex items-center gap-2 text-xs font-medium uppercase tracking-widest ${textHeading}`}>
+      <h3 className={`mb-3 flex items-center gap-2 text-sm font-semibold ${textLabel}`}>
         <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
           <path d="M4 6h6M14 6h6M4 12h2M10 12h10M4 18h10M18 18h2" />
           <circle cx="12" cy="6" r="2" />
@@ -116,16 +126,16 @@ export default function SettingsModels({
           <circle cx="16" cy="18" r="2" />
         </svg>
         <span className="truncate">{t('modelCustomize')}</span>
-      </div>
+      </h3>
       <div className="space-y-2 min-w-0 max-w-full">
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
             {(['8gb', '16gb', '32gb', '64gb'] as const).map((preset) => (
-              <button key={preset} type="button" onClick={() => setModelPreset(preset)} className={`min-w-0 rounded-lg px-2 py-2 text-[11px] font-medium break-words ${btnBase}`}>
+              <button key={preset} type="button" onClick={() => setModelPreset(preset)} className={`min-h-11 min-w-0 rounded-lg px-2 py-2 text-sm font-medium break-words ${btnBase}`}>
                 {t(presetLabels[preset])}
               </button>
             ))}
           </div>
-          {detectedProfile && <p className={`text-[11px] ${textHeading}`}>{t('hardwareProfile')}: {detectedProfile}</p>}
+          {detectedProfile && <p className={`text-sm ${textHeading}`}>{t('hardwareProfile')}: {detectedProfile}</p>}
           {MODEL_SETTING_KEYS.map((key) => {
             const labelKey: Record<ModelSettingKey, TranslationKey> = {
               'tc-models-chat': 'modelChat',
@@ -139,13 +149,13 @@ export default function SettingsModels({
             const isEmbed = key === 'tc-models-embed';
             return (
               <div key={key} className={`flex min-w-0 max-w-full flex-col gap-1.5 overflow-hidden rounded-lg px-3 py-2 sm:flex-row sm:items-center sm:gap-2 ${bgCard}`}>
-                <span className={`min-w-0 break-words text-[10px] leading-tight sm:w-24 sm:shrink-0 ${textHeading}`}>{label}</span>
+                <span className={`min-w-0 break-words text-xs font-medium sm:w-28 sm:shrink-0 ${textLabel}`}>{label}</span>
                 {isEmbed ? (
                   <select
                     aria-label={label}
                     value={getModel(key)}
                     onChange={(event) => setLocalSetting(key, event.target.value)}
-                    className={`min-w-0 max-w-full flex-1 border-b border-transparent bg-transparent px-1 py-0.5 text-[11px] font-mono outline-none transition-colors hover:border-[#006bbd]/30 focus:border-[#006bbd] ${isDark ? 'text-white/70' : 'text-gray-700'}`}
+                    className={`min-h-11 min-w-0 max-w-full flex-1 border-b border-transparent bg-transparent px-1 py-1 text-base font-mono outline-hidden transition-colors hover:border-[#006bbd]/30 focus:border-[#006bbd] sm:text-sm ${isDark ? 'text-white/85' : 'text-gray-800'}`}
                   >
                     <option value="qwen3-embedding:0.6b">qwen3-embedding:0.6b | 1024d</option>
                     <option value="qwen3-embedding:4b">qwen3-embedding:4b | 2560d</option>
@@ -169,39 +179,39 @@ export default function SettingsModels({
                       if (value) setLocalSetting(key, value);
                       event.currentTarget.blur();
                     }}
-                    className={`min-w-0 w-full max-w-full flex-1 border-b border-transparent bg-transparent px-1 py-0.5 text-[11px] font-mono outline-none transition-colors hover:border-[#006bbd]/30 focus:border-[#006bbd] ${isDark ? 'text-white/70' : 'text-gray-700'}`}
+                    className={`min-h-11 min-w-0 w-full max-w-full flex-1 border-b border-transparent bg-transparent px-1 py-1 text-base font-mono outline-hidden transition-colors hover:border-[#006bbd]/30 focus:border-[#006bbd] sm:text-sm ${isDark ? 'text-white/85' : 'text-gray-800'}`}
                   />
                 )}
               </div>
             );
           })}
           <div className="flex flex-col gap-2 sm:flex-row">
-            <button type="button" onClick={() => void pullModels()} disabled={pulling} className="min-w-0 flex-1 rounded-lg bg-[#006bbd] px-3 py-2 text-xs font-medium text-white transition-[background-color,transform] hover:bg-[#0059a0] active:scale-95 disabled:cursor-wait disabled:opacity-60">
+            <button type="button" onClick={() => void pullModels()} disabled={pulling} className="min-h-11 min-w-0 flex-1 rounded-lg bg-[#006bbd] px-3 py-2 text-sm font-medium text-white transition-[background-color,transform] hover:bg-[#0059a0] active:scale-95 disabled:cursor-wait disabled:opacity-60">
               {pulling && pullProgress ? `${pullProgress.model} ${pullProgress.percent}%` : pulling ? t('modelPulling').replace('{model}', '') : t('modelSaveAndPull')}
             </button>
-            {pulling && <button type="button" onClick={() => abortRef.current?.abort()} className="min-w-0 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs font-medium text-red-400 hover:bg-red-500/20">{t('modelPullCancel')}</button>}
-            <button type="button" onClick={() => setModelPreset(detectedProfile || '16gb')} className={`min-w-0 rounded-lg px-3 py-2 text-xs font-medium ${btnBase}`}>{t('modelRestoreDefaults')}</button>
+            {pulling && <button type="button" onClick={() => abortRef.current?.abort()} className={`min-h-11 min-w-0 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm font-medium hover:bg-red-500/20 ${isDark ? 'text-red-300' : 'text-red-700'}`}>{t('modelPullCancel')}</button>}
+            <button type="button" onClick={() => setModelPreset(detectedProfile || '16gb')} className={`min-h-11 min-w-0 rounded-lg px-3 py-2 text-sm font-medium ${btnBase}`}>{t('modelRestoreDefaults')}</button>
           </div>
           <div className={`rounded-xl border p-3 ${bgCard}`}>
-            <p className={`text-xs font-semibold ${textLabel}`}>{t('modelHelpTitle')}</p>
-            <p className={`mt-1 text-[11px] leading-relaxed ${textHeading}`}>{t('modelHelpDescription')}</p>
-            <a href="https://www.canirun.ai" target="_blank" rel="noopener noreferrer" className="mt-3 flex items-center justify-between gap-3 rounded-lg border border-[#006bbd]/20 bg-[#006bbd]/5 px-3 py-2 text-left transition-[background-color,border-color] hover:border-[#006bbd]/50 hover:bg-[#006bbd]/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4aa7ed]">
-              <span className="min-w-0"><span className={`block text-xs font-medium ${textLabel}`}>{t('modelCanIRunLabel')}</span><span className={`mt-0.5 block text-[11px] leading-relaxed ${textHeading}`}>{t('modelCanIRunDescription')}</span></span>
-              <span className="shrink-0 text-xs font-medium text-[#4aa7ed]">canirun.ai -&gt;</span>
+            <p className={`text-sm font-semibold ${textLabel}`}>{t('modelHelpTitle')}</p>
+            <p className={`mt-1 text-sm leading-relaxed ${textHeading}`}>{t('modelHelpDescription')}</p>
+            <a href="https://www.canirun.ai" target="_blank" rel="noopener noreferrer" className="mt-3 flex items-center justify-between gap-3 rounded-lg border border-[#006bbd]/20 bg-[#006bbd]/5 px-3 py-2 text-left transition-[background-color,border-color] hover:border-[#006bbd]/50 hover:bg-[#006bbd]/10 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-[#4aa7ed]">
+              <span className="min-w-0"><span className={`block text-sm font-medium ${textLabel}`}>{t('modelCanIRunLabel')}</span><span className={`mt-0.5 block text-xs leading-relaxed ${textHeading}`}>{t('modelCanIRunDescription')}</span></span>
+              <span className={`shrink-0 text-xs font-medium ${isDark ? 'text-[#8ac9f5]' : 'text-[#0059a0]'}`}>canirun.ai -&gt;</span>
             </a>
             <details className="mt-2 rounded-lg border border-dashed border-[#006bbd]/25 px-3 py-2">
-              <summary className={`cursor-pointer text-xs font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4aa7ed] ${textLabel}`}>{t('modelPromptTitle')}</summary>
-              <p className={`mt-2 text-[11px] leading-relaxed ${textHeading}`}>{t('modelPromptDescription')}</p>
-              <pre className={`mt-2 max-h-56 overflow-y-auto whitespace-pre-wrap break-words rounded-lg p-2 text-[10px] leading-relaxed ${isDark ? 'bg-black/30 text-white/60' : 'bg-gray-100 text-gray-600'}`}>{t('modelPromptText')}</pre>
-              <button type="button" onClick={() => { void navigator.clipboard?.writeText(t('modelPromptText')).then(() => toast.toast(t('modelPromptCopied'), 'success')); }} className="mt-2 rounded-lg bg-[#006bbd]/15 px-3 py-2 text-xs font-medium text-[#006bbd] transition-[background-color,transform] hover:bg-[#006bbd]/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4aa7ed] active:scale-95">{t('modelPromptCopy')}</button>
+              <summary className={`cursor-pointer py-1 text-sm font-medium focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-[#4aa7ed] ${textLabel}`}>{t('modelPromptTitle')}</summary>
+              <p className={`mt-2 text-sm leading-relaxed ${textHeading}`}>{t('modelPromptDescription')}</p>
+              <pre className={`mt-2 max-h-56 overflow-y-auto whitespace-pre-wrap break-words rounded-lg p-2 text-xs leading-relaxed ${isDark ? 'bg-black/30 text-white/75' : 'bg-gray-100 text-gray-700'}`}>{t('modelPromptText')}</pre>
+              <button type="button" onClick={() => void copyModelGuide()} className={`mt-2 min-h-11 rounded-lg bg-[#006bbd]/15 px-3 py-2 text-sm font-medium transition-[background-color,transform] hover:bg-[#006bbd]/25 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-[#4aa7ed] active:scale-95 ${isDark ? 'text-[#8ac9f5]' : 'text-[#0059a0]'}`}>{t('modelPromptCopy')}</button>
             </details>
           </div>
           <div className={`mt-3 space-y-3 rounded-lg border p-3 ${bgCard}`}>
-            <div className={`text-[10px] uppercase tracking-widest ${textHeading}`}>{t('performance')}</div>
-            <label className="flex cursor-pointer items-start justify-between gap-2"><span className="min-w-0"><span className={`block break-words text-xs ${textLabel}`}>{t('thinkingMode')}</span><span className={`mt-0.5 block text-[11px] leading-relaxed ${textHeading}`}>{t('thinkingModeDescription')}</span></span><input type="checkbox" aria-label={t('thinkingMode')} checked={localStorage.getItem('tc-thinking-mode') !== '0'} onChange={(event) => setLocalSetting('tc-thinking-mode', event.target.checked ? '1' : '0')} className="mt-0.5 accent-[#006bbd]" /></label>
-            <label className="flex cursor-pointer items-center justify-between gap-2"><span className={`min-w-0 break-words text-xs ${textLabel}`}>{t('aggressiveQuant')}</span><input type="checkbox" checked={localStorage.getItem('tc-aggressive-quant') === '1'} onChange={(event) => setLocalSetting('tc-aggressive-quant', event.target.checked ? '1' : '0')} className="accent-[#006bbd]" /></label>
-            <div className="space-y-1"><div className="flex items-center justify-between gap-2"><span className={`min-w-0 break-words text-xs ${textLabel}`}>{t('keepModelsLoaded')}</span><span className={`text-[10px] font-mono ${textHeading}`}>{getKeepAlive()}</span></div><input type="range" aria-label={t('keepModelsLoaded')} min="0" max="60" step="5" value={parseInt(getKeepAlive().replace(/[^0-9]/g, '') || '0', 10)} onChange={(event) => setLocalSetting('tc-keep-alive', event.target.value === '0' ? '0s' : `${event.target.value}m`)} className="w-full accent-[#006bbd]" /><div className={`flex justify-between text-[9px] ${textHeading}`}><span>{t('keepAliveOff')}</span><span>30m</span><span>60m</span></div></div>
-            <button type="button" onClick={() => void unloadModels()} className={`w-full rounded-lg py-2 text-xs font-medium ${btnBase}`}>{t('unloadAllModelsNow')}</button>
+            <div className={`text-xs font-semibold uppercase tracking-wide ${textHeading}`}>{t('performance')}</div>
+            <label className="flex min-h-11 cursor-pointer items-start justify-between gap-2"><span className="min-w-0"><span className={`block break-words text-sm ${textLabel}`}>{t('thinkingMode')}</span><span className={`mt-0.5 block text-xs leading-relaxed ${textHeading}`}>{t('thinkingModeDescription')}</span></span><input type="checkbox" aria-label={t('thinkingMode')} checked={localStorage.getItem('tc-thinking-mode') !== '0'} onChange={(event) => setLocalSetting('tc-thinking-mode', event.target.checked ? '1' : '0')} className="mt-0.5 h-5 w-5 shrink-0 accent-[#006bbd]" /></label>
+            <label className="flex min-h-11 cursor-pointer items-center justify-between gap-2"><span className={`min-w-0 break-words text-sm ${textLabel}`}>{t('aggressiveQuant')}</span><input type="checkbox" checked={localStorage.getItem('tc-aggressive-quant') === '1'} onChange={(event) => setLocalSetting('tc-aggressive-quant', event.target.checked ? '1' : '0')} className="h-5 w-5 shrink-0 accent-[#006bbd]" /></label>
+            <div className="space-y-1"><div className="flex items-center justify-between gap-2"><span className={`min-w-0 break-words text-sm ${textLabel}`}>{t('keepModelsLoaded')}</span><span className={`text-xs font-mono ${textHeading}`}>{getKeepAlive()}</span></div><input type="range" aria-label={t('keepModelsLoaded')} min="0" max="60" step="5" value={parseInt(getKeepAlive().replace(/[^0-9]/g, '') || '0', 10)} onChange={(event) => setLocalSetting('tc-keep-alive', event.target.value === '0' ? '0s' : `${event.target.value}m`)} className="min-h-11 w-full accent-[#006bbd]" /><div className={`flex justify-between text-xs ${textHeading}`}><span>{t('keepAliveOff')}</span><span>30m</span><span>60m</span></div></div>
+            <button type="button" onClick={() => void unloadModels()} className={`min-h-11 w-full rounded-lg py-2 text-sm font-medium ${btnBase}`}>{t('unloadAllModelsNow')}</button>
           </div>
       </div>
     </section>

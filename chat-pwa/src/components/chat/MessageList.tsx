@@ -9,7 +9,7 @@ import {
   type ReactNode,
   type RefObject,
 } from 'react';
-import { AnimatePresence, motion } from 'framer-motion';
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import {
   MdCheck,
   MdContentCopy,
@@ -282,6 +282,7 @@ export default function MessageList({
   onScrollToBottom,
 }: MessageListProps) {
   const { t } = useI18n();
+  const prefersReducedMotion = useReducedMotion();
   const messageKeys = useMemo(() => getMessageKeys(messages), [messages]);
   const displayContent = (message: ChatMessage) => (
     message.displayContent ?? (message.content || (message.image ? '[image]' : ''))
@@ -418,7 +419,7 @@ export default function MessageList({
   const visibleMessageIndexes = visibleItemIndexes.filter((index) => index < messages.length);
 
   return (
-    <div className={`${messages.length === 0 && !streaming ? 'hidden' : 'relative flex-1'} min-h-0 min-w-0 max-w-full`}>
+    <div className={`${messages.length === 0 && !streaming ? 'hidden' : 'relative flex-1'} z-0 min-h-0 min-w-0 max-w-full`}>
       <div
         ref={setMessagesElement}
         onScroll={onScrollInternal}
@@ -430,11 +431,10 @@ export default function MessageList({
           const message = messages[index];
           const messageKey = messageKeys[index];
           const content = message.role === 'assistant' ? assistantContent(message, t('collectionEmpty')) : message.content;
+          const canContinue = Boolean(message.canContinue && (message.maxContinuations === undefined || (message.continuationCount || 0) < message.maxContinuations));
           return (
           <MeasuredRow key={messageKey} itemKey={messageKey} top={layout.offsets[index]} onResize={onRowResize}>
-          <motion.div
-            initial={{ opacity: 0, y: 12, scale: 0.96 }} animate={{ opacity: 1, y: 0, scale: 1 }}
-            transition={{ duration: 0.3, delay: 0, ease: [0.16, 1, 0.3, 1] }}
+          <div
             className={`chat-row flex w-full min-w-0 max-w-full gap-2 sm:gap-3 ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
           >
             {message.role === 'assistant' && (
@@ -461,12 +461,12 @@ export default function MessageList({
                     }
                     if (event.key === 'Escape') onCancelEdit();
                   }}
-                  className={`w-full resize-none overflow-hidden rounded-xl border border-[#006bbd]/40 px-3 py-2 text-sm outline-none focus:border-[#006bbd] ${isDark ? 'bg-[#006bbd]/20 text-white placeholder-white/30' : 'bg-[#006bbd]/10 text-gray-900 placeholder-gray-400'}`}
+                  className={`w-full resize-none overflow-hidden rounded-xl border border-[#006bbd]/40 px-3 py-2 text-base outline-hidden focus:border-[#006bbd] sm:text-sm ${isDark ? 'bg-[#006bbd]/20 text-white placeholder-white/30' : 'bg-[#006bbd]/10 text-gray-900 placeholder-gray-400'}`}
                   rows={1}
                 />
                 <div className="mt-1 flex gap-2">
-                  <button onClick={onSaveEdit} className="rounded-lg bg-[#006bbd] px-2 py-1 text-xs text-white">{t('saveAndResend')}</button>
-                  <button onClick={onCancelEdit} className={`rounded-lg px-2 py-1 text-xs ${isDark ? 'bg-white/10 text-white/70 hover:text-white' : 'bg-gray-200 text-gray-700 hover:text-gray-900'}`}>{t('cancel')}</button>
+                  <button onClick={onSaveEdit} className="min-h-11 rounded-lg bg-[#006bbd] px-3 text-sm text-white">{t('saveAndResend')}</button>
+                  <button onClick={onCancelEdit} className={`min-h-11 rounded-lg px-3 text-sm ${isDark ? 'bg-white/10 text-white/70 hover:text-white' : 'bg-gray-200 text-gray-700 hover:text-gray-900'}`}>{t('cancel')}</button>
                 </div>
               </div>
             ) : message.role === 'assistant' ? (
@@ -479,42 +479,42 @@ export default function MessageList({
                     <button
                       type="button"
                       onClick={onOpenIndexing}
-                      className={`mt-3 inline-flex min-h-9 items-center rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors ${isDark ? 'border-blue-300/35 text-blue-200 hover:bg-blue-300/10' : 'border-[#006bbd]/40 text-[#006bbd] hover:bg-[#006bbd]/10'}`}
+                      className={`mt-3 inline-flex min-h-11 items-center rounded-lg border px-3 text-sm font-semibold transition-colors ${isDark ? 'border-blue-300/35 text-blue-200 hover:bg-blue-300/10' : 'border-[#006bbd]/40 text-[#005a9e] hover:bg-[#006bbd]/10'}`}
                     >
                       {t('openIndexing')}
                     </button>
                   )}
                 </div>
-                <div className="chat-actions mt-1 flex w-full items-center gap-2">
+                <div data-completion-status={message.completionStatus} className="chat-actions mt-1 flex w-full flex-wrap items-center gap-2">
                   {message.completionStatus === 'pending' && (
-                    <span role="status" className="text-[11px] text-amber-600">{message.canContinue && (message.maxContinuations === undefined || (message.continuationCount || 0) < message.maxContinuations) ? t('completionPending') : t('completionLimitReached')}</span>
+                    <span role="status" className={`text-sm ${isDark ? 'text-amber-300' : 'text-amber-800'}`}>{canContinue ? t('completionPending') : t('completionLimitReached')}</span>
                   )}
-                  {message.completionStatus === 'cancelled' && <span role="status" className="text-[11px] text-gray-500">{t('requestCancelled')}</span>}
-                  {message.completionStatus === 'error' && <span role="status" className="text-[11px] text-red-600">{t('completionError')}</span>}
-                  {message.canContinue && message.completionStatus === 'pending' && (
+                  {message.completionStatus === 'cancelled' && <span role="status" className={`text-sm ${isDark ? 'text-white/65' : 'text-gray-600'}`}>{t('requestCancelled')}</span>}
+                  {message.completionStatus === 'error' && <span role="status" className={`text-sm ${isDark ? 'text-red-300' : 'text-red-700'}`}>{t('completionError')}</span>}
+                  {canContinue && message.completionStatus === 'pending' && (
                     <button
                       type="button"
                       onClick={() => onContinue(index)}
-                      className="rounded-md bg-[#006bbd]/10 px-2 py-1 text-[11px] font-medium text-[#006bbd] hover:bg-[#006bbd]/20"
+                      className={`min-h-11 rounded-lg bg-[#006bbd]/10 px-3 text-sm font-medium hover:bg-[#006bbd]/20 ${isDark ? 'text-[#4aa7ed]' : 'text-[#005a9e]'}`}
                     >
                       {t('continueResponse')}
                     </button>
                   )}
                   <button
                     onClick={() => onCopy(content.trim(), `msg-copy-${index}`)}
-                    className={`rounded-md p-1 transition-colors ${copiedKey === `msg-copy-${index}` ? 'bg-[#006bbd]/10 text-[#006bbd]' : isDark ? 'text-white/30 hover:bg-white/[0.06] hover:text-white/70' : 'text-gray-400 hover:bg-gray-100 hover:text-gray-600'}`}
+                    className={`grid h-8 w-8 place-items-center rounded-lg transition-colors ${copiedKey === `msg-copy-${index}` ? `bg-[#006bbd]/10 ${isDark ? 'text-[#4aa7ed]' : 'text-[#005a9e]'}` : isDark ? 'text-white/60 hover:bg-white/[0.06] hover:text-white' : 'text-gray-600 hover:bg-gray-100 hover:text-gray-800'}`}
                     title={copiedKey === `msg-copy-${index}` ? t('copied') : t('copy')}
                     aria-label={copiedKey === `msg-copy-${index}` ? t('copied') : t('copy')}
                   >
                     {copiedKey === `msg-copy-${index}` ? <MdCheck size={15} /> : <MdContentCopy size={15} />}
                   </button>
-                  <button onClick={() => onRegenerate(index)} disabled={streaming} className={`rounded-md p-1 transition-colors disabled:opacity-30 ${isDark ? 'text-white/30 hover:bg-white/[0.06] hover:text-white/70' : 'text-gray-400 hover:bg-gray-100 hover:text-gray-600'}`} title={t('regenerate')} aria-label={t('regenerate')}>
+                  <button onClick={() => onRegenerate(index)} disabled={streaming} className={`grid h-8 w-8 place-items-center rounded-lg transition-colors disabled:opacity-30 ${isDark ? 'text-white/60 hover:bg-white/[0.06] hover:text-white' : 'text-gray-600 hover:bg-gray-100 hover:text-gray-800'}`} title={t('regenerate')} aria-label={t('regenerate')}>
                     <MdRefresh size={15} />
                   </button>
                   {ttsSupported && (
                     <button
                       onClick={() => ttsActiveKey === `msg-${index}` ? onStopSpeak() : onSpeak(content.trim(), `msg-${index}`)}
-                      className={`rounded-md p-1 transition-colors ${ttsActiveKey === `msg-${index}` ? 'bg-[#006bbd]/10 text-[#006bbd]' : isDark ? 'text-white/30 hover:bg-white/[0.06] hover:text-white/70' : 'text-gray-400 hover:bg-gray-100 hover:text-gray-600'}`}
+                      className={`grid h-8 w-8 place-items-center rounded-lg transition-colors ${ttsActiveKey === `msg-${index}` ? `bg-[#006bbd]/10 ${isDark ? 'text-[#4aa7ed]' : 'text-[#005a9e]'}` : isDark ? 'text-white/60 hover:bg-white/[0.06] hover:text-white' : 'text-gray-600 hover:bg-gray-100 hover:text-gray-800'}`}
                       title={ttsActiveKey === `msg-${index}` ? t('stop') : t('listen')}
                       aria-label={ttsActiveKey === `msg-${index}` ? t('stop') : t('listen')}
                     >
@@ -544,8 +544,8 @@ export default function MessageList({
                   {!message.image && message.documentAttachments?.some((attachment) => attachment.kind === 'image') && (
                     <div className="mb-2 flex flex-wrap gap-1.5">
                       {message.documentAttachments.filter((attachment) => attachment.kind === 'image').map((attachment, attachmentIndex) => (
-                        <button type="button" key={`image-${attachment.id || attachmentIndex}`} onClick={() => onOpenAttachment(attachment)} className="inline-flex items-center gap-1.5 rounded-lg bg-white/15 px-2 py-1 text-[11px] text-white/90">
-                          <MdImage size={14} /> {attachment.name || t('attachedImage')}
+                        <button type="button" key={`image-${attachment.id || attachmentIndex}`} onClick={() => onOpenAttachment(attachment)} className="inline-flex min-h-11 min-w-0 max-w-full items-center gap-1.5 rounded-lg bg-white/15 px-2 text-sm text-white/90 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-[#4aa7ed]">
+                          <MdImage size={16} className="shrink-0" /> <span className="min-w-0 truncate">{attachment.name || t('attachedImage')}</span>
                           {attachment.localOnly && <span title={t('chatAttachmentLocalOnly')} className="shrink-0 text-amber-200">{t('localOnlyAttachment')}</span>}
                         </button>
                       ))}
@@ -554,7 +554,7 @@ export default function MessageList({
                   {message.documentAttachments?.length ? (
                     <div className="mb-2 flex max-w-full flex-wrap gap-1.5">
                       {message.documentAttachments.filter((attachment) => attachment.kind !== 'image').map((attachment, attachmentIndex) => (
-                        <button type="button" onClick={() => onOpenAttachment(attachment)} key={`${attachment.name}-${attachmentIndex}`} className="inline-flex min-w-0 max-w-full items-center gap-1.5 rounded-lg bg-white/15 px-2 py-1 text-[11px] text-white/90">
+                        <button type="button" onClick={() => onOpenAttachment(attachment)} key={`${attachment.name}-${attachmentIndex}`} className="inline-flex min-h-11 min-w-0 max-w-full items-center gap-1.5 rounded-lg bg-white/15 px-2 text-sm text-white/90 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-[#4aa7ed]">
                           <MdUploadFile size={14} className="shrink-0" />
                           <span className="min-w-0 max-w-48 truncate">{attachment.name}</span>
                           {formatAttachmentSize(attachment.size) && <span className="shrink-0 text-white/60">{formatAttachmentSize(attachment.size)}</span>}
@@ -567,10 +567,10 @@ export default function MessageList({
                   {displayContent(message) && <p className="chat-plain-text min-w-0 max-w-full whitespace-pre-wrap">{displayContent(message)}</p>}
                 </div>
                 <div className="chat-actions mt-1 flex items-center gap-1">
-                  <button onClick={() => onStartEdit(index)} className={`rounded-md p-1 transition-colors ${isDark ? 'text-white/35 hover:bg-white/[0.06] hover:text-white/75' : 'text-gray-500 hover:bg-gray-100 hover:text-gray-700'}`} title={t('clickToEdit')} aria-label={t('clickToEdit')}><MdEdit size={15} /></button>
+                  <button onClick={() => onStartEdit(index)} className={`grid h-8 w-8 place-items-center rounded-lg transition-colors ${isDark ? 'text-white/60 hover:bg-white/[0.06] hover:text-white' : 'text-gray-600 hover:bg-gray-100 hover:text-gray-800'}`} title={t('clickToEdit')} aria-label={t('clickToEdit')}><MdEdit size={15} /></button>
                   <button
                     onClick={() => onCopy(displayContent(message), `msg-copy-${index}`)}
-                    className={`rounded-md p-1 transition-colors ${copiedKey === `msg-copy-${index}` ? 'bg-[#006bbd]/10 text-[#006bbd]' : isDark ? 'text-white/30 hover:bg-white/[0.06] hover:text-white/70' : 'text-gray-400 hover:bg-gray-100 hover:text-gray-600'}`}
+                    className={`grid h-8 w-8 place-items-center rounded-lg transition-colors ${copiedKey === `msg-copy-${index}` ? `bg-[#006bbd]/10 ${isDark ? 'text-[#4aa7ed]' : 'text-[#005a9e]'}` : isDark ? 'text-white/60 hover:bg-white/[0.06] hover:text-white' : 'text-gray-600 hover:bg-gray-100 hover:text-gray-800'}`}
                     title={copiedKey === `msg-copy-${index}` ? t('copied') : t('copy')}
                     aria-label={copiedKey === `msg-copy-${index}` ? t('copied') : t('copy')}
                   >
@@ -585,7 +585,7 @@ export default function MessageList({
                 {(userDisplayName.trim()[0] || 'U').toUpperCase()}
               </div>
             )}
-          </motion.div>
+          </div>
           </MeasuredRow>
           );
         })}
@@ -593,8 +593,8 @@ export default function MessageList({
         {streaming && visibleItemIndexes.includes(messages.length) && (
           <MeasuredRow itemKey={STREAMING_ROW_KEY} top={layout.offsets[messages.length]} onResize={onRowResize}>
           <motion.div
-            initial={{ opacity: 0, y: 8, scale: 0.96 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, scale: 0.96 }}
-            transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
+            initial={prefersReducedMotion ? false : { opacity: 0, y: 8, scale: 0.96 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, scale: 0.96 }}
+            transition={{ duration: prefersReducedMotion ? 0 : 0.3, ease: [0.16, 1, 0.3, 1] }}
             className="chat-row flex w-full min-w-0 max-w-full justify-start gap-2 sm:gap-3"
           >
             <div className={`chat-assistant-avatar mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full p-1 ${isDark ? 'chat-assistant-avatar-dark' : 'chat-assistant-avatar-light'}`}>
@@ -610,10 +610,10 @@ export default function MessageList({
                       <AnimatePresence initial={false} mode="wait">
                         <motion.span
                           key={activityLabel || 'assistant-generating'}
-                          initial={{ opacity: 0, y: 5 }}
+                          initial={prefersReducedMotion ? false : { opacity: 0, y: 5 }}
                           animate={{ opacity: 1, y: 0 }}
                           exit={{ opacity: 0, y: -5 }}
-                          transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
+                          transition={{ duration: prefersReducedMotion ? 0 : 0.24, ease: [0.22, 1, 0.36, 1] }}
                         >
                           {activityLabel || t('assistantGenerating')}
                         </motion.span>
@@ -637,8 +637,8 @@ export default function MessageList({
           <div className="fixed bottom-[calc(env(safe-area-inset-bottom,0px)+6rem)] left-1/2 z-30 -translate-x-1/2">
             <motion.button
               type="button" onClick={onScrollToBottom}
-              initial={{ opacity: 0, scale: 0.94 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.94 }}
-              transition={{ duration: 0.16, ease: 'easeOut' }}
+              initial={prefersReducedMotion ? false : { opacity: 0, scale: 0.94 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.94 }}
+              transition={{ duration: prefersReducedMotion ? 0 : 0.16, ease: 'easeOut' }}
               className={`grid h-11 w-11 place-items-center rounded-full border shadow-lg backdrop-blur-xl transition-[background-color,color,border-color,transform] active:scale-95 ${isDark ? 'border-white/[0.08] bg-black/60 text-white/80 hover:bg-[#006bbd] hover:text-white' : 'border-gray-200 bg-white/80 text-gray-600 hover:bg-[#006bbd] hover:text-white'}`}
               aria-label={t('scrollToBottom')} title={t('scrollToBottom')}
             >

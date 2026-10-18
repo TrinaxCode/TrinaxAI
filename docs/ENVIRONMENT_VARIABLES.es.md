@@ -4,7 +4,7 @@
 
 <p align="center">
   <a href="https://github.com/TrinaxCode/TrinaxAI"><img src="https://img.shields.io/github/stars/TrinaxCode/TrinaxAI?style=flat&amp;label=%E2%98%85&amp;color=006bbd" alt="GitHub stars"></a>
-  <a href="https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.2.6"><img src="https://img.shields.io/badge/version-1.2.6-006bbd" alt="Stable release: 1.2.6"></a>
+  <a href="https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.3.0"><img src="https://img.shields.io/badge/version-1.3.0-006bbd" alt="Stable release: 1.3.0"></a>
   <a href="https://github.com/TrinaxCode/TrinaxAI/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/TrinaxCode/TrinaxAI/ci.yml?branch=main&amp;label=CI" alt="CI status"></a>
   <a href="https://github.com/TrinaxCode/TrinaxAI/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0--or--later-006bbd" alt="License: AGPL-3.0-or-later"></a>
   <img src="https://img.shields.io/badge/macOS%20%7C%20Windows%20%7C%20Linux-4493F8?style=flat-square" alt="Supported platforms: macOS, Windows, and Linux">
@@ -217,7 +217,7 @@ subtítulos, calendarios, contactos y notebooks. Los binarios opacos se omiten.
 | `TRINAXAI_VOICE_RATE_LIMIT_PER_MINUTE` | `30` | Límite de voz por minuto. |
 | `TRINAXAI_VOICE_MAX_CONCURRENCY` | `1` | Trabajos de voz simultáneos. |
 | `TRINAXAI_PIPER_MODEL` | autodetectado | Ruta explícita del modelo Piper. |
-| `TRINAXAI_COQUI_MODEL` | `tts_models/es/mai/tacotron2-DDC` | Identificador del modelo Coqui. |
+| `TRINAXAI_COQUI_MODEL` | según idioma (`tts_models/es/mai/tacotron2-DDC` en español, `tts_models/en/ljspeech/tacotron2-DDC` en el resto) | Identificador del modelo Coqui. |
 
 ## Aislamiento del agente
 
@@ -278,7 +278,7 @@ cambiarlas. Los destinos sin `VITE_*` se leen al ejecutar el gateway.
 | `TRINAXAI_UPDATE_REPAIR_OLLAMA` | `0` | Reinstala o repara Ollama durante la actualización. |
 | `TRINAXAI_UPDATE_RESTART` | auto/preguntado | Reinicia servicios después de actualizar. |
 | `TRINAXAI_UPDATE_AUDIT` | `1` | Ejecuta el readiness audit posterior. |
-| `TRINAXAI_RELEASE_VERSION` | `1.2.6` | **Instalador:** versión semántica del release de GitHub usada para el paquete fuente versionado. El instalador nunca vuelve a `main`. |
+| `TRINAXAI_RELEASE_VERSION` | `1.3.0` | **Instalador:** versión semántica del release de GitHub usada para el paquete fuente versionado. El instalador nunca vuelve a `main`. |
 | `TRINAXAI_SOURCE_URL` | release fijado de GitHub | **Origen de instalación:** URL HTTPS de un paquete fuente personalizado. |
 | `TRINAXAI_SOURCE_SHA256` | sin definir | **Instalador:** SHA-256 del archivo fuente personalizado; obligatorio junto con `TRINAXAI_SOURCE_URL`. |
 | `TRINAXAI_UPDATE_SOURCE_URL` | release fijado de GitHub | **Actualizador:** URL HTTPS del paquete fuente de actualización. |

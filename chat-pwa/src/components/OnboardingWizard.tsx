@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useCallback, useRef, useEffect, useLayoutEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { MdContentCopy, MdCheck, MdStop } from 'react-icons/md';
 import { useI18n } from '../i18n/I18nContext';
@@ -58,6 +58,11 @@ export default function OnboardingWizard({ onComplete, canConfigureSystem }: Pro
   const [testResults, setTestResults] = useState<Record<string, boolean> | null>(null);
   const [copiedCmd, setCopiedCmd] = useState<string | null>(null);
   const indexAbortRef = useRef<AbortController | null>(null);
+  const wizardRef = useRef<HTMLDivElement>(null);
+
+  useLayoutEffect(() => {
+    if (wizardRef.current) wizardRef.current.scrollTop = 0;
+  }, [step]);
 
   // Abort any in-flight indexing poll if the wizard unmounts mid-run.
   useEffect(() => {
@@ -244,23 +249,23 @@ export default function OnboardingWizard({ onComplete, canConfigureSystem }: Pro
     { key: 'fast' as const, label: t('modelFast') },
   ];
 
-  const bg = isDark ? 'bg-black' : 'bg-white';
-  const cardBg = isDark ? 'bg-white/[0.03] border-white/[0.06]' : 'bg-gray-50 border-gray-200';
+  const bg = isDark ? 'bg-[#0b111a]' : 'bg-[#f7f9fc]';
+  const cardBg = isDark ? 'bg-[#14202d] border-white/[0.10]' : 'bg-white border-slate-200';
   const textMain = isDark ? 'text-white' : 'text-gray-900';
-  const textSub = isDark ? 'text-white/50' : 'text-gray-500';
-  const inputBg = isDark ? 'bg-white/[0.05] border-white/[0.1] text-white placeholder-white/30' : 'bg-white border-gray-300 text-gray-900 placeholder-gray-400';
+  const textSub = isDark ? 'text-white/65' : 'text-gray-600';
+  const inputBg = isDark ? 'bg-[#14202d] border-white/[0.12] text-white placeholder-white/45' : 'bg-white border-gray-300 text-gray-900 placeholder-gray-500';
   const btnPrimary = 'bg-[#006bbd] text-white hover:bg-[#0059a0] active:scale-95';
   const btnSecondary = isDark ? 'bg-white/[0.06] text-white/70 hover:bg-white/[0.1]' : 'bg-gray-100 text-gray-700 hover:bg-gray-200';
-  const selectedCard = 'border-[#006bbd] bg-[#006bbd]/5 ring-1 ring-[#006bbd]/30';
+  const selectedCard = isDark ? 'border-[#168de2] bg-[#12314b] ring-1 ring-[#168de2]/30' : 'border-[#006bbd] bg-sky-50 ring-1 ring-[#006bbd]/20';
   const stepDot = (s: Step) => step === s ? 'bg-[#006bbd] w-3' : (step > s ? 'bg-[#006bbd]/40' : (isDark ? 'bg-white/[0.15]' : 'bg-gray-300'));
   const indexProgress = Math.max(uploadProgress, indexJob?.progress ?? 0);
   const indexProgressExact = uploadProgress > 0 ? true : Boolean(indexJob?.progress_exact ?? true);
 
   return (
     <motion.div
-      className={`fixed inset-0 z-50 flex flex-col items-center justify-center overflow-y-auto ${bg} px-4 py-6 transition-colors duration-300`}
-      role="dialog"
-      aria-modal="true"
+      ref={wizardRef}
+      className={`fixed inset-0 z-50 flex flex-col items-center justify-start overflow-y-auto ${bg} px-4 py-6 transition-colors duration-300`}
+      role="main"
       aria-labelledby="onboarding-title"
       style={{
         paddingTop: 'max(1.5rem, calc(env(safe-area-inset-top, 0px) + 1rem))',
@@ -269,11 +274,13 @@ export default function OnboardingWizard({ onComplete, canConfigureSystem }: Pro
       initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
     >
       <div className="my-auto w-full max-w-lg flex flex-col gap-5 sm:gap-6 px-1 sm:px-0">
-        <header className="text-center">
-          <p className={`text-[11px] font-semibold uppercase tracking-[0.2em] ${textSub}`}>{t('onboardingEyebrow')}</p>
-          <h1 id="onboarding-title" className={`mt-2 text-2xl font-semibold text-wrap-balance ${textMain}`}>{t('onboardingWelcome')}</h1>
-          <p className={`mt-2 text-sm ${textSub}`}>{t('onboardingIntro')}</p>
-        </header>
+        {step === 1 || step === 6 ? (
+          <div className="text-center">
+            <p className={`text-[11px] font-semibold uppercase tracking-[0.2em] ${textSub}`}>{t('onboardingEyebrow')}</p>
+            <h1 id="onboarding-title" className={`mt-2 text-2xl font-semibold text-wrap-balance ${textMain}`}>{t('onboardingWelcome')}</h1>
+            <p className={`mt-2 text-sm ${textSub}`}>{t('onboardingIntro')}</p>
+          </div>
+        ) : <h1 id="onboarding-title" className="sr-only">{t('onboardingWelcome')}</h1>}
 
         <AnimatePresence mode="wait">
           {/* Step 1: Language */}
@@ -287,7 +294,7 @@ export default function OnboardingWizard({ onComplete, canConfigureSystem }: Pro
                     key={l}
                     whileTap={{ scale: 0.96 }}
                     onClick={() => setLang(l)}
-                    className={`p-5 rounded-2xl border-2 text-center transition-[background-color,color,border-color,box-shadow,transform] ${lang === l ? selectedCard : `border-transparent ${cardBg} hover:border-white/10`}`}
+                    className={`p-5 rounded-2xl border-2 text-center transition-[background-color,color,border-color,box-shadow,transform] ${lang === l ? selectedCard : `border-transparent ${cardBg} hover:border-sky-400/40`}`}
                   >
                     <span className="text-3xl">{l === 'es' ? '🇪🇸' : '🇺🇸'}</span>
                     <p className={`mt-2 font-medium ${textMain}`}>{l === 'es' ? t('languageSpanish') : t('languageEnglish')}</p>
@@ -308,7 +315,7 @@ export default function OnboardingWizard({ onComplete, canConfigureSystem }: Pro
                     key={mode}
                     whileTap={{ scale: 0.96 }}
                     onClick={() => setTheme(mode)}
-                    className={`p-5 rounded-2xl border-2 text-center transition-[background-color,color,border-color,box-shadow,transform] ${(mode === 'dark') === isDark ? selectedCard : `border-transparent ${cardBg} hover:border-white/10`}`}
+                    className={`p-5 rounded-2xl border-2 text-center transition-[background-color,color,border-color,box-shadow,transform] ${(mode === 'dark') === isDark ? selectedCard : `border-transparent ${cardBg} hover:border-sky-400/40`}`}
                   >
                     <div className={`mx-auto w-16 h-10 rounded-lg mb-2 border ${mode === 'dark' ? 'bg-gray-900 border-gray-700' : 'bg-white border-gray-300'}`}>
                       <div className={`h-2 w-8 mx-auto mt-1.5 rounded ${mode === 'dark' ? 'bg-gray-700' : 'bg-gray-200'}`} />
@@ -324,6 +331,8 @@ export default function OnboardingWizard({ onComplete, canConfigureSystem }: Pro
           {/* Step 3: Name */}
           {step === 3 && (
             <motion.div key="s3" variants={stepVariants} initial="enter" animate="center" exit="exit" transition={{ duration: 0.25 }} className="flex flex-col gap-5">
+              <h2 className={`text-center text-2xl font-semibold ${textMain}`}>{t('onboardingStep3Title')}</h2>
+              <p className={`text-center text-sm ${textSub}`}>{t('onboardingStep3Desc')}</p>
               <div className="space-y-4">
                 <label htmlFor="onboarding-nickname" className="sr-only">{t('onboardingStep3NicknameLabel')}</label>
                 <input
@@ -334,7 +343,7 @@ export default function OnboardingWizard({ onComplete, canConfigureSystem }: Pro
                   onChange={(e) => setNickname(e.target.value)}
                   placeholder={t('onboardingStep3NicknameLabel')}
                   autoComplete="nickname"
-                  className={`w-full px-4 py-3 rounded-xl border text-sm outline-none focus-visible:border-[#006bbd] focus-visible:ring-2 focus-visible:ring-[#006bbd]/25 transition-[border-color,box-shadow] ${inputBg}`}
+                  className={`w-full px-4 py-3 rounded-xl border text-base outline-hidden focus-visible:border-[#006bbd] focus-visible:ring-2 focus-visible:ring-[#006bbd]/25 transition-[border-color,box-shadow] sm:text-sm ${inputBg}`}
                 />
               </div>
             </motion.div>
@@ -357,10 +366,10 @@ export default function OnboardingWizard({ onComplete, canConfigureSystem }: Pro
                         else if (choice === 'test') { setModelChoice('test'); runSystemTest(); }
                         else setModelChoice(choice);
                       }}
-                      className={`w-full p-4 rounded-xl border text-left transition-[background-color,color,border-color,box-shadow,transform] ${modelChoice === choice ? selectedCard : `${cardBg} hover:border-white/10`}`}
+                      className={`w-full p-4 rounded-xl border text-left transition-[background-color,color,border-color,box-shadow,transform] ${modelChoice === choice ? selectedCard : `${cardBg} hover:border-sky-400/40`}`}
                     >
                       <p className={`font-medium text-sm ${textMain}`}>{t(`onboardingStep5${choice === 'default' ? 'Default' : choice === 'custom' ? 'Custom' : 'AutoTest'}` as any)}</p>
-                      <p className={`text-xs mt-1 ${textSub}`}>{t(`onboardingStep5${choice === 'default' ? 'Default' : choice === 'custom' ? 'Custom' : 'AutoTest'}Desc` as any)}</p>
+                      <p className={`mt-1 text-sm leading-relaxed ${textSub}`}>{t(`onboardingStep5${choice === 'default' ? 'Default' : choice === 'custom' ? 'Custom' : 'AutoTest'}Desc` as any)}</p>
                     </motion.button>
                   ))}
                 </div>
@@ -386,8 +395,8 @@ export default function OnboardingWizard({ onComplete, canConfigureSystem }: Pro
                     />
                   </div>
                   {Object.entries(testResults).map(([k, v]) => (
-                    <div key={k} className="flex items-center gap-2 text-xs">
-                      <span className={v ? 'text-green-400' : 'text-red-400'} aria-label={v ? t('systemCheckPassed') : t('systemCheckFailed')}>{v ? <MdCheck size={15} /> : '-'}</span>
+                    <div key={k} className="flex items-center gap-2 text-sm">
+                      <span role="img" className={v ? 'text-green-400' : 'text-red-400'} aria-label={v ? t('systemCheckPassed') : t('systemCheckFailed')}>{v ? <MdCheck size={15} /> : '-'}</span>
                       <span className={textSub}>{t(k as any)}</span>
                     </div>
                   ))}
@@ -402,15 +411,16 @@ export default function OnboardingWizard({ onComplete, canConfigureSystem }: Pro
                 <div className={`p-4 rounded-xl ${cardBg} space-y-3`}>
                   {customStep < modelKeys.length ? (
                     <>
-                      <p className={`text-xs ${textSub}`}>{modelKeys[customStep].label}</p>
+                      <p className={`text-sm ${textSub}`}>{modelKeys[customStep].label}</p>
                       <input
                         type="text"
+                        aria-label={modelKeys[customStep].label}
                         value={customModels[modelKeys[customStep].key]}
                         onChange={(e) => {
                           customModelsEditedRef.current.add(modelKeys[customStep].key);
                           setCustomModels((m) => ({ ...m, [modelKeys[customStep].key]: e.target.value }));
                         }}
-                        className={`w-full px-3 py-2 rounded-lg border text-sm outline-none ${inputBg}`}
+                        className={`w-full px-3 py-2 rounded-lg border text-base outline-hidden sm:text-sm ${inputBg}`}
                       />
                       <div className="flex gap-2">
                         <motion.button whileTap={{ scale: 0.96 }} onClick={() => setCustomStep((s) => s + 1)} className={`flex-1 py-2 rounded-lg text-sm font-medium ${btnPrimary}`}>
@@ -446,26 +456,27 @@ export default function OnboardingWizard({ onComplete, canConfigureSystem }: Pro
                   <p className="text-green-400 text-sm font-medium">{t('ollamaDetected')}</p>
                 ) : (
                   <div className="space-y-3 text-left">
-                    <p className="text-amber-400 text-sm font-medium">{t('ollamaNotDetected')}</p>
-                    <div className="space-y-2 text-xs">
+                    <p className={`text-sm font-medium ${isDark ? 'text-amber-400' : 'text-amber-800'}`}>{t('ollamaNotDetected')}</p>
+                    <div className="space-y-2 text-sm">
                       <details className={`p-2 rounded-lg ${cardBg}`}>
-                        <summary className="font-medium cursor-pointer">{t('platformLinux')}</summary>
+                        <summary className="min-h-11 cursor-pointer py-3 font-medium">{t('platformLinux')}</summary>
                         <a
                           href="https://ollama.com/download/linux"
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="mt-1 block rounded-lg bg-black/20 p-2 text-[11px] text-[#4ea3e0] underline underline-offset-2"
+                          className={`mt-1 block min-h-11 rounded-lg p-3 text-sm underline underline-offset-2 [overflow-wrap:anywhere] ${isDark ? 'bg-black/20 text-[#8ac9f5]' : 'border border-slate-200 bg-white text-[#0059a0]'}`}
                         >
                           {t('ollamaLinuxDownload')}
                         </a>
                       </details>
                       <details className={`p-2 rounded-lg ${cardBg}`}>
-                        <summary className="font-medium cursor-pointer">{t('platformMac')}</summary>
+                        <summary className="min-h-11 cursor-pointer py-3 font-medium">{t('platformMac')}</summary>
                         <div className="mt-1 flex items-center gap-2">
-                          <pre className="flex-1 p-2 rounded text-[11px] bg-black/20 overflow-x-auto">brew install ollama</pre>
+                          <pre className={`min-w-0 flex-1 overflow-x-auto rounded p-2 text-sm ${isDark ? 'bg-black/20' : 'bg-white'}`}>brew install ollama</pre>
                           <button
                             onClick={(e) => { e.stopPropagation(); copyToClipboard('brew install ollama', 'mac'); }}
-                            className={`shrink-0 p-1.5 rounded-md transition-colors ${copiedCmd === 'mac' ? 'text-green-400 bg-green-400/10' : isDark ? 'text-white/30 hover:text-white/70 hover:bg-white/[0.06]' : 'text-gray-400 hover:text-gray-700 hover:bg-gray-100'}`}
+                            className={`grid h-11 w-11 shrink-0 place-items-center rounded-lg transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-[#4aa7ed] ${copiedCmd === 'mac' ? 'bg-green-400/10 text-green-500' : isDark ? 'text-white/75 hover:bg-white/[0.06]' : 'text-gray-700 hover:bg-gray-100'}`}
+                            aria-label={t('copy')}
                             title={t('copy')}
                           >
                             {copiedCmd === 'mac' ? <MdCheck size={14} /> : <MdContentCopy size={14} />}
@@ -473,8 +484,8 @@ export default function OnboardingWizard({ onComplete, canConfigureSystem }: Pro
                         </div>
                       </details>
                       <details className={`p-2 rounded-lg ${cardBg}`}>
-                        <summary className="font-medium cursor-pointer">{t('platformWindows')}</summary>
-                        <pre className="mt-1 p-2 rounded text-[11px] bg-black/20">{t('ollamaWindowsDownload')}</pre>
+                        <summary className="min-h-11 cursor-pointer py-3 font-medium">{t('platformWindows')}</summary>
+                        <pre className={`mt-1 overflow-x-auto rounded p-2 text-sm ${isDark ? 'bg-black/20' : 'bg-white'}`}>{t('ollamaWindowsDownload')}</pre>
                       </details>
                     </div>
                   </div>
@@ -515,10 +526,10 @@ export default function OnboardingWizard({ onComplete, canConfigureSystem }: Pro
                   <div className={`p-3 rounded-xl ${cardBg} space-y-2`}>
                     {indexing ? (
                       <>
-                        <div className="flex items-center justify-between text-xs">
+                        <div className="flex items-center justify-between text-sm">
                           <span className={textSub}>{indexJob?.phase ? t('indexing') : t('loading')}</span>
                           <span className={`font-semibold tabular-nums ${textMain}`}>
-                            {indexProgress}%{!indexProgressExact && <span className="ml-1.5 text-[10px] font-normal uppercase tracking-wide">{t('indexApprox')}</span>}
+                            {indexProgress}%{!indexProgressExact && <span className="ml-1.5 text-xs font-normal uppercase tracking-wide">{t('indexApprox')}</span>}
                           </span>
                         </div>
                         <div
@@ -532,10 +543,10 @@ export default function OnboardingWizard({ onComplete, canConfigureSystem }: Pro
                         >
                           <div className={`tc-index-fill${indexProgressExact ? '' : ' tc-index-fill--live'}`} style={{ width: `${Math.min(100, indexProgress)}%` }} />
                         </div>
-                        <div className={`text-[11px] ${textSub}`}>
+                        <div className={`text-sm ${textSub}`}>
                           {t('indexFiles')}: {indexJob?.files_processed || indexJob?.saved || 0} / {indexJob?.files_total || selectedFolderCount}
                         </div>
-                        <button onClick={cancelIndex} className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-red-500/30 bg-red-500/10 py-2.5 text-xs font-semibold text-red-400 shadow-sm transition-[background-color,border-color,transform] hover:border-red-500/50 hover:bg-red-500/20 active:scale-[.98]">
+                        <button onClick={cancelIndex} className={`flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-red-500/30 bg-red-500/10 py-2.5 text-sm font-semibold shadow-sm transition-[background-color,border-color,transform] hover:border-red-500/50 hover:bg-red-500/20 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-red-400 active:scale-[.98] ${isDark ? 'text-red-300' : 'text-red-800'}`}>
                           <MdStop size={15} />
                           {t('indexCancel')}
                         </button>
@@ -548,24 +559,24 @@ export default function OnboardingWizard({ onComplete, canConfigureSystem }: Pro
                         <span className={textSub}>({indexJob.saved} {t('indexFiles').toLowerCase()})</span>
                       </div>
                       {(indexJob.skipped > 0 || indexJob.failures.length > 0 || indexJob.retry_recommended) && (
-                        <div role="alert" className="flex flex-wrap items-center gap-2 text-xs text-amber-400">
-                          <span>{indexJob.skipped || indexJob.failures.length ? `${t('indexSkipped')}: ${indexJob.skipped || indexJob.failures.length}. Some files were not indexed.` : 'Indexing needs attention.'}</span>
-                          <button type="button" onClick={retryIndex} className="rounded-lg bg-amber-400/15 px-3 py-1.5 font-semibold text-amber-300">{t('retry')}</button>
+                        <div role="alert" className={`flex flex-wrap items-center gap-2 text-sm leading-relaxed ${isDark ? 'text-amber-200' : 'text-amber-800'}`}>
+                          <span>{indexJob.skipped || indexJob.failures.length ? t('indexPartialWarning').replace('{count}', String(indexJob.skipped || indexJob.failures.length)) : t('indexNeedsAttention')}</span>
+                          <button type="button" onClick={retryIndex} className={`min-h-11 rounded-lg bg-amber-400/15 px-3 font-semibold focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-amber-400 ${isDark ? 'text-amber-200' : 'text-amber-800'}`}>{t('retry')}</button>
                         </div>
                       )}
-                      {indexJob.failures.slice(0, 3).map((failure) => <p key={`${failure.path}:${failure.reason}`} className={`text-[11px] ${textSub}`}>{failure.path}: {failure.reason}</p>)}
+                      {indexJob.failures.slice(0, 3).map((failure) => <p key={`${failure.path}:${failure.reason}`} className={`text-sm [overflow-wrap:anywhere] ${textSub}`}>{failure.path}: {failure.reason}</p>)}
                       </div>
                     ) : indexJob?.status === 'failed' ? (
-                      <div role="alert" className="flex flex-wrap items-center gap-2 text-sm text-red-400">
-                        <span>{indexJob.error || 'Indexing failed.'}</span>
-                        <button type="button" onClick={retryIndex} className="rounded-lg bg-red-400/15 px-3 py-1.5 text-xs font-semibold text-red-300">{t('retry')}</button>
+                      <div role="alert" className={`flex flex-wrap items-center gap-2 text-sm leading-relaxed ${isDark ? 'text-red-200' : 'text-red-800'}`}>
+                        <span>{indexJob.error || t('indexFailed')}</span>
+                        <button type="button" onClick={retryIndex} className={`min-h-11 rounded-lg bg-red-400/15 px-3 font-semibold focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-red-400 ${isDark ? 'text-red-200' : 'text-red-800'}`}>{t('retry')}</button>
                       </div>
                     ) : indexJob?.status === 'cancelled' ? (
                       <div role="status" className={`text-sm ${textSub}`}>{t('indexCancelled')}</div>
                     ) : null}
                   </div>
                 )}
-                <p className={`text-[11px] text-center text-amber-400/80`}>{t('onboardingStep6Warning')}</p>
+                <p className={`text-center text-sm leading-relaxed ${isDark ? 'text-amber-200' : 'text-amber-800'}`}>{t('onboardingStep6Warning')}</p>
                 <div className="flex gap-3">
                   <motion.button whileTap={{ scale: 0.96 }} onClick={saveAndNext} className={`flex-1 py-3 rounded-xl text-sm font-medium ${btnSecondary} active:scale-95`}>
                     {t('onboardingStep6IndexLater')}
@@ -606,18 +617,18 @@ export default function OnboardingWizard({ onComplete, canConfigureSystem }: Pro
               whileTap={{ scale: 0.96 }}
               onClick={finish}
               disabled={finishing}
-              className={`text-xs ${isDark ? 'text-white/30 hover:text-white/60' : 'text-gray-400 hover:text-gray-600'} transition-colors disabled:opacity-50`}
+              className={`-ml-2 min-h-11 min-w-11 px-2 text-sm ${isDark ? 'text-white/75 hover:text-white' : 'text-gray-700 hover:text-gray-900'} transition-colors disabled:opacity-50`}
             >
               {t('onboardingSkip')}
             </motion.button>
             <div className="flex-1" />
             {step > 1 && (
-              <motion.button whileTap={{ scale: 0.96 }} onClick={prev} disabled={finishing} className={`px-5 py-2.5 rounded-xl text-sm font-medium ${btnSecondary} active:scale-95 disabled:opacity-50`}>
+              <motion.button whileTap={{ scale: 0.96 }} onClick={prev} disabled={finishing} className={`min-h-11 rounded-xl px-5 py-2.5 text-sm font-medium ${btnSecondary} active:scale-95 disabled:opacity-50`}>
                 {t('onboardingBack')}
               </motion.button>
             )}
-            <motion.button whileTap={{ scale: 0.96 }} onClick={saveAndNext} disabled={finishing} className={`px-5 py-2.5 rounded-xl text-sm font-medium ${btnPrimary} disabled:opacity-50`}>
-              {finishing ? t('onboardingFinish') : step === 5 ? t('onboardingFinish') : t('onboardingNext')}
+            <motion.button whileTap={{ scale: 0.96 }} onClick={saveAndNext} disabled={finishing} className={`min-h-11 rounded-xl px-5 py-2.5 text-sm font-medium ${btnPrimary} disabled:opacity-50`}>
+              {finishing ? t('onboardingFinish') : t('onboardingNext')}
             </motion.button>
           </div>
          )}

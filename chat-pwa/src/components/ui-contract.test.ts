@@ -28,36 +28,37 @@ describe('chat presentation contracts', () => {
     expect(bubbleBlock).toContain('box-shadow: none');
   });
 
-  it('draws assistant answers on the composer surface, not a transparent card', () => {
+  it('draws assistant answers as unframed prose', () => {
     const block = chatModernCss.slice(
       chatModernCss.indexOf('.chat-bubble.chat-bubble-assistant,'),
       chatModernCss.indexOf('.chat-bubble-assistant-dark {'),
     );
-    expect(block).toContain('background: rgba(10, 16, 24, 0.72)');
-    expect(block).toContain('border: 1px solid rgba(22, 141, 226, 0.22)');
-    expect(block).not.toContain('margin-inline');
-    expect(block).not.toContain('background: transparent');
+    expect(block).toContain('background: transparent');
+    expect(block).toContain('border: 0');
   });
 
   it('drops the per-message clock', () => {
     expect(chatModernCss).not.toContain('chat-message-time');
   });
 
-  it('keeps ambient motion in the empty-chat hero only', () => {
+  it('keeps pulsing glow confined to the original welcome logo', () => {
     expect(chatModernCss).not.toContain('tc-glow-pulse');
-    expect(indexCss).toMatch(/\.animate-glow \{[^}]*animation: glow-pulse/);
+    expect(indexCss).toContain('.animate-glow');
   });
 
   it('reveals the model label only on hover or focus', () => {
     expect(chatModernCss).toMatch(/\.chat-model-label \{[^}]*opacity: 0/);
     expect(chatModernCss).toMatch(/\.chat-row:hover \.chat-model-label,[\s\S]*?\.chat-row:focus-within \.chat-model-label \{[^}]*opacity: 1/);
     expect(chatModernCss).toMatch(/\.chat-actions \{[^}]*opacity: 0/);
-    expect(chatModernCss).toMatch(/\.chat-row:hover \.chat-actions,[\s\S]*?\.chat-row:focus-within \.chat-actions \{[^}]*opacity: 1/);
+    expect(chatModernCss).toMatch(/\.chat-row:hover \.chat-actions,\s*\.chat-row:focus-within \.chat-actions,[^{]*\{[^}]*opacity: 1/);
+    for (const status of ['pending', 'cancelled', 'error']) {
+      expect(chatModernCss).toContain(`[data-completion-status="${status}"]`);
+    }
   });
 
   it('never lets a hidden control capture taps', () => {
     expect(chatModernCss).toMatch(/\.chat-actions \{[^}]*pointer-events: none/);
-    expect(chatModernCss).toMatch(/\.chat-row:hover \.chat-actions,[\s\S]*?\.chat-row:focus-within \.chat-actions \{[^}]*pointer-events: auto/);
+    expect(chatModernCss).toMatch(/\.chat-row:hover \.chat-actions,\s*\.chat-row:focus-within \.chat-actions,[^{]*\{[^}]*pointer-events: auto/);
     expect(indexCss).toMatch(/\.hover-reveal \{[^}]*pointer-events: none/);
     expect(indexCss).toMatch(/@media \(hover: none\), \(pointer: coarse\) \{\s*\.hover-reveal \{[^}]*pointer-events: auto/);
   });
@@ -109,11 +110,11 @@ describe('chat presentation contracts', () => {
     expect(iconRule).toContain('color: #168de2');
   });
 
-  it('keeps the dark composer a flat translucent grey bar', () => {
+  it('keeps the dark composer slightly translucent', () => {
     const start = chatModernCss.indexOf('html.dark .composer-surface {');
     expect(start).toBeGreaterThan(-1);
     const block = chatModernCss.slice(start, chatModernCss.indexOf('}', start));
-    expect(block).toContain('background: rgba(148, 163, 184');
+    expect(block).toContain('background: rgba(26, 42, 58, 0.78)');
     expect(block).not.toContain('linear-gradient');
   });
 });

@@ -94,7 +94,7 @@ describe('release-facing status surfaces', () => {
   it('shows an offline stats state and reports the failure once', async () => {
     api.getUsageStats.mockRejectedValue(new Error('offline'));
     render(<StatsPanel />);
-    expect(await screen.findByText('statsUnavailableOffline')).toBeInTheDocument();
+    expect(await screen.findByRole('status')).toHaveTextContent('friendly error');
     expect(toast.toast).toHaveBeenCalledWith('friendly error', 'error');
     await userEvent.click(screen.getByRole('button', { name: 'refresh' }));
     await waitFor(() => expect(api.getUsageStats).toHaveBeenCalledTimes(2));
@@ -107,10 +107,23 @@ describe('release-facing status surfaces', () => {
     await waitFor(() => expect(api.checkStatus).toHaveBeenCalledOnce());
     expect(screen.getByText('ollamaStatus')).toBeInTheDocument();
     expect(screen.getByText('ragStatus')).toBeInTheDocument();
+    expect(await screen.findByText('· statusLimited')).toBeVisible();
     expect(screen.getByText('RAM 42%')).toBeInTheDocument();
     expect(screen.getByText('hardwareProfile: 16gb')).toBeInTheDocument();
     fireEvent.focus(window);
     await waitFor(() => expect(api.checkStatus).toHaveBeenCalledTimes(2));
     expect(shared.onSharedStateUpdated).toHaveBeenCalledOnce();
+  });
+
+  it('shows unknown status until checked and after a connection failure', async () => {
+    api.checkStatus.mockResolvedValueOnce({ ollama: true, rag: true, indexed: true, ramPercent: 42, profile: '16gb' });
+    api.checkStatus.mockRejectedValueOnce(new Error('offline'));
+    render(<StatusDots />);
+    expect(screen.getByTitle('ollamaStatus: statusUnknown')).toBeInTheDocument();
+    expect(screen.getAllByText('· statusUnknown')).toHaveLength(2);
+    await waitFor(() => expect(screen.getByTitle('ollamaStatus: statusReady')).toBeInTheDocument());
+    fireEvent.focus(window);
+    await waitFor(() => expect(screen.getByTitle('ollamaStatus: statusUnknown')).toBeInTheDocument());
+    expect(screen.queryByText('RAM 42%')).not.toBeInTheDocument();
   });
 });

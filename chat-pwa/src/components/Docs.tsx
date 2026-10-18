@@ -224,7 +224,6 @@ export default function Docs({ onBack, initialSection = 'intro', onSectionChange
   const selected = sections[activeIndex] ?? sections[0];
   const previous = activeIndex > 0 ? sections[activeIndex - 1] : undefined;
   const next = activeIndex >= 0 && activeIndex < sections.length - 1 ? sections[activeIndex + 1] : undefined;
-  const referenceCount = selected.links.length;
   const textMain = isDark ? 'text-white' : 'text-gray-900';
   const textSub = isDark ? 'text-white/65' : 'text-gray-600';
   const textMuted = isDark ? 'text-white/55' : 'text-gray-500';
@@ -286,7 +285,7 @@ export default function Docs({ onBack, initialSection = 'intro', onSectionChange
       <div className="page-header shrink-0 px-4 pb-3 pt-[env(safe-area-inset-top,0px)]">
         <div className="flex items-center gap-3">
           <BackButton onClick={onBack} label={t('docsBack')} isDark={isDark} className="-ml-2" />
-          <span className={`text-sm font-medium ${isDark ? 'text-white/80' : 'text-gray-800'}`}>{t('docsTitle')}</span>
+          <span className={`text-lg font-semibold ${isDark ? 'text-white/90' : 'text-gray-900'}`}>{t('docsTitle')}</span>
           <img src="/logo-for-ai-transparent.webp" alt="TrinaxAI" translate="no" className="ml-auto h-10 w-10 shrink-0 rounded-full object-contain" width={40} height={40} draggable={false} />
         </div>
 
@@ -296,7 +295,7 @@ export default function Docs({ onBack, initialSection = 'intro', onSectionChange
             id="docs-section"
             value={active}
             onChange={(event) => selectSection(event.target.value as DocsSection)}
-            className={`min-h-11 w-full appearance-none rounded-xl border px-3 pr-10 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4aa7ed] ${card} ${textMain}`}
+            className={`min-h-11 w-full appearance-none rounded-xl border px-3 pr-10 text-base font-medium focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-[#4aa7ed] ${card} ${textMain}`}
           >
             {sections.map((section) => <option key={section.id} value={section.id}>{pick(section, isEs)}</option>)}
           </select>
@@ -305,8 +304,8 @@ export default function Docs({ onBack, initialSection = 'intro', onSectionChange
       </div>
 
       <div className="flex min-h-0 min-w-0 max-w-full flex-1">
-        <aside className="hidden w-56 shrink-0 overflow-y-auto overscroll-contain px-2 py-4 md:block lg:w-64 lg:px-3">
-          <p className={`px-3 pb-2 text-[0.68rem] font-semibold uppercase tracking-[0.18em] ${textMuted}`}>
+        <aside aria-label={isEs ? 'Índice de documentación' : 'Documentation index'} className="hidden w-56 shrink-0 overflow-y-auto overscroll-contain px-2 py-4 md:block lg:w-64 lg:px-3">
+          <p className={`px-3 pb-2 text-xs font-semibold uppercase tracking-wider ${textMuted}`}>
             {isEs ? 'Índice' : 'Contents'}
           </p>
           <nav aria-label={isEs ? 'Secciones de documentación' : 'Documentation sections'}>
@@ -319,9 +318,9 @@ export default function Docs({ onBack, initialSection = 'intro', onSectionChange
                       href={formatAppRoute({ page: 'docs', docsSection: section.id })}
                       onClick={(event) => handleSectionLink(event, section.id)}
                       aria-current={isActive ? 'page' : undefined}
-                      className={`group flex min-h-11 items-center gap-2.5 rounded-xl py-2 pl-3 pr-2 text-[0.8rem] font-medium leading-snug transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4aa7ed] ${isActive ? activeLink : inactiveLink}`}
+                      className={`group flex min-h-11 items-center gap-2.5 rounded-xl py-2 pl-3 pr-2 text-sm font-medium leading-snug transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-[#4aa7ed] ${isActive ? activeLink : inactiveLink}`}
                     >
-                      <span aria-hidden="true" className={`w-5 shrink-0 text-[0.68rem] tabular-nums ${isActive ? brandText : textMuted}`}>
+                      <span aria-hidden="true" className={`w-5 shrink-0 text-xs tabular-nums ${isActive ? brandText : textMuted}`}>
                         {String(index + 1).padStart(2, '0')}
                       </span>
                       <span className="min-w-0 flex-1">{pick(section, isEs)}</span>
@@ -334,31 +333,19 @@ export default function Docs({ onBack, initialSection = 'intro', onSectionChange
           </nav>
         </aside>
 
-        <main
+        <section
           ref={contentRef}
           id="docs-content"
           tabIndex={-1}
           aria-label={isEs ? 'Contenido de documentación' : 'Documentation content'}
-          className="docs-content min-w-0 max-w-full flex-1 overflow-y-auto overflow-x-hidden overscroll-contain px-3 py-5 [overflow-wrap:anywhere] sm:px-4 sm:py-6 md:max-w-3xl"
+          className="docs-content min-w-0 max-w-full flex-1 overflow-y-auto overflow-x-hidden overscroll-contain px-3 py-5 [overflow-wrap:anywhere] sm:px-4 sm:py-6"
         >
           <div key={`${active}:${lang}`} className="docs-section">
-            <div className="flex flex-wrap items-center gap-2">
-              <p className={`text-[0.68rem] font-semibold uppercase tracking-[0.18em] ${brandText}`}>
-                {isEs ? 'Guía integrada' : 'Integrated guide'}
-              </p>
-              <span className={`h-1 w-1 rounded-full ${isDark ? 'bg-white/20' : 'bg-gray-300'}`} aria-hidden="true" />
-              <span className={`text-[0.68rem] font-medium ${textMuted}`}>
-                {referenceCount === 1
-                  ? (isEs ? '1 referencia' : '1 reference')
-                  : (isEs ? `${referenceCount} referencias` : `${referenceCount} references`)}
-              </span>
-            </div>
-
             <h1
               id="docs-section-title"
               ref={titleRef}
               tabIndex={-1}
-              className={`mt-2 rounded-lg text-2xl font-semibold tracking-tight text-balance outline-none focus-visible:ring-2 focus-visible:ring-[#4aa7ed]/60 ${textMain}`}
+              className={`rounded-lg text-2xl font-semibold tracking-tight text-balance outline-hidden focus-visible:ring-2 focus-visible:ring-[#4aa7ed]/60 ${textMain}`}
             >
               {pick(selected, isEs)}
             </h1>
@@ -375,7 +362,7 @@ export default function Docs({ onBack, initialSection = 'intro', onSectionChange
                       href={docUrl(link.file)}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className={`inline-flex min-h-8 items-center gap-1.5 rounded-lg px-2 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4aa7ed] ${brandText} ${isDark ? 'hover:bg-white/[0.06]' : 'hover:bg-[#006bbd]/10'}`}
+                      className={`inline-flex min-h-10 items-center gap-1.5 rounded-lg px-2 text-sm font-medium transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-[#4aa7ed] ${brandText} ${isDark ? 'hover:bg-white/[0.06]' : 'hover:bg-[#006bbd]/10'}`}
                     >
                       {isEs ? 'Abrir en GitHub' : 'Open on GitHub'}
                       <MdOpenInNew size={13} aria-hidden="true" />
@@ -416,9 +403,9 @@ export default function Docs({ onBack, initialSection = 'intro', onSectionChange
                   href={formatAppRoute({ page: 'docs', docsSection: previous.id })}
                   onClick={(event) => handleSectionLink(event, previous.id)}
                   aria-label={`${isEs ? 'Anterior' : 'Previous'}: ${pick(previous, isEs)}`}
-                  className={`flex min-h-11 flex-col justify-center rounded-2xl border px-4 py-3 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4aa7ed] ${card} ${navCardHover}`}
+                  className={`flex min-h-11 flex-col justify-center rounded-2xl border px-4 py-3 transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-[#4aa7ed] ${card} ${navCardHover}`}
                 >
-                  <span className={`text-[0.68rem] font-semibold uppercase tracking-[0.16em] ${textMuted}`}>{isEs ? 'Anterior' : 'Previous'}</span>
+                  <span className={`text-xs font-semibold uppercase tracking-wider ${textMuted}`}>{isEs ? 'Anterior' : 'Previous'}</span>
                   <span className={`mt-1 text-sm font-semibold ${textMain}`}>{pick(previous, isEs)}</span>
                 </a>
               ) : (
@@ -429,21 +416,21 @@ export default function Docs({ onBack, initialSection = 'intro', onSectionChange
                   href={formatAppRoute({ page: 'docs', docsSection: next.id })}
                   onClick={(event) => handleSectionLink(event, next.id)}
                   aria-label={`${isEs ? 'Siguiente' : 'Next'}: ${pick(next, isEs)}`}
-                  className={`flex min-h-11 flex-col justify-center rounded-2xl border px-4 py-3 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4aa7ed] sm:items-end sm:text-right ${card} ${navCardHover}`}
+                  className={`flex min-h-11 flex-col justify-center rounded-2xl border px-4 py-3 transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-[#4aa7ed] sm:items-end sm:text-right ${card} ${navCardHover}`}
                 >
-                  <span className={`text-[0.68rem] font-semibold uppercase tracking-[0.16em] ${textMuted}`}>{isEs ? 'Siguiente' : 'Next'}</span>
+                  <span className={`text-xs font-semibold uppercase tracking-wider ${textMuted}`}>{isEs ? 'Siguiente' : 'Next'}</span>
                   <span className={`mt-1 text-sm font-semibold ${textMain}`}>{pick(next, isEs)}</span>
                 </a>
               ) : null}
             </nav>
 
-            <p className={`mt-6 text-center text-xs leading-relaxed ${textMuted}`}>
+            <p className={`mt-6 text-center text-sm leading-relaxed ${textMuted}`}>
               {isEs
                 ? 'La guía se incluye en la PWA para consultarla sin salir de la aplicación; cada enlace abre la referencia canónica del repositorio.'
                 : 'The guide is bundled into the PWA for in-app reading; each link opens the canonical repository reference.'}
             </p>
           </div>
-        </main>
+        </section>
       </div>
     </div>
   );

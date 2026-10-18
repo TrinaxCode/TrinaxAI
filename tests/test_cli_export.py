@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+from io import BytesIO
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 from zipfile import ZipFile
 
 import pytest
+from pypdf import PdfReader
 
 from trinaxai_cli.commands import export
 from trinaxai_cli.session import Session
@@ -92,3 +94,9 @@ def test_export_keeps_public_research_metadata_and_sources(tmp_path, fmt) -> Non
 def test_pdf_lines_split_long_unbroken_text() -> None:
     lines = export._pdf_lines("x" * 25, width=10)
     assert lines == ["xxxxxxxxxx", "xxxxxxxxxx", "xxxxx"]
+
+
+def test_pdf_export_preserves_spanish_text() -> None:
+    content = export._pdf("¿Qué puerto usa la telemetría? La respuesta es 4317.")
+    assert b"/Encoding /WinAnsiEncoding" in content
+    assert "¿Qué puerto usa la telemetría?" in PdfReader(BytesIO(content)).pages[0].extract_text()

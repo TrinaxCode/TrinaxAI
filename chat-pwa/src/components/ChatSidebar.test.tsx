@@ -1,4 +1,5 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { ChatSession } from '../lib/api';
@@ -38,10 +39,25 @@ function renderSidebar(overrides: Partial<React.ComponentProps<typeof ChatSideba
 }
 
 describe('ChatSidebar session actions', () => {
+  it('focuses the folder name and enables creation only for a nonempty name', async () => {
+    const user = userEvent.setup();
+    const { props } = renderSidebar();
+    await user.click(screen.getByRole('button', { name: 'createFolder' }));
+    const name = screen.getByRole('textbox', { name: 'folderName' });
+    const create = screen.getByRole('dialog').querySelector<HTMLButtonElement>('button:last-child')!;
+    await waitFor(() => expect(name).toHaveFocus());
+    expect(create).toBeDisabled();
+    await user.type(name, '  Ideas  ');
+    expect(create).toBeEnabled();
+    await user.click(create);
+    expect(props.onCreateFolder).toHaveBeenCalledWith('Ideas');
+  });
+
   it('keeps session selection and destructive actions as sibling controls', () => {
     const { props } = renderSidebar();
     const select = screen.getByRole('button', { name: 'Research' });
-    const deleteButton = screen.getByRole('button', { name: 'delete Research' });
+    fireEvent.click(screen.getByRole('button', { name: 'chatOptions: Research' }));
+    const deleteButton = screen.getByRole('button', { name: 'deleteChat' });
     expect(screen.getByRole('img', { name: 'TrinaxAI' })).toHaveAttribute('src', '/logo-for-ai-transparent.webp');
 
     expect(select.closest('[role="button"]')).toBeNull();

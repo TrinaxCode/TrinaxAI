@@ -13,13 +13,15 @@ describe('EmptyChat', () => {
     expect(action).toHaveBeenCalledOnce();
   });
 
-  it('keeps the logo styling and changes only the avatar background by theme', () => {
+  it('restores the original floating logo in both themes', () => {
     const props = { motd: '', rotation: 0, chips: [] };
     const { rerender } = render(<EmptyChat {...props} isDark />);
     const darkLogo = screen.getByRole('img', { name: 'TrinaxAI' });
 
     expect(darkLogo).toHaveClass('object-contain');
-    expect(darkLogo.parentElement).toHaveClass('bg-black');
+    expect(darkLogo).toHaveClass('animate-glow');
+    expect(darkLogo.closest('.empty-chat-visual')).toHaveClass('animate-float');
+    expect(darkLogo.parentElement).toHaveClass('bg-black', 'h-20', 'w-20', 'md:h-24', 'md:w-24');
 
     rerender(<EmptyChat {...props} isDark={false} />);
     const lightLogo = screen.getByRole('img', { name: 'TrinaxAI' });

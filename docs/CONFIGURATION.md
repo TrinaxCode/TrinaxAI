@@ -4,7 +4,7 @@
 
 <p align="center">
   <a href="https://github.com/TrinaxCode/TrinaxAI"><img src="https://img.shields.io/github/stars/TrinaxCode/TrinaxAI?style=flat&amp;label=%E2%98%85&amp;color=006bbd" alt="GitHub stars"></a>
-  <a href="https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.2.6"><img src="https://img.shields.io/badge/version-1.2.6-006bbd" alt="Stable release: 1.2.6"></a>
+  <a href="https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.3.0"><img src="https://img.shields.io/badge/version-1.3.0-006bbd" alt="Stable release: 1.3.0"></a>
   <a href="https://github.com/TrinaxCode/TrinaxAI/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/TrinaxCode/TrinaxAI/ci.yml?branch=main&amp;label=CI" alt="CI status"></a>
   <a href="https://github.com/TrinaxCode/TrinaxAI/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0--or--later-006bbd" alt="License: AGPL-3.0-or-later"></a>
   <img src="https://img.shields.io/badge/macOS%20%7C%20Windows%20%7C%20Linux-4493F8?style=flat-square" alt="Supported platforms: macOS, Windows, and Linux">
@@ -36,7 +36,7 @@ canonical list of every supported `TRINAXAI_*` and `VITE_TRINAXAI_*` setting.
 | Group | Variables |
 |---|---|
 | Hardware | `TRINAXAI_PROFILE` (`8gb`, `16gb`, `32gb`, `64gb`; auto-detected from CPU/RAM/GPU), `TRINAXAI_PERFORMANCE_MODE` (`fast`, `balanced`, `quality`) |
-| Thinking | `TRINAXAI_THINKING_MODE` (backend fallback when a client omits `think`) |
+| Thinking | `TRINAXAI_THINKING_MODE` (backend fallback when a client omits `think`; depth-1 web research defaults to off unless `think` is explicit) |
 | Models | `TRINAXAI_MODEL_GENERAL`, `TRINAXAI_MODEL_CODE`, `TRINAXAI_MODEL_DEEP`, `TRINAXAI_MODEL_FAST`, `TRINAXAI_AUTO_ROUTE` |
 | Ollama | `OLLAMA_BASE_URL`, `TRINAXAI_NUM_CTX`, `TRINAXAI_NUM_THREAD`, `TRINAXAI_KEEP_ALIVE`, `TRINAXAI_TIMEOUT` |
 | Embeddings | `TRINAXAI_EMBED_PRESET`, `TRINAXAI_EMBED`, `TRINAXAI_EMBED_DIMS`, `TRINAXAI_EMBED_WORKERS`, `TRINAXAI_EMBED_BATCH`, `TRINAXAI_EMBED_KEEP_ALIVE` |

@@ -99,6 +99,7 @@ export function useChatVoice({
         return;
       }
       wakeLockRef.current = sentinel;
+      sentinel.addEventListener?.('release', () => { if (wakeLockRef.current === sentinel) wakeLockRef.current = null; });
     } catch { /* ignore */ }
   }, []);
 
@@ -253,13 +254,12 @@ export function useChatVoice({
         chunks.push(rest);
         break;
       }
-      const cut = Math.max(
-        rest.lastIndexOf('. ', 220),
-        rest.lastIndexOf('? ', 220),
-        rest.lastIndexOf('! ', 220),
-        rest.lastIndexOf(', ', 180),
-        180,
-      );
+      // Prefer a sentence end, then a comma, then any space; never cut inside a word unless there is none.
+      const head = rest.slice(0, 221);
+      let cut = Math.max(head.lastIndexOf('. '), head.lastIndexOf('? '), head.lastIndexOf('! '));
+      if (cut < 60) cut = head.lastIndexOf(', ');
+      if (cut < 60) cut = head.lastIndexOf(' ');
+      if (cut < 1) cut = 219;
       chunks.push(rest.slice(0, cut + 1).trim());
       rest = rest.slice(cut + 1).trim();
     }
@@ -325,6 +325,16 @@ export function useChatVoice({
   }, [releaseWakeLock, stopTtsPump]);
 
   useEffect(() => () => cleanupVoiceResources(), [cleanupVoiceResources]);
+
+  // Browsers drop the screen wake lock whenever the page is hidden; take it again when a call is still live.
+  useEffect(() => {
+    if (!callMode) return;
+    const reacquire = () => {
+      if (document.visibilityState === 'visible' && callModeRef.current && !wakeLockRef.current) void requestWakeLock();
+    };
+    document.addEventListener('visibilitychange', reacquire);
+    return () => document.removeEventListener('visibilitychange', reacquire);
+  }, [callMode, requestWakeLock]);
 
   const stopSpeak = useCallback(() => {
     ttsCancellingRef.current = true;

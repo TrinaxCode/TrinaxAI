@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
-import { AnimatePresence, motion } from 'framer-motion';
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { MdRefresh, MdDelete, MdStorage } from 'react-icons/md';
 import { useI18n } from '../i18n/I18nContext';
 import { useTheme } from '../theme/ThemeContext';
@@ -73,8 +73,9 @@ function saveRecent(items: RecentIndex[]) {
 }
 
 export default function RecentIndexes() {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const { isDark } = useTheme();
+  const prefersReducedMotion = useReducedMotion();
   const toast = useToast();
   const [items, setItems] = useState<RecentIndex[]>(() => loadRecent());
   const [deleteKey, setDeleteKey] = useState<string | null>(null);
@@ -150,14 +151,14 @@ export default function RecentIndexes() {
   }, [forget, items, t, toast]);
 
   const cardBg = isDark ? 'bg-white/[0.03] border-white/[0.06]' : 'bg-gray-50 border-gray-200';
-  const muted = isDark ? 'text-white/45' : 'text-gray-500';
+  const muted = isDark ? 'text-white/65' : 'text-gray-600';
   const label = isDark ? 'text-white/80' : 'text-gray-800';
 
   if (items.length === 0) {
     return (
       <section className={`rounded-xl border p-4 ${cardBg}`}>
-        <div className={`text-sm font-medium ${label}`}>{t('recentIndexesTitle')}</div>
-        <p className={`text-[11px] ${muted} mt-1`}>
+        <h3 className={`text-sm font-semibold ${label}`}>{t('recentIndexesTitle')}</h3>
+        <p className={`text-sm ${muted} mt-1`}>
           {t('recentIndexesEmpty')}
         </p>
       </section>
@@ -166,24 +167,24 @@ export default function RecentIndexes() {
 
   return (
     <section className={`rounded-xl border p-4 space-y-2 ${cardBg}`}>
-      <div className={`text-sm font-medium ${label}`}>{t('recentIndexesTitle')}</div>
+      <h3 className={`text-sm font-semibold ${label}`}>{t('recentIndexesTitle')}</h3>
       <div className="space-y-1.5">
         <AnimatePresence initial={false}>
         {items.map((it) => (
           <motion.div
             key={recentKey(it)}
-            layout
-            initial={{ opacity: 0, y: 2 }}
+            layout={!prefersReducedMotion}
+            initial={prefersReducedMotion ? false : { opacity: 0, y: 2 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -6, height: 0, marginBottom: 0 }}
-            transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+            transition={{ duration: prefersReducedMotion ? 0 : 0.2, ease: [0.16, 1, 0.3, 1] }}
             className={`flex items-center gap-2 overflow-hidden rounded-lg border px-3 py-2 ${isDark ? 'bg-black/30 border-white/[0.06]' : 'bg-white border-gray-200'}`}
           >
-            <MdStorage size={14} className={`shrink-0 ${muted}`} />
+            <MdStorage size={18} className={`shrink-0 ${muted}`} aria-hidden="true" />
             <div className="flex-1 min-w-0">
-              <div className={`text-xs font-mono truncate ${isDark ? 'text-white/80' : 'text-gray-800'}`}>{it.label}</div>
-              <div className={`text-[10px] ${muted}`}>
-                {new Date(it.indexedAt).toLocaleString()}
+              <div title={it.label} className={`line-clamp-2 break-words text-sm font-medium ${label}`}>{it.label}</div>
+              <div className={`break-words text-xs ${muted}`}>
+                {new Date(it.indexedAt).toLocaleString(lang)}
                 {it.saved != null ? ` | ${it.saved} ${t('filesUnit')}` : ''}
                 {it.collectionName ? ` | ${it.collectionName}` : ''}
               </div>
@@ -191,20 +192,20 @@ export default function RecentIndexes() {
             <button
               type="button"
               onClick={() => reindex(it)}
-              className={`shrink-0 min-h-9 min-w-9 inline-flex items-center justify-center rounded-lg ${isDark ? 'text-white/45 hover:text-white hover:bg-white/[0.06]' : 'text-gray-500 hover:text-gray-800 hover:bg-gray-100'}`}
+              className={`inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-[#4aa7ed] ${isDark ? 'text-white/70 hover:bg-white/[0.08] hover:text-white' : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'}`}
               aria-label={t('recentReindex')}
               title={t('recentReindexTitle')}
             >
-              <MdRefresh size={14} />
+              <MdRefresh size={18} aria-hidden="true" />
             </button>
             <button
               type="button"
               onClick={() => setDeleteKey(recentKey(it))}
-              className={`shrink-0 min-h-9 min-w-9 inline-flex items-center justify-center rounded-lg ${isDark ? 'text-white/25 hover:text-red-400 hover:bg-white/[0.05]' : 'text-gray-300 hover:text-red-500 hover:bg-gray-100'}`}
+              className={`inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-[#4aa7ed] ${isDark ? 'text-white/65 hover:bg-red-500/10 hover:text-red-300' : 'text-gray-600 hover:bg-red-50 hover:text-red-700'}`}
               aria-label={t('removeFromHistory')}
               title={t('removeFromHistory')}
             >
-              <MdDelete size={14} />
+              <MdDelete size={18} aria-hidden="true" />
             </button>
           </motion.div>
         ))}

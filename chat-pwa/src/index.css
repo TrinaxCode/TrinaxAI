@@ -1,12 +1,90 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss" source(none);
+@config "../tailwind.config.js";
+
+/* Preserve the existing palette and utility scales during the v4 migration. */
+@theme inline {
+  --color-white: #ffffff;
+  --color-black: #000000;
+  --color-brand-black: #000000;
+  --color-brand-blue: #006bbd;
+  --color-amber-100: #fef3c7;
+  --color-amber-200: #fde68a;
+  --color-amber-300: #fcd34d;
+  --color-amber-400: #fbbf24;
+  --color-amber-50: #fffbeb;
+  --color-amber-500: #f59e0b;
+  --color-amber-700: #b45309;
+  --color-amber-800: #92400e;
+  --color-amber-900: #78350f;
+  --color-blue-200: #bfdbfe;
+  --color-blue-300: #93c5fd;
+  --color-blue-400: #60a5fa;
+  --color-blue-600: #2563eb;
+  --color-blue-700: #1d4ed8;
+  --color-emerald-400: #34d399;
+  --color-emerald-500: #10b981;
+  --color-emerald-700: #047857;
+  --color-emerald-800: #065f46;
+  --color-gray-100: #f3f4f6;
+  --color-gray-200: #e5e7eb;
+  --color-gray-300: #d1d5db;
+  --color-gray-400: #9ca3af;
+  --color-gray-50: #f9fafb;
+  --color-gray-500: #6b7280;
+  --color-gray-600: #4b5563;
+  --color-gray-700: #374151;
+  --color-gray-800: #1f2937;
+  --color-gray-900: #111827;
+  --color-green-300: #86efac;
+  --color-green-400: #4ade80;
+  --color-green-500: #22c55e;
+  --color-red-200: #fecaca;
+  --color-red-300: #fca5a5;
+  --color-red-400: #f87171;
+  --color-red-50: #fef2f2;
+  --color-red-500: #ef4444;
+  --color-red-600: #dc2626;
+  --color-red-700: #b91c1c;
+  --color-red-800: #991b1b;
+  --color-sky-200: #bae6fd;
+  --color-sky-400: #38bdf8;
+  --color-sky-50: #f0f9ff;
+  --color-slate-100: #f1f5f9;
+  --color-slate-200: #e2e8f0;
+  --color-slate-300: #cbd5e1;
+  --color-slate-400: #94a3b8;
+  --color-slate-50: #f8fafc;
+  --color-slate-500: #64748b;
+  --color-slate-600: #475569;
+  --color-slate-700: #334155;
+  --color-slate-800: #1e293b;
+  --color-slate-900: #0f172a;
+  --radius-sm: 0.125rem;
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  --shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
+  --blur-sm: 4px;
+  --backdrop-blur-sm: 4px;
+  --default-ring-width: 3px;
+  --default-ring-color: #3b82f6;
+}
+
 
 /* ============================================
    TRINAXAI CHAT — Dark & Light Theme
    ============================================ */
 
 @layer base {
+  /* Keep v3 form and border defaults after the v4 preflight update. */
+  *, ::before, ::after, ::backdrop, ::file-selector-button {
+    border-color: var(--color-gray-200, currentColor);
+  }
+  input::placeholder, textarea::placeholder {
+    color: var(--color-gray-400);
+    opacity: 1;
+  }
+  button, [role='button'] { cursor: pointer; }
+  :disabled { cursor: default; }
+
   *,
   *::before,
   *::after {
@@ -169,7 +247,7 @@
     border-radius: 4px;
   }
 
-  /* Tailwind's outline-none utility is used to remove native input chrome.
+  /* Tailwind's outline-hidden utility is used to remove native input chrome.
      Restore a consistent keyboard focus indicator after utility styles. */
   input:not([data-group-focus]):focus-visible,
   textarea:not([data-group-focus]):focus-visible,
@@ -192,14 +270,6 @@
 }
 
 @layer components {
-  :root {
-    --agent-avatar-color: #168de2;
-  }
-
-  html.light {
-    --agent-avatar-color: #168de2;
-  }
-
   .sidebar-history-header {
     min-height: 3rem;
   }
@@ -207,10 +277,6 @@
   .sidebar-history-logo {
     width: 3rem;
     height: 3rem;
-  }
-
-  .agent-empty-avatar {
-    color: var(--agent-avatar-color);
   }
 
   /* Glassmorphism utility — dark only for now */
@@ -335,6 +401,10 @@
   box-shadow: 0 1px 0 rgba(148, 163, 184, 0.08), 0 10px 32px rgba(15, 23, 42, 0.04);
 }
 
+.chat-header {
+  padding-inline: 1rem;
+}
+
 html.dark .page-header,
 html.dark .chat-header {
   box-shadow: 0 1px 0 rgba(255, 255, 255, 0.06), 0 14px 38px rgba(0, 0, 0, 0.24);
@@ -442,6 +512,9 @@ html.dark .browser-page .browser-panel:hover {
 .empty-chat {
   position: relative;
   isolation: isolate;
+  min-height: 0;
+  overflow-y: auto;
+  justify-content: safe center;
 }
 
 .empty-chat::before {
@@ -478,6 +551,13 @@ html.dark .sidebar-surface {
   box-shadow: 20px 0 60px rgba(0, 0, 0, 0.42) !important;
 }
 
+@media (min-width: 1024px) {
+  .sidebar-surface,
+  html.dark .sidebar-surface {
+    box-shadow: none !important;
+  }
+}
+
 .browser-page aside button,
 .browser-page .browser-file-row {
   transition: background-color 0.28s ease, color 0.28s ease, transform 0.28s ease;
@@ -492,8 +572,11 @@ html.dark .sidebar-surface {
    Custom Animations
    ============================================ */
 
-/* Keep the waves moving on the compositor while lazy-loaded UI briefly uses
-   the main thread for JavaScript parsing. */
+@keyframes background-waves-enter {
+  from { opacity: 0; translate: 0 6%; }
+  to   { opacity: 1; translate: 0 0; }
+}
+
 @keyframes background-waves-drift {
   from { transform: translate3d(-0.4%, 0, 0) scale(1.01); }
   to   { transform: translate3d(0.4%, -0.15%, 0) scale(1.01); }
@@ -502,23 +585,23 @@ html.dark .sidebar-surface {
 .background-waves {
   transform-origin: center;
   will-change: transform;
-  animation: background-waves-drift 12s ease-in-out infinite alternate;
+  animation:
+    background-waves-enter 1.6s cubic-bezier(0.22, 1, 0.36, 1) both,
+    background-waves-drift 12s ease-in-out infinite alternate;
 }
 
-/* TrinaxAI brand title — smooth color wave (dark mode) */
 @keyframes brand-shift {
   0%, 100% { color: rgba(255, 255, 255, 0.85); }
-  25%  { color: #4ea3e0; }
-  50%  { color: #006bbd; }
-  75%  { color: #4ea3e0; }
+  25% { color: #4ea3e0; }
+  50% { color: #006bbd; }
+  75% { color: #4ea3e0; }
 }
 
-/* TrinaxAI brand title — smooth color wave (light mode) */
 @keyframes brand-shift-light {
   0%, 100% { color: #374151; }
-  25%  { color: #006bbd; }
-  50%  { color: #004d8a; }
-  75%  { color: #006bbd; }
+  25% { color: #006bbd; }
+  50% { color: #004d8a; }
+  75% { color: #006bbd; }
 }
 
 .animate-brand {
@@ -531,26 +614,18 @@ html.light .animate-brand {
   animation-name: brand-shift-light;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .animate-brand {
-    animation: none;
-  }
-}
-
-/* Floating logo */
 @keyframes float {
-  0%, 100% { transform: translateY(0px); }
-  50%      { transform: translateY(-6px); }
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
 }
 
 .animate-float {
   animation: float 3s ease-in-out infinite;
 }
 
-/* Glow pulse on logo */
 @keyframes glow-pulse {
   0%, 100% { box-shadow: 0 0 15px rgba(0, 107, 189, 0.15), 0 0 30px rgba(0, 107, 189, 0.05); }
-  50%      { box-shadow: 0 0 25px rgba(0, 107, 189, 0.35), 0 0 50px rgba(0, 107, 189, 0.12); }
+  50% { box-shadow: 0 0 25px rgba(0, 107, 189, 0.35), 0 0 50px rgba(0, 107, 189, 0.12); }
 }
 
 .animate-glow {
@@ -600,17 +675,6 @@ html.light .animate-brand {
   animation: fade-up 0.4s ease-out forwards;
 }
 
-/* Scale in bounce */
-@keyframes scale-bounce {
-  0%   { transform: scale(0.9); opacity: 0; }
-  60%  { transform: scale(1.04); }
-  100% { transform: scale(1); opacity: 1; }
-}
-
-.animate-scale-bounce {
-  animation: scale-bounce 0.45s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-}
-
 /* ============================================
    Agent mode entrance / exit motion
    ============================================ */
@@ -649,15 +713,6 @@ html.light .animate-brand {
 }
 .animate-overlay-out {
   animation: agent-overlay-out 0.24s ease-in both;
-}
-
-/* Robot avatar drop-in for the agent empty state */
-@keyframes agent-avatar-in {
-  from { opacity: 0; transform: translateY(-14px) scale(0.7); }
-  to   { opacity: 1; transform: translateY(0) scale(1); }
-}
-.animate-agent-avatar {
-  animation: agent-avatar-in 0.6s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 /* Toast countdown — the strip that shows how long a notice stays on screen.
@@ -799,8 +854,23 @@ html.light .prose code:not(pre code) {
 .docs-content table {
   width: max-content;
   min-width: min(100%, 36rem);
-  border-collapse: collapse;
+  border-collapse: separate;
+  border-spacing: 0;
   font-variant-numeric: tabular-nums;
+}
+
+.docs-content th,
+.docs-content td {
+  padding: 0.55rem 0.5rem;
+  border-bottom: 1px solid rgb(148 163 184 / 0.2);
+  text-align: left;
+  vertical-align: top;
+}
+
+.docs-content th {
+  background: rgb(148 163 184 / 0.08);
+  font-weight: 600;
+  white-space: nowrap;
 }
 
 .docs-content code {
@@ -818,9 +888,6 @@ html.light .prose code:not(pre code) {
     white-space: pre-wrap;
   }
 
-  .docs-content table {
-    min-width: 32rem;
-  }
 }
 
 /* Docs skeleton placeholder while a reference loads */
@@ -889,8 +956,10 @@ html.light .prose code:not(pre code) {
   }
 
   .empty-chat::before,
+  .animate-brand,
   .animate-float,
   .animate-glow,
+  .background-waves,
   .composer-shell,
   .chat-interface-enter,
   .settings-page .settings-scroll > section > div,
@@ -917,6 +986,55 @@ html.light .prose code:not(pre code) {
 /* Controls that stay hidden until their row is hovered must not capture taps
    while invisible: they are inert until revealed. Touch screens have no hover,
    so there the control stays visible instead of becoming unreachable. */
+.sidebar-session-select {
+  padding-right: 0.875rem;
+  transition: padding-right 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.sidebar-session-copy {
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.sidebar-session-options {
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(4px);
+}
+
+.sidebar-session-row:hover .sidebar-session-select,
+.sidebar-session-row:focus-within .sidebar-session-select,
+.sidebar-session-row[data-options-open] .sidebar-session-select {
+  padding-right: 3.25rem;
+}
+
+.sidebar-session-row:hover .sidebar-session-copy,
+.sidebar-session-row:focus-within .sidebar-session-copy,
+.sidebar-session-row[data-options-open] .sidebar-session-copy {
+  transform: translateX(-4px);
+}
+
+.sidebar-session-row:hover .sidebar-session-options,
+.sidebar-session-row:focus-within .sidebar-session-options,
+.sidebar-session-row[data-options-open] .sidebar-session-options {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateX(0);
+}
+
+@media (hover: none), (pointer: coarse) {
+  .sidebar-session-select {
+    padding-right: 3.25rem;
+  }
+  .sidebar-session-copy {
+    transform: none !important;
+  }
+  .sidebar-session-options {
+    opacity: 1;
+    pointer-events: auto;
+    transform: none;
+  }
+}
+
 .hover-reveal {
   opacity: 0;
   pointer-events: none;

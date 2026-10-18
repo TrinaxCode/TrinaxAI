@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 from fastapi import HTTPException
 from pydantic import ValidationError
@@ -258,10 +260,36 @@ def test_memory_refresh_handles_empty_store_and_model_outage(tmp_path, monkeypat
     assert summary["summary"] == degraded["summary"]
 
 
+def test_memory_write_summary_does_not_wait_for_model(tmp_path, monkeypatch) -> None:
+    storage = tmp_path / "storage"
+    storage.mkdir()
+    (storage / "user_memory.json").write_text(
+        '{"memories":[{"id":"m1","text":"La telemetría usa el puerto 4317"}]}', encoding="utf-8"
+    )
+    monkeypatch.setattr(memory_service, "USER_MEMORY_PATH", str(storage / "user_memory.json"))
+    monkeypatch.setattr(config, "PERSIST_DIR", str(storage))
+    prompts: list[str] = []
+    monkeypatch.setattr(
+        memory_service,
+        "get_llm",
+        lambda *_args, **_kwargs: SimpleNamespace(complete=lambda prompt: prompts.append(prompt) or "Resumen listo."),
+    )
+
+    result = memory_service._memory_refresh_sync(memory_service.MemoryRefreshRequest(), synthesize=False)
+
+    assert result["summary"] == "La telemetría usa el puerto 4317"
+    assert memory_service.json.loads((storage / "user_memory_summary.json").read_text())["count"] == 1
+    assert prompts == []
+
+    assert memory_service._memory_refresh_sync(memory_service.MemoryRefreshRequest())["summary"] == "Resumen listo."
+    assert "MANDATORY OUTPUT LANGUAGE: Spanish" in prompts[0]
+
+
 @pytest.mark.asyncio
 async def test_memory_endpoints_authorize_and_delegate_without_blocking(monkeypatch) -> None:
     authorized: list[object] = []
     calls: list[str] = []
+    refresh_modes: list[bool] = []
     monkeypatch.setattr(memory_service, "_authorize_system", authorized.append)
 
     async def direct(func, *args):
@@ -273,11 +301,12 @@ async def test_memory_endpoints_authorize_and_delegate_without_blocking(monkeypa
     monkeypatch.setattr(memory_service, "_memory_create_sync", lambda _req: {"id": "new"})
     monkeypatch.setattr(memory_service, "_memory_update_sync", lambda _id, _req: {"id": "updated"})
     monkeypatch.setattr(memory_service, "_memory_delete_sync", lambda _id: {"deleted": True})
-    monkeypatch.setattr(
-        memory_service,
-        "_memory_refresh_sync",
-        lambda _req: {"status": "refreshed", "summary": "", "count": 0},
-    )
+
+    def refresh(_req, *, synthesize=True):
+        refresh_modes.append(synthesize)
+        return {"status": "refreshed", "summary": "", "count": 0}
+
+    monkeypatch.setattr(memory_service, "_memory_refresh_sync", refresh)
     request = object()
 
     created = await memory_service.memory_create(MemoryCreateRequest(text="new"), request)
@@ -290,7 +319,8 @@ async def test_memory_endpoints_authorize_and_delegate_without_blocking(monkeypa
     assert deleted == {"deleted": True}
     assert refreshed["status"] == "refreshed"
     assert authorized == [request, request, request, request]
-    assert calls == ["<lambda>", "<lambda>", "<lambda>", "<lambda>"]
+    assert calls == ["create_and_refresh", "update_and_refresh", "delete_and_refresh", "<lambda>"]
+    assert refresh_modes == [False, False, False, True]
 
 
 @pytest.mark.asyncio

@@ -12,17 +12,18 @@ const ToggleSwitch = memo(function ToggleSwitch({ engine, onChange }: ToggleSwit
   const { t } = useI18n();
   const { isDark } = useTheme();
   const isRag = engine === 'rag';
-  const activeText = 'text-[#006bbd]';
+  const activeText = isDark ? 'text-[#4aa7ed]' : 'text-[#006bbd]';
   const inactiveText = isDark
-    ? 'text-white/40 hover:text-white/60'
+    ? 'text-white/70 hover:text-white'
     : 'text-gray-600 hover:text-gray-900';
 
   return (
     <div className="flex items-center gap-0.5 sm:gap-1.5">
       <button
+        type="button"
         onClick={() => onChange('ollama')}
         aria-pressed={!isRag}
-        className={`text-[11px] font-medium tracking-wide whitespace-nowrap px-1 sm:px-2 py-1 rounded-lg transition-[background-color,color,opacity,transform] active:scale-95 ${
+        className={`min-h-11 whitespace-nowrap rounded-lg px-1 text-xs font-medium tracking-wide transition-[background-color,color,opacity,transform] focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-[#4aa7ed] active:scale-95 sm:px-2 ${
           !isRag ? activeText : inactiveText
         }`}
       >
@@ -30,25 +31,27 @@ const ToggleSwitch = memo(function ToggleSwitch({ engine, onChange }: ToggleSwit
       </button>
 
       <button
+        type="button"
         role="switch"
         aria-checked={isRag}
         aria-label={t('ragEngine')}
         onClick={() => onChange(isRag ? 'ollama' : 'rag')}
-        className="relative flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-full transition-transform duration-300 active:scale-95"
+        className="relative flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-full transition-transform duration-300 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-[#4aa7ed] active:scale-95"
       >
         <span className={`relative block h-4 w-8 rounded-full transition-[background-color,box-shadow] duration-300 sm:h-5 sm:w-10 ${isRag ? 'bg-[#006bbd] shadow-[0_0_10px_rgba(0,107,189,0.4)]' : isDark ? 'bg-white/[0.15]' : 'bg-gray-400'}`}>
           <span
-            className={`absolute top-0.5 h-3 w-3 rounded-full bg-white shadow-md transition-[left] duration-300 sm:top-1 ${
-              isRag ? 'left-[calc(100%-0.875rem)] sm:left-[calc(100%-1rem)]' : 'left-0.5'
+            className={`absolute left-0.5 top-0.5 h-3 w-3 rounded-full bg-white shadow-md transition-transform duration-300 sm:left-[3px] sm:top-[3px] sm:h-3.5 sm:w-3.5 ${
+              isRag ? 'translate-x-4 sm:translate-x-5' : 'translate-x-0'
             }`}
           />
         </span>
       </button>
 
       <button
+        type="button"
         onClick={() => onChange('rag')}
         aria-pressed={isRag}
-        className={`text-[11px] font-medium tracking-wide whitespace-nowrap px-1 sm:px-2 py-1 rounded-lg transition-[background-color,color,opacity] ${
+        className={`min-h-11 whitespace-nowrap rounded-lg px-1 text-xs font-medium tracking-wide transition-[background-color,color,opacity] focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-[#4aa7ed] sm:px-2 ${
           isRag ? activeText : inactiveText
         }`}
       >

@@ -114,7 +114,7 @@ def _pdf(text: str) -> bytes:
     objects: dict[int, bytes] = {
         1: b"<< /Type /Catalog /Pages 2 0 R >>",
         2: f"<< /Type /Pages /Kids [{' '.join(f'{page_id} 0 R' for page_id in page_ids)}] /Count {len(pages)} >>".encode(),
-        font_id: b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+        font_id: b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>",
     }
     for page_id, content_id, page_lines in zip(page_ids, content_ids, pages, strict=True):
         commands = [b"BT", b"/F1 10 Tf", b"54 738 Td"]

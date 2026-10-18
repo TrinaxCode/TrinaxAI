@@ -65,6 +65,7 @@ export default function Settings({ onBack, onOpenDocs, initialSection = 'general
     { key: 'help', label: t('helpProjectTitle'), Icon: MdFavoriteBorder },
   ];
   const tabRefs = useRef<(HTMLButtonElement | null)[]>([]);
+  const scrollRef = useRef<HTMLDivElement>(null);
   const onTabKeyDown = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
     const last = settingsSections.length - 1;
     let next = index;
@@ -77,6 +78,11 @@ export default function Settings({ onBack, onOpenDocs, initialSection = 'general
     changeSection(settingsSections[next].key);
     tabRefs.current[next]?.focus();
   };
+
+  useEffect(() => {
+    if (scrollRef.current) scrollRef.current.scrollTop = 0;
+    tabRefs.current[settingsSections.findIndex(({ key }) => key === section)]?.scrollIntoView?.({ block: 'nearest', inline: 'center' });
+  }, [section]);
 
   useEffect(() => {
     changeSection(initialSection);
@@ -395,7 +401,7 @@ export default function Settings({ onBack, onOpenDocs, initialSection = 'general
     const profile = detectedProfile || '16gb';
     return modelSetting(key, MODEL_PRESETS[profile][key]);
   };
-  const progress = Math.max(uploadProgress, indexJob?.progress ?? 0);
+  const progress = Math.min(100, Math.max(0, uploadProgress, indexJob?.progress ?? 0));
   // The upload counter is always exact; the indexer reports whether its own
   // percentage comes from real counters or is still only an estimate.
   const progressExact = uploadProgress > 0 ? true : Boolean(indexJob?.progress_exact ?? true);
@@ -432,12 +438,12 @@ export default function Settings({ onBack, onOpenDocs, initialSection = 'general
     ? 'bg-green-500/10 border-green-400/30 text-green-300 hover:bg-green-500/20'
     : 'bg-emerald-700 border-emerald-700 text-white hover:bg-emerald-800 hover:border-emerald-800';
 
-  const bgCard = isDark ? 'bg-white/[0.03] border-white/[0.06]' : 'bg-gray-50 border-gray-200';
-  const textHeading = isDark ? 'text-white/40' : 'text-gray-500';
+  const bgCard = isDark ? 'bg-white/[0.05] border-white/[0.10]' : 'bg-white border-gray-200';
+  const textHeading = isDark ? 'text-white/70' : 'text-gray-600';
   const textLabel = isDark ? 'text-white/80' : 'text-gray-800';
-  const textPlaceholder = isDark ? 'placeholder-white/20' : 'placeholder-gray-400';
-  const textValue = isDark ? 'text-white/70' : 'text-gray-700';
-  const inputText = isDark ? 'text-white/70' : 'text-gray-700';
+  const textPlaceholder = isDark ? 'placeholder-white/45' : 'placeholder-gray-500';
+  const textValue = isDark ? 'text-white/85' : 'text-gray-800';
+  const inputText = isDark ? 'text-white/85' : 'text-gray-800';
   const borderFocus = 'focus:border-[#006bbd]/40';
   const sectionBg = isDark ? 'bg-white/[0.03] border-white/[0.06]' : 'bg-gray-50 border-gray-200';
   const shareProject = async () => {
@@ -454,9 +460,9 @@ export default function Settings({ onBack, onOpenDocs, initialSection = 'general
   return (<motion.div className="settings-page h-full flex flex-col min-w-0 max-w-full overflow-x-hidden bg-transparent" initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}}>
     <div className="page-header shrink-0 flex items-center gap-3 px-4 pt-[env(safe-area-inset-top,0px)] pb-3">
       <BackButton onClick={onBack} label={t('back')} isDark={isDark} className="-ml-2" />
-      <span className={`text-sm font-medium ${textLabel}`}>{t('settingsTitle')}</span>
-      <a href={APP_CONFIG.repoUrl} target="_blank" rel="noopener noreferrer" aria-label={t('githubRepoLabel')} title={t('githubRepoLabel')} className={`ml-auto grid h-8 w-8 shrink-0 place-items-center rounded-lg ${textValue} hover:text-[#006bbd] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#006bbd]/50`}>
-        <FaGithub size={16} aria-hidden="true" />
+      <h1 className={`text-lg font-semibold ${textLabel}`}>{t('settingsTitle')}</h1>
+      <a href={APP_CONFIG.repoUrl} target="_blank" rel="noopener noreferrer" aria-label={t('githubRepoLabel')} title={t('githubRepoLabel')} className={`ml-auto grid h-11 w-11 shrink-0 place-items-center rounded-xl ${textValue} hover:text-[#006bbd] transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-[#4aa7ed]`}>
+        <FaGithub size={18} aria-hidden="true" />
       </a>
     </div>
     <div className={`page-tabs shrink-0 flex gap-1 sm:gap-2 overflow-x-auto overscroll-x-contain border-b px-3 sm:px-5 ${isDark ? 'border-white/[0.06]' : 'border-gray-200'}`}>
@@ -468,27 +474,27 @@ export default function Settings({ onBack, onOpenDocs, initialSection = 'general
           onClick={() => changeSection(key)}
           onKeyDown={(event) => onTabKeyDown(event, index)}
           aria-current={section === key ? 'page' : undefined}
-          className={`relative flex shrink-0 items-center gap-1.5 border-b-2 px-2 pb-2.5 pt-3 text-[11px] font-medium transition-colors whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#006bbd]/50 sm:px-2.5 sm:text-xs ${
+          className={`relative flex min-h-11 shrink-0 items-center gap-2 whitespace-nowrap border-b-2 px-3 py-2 text-sm font-medium transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-[#4aa7ed] ${
             section === key
               ? isDark
-                ? 'border-[#168de2] text-[#168de2]'
-                : 'border-[#006bbd] text-[#006bbd]'
+                ? 'border-[#4aa7ed] text-[#8ac9f5]'
+                : 'border-[#006bbd] text-[#0059a0]'
               : isDark
-                ? 'border-transparent text-white/45 hover:text-white/80'
-                : 'border-transparent text-gray-500 hover:text-gray-800'
+                ? 'border-transparent text-white/65 hover:text-white/90'
+                : 'border-transparent text-slate-600 hover:text-slate-900'
           }`}
         >
-          <Icon size={14} className="shrink-0" aria-hidden="true" />
+          <Icon size={16} className="shrink-0" aria-hidden="true" />
           {label}
         </button>
       ))}
     </div>
-    <div className="settings-scroll flex-1 overflow-y-auto px-4 pt-6 pb-[calc(env(safe-area-inset-bottom,0px)+24px)] space-y-6">
+    <div ref={scrollRef} className="settings-scroll mx-auto w-full max-w-5xl flex-1 overflow-y-auto px-4 pt-6 pb-[calc(env(safe-area-inset-bottom,0px)+24px)] space-y-6">
 
       {section === 'general' && (<>
       {/* Status Section */}
       <section>
-        <h3 className={`text-xs font-medium uppercase tracking-widest mb-3 ${textHeading}`}>{t('status')}</h3>
+        <h2 className={`mb-3 text-base font-semibold ${textLabel}`}>{t('status')}</h2>
         <div className={`${bgCard} rounded-xl px-4 py-3`}>
           <StatusDots />
         </div>
@@ -496,11 +502,11 @@ export default function Settings({ onBack, onOpenDocs, initialSection = 'general
 
       {/* ── Profile ── */}
       <section>
-        <h3 className={`text-xs font-medium uppercase tracking-widest mb-3 ${textHeading}`}>{t('profile')}</h3>
+        <h2 className={`mb-3 text-base font-semibold ${textLabel}`}>{t('profile')}</h2>
         <div className={`${bgCard} rounded-xl border px-4 py-3 space-y-2`}>
-          <label className={`text-[10px] uppercase tracking-wider ${textHeading}`}>{t('profileNicknameLabel')}</label>
+          <p className={`text-sm font-semibold ${textHeading}`}>{t('profileNicknameLabel')}</p>
           <div className="flex items-center gap-2">
-            <MdPerson size={18} className={isDark ? 'text-white/30' : 'text-gray-400'} aria-hidden="true" />
+            <MdPerson size={18} className={isDark ? 'text-white/60' : 'text-gray-600'} aria-hidden="true" />
             {nicknameEditing ? (
               <>
                 <input
@@ -513,11 +519,11 @@ export default function Settings({ onBack, onOpenDocs, initialSection = 'general
                   name="nickname"
                   autoComplete="off"
                   spellCheck={false}
-                  className={`min-w-0 flex-1 bg-transparent text-sm outline-none border-b ${isDark ? 'text-white/80 border-[#006bbd]/40 placeholder-white/20' : 'text-gray-800 border-[#006bbd]/40 placeholder-gray-400'} focus:border-[#006bbd] px-1 py-0.5`}
+                  className={`min-h-11 min-w-0 flex-1 border-b bg-transparent px-1 py-1 text-sm outline-hidden focus:border-[#006bbd] ${isDark ? 'border-[#006bbd]/40 text-white/85 placeholder-white/45' : 'border-[#006bbd]/40 text-gray-800 placeholder-gray-500'}`}
                 />
                 <button
                   onClick={saveNickname}
-                  className={`p-1.5 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#006bbd]/50 ${isDark ? 'text-[#006bbd] hover:bg-white/[0.06]' : 'text-[#006bbd] hover:bg-gray-100'}`}
+                  className={`grid h-11 w-11 shrink-0 place-items-center rounded-lg focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-[#4aa7ed] ${isDark ? 'text-[#8ac9f5] hover:bg-white/[0.08]' : 'text-[#0059a0] hover:bg-gray-100'}`}
                   title={t('save')}
                   aria-label={t('save')}
                 >
@@ -531,8 +537,8 @@ export default function Settings({ onBack, onOpenDocs, initialSection = 'general
                 </span>
                 <button
                   onClick={() => setNicknameEditing(true)}
-                  className={`px-2 py-1 rounded-lg text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#006bbd]/50 ${
-                    isDark ? 'text-white/40 hover:text-white/70 hover:bg-white/[0.06]' : 'text-gray-600 hover:text-gray-800 hover:bg-gray-100'
+                  className={`min-h-11 rounded-lg px-3 text-sm font-medium transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-[#4aa7ed] ${
+                    isDark ? 'text-white/75 hover:bg-white/[0.08] hover:text-white' : 'text-gray-700 hover:bg-gray-100 hover:text-gray-900'
                   }`}
                 >
                   {t('edit')}
@@ -540,7 +546,7 @@ export default function Settings({ onBack, onOpenDocs, initialSection = 'general
               </>
             )}
           </div>
-          <p className={`text-[10px] leading-relaxed ${isDark ? 'text-white/25' : 'text-gray-600'}`}>
+          <p className={`text-sm leading-relaxed ${textHeading}`}>
             {t('profileNicknameHint')}
           </p>
         </div>
@@ -548,13 +554,13 @@ export default function Settings({ onBack, onOpenDocs, initialSection = 'general
 
       {/* ── Language & Theme ── */}
       <section>
-        <h3 className={`text-xs font-medium uppercase tracking-widest mb-3 ${textHeading}`}>{t('language')} & {t('theme')}</h3>
+        <h2 className={`mb-3 text-base font-semibold ${textLabel}`}>{t('language')} & {t('theme')}</h2>
         <div className="flex flex-col sm:flex-row gap-3">
           {/* Language Toggle */}
           <button
             type="button"
             onClick={() => setLang(lang === 'es' ? 'en' : 'es')}
-            className={`min-w-0 flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl border text-sm font-medium text-center transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#006bbd]/50 ${
+            className={`min-w-0 flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl border text-sm font-medium text-center transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-[#006bbd]/50 ${
               isDark
                 ? 'bg-white/[0.03] border-white/[0.06] text-white/70 hover:bg-white/[0.06]'
                 : 'bg-gray-50 border-gray-200 text-gray-700 hover:bg-gray-100'
@@ -568,7 +574,7 @@ export default function Settings({ onBack, onOpenDocs, initialSection = 'general
           <button
             type="button"
             onClick={cycleTheme}
-            className={`min-w-0 flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl border text-sm font-medium text-center transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#006bbd]/50 ${
+            className={`min-w-0 flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl border text-sm font-medium text-center transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-[#006bbd]/50 ${
               isDark
                 ? 'bg-white/[0.03] border-white/[0.06] text-white/70 hover:bg-white/[0.06]'
                 : 'bg-gray-50 border-gray-200 text-gray-700 hover:bg-gray-100'
@@ -582,7 +588,7 @@ export default function Settings({ onBack, onOpenDocs, initialSection = 'general
       </section>
 
       <section>
-        <h3 className={`text-xs font-medium uppercase tracking-widest mb-3 ${textHeading}`}>{t('soundEffects')}</h3>
+        <h2 className={`mb-3 text-base font-semibold ${textLabel}`}>{t('soundEffects')}</h2>
         <button
           type="button"
           role="switch"
@@ -593,12 +599,12 @@ export default function Settings({ onBack, onOpenDocs, initialSection = 'general
             audioManager.setEnabled(enabled);
             if (enabled) audioManager.play('tool-complete');
           }}
-          className={`${bgCard} flex w-full items-center gap-3 rounded-xl border px-4 py-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#006bbd]/50 ${isDark ? 'hover:bg-white/[0.05]' : 'hover:bg-gray-100'}`}
+          className={`${bgCard} flex w-full items-center gap-3 rounded-xl border px-4 py-3 text-left transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-[#006bbd]/50 ${isDark ? 'hover:bg-white/[0.05]' : 'hover:bg-gray-100'}`}
         >
           {soundEffects ? <MdVolumeUp size={20} className="text-[#006bbd]" aria-hidden="true" /> : <MdVolumeOff size={20} className={textHeading} aria-hidden="true" />}
           <span className="min-w-0 flex-1">
             <span className={`block text-sm font-medium ${isDark ? 'text-white/75' : 'text-gray-700'}`}>{t('soundEffects')}</span>
-            <span className={`block text-[11px] ${textHeading}`}>{t('soundEffectsHint')}</span>
+            <span className={`mt-0.5 block text-sm leading-relaxed ${textHeading}`}>{t('soundEffectsHint')}</span>
           </span>
           <span className={`h-6 w-11 rounded-full p-0.5 transition-colors ${soundEffects ? 'bg-[#006bbd]' : isDark ? 'bg-white/15' : 'bg-gray-300'}`}>
             <span className={`block h-5 w-5 rounded-full bg-white transition-transform ${soundEffects ? 'translate-x-5' : ''}`} />
@@ -609,7 +615,7 @@ export default function Settings({ onBack, onOpenDocs, initialSection = 'general
       {/* ── Docs Link ── */}
       <section>
         <button type="button" onClick={onOpenDocs}
-          className={`w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl border text-sm font-medium transition-[background-color,color,border-color,transform] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#006bbd]/50 ${btnBase} active:scale-95`}>
+          className={`w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl border text-sm font-medium transition-[background-color,color,border-color,transform] focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-[#006bbd]/50 ${btnBase} active:scale-95`}>
           <MdBook size={16} aria-hidden="true" />
           {t('viewDocs')}
         </button>
@@ -623,21 +629,21 @@ export default function Settings({ onBack, onOpenDocs, initialSection = 'general
           <MdBuild className="mt-0.5 shrink-0 text-[#006bbd]" size={20} aria-hidden="true" />
           <div>
             <h2 className={`text-base font-semibold ${textLabel}`}>{t('settingsAdvanced')}</h2>
-            <p className={`mt-1 text-xs leading-relaxed ${textHeading}`}>{t('settingsAdvancedDescription')}</p>
+            <p className={`mt-1 text-sm leading-relaxed ${textHeading}`}>{t('settingsAdvancedDescription')}</p>
           </div>
         </div>
       </section>
 
-      {!canManageSystem && <div role="note" className={`${bgCard} rounded-xl border px-4 py-3 text-xs leading-relaxed ${textHeading}`}>
+      {!canManageSystem && <div role="note" className={`${bgCard} rounded-xl border px-4 py-3 text-sm leading-relaxed ${textHeading}`}>
         {t('deviceSystemScopeHint')}
       </div>}
 
       {/* ── System Section ── */}
       <section>
-        <h3 className={`mb-3 text-xs font-medium uppercase tracking-widest ${textHeading}`}>{t('system')}</h3>
+        <h3 className={`mb-3 text-sm font-semibold ${textLabel}`}>{t('system')}</h3>
         <DevicePairingCard isDark={isDark} canManageSystem={canManageSystem} />
         {canManageSystem && <div className={`${bgCard} mb-3 space-y-1.5 rounded-xl border px-4 py-3`}>
-          <label className={`text-[10px] uppercase tracking-wider ${textHeading}`}>{t('agentSettingsTitle')} | {t('agentWorkspaceRootLabel')}</label>
+          <p className={`text-sm font-semibold ${textHeading}`}>{t('agentSettingsTitle')} · {t('agentWorkspaceRootLabel')}</p>
           <div className="flex items-center gap-2">
             <input
               type="text"
@@ -649,17 +655,17 @@ export default function Settings({ onBack, onOpenDocs, initialSection = 'general
               aria-label={`${t('agentSettingsTitle')} | ${t('agentWorkspaceRootLabel')}`}
               name="agent-workspace"
               autoComplete="off"
-              className={`min-w-0 flex-1 rounded-lg border bg-transparent px-3 py-2 font-mono text-xs outline-none focus:border-[#006bbd] ${isDark ? 'border-white/[0.08] text-white/80 placeholder-white/25' : 'border-gray-200 text-gray-800 placeholder-gray-400'}`}
+              className={`min-h-11 min-w-0 flex-1 rounded-lg border bg-transparent px-3 py-2 font-mono text-sm outline-hidden focus:border-[#006bbd] ${isDark ? 'border-white/15 text-white/85 placeholder-white/45' : 'border-gray-200 text-gray-800 placeholder-gray-500'}`}
             />
-            <button type="button" onClick={() => setAgentPickerOpen(true)} className={`flex shrink-0 items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#006bbd]/50 ${isDark ? 'border-white/[0.08] text-white/70 hover:bg-white/[0.06]' : 'border-gray-200 text-gray-600 hover:bg-gray-100'}`}>
-              <MdFolder size={14} className="text-[#006bbd]" aria-hidden="true" /> {t('agentPickFolder')}
+            <button type="button" onClick={() => setAgentPickerOpen(true)} className={`flex min-h-11 shrink-0 items-center gap-1.5 rounded-lg border px-3 text-sm font-medium focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-[#4aa7ed] ${isDark ? 'border-white/15 text-white/85 hover:bg-white/[0.08]' : 'border-gray-200 text-gray-700 hover:bg-gray-100'}`}>
+              <MdFolder size={16} className={isDark ? 'text-[#8ac9f5]' : 'text-[#0059a0]'} aria-hidden="true" /> {t('agentPickFolder')}
             </button>
           </div>
-          <p className={`text-[10px] ${textHeading}`}>{t('agentWorkspaceRootHint')}</p>
+          <p className={`text-sm leading-relaxed ${textHeading}`}>{t('agentWorkspaceRootHint')}</p>
         </div>}
         {canManageSystem && <div className="flex flex-col gap-3 sm:flex-row">
-          <button type="button" onClick={() => setConfirmShutdown(true)} disabled={sd} className={`min-w-0 flex-1 flex items-center justify-center gap-1.5 px-4 py-3 rounded-xl border text-sm font-medium text-center disabled:opacity-50 active:scale-95 transition-[background-color,border-color,opacity,transform] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#006bbd]/50 ${dangerButton}`}><MdPowerSettingsNew className="shrink-0" size={16} aria-hidden="true" /><span className="min-w-0 break-words">{sd?t('shuttingDown'):t('shutdownAI')}</span></button>
-          <button type="button" onClick={() => setConfirmStartup(true)} disabled={su} className={`min-w-0 flex-1 flex items-center justify-center gap-1.5 px-4 py-3 rounded-xl border text-sm font-medium text-center disabled:opacity-50 active:scale-95 transition-[background-color,border-color,opacity,transform] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#006bbd]/50 ${startupButton}`}><MdRocketLaunch className="shrink-0" size={16} aria-hidden="true" /><span className="min-w-0 break-words">{su?t('startingUp'):t('startupAI')}</span></button>
+          <button type="button" onClick={() => setConfirmShutdown(true)} disabled={sd} className={`min-w-0 flex-1 flex items-center justify-center gap-1.5 px-4 py-3 rounded-xl border text-sm font-medium text-center disabled:opacity-50 active:scale-95 transition-[background-color,border-color,opacity,transform] focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-[#006bbd]/50 ${dangerButton}`}><MdPowerSettingsNew className="shrink-0" size={16} aria-hidden="true" /><span className="min-w-0 break-words">{sd?t('shuttingDown'):t('shutdownAI')}</span></button>
+          <button type="button" onClick={() => setConfirmStartup(true)} disabled={su} className={`min-w-0 flex-1 flex items-center justify-center gap-1.5 px-4 py-3 rounded-xl border text-sm font-medium text-center disabled:opacity-50 active:scale-95 transition-[background-color,border-color,opacity,transform] focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-[#006bbd]/50 ${startupButton}`}><MdRocketLaunch className="shrink-0" size={16} aria-hidden="true" /><span className="min-w-0 break-words">{su?t('startingUp'):t('startupAI')}</span></button>
         </div>}
       </section>
 
@@ -681,8 +687,8 @@ export default function Settings({ onBack, onOpenDocs, initialSection = 'general
           <div className="flex items-start gap-3">
             <MdWarning className="mt-0.5 shrink-0 text-amber-500" size={18} aria-hidden="true" />
             <div className="min-w-0 flex-1">
-              <h3 className={`text-xs font-medium uppercase tracking-widest ${textHeading}`}>{t('dangerZone')}</h3>
-              <p className={`mt-1 text-[11px] leading-relaxed ${textHeading}`}>{t('dangerZoneHint')}</p>
+              <h3 className={`text-sm font-semibold ${isDark ? 'text-red-200' : 'text-red-800'}`}>{t('dangerZone')}</h3>
+              <p className={`mt-1 text-sm leading-relaxed ${textHeading}`}>{t('dangerZoneHint')}</p>
             </div>
           </div>
         </div>
@@ -697,7 +703,7 @@ export default function Settings({ onBack, onOpenDocs, initialSection = 'general
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -8 }}
             transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
-            className={`w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl border text-sm font-medium transition-[background-color,transform] active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#006bbd]/50 ${dangerButton}`}>
+            className={`w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl border text-sm font-medium transition-[background-color,transform] active:scale-95 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-[#006bbd]/50 ${dangerButton}`}>
             <MdRefresh size={16} aria-hidden="true" />
             {t('restoreConfig')}
           </motion.button>
@@ -711,8 +717,9 @@ export default function Settings({ onBack, onOpenDocs, initialSection = 'general
             className="overflow-hidden"
           >
           <div className="space-y-3 rounded-xl border border-red-500/20 bg-red-500/5 p-4">
-            <p className="text-xs text-red-400/80">{t('restoreConfigConfirm')}</p>
+            <p className={`text-sm leading-relaxed ${isDark ? 'text-red-200' : 'text-red-800'}`}>{t('restoreConfigConfirm')}</p>
             <input
+              autoFocus
               type="text"
               name="restore-confirm"
               aria-label={t('restoreConfigWarning')}
@@ -721,16 +728,16 @@ export default function Settings({ onBack, onOpenDocs, initialSection = 'general
               placeholder={t('restoreConfigWarning')}
               autoComplete="off"
               spellCheck={false}
-              className={`w-full rounded-lg border border-red-500/20 bg-transparent px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-red-500/50 ${isDark ? 'text-white placeholder-white/20' : 'text-gray-900 placeholder-gray-400'}`}
+              className={`min-h-11 w-full rounded-lg border border-red-500/20 bg-transparent px-3 py-2 text-base outline-hidden focus-visible:ring-2 focus-visible:ring-red-500/50 sm:text-sm ${isDark ? 'text-white placeholder-white/55' : 'text-gray-900 placeholder-gray-600'}`}
             />
-            <div className="flex gap-2">
+            <div className="flex flex-col gap-2 sm:flex-row">
               <button type="button" onClick={() => { setShowRestore(false); setRestoreConfirm(''); }}
-                className={`flex-1 rounded-lg py-2 text-xs font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#006bbd]/50 ${btnBase}`}>
+                className={`min-h-11 min-w-0 flex-1 rounded-lg px-3 py-2 text-sm font-medium focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-[#006bbd]/50 ${btnBase}`}>
                 {t('cancel')}
               </button>
               <button type="button" onClick={doRestore}
                 disabled={restoreConfirm !== 'RESTAURAR' && restoreConfirm !== 'RESTORE'}
-                className={`flex-1 rounded-lg py-2 text-xs font-medium transition-[background-color,opacity] disabled:opacity-30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#006bbd]/50 ${dangerButton}`}>
+                className={`min-h-11 min-w-0 flex-1 rounded-lg px-3 py-2 text-sm font-medium transition-[background-color,opacity] disabled:opacity-30 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-[#006bbd]/50 ${dangerButton}`}>
                 {t('restoreConfig')}
               </button>
             </div>
@@ -740,7 +747,7 @@ export default function Settings({ onBack, onOpenDocs, initialSection = 'general
         </AnimatePresence>
         <button type="button" onClick={() => { setStopAllConfirmText(''); setConfirmStopAll(true); }}
           disabled={stoppingAll}
-          className={`mt-3 w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl border text-sm font-medium transition-[background-color,transform] active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#006bbd]/50 ${dangerButton}`}>
+          className={`mt-3 w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl border text-sm font-medium transition-[background-color,transform] active:scale-95 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-[#006bbd]/50 ${dangerButton}`}>
           <MdPowerSettingsNew size={16} aria-hidden="true" />
           {stoppingAll ? t('shuttingDown') : t('stopAllTrinaxAI')}
         </button>
@@ -754,15 +761,15 @@ export default function Settings({ onBack, onOpenDocs, initialSection = 'general
       <>
       {/* ── Index Section ── */}
       <section>
-        <h3 className={`text-xs font-medium uppercase tracking-widest mb-3 ${textHeading}`}>{t('indexProjects')}</h3>
+        <h2 className={`mb-3 text-base font-semibold ${textLabel}`}>{t('indexProjects')}</h2>
         <div className={`mb-3 flex items-center gap-2 px-3 py-2 rounded-xl border ${bgCard}`}>
-          <span className={`text-[11px] shrink-0 ${textHeading}`}>{t('indexCollection')}</span>
+          <span className={`shrink-0 text-sm font-medium ${textHeading}`}>{t('indexCollection')}</span>
           <select
             aria-label={t('indexCollection')}
             value={indexCollectionId}
             onChange={(e) => setIndexCollectionId(e.target.value)}
             style={{ colorScheme: isDark ? 'dark' : 'light' }}
-            className={`min-w-0 flex-1 bg-transparent text-sm outline-none focus-visible:ring-2 focus-visible:ring-[#006bbd]/50 ${inputText}`}
+            className={`min-h-11 min-w-0 flex-1 bg-transparent text-sm outline-hidden focus-visible:ring-2 focus-visible:ring-[#4aa7ed] ${inputText}`}
           >
             {collections.map((collection) => (
               <option key={collection.id} value={collection.id}>{collection.name}</option>
@@ -791,7 +798,7 @@ export default function Settings({ onBack, onOpenDocs, initialSection = 'general
             {...{ webkitdirectory: '', directory: '' }}
           />
           <button onClick={() => folderInputRef.current?.click()} disabled={indexing}
-            className={`min-w-0 flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl border text-sm font-medium text-center transition-[background-color,color,border-color,opacity,transform] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#006bbd]/50 ${btnBase} disabled:opacity-50 active:scale-95`}>
+            className={`min-w-0 flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl border text-sm font-medium text-center transition-[background-color,color,border-color,opacity,transform] focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-[#006bbd]/50 ${btnBase} disabled:opacity-50 active:scale-95`}>
             <MdStorage className="shrink-0" size={16} aria-hidden="true" />
             <span className="min-w-0 break-words">
               {indexing ? t('indexing') : lastIndexedLabel ? t('indexFolderSelected').replace('{folder}', lastIndexedLabel).replace('{count}', '-') : t('chooseFolderIndex')}
@@ -800,7 +807,7 @@ export default function Settings({ onBack, onOpenDocs, initialSection = 'general
           {indexing && (
             <button
               onClick={cancelIndex}
-              className="flex min-h-12 flex-1 items-center justify-center gap-2 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm font-semibold text-red-400 shadow-sm transition-[background-color,border-color,transform] hover:border-red-500/50 hover:bg-red-500/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/60 active:scale-[.98] sm:flex-none"
+              className={`flex min-h-12 flex-1 items-center justify-center gap-2 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm font-semibold shadow-sm transition-[background-color,border-color,transform] hover:border-red-500/50 hover:bg-red-500/20 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-red-400/60 active:scale-[.98] sm:flex-none ${isDark ? 'text-red-300' : 'text-red-700'}`}
               aria-label={t('indexCancel')}
               title={t('indexCancel')}
             >
@@ -809,16 +816,16 @@ export default function Settings({ onBack, onOpenDocs, initialSection = 'general
             </button>
           )}
         </div>
-        <p className={`mt-2 text-[11px] ${textHeading}`}>{t('indexFolderBrowserHint')}</p>
+        <p className={`mt-2 text-sm leading-relaxed ${textHeading}`}>{t('indexFolderBrowserHint')}</p>
         {(indexing || indexJob) && (
-          <div className={`tc-index-card mt-3 space-y-2`}>
+          <div className="tc-index-card mt-3 space-y-3">
             {indexing ? (
               <>
                 <div className="flex items-center justify-between gap-3">
-                  <span className={`text-xs font-medium ${textLabel}`}>{phaseLabel(indexJob?.phase || (uploadProgress > 0 ? 'saving' : 'queued'))}</span>
+                  <span className={`min-w-0 text-sm font-medium ${textLabel}`}>{phaseLabel(indexJob?.phase || (uploadProgress > 0 ? 'saving' : 'queued'))}</span>
                   <span className="flex items-baseline gap-1.5">
-                    <span className={`text-xs font-semibold tabular-nums ${textLabel}`}>{progress}%</span>
-                    {!progressExact && <span className={`text-[10px] uppercase tracking-wide ${textHeading}`}>{t('indexApprox')}</span>}
+                    <span className={`text-xl font-semibold tabular-nums ${textLabel}`}>{progress}%</span>
+                    {!progressExact && <span className={`text-xs font-medium ${textHeading}`}>{t('indexApprox')}</span>}
                   </span>
                 </div>
                 <div
@@ -832,10 +839,10 @@ export default function Settings({ onBack, onOpenDocs, initialSection = 'general
                 >
                   <div
                     className={`tc-index-fill${progressExact ? '' : ' tc-index-fill--live'}`}
-                    style={{ width: `${Math.min(100, Math.max(0, progress))}%` }}
+                    style={{ width: `${progress}%` }}
                   />
                 </div>
-                <div className="flex flex-wrap items-center gap-2 text-[11px]">
+                <div className={`flex flex-wrap items-center gap-2 text-sm ${textHeading}`}>
                   <span className="tc-index-metric tabular-nums">{t('indexElapsed')}: <strong className={textLabel}>{formatSeconds(indexJob?.elapsed_seconds ?? 0)}</strong></span>
                   {etaSeconds !== null && <span className="tc-index-metric tabular-nums">{t('indexEta')}: <strong className={textLabel}>~{formatSeconds(etaSeconds)}</strong></span>}
                   <span className="tc-index-metric tabular-nums">{t('indexFiles')}: <strong className={textLabel}>{filesProcessed} / {filesTotal}</strong></span>
@@ -844,7 +851,7 @@ export default function Settings({ onBack, onOpenDocs, initialSection = 'general
                   {!!indexJob?.skipped && <span className="tc-index-metric tabular-nums">{t('indexSkipped')}: <strong className={textLabel}>{indexJob.skipped}</strong></span>}
                 </div>
                 {!!indexJob?.recent_activity && (
-                  <p className={`tc-index-metric text-[11px] ${textHeading}`}>{t('indexRecentActivity')}: {indexJob.recent_activity}</p>
+                  <p className={`tc-index-metric break-words text-sm leading-relaxed ${textHeading}`}>{t('indexRecentActivity')}: {indexJob.recent_activity}</p>
                 )}
               </>
             ) : indexJob?.status === 'completed' ? (
@@ -857,26 +864,26 @@ export default function Settings({ onBack, onOpenDocs, initialSection = 'general
                 </div>
                 <button
                   onClick={() => folderInputRef.current?.click()}
-                  className="shrink-0 flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-[#006bbd]/15 text-[#006bbd] hover:bg-[#006bbd]/25 active:scale-95 transition-[background-color,transform] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#006bbd]/50"
+                  className={`flex min-h-11 shrink-0 items-center gap-1 rounded-lg bg-[#006bbd]/15 px-3 text-sm font-medium transition-[background-color,transform] hover:bg-[#006bbd]/25 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-[#4aa7ed] active:scale-95 ${isDark ? 'text-[#8ac9f5]' : 'text-[#0059a0]'}`}
                   title={t('chooseFolderIndex')}
                   aria-label={t('indexAgain')}
                 >
-                  <MdRefresh size={14} aria-hidden="true" />
+                  <MdRefresh size={18} aria-hidden="true" />
                   <span className="hidden sm:inline">{t('indexAgain')}</span>
                 </button>
               </div>
               {hasIndexFailures && (
-                <div role="alert" className="flex flex-wrap items-center gap-2 text-xs text-amber-400">
+                <div role="alert" className={`flex flex-wrap items-center gap-2 rounded-xl border px-3 py-2 text-sm leading-relaxed ${isDark ? 'border-amber-400/20 bg-amber-400/5 text-amber-200' : 'border-amber-200 bg-amber-50 text-amber-900'}`}>
                   <span>{indexJob.skipped || indexJob.failures.length ? t('indexPartialWarning').replace('{count}', String(indexJob.skipped || indexJob.failures.length)) : t('indexNeedsAttention')}</span>
-                  <button type="button" onClick={retryCurrentIndex} className="rounded-lg bg-amber-400/15 px-3 py-1.5 font-semibold text-amber-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/60">{t('retry')}</button>
+                  <button type="button" onClick={retryCurrentIndex} className={`min-h-11 rounded-lg px-3 py-2 font-semibold focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-amber-400/60 ${isDark ? 'bg-amber-400/15 text-amber-200 hover:bg-amber-400/25' : 'bg-amber-100 text-amber-900 hover:bg-amber-200'}`}>{t('retry')}</button>
                 </div>
               )}
-              {indexJob.failures.slice(0, 3).map((failure) => <p key={`${failure.path}:${failure.reason}`} className={`text-[11px] ${textHeading}`}>{failure.path}: {failure.reason}</p>)}
+              {indexJob.failures.slice(0, 3).map((failure) => <p key={`${failure.path}:${failure.reason}`} className={`break-words text-sm leading-relaxed ${textHeading}`}>{failure.path}: {failure.reason}</p>)}
               </div>
             ) : indexJob?.status === 'failed' ? (
-              <div className="flex items-center justify-between gap-3 text-sm text-red-400">
-                <span><strong>{phaseLabel(indexJob.phase)}</strong>: {indexJob.error || t('indexFailed')}</span>
-                <button type="button" className="shrink-0 rounded-lg bg-[#006bbd]/15 px-3 py-1.5 text-xs text-[#4ea3e0] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#006bbd]/50" onClick={retryCurrentIndex}>{t('retry')}</button>
+              <div role="alert" className={`flex flex-wrap items-center justify-between gap-3 text-sm leading-relaxed ${isDark ? 'text-red-200' : 'text-red-800'}`}>
+                <span className="min-w-0 break-words"><strong>{phaseLabel(indexJob.phase)}</strong>: {indexJob.error || t('indexFailed')}</span>
+                <button type="button" className={`min-h-11 shrink-0 rounded-lg bg-[#006bbd]/15 px-3 text-sm font-medium focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-[#4aa7ed] ${isDark ? 'text-[#8ac9f5]' : 'text-[#0059a0]'}`} onClick={retryCurrentIndex}>{t('retry')}</button>
               </div>
             ) : indexJob?.status === 'cancelled' ? (
               <div className={`text-sm ${textLabel}`}>{t('indexCancelled')}</div>
@@ -889,7 +896,7 @@ export default function Settings({ onBack, onOpenDocs, initialSection = 'general
 
       {/* ── Collections Section ── */}
       <section>
-        <h3 className={`text-xs font-medium uppercase tracking-widest mb-3 ${textHeading}`}>{t('collections')}</h3>
+        <h2 className={`mb-3 text-base font-semibold ${textLabel}`}>{t('collections')}</h2>
         <div className="space-y-2">
           {collections.map((collection) => (
             <div key={collection.id} className={`flex items-center gap-2 px-3 py-2 rounded-xl border ${bgCard}`}>
@@ -904,27 +911,27 @@ export default function Settings({ onBack, onOpenDocs, initialSection = 'general
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
                 }}
-                className={`min-w-0 flex-1 rounded-md bg-transparent text-sm outline-none focus-visible:ring-2 focus-visible:ring-[#006bbd]/50 disabled:opacity-60 ${inputText}`}
+                className={`min-w-0 flex-1 rounded-md bg-transparent text-sm outline-hidden focus-visible:ring-2 focus-visible:ring-[#006bbd]/50 disabled:opacity-60 ${inputText}`}
               />
               {canManageSystem && (
                 <button
                   onClick={() => setCollectionClearId(collection.id)}
                   disabled={clearingCollectionId === collection.id}
-                  className={`p-1.5 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#006bbd]/50 ${isDark ? 'text-white/25 hover:text-amber-400 hover:bg-white/[0.05]' : 'text-gray-300 hover:text-amber-600 hover:bg-gray-100'} disabled:opacity-30`}
+                  className={`grid h-11 w-11 shrink-0 place-items-center rounded-lg transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-[#4aa7ed] ${isDark ? 'text-white/65 hover:bg-amber-400/10 hover:text-amber-300' : 'text-slate-600 hover:bg-amber-50 hover:text-amber-700'} disabled:opacity-30`}
                   aria-label={`${t('clearCollection')} ${collection.name}`}
                   title={t('clearCollection')}
                 >
-                  <MdDeleteSweep size={16} aria-hidden="true" />
+                  <MdDeleteSweep size={18} aria-hidden="true" />
                 </button>
               )}
               {collection.id !== 'default' && (
                 <button
                   onClick={() => setCollectionDeleteId(collection.id)}
-                  className={`p-1.5 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#006bbd]/50 ${isDark ? 'text-white/25 hover:text-red-400 hover:bg-white/[0.05]' : 'text-gray-300 hover:text-red-500 hover:bg-gray-100'}`}
+                  className={`grid h-11 w-11 shrink-0 place-items-center rounded-lg transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-[#4aa7ed] ${isDark ? 'text-white/65 hover:bg-red-400/10 hover:text-red-300' : 'text-slate-600 hover:bg-red-50 hover:text-red-700'}`}
                   aria-label={t('delete')}
                   title={t('delete')}
                 >
-                  <MdDelete size={16} aria-hidden="true" />
+                  <MdDelete size={18} aria-hidden="true" />
                 </button>
               )}
             </div>
@@ -939,13 +946,13 @@ export default function Settings({ onBack, onOpenDocs, initialSection = 'general
               name="new-collection-name"
               autoComplete="off"
               spellCheck={false}
-              className={`min-w-0 flex-1 rounded-md bg-transparent text-sm outline-none focus-visible:ring-2 focus-visible:ring-[#006bbd]/50 ${textValue} ${textPlaceholder}`}
+              className={`min-h-11 min-w-0 flex-1 rounded-md bg-transparent text-sm outline-hidden focus-visible:ring-2 focus-visible:ring-[#4aa7ed] ${textValue} ${textPlaceholder}`}
             />
             <button
               onClick={addCollection}
-              className="shrink-0 flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-[#006bbd]/15 text-[#006bbd] hover:bg-[#006bbd]/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#006bbd]/50"
+              className={`flex min-h-11 shrink-0 items-center gap-1.5 rounded-lg bg-[#006bbd]/15 px-3 text-sm font-medium hover:bg-[#006bbd]/25 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-[#4aa7ed] ${isDark ? 'text-[#8ac9f5]' : 'text-[#0059a0]'}`}
             >
-              <MdAdd size={14} aria-hidden="true"/> {t('add')}
+              <MdAdd size={18} aria-hidden="true"/> {t('add')}
             </button>
           </div>
         </div>
@@ -983,18 +990,18 @@ export default function Settings({ onBack, onOpenDocs, initialSection = 'general
             </div>
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
-            <a href={APP_CONFIG.repoUrl} target="_blank" rel="noopener noreferrer" className={`rounded-xl border p-4 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#006bbd]/50 sm:col-span-2 ${btnBase}`}>
+            <a href={APP_CONFIG.repoUrl} target="_blank" rel="noopener noreferrer" className={`rounded-xl border p-4 transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-[#006bbd]/50 sm:col-span-2 ${btnBase}`}>
               <div className="flex items-center gap-3 text-sm font-medium">
                 <MdStar className="shrink-0 text-[#eab308]" size={20} aria-hidden="true" />
                 {t('helpProjectRate')}
               </div>
               <p className={`mt-2 text-xs leading-relaxed ${textHeading}`}>{t('helpProjectRateHint')}</p>
             </a>
-            <button type="button" onClick={() => void shareProject()} className={`flex items-center gap-3 rounded-xl border px-4 py-3 text-left text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#006bbd]/50 ${btnBase}`}>
+            <button type="button" onClick={() => void shareProject()} className={`flex items-center gap-3 rounded-xl border px-4 py-3 text-left text-sm font-medium transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-[#006bbd]/50 ${btnBase}`}>
               <MdShare className="shrink-0 text-[#006bbd]" size={20} aria-hidden="true" />
               {t('helpProjectShare')}
             </button>
-            <a href={`${APP_CONFIG.repoUrl}/issues`} target="_blank" rel="noopener noreferrer" className={`flex items-center gap-3 rounded-xl border px-4 py-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#006bbd]/50 ${btnBase}`}>
+            <a href={`${APP_CONFIG.repoUrl}/issues`} target="_blank" rel="noopener noreferrer" className={`flex items-center gap-3 rounded-xl border px-4 py-3 text-sm font-medium transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-[#006bbd]/50 ${btnBase}`}>
               <MdCode className="shrink-0 text-[#006bbd]" size={20} aria-hidden="true" />
               {t('helpProjectContribute')}
             </a>
@@ -1040,7 +1047,7 @@ export default function Settings({ onBack, onOpenDocs, initialSection = 'general
             placeholder={stopAllConfirmWord}
             autoComplete="off"
             spellCheck={false}
-            className={`mt-2 w-full rounded-lg border bg-transparent px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-red-500/50 ${isDark ? 'border-red-500/25 text-white placeholder-white/25' : 'border-red-200 text-gray-900 placeholder-gray-400'}`}
+            className={`mt-2 w-full rounded-lg border bg-transparent px-3 py-2 text-sm outline-hidden focus-visible:ring-2 focus-visible:ring-red-500/50 ${isDark ? 'border-red-500/25 text-white placeholder-white/25' : 'border-red-200 text-gray-900 placeholder-gray-400'}`}
           />
         </label>
       </ConfirmModal>

@@ -362,3 +362,34 @@ async def test_watch_lifecycle_success_status_and_stop(monkeypatch, tmp_path: Pa
     stopped = await watcher_service.watch_stop(object())
     assert stopped == {"status": "stopped"}
     assert await watcher_service.watch_stop(object()) == {"status": "not_running"}
+
+
+def test_worker_survives_batch_failure_and_processes_next_batch(monkeypatch, tmp_path: Path) -> None:
+    import threading
+
+    source = tmp_path / "source"
+    source.mkdir()
+    handler = watcher_service._watch_Handler([str(source)])
+    calls: list[list[str]] = []
+    done = threading.Event()
+
+    def process(pending: list[str]) -> None:
+        calls.append(pending)
+        if len(calls) == 1:
+            raise OSError(28, "No space left on device")
+        done.set()
+
+    monkeypatch.setattr(handler, "_process_batch", process)
+    try:
+        for name in ("a", "b"):
+            with handler._queue_condition:
+                handler._queued.add(str(source / name))
+                handler._queue_condition.notify()
+            for _ in range(100):
+                if len(calls) >= (1 if name == "a" else 2):
+                    break
+                threading.Event().wait(0.02)
+        assert done.wait(2), "worker thread died after the first failing batch"
+        assert handler._worker.is_alive()
+    finally:
+        handler.shutdown()

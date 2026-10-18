@@ -133,4 +133,13 @@ describe('indexing progress bar', () => {
     expect(container.querySelector('.tc-index-fill--live')).toBeNull();
     expect(screen.queryByText(/aprox|approx/i)).toBeNull();
   });
+
+  it.each([[-20, 0], [140, 100]])('keeps an out-of-range progress value %i within %i%%', async (reported, expected) => {
+    mocks.getIndexJob.mockResolvedValue({ ...runningJob, progress: reported });
+    const { container } = renderIndexingTab();
+
+    expect(await screen.findByRole('progressbar')).toHaveAttribute('aria-valuenow', String(expected));
+    expect(screen.getByText(`${expected}%`)).toBeInTheDocument();
+    expect(container.querySelector('.tc-index-fill')).toHaveStyle({ width: `${expected}%` });
+  });
 });

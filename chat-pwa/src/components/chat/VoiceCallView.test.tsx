@@ -18,7 +18,8 @@ describe('VoiceCallView palette', () => {
 
     const endCall = screen.getByRole('button');
     expect(endCall).toHaveFocus();
-    expect(endCall).toHaveClass('bg-red-500');
-    expect(endCall).toHaveClass('hover:bg-red-600');
+    expect(endCall).toHaveClass('bg-red-600');
+    expect(endCall).toHaveClass('hover:bg-red-700');
+    expect(screen.getByRole('heading', { level: 1, name: 'Call mode' })).toBeInTheDocument();
   });
 });

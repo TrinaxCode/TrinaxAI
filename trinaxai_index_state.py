@@ -121,8 +121,9 @@ def read_manifest(context: SourceContext | None = None) -> dict:
     try:
         with open(runtime.config.MANIFEST_PATH, encoding="utf-8") as stream:
             raw = json.load(stream)
-    except (OSError, ValueError):
+    except (FileNotFoundError, ValueError):
         return {}
+    # Other OSErrors propagate: an unreadable manifest must not look empty and trigger a full duplicate re-index.
     if not isinstance(raw, dict):
         return {}
     canonical = {}

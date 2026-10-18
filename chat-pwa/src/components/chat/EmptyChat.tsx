@@ -1,4 +1,4 @@
-import { AnimatePresence, motion } from 'framer-motion';
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import type { DisplayChip } from './types';
 
 interface EmptyChatProps {
@@ -9,46 +9,47 @@ interface EmptyChatProps {
 }
 
 export default function EmptyChat({ isDark, motd, rotation, chips }: EmptyChatProps) {
+  const prefersReducedMotion = useReducedMotion();
   return (
-    <motion.div className="empty-chat flex flex-1 flex-col items-center justify-center gap-6 px-6" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-      <motion.div className="empty-chat-visual animate-float">
+    <div className="empty-chat flex flex-1 flex-col items-center justify-center gap-6 px-6 pb-12 pt-6">
+      <div className="empty-chat-visual animate-float">
         <div className={`flex h-20 w-20 items-center justify-center rounded-full p-1.5 md:h-24 md:w-24 ${isDark ? 'bg-black shadow-lg' : 'bg-white shadow-[0_0_14px_1px_rgba(15,23,42,0.14)]'}`}>
           <img src="/logo-for-ai.webp" alt="TrinaxAI" className={`${isDark ? 'animate-glow' : ''} h-full w-full rounded-full object-contain opacity-85`} width={80} height={80} draggable={false} />
         </div>
-      </motion.div>
-      <AnimatePresence mode="popLayout">
-        <motion.p
+      </div>
+      <AnimatePresence mode="wait" initial={false}>
+        <motion.h1
           key={motd}
-          className={`chat-empty-motd empty-chat-copy max-w-xs text-center text-sm font-light tracking-wide md:text-base ${isDark ? 'text-white/50' : 'text-gray-600'}`}
-          initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }}
-          transition={{ duration: 0.5, ease: 'easeInOut' }}
+          className={`chat-empty-motd empty-chat-copy max-w-2xl text-center text-[clamp(1.5rem,3vw,2.25rem)] font-semibold leading-tight tracking-tight ${isDark ? 'text-white/90' : 'text-slate-800'}`}
+          initial={{ opacity: 0, y: prefersReducedMotion ? 0 : 6 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: prefersReducedMotion ? 0 : -6 }}
+          transition={{ duration: prefersReducedMotion ? 0 : 0.25, ease: 'easeOut' }}
         >
           {motd}
-        </motion.p>
+        </motion.h1>
       </AnimatePresence>
-      <AnimatePresence mode="popLayout">
+      <AnimatePresence mode="wait" initial={false}>
         <motion.div
           key={rotation}
           className="flex max-w-md flex-wrap items-center justify-center gap-1.5 sm:gap-2.5"
-          initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -5 }}
-          transition={{ duration: 0.22, ease: 'easeOut' }}
+          initial={{ opacity: 0, y: prefersReducedMotion ? 0 : 5 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: prefersReducedMotion ? 0 : -5 }}
+          transition={{ duration: prefersReducedMotion ? 0 : 0.22, ease: 'easeOut' }}
         >
           {chips.map((chip) => (
-            <motion.button
+            <button
               key={`${chip.label}-${chip.idx}`}
-              initial={{ opacity: 0, y: 8, scale: 0.94 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              transition={{ duration: 0.32, delay: 0.06 + chip.idx * 0.07, ease: [0.16, 1, 0.3, 1] }}
-              whileHover={{ scale: 1.05, y: -2 }} whileTap={{ scale: 0.96 }}
               onClick={chip.action}
-              className={`chip-elegant relative flex items-center gap-1.5 overflow-hidden rounded-full border py-1 pl-1.5 pr-2.5 text-[11px] font-medium sm:gap-2 sm:px-3.5 sm:py-1.5 sm:text-xs ${isDark ? 'border-white/[0.09] bg-gradient-to-b from-white/[0.06] to-white/[0.015] text-white/70' : 'border-gray-200/80 bg-gradient-to-b from-white to-gray-50 text-gray-600'}`}
+              className={`chip-elegant relative flex min-h-11 max-w-full items-center gap-2 overflow-hidden rounded-xl border px-3 py-2 text-sm font-medium focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-[#4aa7ed] ${isDark ? 'border-white/[0.12] bg-white/[0.05] text-slate-200' : 'border-slate-200 bg-white text-slate-700'}`}
             >
-              {chip.icon && <span className="chip-elegant-icon flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[11px] leading-none sm:h-5 sm:w-5 sm:text-[13px]">{chip.icon}</span>}
-              <span className="relative z-[1] whitespace-nowrap">{chip.label}</span>
-            </motion.button>
+              {chip.icon && <span className="chip-elegant-icon flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-sm leading-none">{chip.icon}</span>}
+              <span className="relative z-[1] min-w-0 break-words text-left">{chip.label}</span>
+            </button>
           ))}
         </motion.div>
       </AnimatePresence>
-    </motion.div>
+    </div>
   );
 }

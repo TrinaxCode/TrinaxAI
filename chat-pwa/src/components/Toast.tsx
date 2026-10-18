@@ -116,8 +116,8 @@ const NOTICE_ICONS: Record<ToastType, ReactNode> = {
 };
 
 const CARD_CLASS = 'pointer-events-auto relative w-full overflow-hidden rounded-2xl border bg-white/95 px-4 py-3.5 text-left backdrop-blur-2xl dark:bg-[#0a1018]/90';
-const PRIMARY_BUTTON_CLASS = 'inline-flex min-h-10 items-center justify-center rounded-xl bg-[#006bbd] px-3.5 py-2 text-xs font-semibold text-white transition-[background-color,box-shadow,transform] hover:bg-[#0059a0] active:scale-[0.98] disabled:cursor-wait disabled:opacity-60';
-const SECONDARY_BUTTON_CLASS = 'inline-flex min-h-10 items-center justify-center rounded-xl border border-black/10 px-3.5 py-2 text-xs font-semibold text-[#0f1c28]/75 transition-[background-color,border-color,transform] hover:border-black/20 hover:bg-black/[0.04] active:scale-[0.98] dark:border-white/15 dark:text-white/80 dark:hover:bg-white/[0.07]';
+const PRIMARY_BUTTON_CLASS = 'inline-flex min-h-11 items-center justify-center rounded-xl bg-[#006bbd] px-3.5 py-2 text-sm font-semibold text-white transition-[background-color,box-shadow,transform] hover:bg-[#0059a0] focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-[#4aa7ed] active:scale-[0.98] disabled:cursor-wait disabled:opacity-60';
+const SECONDARY_BUTTON_CLASS = 'inline-flex min-h-11 items-center justify-center rounded-xl border border-black/10 px-3.5 py-2 text-sm font-semibold text-[#0f1c28]/80 transition-[background-color,border-color,transform] hover:border-black/20 hover:bg-black/[0.04] focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-[#4aa7ed] active:scale-[0.98] dark:border-white/15 dark:text-white/85 dark:hover:bg-white/[0.07]';
 
 export function ToastProvider({ children }: { children: ReactNode }) {
   const { t } = useI18n();
@@ -336,10 +336,10 @@ export function ToastProvider({ children }: { children: ReactNode }) {
                   {NOTICE_ICONS[notice.type]}
                 </span>
                 <div className="min-w-0 flex-1">
-                  <p className={`text-[10px] font-semibold uppercase tracking-[0.16em] ${style.label}`}>
+                  <p className={`text-xs font-semibold uppercase tracking-[0.12em] ${style.label}`}>
                     {t(TOAST_LABEL_KEY[notice.type])}
                   </p>
-                  <p className="mt-1 break-words text-pretty text-[13px] font-medium leading-5 text-[#0f1c28] dark:text-white/90">
+                  <p className="mt-1 break-words text-pretty text-sm font-medium leading-5 text-[#0f1c28] dark:text-white/90">
                     {notice.message}
                   </p>
                   {(notice.action || notice.type === 'error') && (
@@ -369,10 +369,10 @@ export function ToastProvider({ children }: { children: ReactNode }) {
                 <button
                   type="button"
                   onClick={() => requestDismiss(notice.id)}
-                  className="-mr-1 -mt-1 grid h-9 w-9 shrink-0 place-items-center rounded-lg text-[#0f1c28]/40 transition-[background-color,color,transform] hover:bg-black/[0.05] hover:text-[#0f1c28] active:scale-95 dark:text-white/40 dark:hover:bg-white/[0.08] dark:hover:text-white"
+                  className="-mr-1 -mt-1 grid h-11 w-11 shrink-0 place-items-center rounded-lg text-[#0f1c28]/65 transition-[background-color,color,transform] hover:bg-black/[0.05] hover:text-[#0f1c28] focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-[#4aa7ed] active:scale-95 dark:text-white/70 dark:hover:bg-white/[0.08] dark:hover:text-white"
                   aria-label={t('close')}
                 >
-                  <MdClose size={15} />
+                  <MdClose size={18} aria-hidden="true" />
                 </button>
               </div>
               {counting && !prefersReducedMotion && (

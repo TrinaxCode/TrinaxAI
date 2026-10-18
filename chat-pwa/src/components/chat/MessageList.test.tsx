@@ -170,6 +170,7 @@ describe('assistant message bubble', () => {
     expect(document.querySelectorAll('.chat-row').length).toBeLessThan(messages.length);
     expect(screen.getByText('message-0')).toBeInTheDocument();
     expect(screen.queryByText('message-199')).not.toBeInTheDocument();
+    expect(document.querySelector('.chat-row')).not.toHaveAttribute('style');
   });
 
   it('keeps the visible anchor when an earlier message is inserted', () => {
@@ -257,15 +258,24 @@ describe('assistant message bubble', () => {
   });
 
 
-  it('exposes a bounded continuation when a stream ended at its limit', async () => {
+  it('does not offer continuation after reaching its limit', () => {
     const onContinue = vi.fn();
-    const user = userEvent.setup();
     renderList([
       { role: 'assistant', content: 'Respuesta parcial', completionStatus: 'pending', canContinue: true, continuationCount: 2, maxContinuations: 2 },
     ], { onContinue });
 
     expect(screen.getByRole('status')).toHaveTextContent('Continuation limit reached.');
-    await user.click(screen.getByRole('button', { name: 'Continue' }));
+    expect(screen.queryByRole('button', { name: 'Continue' })).not.toBeInTheDocument();
+  });
+
+  it('offers continuation while attempts remain', async () => {
+    const onContinue = vi.fn();
+    renderList([
+      { role: 'assistant', content: 'Respuesta parcial', completionStatus: 'pending', canContinue: true, continuationCount: 1, maxContinuations: 2 },
+    ], { onContinue });
+
+    expect(screen.getByRole('status')).toHaveTextContent('Response interrupted: you can continue.');
+    await userEvent.click(screen.getByRole('button', { name: 'Continue' }));
     expect(onContinue).toHaveBeenCalledWith(0);
   });
 });

@@ -1041,7 +1041,7 @@ def test_small_cli_command_validation_and_success_edges(monkeypatch: pytest.Monk
     pair_ui = _ui()
     pair_client.list_paired_devices.return_value = []
     assert pair.run(SimpleNamespace(pair_command="list"), pair_client, pair_ui, None) == 0
-    assert pair._pairing_url("https://[::1]:3333", "code", "https://pwa") == "https://pwa/#settings?pair=code"
+    assert pair._pairing_url("https://[::1]:3333", "code", "https://pwa") == "https://pwa/#/settings/advanced?pair=code"
     assert pair._pairing_url("https://[::1]:3333", "code", None).startswith("https://[::1]:3334")
     assert pair.run(SimpleNamespace(pair_command="unknown"), pair_client, pair_ui, None) == 2
     pair_client.revoke_paired_device.side_effect = RuntimeError("offline")

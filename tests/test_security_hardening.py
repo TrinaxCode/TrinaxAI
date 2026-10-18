@@ -175,3 +175,30 @@ def test_usage_record_rewrites_log_to_retained_bounded_records(tmp_path, monkeyp
     records = [json.loads(line) for line in usage_path.read_text(encoding="utf-8").splitlines()]
     assert [record["ts"] for record in records] == [95.0, 100.0]
     assert json.loads(summary_path.read_text(encoding="utf-8"))["messages_total"] == 2
+
+
+def test_usage_log_recovers_valid_records_after_corrupt_entries(tmp_path, monkeypatch) -> None:
+    usage_path = tmp_path / "usage.jsonl"
+    usage_path.write_text(
+        "\n".join(
+            [
+                json.dumps({"ts": 10, "engine": "old", "model": "m"}),
+                "{broken json",
+                json.dumps({"ts": "invalid", "engine": "bad"}),
+                json.dumps({"ts": 20, "engine": "oversized", "padding": "x" * 300}),
+                json.dumps({"ts": 30, "engine": "rag", "model": "m", "collections": ["docs", ""]}),
+                json.dumps({"ts": 40, "engine": "chat", "model": "m", "est_tokens": -5}),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(shared_runtime, "USAGE_PATH", str(usage_path))
+    monkeypatch.setattr(runtime_usage, "_USAGE_MAX_LINE_BYTES", 256)
+    monkeypatch.setattr(runtime_usage, "_USAGE_MAX_RECORDS", 2)
+
+    records = runtime_usage._read_usage_records_unlocked()
+
+    assert [(record["ts"], record["engine"]) for record in records] == [(30.0, "rag"), (40.0, "chat")]
+    assert records[0]["collections"] == ["docs"]
+    assert records[1]["est_tokens"] == 0

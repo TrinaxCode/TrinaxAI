@@ -34,6 +34,27 @@ describe('watcher card lifecycle', () => {
     delete (window as any).showDirectoryPicker;
   });
 
+  it('can stop a restored server watcher without a local folder or typed path', async () => {
+    render(<WatcherCard collections={[]} />);
+
+    const stop = await screen.findByRole('button', { name: 'stop' });
+    expect(stop).toBeEnabled();
+    await userEvent.click(stop);
+    expect(api.stopWatch).toHaveBeenCalledOnce();
+  });
+
+  it('keeps the watcher active when stopping it fails', async () => {
+    api.stopWatch.mockRejectedValueOnce(new Error('offline'));
+    render(<WatcherCard collections={[]} />);
+
+    const stop = await screen.findByRole('button', { name: 'stop' });
+    await userEvent.click(stop);
+
+    expect(toast.toast).toHaveBeenCalledWith('friendly error', 'error');
+    expect(stop).toBeEnabled();
+    expect(screen.getByRole('status')).toHaveTextContent('watcherActive');
+  });
+
   it('loads server status, adds files, starts/stops a host watcher, and removes a folder', async () => {
     const user = userEvent.setup();
     render(<WatcherCard collections={[{ id: 'docs', name: 'Docs' }]} />);

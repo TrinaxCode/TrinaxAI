@@ -50,6 +50,7 @@ export default function NetworkNotice({ canManageSystem }: { canManageSystem: bo
   // Dismissal is keyed by the detected addresses so a later network change asks again.
   const signature = offline ? 'offline' : (info?.urls || []).join('|');
   const dismiss = () => {
+    setReadyUrl('');
     setDismissed(signature);
     try {
       localStorage.setItem(DISMISSED_KEY, signature);
@@ -119,72 +120,73 @@ export default function NetworkNotice({ canManageSystem }: { canManageSystem: bo
     <>
     <AnimatePresence>
       {noticeActive && (
-    <motion.aside
+    <motion.div
       role="status"
       aria-live="polite"
       initial={{ opacity: 0, y: 20, scale: 0.97 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
       exit={{ opacity: 0, y: 20, scale: 0.97 }}
       transition={{ duration: 0.26, ease: [0.16, 1, 0.3, 1] }}
-      className={`pointer-events-none fixed inset-x-3 bottom-[calc(env(safe-area-inset-bottom,0px)+6rem)] z-[65] mx-auto max-w-xl rounded-2xl border p-4 shadow-2xl backdrop-blur-xl ${
-        isDark ? 'border-amber-300/25 bg-[#111827]/95 text-white' : 'border-amber-500/30 bg-white/95 text-gray-900'
+      className={`fixed inset-x-3 bottom-[calc(env(safe-area-inset-bottom,0px)+6rem)] z-[54] mx-auto max-h-[calc(100dvh_-_7rem)] max-w-xl overflow-y-auto rounded-2xl border p-4 shadow-2xl backdrop-blur-xl ${
+        isDark ? 'border-amber-300/25 bg-[#111c29]/95 text-white' : 'border-amber-500/30 bg-white/95 text-gray-900'
       }`}
     >
-      <div className="pointer-events-none flex items-start gap-3">
-        <span className="mt-0.5 grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-amber-400/15 text-amber-500">
+      <div className="grid grid-cols-[2.75rem_minmax(0,1fr)_2.75rem] items-start gap-x-3 gap-y-2">
+        <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-amber-400/15 text-amber-500">
           <MdLan size={20} aria-hidden="true" />
         </span>
-        <div className="min-w-0 flex-1">
-          <h2 className="text-sm font-semibold">{readyUrl ? t('networkReadyTitle') : offline ? t('networkOfflineTitle') : t('networkChangedTitle')}</h2>          <p className={`mt-1 text-xs leading-relaxed ${isDark ? 'text-white/65' : 'text-gray-600'}`}>
+        <h2 className="self-center text-base font-semibold">{readyUrl ? t('networkReadyTitle') : offline ? t('networkOfflineTitle') : t('networkChangedTitle')}</h2>
+        <button
+          type="button"
+          onClick={dismiss}
+          aria-label={t('close')}
+          className={`grid h-11 w-11 place-items-center rounded-xl focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-[#4aa7ed] ${isDark ? 'text-white/70 hover:bg-white/[0.08] hover:text-white' : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'}`}
+        >
+          <MdClose size={18} />
+        </button>
+        <div className="col-span-3 min-w-0">
+          <p className={`text-sm leading-relaxed ${isDark ? 'text-white/75' : 'text-gray-600'}`}>
             {readyUrl ? t('networkReadyHint') : offline ? t('networkOfflineHint') : t('networkChangedHint')}
           </p>
           {readyUrl ? (
-            <a href={readyUrl} className="pointer-events-auto mt-2 block break-all font-mono text-xs text-[#168de2] underline underline-offset-2">
+            <a href={readyUrl} className={`mt-2 block break-all font-mono text-sm underline underline-offset-2 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-[#4aa7ed] ${isDark ? 'text-[#4aa7ed]' : 'text-[#005a9e]'}`}>
               {readyUrl}
             </a>
           ) : (
-            <code className={`pointer-events-none mt-2 block select-all rounded-lg px-2.5 py-2 text-xs ${isDark ? 'bg-black/35 text-white/80' : 'bg-gray-100 text-gray-700'}`}>
+            <code className={`mt-2 block select-all break-all rounded-lg px-2.5 py-2 font-mono text-sm ${isDark ? 'bg-black/35 text-white/85' : 'bg-gray-100 text-gray-700'}`}>
               {command}
             </code>
           )}
           <div className="mt-3 flex flex-wrap gap-2">
             {readyUrl ? (
-              <a href={readyUrl} className="pointer-events-auto inline-flex min-h-10 items-center gap-2 rounded-xl bg-[#006bbd] px-3 py-2 text-xs font-semibold text-white">
+              <a href={readyUrl} className="pointer-events-auto inline-flex min-h-11 items-center gap-2 rounded-xl bg-[#006bbd] px-3 py-2 text-sm font-semibold text-white focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-[#4aa7ed]">
                 <MdOpenInNew size={16} /> {t('networkOpenNewLink')}
               </a>
             ) : (info?.capabilities?.manageSystem ?? canManageSystem) && !offline ? (
-              <button type="button" onClick={refreshNetwork} disabled={refreshing} className="pointer-events-auto inline-flex min-h-10 items-center gap-2 rounded-xl bg-[#006bbd] px-3 py-2 text-xs font-semibold text-white disabled:opacity-50">
+              <button type="button" onClick={refreshNetwork} disabled={refreshing} className="pointer-events-auto inline-flex min-h-11 items-center gap-2 rounded-xl bg-[#006bbd] px-3 py-2 text-sm font-semibold text-white focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-[#4aa7ed] disabled:opacity-50">
                 <MdRefresh className={refreshing ? 'animate-spin' : ''} size={16} />
                 {refreshing ? t('networkRefreshing') : t('networkPrepare')}
               </button>
             ) : null}
             {!readyUrl && (
-              <button type="button" onClick={copyCommand} className={`pointer-events-auto inline-flex min-h-10 items-center gap-2 rounded-xl border px-3 py-2 text-xs font-semibold ${isDark ? 'border-white/15 text-white/75' : 'border-gray-200 text-gray-700'}`}>
+              <button type="button" onClick={copyCommand} className={`pointer-events-auto inline-flex min-h-11 items-center gap-2 rounded-xl border px-3 py-2 text-sm font-semibold focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-[#4aa7ed] ${isDark ? 'border-white/15 text-white/85' : 'border-gray-200 text-gray-700'}`}>
                 <MdContentCopy size={15} /> {copied ? t('copied') : t('networkCopyCommand')}
               </button>
             )}
             {offline && (
               <>
-                <button type="button" onClick={() => void check()} className={`pointer-events-auto inline-flex min-h-10 items-center gap-2 rounded-xl border px-3 py-2 text-xs font-semibold ${isDark ? 'border-white/15 text-white/75' : 'border-gray-200 text-gray-700'}`}>
+                <button type="button" onClick={() => void check()} className={`pointer-events-auto inline-flex min-h-11 items-center gap-2 rounded-xl border px-3 py-2 text-sm font-semibold focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-[#4aa7ed] ${isDark ? 'border-white/15 text-white/85' : 'border-gray-200 text-gray-700'}`}>
                   <MdRefresh size={15} /> {t('networkRetry')}
                 </button>
-                <button type="button" onClick={() => setConfirmRemoveOld(true)} disabled={removing} className={`pointer-events-auto inline-flex min-h-10 items-center gap-2 rounded-xl border px-3 py-2 text-xs font-semibold disabled:opacity-50 ${isDark ? 'border-red-300/25 text-red-200' : 'border-red-200 text-red-700'}`}>
+                <button type="button" onClick={() => setConfirmRemoveOld(true)} disabled={removing} className={`pointer-events-auto inline-flex min-h-11 items-center gap-2 rounded-xl border px-3 py-2 text-sm font-semibold focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-[#4aa7ed] disabled:opacity-50 ${isDark ? 'border-red-300/25 text-red-200' : 'border-red-200 text-red-700'}`}>
                   <MdDeleteOutline size={16} /> {removing ? t('networkRemovingOld') : t('networkRemoveOld')}
                 </button>
               </>
             )}
           </div>
         </div>
-        <button
-          type="button"
-          onClick={dismiss}
-          aria-label={t('close')}
-          className={`pointer-events-auto -mr-1 -mt-1 grid h-9 w-9 shrink-0 place-items-center rounded-xl ${isDark ? 'text-white/55 hover:text-white' : 'text-gray-400 hover:text-gray-700'}`}
-        >
-          <MdClose size={18} />
-        </button>
       </div>
-    </motion.aside>
+    </motion.div>
       )}
     </AnimatePresence>
     <ConfirmModal

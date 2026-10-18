@@ -13,6 +13,9 @@ const Background = memo(function Background({ isDark, active = true }: Backgroun
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const rafRef = useRef(0);
   const visibleRef = useRef(true);
+  // Read by the draw loop so a theme change repaints without restarting the animation.
+  const isDarkRef = useRef(isDark);
+  isDarkRef.current = isDark;
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -76,7 +79,7 @@ const Background = memo(function Background({ isDark, active = true }: Backgroun
         context.lineTo(width + 2, height + 10);
         context.lineTo(-2, height + 10);
         context.closePath();
-        context.fillStyle = `rgba(${red}, ${green}, ${blue}, ${isDark ? alpha : alpha * 0.55})`;
+        context.fillStyle = `rgba(${red}, ${green}, ${blue}, ${isDarkRef.current ? alpha : alpha * 0.55})`;
         context.fill();
       }
     }
@@ -125,7 +128,7 @@ const Background = memo(function Background({ isDark, active = true }: Backgroun
     };
 
     resize();
-    draw(0);
+    draw(performance.now());
     document.addEventListener('visibilitychange', onVisibility);
     window.addEventListener('resize', onResize);
     reducedMotion?.addEventListener?.('change', onMotionPreferenceChange);
@@ -140,7 +143,7 @@ const Background = memo(function Background({ isDark, active = true }: Backgroun
       window.removeEventListener('resize', onResize);
       reducedMotion?.removeEventListener?.('change', onMotionPreferenceChange);
     };
-  }, [active, isDark]);
+  }, [active]);
 
   return (
     <canvas

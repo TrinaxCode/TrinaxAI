@@ -1,5 +1,5 @@
 import { useState, useEffect, useLayoutEffect, useCallback, useMemo, lazy, Suspense, useRef } from 'react';
-import { AnimatePresence, motion } from 'framer-motion';
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { useTheme } from './theme/ThemeContext';
 import { useI18n } from './i18n/I18nContext';
 import Background from './components/Background';
@@ -45,7 +45,7 @@ export default function App() {
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [showDeviceSetup, setShowDeviceSetup] = useState(false);
   const [blockedFeature, setBlockedFeature] = useState<'rag' | 'web' | null>(null);
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(() => initialRoute.page !== 'settings' && initialRoute.page !== 'browser' && window.matchMedia('(min-width: 1024px)').matches);
   const [page, setPage] = useState<AppPage>(initialRoute.page);
   const [settingsSection, setSettingsSection] = useState<SettingsSection>(initialRoute.settingsSection ?? 'general');
   const [docsSection, setDocsSection] = useState<DocsSection>(initialRoute.docsSection ?? 'intro');
@@ -56,18 +56,30 @@ export default function App() {
   const [canManageSystem, setCanManageSystem] = useState(false);
   const { isDark } = useTheme();
   const { t } = useI18n();
+  const prefersReducedMotion = useReducedMotion();
   const resizeTimerRef = useRef<number>(0);
   const prevPageRef = useRef<AppPage>('chat');
   const lastChatIdRef = useRef<string | undefined>(initialRoute.chatId);
   const [chatAnimKey, setChatAnimKey] = useState(0);
+  const closeSidebarOnMobile = useCallback(() => {
+    if (!window.matchMedia('(min-width: 1024px)').matches) setSidebarOpen(false);
+  }, []);
+
+  useEffect(() => {
+    const desktop = window.matchMedia('(min-width: 1024px)');
+    const syncSidebar = (event: MediaQueryListEvent) => setSidebarOpen(event.matches && page !== 'settings' && page !== 'browser');
+    desktop.addEventListener('change', syncSidebar);
+    return () => desktop.removeEventListener('change', syncSidebar);
+  }, [page]);
 
   const applyRoute = useCallback((route: AppRoute) => {
     setPage(route.page);
     if (route.settingsSection) setSettingsSection(route.settingsSection);
     if (route.docsSection) setDocsSection(route.docsSection);
     setRouteChatId(route.chatId);
-    setSidebarOpen(false);
-  }, []);
+    if (route.page === 'settings' || route.page === 'browser') setSidebarOpen(false);
+    else closeSidebarOnMobile();
+  }, [closeSidebarOnMobile]);
 
   const navigate = useCallback((route: AppRoute, replace = false) => {
     const nextHash = formatAppRoute(route);
@@ -195,7 +207,7 @@ export default function App() {
       setShowDeviceSetup(false);
     } else if (installationState !== 'checking') {
       navigate({ page: 'chat', chatId: lastChatIdRef.current }, true);
-      setSidebarOpen(false);
+      closeSidebarOnMobile();
       if (installationState === 'new') {
         setShowDeviceSetup(false);
         setShowOnboarding(true);
@@ -204,7 +216,7 @@ export default function App() {
         setShowDeviceSetup(true);
       }
     }
-  }), [installationState, navigate]);
+  }), [closeSidebarOnMobile, installationState, navigate]);
 
   useEffect(() => {
     const onPaired = () => {
@@ -220,7 +232,7 @@ export default function App() {
     const onAccessRevoked = async () => {
       await wipeRevokedDeviceData();
       navigate({ page: 'chat' }, true);
-      setSidebarOpen(false);
+      closeSidebarOnMobile();
       setShowOnboarding(false);
       setInstallationState('existing');
       setShowDeviceSetup(true);
@@ -230,7 +242,7 @@ export default function App() {
     };
     window.addEventListener(DEVICE_ACCESS_REVOKED_EVENT, onAccessRevoked);
     return () => window.removeEventListener(DEVICE_ACCESS_REVOKED_EVENT, onAccessRevoked);
-  }, [navigate]);
+  }, [closeSidebarOnMobile, navigate]);
 
   const handleOnboardingComplete = useCallback(() => {
     setShowOnboarding(false);
@@ -319,17 +331,17 @@ export default function App() {
   const handleCreate = useCallback((engine: ChatEngine) => {
     const created = createSession(engine, t('newChat'));
     navigate({ page: 'chat', chatId: created.id });
-    setSidebarOpen(false);
-  }, [createSession, navigate, t]);
+    closeSidebarOnMobile();
+  }, [closeSidebarOnMobile, createSession, navigate, t]);
 
   const handleCreateTemporary = useCallback((engine: ChatEngine) => {
     const created = createSession(engine, t('temporaryChat'), undefined, true);
     navigate({ page: 'chat', chatId: created.id });
-    setSidebarOpen(false);
-  }, [createSession, navigate, t]);
+    closeSidebarOnMobile();
+  }, [closeSidebarOnMobile, createSession, navigate, t]);
 
   const handleNavigate = useCallback((target: NavigateTarget) => {
-    setSidebarOpen(false);
+    closeSidebarOnMobile();
     if (target === 'browser') {
       navigate({ page: 'browser' });
       return;
@@ -346,13 +358,13 @@ export default function App() {
       page: 'settings',
       settingsSection: target === 'memory' ? 'memory' : target === 'indexing' ? 'indexing' : 'general',
     });
-  }, [navigate, docsSection]);
+  }, [closeSidebarOnMobile, navigate, docsSection]);
 
   const handleAgentHandoff = useCallback((handoff: AgentHandoff) => {
-    setSidebarOpen(false);
+    closeSidebarOnMobile();
     setPendingAgentRequest(handoff);
     navigate({ page: 'agent' });
-  }, [navigate]);
+  }, [closeSidebarOnMobile, navigate]);
 
   const handleAgentRequestConsumed = useCallback((id: string) => {
     setPendingAgentRequest((current) => current?.id === id ? null : current);
@@ -381,9 +393,20 @@ export default function App() {
           ? 'stats'
           : null;
 
+  const routeTransition = prefersReducedMotion
+    ? { duration: 0 }
+    : { duration: 0.28, ease: [0.22, 1, 0.36, 1] as const };
+  const routeOffset = prefersReducedMotion ? 0 : 36;
+  const pageLoading = (
+    <div role="status" className={`flex h-full flex-col items-center justify-center gap-3 text-sm ${isDark ? 'text-slate-300' : 'text-slate-600'}`}>
+      <img src="/logo-for-ai.webp" alt="" width={36} height={36} className="h-9 w-9 opacity-70 motion-safe:animate-pulse" />
+      {t('loading')}
+    </div>
+  );
+
   return (
     <div data-app-shell className="app-shell w-full max-w-full min-w-0 overflow-hidden relative transition-colors duration-300">
-      <a
+      {sharedReady && installationState !== 'checking' && !showOnboarding && !showDeviceSetup && <a
         href="#tc-main-content"
         className="skip-link"
         onClick={(event) => {
@@ -392,13 +415,9 @@ export default function App() {
         }}
       >
         {t('skipToContent')}
-      </a>
+      </a>}
       {/* Keep the shared canvas mounted behind the app shell. */}
       <Background isDark={isDark} />
-
-      {sharedReady && installationState !== 'checking' && !showOnboarding && !showDeviceSetup && (
-        <NetworkNotice canManageSystem={canManageSystem} />
-      )}
 
       {/* First-run surfaces animate out as well as in, so the handoff to the
           main shell reads as a transition instead of a hard swap. */}
@@ -451,6 +470,8 @@ export default function App() {
           animate={{ opacity: 1 }}
           transition={{ duration: 0.35, ease: 'easeOut' }}
         >
+          {/* Keep notices in the drawer's stacking context so navigation stays usable. */}
+          <NetworkNotice canManageSystem={canManageSystem} />
           {/* Sidebar */}
           <ErrorBoundary>
             <ChatSidebar
@@ -461,13 +482,13 @@ export default function App() {
               onSelect={(id) => {
                 selectSession(id);
                 navigate({ page: 'chat', chatId: id });
-                setSidebarOpen(false);
+                closeSidebarOnMobile();
               }}
               onDelete={deleteSession}
               onCreate={handleCreate}
               onCreateTemporary={handleCreateTemporary}
-              onSettings={() => { navigate({ page: 'settings', settingsSection: 'general' }); setSidebarOpen(false); }}
-              onBrowser={() => { navigate({ page: 'browser' }); setSidebarOpen(false); }}
+              onSettings={() => { navigate({ page: 'settings', settingsSection: 'general' }); closeSidebarOnMobile(); }}
+              onBrowser={() => { navigate({ page: 'browser' }); closeSidebarOnMobile(); }}
               engine={currentEngine}
               folders={folders}
               onCreateFolder={createFolder}
@@ -480,134 +501,144 @@ export default function App() {
           <main
             id="tc-main-content"
             tabIndex={-1}
-            // The sidebar is fixed and overlays this area. Keeping the main
-            // column unchanged prevents the chat from reflowing on open.
-            className="relative min-w-0 min-h-0 h-full flex-1 basis-0 overflow-hidden"
+            // The sidebar overlays on mobile and docks beside the main column on desktop.
+            className={`relative min-w-0 min-h-0 h-full flex-1 basis-0 overflow-hidden transition-[margin] duration-200 ${sidebarOpen ? 'lg:ml-[280px]' : ''}`}
             onTouchStart={handleTouchStart}
             onTouchEnd={handleTouchEnd}
           >
             <ErrorBoundary>
-            {activeSession && page === 'chat' ? (
-              <motion.div
-                key={`chat-${chatAnimKey}`}
-                className="h-full"
-                initial={prevPageRef.current !== 'chat' ? { x: -40, opacity: 0 } : false}
-                animate={{ x: 0, opacity: 1 }}
-                transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
-                onAnimationComplete={() => { prevPageRef.current = 'chat'; }}
-              >
-                <Suspense fallback={<div className={`h-full flex items-center justify-center text-sm ${isDark ? 'text-white/30' : 'text-gray-400'}`}>{t('loading')}</div>}>
-                  <ChatInterface
-                    key={activeSession.id}
-                    messages={activeSession.messages}
-                    engine={currentEngine}
-                    temporary={Boolean(activeSession.temporary)}
-                    onMessagesChange={handleMessagesChange}
-                    onEngineChange={handleEngineChange}
-                    onMenuToggle={handleMenuToggle}
-                    onNavigate={handleNavigate}
-                    onAgentHandoff={handleAgentHandoff}
-                    onWebSearchBlocked={handleWebSearchBlocked}
-                    folderContext={folderContext}
-                  />
-                </Suspense>
-              </motion.div>
-            ) : page === 'chat' ? (
-              <>
-                {/* Menu button when no active chat */}
-                {!sidebarOpen && (
-                  <button
-                    onClick={() => setSidebarOpen(true)}
-                    className={`fixed right-3 z-20 min-h-11 min-w-11 rounded-xl p-2.5
-                               border transition-colors ${
-                                 isDark
-                                   ? 'bg-black/60 border-white/[0.08] text-white/60 hover:text-white hover:border-white/[0.15]'
-                                   : 'bg-white/80 border-gray-200 text-gray-500 hover:text-gray-800 hover:border-gray-300'
-                               }`}
-                    style={{ top: 'calc(env(safe-area-inset-top, 0px) + 0.75rem)' }}
-                    aria-label={t('openMenu')}
+              <AnimatePresence mode="wait" initial={false}>
+                {activeSession && page === 'chat' ? (
+                  <motion.div
+                    key={`chat-${chatAnimKey}`}
+                    data-route-screen="chat"
+                    className="h-full"
+                    initial={prevPageRef.current !== 'chat' ? { x: -routeOffset, opacity: 0 } : false}
+                    animate={{ x: 0, opacity: 1 }}
+                    exit={{ x: -routeOffset, opacity: 0 }}
+                    transition={routeTransition}
+                    onAnimationComplete={() => { prevPageRef.current = 'chat'; }}
                   >
-                    <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-                      <path d="M3 5h14M3 10h14M3 15h14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-                    </svg>
-                  </button>
+                    <Suspense fallback={pageLoading}>
+                      <ChatInterface
+                        key={activeSession.id}
+                        messages={activeSession.messages}
+                        engine={currentEngine}
+                        temporary={Boolean(activeSession.temporary)}
+                        onMessagesChange={handleMessagesChange}
+                        onEngineChange={handleEngineChange}
+                        onMenuToggle={handleMenuToggle}
+                        menuOpen={sidebarOpen}
+                        onNavigate={handleNavigate}
+                        onAgentHandoff={handleAgentHandoff}
+                        onWebSearchBlocked={handleWebSearchBlocked}
+                        folderContext={folderContext}
+                      />
+                    </Suspense>
+                  </motion.div>
+                ) : page === 'chat' ? (
+                  <motion.div
+                    key={`chat-empty-${chatAnimKey}`}
+                    data-route-screen="chat"
+                    className="h-full"
+                    initial={prevPageRef.current !== 'chat' ? { x: -routeOffset, opacity: 0 } : false}
+                    animate={{ x: 0, opacity: 1 }}
+                    exit={{ x: -routeOffset, opacity: 0 }}
+                    transition={routeTransition}
+                  >
+                    {/* Menu button when no active chat */}
+                    {!sidebarOpen && (
+                      <button
+                        onClick={() => setSidebarOpen(true)}
+                        className={`fixed right-3 z-20 min-h-11 min-w-11 rounded-xl p-2.5
+                                   border transition-colors ${
+                                     isDark
+                                       ? 'bg-black/60 border-white/[0.08] text-white/60 hover:text-white hover:border-white/[0.15]'
+                                       : 'bg-white/80 border-gray-200 text-gray-500 hover:text-gray-800 hover:border-gray-300'
+                                   }`}
+                        style={{ top: 'calc(env(safe-area-inset-top, 0px) + 0.75rem)' }}
+                        aria-label={t('openMenu')}
+                      >
+                        <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+                          <path d="M3 5h14M3 10h14M3 15h14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                        </svg>
+                      </button>
+                    )}
+                    <div className={`flex flex-col items-center justify-center h-full gap-6 px-6 ${
+                      isDark ? 'text-white/30' : 'text-gray-400'
+                    }`}>
+                      <img
+                        src="/logo.webp"
+                        alt="TrinaxAI"
+                        className="w-16 h-16 opacity-30"
+                        width={64}
+                        height={64}
+                        draggable={false}
+                      />
+                      <p className="text-sm tracking-wide text-center">
+                        {t('selectOrCreateChat')}
+                      </p>
+                      <button
+                        onClick={() => handleCreate('ollama')}
+                        className="flex items-center gap-2 px-5 py-2.5 rounded-xl
+                                   border border-[#006bbd]/40 text-[#006bbd] text-sm font-medium
+                                   hover:bg-[#006bbd]/10 transition-colors"
+                      >
+                        + {t('newChat')}
+                      </button>
+                    </div>
+                  </motion.div>
+                ) : (
+                  <motion.div
+                    key={page}
+                    data-route-screen={page}
+                    className="absolute inset-0 z-30 min-h-0"
+                    initial={{ x: routeOffset, opacity: 0 }}
+                    animate={{ x: 0, opacity: 1 }}
+                    exit={{ x: routeOffset, opacity: 0 }}
+                    transition={routeTransition}
+                  >
+                    {protectedFeature ? (
+                      <Suspense fallback={null}>
+                        <PermissionNotice feature={protectedFeature} onBack={handleBackToChat} />
+                      </Suspense>
+                    ) : page === 'settings' ? (
+                      <Suspense fallback={pageLoading}>
+                        <Settings
+                          key="settings"
+                          onBack={handleBackToChat}
+                          onOpenDocs={() => navigate({ page: 'docs', docsSection })}
+                          initialSection={settingsSection}
+                          onSectionChange={handleSettingsSectionChange}
+                          canManageSystem={canManageSystem}
+                        />
+                      </Suspense>
+                    ) : page === 'docs' ? (
+                      <Suspense fallback={pageLoading}>
+                        <Docs
+                          key="docs"
+                          onBack={handleBackToChat}
+                          initialSection={docsSection}
+                          onSectionChange={(section) => navigate({ page: 'docs', docsSection: section })}
+                        />
+                      </Suspense>
+                    ) : page === 'browser' ? (
+                      <Suspense fallback={pageLoading}>
+                        <KnowledgeBrowser onBack={handleBackToChat} canManageSystem={canManageSystem} />
+                      </Suspense>
+                    ) : page === 'agent' ? (
+                      <Suspense fallback={pageLoading}>
+                        <AgentInterface
+                          key="agent"
+                          onBack={handleBackToChat}
+                          initialRequest={pendingAgentRequest}
+                          onRequestConsumed={handleAgentRequestConsumed}
+                        />
+                      </Suspense>
+                    ) : null}
+                  </motion.div>
                 )}
-                <div className={`flex flex-col items-center justify-center h-full gap-6 px-6 ${
-                  isDark ? 'text-white/30' : 'text-gray-400'
-                }`}>
-                <img
-                  src="/logo.webp"
-                  alt="TrinaxAI"
-                   className="w-16 h-16 opacity-30"
-                   width={64}
-                   height={64}
-                   draggable={false}
-                 />
-                <p className="text-sm tracking-wide text-center">
-                  {t('selectOrCreateChat')}
-                </p>
-                <button
-                  onClick={() => handleCreate('ollama')}
-                  className="flex items-center gap-2 px-5 py-2.5 rounded-xl
-                             border border-[#006bbd]/40 text-[#006bbd] text-sm font-medium
-                             hover:bg-[#006bbd]/10 transition-colors"
-                >
-                  + {t('newChat')}
-                </button>
-              </div>
-            </>
-            ) : null}
-            {page !== 'chat' && (
-              <AnimatePresence>
-                <motion.div
-                  key={page}
-                  className="absolute inset-0 z-30 min-h-0"
-                  initial={{ x: 60, opacity: 0 }}
-                  animate={{ x: 0, opacity: 1 }}
-                  exit={{ x: 60, opacity: 0 }}
-                  transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
-                >
-                {protectedFeature ? (
-                  <Suspense fallback={null}>
-                    <PermissionNotice feature={protectedFeature} onBack={handleBackToChat} />
-                  </Suspense>
-                ) : page === 'settings' ? (
-                  <Suspense fallback={<div className="h-full flex items-center justify-center text-black/20 dark:text-white/20 text-sm">{t('loading')}</div>}>
-                    <Settings
-                      key="settings"
-                      onBack={handleBackToChat}
-                      onOpenDocs={() => navigate({ page: 'docs', docsSection })}
-                      initialSection={settingsSection}
-                      onSectionChange={handleSettingsSectionChange}
-                      canManageSystem={canManageSystem}
-                    />
-                  </Suspense>
-                ) : page === 'docs' ? (
-                  <Suspense fallback={<div className="h-full flex items-center justify-center text-black/20 dark:text-white/20 text-sm">{t('loading')}</div>}>
-                    <Docs
-                      key="docs"
-                      onBack={handleBackToChat}
-                      initialSection={docsSection}
-                      onSectionChange={(section) => navigate({ page: 'docs', docsSection: section })}
-                    />
-                  </Suspense>
-                ) : page === 'browser' ? (
-                  <Suspense fallback={<div className="h-full flex items-center justify-center text-black/20 dark:text-white/20 text-sm">{t('loading')}</div>}>
-                    <KnowledgeBrowser onBack={handleBackToChat} canManageSystem={canManageSystem} />
-                  </Suspense>
-                ) : page === 'agent' ? (
-                  <Suspense fallback={<div className="h-full flex items-center justify-center text-black/20 dark:text-white/20 text-sm">{t('loading')}</div>}>
-                    <AgentInterface
-                      key="agent"
-                      onBack={handleBackToChat}
-                      initialRequest={pendingAgentRequest}
-                      onRequestConsumed={handleAgentRequestConsumed}
-                    />
-                  </Suspense>
-                ) : null}
-                </motion.div>
               </AnimatePresence>
-            )}
             </ErrorBoundary>
           </main>
         </motion.div>

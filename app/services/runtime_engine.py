@@ -82,8 +82,9 @@ def _read_collections_unlocked() -> list[dict]:
     try:
         with open(runtime.config.COLLECTIONS_PATH, encoding="utf-8") as stream:
             raw = runtime.json.load(stream)
-    except (OSError, ValueError):
+    except (FileNotFoundError, ValueError):
         raw = {}
+    # Other OSErrors propagate so a transient read failure is not rewritten as "no collections".
     items = raw.get("collections") if isinstance(raw, dict) else raw
     if not isinstance(items, list):
         items = []

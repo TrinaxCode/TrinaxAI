@@ -41,15 +41,33 @@ function props(overrides: Partial<AgentInterfaceViewProps> = {}): AgentInterface
 }
 
 describe('AgentInterfaceView', () => {
+  it('uses a black welcome orb in dark mode and a white one in light mode', () => {
+    const p = props({ isDark: true });
+    const view = render(<AgentInterfaceView {...p} />);
+    expect(screen.getByRole('img', { name: 'TrinaxAI' }).parentElement).toHaveClass('bg-black');
+    view.rerender(<AgentInterfaceView {...p} isDark={false} />);
+    expect(screen.getByRole('img', { name: 'TrinaxAI' }).parentElement).toHaveClass('bg-white');
+  });
+
+  it('distinguishes no agent history from a search with no matches', () => {
+    const p = props({ historyOpen: true });
+    const view = render(<AgentInterfaceView {...p} />);
+    expect(screen.getByText('agentNoHistory')).toBeInTheDocument();
+    view.rerender(<AgentInterfaceView {...p} search="missing" />);
+    expect(screen.getByText('noChatResults')).toBeInTheDocument();
+  });
+
   it('delegates empty-state, header, workspace, mobile tools, and composer controls', () => {
     const p = props({ mobileToolsOpen: true, knowledgeSearch: true, webSearch: true, deepResearch: true, attachmentMenuOpen: true, dictationAvailable: true, input: 'ship it' });
     const view = render(<AgentInterfaceView {...p} />);
     const { container } = view;
+    expect(screen.getByRole('heading', { name: 'agentEmptyTitle' })).toBeVisible();
+    expect(screen.getByRole('img', { name: 'TrinaxAI' })).toHaveAttribute('src', '/logo-for-ai.webp');
 
     for (const name of ['back', 'agentHistory', 'agentNewSession', 'agentPickFolder', 'quickChipFindBugs', 'agentVoiceMode', 'agentSend']) {
       fireEvent.click(screen.getByRole('button', { name }));
     }
-    fireEvent.click(screen.getByRole('switch', { name: 'agentYoloModeOff' }));
+    fireEvent.click(screen.getAllByRole('switch', { name: 'agentYoloModeOff' })[0]);
     expect(p.onBack).toHaveBeenCalled();
     expect(p.openHistory).toHaveBeenCalled();
     expect(p.startNewSession).toHaveBeenCalled();
@@ -70,6 +88,7 @@ describe('AgentInterfaceView', () => {
     expect(p.setModelMode).toHaveBeenCalledWith('deep');
 
     const workspace = screen.getByRole('textbox', { name: 'agentWorkspaceRootLabel' });
+    expect(workspace).toHaveAttribute('placeholder', 'agentWorkspaceRootLabel');
     fireEvent.change(workspace, { target: { value: '/next' } });
     expect(p.setWorkspace).toHaveBeenCalledWith('/next');
     view.rerender(<AgentInterfaceView {...p} workspace="/next" />);
@@ -101,7 +120,7 @@ describe('AgentInterfaceView', () => {
     expect(screen.getByText('Second')).toBeInTheDocument();
     fireEvent.change(screen.getByRole('textbox', { name: 'agentSearchHistory' }), { target: { value: 'new' } });
     fireEvent.click(screen.getByText('Second'));
-    fireEvent.click(screen.getAllByRole('button', { name: 'delete' })[0]);
+    fireEvent.click(screen.getByRole('button', { name: 'delete agentUntitled' }));
     fireEvent.click(screen.getByRole('button', { name: 'delete-confirm' }));
     expect(p.setSearch).toHaveBeenCalledWith('new');
     expect(p.openSession).toHaveBeenCalledWith('two');

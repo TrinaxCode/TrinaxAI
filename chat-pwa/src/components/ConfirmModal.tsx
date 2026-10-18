@@ -37,7 +37,7 @@ export default function ConfirmModal({
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.key !== 'Tab') return;
     const focusable = dialogRef.current?.querySelectorAll<HTMLElement>(
-      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+      ':is(button, [href], input, select, textarea, [tabindex]):not([disabled]):not([tabindex="-1"])'
     );
     if (!focusable || focusable.length === 0) return;
     const first = focusable[0];
@@ -103,12 +103,12 @@ export default function ConfirmModal({
       {open && (
         <motion.div
           data-confirm-modal-root
-          className="fixed inset-0 z-[90] flex items-center justify-center p-4"
+          className="fixed inset-0 z-[90] flex items-center justify-center p-3 sm:p-4"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
         >
-          <div aria-hidden="true" className="absolute inset-0 bg-black/60" onClick={onCancel} />
+          <div aria-hidden="true" className="absolute inset-0 bg-[#07111e]/70 backdrop-blur-sm" onClick={onCancel} />
           <motion.div
             ref={dialogRef}
             role="dialog"
@@ -119,20 +119,21 @@ export default function ConfirmModal({
             initial={{ opacity: 0, scale: 0.92, y: 20 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.92, y: 20 }}
-          className={`relative w-[calc(100%_-_2rem)] max-w-sm max-h-[calc(100dvh_-_2rem)] overscroll-contain overflow-y-auto p-5 sm:p-6 rounded-2xl border shadow-2xl ${
-              isDark ? 'bg-gray-900 border-white/[0.08]' : 'bg-white border-gray-200'
+            className={`relative max-h-[calc(100dvh_-_1.5rem)] w-full max-w-sm overscroll-contain overflow-y-auto rounded-2xl border p-5 shadow-2xl sm:max-h-[calc(100dvh_-_2rem)] sm:p-6 ${
+              isDark ? 'border-white/15 bg-[#111c29]' : 'border-gray-200 bg-white'
             }`}
           >
-            <h3 id={titleId} className={`text-lg font-semibold mb-2 ${isDark ? 'text-white' : 'text-gray-900'}`}>{title}</h3>
-            <p id={descriptionId} className={`text-sm mb-4 ${isDark ? 'text-white/60' : 'text-gray-600'}`}>{message}</p>
+            <h3 id={titleId} className={`mb-2 text-lg font-semibold ${isDark ? 'text-white' : 'text-gray-900'}`}>{title}</h3>
+            <p id={descriptionId} className={`mb-5 text-sm leading-relaxed ${isDark ? 'text-white/75' : 'text-gray-600'}`}>{message}</p>
             {children && <div className="mb-4">{children}</div>}
-            <div className="flex gap-3">
+            <div className="flex flex-col gap-3 sm:flex-row">
               {showCancel && (
                 <button
                   ref={cancelRef}
+                  type="button"
                   onClick={onCancel}
-                  className={`flex-1 py-2.5 rounded-xl text-sm font-medium transition-[background-color,color,transform] active:scale-95 ${
-                    isDark ? 'bg-white/[0.06] text-white/70 hover:bg-white/[0.1]' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  className={`min-h-11 min-w-0 flex-1 rounded-xl px-3 py-2 text-sm font-medium transition-[background-color,color,transform] focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-[#4aa7ed] active:scale-95 ${
+                    isDark ? 'bg-white/[0.08] text-white/85 hover:bg-white/[0.14]' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                   }`}
                 >
                   {cancelText}
@@ -140,11 +141,12 @@ export default function ConfirmModal({
               )}
               <button
                 ref={confirmRef}
+                type="button"
                 onClick={onConfirm}
                 disabled={confirmDisabled}
-                className={`${showCancel ? 'flex-1' : 'w-full'} py-2.5 rounded-xl text-sm font-medium transition-[background-color,color,transform] active:scale-95 disabled:opacity-40 ${
+                className={`${showCancel ? 'min-w-0 flex-1' : 'w-full'} min-h-11 rounded-xl px-3 py-2 text-sm font-medium transition-[background-color,color,transform] focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-[#4aa7ed] active:scale-95 disabled:opacity-40 ${
                   danger
-                    ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30'
+                    ? isDark ? 'bg-red-500/20 text-red-300 hover:bg-red-500/30' : 'bg-red-600 text-white hover:bg-red-700'
                     : 'bg-[#006bbd] text-white hover:bg-[#0059a0]'
                 }`}
               >

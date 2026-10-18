@@ -40,6 +40,10 @@ describe('ConfirmModal release branches', () => {
     expect(confirm).toBeDisabled();
     fireEvent.click(confirm);
     expect(onConfirm).not.toHaveBeenCalled();
+    const cancel = screen.getByRole('button', { name: 'cancelDefault' });
+    cancel.focus();
+    fireEvent.keyDown(dialog, { key: 'Tab' });
+    expect(cancel).toHaveFocus();
     view.rerender(<ConfirmModal open title="Disabled" message="Wait" onConfirm={onConfirm} onCancel={vi.fn()} />);
     const focusable = dialog.querySelectorAll<HTMLElement>('button, input, select, textarea, [tabindex]:not([tabindex="-1"])');
     document.body.setAttribute('tabindex', '-1');

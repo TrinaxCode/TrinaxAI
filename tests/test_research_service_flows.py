@@ -171,7 +171,7 @@ def test_research_synthesis_streams_tokens_closes_stream_and_adds_missing_citati
     assert closed == [True]
 
 
-def test_deep_web_research_uses_preset_budget_not_legacy_180_tokens(monkeypatch) -> None:
+def test_web_research_model_budget_and_thinking_defaults(monkeypatch) -> None:
     observed: dict = {}
     monkeypatch.setattr(research.state, "fusion_retriever", None)
     monkeypatch.setattr(research, "configured_provider", lambda: "duckduckgo")
@@ -198,6 +198,11 @@ def test_deep_web_research_uses_preset_budget_not_legacy_180_tokens(monkeypatch)
     assert observed["num_predict"] >= 640
     assert observed["num_predict"] != 180
     assert observed["num_ctx"] <= 4096
+
+    research._research_sync(ResearchRequest(query="Quick lookup", web_search=True, depth=1))
+    assert observed["thinking"] is False
+    research._research_sync(ResearchRequest(query="Quick lookup", web_search=True, depth=1, think=True))
+    assert observed["thinking"] is True
 
 
 def test_research_synthesis_handles_empty_and_cancelled_streams() -> None:

@@ -1,21 +1,13 @@
 /* Chat-specific presentation lives with the components that consume it. */
 
-/* ============================================
-   Quick-start chips — elegant glass pills.
-   Entrance + hover motion are handled by framer-motion (opacity/transform),
-   so CSS never sets the `animation` shorthand on the button (that caused the
-   old invisible-but-clickable bug). CSS only decorates: surface, border,
-   brand glow, and icon disc.
-   ============================================ */
+/* Quick-start chips — quiet shortcuts. */
 .chip-elegant {
   transition:
     border-color 0.35s ease,
     background-color 0.35s ease,
     box-shadow 0.35s ease,
     color 0.25s ease;
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  box-shadow: none;
 }
 
 /* Long conversations keep their scroll geometry but skip layout/paint work for
@@ -25,42 +17,31 @@
   contain-intrinsic-size: auto 112px;
 }
 
-/* Icon sits in a soft brand-tinted disc that lifts on hover */
+/* Icon sits in a soft brand-tinted disc. */
 .chip-elegant-icon {
   background: rgba(0, 107, 189, 0.10);
-  transition:
-    background-color 0.35s ease,
-    transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: background-color 0.35s ease;
 }
 html.dark .chip-elegant-icon {
   background: rgba(78, 163, 224, 0.12);
 }
 .chip-elegant:hover .chip-elegant-icon {
-  transform: scale(1.14) rotate(-5deg);
   background: rgba(0, 107, 189, 0.20);
 }
 html.dark .chip-elegant:hover .chip-elegant-icon {
   background: rgba(78, 163, 224, 0.22);
 }
 
-/* Hover surface + brand glow aura */
+/* Quiet hover state keeps suggestions secondary to the composer. */
 html.dark .chip-elegant:hover {
-  color: rgba(255, 255, 255, 0.95);
+  color: #fff;
   border-color: rgba(78, 163, 224, 0.45);
-  background-color: rgba(78, 163, 224, 0.09);
-  box-shadow:
-    0 6px 18px rgba(0, 0, 0, 0.28),
-    0 0 0 1px rgba(78, 163, 224, 0.16),
-    0 0 20px rgba(0, 107, 189, 0.20);
+  background: #1b3449;
 }
 html.light .chip-elegant:hover {
-  color: #004d8a;
+  color: #0d527e;
   border-color: rgba(0, 107, 189, 0.42);
-  background-color: rgba(0, 107, 189, 0.05);
-  box-shadow:
-    0 6px 16px rgba(0, 107, 189, 0.12),
-    0 0 0 1px rgba(0, 107, 189, 0.14),
-    0 0 16px rgba(0, 107, 189, 0.12);
+  background: #edf6fc;
 }
 
 
@@ -91,6 +72,7 @@ html.light .chip-elegant:hover {
   overflow: hidden;
   overflow-wrap: anywhere;
   word-break: break-word;
+  font-size: 0.975rem;
   line-height: 1.7;
   text-wrap: pretty;
 }
@@ -138,6 +120,9 @@ html.light .chip-elegant:hover {
   padding-inline-start: 1.35rem;
 }
 
+.chat-markdown ul { list-style: disc; }
+.chat-markdown ol { list-style: decimal; }
+
 .chat-markdown li + li {
   margin-top: 0.38rem;
 }
@@ -155,7 +140,7 @@ html.light .chip-elegant:hover {
 
 .chat-markdown a {
   overflow-wrap: anywhere;
-  word-break: break-all;
+  word-break: normal;
 }
 
 .chat-markdown pre {
@@ -163,8 +148,9 @@ html.light .chip-elegant:hover {
   max-width: 100%;
   overflow-x: auto;
   overscroll-behavior-x: contain;
-  white-space: pre-wrap;
-  word-break: break-word;
+  overflow-wrap: normal;
+  white-space: pre;
+  word-break: normal;
   -webkit-overflow-scrolling: touch;
 }
 
@@ -173,11 +159,16 @@ html.light .chip-elegant:hover {
   border-inline-start: 3px solid rgba(0, 107, 189, 0.55);
 }
 
-.chat-markdown code {
+.chat-markdown code:not(pre code) {
   white-space: pre-wrap;
   word-break: break-word;
 }
 
+.chat-markdown pre code {
+  overflow-wrap: normal;
+  white-space: inherit;
+  word-break: normal;
+}
 
 .chat-markdown table {
   display: block;
@@ -185,7 +176,30 @@ html.light .chip-elegant:hover {
   max-width: 100%;
   overflow-x: auto;
   overscroll-behavior-x: contain;
+  border: 1px solid rgb(148 163 184 / 0.24);
+  border-collapse: separate;
+  border-spacing: 0;
+  border-radius: 0.75rem;
+  font-variant-numeric: tabular-nums;
   -webkit-overflow-scrolling: touch;
+}
+
+.chat-markdown th,
+.chat-markdown td {
+  max-width: min(22rem, 70vw);
+  padding: 0.6rem 0.8rem;
+  border-bottom: 1px solid rgb(148 163 184 / 0.2);
+  text-align: left;
+  vertical-align: top;
+}
+
+.chat-markdown th {
+  background: rgb(148 163 184 / 0.1);
+  font-weight: 650;
+}
+
+.chat-markdown tbody tr:last-child td {
+  border-bottom: 0;
 }
 
 .chat-messages,
@@ -333,7 +347,7 @@ html.dark .chat-generating-label {
   }
 
   .chat-markdown {
-    font-size: 0.94rem;
+    font-size: 0.975rem;
     line-height: 1.68;
   }
 
@@ -348,14 +362,14 @@ html.dark .chat-generating-label {
 
   .chat-markdown pre {
     padding: 0.75rem 0.85rem;
-    font-size: 0.82rem;
+    font-size: 0.875rem;
   }
 }
 
 /* Small phone landscape / very narrow viewports */
 @media (max-width: 380px) {
   .chat-markdown {
-    font-size: 0.9rem;
+    font-size: 0.9375rem;
   }
 
   .chat-bubble {

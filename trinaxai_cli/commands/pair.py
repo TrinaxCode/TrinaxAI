@@ -16,7 +16,7 @@ def _pairing_url(api_base: str, code: str, explicit: str | None) -> str:
             host = f"[{host}]"
         netloc = f"{host}:3334"
         origin = urlunparse((parsed.scheme or "https", netloc, "", "", "", "")).rstrip("/")
-    return f"{origin}/#settings?pair={code}"
+    return f"{origin}/#/settings/advanced?pair={code}"
 
 
 def run(args: Any, client: Any, ui: Any, _config: Any) -> int:

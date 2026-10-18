@@ -29,6 +29,7 @@ export interface ChatInterfaceProps {
   onMessagesChange: (messages: ChatMessage[]) => void;
   onEngineChange: (engine: ChatEngine) => void;
   onMenuToggle: () => void;
+  menuOpen?: boolean;
   onNavigate?: (page: 'settings' | 'indexing' | 'browser' | 'memory' | 'docs' | 'agent') => void;
   onAgentHandoff?: (handoff: AgentHandoff) => void;
   onWebSearchBlocked?: () => void;
@@ -42,6 +43,7 @@ export function useChatController({
   onMessagesChange,
   onEngineChange,
   onMenuToggle,
+  menuOpen = false,
   onNavigate,
   onAgentHandoff,
   onWebSearchBlocked,
@@ -290,6 +292,7 @@ export function useChatController({
   useEffect(() => {
     if (messages.length > 0 || streaming) return undefined;
     const id = setInterval(() => {
+      if (document.hidden) return;
       setMotdIndex((prev) => (prev + 1) % phrases.length);
     }, 4000);
     return () => clearInterval(id);
@@ -307,7 +310,9 @@ export function useChatController({
 
   useEffect(() => {
     if (messages.length > 0 || streaming) return undefined;
-    const id = window.setInterval(() => setQuickChipRotation((current) => current + 1), 15_000);
+    const id = window.setInterval(() => {
+      if (!document.hidden) setQuickChipRotation((current) => current + 1);
+    }, 15_000);
     return () => window.clearInterval(id);
   }, [messages.length, streaming]);
 
@@ -705,6 +710,7 @@ export function useChatController({
     motd,
     onEngineChange,
     onMenuToggle,
+    menuOpen,
     onNavigate,
     onPickDocs,
     onPickImage,

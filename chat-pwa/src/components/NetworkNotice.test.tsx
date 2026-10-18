@@ -58,10 +58,22 @@ describe('NetworkNotice', () => {
     expect(await screen.findByRole('link', { name: 'networkOpenNewLink' })).toHaveAttribute('href', network.recommendedUrl);
   });
 
+  it('closes the ready-link notice with the close button', async () => {
+    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify(network), { status: 200 }));
+    systemFetch.mockResolvedValue(new Response(JSON.stringify({ ok: true, ...network }), { status: 200 }));
+    render(<NetworkNotice canManageSystem />);
+    await userEvent.click(await screen.findByRole('button', { name: 'networkPrepare' }));
+    await screen.findByRole('link', { name: 'networkOpenNewLink' });
+    await userEvent.click(screen.getByRole('button', { name: 'close' }));
+    await waitFor(() => expect(screen.queryByRole('status')).not.toBeInTheDocument());
+  });
+
   it('identifies a cached offline shell and provides the host command', async () => {
     vi.mocked(fetch).mockRejectedValue(new TypeError('offline'));
     render(<NetworkNotice canManageSystem={false} />);
     expect(await screen.findByText('networkOfflineTitle')).toBeInTheDocument();
+    expect(screen.getByRole('status')).not.toHaveClass('pointer-events-none');
+    expect(screen.getByText('trinaxai network refresh').closest('code')).toHaveClass('select-all');
     await userEvent.click(screen.getByRole('button', { name: 'networkCopyCommand' }));
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith('trinaxai network refresh');
   });

@@ -64,6 +64,51 @@ function renderSettings(overrides: Partial<React.ComponentProps<typeof Settings>
 }
 
 describe('Settings section tabs', () => {
+  it('exposes a clear heading hierarchy in general settings', () => {
+    renderSettings();
+    expect(screen.getByRole('heading', { level: 1, name: /settings|configuración/i })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 2, name: /status|estado/i })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 2, name: /profile|perfil/i })).toBeInTheDocument();
+  });
+
+  it('enables adding a custom prompt only when its name and text are filled', async () => {
+    localStorage.setItem('tc-prompts', '[]');
+    const user = userEvent.setup();
+    renderSettings({ initialSection: 'prompts' });
+    const add = screen.getByRole('button', { name: /add prompt|agregar prompt/i });
+    expect(add).toBeDisabled();
+    await user.type(screen.getByRole('textbox', { name: /command name|nombre del comando/i }), 'Summary');
+    expect(add).toBeDisabled();
+    await user.type(screen.getByRole('textbox', { name: /prompt text|texto del prompt/i }), 'Summarize in three points.');
+    expect(add).toBeEnabled();
+    await user.click(add);
+    expect(screen.getByText('/summary')).toBeInTheDocument();
+  });
+
+  it('keeps an empty current prompt list empty when legacy prompts exist', () => {
+    localStorage.setItem('tc-prompts', '[]');
+    localStorage.setItem('tc-ollama-prompts', JSON.stringify([{ name: 'legacy', text: 'old' }]));
+    try {
+      renderSettings({ initialSection: 'prompts' });
+      expect(screen.queryByText('/legacy')).not.toBeInTheDocument();
+    } finally {
+      localStorage.removeItem('tc-ollama-prompts');
+    }
+  });
+
+  it('reveals the active tab when opening a section directly', () => {
+    const previous = HTMLElement.prototype.scrollIntoView;
+    const scrollIntoView = vi.fn();
+    HTMLElement.prototype.scrollIntoView = scrollIntoView;
+    try {
+      renderSettings({ initialSection: 'prompts' });
+      expect(screen.getByRole('button', { name: 'Prompts' })).toHaveAttribute('aria-current', 'page');
+      expect(scrollIntoView).toHaveBeenCalledWith({ block: 'nearest', inline: 'center' });
+    } finally {
+      HTMLElement.prototype.scrollIntoView = previous;
+    }
+  });
+
   it('exposes every section as a tab with a single accessible current marker', async () => {
     const user = userEvent.setup();
     const { container } = renderSettings();
@@ -73,8 +118,11 @@ describe('Settings section tabs', () => {
     expect(tabs.filter((tab) => tab.getAttribute('aria-current') === 'page')).toHaveLength(1);
 
     const webSearchTab = screen.getByRole('button', { name: /web search|búsqueda/i });
+    const scroll = container.querySelector<HTMLDivElement>('.settings-scroll')!;
+    scroll.scrollTop = 400;
     await user.click(webSearchTab);
 
+    expect(scroll.scrollTop).toBe(0);
     expect(webSearchTab).toHaveAttribute('aria-current', 'page');
     expect(tabs.filter((tab) => tab.getAttribute('aria-current') === 'page')).toHaveLength(1);
     expect(container.querySelector('[data-testid="web-search-settings"]')).not.toBeNull();
@@ -147,6 +195,7 @@ describe('Settings section tabs', () => {
     expect(restoreTriggers.at(-1)).toBeInTheDocument();
     await user.click(restoreTriggers.at(-1)!);
     const restoreInput = screen.getByRole('textbox', { name: /RESTORE|RESTAURAR/i });
+    expect(restoreInput).toHaveFocus();
     await user.type(restoreInput, 'WRONG');
     expect(screen.getAllByRole('button', { name: /restore|restaurar|factory reset/i }).at(-1)).toBeDisabled();
     await user.click(screen.getAllByRole('button', { name: /cancel|cancelar/i }).at(-1)!);
@@ -156,7 +205,7 @@ describe('Settings section tabs', () => {
     expect(stopConfirm).toBeDisabled();
     const stopInput = within(stopAll).getByRole('textbox');
     await user.type(stopInput, stopInput.getAttribute('placeholder') || 'STOP ALL');
-    expect(stopConfirm).not.toBeDisabled();
+    await waitFor(() => expect(stopConfirm).not.toBeDisabled());
     await user.click(stopConfirm);
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/system/stop-all', expect.anything()));
     vi.unstubAllGlobals();

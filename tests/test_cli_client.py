@@ -122,6 +122,7 @@ def test_client_methods_preserve_api_paths_bodies_and_encoding() -> None:
     assert client.add_memory("Remember", ["preference"]) == {"memory": {"id": "memory"}}
     assert client.delete_memory("memory") is True
     assert client.refresh_memory() == {"summary": "updated"}
+    client._post.assert_any_call("/v1/memory/refresh", {}, timeout=300.0)
     assert client.memory_summary() == {"summary": "short"}
     assert client.memory_context("current task") == [{"id": "memory"}]
     assert client.research("compare", ["docs"], 3, web_search=True, include_local=True)["answer"] == "research"

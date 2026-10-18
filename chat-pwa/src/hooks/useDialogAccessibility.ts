@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, type KeyboardEvent, type RefObject } from 'react';
 
-const FOCUSABLE = 'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
+const FOCUSABLE = ':is(button, [href], input, select, textarea, [tabindex]):not([disabled]):not([tabindex="-1"])';
 
 export function useDialogAccessibility(
   open: boolean,

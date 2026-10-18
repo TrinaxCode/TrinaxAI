@@ -1,10 +1,23 @@
 import { expect, test } from '@playwright/test';
 
+test('applies a saved light theme before the app module loads', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'chromium-desktop', 'One pre-paint check is sufficient.');
+  await page.addInitScript(() => localStorage.setItem('tc-theme', 'light'));
+  await page.route('**/assets/index-*.js', (route) => route.abort());
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+
+  await expect(page.locator('html')).toHaveClass('light');
+  await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute('content', '#ffffff');
+});
+
 test('configures web search without exposing provider secrets', async ({ page }) => {
   await page.addInitScript(() => {
     localStorage.setItem('tc-onboarding-complete', 'true');
     localStorage.setItem('tc-lang', 'en');
   });
+  await page.route('**/api/network', (route) => route.fulfill({
+    json: { online: true, recommendedUrl: '', urls: [], needsRefresh: false, refreshCommand: '', capabilities: { manageSystem: true } },
+  }));
   await page.route('**/api/rag/app-state', (route) => route.fulfill({
     status: 200,
     contentType: 'application/json',

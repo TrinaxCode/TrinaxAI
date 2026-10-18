@@ -173,6 +173,23 @@ def test_collections_delete_resolves_unique_name() -> None:
     client.delete_collection.assert_called_once_with("docs-123")
 
 
+def test_collections_delete_resets_active_selection(tmp_path: Path) -> None:
+    client = MagicMock()
+    ui = MagicMock()
+    ui.confirm.return_value = True
+    config = CLIConfig(active_collection="docs", collections=["docs"])
+    config.save = MagicMock(return_value=tmp_path / "config.toml")
+
+    result = collections.run(
+        SimpleNamespace(collections_command="delete", collection_id="docs", name=None), client, ui, config
+    )
+
+    assert result == 0
+    assert config.active_collection == "default"
+    assert config.collections == ["default"]
+    config.save.assert_called_once_with()
+
+
 def test_memory_forget_rejects_disagreeing_ids() -> None:
     ui = MagicMock()
     result = memory.run(

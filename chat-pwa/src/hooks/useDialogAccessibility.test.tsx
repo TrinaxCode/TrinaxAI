@@ -5,7 +5,7 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 import { useDialogAccessibility } from './useDialogAccessibility';
 
-function Harness() {
+function Harness({ disableLast = false }: { disableLast?: boolean }) {
   const [open, setOpen] = useState(false);
   const closeRef = useRef<HTMLButtonElement>(null);
   const modal = useDialogAccessibility(open, () => setOpen(false), closeRef);
@@ -15,7 +15,7 @@ function Harness() {
       <div data-modal-root>
         <div ref={modal.dialogRef} role="dialog" onKeyDown={modal.onKeyDown}>
           <button ref={closeRef} onClick={() => setOpen(false)}>Close</button>
-          <button>Last</button>
+          <button disabled={disableLast}>Last</button>
         </div>
       </div>, document.body,
     )}
@@ -23,6 +23,16 @@ function Harness() {
 }
 
 describe('useDialogAccessibility', () => {
+  it('skips disabled controls when wrapping focus', async () => {
+    const user = userEvent.setup();
+    render(<Harness disableLast />);
+    await user.click(screen.getByRole('button', { name: 'Open' }));
+    const close = screen.getByRole('button', { name: 'Close' });
+    await waitFor(() => expect(close).toHaveFocus());
+    await user.tab({ shift: true });
+    expect(close).toHaveFocus();
+  });
+
   it('focuses the dialog, traps Tab, closes on Escape, and restores focus', async () => {
     const user = userEvent.setup();
     const { container } = render(<Harness />);

@@ -166,7 +166,8 @@ export default function DevicePairingCard({
 
   const copyGeneratedCode = async () => {
     try {
-      await navigator.clipboard?.writeText(generatedCode);
+      if (!navigator.clipboard?.writeText) return;
+      await navigator.clipboard.writeText(generatedCode);
       setCopiedCode(true);
       window.setTimeout(() => setCopiedCode(false), 2200);
     } catch { /* copy is optional; the visible code remains usable */ }
@@ -183,39 +184,41 @@ export default function DevicePairingCard({
   };
 
   const border = isDark ? 'border-white/[0.08]' : 'border-gray-200';
-  const muted = isDark ? 'text-white/40' : 'text-gray-500';
+  const muted = isDark ? 'text-white/65' : 'text-gray-600';
   const text = isDark ? 'text-white/80' : 'text-gray-800';
+  const accent = isDark ? 'text-[#4aa7ed]' : 'text-[#005a9e]';
+  const danger = isDark ? 'text-red-400' : 'text-red-700';
   return (
     <div className={`mb-3 rounded-xl border px-4 py-3 space-y-3 ${border} ${isDark ? 'bg-white/[0.03]' : 'bg-gray-50'}`}>
       <div className="flex items-center gap-2">
-        <MdDevices size={18} className="text-[#006bbd]" aria-hidden="true" />
-        <h4 className={`text-xs font-medium ${text}`}>{t('devicePairingTitle')}</h4>
+        <MdDevices size={18} className={accent} aria-hidden="true" />
+        <h4 className={`text-base font-semibold ${text}`}>{t('devicePairingTitle')}</h4>
       </div>
       {device ? (
         <div className="space-y-2">
           <p className={`text-sm ${text}`}>{device.name}</p>
-          <p className={`text-[10px] break-words ${muted}`}>
+          <p className={`break-words text-sm leading-relaxed ${muted}`}>
             {t('deviceScopes')}: {device.scopes.join(', ')}
           </p>
-          <p className={`text-[10px] leading-relaxed ${muted}`}>{t('deviceSystemScopeHint')}</p>
+          <p className={`text-sm leading-relaxed ${muted}`}>{t('deviceSystemScopeHint')}</p>
           <button
             type="button"
             disabled={busy}
             onClick={() => setPendingRevokeId(device.id)}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-red-500/20 px-3 py-2 text-xs font-medium text-red-400 hover:bg-red-500/10 disabled:opacity-50"
+            className={`inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-red-500/20 px-3 py-2 text-sm font-medium hover:bg-red-500/10 disabled:opacity-50 ${danger}`}
           >
             <MdLinkOff size={15} aria-hidden="true" /> {t('deviceRevoke')}
           </button>
         </div>
       ) : (
         <div className="space-y-2">
-          <p className={`text-[10px] leading-relaxed ${muted}`}>{t('devicePairingHint')}</p>
+          <p className={`text-sm leading-relaxed ${muted}`}>{t('devicePairingHint')}</p>
           {canManageDevices && (
             <button
               type="button"
               disabled={generating}
               onClick={() => { void generate(); }}
-              className={`inline-flex items-center rounded-lg border border-[#006bbd]/40 px-3 py-2 text-xs font-medium hover:bg-[#006bbd]/10 disabled:opacity-50 ${isDark ? 'text-[#4aa7ed]' : 'text-[#006bbd]'}`}
+              className={`inline-flex min-h-11 items-center rounded-lg border border-[#006bbd]/40 px-3 py-2 text-sm font-medium hover:bg-[#006bbd]/10 disabled:opacity-50 ${accent}`}
             >
               {generating ? t('loading') : t('devicePairingGenerate')}
             </button>
@@ -231,7 +234,7 @@ export default function DevicePairingCard({
                 value={code}
                 onChange={(event) => setCode(formatPairingCode(event.target.value))}
                 placeholder={t('devicePairingCode')}
-                className={`rounded-lg border bg-transparent px-3 py-2 text-sm font-mono outline-none ${border} ${text}`}
+                className={`min-h-11 rounded-lg border bg-transparent px-3 py-2 font-mono text-base outline-hidden sm:text-sm ${border} ${text} ${isDark ? 'placeholder-white/55' : 'placeholder-gray-600'}`}
               />
               <input
                 aria-label={t('deviceName')}
@@ -240,14 +243,14 @@ export default function DevicePairingCard({
                 value={name}
                 onChange={(event) => setName(event.target.value)}
                 placeholder={t('deviceName')}
-                className={`rounded-lg border bg-transparent px-3 py-2 text-sm outline-none ${border} ${text}`}
+                className={`min-h-11 rounded-lg border bg-transparent px-3 py-2 text-base outline-hidden sm:text-sm ${border} ${text} ${isDark ? 'placeholder-white/55' : 'placeholder-gray-600'}`}
               />
             </div>
             <button
               type="button"
               disabled={busy || !code.trim() || !name.trim()}
               onClick={() => { void pair(); }}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-[#006bbd] px-3 py-2 text-xs font-medium text-white hover:bg-[#005ca3] disabled:opacity-50"
+              className="inline-flex min-h-11 items-center gap-1.5 rounded-lg bg-[#006bbd] px-3 py-2 text-sm font-medium text-white hover:bg-[#005ca3] disabled:opacity-50"
             >
               <MdLink size={15} aria-hidden="true" /> {busy ? t('loading') : t('devicePair')}
             </button>
@@ -256,15 +259,15 @@ export default function DevicePairingCard({
       )}
       {managedDevices.filter((item) => item.revoked_at === null).length > 0 && (
         <div className={`border-t pt-3 ${border}`}>
-          <p className={`mb-2 text-[10px] uppercase tracking-wider ${muted}`}>{t('devicePairedDevices')}</p>
+          <p className={`mb-2 text-xs font-medium uppercase tracking-wider ${muted}`}>{t('devicePairedDevices')}</p>
           <div className="space-y-2">
             {managedDevices.filter((item) => item.revoked_at === null).map((item) => (
-              <div key={item.id} className="flex items-center justify-between gap-2">
+              <div key={item.id} className={`flex items-center justify-between gap-2 rounded-lg border px-3 py-2 ${border}`}>
                 <div className="min-w-0">
-                  <p className={`truncate text-xs ${text}`}>{item.name}</p>
-                  <p className={`truncate text-[10px] ${muted}`}>{item.scopes.join(', ')}</p>
+                  <p className={`truncate text-sm ${text}`}>{item.name}</p>
+                  <p className={`truncate text-sm ${muted}`} title={item.scopes.join(', ')}>{item.scopes.join(', ')}</p>
                 </div>
-                <button type="button" disabled={Boolean(revokingId)} onClick={() => setPendingRevokeId(item.id)} className="shrink-0 rounded-lg border border-red-500/20 px-2 py-1 text-[10px] text-red-400 hover:bg-red-500/10 disabled:opacity-50">
+                <button type="button" disabled={Boolean(revokingId)} onClick={() => setPendingRevokeId(item.id)} className={`min-h-11 shrink-0 rounded-lg border border-red-500/20 px-3 text-sm font-medium hover:bg-red-500/10 disabled:opacity-50 ${danger}`}>
                   {revokingId === item.id ? t('loading') : t('deviceRevoke')}
                 </button>
               </div>
@@ -280,10 +283,10 @@ export default function DevicePairingCard({
             animate={{ opacity: 1, height: 'auto' }}
             exit={{ opacity: 0, height: 0 }}
             transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
-            className="overflow-hidden text-[10px] text-red-400"
+            className={`overflow-hidden text-sm ${danger}`}
           >
             <p>{error}</p>
-            <button type="button" onClick={() => setRepairOpen(true)} className="mt-1 text-[#006bbd] underline underline-offset-2">{t('fixError')}</button>
+            <button type="button" onClick={() => setRepairOpen(true)} className={`mt-1 min-h-11 underline underline-offset-2 ${accent}`}>{t('fixError')}</button>
           </motion.div>
         )}
       </AnimatePresence>
@@ -306,7 +309,7 @@ export default function DevicePairingCard({
         <ConfirmModal open title={t('devicePairingGenerated')} message={t('devicePairingGeneratedHint')} confirmLabel={t('close')} showCancel={false} onConfirm={() => setShowGeneratedCode(false)} onCancel={() => setShowGeneratedCode(false)}>
           <div className={`rounded-xl border px-4 py-3 text-center ${border}`}>
             <code className={`block text-2xl tracking-[0.24em] ${text}`}>{generatedCode}</code>
-            <button type="button" onClick={() => { void copyGeneratedCode(); }} className="mt-3 inline-flex items-center gap-1 text-xs text-[#4aa7ed] hover:underline" aria-label={copiedCode ? t('copied') : t('copy')}>
+            <button type="button" onClick={() => { void copyGeneratedCode(); }} disabled={!navigator.clipboard?.writeText} className={`mt-3 inline-flex min-h-11 items-center gap-1 text-sm hover:underline disabled:opacity-50 ${accent}`} aria-label={copiedCode ? t('copied') : t('copy')}>
               {copiedCode ? <MdCheck size={14} aria-hidden="true" /> : <MdContentCopy size={14} aria-hidden="true" />} {copiedCode ? t('copied') : t('copy')}
             </button>
           </div>

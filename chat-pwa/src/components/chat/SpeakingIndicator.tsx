@@ -15,13 +15,13 @@ export default function SpeakingIndicator({ speaking }: { speaking: boolean }) {
             {[3, 12, 6, 16, 4, 10, 5].map((height, index) => (
               <motion.div
                 key={index}
-                className="w-1 rounded-full bg-[#006bbd]"
+                className="w-1 rounded-full bg-[#006bbd] dark:bg-[#4aa7ed]"
                 animate={{ height: [Math.max(2, height - 6), height, Math.max(2, height - 4), height] }}
                 transition={{ repeat: Infinity, repeatType: 'reverse', duration: 0.35 + index * 0.1, ease: 'easeInOut' }}
               />
             ))}
           </div>
-          <span className="text-xs font-medium text-[#006bbd]">{t('speaking')}</span>
+          <span className="text-sm font-medium text-[#0059a0] dark:text-[#8ac9f5]">{t('speaking')}</span>
         </motion.div>
       )}
     </AnimatePresence>

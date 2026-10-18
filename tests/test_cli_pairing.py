@@ -57,7 +57,7 @@ def test_pair_start_prints_code_and_pwa_link() -> None:
     )
     assert result == 0
     assert any("ABCD-EFGH" in message for message in ui.messages)
-    assert any("https://192.168.1.20:3334/#settings?pair=ABCD-EFGH" in message for message in ui.messages)
+    assert any("https://192.168.1.20:3334/#/settings/advanced?pair=ABCD-EFGH" in message for message in ui.messages)
 
 
 def test_pair_list_and_revoke() -> None:

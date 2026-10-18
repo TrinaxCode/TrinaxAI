@@ -90,14 +90,14 @@ export default function Sources({ sources, model, project, query, onOpenInBrowse
       {hasSources ? (
         <div className="tc-sources-card">
           <div className="flex items-center justify-between gap-2">
-            <span className={`inline-flex items-center gap-1.5 text-[11px] font-semibold ${isDark ? 'text-white/75' : 'text-gray-700'}`}>
+            <span className={`inline-flex items-center gap-1.5 text-sm font-semibold ${isDark ? 'text-white/80' : 'text-gray-700'}`}>
               <MdLibraryBooks size={14} className="text-[#2ac9b6]" aria-hidden="true" />
               {t('sources')}
             </span>
             <button
               type="button"
               onClick={() => setOpen((v) => !v)}
-              className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[10px] font-medium transition-colors ${isDark ? 'border-[#2ac9b6]/25 bg-[#2ac9b6]/10 text-[#2ac9b6] hover:border-[#2ac9b6]/45' : 'border-[#00756b]/25 bg-[#00756b]/10 text-[#00756b] hover:border-[#00756b]/45'}`}
+              className={`inline-flex min-h-10 items-center gap-1 rounded-full border px-3 text-sm font-medium transition-colors ${isDark ? 'border-[#2ac9b6]/25 bg-[#2ac9b6]/10 text-[#2ac9b6] hover:border-[#2ac9b6]/45' : 'border-[#00756b]/25 bg-[#00756b]/10 text-[#00756b] hover:border-[#00756b]/45'}`}
               aria-expanded={open}
               aria-controls={sourcesId}
             >
@@ -129,7 +129,7 @@ export default function Sources({ sources, model, project, query, onOpenInBrowse
                         href={externalUrl}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className={`block truncate text-[12px] font-semibold hover:underline ${isDark ? 'text-white/85' : 'text-gray-800'}`}
+                        className={`block min-h-10 truncate text-sm font-semibold leading-10 hover:underline ${isDark ? 'text-white/85' : 'text-gray-800'}`}
                         title={externalUrl}
                       >
                         {s.title || externalUrl}
@@ -137,7 +137,7 @@ export default function Sources({ sources, model, project, query, onOpenInBrowse
                     ) : (
                       <button
                         type="button"
-                        className={`block max-w-full truncate text-left text-[12px] font-semibold hover:underline ${isDark ? 'text-white/85' : 'text-gray-800'}`}
+                        className={`block min-h-10 max-w-full truncate text-left text-sm font-semibold leading-10 hover:underline ${isDark ? 'text-white/85' : 'text-gray-800'}`}
                         onClick={() => copyPath(s.file, i)}
                         title={`${s.file} | ${t('clickToCopy')}`}
                         aria-label={`${t('copy')}: ${s.file}`}
@@ -145,45 +145,45 @@ export default function Sources({ sources, model, project, query, onOpenInBrowse
                         {s.file.split('/').pop() || s.file}
                       </button>
                     )}
-                    <span className={`mt-0.5 block truncate font-mono text-[10px] ${isDark ? 'text-white/35' : 'text-gray-500'}`}>
+                    <span className={`mt-0.5 block truncate font-mono text-xs ${isDark ? 'text-white/65' : 'text-gray-600'}`}>
                       {s.file}{meta ? ` · ${meta}` : ''}
                     </span>
                   </div>
-                  <div className="flex items-center gap-1.5">
+                  <div className="tc-sources-actions flex items-center gap-1.5">
                     {s.score != null && <span className="tc-sources-score">{s.score}</span>}
                     <button
                       type="button"
                       onClick={() => copyPath(externalUrl || s.file, i)}
-                      className={`inline-flex h-7 w-7 items-center justify-center rounded-lg transition-colors ${isDark ? 'text-white/30 hover:bg-white/[0.06] hover:text-white/75' : 'text-gray-400 hover:bg-gray-100 hover:text-gray-700'}`}
+                      className={`inline-flex h-10 w-10 items-center justify-center rounded-lg transition-colors ${isDark ? 'text-white/65 hover:bg-white/[0.06] hover:text-white' : 'text-gray-600 hover:bg-gray-100 hover:text-gray-800'}`}
                       aria-label={t('copy')}
                       title={t('copy')}
                     >
-                      {copiedIdx === i ? <MdCheck size={12} /> : <MdContentCopy size={12} />}
+                      {copiedIdx === i ? <MdCheck size={16} /> : <MdContentCopy size={16} />}
                     </button>
                     {externalUrl ? (
                       <a
                         href={externalUrl}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className={`inline-flex h-7 w-7 items-center justify-center rounded-lg transition-colors ${isDark ? 'text-white/30 hover:bg-white/[0.06] hover:text-white/75' : 'text-gray-400 hover:bg-gray-100 hover:text-gray-700'}`}
+                        className={`inline-flex h-10 w-10 items-center justify-center rounded-lg transition-colors ${isDark ? 'text-white/65 hover:bg-white/[0.06] hover:text-white' : 'text-gray-600 hover:bg-gray-100 hover:text-gray-800'}`}
                         aria-label={`${t('openInBrowser')}: ${s.title || externalUrl}`}
                         title={t('openInBrowser')}
                       >
-                        <MdOpenInNew size={12} />
+                        <MdOpenInNew size={16} />
                       </a>
                     ) : onOpenInBrowser ? (
                       <button
                         type="button"
                         onClick={() => onOpenInBrowser(s.file, s.collection_id)}
-                        className={`inline-flex h-7 w-7 items-center justify-center rounded-lg transition-colors ${isDark ? 'text-white/30 hover:bg-white/[0.06] hover:text-white/75' : 'text-gray-400 hover:bg-gray-100 hover:text-gray-700'}`}
+                        className={`inline-flex h-10 w-10 items-center justify-center rounded-lg transition-colors ${isDark ? 'text-white/65 hover:bg-white/[0.06] hover:text-white' : 'text-gray-600 hover:bg-gray-100 hover:text-gray-800'}`}
                         aria-label={t('openInBrowser')}
                         title={t('openInKnowledgeBrowser')}
                       >
-                        <MdLibraryBooks size={12} />
+                        <MdLibraryBooks size={16} />
                       </button>
                     ) : null}
                   </div>
-                  <pre className={`col-span-3 mt-1 max-h-24 overflow-y-auto whitespace-pre-wrap break-words border-t pt-2 text-[10px] font-mono ${isDark ? 'border-white/[0.06] text-white/45' : 'border-gray-200 text-gray-500'}`}>
+                  <pre className={`col-span-3 mt-1 max-h-32 overflow-y-auto whitespace-pre-wrap break-words border-t pt-2 font-mono text-sm leading-relaxed ${isDark ? 'border-white/[0.06] text-white/80' : 'border-gray-200 text-gray-800'}`}>
                     {highlight(s.snippet, terms)}
                   </pre>
                 </div>
@@ -193,13 +193,13 @@ export default function Sources({ sources, model, project, query, onOpenInBrowse
           </div>
 
           <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
-            {project && <span className={`text-[10px] ${isDark ? 'text-white/35' : 'text-gray-500'}`}>{project}</span>}
-            {webProviders.length > 0 && <span className={`text-[10px] ${isDark ? 'text-white/30' : 'text-gray-400'}`}>{t('sourceWeb')}: {webProviders.join(', ')}</span>}
+            {project && <span className={`text-xs ${isDark ? 'text-white/65' : 'text-gray-600'}`}>{project}</span>}
+            {webProviders.length > 0 && <span className={`text-xs ${isDark ? 'text-white/65' : 'text-gray-600'}`}>{t('sourceWeb')}: {webProviders.join(', ')}</span>}
             {onOpenInBrowser && (
               <button
                 type="button"
                 onClick={() => onOpenInBrowser(sources![0].file, sources![0].collection_id)}
-                className={`ml-auto inline-flex items-center gap-1 text-[10px] font-medium transition-colors ${isDark ? 'text-[#4ea3e0] hover:text-[#7cc0f0]' : 'text-[#006bbd] hover:text-[#004d8a]'}`}
+                className={`ml-auto inline-flex min-h-10 items-center gap-1 text-sm font-medium transition-colors ${isDark ? 'text-[#4ea3e0] hover:text-[#7cc0f0]' : 'text-[#005a9e] hover:text-[#004d8a]'}`}
               >
                 <MdLibraryBooks size={12} aria-hidden="true" />
                 {t('openInKnowledgeBrowser')}
@@ -208,9 +208,9 @@ export default function Sources({ sources, model, project, query, onOpenInBrowse
           </div>
         </div>
       ) : (
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px]">
-          {project && <span className={isDark ? 'text-white/40' : 'text-gray-500'}>{project}</span>}
-          {webProviders.length > 0 && <span className={isDark ? 'text-white/35' : 'text-gray-400'}>{t('sourceWeb')}: {webProviders.join(', ')}</span>}
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+          {project && <span className={isDark ? 'text-white/65' : 'text-gray-600'}>{project}</span>}
+          {webProviders.length > 0 && <span className={isDark ? 'text-white/65' : 'text-gray-600'}>{t('sourceWeb')}: {webProviders.join(', ')}</span>}
         </div>
       )}
     </div>

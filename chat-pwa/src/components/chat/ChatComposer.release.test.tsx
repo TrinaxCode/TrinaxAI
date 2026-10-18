@@ -86,7 +86,7 @@ function renderComposer(overrides: Partial<ComponentProps<typeof ChatComposer>> 
 describe('ChatComposer release paths', () => {
   it('renders document/image progress, indexing and removes attachments', async () => {
     const user = userEvent.setup();
-    const { actions } = renderComposer({
+    const { actions, container } = renderComposer({
       attachedDocs: [{ name: 'guide.md', size: 12, content: 'hello', file: new File(['hello'], 'guide.md'), truncated: true }],
       attachedImages: [{ dataUrl: 'data:image/png;base64,abc', file: new File(['x'], 'shot.png') }],
       docUploadStatus: 'Uploading',
@@ -94,7 +94,8 @@ describe('ChatComposer release paths', () => {
       imageError: 'Invalid image',
     });
     expect(screen.getByRole('status')).toHaveTextContent('Uploading');
-    expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '120');
+    expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '100');
+    expect(container.querySelector('.chat-active-collections')).toHaveClass('relative');
     expect(screen.getByText('guide.md')).toBeInTheDocument();
     expect(screen.getByText('truncated')).toBeInTheDocument();
     expect(screen.getByText('Invalid image')).toBeInTheDocument();

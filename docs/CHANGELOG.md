@@ -18,9 +18,34 @@ All notable changes to TrinaxAI are documented here. This project follows the
 
 ## [Unreleased]
 
+## [1.3.0] — 2026-10-18
+
+### Changed
+
 - Reworked the public documentation around one npm installation path, clarified
   first-run and platform operations, aligned the English and Spanish guides,
   and removed obsolete direct-installer onboarding.
+- Cross-platform release checks, Windows and macOS test paths, and watcher
+  status handling were stabilized.
+
+### Fixed
+
+- Shared app state: a transient read error no longer looks like an empty store
+  that the next sync would overwrite; corrupt files are quarantined instead.
+- Backup restore: rollback can no longer delete the original data when moving
+  it aside fails.
+- Source updates: the rollback marker is removed before the backup, so a
+  half-deleted backup is never restored.
+- Indexing: the watcher worker survives out-of-space and other batch failures
+  and keeps processing the queue; unreadable manifests and collection lists
+  are no longer treated as empty.
+- PWA: the network notice closes properly after preparing a new link, and the
+  `trinaxai pair` link opens Settings > Advanced instead of the chat.
+- Voice: read-aloud text is no longer cut mid-word, calls keep the screen awake
+  after returning to the tab, the system TTS picks the matching language voice,
+  and temporary audio files are cleaned up on failed writes.
+- Piper now uses the real `piper` package API, Coqui picks its model by
+  language, and concurrent LibreOffice conversions no longer fail.
 
 ## [1.2.6] — 2026-09-20
 

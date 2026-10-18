@@ -260,8 +260,9 @@ PY
   local candidate
   for candidate in .env storage local_sources; do
     [ -e "$stage/$candidate" ] || continue
+    # Park the original first; only then is it safe for rollback to delete $ROOT/$candidate.
+    if [ -e "$ROOT/$candidate" ]; then mv "$ROOT/$candidate" "$rollback/$candidate"; fi
     applied+=("$candidate")
-    [ -e "$ROOT/$candidate" ] && mv "$ROOT/$candidate" "$rollback/$candidate"
     mv "$stage/$candidate" "$ROOT/$candidate"
   done
   trap - ERR INT TERM

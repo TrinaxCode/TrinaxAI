@@ -1,5 +1,6 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react';
 import { motion } from 'framer-motion';
+import { MdErrorOutline } from 'react-icons/md';
 import { translations, type Lang } from '../i18n/translations';
 import ErrorRepairModal from './ErrorRepairModal';
 
@@ -29,23 +30,28 @@ export default class ErrorBoundary extends Component<Props, State> {
           initial={{ opacity: 0, scale: 0.96 }}
           animate={{ opacity: 1, scale: 1 }}
           transition={{ duration: 0.3 }}
-          className={`h-full flex flex-col items-center justify-center gap-4 px-6 text-center transition-colors duration-300 ${isDark ? 'bg-black' : 'bg-white'}`}
+          className={`grid h-full place-items-center px-6 transition-colors duration-300 ${isDark ? 'bg-[#0b111a]' : 'bg-[#f7f9fc]'}`}
         >
-          <p className={`text-sm ${isDark ? 'text-white/50' : 'text-gray-500'}`}>{strings.errorBoundaryTitle}</p>
-          <p className={`max-w-md text-xs ${isDark ? 'text-white/30' : 'text-gray-400'}`}>{strings.errorBoundaryDetail}</p>
-          <button
-            onClick={() => { this.setState({ hasError: false, error: null, repairOpen: false }); window.location.reload(); }}
-            className="px-4 py-2 rounded-xl bg-[#006bbd]/20 text-[#006bbd] text-sm hover:bg-[#006bbd]/30 transition-colors"
-          >
-            {strings.errorBoundaryReload}
-          </button>
-          <button
-            type="button"
-            onClick={() => this.setState({ repairOpen: true })}
-            className="text-sm text-[#006bbd] underline underline-offset-2"
-          >
-            {strings.fixError}
-          </button>
+          <div className={`w-full max-w-md rounded-2xl border p-7 text-center ${isDark ? 'border-white/10 bg-[#14202d]' : 'border-slate-200 bg-white'}`}>
+            <span className={`mx-auto grid h-14 w-14 place-items-center rounded-2xl ${isDark ? 'bg-sky-400/10 text-sky-400' : 'bg-sky-50 text-[#006bbd]'}`} aria-hidden="true"><MdErrorOutline size={28} /></span>
+            <h1 className={`mt-5 text-lg font-semibold ${isDark ? 'text-white/90' : 'text-slate-800'}`}>{strings.errorBoundaryTitle}</h1>
+            <p className={`mt-2 text-sm leading-relaxed ${isDark ? 'text-white/60' : 'text-slate-600'}`}>{strings.errorBoundaryDetail}</p>
+            <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
+              <button
+                onClick={() => { this.setState({ hasError: false, error: null, repairOpen: false }); window.location.reload(); }}
+                className="min-h-10 rounded-xl bg-[#006bbd] px-4 text-sm font-medium text-white transition-colors hover:bg-[#0059a0]"
+              >
+                {strings.errorBoundaryReload}
+              </button>
+              <button
+                type="button"
+                onClick={() => this.setState({ repairOpen: true })}
+                className={`min-h-10 px-2 text-sm underline underline-offset-2 ${isDark ? 'text-sky-400' : 'text-[#006bbd]'}`}
+              >
+                {strings.fixError}
+              </button>
+            </div>
+          </div>
           <ErrorRepairModal
             open={this.state.repairOpen}
             dark={isDark}

@@ -82,3 +82,27 @@ def test_index_uses_install_root_when_called_outside_project(monkeypatch, tmp_pa
     assert launched["command"][1] == str(index_script)  # type: ignore[index]
     assert launched["env"]["TRINAXAI_PROJECT_ROOT"] == str(install_root)  # type: ignore[index]
     assert launched["timeout"] == 3600
+
+
+def test_index_explicit_install_root_never_uses_cwd_script(monkeypatch, tmp_path: Path) -> None:
+    install_root = tmp_path / "install"
+    install_root.mkdir()
+    source = tmp_path / "documents"
+    source.mkdir()
+    (tmp_path / "index.py").write_text("", encoding="utf-8")
+    monkeypatch.setattr(index, "find_install_root", lambda: install_root)
+    monkeypatch.chdir(tmp_path)
+    launched = []
+    monkeypatch.setattr(index, "spawn_process_group", lambda *args, **kwargs: launched.append(args))
+    ui = _UI()
+
+    result = index.run(
+        SimpleNamespace(path=str(source), collection="default", append=False, install_root=str(install_root)),
+        None,
+        ui,
+        None,
+    )
+
+    assert result == 1
+    assert not launched
+    assert "Cannot locate index.py" in ui.messages[0]

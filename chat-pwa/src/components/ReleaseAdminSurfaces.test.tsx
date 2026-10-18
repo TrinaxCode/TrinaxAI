@@ -149,4 +149,30 @@ describe('release administration surfaces', () => {
     fireEvent.change(screen.getByRole('slider', { name: 'keepModelsLoaded' }), { target: { value: '0' } });
     expect(props.setLocalSetting).toHaveBeenCalled();
   });
+
+  it('warns when Ollama rejects unloading a model', async () => {
+    api.systemFetch.mockResolvedValue({ ok: false });
+    render(<SettingsModels {...modelProps()} />);
+
+    await userEvent.click(screen.getByRole('button', { name: 'unloadAllModelsNow' }));
+
+    await waitFor(() => expect(toast.toast).toHaveBeenCalledWith('modelsUnloaded', 'warning'));
+  });
+
+  it('reports when the model guide cannot be copied', async () => {
+    const clipboard = navigator.clipboard;
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText: vi.fn().mockRejectedValue(new Error('denied')) },
+    });
+    try {
+      render(<SettingsModels {...modelProps()} />);
+      fireEvent.click(screen.getByText('modelPromptTitle'));
+      fireEvent.click(screen.getByRole('button', { name: 'modelPromptCopy' }));
+
+      await waitFor(() => expect(toast.toast).toHaveBeenCalledWith('modelPromptCopyFailed', 'error'));
+    } finally {
+      Object.defineProperty(navigator, 'clipboard', { configurable: true, value: clipboard });
+    }
+  });
 });

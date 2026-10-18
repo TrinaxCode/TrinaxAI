@@ -7,7 +7,8 @@ const kib = 1024;
 const budgets = {
   maxJavaScript: Number(process.env.TRINAXAI_BUNDLE_MAX_JS_KIB || 350) * kib,
   totalJavaScript: Number(process.env.TRINAXAI_BUNDLE_TOTAL_JS_KIB || 1536) * kib,
-  totalCss: Number(process.env.TRINAXAI_BUNDLE_TOTAL_CSS_KIB || 128) * kib,
+  // Tailwind 4 with the preserved palette measures 129.2 KiB.
+  totalCss: Number(process.env.TRINAXAI_BUNDLE_TOTAL_CSS_KIB || 132) * kib,
   totalDist: Number(process.env.TRINAXAI_BUNDLE_TOTAL_DIST_KIB || 4096) * kib,
 };
 

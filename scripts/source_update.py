@@ -21,7 +21,7 @@ from urllib.parse import urlsplit
 
 REPOSITORY = "TrinaxCode/TrinaxAI"
 LATEST_RELEASE_URL = f"https://api.github.com/repos/{REPOSITORY}/releases/latest"
-RELEASE_VERSION = "1.2.6"
+RELEASE_VERSION = "1.3.0"
 ARCHIVE_NAME = f"TrinaxAI-{RELEASE_VERSION}.tar.gz"
 RELEASE_ARCHIVE_URL = f"https://github.com/TrinaxCode/TrinaxAI/releases/download/v{RELEASE_VERSION}/{ARCHIVE_NAME}"
 CHECKSUM_URL = f"https://github.com/TrinaxCode/TrinaxAI/releases/download/v{RELEASE_VERSION}/SHA256SUMS"
@@ -422,8 +422,9 @@ def _write_marker(root: Path, backup: Path) -> None:
 
 
 def _clear_marker(marker: Path, backup: Path) -> None:
-    shutil.rmtree(backup)
+    # Drop the marker first: a half-deleted backup must never be restored by a later recovery.
     marker.unlink()
+    shutil.rmtree(backup)
 
 
 def _restore(root: Path, backup: Path) -> None:

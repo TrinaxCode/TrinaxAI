@@ -12,6 +12,7 @@ export default function StatusDots() {
   const { t } = useI18n();
   const { isDark } = useTheme();
   const [s, setS] = useState(DEFAULT_STATUS);
+  const [known, setKnown] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -21,7 +22,9 @@ export default function StatusDots() {
       inFlight = true;
       try {
         const r = await checkStatus();
-        if (alive) setS(r);
+        if (alive) { setS(r); setKnown(true); }
+      } catch {
+        if (alive) setKnown(false);
       } finally {
         inFlight = false;
       }
@@ -42,27 +45,33 @@ export default function StatusDots() {
   }, []);
 
   const dot = (ok: boolean, warn = false) =>
-    ok ? (warn ? 'bg-amber-400' : 'bg-green-400') : 'bg-red-500/70';
+    !known ? 'bg-slate-400' : ok ? (warn ? 'bg-amber-400' : 'bg-emerald-500') : 'bg-red-500';
+  const ollamaState = !known ? t('statusUnknown') : s.ollama ? t('statusReady') : t('statusUnavailable');
+  const ragState = !known ? t('statusUnknown') : !s.rag ? t('statusUnavailable') : s.indexed ? t('statusReady') : t('statusLimited');
 
   return (
     <div
-      className={`flex items-center justify-center gap-4 text-xs font-semibold ${
+      className={`flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-sm font-medium ${
         isDark ? 'text-white/70' : 'text-gray-800'
       }`}
       title={t('status')}
     >
-      <span className="flex items-center gap-1.5">
-        <span className={`w-2.5 h-2.5 rounded-full ${dot(s.ollama)}`} />{t('ollamaStatus')}
+      <span className="flex items-center gap-1.5" title={`${t('ollamaStatus')}: ${ollamaState}`}>
+        <span aria-hidden="true" className={`h-2.5 w-2.5 rounded-full ${dot(s.ollama)}`} />
+        <span>{t('ollamaStatus')}</span>
+        <span className={isDark ? 'text-white/85' : 'text-gray-900'}>· {ollamaState}</span>
       </span>
-      <span className="flex items-center gap-1.5">
-        <span className={`w-2.5 h-2.5 rounded-full ${dot(s.rag, s.rag && !s.indexed)}`} />{t('ragStatus')}
+      <span className="flex items-center gap-1.5" title={`${t('ragStatus')}: ${ragState}`}>
+        <span aria-hidden="true" className={`h-2.5 w-2.5 rounded-full ${dot(s.rag, s.rag && !s.indexed)}`} />
+        <span>{t('ragStatus')}</span>
+        <span className={isDark ? 'text-white/85' : 'text-gray-900'}>· {ragState}</span>
       </span>
-      {s.ramPercent != null && (
+      {known && s.ramPercent != null && (
         <span className="hidden sm:inline tabular-nums">
           RAM {Math.round(s.ramPercent)}%
         </span>
       )}
-      {s.profile && (
+      {known && s.profile && (
         <span className="hidden sm:inline uppercase tabular-nums">
           {t('hardwareProfile')}: {s.profile}
         </span>

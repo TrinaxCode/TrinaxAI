@@ -4,7 +4,7 @@
 
 <p align="center">
   <a href="https://github.com/TrinaxCode/TrinaxAI"><img src="https://img.shields.io/github/stars/TrinaxCode/TrinaxAI?style=flat&amp;label=%E2%98%85&amp;color=006bbd" alt="GitHub stars"></a>
-  <a href="https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.2.6"><img src="https://img.shields.io/badge/version-1.2.6-006bbd" alt="Stable release: 1.2.6"></a>
+  <a href="https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.3.0"><img src="https://img.shields.io/badge/version-1.3.0-006bbd" alt="Stable release: 1.3.0"></a>
   <a href="https://github.com/TrinaxCode/TrinaxAI/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/TrinaxCode/TrinaxAI/ci.yml?branch=main&amp;label=CI" alt="CI status"></a>
   <a href="https://github.com/TrinaxCode/TrinaxAI/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0--or--later-006bbd" alt="License: AGPL-3.0-or-later"></a>
   <img src="https://img.shields.io/badge/macOS%20%7C%20Windows%20%7C%20Linux-4493F8?style=flat-square" alt="Supported platforms: macOS, Windows, and Linux">
@@ -13,7 +13,7 @@
 <p align="center"><sub><strong>English</strong> · <a href="README.es.md">Español</a></sub></p>
 <p align="center"><sub><a href="https://www.trinaxai.app/">Website</a> · <a href="../docs/README.md">Documentation</a> · <a href="../README.md">Home</a> · <a href="../docs/CHANGELOG.md">Changelog</a></sub></p>
 
-TrinaxAI 1.2.6 frontend built with React 19, TypeScript, and Vite 6 under AGPL-3.0-or-later. It provides direct Ollama chat, cited RAG, optional web search, deep research, a tool-using agent, image analysis, documents, local voice, memory, and installable PWA behavior.
+TrinaxAI 1.3.0 frontend built with React 19, TypeScript, Tailwind CSS 4, and Vite 6 under AGPL-3.0-or-later. It provides direct Ollama chat, cited RAG, optional web search, deep research, a tool-using agent, image analysis, documents, local voice, memory, and installable PWA behavior.
 
 [Project documentation](../docs/README.md) · [API reference](../docs/API_REFERENCE.md) · [Troubleshooting](../docs/TROUBLESHOOTING.md)
 
@@ -31,6 +31,7 @@ The browser normally uses same-origin `/api/*` URLs. This avoids mixed-content a
 ## Prerequisites
 
 - Node.js 22 or newer and npm; an active LTS release is recommended.
+- Chrome 111+, Safari 16.4+, or Firefox 128+ for Tailwind CSS 4 styles.
 - A running Ollama instance for chat/vision.
 - The Python backend for RAG, indexing, memory, shared state, and server voice.
 - Models configured in the onboarding wizard or environment.
@@ -57,6 +58,9 @@ Open `https://localhost:3334` when local certificates exist; without them the ga
 | `npm run check:bundle` | Check the generated frontend bundle budget. |
 | `npm run lint` | Run ESLint. |
 | `npx tsc --noEmit` | Type-check without building. |
+
+Bundle limits are 350 KiB per JavaScript chunk, 1536 KiB of JavaScript,
+132 KiB of CSS, and 4096 KiB for all build assets.
 
 The dev server binds to loopback by default. For an intentional LAN test, set
 `TRINAXAI_PWA_HOST=0.0.0.0`, use HTTPS, and pair every remote browser; never

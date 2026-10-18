@@ -56,6 +56,19 @@ describe('KnowledgeBrowser request races', () => {
     (window as any).__tc_browser_open = null;
   });
 
+  it('guides an empty browser to indexing only when this device can manage it', async () => {
+    apiMocks.getCollections.mockResolvedValue([]);
+    apiMocks.getCollectionSources.mockResolvedValue({ collection: 'default', sources: [] });
+
+    const { rerender } = render(<KnowledgeBrowser onBack={vi.fn()} canManageSystem />);
+    expect((await screen.findAllByText('noCollectionsHint')).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole('link', { name: 'openIndexing' })[0]).toHaveAttribute('href', '#/settings/indexing');
+
+    rerender(<KnowledgeBrowser onBack={vi.fn()} />);
+    expect(screen.queryAllByRole('link', { name: 'openIndexing' })).toHaveLength(0);
+    expect(screen.getAllByText('noCollectionsRemoteHint').length).toBeGreaterThan(0);
+  });
+
   it('ignores a stale collection response after switching collections', async () => {
     const general = deferred<{ collection: string; sources: ReturnType<typeof source>[] }>();
     apiMocks.getCollectionSources
@@ -66,6 +79,7 @@ describe('KnowledgeBrowser request races', () => {
     await waitFor(() => expect(screen.getAllByRole('button', { name: 'Docs' }).length).toBeGreaterThan(0));
     const docsButtons = screen.getAllByRole('button', { name: 'Docs' });
     await userEvent.click(docsButtons[0]);
+    expect(docsButtons[0]).toHaveAttribute('aria-current', 'true');
     general.resolve({ collection: 'default', sources: [source('stale.md')] });
 
     await waitFor(() => expect(screen.getByText('docs/manual.md')).toBeInTheDocument());
@@ -88,6 +102,7 @@ describe('KnowledgeBrowser request races', () => {
     const bButton = screen.getAllByText('b.md')[0].closest('button');
     expect(bButton).not.toBeNull();
     await userEvent.click(bButton!);
+    expect(bButton).toHaveAttribute('aria-current', 'true');
     first.resolve({ collection: 'docs', file: 'a.md', total: 0, chunks: [] });
 
     await waitFor(() => expect(screen.getAllByText('B').length).toBeGreaterThan(0));

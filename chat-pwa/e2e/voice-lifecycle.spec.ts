@@ -107,7 +107,6 @@ test('uses backend STT when Web Speech is unavailable', async ({ page }) => {
 
     Object.defineProperty(window, 'AudioContext', { configurable: true, value: FakeAudioContext });
     Object.defineProperty(window, 'MediaRecorder', { configurable: true, value: FakeMediaRecorder });
-    window.requestAnimationFrame = () => 0;
   });
   await page.route('**/api/rag/app-state', (route) => route.fulfill({
     status: 200,

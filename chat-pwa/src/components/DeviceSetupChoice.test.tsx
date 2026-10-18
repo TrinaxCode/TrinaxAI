@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import DeviceSetupChoice from './DeviceSetupChoice';
@@ -29,5 +29,18 @@ describe('DeviceSetupChoice', () => {
 
     await user.keyboard('{Enter}');
     expect(screen.getByRole('button', { name: /deviceSetupExisting/ })).toHaveFocus();
+  });
+
+  it('shows progress and then an error when new device setup fails', async () => {
+    const user = userEvent.setup();
+    let reject!: (reason: Error) => void;
+    const onNewDevice = vi.fn(() => new Promise<void>((_resolve, fail) => { reject = fail; }));
+    render(<DeviceSetupChoice onNewDevice={onNewDevice} />);
+
+    await user.click(screen.getByRole('button', { name: /deviceSetupNew/ }));
+    expect(screen.getByRole('button', { name: /loading/ })).toBeDisabled();
+    reject(new Error('unavailable'));
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('deviceSetupNewError'));
+    expect(screen.getByRole('button', { name: /deviceSetupNew/ })).toBeEnabled();
   });
 });

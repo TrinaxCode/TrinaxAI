@@ -496,7 +496,9 @@ def _research_sync(
         aggressive_quant=req.aggressive_quant,
         num_ctx=num_ctx,
         num_predict=num_predict,
-        thinking=config.TRINAXAI_THINKING_MODE if req.think is None else bool(req.think),
+        thinking=(config.TRINAXAI_THINKING_MODE and not (use_web and depth == 1))
+        if req.think is None
+        else bool(req.think),
     )
     # A normal web lookup needs one search and one synthesis. For an explicit
     # deep-research request (depth > 1), plan multiple focused searches so the

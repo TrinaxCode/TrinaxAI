@@ -133,6 +133,38 @@ describe('chat controller integration surface', () => {
     expect(screen.getByRole('textbox', { name: 'chat input' })).not.toHaveFocus();
   });
 
+  it('rotates the welcome every 4 seconds and two suggestions every 15 seconds until a conversation starts', async () => {
+    vi.useFakeTimers();
+    const random = vi.spyOn(Math, 'random').mockReturnValue(0.9);
+    try {
+      const props = baseProps();
+      const { result, rerender, unmount } = renderHook((value) => useChatController(value), { initialProps: props });
+      await act(async () => {});
+      const suggestions = result.current.displayChips.map((chip) => chip.label);
+      expect(result.current.motd).toBe('motd1');
+      expect(suggestions).toHaveLength(2);
+      act(() => vi.advanceTimersByTime(4_000));
+      expect(result.current.motd).toBe('motd2');
+      expect(result.current.displayChips.map((chip) => chip.label)).toEqual(suggestions);
+      random.mockReturnValue(0.1);
+      act(() => vi.advanceTimersByTime(11_000));
+      expect(result.current.motd).toBe('motd4');
+      expect(result.current.quickChipRotation).toBe(1);
+      expect(result.current.displayChips).toHaveLength(2);
+      expect(result.current.displayChips.map((chip) => chip.label)).not.toEqual(suggestions);
+      const rotatedSuggestions = result.current.displayChips.map((chip) => chip.label);
+      rerender({ ...props, messages: [{ role: 'user', content: 'Hello' }] });
+      act(() => vi.advanceTimersByTime(16_000));
+      expect(result.current.motd).toBe('motd4');
+      expect(result.current.quickChipRotation).toBe(1);
+      expect(result.current.displayChips.map((chip) => chip.label)).toEqual(rotatedSuggestions);
+      unmount();
+    } finally {
+      random.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
   it('covers exports, attachment menus, voice toggles, and collection fallback', async () => {
     localStorage.setItem('tc-research-mode', '1');
     const props = baseProps();

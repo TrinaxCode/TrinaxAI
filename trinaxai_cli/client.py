@@ -374,7 +374,7 @@ class TrinaxAPIClient:
         return bool(self._delete(f"/v1/memory/{mid}").get("deleted"))
 
     def refresh_memory(self) -> dict[str, Any]:
-        return self._post("/v1/memory/refresh", {})
+        return self._post("/v1/memory/refresh", {}, timeout=max(float(self.timeout), 300.0))
 
     def memory_summary(self) -> dict[str, Any]:
         return self._get("/v1/memory/summary")

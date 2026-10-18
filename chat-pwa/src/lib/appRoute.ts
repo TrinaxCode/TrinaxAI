@@ -60,7 +60,7 @@ function safeDecode(value?: string): string | undefined {
 
 /** Parse canonical `#/…` routes plus the legacy `#docs`/`#settings` links. */
 export function parseAppRoute(hash: string): AppRoute {
-  const normalized = hash.replace(/^#\/?/, '').replace(/\/$/, '');
+  const normalized = hash.replace(/^#\/?/, '').split('?', 1)[0].replace(/\/$/, '');
   const [head = '', detail] = normalized.split('/');
   if (head === 'docs') {
     return DOCS_SECTIONS.has(detail as DocsSection)

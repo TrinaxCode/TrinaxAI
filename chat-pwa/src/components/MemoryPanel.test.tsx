@@ -76,13 +76,21 @@ describe('MemoryPanel', () => {
   });
 
   it('surfaces backend failures instead of pretending memory is empty', async () => {
-    vi.mocked(listMemories).mockRejectedValue(new Error('memory backend unavailable'));
+    vi.mocked(listMemories).mockRejectedValueOnce(new Error('memory backend unavailable'));
+    const user = userEvent.setup();
 
     render(<MemoryPanel />);
 
     await waitFor(() => {
       expect(toast).toHaveBeenCalledWith('memory backend unavailable', 'error');
     });
+    expect(screen.getByRole('alert')).toHaveTextContent('memory backend unavailable');
+    expect(screen.queryByText('memoryEmpty')).not.toBeInTheDocument();
+    expect(screen.queryByText('memoryNoSummary')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'retry' }));
+    await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
+    expect(screen.getByText('memoryEmpty')).toBeInTheDocument();
   });
 
   it('does not let an older refresh overwrite a newer memory list', async () => {

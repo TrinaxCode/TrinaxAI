@@ -1,7 +1,7 @@
 import type { ChangeEvent, KeyboardEvent, ReactNode, RefObject } from 'react';
 import { useCallback, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { AnimatePresence, motion } from 'framer-motion';
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { MdClose, MdOpenInFull } from 'react-icons/md';
 import { useDialogAccessibility } from '../../hooks/useDialogAccessibility';
 
@@ -46,6 +46,7 @@ export default function ComposerLayout({
   rightActions,
   floatingContent,
 }: ComposerLayoutProps) {
+  const prefersReducedMotion = useReducedMotion();
   const shellRef = useRef<HTMLDivElement | null>(null);
   const leftSlotRef = useRef<HTMLDivElement | null>(null);
   const rightSlotRef = useRef<HTMLDivElement | null>(null);
@@ -148,7 +149,7 @@ export default function ComposerLayout({
       aria-keyshortcuts={ariaKeyShortcuts}
       name={name}
       disabled={disabled}
-      className={`block w-full resize-none overflow-y-hidden break-words bg-transparent text-sm leading-6 outline-none ${expandedEditor ? 'h-full min-h-0 flex-1 px-3 py-2' : stacked ? 'min-h-[42px] max-h-[360px] px-3 py-2' : 'h-6 min-h-6 max-h-6 px-0 py-0 leading-6'} ${!expandedEditor && canExpand ? 'pr-14' : ''} ${isDark ? 'text-white/70 placeholder-white/25' : 'text-gray-700 placeholder-gray-400'}`}
+      className={`block w-full resize-none overflow-y-hidden break-words bg-transparent text-base leading-6 outline-hidden ${expandedEditor ? 'h-full min-h-0 flex-1 pl-3 pr-14 py-2' : stacked ? 'min-h-[42px] max-h-[360px] px-3 py-2' : 'h-6 min-h-6 max-h-6 px-0 py-0 leading-6'} ${!expandedEditor && canExpand ? 'pr-14' : ''} ${isDark ? 'text-white/90 placeholder-white/50' : 'text-slate-900 placeholder-slate-500'}`}
       style={{ maxHeight: expandedEditor ? 'none' : stacked ? `${MAX_HEIGHT}px` : '24px' }}
     />
   );
@@ -171,7 +172,7 @@ export default function ComposerLayout({
     <button
       type="button"
       onClick={() => setExpanded(true)}
-      className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl transition-colors ${isDark ? 'bg-white/[0.06] text-white/55 hover:bg-white/[0.1] hover:text-white' : 'bg-gray-200 text-gray-500 hover:bg-gray-300 hover:text-gray-700'}`}
+      className={`grid h-11 w-11 shrink-0 place-items-center rounded-xl transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-[#4aa7ed] ${isDark ? 'bg-white/[0.08] text-white/80 hover:bg-white/[0.14] hover:text-white' : 'bg-slate-200 text-slate-700 hover:bg-slate-300 hover:text-slate-900'}`}
       aria-label={expandLabel}
     >
       <MdOpenInFull size={18} />
@@ -188,10 +189,10 @@ export default function ComposerLayout({
             <AnimatePresence>
               {canExpand && (
                 <motion.div
-                  initial={{ opacity: 0, scale: 0.82 }}
+                  initial={prefersReducedMotion ? false : { opacity: 0, scale: 0.82 }}
                   animate={{ opacity: 1, scale: 1 }}
                   exit={{ opacity: 0, scale: 0.82 }}
-                  transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
+                  transition={{ duration: prefersReducedMotion ? 0 : 0.16, ease: [0.16, 1, 0.3, 1] }}
                   className="absolute right-1 top-1 z-10"
                 >
                   {expandButton}
@@ -211,26 +212,26 @@ export default function ComposerLayout({
             <motion.div
               data-modal-root
               className="fixed inset-0 z-[80] flex items-center justify-center p-2 sm:p-4"
-              initial={{ opacity: 0 }}
+              initial={prefersReducedMotion ? false : { opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              transition={{ duration: 0.18, ease: 'easeOut' }}
+              transition={{ duration: prefersReducedMotion ? 0 : 0.18, ease: 'easeOut' }}
             >
               <div aria-hidden="true" className="absolute inset-0 bg-black/60" onClick={closeExpanded} />
               <motion.div
                 ref={dialogRef}
                 onKeyDown={onDialogKeyDown}
-                initial={{ opacity: 0, y: 24, scale: 0.97 }}
+                initial={prefersReducedMotion ? false : { opacity: 0, y: 24, scale: 0.97 }}
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: 24, scale: 0.97 }}
-                transition={{ duration: 0.24, ease: [0.16, 1, 0.3, 1] }}
-                className={`relative z-10 flex h-[calc(100dvh-1rem)] max-h-[calc(100dvh-1rem)] w-full max-w-[96rem] flex-col overscroll-contain rounded-2xl border p-3 shadow-2xl sm:h-[calc(100dvh-2rem)] sm:max-h-[calc(100dvh-2rem)] sm:p-5 ${isDark ? 'border-white/[0.1] bg-[#111]' : 'border-gray-200 bg-white'}`}
+                transition={{ duration: prefersReducedMotion ? 0 : 0.24, ease: [0.16, 1, 0.3, 1] }}
+                className={`relative z-10 flex h-[calc(100dvh-1rem)] max-h-[calc(100dvh-1rem)] w-full max-w-[96rem] flex-col overscroll-contain rounded-2xl border p-3 shadow-2xl sm:h-[calc(100dvh-2rem)] sm:max-h-[calc(100dvh-2rem)] sm:p-5 ${isDark ? 'border-white/15 bg-[#111c29]' : 'border-slate-200 bg-white'}`}
                 role="dialog"
                 aria-modal="true"
                 aria-label={expandLabel}
               >
-                <div className={`relative flex min-h-0 flex-1 flex-col rounded-xl border px-2 py-1 ${isDark ? 'border-white/[0.08] bg-white/[0.03]' : 'border-gray-200 bg-gray-50'}`}>
-                  <button ref={closeButtonRef} type="button" onClick={closeExpanded} className={`absolute right-2 top-2 z-10 grid h-10 w-10 place-items-center rounded-xl ${isDark ? 'bg-black/30 text-white/60 hover:bg-white/[0.08] hover:text-white' : 'bg-white/80 text-gray-500 hover:bg-gray-100 hover:text-gray-800'}`} aria-label={closeLabel} title={closeLabel}><MdClose size={20} /></button>
+                <div className={`relative flex min-h-0 flex-1 flex-col rounded-xl border px-2 py-1 ${isDark ? 'border-white/10 bg-white/[0.04]' : 'border-slate-200 bg-slate-50'}`}>
+                  <button ref={closeButtonRef} type="button" onClick={closeExpanded} className={`absolute right-2 top-2 z-10 grid h-11 w-11 place-items-center rounded-xl focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-[#4aa7ed] ${isDark ? 'bg-black/30 text-white/80 hover:bg-white/[0.1] hover:text-white' : 'bg-white text-slate-600 hover:bg-slate-100 hover:text-slate-900'}`} aria-label={closeLabel} title={closeLabel}><MdClose size={20} /></button>
                   <div className="min-h-0 flex-1 overflow-hidden">{editorSurface(expandedInputRef, true)}</div>
                   <div className="mt-2 pt-2">{actionRow()}</div>
                 </div>

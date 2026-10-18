@@ -45,15 +45,16 @@ export default function VoiceCallView({ isDark, listening, speaking, thinking, o
       variants={container}
       initial={reduceMotion ? false : 'hidden'}
       animate="show"
-      className={`relative flex min-h-0 flex-1 flex-col items-center justify-center overflow-hidden px-6 pb-28 pt-12 ${isDark ? 'bg-[#05080d]/70' : 'bg-[#f4f9fd]/70'}`}
+      className={`voice-call-surface relative flex min-h-0 flex-1 flex-col items-center justify-center overflow-hidden px-6 pb-28 pt-12 ${isDark ? 'bg-[#05080d]/70' : 'bg-[#f4f9fd]/70'}`}
       aria-label={t('voiceMode')}
     >
+      <h1 className="sr-only">{t('voiceMode')}</h1>
       {/* Subtle radial overlay for depth */}
       <motion.div variants={fade} className={`pointer-events-none absolute inset-0 ${isDark ? 'bg-[radial-gradient(circle_at_50%_38%,rgba(78,163,224,0.14),transparent_50%),radial-gradient(circle_at_18%_82%,rgba(0,107,189,0.10),transparent_35%)]' : 'bg-[radial-gradient(circle_at_50%_38%,rgba(78,163,224,0.12),transparent_50%),radial-gradient(circle_at_18%_82%,rgba(0,107,189,0.08),transparent_35%)]'}`} />
       <motion.div variants={fade} className={`pointer-events-none absolute inset-x-0 bottom-0 h-40 bg-gradient-to-t ${isDark ? 'from-black/50' : 'from-white/70'} to-transparent`} />
 
       <motion.div variants={item} className="relative z-10 flex flex-col items-center text-center">
-        <div className="relative grid h-52 w-52 place-items-center sm:h-60 sm:w-60">
+        <div className="voice-call-orb relative grid h-52 w-52 place-items-center sm:h-60 sm:w-60">
           {[1, 0.78, 0.58].map((scale, index) => (
             <motion.span
               key={scale}
@@ -64,7 +65,7 @@ export default function VoiceCallView({ isDark, listening, speaking, thinking, o
             />
           ))}
           <motion.div
-            className="relative grid h-28 w-28 place-items-center rounded-full border border-white/30 bg-gradient-to-br from-[#4ea3e0] via-[#006bbd] to-[#004d8a] shadow-[0_20px_65px_rgba(0,107,189,0.42)] sm:h-32 sm:w-32"
+            className="voice-call-core relative grid h-28 w-28 place-items-center rounded-full border border-white/30 bg-gradient-to-br from-[#4ea3e0] via-[#006bbd] to-[#004d8a] shadow-[0_20px_65px_rgba(0,107,189,0.42)] sm:h-32 sm:w-32"
             animate={active && !reduceMotion ? { scale: [1, 1.055, 1], boxShadow: ['0 20px 55px rgba(0,107,189,.34)', '0 20px 80px rgba(78,163,224,.55)', '0 20px 55px rgba(0,107,189,.34)'] } : { scale: 1 }}
             transition={{ duration: speaking ? 1.05 : 1.8, repeat: active && !reduceMotion ? Infinity : 0, ease: 'easeInOut' }}
           >
@@ -73,10 +74,10 @@ export default function VoiceCallView({ isDark, listening, speaking, thinking, o
             {speaking ? <MdVolumeUp size={38} className="relative text-white" /> : <MdMic size={38} className="relative text-white" />}
           </motion.div>
         </div>
-        <motion.p key={status} initial={reduceMotion ? false : { opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} className={`mt-6 text-lg font-semibold ${foreground}`} role="status" aria-live="polite">
+        <motion.p key={status} initial={reduceMotion ? false : { opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} className={`voice-call-status mt-6 text-lg font-semibold ${foreground}`} role="status" aria-live="polite">
           {status}
         </motion.p>
-        <div className="mt-4 flex h-6 items-center justify-center gap-1" aria-hidden="true">
+        <div className="voice-call-bars mt-4 flex h-6 items-center justify-center gap-1" aria-hidden="true">
           {[0, 1, 2, 3, 4].map((bar) => (
             <motion.span
               key={bar}
@@ -87,7 +88,7 @@ export default function VoiceCallView({ isDark, listening, speaking, thinking, o
           ))}
         </div>
       </motion.div>
-      <motion.button variants={item} autoFocus type="button" onClick={onEnd} className="absolute bottom-[max(2rem,env(safe-area-inset-bottom))] z-10 flex min-h-14 items-center gap-3 rounded-full bg-red-500 px-6 font-semibold text-white shadow-lg shadow-red-500/25 transition hover:bg-red-600 active:scale-95" aria-label={t('exitVoiceMode')} title={t('exitVoiceMode')}>
+      <motion.button variants={item} autoFocus type="button" onClick={onEnd} className="absolute bottom-[max(2rem,env(safe-area-inset-bottom))] z-10 flex min-h-14 items-center gap-3 rounded-full bg-red-600 px-6 font-semibold text-white shadow-lg shadow-red-500/25 transition hover:bg-red-700 active:scale-95" aria-label={t('exitVoiceMode')} title={t('exitVoiceMode')}>
         <MdCallEnd size={24} />
         <span>{t('exitVoiceMode')}</span>
       </motion.button>

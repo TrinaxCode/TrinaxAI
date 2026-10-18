@@ -1,4 +1,4 @@
-import { AnimatePresence, motion } from 'framer-motion';
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { MdVisibilityOff } from 'react-icons/md';
 import type { ChatController } from '../../hooks/useChatController';
 import AttachmentPreview from './AttachmentPreview';
@@ -70,6 +70,7 @@ export function ChatInterfaceView({ controller }: { controller: ChatController }
     motd,
     onEngineChange,
     onMenuToggle,
+    menuOpen,
     onNavigate,
     onPickDocs,
     onPickImage,
@@ -115,6 +116,8 @@ export function ChatInterfaceView({ controller }: { controller: ChatController }
     webSearchMode,
     handleWebSearchModeChange,
   } = controller;
+  const prefersReducedMotion = useReducedMotion();
+  const sectionTransition = prefersReducedMotion ? { duration: 0 } : SECTION_SWAP;
 
   return (
     <div
@@ -131,10 +134,10 @@ export function ChatInterfaceView({ controller }: { controller: ChatController }
           <motion.div
             key="drop-overlay"
             role="status"
-            initial={{ opacity: 0, scale: 0.985 }}
+            initial={prefersReducedMotion ? false : { opacity: 0, scale: 0.985 }}
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.985 }}
-            transition={{ duration: 0.18, ease: 'easeOut' }}
+            transition={{ duration: prefersReducedMotion ? 0 : 0.18, ease: 'easeOut' }}
             className={`pointer-events-none absolute inset-3 z-[70] grid place-items-center rounded-2xl border-2 border-dashed ${isDark ? 'border-[#4ea3e0] bg-[#006bbd]/20 text-white' : 'border-[#006bbd] bg-white/85 text-[#004d8a]'}`}
           >
             <span className="rounded-lg px-4 py-2 text-sm font-medium shadow-lg">{t('dropFilesHere')}</span>
@@ -150,10 +153,10 @@ export function ChatInterfaceView({ controller }: { controller: ChatController }
             key="voice-call"
             data-voice-call
             className="flex min-h-0 flex-1 flex-col"
-            initial={{ opacity: 0, y: 24, scale: 0.98 }}
+            initial={prefersReducedMotion ? false : { opacity: 0, y: 24, scale: 0.98 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 24, scale: 0.98 }}
-            transition={SECTION_SWAP}
+            transition={sectionTransition}
           >
             <VoiceCallView
               isDark={isDark}
@@ -168,10 +171,10 @@ export function ChatInterfaceView({ controller }: { controller: ChatController }
             key="chat-flow"
             data-chat-flow
             className="flex min-h-0 flex-1 flex-col"
-            initial={{ opacity: 0, y: -16 }}
+            initial={prefersReducedMotion ? false : { opacity: 0, y: -16 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -16 }}
-            transition={SECTION_SWAP}
+            transition={sectionTransition}
           >
             <ChatHeader
               engine={engine}
@@ -183,6 +186,7 @@ export function ChatInterfaceView({ controller }: { controller: ChatController }
               webSearchAvailable={webSearchAvailable === true}
               exportMenuOpen={exportMenuOpen}
               onMenuToggle={onMenuToggle}
+              menuOpen={menuOpen}
               onEngineChange={onEngineChange}
               onResearchModeChange={setResearchMode}
               onWebSearchModeChange={handleWebSearchModeChange}
@@ -197,7 +201,7 @@ export function ChatInterfaceView({ controller }: { controller: ChatController }
               <div className="shrink-0 px-3 pt-3 sm:px-5">
                 <div
                   role="status"
-                  className={`mx-auto flex max-w-xl items-start gap-2.5 rounded-xl border px-3.5 py-2.5 text-xs shadow-sm ${isDark ? 'border-amber-300/25 bg-amber-300/[0.10] text-amber-100/90 shadow-black/20' : 'border-amber-400/45 bg-amber-50 text-amber-900/80 shadow-amber-900/5'}`}
+                  className={`mx-auto flex max-w-xl items-start gap-2.5 rounded-xl border px-3.5 py-2.5 text-sm leading-relaxed shadow-sm ${isDark ? 'border-amber-300/25 bg-amber-300/[0.10] text-amber-100/90 shadow-black/20' : 'border-amber-400/45 bg-amber-50 text-amber-900/80 shadow-amber-900/5'}`}
                 >
                   <MdVisibilityOff size={17} className="mt-0.5 shrink-0" />
                   <span><strong>{t('temporaryChat')}.</strong> {t('temporaryChatDescription')}</span>

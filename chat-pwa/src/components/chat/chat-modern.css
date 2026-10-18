@@ -1,8 +1,7 @@
 /* Modern chat surfaces for TrinaxAI.
    Presentation only — no behaviour contracts live here.
-   Targets the ChatGPT / Claude / Grok language: assistant answers read as
-   clean prose, user turns stay as compact bubbles, actions stay quiet until
-   hover, and the composer is one integrated bar. */
+   Assistant answers read as prose, user turns stay as compact bubbles,
+   actions stay quiet until hover, and the composer is one integrated bar. */
 
 :root {
   --tc-frame-border: rgba(22, 141, 226, 0.28);
@@ -14,7 +13,6 @@
   --tc-index-card-bg: linear-gradient(180deg, rgba(0, 107, 189, 0.12), rgba(0, 107, 189, 0.03));
   --tc-index-track: rgba(0, 107, 189, 0.16);
   --tc-index-fill-from: #006bbd;
-  --tc-index-fill-to: #2f9bf0;
   --tc-index-fill-glow: 0 0 10px rgba(0, 107, 189, 0.45);
 }
 
@@ -41,11 +39,6 @@ html.light {
   transition:
     background-color 0.22s ease,
     transform 0.22s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.sidebar-surface .sidebar-session-row:hover,
-.sidebar-surface [data-session-row]:hover {
-  transform: translateX(2px);
 }
 
 .sidebar-surface .sidebar-active-indicator {
@@ -90,8 +83,13 @@ html.light .agent-page .agent-session-indicator {
    ============================================ */
 
 .chat-messages {
-  padding-top: 1.4rem;
-  padding-bottom: 1.4rem;
+  padding-top: 2rem;
+  padding-bottom: 2rem;
+}
+
+.chat-messages > div {
+  max-width: 56rem;
+  margin-inline: auto;
 }
 
 .chat-bubble-wrap {
@@ -100,31 +98,45 @@ html.light .agent-page .agent-session-indicator {
 }
 
 /* ============================================
-   Assistant answers — the same card language as the user turn, drawn in the
-   composer's quiet surface so both voices read as bubbles.
+   Assistant answers read as unframed prose beside a compact brand avatar.
    ============================================ */
 
 .chat-bubble.chat-bubble-assistant,
 .chat-bubble.chat-bubble-assistant-dark,
 .chat-bubble.chat-bubble-assistant-light {
-  background: rgba(10, 16, 24, 0.72);
-  border: 1px solid rgba(22, 141, 226, 0.22);
-  animation: tc-surface-in 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
-  transition: background-color 0.25s ease;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  padding: 0.15rem 0;
+  animation: none;
+  font-size: 0.95rem;
 }
 
 html.light .chat-bubble.chat-bubble-assistant,
 html.light .chat-bubble.chat-bubble-assistant-dark,
 html.light .chat-bubble.chat-bubble-assistant-light {
-  background: rgba(255, 255, 255, 0.92);
+  background: transparent;
 }
 
 .chat-bubble-assistant-dark {
-  color: rgba(237, 244, 251, 0.93);
+  color: #e4edf5;
 }
 
 .chat-bubble-assistant-light {
-  color: #26313e;
+  color: #24384a;
+}
+
+.chat-row.justify-end .chat-bubble {
+  background: #16466b;
+  border: 1px solid rgba(83, 173, 231, 0.16);
+  border-radius: 1.2rem 1.2rem 0.4rem 1.2rem;
+  font-size: 0.95rem;
+}
+
+html.light .chat-row.justify-end .chat-bubble {
+  background: #dcecf8;
+  border-color: #c9dfef;
+  color: #173d5c;
 }
 
 /* Message bubbles keep a flat framed surface: no drop shadows. */
@@ -137,14 +149,15 @@ html.light .chat-bubble.chat-bubble-assistant-light {
 }
 
 html.dark .chat-assistant-avatar {
-  background: #030507;
+  background: #000;
 }
 
 html.light .chat-assistant-avatar {
-  background: #ffffff;
+  background: #fff;
+  border: 1px solid #e2e8f0;
 }
 
-/* Empty state keeps its original TrinaxAI hero: no added ring or halo. */
+/* Keep welcome copy within a comfortable reading width. */
 
 .chat-empty-motd {
   text-wrap: balance;
@@ -166,16 +179,19 @@ html.light .chat-bubble.bg-\[\#006bbd\] {
 .chat-model-label {
   margin-left: auto;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 0.56rem;
+  font-size: 0.6875rem;
   letter-spacing: 0.02em;
+  max-width: min(50%, 12rem);
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
-  color: rgba(203, 213, 225, 0.5);
+  color: rgba(203, 213, 225, 0.7);
   opacity: 0;
   transition: opacity 0.2s ease;
 }
 
 html.light .chat-model-label {
-  color: rgba(71, 85, 105, 0.65);
+  color: rgba(71, 85, 105, 0.85);
 }
 
 .chat-row:hover .chat-model-label,
@@ -183,10 +199,9 @@ html.light .chat-model-label {
   opacity: 1;
 }
 
-/* Keep the action row quiet until the message is hovered or focused. While it
-   is invisible it must not capture taps, or a tap right under a bubble fires an
-   action nobody can see. Touch screens have no hover, so there the actions stay
-   visible instead of becoming unreachable. */
+/* Keep completed-message actions quiet until hover or focus; interrupted and
+   failed responses keep their status and recovery action visible. Hidden
+   actions do not capture taps, and touch screens always show them. */
 .chat-row .chat-actions {
   opacity: 0;
   pointer-events: none;
@@ -194,15 +209,39 @@ html.light .chat-model-label {
 }
 
 .chat-row:hover .chat-actions,
-.chat-row:focus-within .chat-actions {
+.chat-row:focus-within .chat-actions,
+.chat-row .chat-actions[data-completion-status="pending"],
+.chat-row .chat-actions[data-completion-status="cancelled"],
+.chat-row .chat-actions[data-completion-status="error"] {
   opacity: 1;
   pointer-events: auto;
+}
+
+.chat-row .chat-actions button:focus-visible {
+  outline: 2px solid #4aa7ed;
+  outline-offset: 2px;
 }
 
 @media (hover: none), (pointer: coarse) {
   .chat-row .chat-actions {
     opacity: 1;
     pointer-events: auto;
+  }
+
+  .chat-row .chat-actions button {
+    display: inline-flex;
+    min-width: 2.75rem;
+    min-height: 2.75rem;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .chat-row .chat-model-label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-size: 0.6875rem;
+    opacity: 1;
   }
 }
 
@@ -224,17 +263,16 @@ html.light .chat-model-label {
     background-color 0.3s ease;
 }
 
-/* Dark mode keeps the bar clearly above the black page with a flat, slightly
-   translucent grey surface: no gradient and no blue halo. */
+/* Let the waves show through without losing the editor's contrast. */
 html.dark .composer-surface {
-  border-color: rgba(255, 255, 255, 0.10);
-  background: rgba(148, 163, 184, 0.22);
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+  border-color: #35506a;
+  background: rgba(26, 42, 58, 0.78);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.24);
 }
 
 html.light .composer-surface {
-  border-color: rgba(0, 107, 189, 0.22);
-  background: rgba(255, 255, 255, 0.92);
+  border-color: #cbd9e5;
+  background: rgba(255, 255, 255, 0.85);
 }
 
 .composer-surface:focus-within {
@@ -319,6 +357,20 @@ html.light .composer-surface > div:last-child button[aria-pressed="true"] svg {
   align-items: center;
   gap: 0.5rem 0.75rem;
   padding: 0.55rem 0;
+}
+
+@media (max-width: 640px) {
+  .tc-sources-card .tc-sources-row {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .tc-sources-card .tc-sources-actions {
+    grid-column: 2;
+  }
+
+  .tc-sources-card .tc-sources-row > pre {
+    grid-column: 1 / -1;
+  }
 }
 
 .tc-sources-card .tc-sources-row + .tc-sources-row {
@@ -453,28 +505,9 @@ html.light .tc-sources-score {
 .tc-index-fill {
   height: 100%;
   border-radius: 9999px;
-  background-image: linear-gradient(90deg, var(--tc-index-fill-from), var(--tc-index-fill-to));
+  background: var(--tc-index-fill-from);
   box-shadow: var(--tc-index-fill-glow);
   transition: width 0.55s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-/* A batch in flight cannot move the exact percentage yet (embeddings report
-   once per completed node batch). The sheen says "working" without inventing a
-   number the counters do not support. */
-.tc-index-fill--live {
-  background-image:
-    linear-gradient(90deg, var(--tc-index-fill-from), var(--tc-index-fill-to)),
-    linear-gradient(
-      100deg,
-      rgba(255, 255, 255, 0) 30%,
-      rgba(255, 255, 255, 0.5) 50%,
-      rgba(255, 255, 255, 0) 70%
-    );
-  background-size:
-    100% 100%,
-    220% 100%;
-  background-repeat: no-repeat;
-  animation: tc-index-sheen 1.9s linear infinite;
 }
 
 .tc-index-metric {
@@ -518,21 +551,7 @@ html.light .tc-sources-score {
   }
 }
 
-@keyframes tc-index-sheen {
-  from {
-    background-position:
-      0 0,
-      200% 0;
-  }
-  to {
-    background-position:
-      0 0,
-      -120% 0;
-  }
-}
-
-/* Ambient motion belongs to the empty-chat hero (.animate-glow in index.css).
-   Conversation avatars stay still so the answer keeps the focus. */
+/* Conversation avatars stay still so the answer keeps the focus. */
 
 @media (prefers-reduced-motion: reduce) {
   .chat-bubble-wrap,
@@ -555,4 +574,12 @@ html.light .tc-sources-score {
   .browser-page .browser-file-row:hover {
     transform: none;
   }
+}
+
+@media (max-height: 420px) {
+  .voice-call-surface { padding-top: 0.5rem; padding-bottom: 5rem; }
+  .voice-call-orb { width: 8rem; height: 8rem; }
+  .voice-call-core { width: 5rem; height: 5rem; }
+  .voice-call-status { margin-top: 0.5rem; font-size: 1rem; }
+  .voice-call-bars { margin-top: 0.25rem; height: 1rem; }
 }

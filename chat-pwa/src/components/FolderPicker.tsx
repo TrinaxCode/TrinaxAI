@@ -67,19 +67,19 @@ export default function FolderPicker({ initialPath, onSelect, onClose }: FolderP
 
   useEffect(() => load(initialPath), [load, initialPath]);
 
-  const panel = isDark ? 'bg-[#111] border-white/10 text-white' : 'bg-white border-gray-200 text-gray-900';
+  const panel = isDark ? 'bg-[#101a26] border-white/10 text-white' : 'bg-white border-gray-200 text-gray-900';
   const rowHover = isDark ? 'hover:bg-white/[0.06]' : 'hover:bg-gray-100';
-  const subtle = isDark ? 'text-white/45' : 'text-gray-400';
+  const subtle = isDark ? 'text-white/60' : 'text-gray-600';
 
   return createPortal(
-    <div data-modal-root className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+    <div data-modal-root className="fixed inset-0 z-[60] flex items-center justify-center p-3 sm:p-4">
       <div className={`absolute inset-0 bg-black/50 backdrop-blur-sm ${closing ? 'animate-overlay-out' : 'animate-overlay-in'}`} onClick={handleClose} />
-      <div ref={dialogRef} onKeyDown={onKeyDown} role="dialog" aria-modal="true" aria-label={t('agentPickFolder')} className={`relative z-10 flex h-[70vh] max-h-[560px] w-full max-w-lg flex-col overscroll-contain overflow-hidden rounded-2xl border shadow-2xl ${closing ? 'animate-modal-out' : 'animate-modal-in'} ${panel}`}>
+      <div ref={dialogRef} onKeyDown={onKeyDown} role="dialog" aria-modal="true" aria-label={t('agentPickFolder')} className={`relative z-10 flex h-[calc(100dvh-1.5rem)] max-h-[640px] w-full max-w-lg flex-col overscroll-contain overflow-hidden rounded-2xl border shadow-2xl sm:h-[70dvh] ${closing ? 'animate-modal-out' : 'animate-modal-in'} ${panel}`}>
         {/* Header */}
         <div className={`flex shrink-0 items-center gap-2 border-b px-4 py-3 ${isDark ? 'border-white/10' : 'border-gray-200'}`}>
-          <MdFolder size={18} className="text-[#006bbd]" />
-          <span className="text-sm font-semibold">{t('agentPickFolder')}</span>
-          <button ref={closeButtonRef} onClick={handleClose} className={`ml-auto rounded-lg p-1.5 ${rowHover}`} aria-label={t('close')}>
+          <MdFolder size={20} className={isDark ? 'text-[#4aa7ed]' : 'text-[#006bbd]'} />
+          <span className="text-base font-semibold">{t('agentPickFolder')}</span>
+          <button ref={closeButtonRef} onClick={handleClose} className={`ml-auto grid h-11 w-11 place-items-center rounded-lg ${rowHover}`} aria-label={t('close')}>
             <MdClose size={18} />
           </button>
         </div>
@@ -88,7 +88,7 @@ export default function FolderPicker({ initialPath, onSelect, onClose }: FolderP
         <div className={`flex shrink-0 items-center gap-1.5 border-b px-3 py-2 ${isDark ? 'border-white/10' : 'border-gray-200'}`}>
           <button
             onClick={() => load(listing?.home)}
-            className={`rounded-lg p-1.5 ${rowHover}`}
+            className={`grid h-11 w-11 shrink-0 place-items-center rounded-lg ${rowHover}`}
             title={t('agentHomeFolder')}
             aria-label={t('agentHomeFolder')}
           >
@@ -97,13 +97,13 @@ export default function FolderPicker({ initialPath, onSelect, onClose }: FolderP
           <button
             onClick={() => listing?.parent && load(listing.parent)}
             disabled={!listing?.parent}
-            className={`rounded-lg p-1.5 ${rowHover} disabled:opacity-30`}
+            className={`grid h-11 w-11 shrink-0 place-items-center rounded-lg ${rowHover} disabled:opacity-30`}
             title={t('agentParentFolder')}
             aria-label={t('agentParentFolder')}
           >
             <MdArrowUpward size={16} />
           </button>
-          <span className={`min-w-0 flex-1 truncate font-mono text-xs ${subtle}`} title={listing?.path}>
+          <span className={`min-w-0 flex-1 truncate font-mono text-sm ${subtle}`} title={listing?.path}>
             {listing?.path ?? '...'}
           </span>
         </div>
@@ -113,9 +113,9 @@ export default function FolderPicker({ initialPath, onSelect, onClose }: FolderP
           {loading ? (
             <div className={`py-8 text-center text-sm ${subtle}`}>{t('loading')}</div>
           ) : error ? (
-            <div role="alert" className="px-3 py-8 text-center text-sm text-red-400">
+            <div role="alert" className={`px-3 py-8 text-center text-sm ${isDark ? 'text-red-300' : 'text-red-700'}`}>
               <p>{error}</p>
-              <button type="button" onClick={() => setRepairOpen(true)} className="mt-2 text-[#006bbd] underline underline-offset-2">
+              <button type="button" onClick={() => setRepairOpen(true)} className="mt-2 min-h-10 text-[#006bbd] underline underline-offset-2">
                 {t('fixError')}
               </button>
             </div>
@@ -127,9 +127,9 @@ export default function FolderPicker({ initialPath, onSelect, onClose }: FolderP
                 key={dir.path}
                 onClick={() => dir.readable && load(dir.path)}
                 disabled={!dir.readable}
-                className={`flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm ${rowHover} disabled:opacity-40`}
+                className={`flex min-h-11 w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm ${rowHover} disabled:opacity-40`}
               >
-                {dir.readable ? <MdFolder size={17} className="shrink-0 text-[#006bbd]" /> : <MdLock size={15} className={`shrink-0 ${subtle}`} />}
+                {dir.readable ? <MdFolder size={17} className={`shrink-0 ${isDark ? 'text-[#4aa7ed]' : 'text-[#006bbd]'}`} /> : <MdLock size={15} className={`shrink-0 ${subtle}`} />}
                 <span className="min-w-0 truncate">{dir.name}</span>
               </button>
             ))
@@ -137,17 +137,17 @@ export default function FolderPicker({ initialPath, onSelect, onClose }: FolderP
         </div>
 
         {/* Footer — confirm current directory */}
-        <div className={`flex shrink-0 items-center justify-end gap-2 border-t px-4 py-3 ${isDark ? 'border-white/10' : 'border-gray-200'}`}>
+        <div className={`flex shrink-0 flex-col-reverse gap-2 border-t px-4 py-3 sm:flex-row sm:justify-end ${isDark ? 'border-white/10' : 'border-gray-200'}`}>
           <button
             onClick={handleClose}
-            className={`rounded-lg px-3 py-1.5 text-sm font-medium ${isDark ? 'bg-white/[0.06] text-white/70 hover:bg-white/10' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+            className={`min-h-11 w-full rounded-lg px-3 text-sm font-medium sm:w-auto ${isDark ? 'bg-white/[0.06] text-white/70 hover:bg-white/10' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
           >
             {t('cancel')}
           </button>
           <button
             onClick={() => listing && handleSelect(listing.path)}
             disabled={!listing}
-            className="rounded-lg bg-[#006bbd] px-4 py-1.5 text-sm font-medium text-white hover:bg-[#0059a0] disabled:opacity-40"
+            className="min-h-11 w-full rounded-lg bg-[#006bbd] px-4 text-sm font-medium text-white hover:bg-[#0059a0] disabled:opacity-40 sm:w-auto"
           >
             {t('agentUseThisFolder')}
           </button>

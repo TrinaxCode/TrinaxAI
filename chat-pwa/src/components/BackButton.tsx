@@ -18,7 +18,7 @@ export default function BackButton({ onClick, label, isDark, buttonRef, classNam
       type="button"
       onClick={onClick}
       aria-label={label}
-      className={`inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-xl p-2 transition-[background-color,color,transform] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4aa7ed] active:scale-95 ${tone} ${className}`}
+      className={`inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-xl p-2 transition-[background-color,color,transform] focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-[#4aa7ed] active:scale-95 ${tone} ${className}`}
     >
       <MdArrowBack size={20} aria-hidden="true" />
     </button>

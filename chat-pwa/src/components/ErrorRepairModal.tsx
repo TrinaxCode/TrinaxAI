@@ -1,6 +1,7 @@
 import { useId, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'framer-motion';
+import { MdErrorOutline } from 'react-icons/md';
 import { useDialogAccessibility } from '../hooks/useDialogAccessibility';
 
 interface ErrorRepairModalProps {
@@ -48,7 +49,7 @@ export default function ErrorRepairModal({
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
         >
-          <div aria-hidden="true" className="absolute inset-0 bg-black/60" onClick={onCancel} />
+          <div aria-hidden="true" className="absolute inset-0 bg-[#07111e]/70 backdrop-blur-sm" onClick={onCancel} />
           <motion.div
             ref={dialogRef}
             role="dialog"
@@ -59,20 +60,21 @@ export default function ErrorRepairModal({
             initial={{ opacity: 0, scale: 0.92, y: 20 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.92, y: 20 }}
-            className={`relative w-[calc(100%_-_2rem)] max-w-sm max-h-[calc(100dvh_-_2rem)] overflow-y-auto rounded-2xl border p-5 shadow-2xl sm:p-6 ${
-              dark ? 'border-white/[0.08] bg-gray-900' : 'border-gray-200 bg-white'
+            className={`relative max-h-[calc(100dvh_-_2rem)] w-full max-w-sm overscroll-contain overflow-y-auto rounded-2xl border p-5 shadow-[0_24px_80px_rgba(4,19,35,0.28)] sm:p-6 ${
+              dark ? 'border-white/15 bg-[#111c29] shadow-[0_24px_80px_rgba(0,0,0,0.55)]' : 'border-slate-200 bg-white'
             }`}
           >
-            <h3 id={titleId} className={`mb-2 text-lg font-semibold ${dark ? 'text-white' : 'text-gray-900'}`}>{title}</h3>
-            <p className={`mb-3 text-sm ${dark ? 'text-white/60' : 'text-gray-600'}`}>{message}</p>
-            <p id={descriptionId} className={`mb-5 whitespace-pre-line text-sm ${dark ? 'text-white/75' : 'text-gray-700'}`}>{details}</p>
-            <div className="flex gap-3">
+            <span className={`mb-4 grid h-11 w-11 place-items-center rounded-xl ${dark ? 'bg-red-400/10 text-red-300' : 'bg-red-50 text-red-700'}`} aria-hidden="true"><MdErrorOutline size={24} /></span>
+            <h3 id={titleId} className={`mb-2 text-lg font-semibold ${dark ? 'text-white' : 'text-slate-900'}`}>{title}</h3>
+            <p className={`mb-3 text-sm leading-relaxed ${dark ? 'text-white/75' : 'text-slate-600'}`}>{message}</p>
+            <p id={descriptionId} className={`mb-5 whitespace-pre-line rounded-xl border p-3 text-sm leading-relaxed ${dark ? 'border-white/10 bg-white/[0.04] text-white/80' : 'border-slate-200 bg-slate-50 text-slate-700'}`}>{details}</p>
+            <div className="flex flex-wrap gap-3">
               {showCancel && (
                 <button
                   ref={cancelRef}
                   type="button"
                   onClick={onCancel}
-                  className={`flex-1 rounded-xl py-2.5 text-sm font-medium transition-colors ${dark ? 'bg-white/[0.06] text-white/70 hover:bg-white/[0.1]' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
+                  className={`min-h-11 min-w-0 flex-1 rounded-xl px-3 py-2 text-sm font-medium transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-[#4aa7ed] ${dark ? 'bg-white/[0.08] text-white/85 hover:bg-white/[0.14]' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}
                 >
                   {cancelLabel}
                 </button>
@@ -82,7 +84,7 @@ export default function ErrorRepairModal({
                 type="button"
                 onClick={onConfirm}
                 disabled={confirmDisabled}
-                className={`${showCancel ? 'flex-1' : 'w-full'} rounded-xl bg-[#006bbd] py-2.5 text-sm font-medium text-white transition-colors hover:bg-[#0059a0] disabled:cursor-wait disabled:opacity-40`}
+                className={`${showCancel ? 'min-w-0 flex-1' : 'w-full'} min-h-11 rounded-xl bg-[#006bbd] px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-[#0059a0] focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-[#4aa7ed] disabled:cursor-wait disabled:opacity-40`}
               >
                 {confirmLabel}
               </button>

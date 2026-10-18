@@ -11,6 +11,7 @@ describe('app routes', () => {
     expect(parseAppRoute('#/settings/memory')).toEqual({ page: 'settings', settingsSection: 'memory' });
     expect(parseAppRoute('#/settings/web-search')).toEqual({ page: 'settings', settingsSection: 'web-search' });
     expect(parseAppRoute('#/settings/advanced')).toEqual({ page: 'settings', settingsSection: 'advanced' });
+    expect(parseAppRoute('#/settings/advanced?pair=ABCD-EFGH')).toEqual({ page: 'settings', settingsSection: 'advanced' });
     expect(parseAppRoute('#/docs/security')).toEqual({ page: 'docs', docsSection: 'security' });
   });
 

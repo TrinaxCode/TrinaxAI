@@ -30,7 +30,7 @@ class TestVoiceService:
 
     def test_backend_availability_detects_installed_modules(self, monkeypatch):
         real_import = builtins.__import__
-        available = {"faster_whisper", "pyttsx3", "piper_tts", "TTS.api"}
+        available = {"faster_whisper", "pyttsx3", "piper", "TTS.api"}
 
         def fake_import(name, *args, **kwargs):
             if name in available:
@@ -195,21 +195,31 @@ class TestVoiceService:
         assert voice_service._pick_pyttsx3_voice(SimpleNamespace(getProperty=lambda _name: []), "en") is None
 
     def test_piper_requires_a_model_and_synthesizes_bounded_text(self, tmp_path, monkeypatch):
-        module = types.SimpleNamespace(find_model=lambda _root, _lang: None)
-        monkeypatch.setitem(sys.modules, "piper_tts", module)
+        module = types.SimpleNamespace(PiperVoice=None)
+        monkeypatch.setitem(sys.modules, "piper", module)
         monkeypatch.setattr(config, "PERSIST_DIR", str(tmp_path))
         monkeypatch.delenv("TRINAXAI_PIPER_MODEL", raising=False)
 
         with pytest.raises(RuntimeError, match="model not found"):
             voice_service._tts_piper("hello", "en")
 
-        model = tmp_path / "voice.onnx"
-        model.write_bytes(b"model")
-        module.find_model = lambda _root, _lang: str(model)
-        module.PiperVoice = lambda _path: SimpleNamespace(synthesize=lambda text: text.encode())
+        models = tmp_path / "piper"
+        models.mkdir()
+        (models / "en_US-test.onnx").write_bytes(b"model")
+        spoken: list[str] = []
+
+        def synthesize_wav(text, wav_file):
+            spoken.append(text)
+            wav_file.setnchannels(1)
+            wav_file.setsampwidth(2)
+            wav_file.setframerate(16000)
+            wav_file.writeframes(b"\0\0")
+
+        module.PiperVoice = SimpleNamespace(load=lambda _path: SimpleNamespace(synthesize_wav=synthesize_wav))
         monkeypatch.setattr(config, "VOICE_TTS_MAX_CHARS", 4)
 
-        assert voice_service._tts_piper("hello", "en") == (b"hell", "audio/wav")
+        audio, mime = voice_service._tts_piper("hello", "en")
+        assert spoken == ["hell"] and mime == "audio/wav" and audio[:4] == b"RIFF"
 
     def test_pyttsx3_writes_audio_and_stops_engine(self, monkeypatch):
         stopped: list[bool] = []
@@ -387,3 +397,38 @@ class TestVoiceRoutes:
         tts_success = client.post("/v1/voice/tts", json={"text": "hello", "lang": "en"})
         assert tts_success.status_code == 200
         assert tts_success.content == b"audio"
+
+
+def test_pyttsx3_voice_match_uses_language_token_not_substring() -> None:
+    from types import SimpleNamespace
+
+    from app.services.voice_service import _pick_pyttsx3_voice
+
+    english = SimpleNamespace(id=r"HKEY\Speech\Voices\Tokens\TTS_MS_EN-US_ZIRA", languages=[])
+    spanish = SimpleNamespace(id=r"HKEY\Speech\Voices\Tokens\TTS_MS_ES-ES_HELENA", languages=[])
+    engine = SimpleNamespace(getProperty=lambda _name: [english, spanish])
+    assert _pick_pyttsx3_voice(engine, "es") == spanish.id
+    assert _pick_pyttsx3_voice(engine, "en") == english.id
+    assert _pick_pyttsx3_voice(engine, "fr") is None
+
+
+def test_temp_audio_is_removed_when_the_write_fails(monkeypatch) -> None:
+    removed: list[str] = []
+
+    class Broken:
+        name = "/tmp/broken.webm"
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_exc):
+            return False
+
+        def write(self, _data):
+            raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(voice_service.tempfile, "NamedTemporaryFile", lambda **_kw: Broken())
+    monkeypatch.setattr(voice_service, "_cleanup_temp", removed.append)
+    with pytest.raises(OSError):
+        voice_service._write_temp_audio(b"audio", "a.webm")
+    assert removed == ["/tmp/broken.webm"]

@@ -41,8 +41,10 @@ export default function WebSearchSettings({ canManageSystem, onBack }: { canMana
   const [repairOpen, setRepairOpen] = useState(false);
   const [confirmDeleteKey, setConfirmDeleteKey] = useState(false);
   const [confirmReset, setConfirmReset] = useState(false);
-  const card = isDark ? 'border-white/10 bg-white/[0.03]' : 'border-gray-200 bg-gray-50';
-  const input = isDark ? 'border-white/10 bg-black/20 text-white' : 'border-gray-200 bg-white text-gray-900';
+  const card = isDark ? 'border-white/10 bg-white/[0.03]' : 'border-slate-200 bg-white';
+  const input = isDark ? 'border-white/15 bg-black/20 text-white' : 'border-slate-200 bg-slate-50 text-slate-900';
+  const muted = isDark ? 'text-white/65' : 'text-slate-600';
+  const secondaryButton = `min-h-11 rounded-xl border px-4 py-2 text-sm font-medium transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-[#4aa7ed] disabled:opacity-50 ${isDark ? 'border-white/15 text-white/85 hover:bg-white/[0.08]' : 'border-slate-200 text-slate-700 hover:bg-slate-50'}`;
   const clearMessage = () => {
     setMessage('');
     setRepairError('');
@@ -124,13 +126,18 @@ export default function WebSearchSettings({ canManageSystem, onBack }: { canMana
     />
   );
   if (!settings) return <>
-    <p role={repairError ? 'alert' : undefined}>{message || t('webSearchLoading')}</p>
-    {repairError && <button type="button" onClick={() => setRepairOpen(true)} className="text-sm text-[#006bbd] underline underline-offset-2">{t('fixError')}</button>}
+    <section className={`rounded-2xl border p-5 ${card}`} aria-label={t('webSearchSettingsTitle')}>
+      <p role={repairError ? 'alert' : 'status'} className={`text-sm leading-relaxed ${muted}`}>{message || t('webSearchLoading')}</p>
+      {repairError && <button type="button" onClick={() => setRepairOpen(true)} className={`mt-2 min-h-11 rounded-lg px-2 text-sm font-medium underline underline-offset-2 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-[#4aa7ed] ${isDark ? 'text-[#8ac9f5]' : 'text-[#0059a0]'}`}>{t('fixError')}</button>}
+    </section>
     {repairModal}
   </>;
   const configured = settings.providers[provider]?.configured;
   const providerExternal = settings.externally_managed.preferred_provider;
   const hasExternal = Object.values(settings.externally_managed).some(Boolean);
+  const feedback = repairError
+    ? isDark ? 'border-red-400/25 bg-red-400/10 text-red-200' : 'border-red-200 bg-red-50 text-red-800'
+    : isDark ? 'border-white/10 bg-white/[0.04] text-white/80' : 'border-slate-200 bg-slate-50 text-slate-700';
 
   const removeBraveKey = async () => {
     setBusy(true); clearMessage();
@@ -158,41 +165,43 @@ export default function WebSearchSettings({ canManageSystem, onBack }: { canMana
     finally { setBusy(false); }
   };
 
-  return <section className={`rounded-xl border p-4 space-y-4 ${card}`} aria-labelledby="web-search-settings-title">
+  return <section className={`space-y-5 rounded-2xl border p-4 sm:p-5 ${card}`} aria-labelledby="web-search-settings-title">
     <div>
-      <h3 id="web-search-settings-title" className="font-semibold">{t('webSearchSettingsTitle')}</h3>
-      <p className="text-xs opacity-60">{t('webSearchCredentialsLocalOnly')}</p>
+      <h2 id="web-search-settings-title" className={`text-lg font-semibold ${isDark ? 'text-white/90' : 'text-slate-900'}`}>{t('webSearchSettingsTitle')}</h2>
+      <p className={`mt-1 text-sm leading-relaxed ${muted}`}>{t('webSearchCredentialsLocalOnly')}</p>
     </div>
-    <label className="flex items-center justify-between gap-3">
+    <label className={`flex min-h-11 cursor-pointer items-center justify-between gap-3 text-sm font-medium ${isDark ? 'text-white/85' : 'text-slate-800'}`}>
       <span>{t('webSearchEnable')}</span>
-      <input name="web-search-enabled" type="checkbox" checked={enabled} onChange={(event) => setEnabled(event.target.checked)} disabled={providerExternal || busy} />
+      <input name="web-search-enabled" type="checkbox" checked={enabled} onChange={(event) => setEnabled(event.target.checked)} disabled={providerExternal || busy} className="h-5 w-5 shrink-0 accent-[#006bbd] disabled:opacity-50" />
     </label>
     <label className="block space-y-1">
-      <span>{t('webSearchPreferredProvider')}</span>
-      <select name="web-search-provider" autoComplete="off" aria-label={t('webSearchPreferredProvider')} value={provider} onChange={(event) => setProvider(event.target.value as typeof provider)} disabled={providerExternal || busy} className={`w-full rounded-lg border p-2 ${input}`}>
+      <span className={`text-sm font-medium ${isDark ? 'text-white/85' : 'text-slate-800'}`}>{t('webSearchPreferredProvider')}</span>
+      <select name="web-search-provider" autoComplete="off" aria-label={t('webSearchPreferredProvider')} value={provider} onChange={(event) => setProvider(event.target.value as typeof provider)} disabled={providerExternal || busy} className={`min-h-11 w-full rounded-xl border px-3 py-2 text-base outline-hidden focus-visible:ring-2 focus-visible:ring-[#4aa7ed] disabled:opacity-50 sm:text-sm ${input}`}>
         <option value="auto">{t('webSearchAutomatic')}</option><option value="duckduckgo">DuckDuckGo</option><option value="brave">Brave Search</option><option value="searxng">SearXNG</option>
       </select>
     </label>
-    {provider === 'auto' && <p className="text-sm">{t('webSearchAutoDescription')}</p>}
-    {provider === 'duckduckgo' && <p className="text-sm">{t('webSearchDuckDescription')}</p>}
-    {provider === 'brave' && <label className="block space-y-1">
-      <span>{t('webSearchBraveApiKey')} | {configured ? t('webSearchConfigured') : t('webSearchNotConfigured')}</span>
-      <input name="brave-api-key" type="password" autoComplete="new-password" disabled={settings.externally_managed.brave_api_key || busy} value={braveKey} onChange={(event) => setBraveKey(event.target.value)} placeholder={configured ? t('webSearchReplaceKey') : 'BSA...'} className={`w-full rounded-lg border p-2 disabled:opacity-60 ${input}`} />
-      {configured && !settings.externally_managed.brave_api_key && <button type="button" onClick={() => setConfirmDeleteKey(true)} className="text-sm text-red-500">{t('webSearchDeleteKey')}</button>}
-    </label>}
+    {provider === 'auto' && <p className={`text-sm leading-relaxed ${muted}`}>{t('webSearchAutoDescription')}</p>}
+    {provider === 'duckduckgo' && <p className={`text-sm leading-relaxed ${muted}`}>{t('webSearchDuckDescription')}</p>}
+    {provider === 'brave' && <div className="space-y-1">
+      <label className="block space-y-1">
+        <span className={`text-sm font-medium ${isDark ? 'text-white/85' : 'text-slate-800'}`}>{t('webSearchBraveApiKey')} · {configured ? t('webSearchConfigured') : t('webSearchNotConfigured')}</span>
+        <input name="brave-api-key" type="password" autoComplete="new-password" disabled={settings.externally_managed.brave_api_key || busy} value={braveKey} onChange={(event) => setBraveKey(event.target.value)} placeholder={configured ? t('webSearchReplaceKey') : 'BSA...'} className={`min-h-11 w-full rounded-xl border px-3 py-2 text-base outline-hidden focus-visible:ring-2 focus-visible:ring-[#4aa7ed] disabled:opacity-50 sm:text-sm ${input}`} />
+      </label>
+      {configured && !settings.externally_managed.brave_api_key && <button type="button" onClick={() => setConfirmDeleteKey(true)} className={`min-h-11 rounded-lg px-2 text-sm font-medium underline underline-offset-2 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-[#4aa7ed] ${isDark ? 'text-red-300' : 'text-red-700'}`}>{t('webSearchDeleteKey')}</button>}
+    </div>}
     {provider === 'searxng' && <label className="block space-y-1">
-      <span>{t('webSearchPublicSearxUrl')}</span>
-      <input name="searxng-url" type="url" autoComplete="off" disabled={settings.externally_managed.searxng_url || busy} value={searxngUrl} onChange={(event) => setSearxngUrl(event.target.value)} placeholder="https://search.example.org..." className={`w-full rounded-lg border p-2 disabled:opacity-60 ${input}`} />
+      <span className={`text-sm font-medium ${isDark ? 'text-white/85' : 'text-slate-800'}`}>{t('webSearchPublicSearxUrl')}</span>
+      <input name="searxng-url" type="url" autoComplete="off" disabled={settings.externally_managed.searxng_url || busy} value={searxngUrl} onChange={(event) => setSearxngUrl(event.target.value)} placeholder="https://search.example.org..." className={`min-h-11 w-full rounded-xl border px-3 py-2 text-base outline-hidden focus-visible:ring-2 focus-visible:ring-[#4aa7ed] disabled:opacity-50 sm:text-sm ${input}`} />
     </label>}
-    {hasExternal && <p className="text-sm text-amber-500">{t('webSearchEnvironmentManaged')}</p>}
+    {hasExternal && <p className={`rounded-xl border px-3 py-2 text-sm leading-relaxed ${isDark ? 'border-amber-300/20 bg-amber-300/5 text-amber-200' : 'border-amber-200 bg-amber-50 text-amber-900'}`}>{t('webSearchEnvironmentManaged')}</p>}
     <div className="flex flex-wrap gap-2">
-      <button type="button" disabled={busy} onClick={save} className="rounded-lg bg-[#006bbd] px-4 py-2 text-white disabled:opacity-50">{busy ? t('webSearchSaving') : t('save')}</button>
-      <button type="button" disabled={busy} onClick={test} className="rounded-lg border px-4 py-2 disabled:opacity-50">{t('webSearchTestButton')}</button>
-      <button type="button" disabled={busy || hasExternal} onClick={() => setConfirmReset(true)} className="rounded-lg border px-4 py-2 disabled:opacity-50">{t('webSearchResetButton')}</button>
+      <button type="button" disabled={busy} onClick={save} className="min-h-11 rounded-xl bg-[#006bbd] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#0059a0] focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-[#4aa7ed] disabled:opacity-50">{busy ? t('webSearchSaving') : t('save')}</button>
+      <button type="button" disabled={busy} onClick={test} className={secondaryButton}>{t('webSearchTestButton')}</button>
+      <button type="button" disabled={busy || hasExternal} onClick={() => setConfirmReset(true)} className={secondaryButton}>{t('webSearchResetButton')}</button>
     </div>
-    {message && <div role={repairError ? 'alert' : 'status'} className="text-sm">
+    {message && <div role={repairError ? 'alert' : 'status'} className={`rounded-xl border px-3 py-2 text-sm leading-relaxed ${feedback}`}>
       <p>{message}</p>
-      {repairError && <button type="button" onClick={() => setRepairOpen(true)} className="mt-1 text-[#006bbd] underline underline-offset-2">{t('fixError')}</button>}
+      {repairError && <button type="button" onClick={() => setRepairOpen(true)} className="mt-1 min-h-11 rounded-lg px-2 font-medium underline underline-offset-2 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-[#4aa7ed]">{t('fixError')}</button>}
     </div>}
     <ConfirmModal
       open={confirmDeleteKey}

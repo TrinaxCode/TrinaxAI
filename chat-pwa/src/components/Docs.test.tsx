@@ -31,6 +31,8 @@ describe('PWA documentation', () => {
 
     const picker = screen.getByRole('combobox', { name: 'Select section' });
     expect(picker.closest('main')).toBeNull();
+    expect(screen.getByRole('region', { name: 'Documentation content' })).toBeInTheDocument();
+    expect(screen.queryByRole('main')).not.toBeInTheDocument();
     const sectionIds = Array.from(picker.querySelectorAll('option')).map((option) => option.value);
 
     expect(sectionIds).toHaveLength(15);
@@ -47,7 +49,7 @@ describe('PWA documentation', () => {
     const user = userEvent.setup();
     render(<Docs onBack={vi.fn()} />);
 
-    expect(screen.getByText('Integrated guide')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 1, name: 'Introduction' })).toBeInTheDocument();
     expect(screen.getByRole('img', { name: 'TrinaxAI' })).toHaveAttribute('src', '/logo-for-ai-transparent.webp');
     expect(screen.getByRole('img', { name: 'TrinaxAI' })).toHaveClass('h-10', 'w-10');
     expect(await screen.findByText(/Your private assistant/)).toBeInTheDocument();

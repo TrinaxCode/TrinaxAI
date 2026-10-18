@@ -40,10 +40,9 @@ def run(args: Any, client: Any, ui: Any, config: Any) -> int:
     # A packaged CLI can be launched from any directory. Prefer the full
     # installation root over the current working directory or site-packages.
     project_root = find_install_root() or Path(__file__).resolve().parents[2]
-    candidates = [
-        project_root / "index.py",
-        Path.cwd() / "index.py",
-    ]
+    candidates = [project_root / "index.py"]
+    if not getattr(args, "install_root", None):
+        candidates.append(Path.cwd() / "index.py")
     index_py = next((c for c in candidates if c.is_file()), None)
     if not index_py:
         ui.error("Cannot locate index.py. Run from the TrinaxAI project root.")

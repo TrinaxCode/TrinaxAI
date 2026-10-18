@@ -34,7 +34,7 @@ async function stubShell(page: Page, canManageSystem = true) {
 test('does not move empty chat content when RAG context appears', async ({ page }) => {
   await stubShell(page);
   await page.goto('/');
-  await expect(page.locator('.animate-float')).toBeVisible();
+  await expect(page.locator('.empty-chat-visual')).toBeVisible();
   await expect(page.locator('.chat-empty-motd')).toBeVisible();
   await expect(page.locator('.chip-elegant').first()).toBeVisible();
   await expect(page.locator('.chip-elegant').first()).toHaveCSS('opacity', '1');
@@ -45,7 +45,7 @@ test('does not move empty chat content when RAG context appears', async ({ page 
       return element instanceof HTMLElement ? { top: element.offsetTop, height: element.offsetHeight } : null;
     };
     return {
-      logo: read('.animate-float'),
+      logo: read('.empty-chat-visual'),
       motd: read('.chat-empty-motd'),
       chip: read('.chip-elegant'),
     };
@@ -62,7 +62,7 @@ test('does not move empty chat content when RAG context appears', async ({ page 
       return element instanceof HTMLElement ? { top: element.offsetTop, height: element.offsetHeight } : null;
     };
     return {
-      logo: read('.animate-float'),
+      logo: read('.empty-chat-visual'),
       motd: read('.chat-empty-motd'),
       chip: read('.chip-elegant'),
     };
@@ -71,6 +71,45 @@ test('does not move empty chat content when RAG context appears', async ({ page 
   expect(after.motd && before.motd ? after.motd.top : -1).toBe(before.motd?.top ?? -2);
   expect(after.chip && before.chip ? after.chip.top : -1).toBe(before.chip?.top ?? -2);
 });
+
+for (const theme of ['light', 'dark'] as const) {
+test(`chat context and composer menus stay above a populated conversation in ${theme} mode`, async ({ page }, testInfo) => {
+  await stubShell(page);
+  await page.route('**/api/rag/app-state', (route) => route.fulfill({ status: 304 }));
+  await page.addInitScript((theme) => {
+    localStorage.setItem('tc-theme', theme);
+    localStorage.setItem('tc-chat-sessions', JSON.stringify([{
+      id: 'layers', title: 'Layer review', engine: 'rag', createdAt: 1, updatedAt: 1,
+      messages: [{ role: 'assistant', content: Array.from({ length: 50 }, (_, i) => `Paragraph ${i + 1}: Review the project and confirm the next steps.`).join('\n\n') }],
+    }]));
+  }, theme);
+  await page.goto('/#/chat/layers');
+  const context = page.locator('.chat-active-collections');
+  await expect(context).toBeVisible();
+  await expect(context).toHaveCSS('background-color', theme === 'dark' ? 'rgb(2, 4, 6)' : 'rgb(255, 255, 255)');
+  await expect(page.locator('.chat-assistant-avatar')).toHaveCSS('background-color', theme === 'dark' ? 'rgb(0, 0, 0)' : 'rgb(255, 255, 255)');
+  const general = context.getByRole('button', { name: 'General' });
+  await expect.poll(() => general.evaluate((element) => {
+    const rect = element.getBoundingClientRect();
+    return element.contains(document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2));
+  })).toBe(true);
+  await page.locator('.composer-surface').getByRole('button', { name: 'Attach image / Attach document' }).click();
+  const attach = page.getByRole('menuitem', { name: 'Attach document' });
+  await expect.poll(() => attach.evaluate((element) => {
+    const rect = element.getBoundingClientRect();
+    return element.contains(document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2));
+  })).toBe(true);
+  if (process.env.VISUAL_AUDIT_LABEL) await page.screenshot({ path: `visual-audit/${process.env.VISUAL_AUDIT_LABEL}/${testInfo.project.name}/chat-layers-${theme}.png` });
+  const input = page.getByRole('textbox', { name: /Type a message/ });
+  await input.click();
+  await input.fill('/');
+  const prompt = page.locator('[data-composer-root]').getByRole('button', { name: /\/browse/ });
+  await expect.poll(() => prompt.evaluate((element) => {
+    const rect = element.getBoundingClientRect();
+    return element.contains(document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2));
+  })).toBe(true);
+});
+}
 
 test('routes public lookup and personal history, then requires explicit Agent mode for website creation', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== 'chromium-desktop', 'One desktop routing flow covers the automatic capability selector.');
@@ -146,7 +185,9 @@ test('routes public lookup and personal history, then requires explicit Agent mo
   expect(agentCalls).toBe(0);
 
   await input.fill('Quiero crear una página web para mi negocio');
+  const chatScreen = page.locator('[data-route-screen="chat"]');
   await page.getByRole('button', { name: 'Open TrinaxAI Agent' }).click();
+  expect(await chatScreen.count()).toBe(1);
   await expect(page).toHaveURL(/#\/agent$/);
   const agentPage = page.locator('#tc-main-content');
   await agentPage.getByRole('textbox', { name: /Ask the agent/ }).fill('Quiero crear una página web para mi negocio');
@@ -155,6 +196,12 @@ test('routes public lookup and personal history, then requires explicit Agent mo
   expect(researchCalls).toBe(1);
   expect(ragCalls).toBe(1);
   expect(agentCalls).toBe(1);
+
+  const agentScreen = page.locator('[data-route-screen="agent"]');
+  await agentPage.getByRole('button', { name: 'Back' }).click();
+  expect(await agentScreen.count()).toBe(1);
+  await expect(page.locator('[data-route-screen="chat"]')).toBeVisible();
+  await expect(page.locator('nav.chat-header [data-header-tools]')).toBeVisible();
 });
 
 test('keeps reasoning private and automatically continues a length-limited answer', async ({ page }, testInfo) => {

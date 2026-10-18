@@ -18,10 +18,37 @@ el formato de [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Sin publicar]
 
+## [1.3.0] — 2026-10-18
+
+### Cambiado
+
 - Se reorganizó la documentación pública alrededor de una única instalación
   npm, se aclararon el primer inicio y las operaciones por plataforma, se
   alinearon las guías en inglés y español y se eliminó el onboarding obsoleto
   de instaladores directos.
+- Se estabilizaron las comprobaciones de release multiplataforma, las rutas de
+  prueba en Windows y macOS y el estado del watcher.
+
+### Corregido
+
+- Estado compartido: un error pasajero de lectura ya no parece un almacén vacío
+  que la siguiente sincronización sobrescribiría; los archivos corruptos se
+  ponen en cuarentena.
+- Restauración de backup: la reversión ya no puede borrar los datos originales
+  si falla apartarlos.
+- Actualización del código fuente: el marcador de reversión se elimina antes que
+  el backup, así nunca se restaura un backup borrado a medias.
+- Indexado: el worker del watcher sobrevive a falta de espacio y otros fallos de
+  lote y sigue procesando la cola; los manifiestos y listas de colecciones
+  ilegibles ya no se tratan como vacíos.
+- PWA: el aviso de red se cierra bien tras preparar un enlace nuevo y el enlace
+  de `trinaxai pair` abre Ajustes > Avanzado en lugar del chat.
+- Voz: el texto leído en voz alta ya no se corta a mitad de palabra, las
+  llamadas mantienen la pantalla activa al volver a la pestaña, el TTS del
+  sistema elige la voz del idioma correcto y los audios temporales se limpian
+  si falla la escritura.
+- Piper usa ahora la API real del paquete `piper`, Coqui elige el modelo según
+  el idioma y las conversiones simultáneas con LibreOffice ya no fallan.
 
 ## [1.2.6] — 2026-09-20
 

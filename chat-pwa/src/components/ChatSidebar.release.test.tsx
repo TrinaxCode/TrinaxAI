@@ -43,16 +43,32 @@ function renderSidebar(overrides: Partial<React.ComponentProps<typeof ChatSideba
 }
 
 describe('ChatSidebar release paths', () => {
+  it('closes the move menu on Escape and outside interaction', async () => {
+    const user = userEvent.setup();
+    renderSidebar();
+    const row = screen.getByRole('button', { name: 'General chat' }).closest('[data-session-row]') as HTMLElement;
+    const trigger = within(row).getByRole('button', { name: 'chatOptions: General chat' });
+
+    await user.click(trigger);
+    expect(trigger).toHaveAttribute('aria-expanded', 'true');
+    await user.keyboard('{Escape}');
+    await waitFor(() => expect(trigger).toHaveAttribute('aria-expanded', 'false'));
+    expect(trigger).toHaveFocus();
+
+    await user.click(trigger);
+    await user.click(screen.getByRole('textbox', { name: 'searchChats' }));
+    await waitFor(() => expect(trigger).toHaveAttribute('aria-expanded', 'false'));
+  });
+
   it('covers folder filters, session moves, search, collapse and header actions', async () => {
     const user = userEvent.setup();
     const { props } = renderSidebar({ onBrowser: vi.fn() });
 
     await user.click(screen.getByRole('button', { name: 'knowledgeBrowser' }));
     await user.click(screen.getByRole('button', { name: 'settings' }));
-    await user.click(screen.getByRole('button', { name: 'closeMenu' }));
     expect(props.onBrowser).toHaveBeenCalledOnce();
     expect(props.onSettings).toHaveBeenCalledOnce();
-    expect(props.onToggle).toHaveBeenCalledOnce();
+    expect(screen.queryByRole('button', { name: 'closeMenu' })).not.toBeInTheDocument();
 
     const workFilter = screen.getByTitle('Work');
     await user.click(workFilter);
@@ -62,16 +78,18 @@ describe('ChatSidebar release paths', () => {
     await user.click(workGroup);
 
     const row = screen.getByRole('button', { name: 'Work chat' }).closest('[data-session-row]') as HTMLElement;
-    await user.click(within(row).getByRole('button', { name: 'moveChatToFolder' }));
+    await user.click(within(row).getByRole('button', { name: 'chatOptions: Work chat' }));
     await user.click(screen.getByRole('button', { name: 'generalFolder' }));
     expect(props.onMoveToFolder).toHaveBeenCalledWith('work-chat', undefined);
-    await user.click(within(row).getByRole('button', { name: 'moveChatToFolder' }));
+    await user.click(within(row).getByRole('button', { name: 'chatOptions: Work chat' }));
     await user.click(screen.getByRole('button', { name: 'Work', exact: true }));
     expect(props.onMoveToFolder).toHaveBeenCalledWith('work-chat', 'work');
 
     const search = screen.getByRole('textbox', { name: 'searchChats' });
     await user.type(search, 'missing');
     expect(screen.getByText('noChatResults')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'generalFolder0' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Work0' })).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'clearSearch' }));
     expect(search).toHaveValue('');
   });
@@ -93,7 +111,8 @@ describe('ChatSidebar release paths', () => {
     await user.click(within(folderDialog).getByRole('button', { name: 'delete' }));
     expect(props.onDeleteFolder).toHaveBeenCalledWith('work');
 
-    await user.click(screen.getByRole('button', { name: 'delete General chat' }));
+    await user.click(screen.getByRole('button', { name: 'chatOptions: General chat' }));
+    await user.click(screen.getByRole('button', { name: 'deleteChat' }));
     const chatDialog = screen.getByRole('dialog', { name: 'deleteChat' });
     await user.click(within(chatDialog).getByRole('button', { name: 'delete' }));
     expect(props.onDelete).toHaveBeenCalledWith('general');
