@@ -2122,9 +2122,9 @@ tiktoken==0.13.0 \
     --hash=sha256:ed5a30027cb4d8c7ca8b273d4766f3db3cf58fad9e9f3b1a68a351ffb54873d5 \
     --hash=sha256:fc1c44cd37b43fc46bae593129164f4f281e82ea116b57a85aa81bda57eafc94
     # via llama-index-core
-tinytag==2.2.1 \
-    --hash=sha256:e6d06610ebe7cd66fd07be2d3b9495914ab32654a5e47657bb8cd44c2484523c \
-    --hash=sha256:ed8b1e6d25367937e3321e054f4974f9abfde1a3e0a538824c87da377130c2b6
+tinytag==2.3.0 \
+    --hash=sha256:231ba5b2fb7a6db478f6dd344ebf20dfdfcd5907f142d475605d516dd7e8b9a8 \
+    --hash=sha256:84850f8045424b944475b9754bc35c7e09bcae1ab08d1f88d9293aa33af39a27
     # via llama-index-core
 tomli==2.4.1 ; python_full_version < '3.11' \
     --hash=sha256:01f520d4f53ef97964a240a035ec2a869fe1a37dde002b57ebc4417a27ccd853 \

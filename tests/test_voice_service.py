@@ -432,3 +432,15 @@ def test_temp_audio_is_removed_when_the_write_fails(monkeypatch) -> None:
     with pytest.raises(OSError):
         voice_service._write_temp_audio(b"audio", "a.webm")
     assert removed == ["/tmp/broken.webm"]
+
+
+def test_stt_is_unavailable_without_faster_whisper(monkeypatch) -> None:
+    real_import = builtins.__import__
+
+    def fake_import(name, *args, **kwargs):
+        if name == "faster_whisper":
+            raise ImportError(name)
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+    assert voice_service.stt_available() is False

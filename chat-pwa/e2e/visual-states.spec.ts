@@ -132,7 +132,7 @@ test('history sidebar fits the viewport and retains its controls', async ({ page
   await expect(sidebar).toHaveAttribute('aria-hidden', 'false');
   await expect(sidebar).toBeVisible();
   await expect(sidebar.getByText('Historial', { exact: true })).toBeVisible();
-  await expect(sidebar.getByLabel(/Cerrar menú/i)).toBeVisible();
+  await expect(sidebar.getByLabel(/Configuración/i)).toBeVisible();
 
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   expect(overflow).toBeLessThanOrEqual(1);

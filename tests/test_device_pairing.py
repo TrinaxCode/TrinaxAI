@@ -123,6 +123,27 @@ async def test_new_device_endpoint_issues_cookie_without_private_scope(pairing_s
     assert denied.value.status_code == 403
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("error", "status"),
+    [(ValueError("bad name"), 422), (DeviceRegistryError("locked"), 503)],
+)
+async def test_new_device_endpoint_maps_storage_and_validation_errors(
+    pairing_store: Path, monkeypatch, error: Exception, status: int
+) -> None:
+    def fail(_name):
+        raise error
+
+    monkeypatch.setattr(pairing_routes, "create_new_device_session", fail)
+    with pytest.raises(HTTPException) as raised:
+        await pairing_routes.pairing_new_device(
+            NewDeviceRequest(device_name="Fresh phone"),
+            _request("/v1/pairing/new-device", client="192.168.1.44"),
+            Response(),
+        )
+    assert raised.value.status_code == status
+
+
 def test_expired_code_and_device_revocation_fail_closed(pairing_store: Path) -> None:
     code = create_pairing_code(["chat"], ttl_seconds=60, device_ttl_days=1, now=100)["code"]
     with pytest.raises(PermissionError):
