@@ -155,6 +155,41 @@ def test_ollama_smoke_requires_direct_model_generation(monkeypatch) -> None:
     }
 
 
+def test_ollama_smoke_never_auto_selects_an_embedding_model(monkeypatch) -> None:
+    generated: list[str] = []
+
+    class Response:
+        def __init__(self, payload):
+            self.payload = payload
+
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self):
+            return self.payload
+
+    class Client:
+        def __init__(self, base_url, timeout):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def get(self, _path):
+            return Response({"models": [{"name": "qwen3-embedding:0.6b"}, {"name": "qwen3.5:2b"}]})
+
+        def post(self, _path, *, json):
+            generated.append(json["model"])
+            return Response({"response": "OK"})
+
+    monkeypatch.setattr(evaluate_rag.httpx, "Client", Client)
+    assert evaluate_rag.ollama_smoke("http://ollama", "", 5)["model"] == "qwen3.5:2b"
+    assert generated == ["qwen3.5:2b"]
+
+
 def test_live_api_evaluation_requires_backend_rag_metadata(monkeypatch) -> None:
     class Response:
         def raise_for_status(self) -> None:

@@ -131,9 +131,11 @@ def ollama_smoke(base_url: str, model: str, timeout: float) -> dict[str, Any]:
             raise ValueError("Ollama /api/tags returned no models array")
         model_names = [str(item.get("name") or "").strip() for item in installed if isinstance(item, dict)]
         model_names = [name for name in model_names if name]
-        selected = model.strip() or (model_names[0] if model_names else "")
+        # Embedding models cannot generate (Ollama answers 400), so never auto-select one.
+        generative = [name for name in model_names if "embed" not in name.lower()]
+        selected = model.strip() or (generative[0] if generative else "")
         if not selected:
-            raise ValueError("Ollama has no installed models; pass --ollama-model")
+            raise ValueError("Ollama has no installed generative models; pass --ollama-model")
         if selected not in model_names:
             raise ValueError(f"Ollama model is not installed: {selected}")
 
