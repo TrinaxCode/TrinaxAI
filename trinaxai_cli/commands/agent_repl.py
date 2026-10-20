@@ -11,6 +11,7 @@ the non-interactive paths. The REPL mirrors the Claude Code workflow:
 
 from __future__ import annotations
 
+import os
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -273,22 +274,43 @@ def _cmd_todos(_arg: str, ctx: ReplContext) -> None:
         ctx.ui.say(f"  {line}", style=style)
 
 
+def _git_diff(workspace: Path, *args: str) -> subprocess.CompletedProcess[str]:
+    """Run ``git diff`` without honouring config the Agent could have written.
+
+    The workspace is Agent-writable, so its ``.git/config`` is untrusted: a
+    ``core.fsmonitor`` or ``diff.external`` entry would run a program as the
+    user the moment the operator types ``/diff``.
+    """
+    env = {**os.environ, "GIT_CONFIG_NOSYSTEM": "1", "GIT_EXTERNAL_DIFF": "", "GIT_PAGER": "cat"}
+    return subprocess.run(  # noqa: S603,S607 - fixed argv, hardened read-only git
+        [
+            "git",
+            "-c",
+            "core.fsmonitor=",
+            "-c",
+            "core.pager=cat",
+            "-c",
+            "diff.external=",
+            "-C",
+            str(workspace),
+            "diff",
+            "--no-ext-diff",
+            "--no-textconv",
+            "--no-color",
+            *args,
+        ],
+        capture_output=True,
+        text=True,
+        timeout=15,
+        check=False,
+        env=env,
+    )
+
+
 def _cmd_diff(_arg: str, ctx: ReplContext) -> None:
     try:
-        stat = subprocess.run(  # noqa: S603,S607 - fixed argv, read-only git
-            ["git", "-C", str(ctx.workspace), "diff", "--stat", "--no-color"],
-            capture_output=True,
-            text=True,
-            timeout=15,
-            check=False,
-        )
-        full = subprocess.run(  # noqa: S603,S607
-            ["git", "-C", str(ctx.workspace), "diff", "--no-color", "-U2"],
-            capture_output=True,
-            text=True,
-            timeout=15,
-            check=False,
-        )
+        stat = _git_diff(ctx.workspace, "--stat")
+        full = _git_diff(ctx.workspace, "-U2")
     except (OSError, subprocess.TimeoutExpired):
         ctx.ui.warn(_t(ctx.ui, "git is not available here.", "git no está disponible aquí."))
         return

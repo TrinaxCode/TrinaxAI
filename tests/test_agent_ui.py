@@ -47,6 +47,8 @@ def _tool(name: str, dangerous: bool = False) -> Tool:
         ("rg TODO src", "rg"),
         ("rg --pre ./evil TODO", "rg --pre ./evil TODO"),
         ("rg --search-zip x", "rg --search-zip x"),
+        ("rg -iz TODO", "rg -iz TODO"),
+        ("rg -n TODO", "rg"),
         ("pytest -q", "pytest -q"),
         ("mypy .", "mypy ."),
         ("git status --short", "git status"),
@@ -632,3 +634,45 @@ def test_failed_exploratory_read_is_not_appended_to_the_answer(tmp_path: Path) -
     assert ReadOnly(model="m", workspace_root=tmp_path).run([{"role": "user", "content": "x"}]) == (
         "There is no such file."
     )
+
+
+def test_workspace_code_rules_expire_after_an_edit_but_passive_rules_do_not() -> None:
+    edit, shell = _tool("edit_file", True), _tool("run_command", True)
+    policy = ApprovalPolicy()
+    policy.remember(shell, {"command": "ls"})
+    policy.remember(shell, {"command": "make test"})
+    assert policy.auto_decision(shell, {"command": "make test"}) is True
+
+    # The Agent edits a file (even when the user approves it by hand).
+    policy.auto_decision(edit, {"path": "tests/test_new.py"})
+    assert policy.auto_decision(shell, {"command": "make test"}) is None
+    assert policy.auto_decision(shell, {"command": "ls src"}) is True
+
+    # Approving the command again re-arms the rule until the next edit.
+    policy.remember(shell, {"command": "make test"})
+    assert policy.auto_decision(shell, {"command": "make test"}) is True
+
+
+def test_slash_diff_ignores_agent_written_git_config(tmp_path: Path) -> None:
+    import shutil
+    import subprocess
+
+    from trinaxai_cli.commands.agent_repl import _git_diff
+
+    if shutil.which("git") is None:
+        pytest.skip("git is not installed")
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    (repo / "a.txt").write_text("one\n")
+    marker = tmp_path / "ran"
+    hook = tmp_path / "hook.sh"
+    hook.write_text(f"#!/bin/sh\ntouch {marker}\n")
+    hook.chmod(0o755)
+    with (repo / ".git" / "config").open("a") as config:
+        config.write(f"[core]\n\tfsmonitor = {hook}\n[diff]\n\texternal = {hook}\n")
+
+    result = _git_diff(repo, "--stat")
+
+    assert result.returncode == 0
+    assert not marker.exists(), "/diff executed a program named in the workspace's .git/config"

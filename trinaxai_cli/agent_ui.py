@@ -51,6 +51,18 @@ _SAFE_GIT = {"status", "diff", "log", "show"}
 _RISKY_GIT_FLAGS = ("--output", "--ext-diff", "--textconv", "--exec", "-c", "--config")
 
 
+def _is_risky_flag(program: str, arg: str) -> bool:
+    """True when ``arg`` makes a passive program run another one (also in ``-iz`` clusters)."""
+    if arg.startswith(_RISKY_FLAGS.get(program, ())):
+        return True
+    return program == "rg" and re.fullmatch(r"-[^-].*", arg) is not None and "z" in arg
+
+
+def _is_passive_rule(rule: str) -> bool:
+    """Rules that never run workspace code, so they stay valid after the Agent edits files."""
+    return rule in _SAFE_PROGRAMS or rule in {f"git {sub}" for sub in _SAFE_GIT}
+
+
 def normalize_mode(value: str | None, *, yolo: bool = False) -> str:
     """Map CLI input to a known permission mode (``yolo`` flag wins)."""
     if yolo:
@@ -85,7 +97,7 @@ def command_rule(command: str) -> str | None:
             return f"git {argv[1]}"
         return exact
     if program in _SAFE_PROGRAMS:
-        if any(a.startswith(_RISKY_FLAGS.get(program, ())) for a in argv[1:]):
+        if any(_is_risky_flag(program, a) for a in argv[1:]):
             return exact
         return program
     return exact
@@ -97,6 +109,10 @@ class ApprovalPolicy:
 
     mode: str = MODE_DEFAULT
     allowed: set[str] = field(default_factory=set)
+    # Set once an edit tool is about to run. A remembered rule for a command that
+    # executes workspace code (pytest, make, ./tool, ...) was approved against the
+    # files the user saw; after the Agent edits them it must be approved again.
+    workspace_dirty: bool = False
 
     @property
     def yolo(self) -> bool:
@@ -120,6 +136,8 @@ class ApprovalPolicy:
 
     def auto_decision(self, tool: Tool, args: dict[str, Any]) -> bool | None:
         """``True`` run, ``False`` refuse, ``None`` ask the user."""
+        if tool.name in EDIT_TOOLS:
+            self.workspace_dirty = True
         if self.mode == MODE_YOLO:
             return True
         if self.mode == MODE_PLAN:
@@ -128,6 +146,9 @@ class ApprovalPolicy:
             return True
         rule = self.rule_for(tool, args)
         if rule and rule in self.allowed:
+            command_rule_text = rule.removeprefix("run_command:")
+            if tool.name == "run_command" and self.workspace_dirty and not _is_passive_rule(command_rule_text):
+                return None
             return True
         return None
 
@@ -139,6 +160,9 @@ class ApprovalPolicy:
         rule = self.rule_for(tool, args)
         if rule:
             self.allowed.add(rule)
+            if tool.name == "run_command":
+                # The user has just reviewed the workspace as it stands.
+                self.workspace_dirty = False
         return rule
 
 
