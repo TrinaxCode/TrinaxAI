@@ -18,6 +18,64 @@ el formato de [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Sin publicar]
 
+### Añadido
+
+- `trinaxai agent` ahora funciona como otros agentes de código para terminal:
+  transcripción `● herramienta(args)` / `⎿ resultado` con estado "Trabajando…",
+  diffs unificados reales al pedir aprobación, aprobación en tres opciones
+  (sí / no volver a preguntar / no), modos de permisos (`default`,
+  `accept-edits`, `plan`, `yolo`) con Shift+Tab, adjuntos `@archivo`, lista de
+  tareas `todo_write`, instrucciones de proyecto (`TRINAXAI.md`, `AGENTS.md`,
+  `CLAUDE.md`), historial persistente, Ctrl-C que revierte el turno,
+  `/compact`, `/status`, `/diff`, `/init`, `/resume`, `--continue`/`--resume` y
+  ejecución no interactiva con `-p`, stdin y `--output-format json`.
+
+- Permisos por dispositivo: el anfitrión elige qué puede hacer cada dispositivo
+  vinculado al generar el código y puede cambiarlo después en **Configuración →
+  Avanzado → Dispositivos vinculados → Permisos** o con `trinaxai pair set`.
+  Los nuevos permisos concedibles son `index` (indexar/vigilar carpetas y
+  administrar colecciones y fuentes), `agent` (usar TrinaxAI Agent, que sigue
+  pidiendo confirmación en cada acción peligrosa) y `modify` (editar la memoria
+  y los ajustes de búsqueda web, borrar adjuntos). El anfitrión pide
+  confirmación antes de conceder cualquiera de ellos.
+- `PATCH /v1/pairing/devices/{id}` para reemplazar los permisos de un
+  dispositivo (solo loopback).
+
+- El instalador de Linux ahora instala `bubblewrap` (mejor esfuerzo) para que la
+  terminal del Agente funcione de inmediato, y `trinaxai doctor` informa una
+  fila «Agent shell sandbox» (informativa, nunca hace fallar `--strict`).
+- `tests/fixtures/rag_docs_golden.json`: un benchmark de recuperación más
+  exigente sobre la propia documentación de TrinaxAI (20 archivos, corpus en
+  inglés, consultas en español e inglés, casos de abstención), ejecutado en
+  vivo en CI junto al corpus de humo.
+- `tests/test_route_scope_contract.py` fija el scope de dispositivo de cada
+  ruta HTTP, de modo que añadir o reescopar un endpoint sea un cambio explícito
+  y revisado.
+
+### Cambiado
+
+- El README y la guía de seguridad indican que la terminal del Agente solo está
+  aislada en Linux y permanece desactivada en macOS y Windows salvo
+  `TRINAXAI_AGENT_ALLOW_UNSANDBOXED_COMMANDS=1`; las herramientas de archivos
+  funcionan en todas.
+- Los módulos de tests de casos límite se nombran por dominio en vez de
+  `*_coverage*`; se eliminó el prototipo `trinaxai-ui-preview`, sin uso.
+
+### Seguridad
+
+- `system` y el modo de autoaprobación (YOLO) del Agente siguen sin poder
+  concederse a un dispositivo. Los permisos elevados solo los concede el
+  operador en localhost, se ignoran en registros anteriores a este cambio hasta
+  que se concedan de nuevo y un token admin enviado por la red no los desbloquea.
+- Un dispositivo con `index` solo puede vigilar carpetas dentro de las raíces de
+  indexación configuradas en el anfitrión.
+- Un dispositivo con `agent` nunca puede usar ni explorar un workspace que
+  contenga archivos propios de TrinaxAI (directorio de instalación, `.env`,
+  storage, secretos de credenciales), aunque las raíces del anfitrión los
+  incluyan.
+- Borrar una fuente importada resuelve los symlinks antes de comprobar que la
+  ruta sigue dentro de la carpeta de importaciones.
+
 ## [1.3.0] — 2026-10-18
 
 ### Cambiado

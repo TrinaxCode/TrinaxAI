@@ -243,6 +243,30 @@ jobs:
           --timeout 900
           --output live-backend-rag-report.json
 
+      - name: Evaluate retrieval over TrinaxAI's own documentation
+        env:
+          TRINAXAI_ADMIN_TOKEN: ci-rag-evaluation
+        shell: bash
+        run: |
+          set -euo pipefail
+          # English guides only: 20 files with many near-duplicate topics, so
+          # recall@10 is a real signal (the 7-file smoke corpus above fits in
+          # the top 10). Spanish queries in the golden set test cross-lingual
+          # retrieval against this English corpus. Each question has one correct
+          # file but the API cites two or three, so the citation-precision floor
+          # is 0.5 here (measured 0.60); every other threshold keeps its default.
+          mkdir -p "$RUNNER_TEMP/docs-corpus"
+          find docs -maxdepth 1 -name '*.md' ! -name '*.es.md' -exec cp {} "$RUNNER_TEMP/docs-corpus/" \;
+          python scripts/evaluate_rag.py \
+            --golden tests/fixtures/rag_docs_golden.json \
+            --api-url http://127.0.0.1:3333 \
+            --index-corpus "$RUNNER_TEMP/docs-corpus" \
+            --collection-id rag-docs \
+            --embed-model qwen3-embedding:0.6b \
+            --timeout 1800 \
+            --min-citation-precision 0.5 \
+            --output live-docs-rag-report.json
+
       - name: Print backend log on failure
         if: failure()
         run: cat "$RUNNER_TEMP/backend.log"
@@ -255,6 +279,7 @@ jobs:
           path: |
             ollama-smoke-report.json
             live-backend-rag-report.json
+            live-docs-rag-report.json
             ${{ runner.temp }}/backend.log
           if-no-files-found: warn
 

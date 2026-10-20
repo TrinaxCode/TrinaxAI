@@ -45,7 +45,8 @@ trinaxai --api-url https://localhost:3333 --ca-file /path/to/rootCA.pem ask "Sho
 ```bash
 trinaxai chat [--prompt TEXT] [--file PATH] [--engine ENGINE] [--collections IDS] [--thinking]
 trinaxai ask [PROMPT ...] [--file PATH] [--engine ENGINE] [--collections IDS] [--thinking]
-trinaxai agent [--prompt TEXT] [--workspace PATH] [--model NAME] [--max-steps N] [--yolo]
+trinaxai agent [TASK ...] [-p TEXT] [--workspace PATH] [--model NAME] [--max-steps N]
+               [--permission-mode MODE] [--output-format text|json] [-c | -r SESSION] [--yolo]
 trinaxai research --query TEXT [--session NAME] [--depth DEPTH] [--collections IDS] [--thinking]
 trinaxai index [PATH] [--collection ID] [--append]
 trinaxai browse list-collections
@@ -56,6 +57,7 @@ trinaxai collections ACTION
 trinaxai watch ACTION
 trinaxai pair [start] [--scopes LIST] [--ttl SECONDS] [--device-ttl-days DAYS] [--pwa-url URL]
 trinaxai pair list
+trinaxai pair set DEVICE_ID --scopes LIST
 trinaxai pair revoke DEVICE_ID
 trinaxai obsidian --vault PATH [--collection ID]
 trinaxai export [--session NAME] [--format FORMAT] [--output PATH]
@@ -203,14 +205,17 @@ Run pairing creation and device administration from the host through loopback:
 trinaxai pair start
 trinaxai pair start --scopes chat,read_private,web --ttl 180 --device-ttl-days 30
 trinaxai pair list
+trinaxai pair set DEVICE_ID --scopes chat,read_private,agent
 trinaxai pair revoke DEVICE_ID
 ```
 
 `pair` without an action is the same as `pair start`. It prints a single-use
 code and a PWA link. Codes last 60–900 seconds (`300` by default). The default
-device scopes are `chat,read_private`; `web` is the only optional additional
-scope. `index`, `system`, `agent`, and `agent_yolo` are retired for paired
-devices and are rejected even when an admin credential is sent from LAN.
+device scopes are `chat,read_private`. Optional additional scopes are `web` and
+the elevated `index`, `agent` and `modify`, which let that device change the
+host (the CLI warns when you grant one). `pair set` replaces the permissions of
+an existing device. `system` and `agent_yolo` can never be granted and are
+rejected even when an admin credential is sent from LAN.
 
 The browser keeps new pairing credentials in an `HttpOnly; SameSite=Strict`
 cookie scoped to `/api`. A packaged CLI acting as a paired remote device
@@ -226,6 +231,33 @@ After changing Wi-Fi, router, or LAN address, run `trinaxai network refresh` on
 the host to renew HTTPS, CORS, and the active service configuration. This does
 not erase data or grant every device access; existing pairing scopes remain in
 force.
+
+## Agent workflow
+
+`trinaxai agent` follows the same workflow as other terminal coding agents.
+
+```bash
+trinaxai agent                                 # interactive session
+trinaxai agent "add a --verbose flag to cli.py"  # one task, answer only on stdout
+echo "explain this repo" | trinaxai agent -p     # task from stdin
+trinaxai agent -p "fix the failing test" --output-format json
+trinaxai agent --continue                      # resume the latest session
+trinaxai agent --permission-mode plan          # read-only: ask for a plan first
+```
+
+| Feature | Behavior |
+|---|---|
+| Transcript | `● read_file(app.py)` followed by `⎿ Read 120 lines`; shell output is folded to 8 lines; a `✻ 12.3s · 3 tool calls · 90 tokens` footer closes each turn. |
+| Approvals | Edits show a real unified diff, commands show the command. Choose **Yes**, **Yes, and don't ask again** (edits for the session, or a command: read-only ones (`git status/diff/log/show`, `ls`, `cat`, `pytest`, …) are remembered by name, any other command only verbatim; compound commands with `;`, `\|`, `&&` or `$(…)` are never remembered) or **No**. |
+| Permission modes | `default` asks, `accept-edits` auto-approves file edits, `plan` blocks every change, `yolo` approves everything. `Shift+Tab` cycles the first three; `/mode` and `--permission-mode` set any. |
+| Without a terminal | Dangerous actions are refused unless you pass `--permission-mode accept-edits` or `--yolo`. |
+| `@path` | Attaches a workspace file or directory listing to the prompt (Tab completes). Paths outside the workspace are ignored. |
+| Todo list | The model keeps a visible checklist for multi-step work (`todo_write`; `/todos`). |
+| Project instructions | `TRINAXAI.md`, `AGENTS.md` and `CLAUDE.md` at the workspace root are added to the system prompt (8,000 characters in total). `/init` asks the agent to write `TRINAXAI.md`. |
+| Interrupt | `Ctrl-C` stops the running turn and rolls the conversation back; press `↑` to edit and resend. |
+| Input | History persists in `~/.local/share/trinaxai/agent_history`; `Alt+Enter` or a trailing `\` adds a newline; the bottom bar shows model, workspace, mode and context use. |
+| Slash commands | `/help /clear /compact /model /mode /yolo /tools /status /todos /diff /init /resume /exit`. |
+| JSON output | `--output-format json` prints `result`, `status` (`complete` or `degraded`), `session`, `model`, `tool_calls`, `duration_s` and `tokens`. |
 
 ## Agent isolation
 

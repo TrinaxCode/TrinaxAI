@@ -422,9 +422,16 @@ Estas áreas requieren cuidado extra al modificarlas:
    repetidas, malformadas o de otra ruta fallan cerrado. Pertenecer a la red no
    concede privilegios por sí solo.
 3. Loopback directo tiene privilegio del operador local. Los tokens de dispositivo
-   solo pueden incluir `chat`, `read_private` y `web`; scopes elevados antiguos se ignoran.
-4. Las rutas `system`, `index`, `agent` o `agent_yolo` exigen procedencia loopback
-   original verificada. Un token admin no puede evitar esa comprobación.
+   pueden incluir `chat`, `read_private`, `web` y los scopes elevados `index`,
+   `agent` y `modify`. El operador en localhost concede los elevados por
+   dispositivo (`PATCH /v1/pairing/devices/{id}`); los registros anteriores a esa
+   marca conservan su lista pero sus scopes elevados se ignoran hasta que se
+   concedan de nuevo.
+4. Las rutas `system` o `agent_yolo` exigen procedencia loopback original
+   verificada. Las rutas `index`, `agent` y `modify` exigen loopback o un
+   dispositivo con ese scope; un token admin por la red no las desbloquea. Un
+   dispositivo solo puede vigilar carpetas dentro de las raíces de indexación
+   configuradas.
 5. `TRINAXAI_ALLOW_LAN_SYSTEM` se conserva solo por compatibilidad de configuración
    y no concede autoridad. Solicitudes inválidas o sin permiso devuelven `403`.
 6. `agent_yolo` HTTP sigue limitado a loopback y las herramientas peligrosas
@@ -432,7 +439,9 @@ Estas áreas requieren cuidado extra al modificarlas:
 
 **Valores por defecto:**
 - `TRINAXAI_ADMIN_TOKEN` — vacío (no configurado). El acceso desde localhost funciona automáticamente.
-- El pairing concede `chat,read_private` y opcionalmente puede añadir `web`.
+- El pairing concede `chat,read_private` por defecto; el anfitrión puede añadir
+  `web` y, por dispositivo, `index`, `agent` y `modify`. `system` y `agent_yolo`
+  nunca se pueden guardar en un dispositivo.
   El token nuevo queda solo en una cookie `HttpOnly; SameSite=Strict` con alcance
   `/api`; los valores legacy se leen únicamente durante la migración explícita
   de `/v1/pairing/me` y después se eliminan.

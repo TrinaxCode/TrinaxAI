@@ -25,9 +25,11 @@ CA on their device, and must not connect directly to port `3333` or Ollama
 
 Protected low-risk endpoints allow a direct loopback request, a scoped
 paired-device credential (`X-TrinaxAI-Device-Token`), or the administrator
-credential (`X-Admin-Token`). Host-only scopes (`system`, `index`, `agent`, and
-`agent_yolo`) first require verified original loopback provenance; no credential
-and no legacy LAN setting can override that requirement. The local PWA gateway strips
+credential (`X-Admin-Token`). Host-only scopes (`system` and `agent_yolo`)
+first require verified original loopback provenance; no credential and no legacy
+LAN setting can override that requirement. The elevated scopes `index`, `agent`
+and `modify` are granted to a specific paired device by the localhost operator;
+an admin token sent over the network does not unlock them. The local PWA gateway strips
 client identity headers and signs the original peer, method and path with a
 fresh, single-use HMAC assertion. FastAPI accepts that assertion only from
 loopback or an explicitly configured private runtime peer that also proves the
@@ -42,11 +44,12 @@ curl -k -H "X-Admin-Token: $TOKEN" https://localhost:3333/v1/memory
 curl -k -H "X-TrinaxAI-Device-Token: $DEVICE_TOKEN" https://localhost:3333/v1/memory
 ```
 
-Device scopes are `chat`, `read_private`, and `web`; default pairing grants
-`chat` and `read_private`. Requests for retired scopes (`index`, `system`,
-`agent`, and `agent_yolo`) are rejected, and those scopes are ignored on old
-tokens. An admin token can authenticate protected reads but cannot turn a LAN
-peer into localhost. An invalid supplied credential is never bypassed merely
+Device scopes are `chat`, `read_private`, `web`, `index`, `agent`, and
+`modify`; default pairing grants `chat` and `read_private`. Requests for
+`system` or `agent_yolo` are rejected. Records written before per-device grants
+existed keep their stored list but their elevated scopes (`index`, `agent`,
+`modify`) are ignored until the host grants them again. An admin token can
+authenticate protected reads but cannot turn a LAN peer into localhost. An invalid supplied credential is never bypassed merely
 because its transport peer is loopback.
 
 ## Endpoint map
@@ -54,18 +57,19 @@ because its transport peer is loopback.
 | Method and path | Access | Purpose |
 |---|---|---|
 | `POST /v1/chat/completions`, `/v1/research` | `chat` + rate limited | JSON/SSE chat and research. |
-| `POST /v1/agent`, `/v1/agent/approve`, `/v1/agent/cancel`, `GET /v1/agent/browse` | Loopback only | Workspace agent stream, approval/cancellation, and registered-root browsing. |
+| `POST /v1/agent`, `/v1/agent/approve`, `/v1/agent/cancel`, `GET /v1/agent/browse` | `agent` (loopback or granted device) | Workspace agent stream, approval/cancellation, and registered-root browsing. `yolo: true` additionally needs loopback (`agent_yolo`). |
 | `GET/POST /v1/voice/*` | `chat` + rate limited | Speech recognition and synthesis. |
 | `POST /documents/extract` | LAN/VPN or `chat` + rate limited | Stateless temporary document extraction. |
 | `GET /v1/sources/*`, `GET /v1/memory/*`, `POST /v1/memory/context`, `GET /v1/stats` | `read_private` | Private indexed and user data. |
-| `DELETE /v1/sources/*`, memory writes, `/v1/watch/*`, collection mutations | Loopback only | Host data and watcher administration. |
+| `DELETE /v1/sources/*`, `/v1/watch/*`, collection mutations | `index` | Source, watcher and collection administration. A device may only watch folders inside the configured indexing roots. |
+| Memory writes (`POST/PATCH/DELETE /v1/memory*`) | `modify` | Edit private memory. |
 | `POST /v1/usage` | `chat` | Local usage accounting. |
 | `GET /health`, `GET /ready`, `GET /resources` | Public | Liveness, model-provider readiness, and RAM data. |
-| `GET/PUT/DELETE /v1/settings/web-search*` | Loopback only | Host-local web-search provider settings and credential reset. |
+| `GET/PUT/DELETE /v1/settings/web-search*` | `modify` | Host-local web-search provider settings and credential reset. |
 | `GET/PUT /app-state` / `DELETE /app-state` | `read_private` / loopback (`system`) | Versioned shared PWA state / factory reset. |
-| `POST /attachments`, `GET /attachments/{id}` / `DELETE /attachments/{id}`, `POST /attachments/{id}/open` | `read_private` / loopback (`system`) | Store/retrieve versus delete/open host-backed chat attachments. |
-| `GET /collections` / mutations | `read_private` / loopback only | Collection metadata and administration. |
-| `/system/index*` / other `/system/*` | Loopback only | Indexing versus lifecycle/reload/self-test. |
+| `POST /attachments`, `GET /attachments/{id}` / `DELETE /attachments/{id}` / `POST /attachments/{id}/open` | `read_private` / `modify` / loopback (`system`) | Store/retrieve, delete, or open host-backed chat attachments. |
+| `GET /collections` / mutations | `read_private` / `index` | Collection metadata and administration. |
+| `/system/index*` / other `/system/*` | `index` / loopback only | Indexing versus lifecycle/reload/self-test. |
 | `/v1/pairing/*` | Mixed | One-time device pairing and revocation. |
 
 ## Error contract
@@ -117,9 +121,22 @@ mode-0600 files. Pairing authenticates a device/capability; it is not a
 multi-user account or authorization delegation system.
 
 `GET /v1/pairing/me` and `DELETE /v1/pairing/me` accept the cookie; the legacy
-header remains supported for CLI clients only. `GET /v1/pairing/devices`
-and `DELETE /v1/pairing/devices/{id}` are loopback-only operations. Revocation
-takes effect for FastAPI and the Ollama gateway.
+header remains supported for CLI clients only. `GET /v1/pairing/devices`,
+`PATCH /v1/pairing/devices/{id}` and `DELETE /v1/pairing/devices/{id}` are
+loopback-only operations. Revocation takes effect for FastAPI and the Ollama
+gateway.
+
+`PATCH /v1/pairing/devices/{id}` replaces one active device's permissions:
+
+```http
+PATCH /v1/pairing/devices/0123456789abcdef01234567
+{"scopes":["chat","read_private","agent"]}
+```
+
+The list must be non-empty and contain only the six grantable scopes; `system`
+and `agent_yolo` return `422`, an unknown or revoked device returns `404`, and a
+device or remote admin token cannot call it (`403`). The change applies to the
+next request, in FastAPI and in the PWA gateway.
 
 ## RAG chat
 

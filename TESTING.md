@@ -223,6 +223,49 @@ below the configured thresholds. The manual `Live backend RAG` GitHub Actions
 job performs this full path with Ollama; it is opt-in because model downloads
 and inference are hardware-dependent.
 
+### Retrieval benchmark over TrinaxAI's own documentation
+
+The smoke corpus above has seven files of a few hundred bytes, so `recall@10`
+is trivially 1.0 there. `tests/fixtures/rag_docs_golden.json` is the harder
+benchmark: 20 cases (14 English and 3 Spanish questions with one correct file
+each, plus 3 questions the documents cannot answer) over the 20 English guides
+in `docs/`, which contain many near-duplicate topics. It runs in the same
+opt-in `Live backend RAG` job.
+
+```bash
+mkdir -p /tmp/docs-corpus
+find docs -maxdepth 1 -name '*.md' ! -name '*.es.md' -exec cp {} /tmp/docs-corpus/ \;
+python scripts/evaluate_rag.py \
+  --golden tests/fixtures/rag_docs_golden.json \
+  --api-url http://127.0.0.1:3333 \
+  --index-corpus /tmp/docs-corpus \
+  --collection-id rag-docs \
+  --embed-model qwen3-embedding:0.6b \
+  --min-citation-precision 0.5 \
+  --timeout 1800 \
+  --output live-docs-rag-report.json
+```
+
+Measured on 2026-10-20 (Ryzen 7 5700U, 16 GB, CPU only, `8gb` profile,
+`qwen3.5:2b` + `qwen3-embedding:0.6b`, 106 chunks):
+
+| Metric | Result | Threshold |
+|---|---:|---:|
+| recall@5 / recall@10 | 1.00 / 1.00 | 0.75 (@10) |
+| MRR | 0.825 | 0.60 |
+| nDCG | 0.98 | 0.60 |
+| Answer-term recall | 1.00 | 0.70 |
+| Abstains when the documents have no answer | 1.00 | 0.90 |
+| Citation precision | 0.60 | 0.50 |
+
+Citation precision is low by construction: every question has one correct file
+but the API cites two or three. The first run of this benchmark scored answer
+recall 0.20 because the `8gb` profile used a 2048-token window that three
+retrieved chunks filled, so the model stopped after one token
+(`finish_reason: length`); the profile now defaults to 4096. All seventeen
+answerable cases are one-fact lookups, so treat these numbers as a regression
+guard, not a general quality claim.
+
 ## Documentation checks
 
 For documentation-only changes, run the smallest relevant checks plus the PWA

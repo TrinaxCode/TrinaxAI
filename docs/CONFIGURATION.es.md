@@ -208,11 +208,16 @@ conversación y permite reintentar; nunca inventa un resultado silencioso.
 CORS no es autenticación. FastAPI y Ollama administrados quedan en loopback; el
 gateway PWA es la frontera LAN. Bloquea 3333/11434 y usa VPN. Las lecturas
 privadas remotas exigen `read_private` o una credencial admin; índice, Agente y
-administración del host exigen procedencia loopback verificada.
+cambios de datos exigen un dispositivo al que el anfitrión haya concedido
+`index`, `agent` o `modify`; la administración del host exige procedencia
+loopback verificada.
 
 Ejecuta `trinaxai pair start` en el host para emitir un código de un uso. Por
-defecto concede `chat,read_private` y solo admite añadir `web`. Indexación,
-Agente y administración del host requieren loopback aunque exista token. `trinaxai pair list` muestra el inventario y
+defecto concede `chat,read_private` y admite añadir `web` y, por dispositivo,
+`index`, `agent` y `modify` (`--scopes chat,read_private,agent`); cámbialos
+después con `trinaxai pair set ID --scopes ...`. Ciclo de vida, administración
+de modelos/dispositivos y autoaprobación del Agente requieren loopback aunque
+exista token. `trinaxai pair list` muestra el inventario y
 `trinaxai pair revoke ID` invalida un equipo. Un claim nuevo de la PWA recibe el
 bearer únicamente en una cookie `HttpOnly; SameSite=Strict` con alcance
 `/api`; el JSON del claim contiene metadatos del dispositivo, no un bearer.

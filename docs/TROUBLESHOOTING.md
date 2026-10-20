@@ -39,8 +39,8 @@ The PWA combines a safe explanation with the next useful action when the error
 is recognized:
 
 - **Open indexing** appears for an empty or missing RAG collection. It opens
-  the host-only indexing area; the device still needs the permission to make
-  that change.
+  the indexing area; a paired device needs the `index` permission, which the
+  host grants in **Settings → Advanced → Paired devices → Permissions**.
 - **Retry** is appropriate for a transient network, provider, timeout, or
   failed index-job error. It does not change the source or collection.
 - **Start AI** starts the local services from the host. A paired phone cannot
@@ -130,7 +130,9 @@ The canonical profiles are `8gb`, `16gb`, `32gb`, and `64gb`. Legacy `max` and
   Research preflight or inspect **Settings → Web search**; a disabled provider
   is not an indexing failure.
 - Agent file actions require a registered workspace and may pause for approval.
-  A remote paired device cannot use host-only Agent or shell administration.
+  A remote paired device can use the Agent only if the host granted it the
+  `agent` permission, and it still confirms every dangerous action; auto-approve
+  (YOLO) and shell administration of the host stay localhost-only.
 - Voice availability depends on browser permissions, local audio hardware, and
   optional Python extras. Check `GET /v1/voice/capabilities` before debugging
   STT/TTS; a `501` means the local engine is not installed or available.

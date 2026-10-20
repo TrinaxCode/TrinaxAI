@@ -69,15 +69,38 @@ uno nuevo.
 
 ## Vincular El Navegador
 
-1. En el anfitrión, abre **Configuración > Avanzado > Dispositivo vinculado > Generar código de vinculación**.
+1. En el anfitrión, abre **Configuración > Avanzado > Dispositivo vinculado**, elige los permisos que tendrá el nuevo dispositivo y pulsa **Generar código de vinculación**.
 2. En el teléfono, elige **Ya tengo TrinaxAI en otro dispositivo**.
 3. Introduce el código de un solo uso, asigna un nombre y confirma.
-4. Revisa o revoca el dispositivo desde la configuración del anfitrión, o usa `trinaxai pair list` y `trinaxai pair revoke ID`.
+4. Revisa, cambia o revoca el dispositivo desde la configuración del anfitrión, o usa `trinaxai pair list`, `trinaxai pair set ID --scopes ...` y `trinaxai pair revoke ID`.
 
-El pairing solo concede `chat`, `read_private` y opcionalmente `web`. Indexar,
-escribir configuración, usar el Agente, gestionar modelos, controlar el ciclo
-de vida, restaurar todo y administrar dispositivos siguen siendo acciones del
-host en `https://localhost:3334`.
+## Permisos Por Dispositivo
+
+Cada dispositivo vinculado tiene su propio conjunto de permisos, que eliges en
+el anfitrión al generar el código y puedes editar después (**Permisos** junto al
+dispositivo, o `trinaxai pair set`). El anfitrión pide confirmación antes de
+conceder cualquier permiso que permita a un dispositivo modificar el equipo.
+
+| Permiso | Permite al dispositivo |
+|---|---|
+| `chat` | Conversar con los modelos locales. |
+| `read_private` | Usar el conocimiento indexado, la memoria, los chats sincronizados y las estadísticas. |
+| `web` | Buscar en la web a través del anfitrión. |
+| `index` | Indexar y vigilar carpetas, crear/vaciar/borrar colecciones y fuentes. Una carpeta vigilada debe estar dentro de las raíces de indexación configuradas en el anfitrión. |
+| `agent` | Usar TrinaxAI Agent dentro de las raíces de trabajo permitidas, nunca en una carpeta que contenga archivos propios de TrinaxAI (instalación, `.env`, storage, credenciales). Cada acción peligrosa sigue requiriendo confirmación desde ese dispositivo. |
+| `modify` | Editar la memoria y los ajustes de búsqueda web, y borrar adjuntos. |
+
+Un código nuevo concede por defecto `chat`, `read_private` y `web`. `index`,
+`agent` y `modify` están desactivados hasta que los actives para un dispositivo
+concreto; un dispositivo vinculado antes de esta función conserva su
+comportamiento anterior hasta que se los concedas de forma explícita. Los
+cambios se aplican en la siguiente petición del dispositivo.
+
+Apagar y reiniciar, gestionar modelos, borrar datos, abrir archivos del
+anfitrión, vincular o revocar otros dispositivos y el modo de autoaprobación
+(YOLO) del Agente nunca se pueden conceder. Solo funcionan desde
+`https://localhost:3334`, y ni un dispositivo ni un token admin enviado por la
+red pueden cambiar los permisos de un dispositivo.
 
 Elegir **Configurar como dispositivo nuevo** crea una cookie revocable con
 `chat`/`web`, sin historial sincronizado ni lecturas privadas. Vincúlalo después

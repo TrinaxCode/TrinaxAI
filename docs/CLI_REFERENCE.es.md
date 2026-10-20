@@ -116,14 +116,17 @@ Crea y administra emparejamientos desde el host mediante loopback:
 trinaxai pair start
 trinaxai pair start --scopes chat,read_private,web --ttl 180 --device-ttl-days 30
 trinaxai pair list
+trinaxai pair set ID_DISPOSITIVO --scopes chat,read_private,agent
 trinaxai pair revoke ID_DISPOSITIVO
 ```
 
 `pair` sin acción equivale a `pair start`. Muestra un código de un solo uso y un
 enlace PWA. El código dura 60–900 segundos (`300` por defecto). Los scopes
-iniciales son `chat,read_private`; `web` es el único scope adicional opcional.
-`index`, `system`, `agent` y `agent_yolo` están retirados para dispositivos
-vinculados y se rechazan incluso con credencial admin enviada desde LAN.
+iniciales son `chat,read_private`. Los adicionales opcionales son `web` y los
+elevados `index`, `agent` y `modify`, que permiten a ese dispositivo modificar
+el anfitrión (la CLI avisa al concederlos). `pair set` reemplaza los permisos de
+un dispositivo existente. `system` y `agent_yolo` nunca se pueden conceder y se
+rechazan incluso con credencial admin enviada desde LAN.
 
 El navegador guarda las credenciales nuevas de pairing en una cookie
 `HttpOnly; SameSite=Strict` con alcance `/api`; solo un bearer legacy se lee
@@ -141,6 +144,33 @@ versionado. Pairing representa una capability revocable, no una cuenta.
 refresh` en el host para renovar HTTPS, CORS y la configuración activa. No borra
 datos ni autoriza a todos los dispositivos; los scopes de pairing siguen
 vigentes.
+
+## Flujo del agente
+
+`trinaxai agent` sigue el mismo flujo que otros agentes de código para terminal.
+
+```bash
+trinaxai agent                                 # sesión interactiva
+trinaxai agent "añade una opción --verbose a cli.py"  # una tarea, solo la respuesta por stdout
+echo "explica este repo" | trinaxai agent -p    # tarea desde stdin
+trinaxai agent -p "arregla el test que falla" --output-format json
+trinaxai agent --continue                      # retoma la última sesión
+trinaxai agent --permission-mode plan          # solo lectura: pide primero un plan
+```
+
+| Función | Comportamiento |
+|---|---|
+| Transcripción | `● read_file(app.py)` seguido de `⎿ Read 120 lines`; la salida del shell se pliega a 8 líneas; cada turno termina con `✻ 12.3s · 3 tool calls · 90 tokens`. |
+| Aprobaciones | Las ediciones muestran un diff unificado real; los comandos, el comando. Elige **Sí**, **Sí, y no volver a preguntar** (ediciones durante la sesión o un comando: los de solo lectura (`git status/diff/log/show`, `ls`, `cat`, `pytest`, …) se recuerdan por nombre y cualquier otro solo literalmente; los comandos compuestos con `;`, `\|`, `&&` o `$(…)` nunca se recuerdan) o **No**. |
+| Modos de permisos | `default` pregunta, `accept-edits` aprueba ediciones de archivos, `plan` bloquea todo cambio, `yolo` aprueba todo. `Shift+Tab` alterna los tres primeros; `/mode` y `--permission-mode` fijan cualquiera. |
+| Sin terminal | Las acciones peligrosas se rechazan salvo `--permission-mode accept-edits` o `--yolo`. |
+| `@ruta` | Adjunta un archivo del workspace o el listado de una carpeta al prompt (Tab completa). Las rutas fuera del workspace se ignoran. |
+| Lista de tareas | El modelo mantiene una lista visible en trabajos de varios pasos (`todo_write`; `/todos`). |
+| Instrucciones del proyecto | `TRINAXAI.md`, `AGENTS.md` y `CLAUDE.md` en la raíz del workspace se añaden al prompt del sistema (8 000 caracteres en total). `/init` pide al agente escribir `TRINAXAI.md`. |
+| Interrupción | `Ctrl-C` detiene el turno y revierte la conversación; pulsa `↑` para editar y reenviar. |
+| Entrada | El historial persiste en `~/.local/share/trinaxai/agent_history`; `Alt+Enter` o una `\` final añade una línea; la barra inferior muestra modelo, workspace, modo y uso de contexto. |
+| Comandos slash | `/help /clear /compact /model /mode /yolo /tools /status /todos /diff /init /resume /exit`. |
+| Salida JSON | `--output-format json` imprime `result`, `status` (`complete` o `degraded`), `session`, `model`, `tool_calls`, `duration_s` y `tokens`. |
 
 ## Aislamiento del agente
 

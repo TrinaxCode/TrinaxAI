@@ -225,6 +225,49 @@ por debajo de los umbrales. El job manual `Live backend RAG` de GitHub Actions
 recorre esta ruta completa con Ollama; es opt-in porque las descargas de modelos
 y la inferencia dependen del hardware.
 
+### Benchmark de recuperación sobre la propia documentación de TrinaxAI
+
+El corpus de humo anterior tiene siete archivos de unos cientos de bytes, así
+que allí `recall@10` es trivialmente 1.0. `tests/fixtures/rag_docs_golden.json`
+es el benchmark exigente: 20 casos (14 preguntas en inglés y 3 en español con un
+archivo correcto cada una, más 3 que los documentos no pueden responder) sobre
+las 20 guías en inglés de `docs/`, con muchos temas casi duplicados. Se ejecuta
+en el mismo job opcional `Live backend RAG`.
+
+```bash
+mkdir -p /tmp/docs-corpus
+find docs -maxdepth 1 -name '*.md' ! -name '*.es.md' -exec cp {} /tmp/docs-corpus/ \;
+python scripts/evaluate_rag.py \
+  --golden tests/fixtures/rag_docs_golden.json \
+  --api-url http://127.0.0.1:3333 \
+  --index-corpus /tmp/docs-corpus \
+  --collection-id rag-docs \
+  --embed-model qwen3-embedding:0.6b \
+  --min-citation-precision 0.5 \
+  --timeout 1800 \
+  --output live-docs-rag-report.json
+```
+
+Medido el 2026-10-20 (Ryzen 7 5700U, 16 GB, solo CPU, perfil `8gb`,
+`qwen3.5:2b` + `qwen3-embedding:0.6b`, 106 fragmentos):
+
+| Métrica | Resultado | Umbral |
+|---|---:|---:|
+| recall@5 / recall@10 | 1,00 / 1,00 | 0,75 (@10) |
+| MRR | 0,825 | 0,60 |
+| nDCG | 0,98 | 0,60 |
+| Recall de términos de la respuesta | 1,00 | 0,70 |
+| Se abstiene cuando los documentos no responden | 1,00 | 0,90 |
+| Precisión de citas | 0,60 | 0,50 |
+
+La precisión de citas es baja por construcción: cada pregunta tiene un archivo
+correcto, pero la API cita dos o tres. La primera ejecución de este benchmark
+dio un recall de respuesta de 0,20 porque el perfil `8gb` usaba una ventana de
+2048 tokens que tres fragmentos recuperados llenaban, y el modelo se detenía tras
+un token (`finish_reason: length`); el perfil ahora usa 4096 por defecto. Los diecisiete
+casos respondibles son búsquedas de un dato, así que estas cifras sirven como
+guardia de regresión, no como afirmación general de calidad.
+
 ## Comprobaciones de documentación
 
 Para cambios solo documentales, ejecuta las comprobaciones mínimas relevantes y

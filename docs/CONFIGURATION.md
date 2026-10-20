@@ -65,9 +65,11 @@ canonical list of every supported `TRINAXAI_*` and `VITE_TRINAXAI_*` setting.
   remote use requires the configured credential and joins the cross-process
   inference lock.
 - Protected non-loopback reads require a paired-device token with the exact
-  `chat`, `read_private`, or `web` scope, or an administrator credential. Host
-  mutations, indexing, Agent routes, model/device management, and lifecycle
-  controls require verified original loopback regardless of credentials.
+  `chat`, `read_private`, or `web` scope, or an administrator credential.
+  Indexing, Agent and data-modifying routes need a device the host granted the
+  `index`, `agent` or `modify` scope to (an admin credential over the network
+  does not count). Model/device management, lifecycle controls and Agent
+  auto-approve require verified original loopback regardless of credentials.
 - Generate a single-use code with `trinaxai pair start`, inspect devices with
   `trinaxai pair list`, and revoke them from the host. A new PWA claim receives
   the device bearer only in an `HttpOnly; SameSite=Strict` cookie scoped to
@@ -200,8 +202,10 @@ discard unpublished data and may be retried when their staged source remains.
   remains the preferred path when available.
 
 Use `trinaxai pair start` for a device token. It grants `chat,read_private` by
-default and can add only `web`; indexing, Agent, lifecycle, and host
-administration still require verified loopback.
+default and can add `web` and, per device, `index`, `agent` and `modify`
+(`--scopes chat,read_private,agent`); change them later with
+`trinaxai pair set ID --scopes ...`. Lifecycle, model/device administration and
+Agent auto-approve still require verified loopback.
 
 ## Common values
 
@@ -215,7 +219,7 @@ administration still require verified loopback.
 | Host-backed chat attachment limit | 512 MiB per file; 4 GiB retained total |
 | Temporary extracted text | 120,000 characters |
 | Backend / Ollama bind | loopback-only |
-| Protected LAN reads | matching `chat`, `read_private`, or `web` device scope, or admin token; host administration remains loopback-only |
+| Protected LAN access | matching device scope (`chat`, `read_private`, `web`, and host-granted `index`, `agent`, `modify`); admin token for reads only; host administration remains loopback-only |
 
 ## Large-file processing and recoverable failures
 

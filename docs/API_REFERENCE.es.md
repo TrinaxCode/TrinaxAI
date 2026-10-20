@@ -32,9 +32,11 @@ Documentación generada en una instancia activa:
 
 Los endpoints protegidos de bajo riesgo aceptan peer loopback directo,
 credencial de dispositivo con scope (`X-TrinaxAI-Device-Token`) o credencial
-admin (`X-Admin-Token`). Los scopes exclusivos del host (`system`, `index`,
-`agent` y `agent_yolo`) exigen primero procedencia loopback original verificada;
-ninguna credencial ni ajuste LAN legacy evita ese requisito. El gateway local elimina cabeceras de
+admin (`X-Admin-Token`). Los scopes exclusivos del host (`system` y
+`agent_yolo`) exigen primero procedencia loopback original verificada; ninguna
+credencial ni ajuste LAN legacy evita ese requisito. Los scopes elevados
+`index`, `agent` y `modify` los concede el operador en localhost a un
+dispositivo concreto; un token admin enviado por la red no los desbloquea. El gateway local elimina cabeceras de
 identidad del cliente y firma peer, método y ruta con HMAC fresca y de un uso.
 FastAPI solo acepta esa firma desde loopback o un peer privado de runtime
 configurado explícitamente que además demuestre la clave compartida; nunca usa
@@ -49,10 +51,11 @@ curl -k -H "X-Admin-Token: $TOKEN" https://localhost:3333/v1/memory
 curl -k -H "X-TrinaxAI-Device-Token: $DEVICE_TOKEN" https://localhost:3333/v1/memory
 ```
 
-Los scopes de dispositivo disponibles son `chat`, `read_private` y `web`; el
-pairing concede `chat` y `read_private` por defecto. Se rechazan solicitudes de
-scopes retirados (`index`, `system`, `agent`, `agent_yolo`) y se ignoran en tokens
-antiguos. Un token admin puede autenticar lecturas protegidas, pero no convierte
+Los scopes de dispositivo disponibles son `chat`, `read_private`, `web`,
+`index`, `agent` y `modify`; el pairing concede `chat` y `read_private` por
+defecto. Se rechazan `system` y `agent_yolo`. Los registros anteriores a los
+permisos por dispositivo conservan su lista, pero sus scopes elevados (`index`,
+`agent`, `modify`) se ignoran hasta que el anfitrión los conceda de nuevo. Un token admin puede autenticar lecturas protegidas, pero no convierte
 un peer LAN en localhost. Una credencial inválida nunca se ignora por ser loopback.
 
 ## Resumen de endpoints
@@ -60,21 +63,21 @@ un peer LAN en localhost. Una credencial inválida nunca se ignora por ser loopb
 | Método y ruta | Protección | Propósito |
 |---|---|---|
 | `POST /v1/chat/completions`, `/v1/research` | `chat` + rate limit | Chat e investigación. |
-| `POST /v1/agent`, `/v1/agent/approve`, `/v1/agent/cancel`, `GET /v1/agent/browse` | Solo loopback | Stream de agente, aprobación/cancelación y raíces registradas. |
+| `POST /v1/agent`, `/v1/agent/approve`, `/v1/agent/cancel`, `GET /v1/agent/browse` | `agent` (loopback o dispositivo autorizado) | Stream de agente, aprobación/cancelación y raíces registradas. `yolo: true` exige además loopback (`agent_yolo`). |
 | `GET/POST /v1/voice/*` | `chat` + rate limit | Reconocimiento y síntesis de voz. |
 | `POST /documents/extract` | LAN/VPN o `chat` + rate limit | Extracción temporal sin persistencia. |
 | `GET /v1/sources` | `read_private` | Archivos indexados por colección. |
 | `GET /v1/sources/{collection}/{file}/chunks` | `read_private` | Chunks paginados. |
-| `DELETE /v1/sources/*` | Solo loopback | Elimina archivo o colección de fuentes. |
-| `GET /v1/memory/*`, `POST /v1/memory/context` / escrituras de memoria | `read_private` / loopback (`system`) | Lectura versus mutación de memoria privada. |
-| `POST/GET /v1/watch/*` | Solo loopback | Administra watcher. |
+| `DELETE /v1/sources/*` | `index` | Elimina archivo o colección de fuentes. |
+| `GET /v1/memory/*`, `POST /v1/memory/context` / escrituras de memoria | `read_private` / `modify` | Lectura versus mutación de memoria privada. |
+| `POST/GET /v1/watch/*` | `index` | Administra watcher. Un dispositivo solo puede vigilar carpetas dentro de las raíces de indexación configuradas. |
 | `POST /v1/usage`, `GET /v1/stats` | `chat` / `read_private` | Métricas locales. |
 | `GET /health`, `GET /ready`, `GET /resources` | Pública | Vida del servicio, disponibilidad de Ollama y RAM local. |
-| `GET/PUT/DELETE /v1/settings/web-search*` | Solo loopback | Configuración local del proveedor web y borrado de credenciales. |
+| `GET/PUT/DELETE /v1/settings/web-search*` | `modify` | Configuración local del proveedor web y borrado de credenciales. |
 | `GET/PUT /app-state` / `DELETE /app-state` | `read_private` / loopback (`system`) | Estado PWA versionado / reset total. |
-| `POST /attachments`, `GET /attachments/{id}` / `DELETE /attachments/{id}`, `POST /attachments/{id}/open` | `read_private` / loopback (`system`) | Guardar/recuperar versus eliminar/abrir adjuntos en el host. |
-| `GET /collections` / mutaciones | `read_private` / solo loopback | Colecciones. |
-| `/system/index*` / resto `/system/*` | Solo loopback | Índice versus lifecycle/autoprueba. |
+| `POST /attachments`, `GET /attachments/{id}` / `DELETE /attachments/{id}` / `POST /attachments/{id}/open` | `read_private` / `modify` / loopback (`system`) | Guardar/recuperar, eliminar o abrir adjuntos en el host. |
+| `GET /collections` / mutaciones | `read_private` / `index` | Colecciones. |
+| `/system/index*` / resto `/system/*` | `index` / solo loopback | Índice versus lifecycle/autoprueba. |
 | `/v1/pairing/*` | Mixto | Pairing de dispositivos y revocación. |
 
 ## Contrato de errores
@@ -126,9 +129,22 @@ separados modo `0600`. Pairing autentica dispositivo/capability; no es sistema
 multiusuario.
 
 `GET /v1/pairing/me` y `DELETE /v1/pairing/me` aceptan la cookie; la cabecera
-legacy sigue soportada para clientes CLI y la migración. `GET /v1/pairing/devices`
-y `DELETE /v1/pairing/devices/{id}` requieren loopback real. La revocación afecta
-tanto FastAPI como el gateway de Ollama.
+legacy sigue soportada para clientes CLI y la migración. `GET /v1/pairing/devices`,
+`PATCH /v1/pairing/devices/{id}` y `DELETE /v1/pairing/devices/{id}` requieren
+loopback real. La revocación afecta tanto FastAPI como el gateway de Ollama.
+
+`PATCH /v1/pairing/devices/{id}` reemplaza los permisos de un dispositivo activo:
+
+```http
+PATCH /v1/pairing/devices/0123456789abcdef01234567
+{"scopes":["chat","read_private","agent"]}
+```
+
+La lista no puede estar vacía y solo admite los seis scopes concedibles;
+`system` y `agent_yolo` devuelven `422`, un dispositivo desconocido o revocado
+devuelve `404`, y un dispositivo o un token admin remoto no pueden llamarlo
+(`403`). El cambio se aplica en la siguiente petición, tanto en FastAPI como en
+el gateway PWA.
 
 ## Chat RAG
 

@@ -423,11 +423,16 @@ These areas require extra care when modifying:
    path-mismatched assertions fail closed. Network membership alone grants no
    privilege.
 3. A real direct-loopback caller has local operator privilege. Device tokens may
-   carry only `chat`, `read_private`, and `web`; retired elevated scopes in old
-   records are ignored.
-4. Routes classified as `system`, `index`, `agent`, or `agent_yolo` require
-   verified original loopback before credentials are considered. Admin tokens
-   may authenticate lower-risk protected operations but cannot override origin.
+   carry `chat`, `read_private`, `web` and the elevated `index`, `agent` and
+   `modify` scopes. The localhost operator grants elevated scopes per device
+   (`PATCH /v1/pairing/devices/{id}`); records written before that marker
+   existed keep their stored list but their elevated scopes are ignored until
+   re-granted.
+4. Routes classified as `system` or `agent_yolo` require verified original
+   loopback before credentials are considered. `index`, `agent` and `modify`
+   routes need either loopback or a device that holds that scope; an admin
+   token over the network does not unlock them. A device may only watch folders
+   inside the configured indexing roots.
 5. `TRINAXAI_ALLOW_LAN_SYSTEM` is retained only for configuration compatibility
    and grants no authority. Invalid or unmatched requests return `403`.
 6. HTTP `agent_yolo` remains loopback-only and dangerous tools retain their
@@ -435,7 +440,9 @@ These areas require extra care when modifying:
 
 **Defaults:**
 - `TRINAXAI_ADMIN_TOKEN` — empty (not set). Localhost access works automatically.
-- Device pairing grants `chat,read_private` by default and may add only `web`.
+- Device pairing grants `chat,read_private` by default; the host may add `web`
+  and, per device, `index`, `agent` and `modify`. `system` and `agent_yolo`
+  can never be stored on a device.
   New clear tokens are held only in an `HttpOnly; SameSite=Strict` cookie scoped
   to `/api`; legacy CLI values remain in the device-token header and are
   never copied into a response cookie.

@@ -57,7 +57,7 @@ superficie principal es:
 |------------|--------|-------|
 | **API RAG** (`app/`) | Medio | El arranque administrado es solo loopback. El gateway firma el peer original con HMAC efímero; se ignoran cabeceras de forwarding ordinarias. Estado privado, fuentes, memoria, adjuntos, agente y administración exigen autorización. |
 | **Gateway PWA** (`chat-pwa/vite.config.ts`) | Medio | Frontera HTTPS orientada a LAN. Valida credenciales admin/de dispositivo emparejado, elimina identidad aportada por cliente, firma el peer para FastAPI, aplica cabeceras y publica solo una fachada Ollama con allowlist. |
-| **Agente** (`trinaxai_agent/`) | Alto | Las herramientas de archivo resuelven symlinks dentro de raíces registradas. En Linux el shell usa bubblewrap sin red; sin aislamiento compatible falla cerrado. Las acciones peligrosas piden aprobación y autoaprobación HTTP no está disponible remotamente. |
+| **Agente** (`trinaxai_agent/`) | Alto | Las herramientas de archivo resuelven symlinks dentro de raíces registradas. En Linux el shell usa bubblewrap sin red (lo instala `install.sh` y lo comprueba `trinaxai doctor`); en macOS y Windows no hay sandbox del SO, así que la ejecución de comandos permanece desactivada salvo que `TRINAXAI_AGENT_ALLOW_UNSANDBOXED_COMMANDS=1` acepte acceso completo del usuario. Las herramientas de archivo siguen confinadas a los workspaces registrados en todas las plataformas. Las acciones peligrosas piden aprobación y autoaprobación HTTP no está disponible remotamente. |
 | **CLI** (`trinaxai_cli/`) | Bajo | Herramienta local con TLS verificado; certificados privados requieren `--ca-file` o `TRINAXAI_CA_FILE`. `--yolo` y shell sin sandbox son opt-ins de alto riesgo. |
 | **Lifecycle/backups** | Medio | El privilegio usa wrapper exacto, propiedad de root, no scripts editables del repo. El backup usa modos privados, valida rutas/tipos, restaura en staging y revierte fallos. Aun así contiene datos sensibles y debe cifrarse fuera del host. |
 | **Ollama** | Alto si se expone | No tiene autenticación. El arranque administrado usa `127.0.0.1`; nunca expongas 11434 ni un proxy genérico. |
@@ -110,11 +110,20 @@ El modelo de amenazas de TrinaxAI asume:
 
 1. **Mantén FastAPI y Ollama en loopback.** Deja `TRINAXAI_UNSAFE_BIND_BACKEND=0` y publica solo el gateway autenticado.
 2. **Empareja con mínimo privilegio.** `trinaxai pair start` concede
-   `chat,read_private` y solo puede añadir `web`. Revisa `trinaxai pair list` y
-   revoca equipos perdidos o en desuso.
-3. **Administra solo desde `https://localhost:3334`.** Indexación, Agente,
-   modelos, dispositivos, lifecycle y restauración total requieren loopback
-   verificado aunque se envíe credencial admin o un scope retirado.
+   `chat,read_private` por defecto. Añade `web`, o los permisos elevados
+   `index`, `agent` y `modify`, solo para un dispositivo en el que confíes con
+   tus archivos: `index` permite indexar/vigilar carpetas y borrar fuentes,
+   `agent` permite usar el Agente (que sigue pidiendo confirmación en cada
+   acción peligrosa) y `modify` permite editar la memoria y los ajustes de
+   búsqueda web. Cambia un dispositivo después con
+   `trinaxai pair set ID --scopes ...`, revisa `trinaxai pair list` y revoca
+   los equipos perdidos o en desuso.
+3. **Administra solo desde `https://localhost:3334`.** Apagado y ciclo de vida,
+   modelos, dispositivos, restauración total y el modo YOLO (autoaprobación) del
+   Agente requieren loopback verificado y nunca se pueden conceder a un
+   dispositivo. Los permisos elevados solo los concede el operador en localhost;
+   un dispositivo no puede subirse los suyos y un token admin enviado por la red
+   no los desbloquea.
 4. **Protege los secretos de credenciales.** No compartas
    `storage/.proxy_secret` ni `storage/.device_secret`; conserva modo `0600`
    también en `storage/device_pairing.json`.

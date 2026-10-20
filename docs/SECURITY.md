@@ -57,7 +57,7 @@ The primary attack surface is:
 |-----------|------|-------|
 | **RAG API** (`app/`) | Medium | Managed launch is loopback-only. The local gateway signs the original peer with a short-lived HMAC assertion; ordinary forwarding headers are ignored. Private state, sources, memory, attachments, agent and administration require authorization. |
 | **PWA gateway** (`chat-pwa/vite.config.ts`) | Medium | LAN-facing HTTPS boundary. It validates paired-device/admin credentials, strips client-supplied identity headers, signs the peer for FastAPI, applies security headers, and exposes only an allowlisted Ollama facade. Vite remains a project gateway, not a generic reverse proxy. |
-| **Agent** (`trinaxai_agent/`) | High | File tools resolve symlinks inside registered workspace roots. Linux shell commands use networkless bubblewrap; command execution fails closed when supported isolation is unavailable. Dangerous tools require approval; HTTP auto-approval is disabled and cannot be enabled remotely. |
+| **Agent** (`trinaxai_agent/`) | High | File tools resolve symlinks inside registered workspace roots. Linux shell commands use networkless bubblewrap (installed by `install.sh`, checked by `trinaxai doctor`); on macOS and Windows no OS sandbox exists, so command execution stays disabled unless `TRINAXAI_AGENT_ALLOW_UNSANDBOXED_COMMANDS=1` accepts full user-level host access. File tools remain confined to registered workspaces on every platform. Dangerous tools require approval; HTTP auto-approval is disabled and cannot be enabled remotely. |
 | **CLI** (`trinaxai_cli/`) | Limited | Local terminal tool with verified TLS by default. `--ca-file`, `--yolo`, and unsandboxed command execution are explicit high-risk opt-ins. |
 | **Lifecycle/backups** | Medium | Privileged lifecycle calls use an exact, root-owned wrapper rather than repository-editable scripts. Backups use private modes, validate archive entry types/paths, restore through staging, and roll back failed replacement. Backups contain sensitive data and should still be encrypted at rest. |
 | **Ollama** | High if exposed | Ollama has no built-in authentication. Managed launch binds it to `127.0.0.1`; never expose port 11434 or a generic Ollama proxy. |
@@ -108,11 +108,19 @@ TrinaxAI's threat model assumes:
 
 1. **Keep FastAPI and Ollama on loopback.** Leave `TRINAXAI_UNSAFE_BIND_BACKEND=0`; publish only the authenticated PWA gateway.
 2. **Pair devices with least privilege.** `trinaxai pair start` grants
-   `chat,read_private` by default and may add only `web`. Review
-   `trinaxai pair list` and revoke devices that are lost or no longer used.
-3. **Administer only from `https://localhost:3334`.** Indexing, Agent, model and
-   device management, lifecycle actions, and factory reset require verified
-   loopback even when an admin credential or retired device scope is supplied.
+   `chat,read_private` by default. Add `web`, or the elevated `index`, `agent`
+   and `modify` permissions, only for a device you trust with your files:
+   `index` lets it index/watch folders and delete sources, `agent` lets it run
+   the Agent (still confirming every dangerous action), and `modify` lets it
+   edit memory and web-search settings. Change a device later with
+   `trinaxai pair set ID --scopes ...`, review `trinaxai pair list`, and revoke
+   devices that are lost or no longer used.
+3. **Administer only from `https://localhost:3334`.** Power and lifecycle
+   actions, model and device management, factory reset, and the Agent's YOLO
+   (auto-approve) mode require verified loopback and can never be granted to a
+   device. Elevated permissions are granted only by the localhost operator; a
+   device cannot raise its own, and an admin token sent over the network does
+   not unlock them.
 4. **Keep credential secrets private.** Never share `storage/.proxy_secret` or
    `storage/.device_secret`; preserve mode `0600` on those files and on
    `storage/device_pairing.json`.

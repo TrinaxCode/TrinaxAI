@@ -18,7 +18,7 @@
 TrinaxAI se ejecuta en tu equipo y mantiene la inferencia y los datos indexados
 en el host configurado salvo que elijas explícitamente un servicio remoto.
 Combina chat local, generación aumentada por recuperación (RAG) con citas,
-investigación web opcional, un agente de código aislado, una interfaz de
+investigación web opcional, un agente de código confinado al workspace, una interfaz de
 terminal y una aplicación web progresiva (PWA) instalable.
 
 ## Instalar con npm
@@ -94,7 +94,9 @@ El instalador detecta CPU, memoria, GPU y VRAM. Consulta
 - Chat local con Ollama y enrutamiento por tipo de tarea
 - RAG híbrido sobre código y documentos con citas, colecciones e indexación incremental
 - Búsqueda web, investigación profunda, memoria, voz y visión opcionales
-- Agente de código aislado con workspaces aprobados y aprobación de acciones
+- Agente de código con workspaces aprobados y aprobación de acciones. Su herramienta de
+  terminal se ejecuta en un sandbox bubblewrap sin red en Linux y permanece desactivada en
+  macOS y Windows; las herramientas de archivos funcionan en todas (ver la [guía de seguridad](docs/SECURITY.es.md))
 - PWA HTTPS para escritorio y móvil con emparejamiento por scopes
 - Interfaz de terminal para chat, indexación, investigación, diagnósticos y exportaciones
 

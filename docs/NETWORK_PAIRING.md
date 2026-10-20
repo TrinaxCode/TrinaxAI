@@ -66,15 +66,39 @@ current LAN address; changing Wi-Fi can require a new certificate.
 
 ## Pair The Browser
 
-1. On the host, open **Settings > Advanced > Paired device > Generate pairing code**.
+1. On the host, open **Settings > Advanced > Paired device**, choose the
+   permissions the new device should have, and press **Generate pairing code**.
 2. On the phone, choose **I already have TrinaxAI on another device**.
 3. Enter the one-time code, name the device, and confirm.
-4. Review or revoke it from the host settings, or run `trinaxai pair list` and
+4. Review, change or revoke it from the host settings, or run
+   `trinaxai pair list`, `trinaxai pair set ID --scopes ...` and
    `trinaxai pair revoke ID`.
 
-Pairing grants only `chat`, `read_private`, and optionally `web`. Indexing,
-configuration writes, the Agent, model management, lifecycle controls, factory
-reset, and device administration remain host-only at `https://localhost:3334`.
+## Permissions Per Device
+
+Each paired device holds its own permission set, chosen on the host when the
+code is generated and editable later (**Permissions** next to the device, or
+`trinaxai pair set`). The host asks for confirmation before it grants any
+permission that lets a device change the computer.
+
+| Permission | Allows the device to |
+|---|---|
+| `chat` | Talk to the local models. |
+| `read_private` | Use indexed knowledge, memory, synced chats and statistics. |
+| `web` | Search the web through the host. |
+| `index` | Index and watch folders, create/clear/delete collections and sources. A watched folder must be inside the host's configured indexing roots. |
+| `agent` | Use TrinaxAI Agent inside the allowed workspace roots, never in a folder that holds TrinaxAI's own files (install, `.env`, storage, credentials). Every dangerous action still needs confirmation from that device. |
+| `modify` | Edit memory and web-search settings, and delete attachments. |
+
+The default for a new code is `chat`, `read_private` and `web`. `index`,
+`agent` and `modify` are off until you turn them on for a specific device; a
+device paired before this feature existed keeps its previous behaviour until you
+grant them explicitly. Changes apply on the device's next request.
+
+Power and restart, model management, wiping data, opening host files, pairing
+or revoking other devices, and the Agent's auto-approve (YOLO) mode can never
+be granted. They only work from `https://localhost:3334`, and neither a device
+nor an admin token sent over the network can change a device's permissions.
 
 Choosing **Set up as a new device** creates a revocable `chat`/`web` cookie
 without synchronized history or private reads. Pair it later from the host if

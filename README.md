@@ -18,7 +18,7 @@
 TrinaxAI runs on your computer and keeps inference and indexed data on the
 configured host unless you explicitly choose a remote service. It combines
 local chat, cited retrieval-augmented generation (RAG), optional web research,
-a sandboxed coding agent, a terminal interface, and an installable progressive
+a workspace-confined coding agent, a terminal interface, and an installable progressive
 web app (PWA).
 
 ## Install with npm
@@ -97,7 +97,9 @@ Use the CLI from any directory after setup:
 - Local Ollama chat with task-aware routing for chat, code, reasoning, and math
 - Hybrid RAG over code and documents with citations, collections, and incremental indexing
 - Optional web search, deep research, memory, voice, and vision
-- A sandboxed coding agent with approved workspaces and action approvals
+- A coding agent with approved workspaces and action approvals. Its terminal tool
+  runs in a networkless bubblewrap sandbox on Linux and stays disabled on macOS
+  and Windows; the file tools work everywhere (see the [security guide](docs/SECURITY.md))
 - An HTTPS PWA for desktop and mobile with scoped device pairing
 - A terminal interface for chat, indexing, research, diagnostics, and exports
 
@@ -119,8 +121,9 @@ The `8gb` profile works with CPU-only hardware. See the
 
 TrinaxAI binds local services to loopback by default. Ollama is not exposed as
 a generic proxy. LAN browsers must pair with a one-time code and receive only
-the capabilities you grant. Indexing, administration, agent tools, and model
-management remain host-only.
+the capabilities you grant, device by device. You can let a specific device
+index, use the Agent, or modify data; power, model management, device pairing,
+factory reset and Agent auto-approve (YOLO) always remain host-only.
 
 Keep ports `3333` and `11434` private, protect `storage/.proxy_secret`, and
 use a VPN instead of exposing the host to the public Internet. Read the

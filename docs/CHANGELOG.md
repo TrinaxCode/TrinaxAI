@@ -18,6 +18,59 @@ All notable changes to TrinaxAI are documented here. This project follows the
 
 ## [Unreleased]
 
+### Added
+
+- `trinaxai agent` now works like other terminal coding agents: a
+  `● tool(args)` / `⎿ result` transcript with a live "Working…" status, real
+  unified diffs on approval prompts, three-way approvals (yes / don't ask again
+  / no), permission modes (`default`, `accept-edits`, `plan`, `yolo`) cycled
+  with Shift+Tab, `@file` attachments, a `todo_write` checklist,
+  `TRINAXAI.md` / `AGENTS.md` / `CLAUDE.md` project instructions, persistent
+  prompt history, Ctrl-C that rolls the turn back, `/compact`, `/status`,
+  `/diff`, `/init`, `/resume`, session `--continue`/`--resume`, and
+  non-interactive `-p`, stdin and `--output-format json` runs.
+
+- Per-device permissions: the host chooses what each paired device may do when
+  it generates the pairing code and can change it later from **Settings →
+  Advanced → Paired devices → Permissions** or with `trinaxai pair set`. New
+  grantable permissions are `index` (index/watch folders, manage collections
+  and sources), `agent` (use TrinaxAI Agent, still confirming every dangerous
+  action) and `modify` (edit memory and web-search settings, delete
+  attachments). The host confirms before granting any of them.
+- `PATCH /v1/pairing/devices/{id}` to replace a device's permissions
+  (loopback-only).
+
+- The Linux installer now installs `bubblewrap` (best-effort) so the Agent's
+  terminal tool works out of the box, and `trinaxai doctor` reports an
+  "Agent shell sandbox" row (informational, never fails `--strict`).
+- `tests/fixtures/rag_docs_golden.json`: a harder retrieval benchmark over
+  TrinaxAI's own documentation (20 files, English corpus, Spanish and English
+  queries, abstention cases), run live in CI next to the smoke corpus.
+- `tests/test_route_scope_contract.py` pins the device scope of every HTTP
+  route, so adding or re-scoping an endpoint is an explicit, reviewed change.
+
+### Changed
+
+- The README and security guide now state that the Agent's terminal tool is
+  sandboxed only on Linux and stays disabled on macOS and Windows unless
+  `TRINAXAI_AGENT_ALLOW_UNSANDBOXED_COMMANDS=1`; file tools work everywhere.
+- Edge-case test modules are named after the domain they exercise instead of
+  `*_coverage*`; the unused `trinaxai-ui-preview` prototype was removed.
+
+### Security
+
+- `system` and the Agent's auto-approve (YOLO) mode remain impossible to grant
+  to a device. Elevated permissions are granted only by the localhost operator,
+  are ignored on records created before this change until granted again, and an
+  admin token sent over the network does not unlock them.
+- A device with `index` can only watch folders inside the host's configured
+  indexing roots.
+- A device with `agent` can never use or browse a workspace that holds
+  TrinaxAI's own files (install directory, `.env`, storage, credential
+  secrets), even when the host's workspace roots include them.
+- Deleting an imported source resolves symlinks before checking that the path
+  stays inside the imports folder.
+
 ## [1.3.0] — 2026-10-18
 
 ### Changed
