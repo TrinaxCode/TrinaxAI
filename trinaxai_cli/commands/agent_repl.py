@@ -12,11 +12,13 @@ the non-interactive paths. The REPL mirrors the Claude Code workflow:
 from __future__ import annotations
 
 import os
+import shlex
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
+from trinaxai_agent.tools import _bubblewrap_argv
 from trinaxai_cli.agent_ui import (
     MODE_ACCEPT_EDITS,
     MODE_DEFAULT,
@@ -275,34 +277,39 @@ def _cmd_todos(_arg: str, ctx: ReplContext) -> None:
 
 
 def _git_diff(workspace: Path, *args: str) -> subprocess.CompletedProcess[str]:
-    """Run ``git diff`` without honouring config the Agent could have written.
+    """Run ``git diff`` without trusting config or attributes the Agent could have written.
 
-    The workspace is Agent-writable, so its ``.git/config`` is untrusted: a
-    ``core.fsmonitor`` or ``diff.external`` entry would run a program as the
-    user the moment the operator types ``/diff``.
+    The workspace is Agent-writable, so ``.git/config`` is untrusted: ``core.fsmonitor``
+    or a clean/smudge filter would run a program as the user the moment the
+    operator types ``/diff``. Where the OS offers the Agent's networkless sandbox
+    (Linux/bubblewrap) the diff runs inside it, so even a poisoned repository can
+    only touch the workspace. Elsewhere the Agent has no way to write ``.git``
+    (its file tools refuse it) and the call is hardened with ``-c`` overrides.
     """
+    git_argv = [
+        "git",
+        "-c",
+        "core.fsmonitor=",
+        "-c",
+        "core.pager=cat",
+        "-c",
+        "diff.external=",
+        "diff",
+        "--no-ext-diff",
+        "--no-textconv",
+        "--no-color",
+        *args,
+    ]
     env = {**os.environ, "GIT_CONFIG_NOSYSTEM": "1", "GIT_EXTERNAL_DIFF": "", "GIT_PAGER": "cat"}
-    return subprocess.run(  # noqa: S603,S607 - fixed argv, hardened read-only git
-        [
-            "git",
-            "-c",
-            "core.fsmonitor=",
-            "-c",
-            "core.pager=cat",
-            "-c",
-            "diff.external=",
-            "-C",
-            str(workspace),
-            "diff",
-            "--no-ext-diff",
-            "--no-textconv",
-            "--no-color",
-            *args,
-        ],
+    sandboxed = _bubblewrap_argv(workspace, shlex.join(git_argv))
+    argv = sandboxed if sandboxed is not None else [*git_argv[:1], "-C", str(workspace), *git_argv[1:]]
+    return subprocess.run(  # noqa: S603 - fixed argv, sandboxed or hardened read-only git
+        argv,
         capture_output=True,
         text=True,
         timeout=15,
         check=False,
+        cwd=str(workspace),
         env=env,
     )
 

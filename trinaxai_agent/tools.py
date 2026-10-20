@@ -470,8 +470,22 @@ def _read_file(workspace_root: Path, path: str, offset: int = 0, limit: int = 0,
     return _truncate(f"{header}\n{body}{facts_block}\n{footer}")
 
 
-def _write_file(workspace_root: Path, path: str, content: str = "", **_: Any) -> str:
+def _resolve_for_write(workspace_root: Path, path: str) -> Path:
+    """Resolve a write target and refuse git metadata.
+
+    ``.git/config`` can name programs (``core.fsmonitor``, filter drivers) that
+    git runs for the *user* the next time they inspect the repository, so the
+    Agent may not write there even though it may write everywhere else.
+    """
     target = _resolve_in_workspace(workspace_root, path)
+    relative = target.relative_to(workspace_root.resolve())
+    if ".git" in (part.casefold() for part in relative.parts):
+        raise SandboxError(f"path '{path}' is git metadata; the Agent may not modify it")
+    return target
+
+
+def _write_file(workspace_root: Path, path: str, content: str = "", **_: Any) -> str:
+    target = _resolve_for_write(workspace_root, path)
     try:
         target.parent.mkdir(parents=True, exist_ok=True)
         existed = target.exists()
@@ -483,7 +497,7 @@ def _write_file(workspace_root: Path, path: str, content: str = "", **_: Any) ->
 
 
 def _edit_file(workspace_root: Path, path: str, old: str = "", new: str = "", **_: Any) -> str:
-    target = _resolve_in_workspace(workspace_root, path)
+    target = _resolve_for_write(workspace_root, path)
     if not target.is_file():
         return f"error: file not found: {path}"
     try:

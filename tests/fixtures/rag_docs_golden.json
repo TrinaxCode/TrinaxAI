@@ -1,0 +1,258 @@
+{
+ "schema_version": 1,
+ "name": "trinaxai-docs-golden-v1",
+ "description": "Retrieval benchmark over TrinaxAI's own English documentation (20 files, many near-duplicate topics). Spanish queries test cross-lingual retrieval; the last three cases must abstain.",
+ "cases": [
+  {
+   "id": "security-response",
+   "query": "How quickly does the project aim to respond to a reported security vulnerability?",
+   "collections": [
+    "rag-docs"
+   ],
+   "expected_sources": [
+    "SECURITY.md"
+   ],
+   "answer_contains": [
+    "72"
+   ]
+  },
+  {
+   "id": "blake2b",
+   "query": "Which hash algorithm do content fingerprints use for incremental indexing?",
+   "collections": [
+    "rag-docs"
+   ],
+   "expected_sources": [
+    "ARCHITECTURE.md"
+   ],
+   "answer_contains": [
+    "blake2b"
+   ]
+  },
+  {
+   "id": "bench-speed",
+   "query": "What generation speed in tokens per second did qwen2.5-coder:1.5b reach in the model benchmark?",
+   "collections": [
+    "rag-docs"
+   ],
+   "expected_sources": [
+    "MODEL_BENCHMARK.md"
+   ],
+   "answer_contains": [
+    "20.32"
+   ]
+  },
+  {
+   "id": "trusted-peers",
+   "query": "Which environment variable lists the IPs or CIDRs allowed as transport peers for signed gateway assertions?",
+   "collections": [
+    "rag-docs"
+   ],
+   "expected_sources": [
+    "ENVIRONMENT_VARIABLES.md"
+   ],
+   "answer_contains": [
+    "TRINAXAI_PROXY_TRUSTED_PEERS"
+   ]
+  },
+  {
+   "id": "trademark-owner",
+   "query": "Who owns the TrinaxAI trademark?",
+   "collections": [
+    "rag-docs"
+   ],
+   "expected_sources": [
+    "TRADEMARK.md"
+   ],
+   "answer_contains": [
+    "TrinaxCode"
+   ]
+  },
+  {
+   "id": "rate-window",
+   "query": "Which variable sets how many seconds an empty backend rate-limit bucket takes to refill?",
+   "collections": [
+    "rag-docs"
+   ],
+   "expected_sources": [
+    "ENVIRONMENT_VARIABLES.md"
+   ],
+   "answer_contains": [
+    "TRINAXAI_RATE_LIMIT_WINDOW_SECONDS"
+   ]
+  },
+  {
+   "id": "fingerprint-mismatch",
+   "query": "What happens in the release workflow if the imported public signing key fingerprint differs from the expected one?",
+   "collections": [
+    "rag-docs"
+   ],
+   "expected_sources": [
+    "RELEASE_SIGNING.md"
+   ],
+   "answer_contains": [
+    "fail"
+   ]
+  },
+  {
+   "id": "ollama-auth",
+   "query": "Why must port 11434 never be exposed to the network?",
+   "collections": [
+    "rag-docs"
+   ],
+   "expected_sources": [
+    "SECURITY.md"
+   ],
+   "answer_contains": [
+    "authentication"
+   ]
+  },
+  {
+   "id": "linux-disk",
+   "query": "What is the minimum free disk space required to install TrinaxAI on Linux?",
+   "collections": [
+    "rag-docs"
+   ],
+   "expected_sources": [
+    "INSTALL_LINUX.md"
+   ],
+   "answer_contains": [
+    "5 GB"
+   ]
+  },
+  {
+   "id": "windows-shell",
+   "query": "Which PowerShell version is the minimum for installing TrinaxAI on Windows?",
+   "collections": [
+    "rag-docs"
+   ],
+   "expected_sources": [
+    "INSTALL_WINDOWS.md"
+   ],
+   "answer_contains": [
+    "5.1"
+   ]
+  },
+  {
+   "id": "web-cache",
+   "query": "What is the default maximum number of unexpired web search result entries kept in memory?",
+   "collections": [
+    "rag-docs"
+   ],
+   "expected_sources": [
+    "ENVIRONMENT_VARIABLES.md"
+   ],
+   "answer_contains": [
+    "256"
+   ]
+  },
+  {
+   "id": "device-secret",
+   "query": "Which file holds the key used to hash pairing codes and device bearer tokens?",
+   "collections": [
+    "rag-docs"
+   ],
+   "expected_sources": [
+    "ENVIRONMENT_VARIABLES.md"
+   ],
+   "answer_contains": [
+    ".device_secret"
+   ]
+  },
+  {
+   "id": "support-checks",
+   "query": "Which commands should I run from the repository root before opening a support issue?",
+   "collections": [
+    "rag-docs"
+   ],
+   "expected_sources": [
+    "SUPPORT.md"
+   ],
+   "answer_contains": [
+    "public_readiness"
+   ]
+  },
+  {
+   "id": "granite-rag",
+   "query": "Which model in the benchmark was fast but mistranslated the term RAG?",
+   "collections": [
+    "rag-docs"
+   ],
+   "expected_sources": [
+    "MODEL_BENCHMARK.md"
+   ],
+   "answer_contains": [
+    "granite"
+   ]
+  },
+  {
+   "id": "es-security-response",
+   "query": "¿En cuántas horas se propone responder el proyecto a un reporte de vulnerabilidad?",
+   "collections": [
+    "rag-docs"
+   ],
+   "expected_sources": [
+    "SECURITY.md"
+   ],
+   "answer_contains": [
+    "72"
+   ]
+  },
+  {
+   "id": "es-bench-2b",
+   "query": "¿Qué velocidad en tokens por segundo obtuvo qwen3.5:2b en el benchmark de modelos?",
+   "collections": [
+    "rag-docs"
+   ],
+   "expected_sources": [
+    "MODEL_BENCHMARK.md"
+   ],
+   "answer_contains": [
+    "8.97"
+   ]
+  },
+  {
+   "id": "es-windows-shell",
+   "query": "¿Qué versión mínima de PowerShell hace falta para instalar en Windows?",
+   "collections": [
+    "rag-docs"
+   ],
+   "expected_sources": [
+    "INSTALL_WINDOWS.md"
+   ],
+   "answer_contains": [
+    "5.1"
+   ]
+  },
+  {
+   "id": "missing-price",
+   "query": "What is the price of a TrinaxAI Pro subscription?",
+   "collections": [
+    "rag-docs"
+   ],
+   "expected_sources": [],
+   "answer_contains": [],
+   "should_answer": false
+  },
+  {
+   "id": "missing-phone",
+   "query": "¿Cuál es el número de teléfono del soporte técnico de TrinaxAI?",
+   "collections": [
+    "rag-docs"
+   ],
+   "expected_sources": [],
+   "answer_contains": [],
+   "should_answer": false
+  },
+  {
+   "id": "missing-gpu",
+   "query": "Which GPU model does the hosted TrinaxAI cloud service run on?",
+   "collections": [
+    "rag-docs"
+   ],
+   "expected_sources": [],
+   "answer_contains": [],
+   "should_answer": false
+  }
+ ]
+}

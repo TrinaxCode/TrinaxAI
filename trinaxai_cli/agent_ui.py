@@ -59,8 +59,12 @@ def _is_risky_flag(program: str, arg: str) -> bool:
 
 
 def _is_passive_rule(rule: str) -> bool:
-    """Rules that never run workspace code, so they stay valid after the Agent edits files."""
-    return rule in _SAFE_PROGRAMS or rule in {f"git {sub}" for sub in _SAFE_GIT}
+    """Rules that never run workspace code, so they stay valid after the Agent edits files.
+
+    ``git`` is not passive: it runs filter drivers and hooks named in the
+    repository's own config, which lives in the Agent-writable workspace.
+    """
+    return rule in _SAFE_PROGRAMS
 
 
 def normalize_mode(value: str | None, *, yolo: bool = False) -> str:
@@ -109,10 +113,12 @@ class ApprovalPolicy:
 
     mode: str = MODE_DEFAULT
     allowed: set[str] = field(default_factory=set)
-    # Set once an edit tool is about to run. A remembered rule for a command that
-    # executes workspace code (pytest, make, ./tool, ...) was approved against the
-    # files the user saw; after the Agent edits them it must be approved again.
-    workspace_dirty: bool = False
+    # Bumped whenever an edit tool is about to run. A remembered rule for a command
+    # that executes workspace code (pytest, make, git, ./tool, ...) is valid only for
+    # the generation in which the user approved it; after the Agent edits the
+    # workspace each such rule must be approved again, individually.
+    edit_generation: int = 0
+    rule_generation: dict[str, int] = field(default_factory=dict)
 
     @property
     def yolo(self) -> bool:
@@ -137,7 +143,7 @@ class ApprovalPolicy:
     def auto_decision(self, tool: Tool, args: dict[str, Any]) -> bool | None:
         """``True`` run, ``False`` refuse, ``None`` ask the user."""
         if tool.name in EDIT_TOOLS:
-            self.workspace_dirty = True
+            self.edit_generation += 1
         if self.mode == MODE_YOLO:
             return True
         if self.mode == MODE_PLAN:
@@ -146,8 +152,8 @@ class ApprovalPolicy:
             return True
         rule = self.rule_for(tool, args)
         if rule and rule in self.allowed:
-            command_rule_text = rule.removeprefix("run_command:")
-            if tool.name == "run_command" and self.workspace_dirty and not _is_passive_rule(command_rule_text):
+            stale = self.rule_generation.get(rule) != self.edit_generation
+            if tool.name == "run_command" and stale and not _is_passive_rule(rule.removeprefix("run_command:")):
                 return None
             return True
         return None
@@ -160,9 +166,8 @@ class ApprovalPolicy:
         rule = self.rule_for(tool, args)
         if rule:
             self.allowed.add(rule)
-            if tool.name == "run_command":
-                # The user has just reviewed the workspace as it stands.
-                self.workspace_dirty = False
+            # The user has just reviewed the workspace as it stands.
+            self.rule_generation[rule] = self.edit_generation
         return rule
 
 

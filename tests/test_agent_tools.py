@@ -156,3 +156,16 @@ def test_shell_sandbox_status_reports_each_host_state(monkeypatch, tmp_path: Pat
     monkeypatch.setenv("TRINAXAI_AGENT_ALLOW_UNSANDBOXED_COMMANDS", "1")
     ok, detail = agent_tools.shell_sandbox_status()
     assert ok and "UNSANDBOXED" in detail
+
+
+def test_write_tools_refuse_git_metadata(tmp_path: Path) -> None:
+    (tmp_path / ".git").mkdir()
+    (tmp_path / ".git" / "config").write_text("[core]\n")
+    (tmp_path / "pkg" / ".git").mkdir(parents=True)
+    for path in (".git/config", ".git/hooks/pre-commit", "pkg/.git/config", ".GIT/config"):
+        with pytest.raises(SandboxError):
+            agent_tools._write_file(tmp_path, path, "x")
+    with pytest.raises(SandboxError):
+        agent_tools._edit_file(tmp_path, ".git/config", "[core]", "[evil]")
+    assert (tmp_path / ".git" / "config").read_text() == "[core]\n"
+    assert "created" in agent_tools._write_file(tmp_path, ".gitignore", "x\n")

@@ -641,16 +641,21 @@ def test_workspace_code_rules_expire_after_an_edit_but_passive_rules_do_not() ->
     policy = ApprovalPolicy()
     policy.remember(shell, {"command": "ls"})
     policy.remember(shell, {"command": "make test"})
+    policy.remember(shell, {"command": "git status"})
     assert policy.auto_decision(shell, {"command": "make test"}) is True
 
     # The Agent edits a file (even when the user approves it by hand).
     policy.auto_decision(edit, {"path": "tests/test_new.py"})
     assert policy.auto_decision(shell, {"command": "make test"}) is None
+    # git reads the repository's own config, which the Agent can edit: not passive.
+    assert policy.auto_decision(shell, {"command": "git status"}) is None
     assert policy.auto_decision(shell, {"command": "ls src"}) is True
 
-    # Approving the command again re-arms the rule until the next edit.
-    policy.remember(shell, {"command": "make test"})
-    assert policy.auto_decision(shell, {"command": "make test"}) is True
+    # Re-approving one command must not silently re-arm the others.
+    policy.remember(shell, {"command": "pytest -q"})
+    assert policy.auto_decision(shell, {"command": "pytest -q"}) is True
+    assert policy.auto_decision(shell, {"command": "make test"}) is None
+    assert policy.auto_decision(shell, {"command": "git status"}) is None
 
 
 def test_slash_diff_ignores_agent_written_git_config(tmp_path: Path) -> None:
