@@ -162,7 +162,17 @@ def test_write_tools_refuse_git_metadata(tmp_path: Path) -> None:
     (tmp_path / ".git").mkdir()
     (tmp_path / ".git" / "config").write_text("[core]\n")
     (tmp_path / "pkg" / ".git").mkdir(parents=True)
-    for path in (".git/config", ".git/hooks/pre-commit", "pkg/.git/config", ".GIT/config"):
+    for path in (
+        ".git/config",
+        ".git/hooks/pre-commit",
+        "pkg/.git/config",
+        ".GIT/config",
+        ".git./config",
+        ".git /config",
+        ".gi\u200dt/config",
+        "GIT~1/config",
+        ".git::$INDEX_ALLOCATION/config",
+    ):
         with pytest.raises(SandboxError):
             agent_tools._write_file(tmp_path, path, "x")
     with pytest.raises(SandboxError):

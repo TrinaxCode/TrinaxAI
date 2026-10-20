@@ -33,6 +33,7 @@ import signal
 import subprocess
 import sys
 import tempfile
+import unicodedata
 import urllib.error
 from dataclasses import dataclass
 from pathlib import Path
@@ -470,6 +471,18 @@ def _read_file(workspace_root: Path, path: str, offset: int = 0, limit: int = 0,
     return _truncate(f"{header}\n{body}{facts_block}\n{footer}")
 
 
+def _is_git_component(part: str) -> bool:
+    """True for every spelling of ``.git`` that git itself treats as the git directory.
+
+    Covers case-insensitive volumes, Unicode ignorable characters (HFS+), trailing
+    dots/spaces and 8.3 short names (NTFS) and alternate data streams.
+    """
+    cleaned = "".join(ch for ch in part if unicodedata.category(ch) != "Cf").casefold()
+    cleaned = cleaned.rstrip(". ")
+    cleaned = cleaned.split(":", 1)[0].rstrip(". ")
+    return cleaned == ".git" or (cleaned.startswith("git~") and cleaned[4:].isdigit())
+
+
 def _resolve_for_write(workspace_root: Path, path: str) -> Path:
     """Resolve a write target and refuse git metadata.
 
@@ -478,9 +491,21 @@ def _resolve_for_write(workspace_root: Path, path: str) -> Path:
     Agent may not write there even though it may write everywhere else.
     """
     target = _resolve_in_workspace(workspace_root, path)
-    relative = target.relative_to(workspace_root.resolve())
-    if ".git" in (part.casefold() for part in relative.parts):
+    root = workspace_root.resolve()
+    relative = target.relative_to(root)
+    if any(_is_git_component(part) for part in relative.parts):
         raise SandboxError(f"path '{path}' is git metadata; the Agent may not modify it")
+    # Spelling checks cannot see hard links or odd mounts; compare identities too.
+    git_dir = root / ".git"
+    if git_dir.exists():
+        for candidate in (target, *target.parents):
+            if candidate == root or root not in candidate.parents:
+                break
+            try:
+                if candidate.exists() and os.path.samefile(candidate, git_dir):
+                    raise SandboxError(f"path '{path}' is git metadata; the Agent may not modify it")
+            except OSError:
+                continue
     return target
 
 
