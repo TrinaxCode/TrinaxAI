@@ -76,6 +76,18 @@ describe('chat presentation contracts', () => {
     expect(block).toContain('overflow: hidden');
   });
 
+  it('never turns message rows into nested scroll containers', () => {
+    // `overflow-x: hidden` alone computes `overflow-y: auto`, which paints a
+    // second scrollbar inside the message when its content grows momentarily.
+    for (const selector of ['.chat-row', '.chat-bubble-wrap']) {
+      const pattern = new RegExp(`(?:^|\\n)${selector.replace('.', '\\.')} \\{([^}]*)\\}`, 'g');
+      const block = [...chatCss.matchAll(pattern)].map((match) => match[1]).join('\n');
+      expect(block, selector).toContain('overflow-x: clip');
+      expect(block, selector).toContain('overflow-y: visible');
+      expect(block, selector).not.toContain('overflow-x: hidden');
+    }
+  });
+
   it('keeps a comfortable block while an answer streams', () => {
     const block = chatCss.slice(
       chatCss.indexOf('.chat-bubble-streaming {'),
@@ -127,5 +139,15 @@ describe('agent presentation contracts', () => {
     expect(block).toContain('background-color: transparent');
     const iconRule = indexCss.slice(indexCss.indexOf('.page-header button[aria-pressed="true"] svg'));
     expect(iconRule).toContain('color: #168de2');
+  });
+
+  it('sizes the app shell from dynamic viewport units so iOS shows no strip under the app', () => {
+    // window.innerHeight stops above the home indicator in the installed iOS PWA;
+    // the measured value is only a fallback for browsers without dvh.
+    const block = indexCss.slice(indexCss.indexOf('@supports (height: 100dvh)'));
+    expect(block).toContain('#root');
+    expect(block).toContain('.app-shell');
+    expect(block).toContain('height: 100dvh');
+    expect(indexCss).toContain('height: var(--app-height, 100vh)');
   });
 });

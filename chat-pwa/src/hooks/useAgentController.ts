@@ -1,6 +1,8 @@
-import { useCallback, useEffect, useId, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useTheme } from '../theme/ThemeContext';
 import { useI18n } from '../i18n/I18nContext';
+import { useToast } from '../components/Toast';
+import { getPreferredUserName } from '../lib/userProfile';
 import {
   agentWorkspaceRoot,
   approveAgentAction,
@@ -21,6 +23,7 @@ import {
 } from '../lib/api';
 import { useAgentHistory } from './useAgentHistory';
 import { useAgentVoice } from './useAgentVoice';
+import { useChatVoice, type ChatSendOptions } from './useChatVoice';
 import { useWaitingSound } from './useWaitingSound';
 import { audioManager } from '../services/audioManager';
 import { streamFlushSize } from './useStreamChat';
@@ -46,8 +49,10 @@ export function useAgentController({
   const { isDark } = useTheme();
   const { t, lang } = useI18n();
   const isMobile = typeof window !== 'undefined' && window.matchMedia?.('(max-width: 640px)').matches;
+  const toast = useToast();
   const [turns, setTurns] = useState<AgentTurn[]>([]);
   const [input, setInput] = useState('');
+  const [sessionResetKey, setSessionResetKey] = useState(0);
   const [running, setRunning] = useState(false);
   // The waiting cue is a "thinking" sound: it must stop the moment TrinaxAI
   // starts answering (first streamed token), not linger through the whole
@@ -129,6 +134,28 @@ export function useAgentController({
     setImageError,
     t,
   });
+
+  // Spoken answers reuse the chat's speech pipeline (browser voices with a
+  // backend fallback). The agent only needs playback, so there is no call mode:
+  // dictation stays with `useAgentVoice` and this send hook is intentionally inert.
+  const inertSendRef = useRef<(raw: string, opts?: ChatSendOptions) => Promise<void>>(async () => undefined);
+  const { speak, stopSpeak, ttsActiveKey, ttsSpeaking, ttsSupported } = useChatVoice({
+    inputRef,
+    sendTextRef: inertSendRef,
+    setInput,
+    streaming: false,
+    t,
+    toast,
+    voiceLang: lang === 'en' ? 'en-US' : 'es-MX',
+  });
+  const [userDisplayName] = useState(() => getPreferredUserName(lang));
+
+  // Concrete model behind each picker mode; `auto` is routed per task.
+  const modelNames = useMemo<AgentInterfaceViewProps['modelNames']>(() => ({
+    chat: modelSetting(AGENT_MODEL_KEYS.chat, DEFAULT_MODEL_SETTINGS[AGENT_MODEL_KEYS.chat]),
+    deep: modelSetting(AGENT_MODEL_KEYS.deep, DEFAULT_MODEL_SETTINGS[AGENT_MODEL_KEYS.deep]),
+    fast: modelSetting(AGENT_MODEL_KEYS.fast, DEFAULT_MODEL_SETTINGS[AGENT_MODEL_KEYS.fast]),
+  }), []);
 
   const placeholder = isMobile ? t('agentPlaceholderShort') : t('agentPlaceholder');
 
@@ -422,6 +449,7 @@ export function useAgentController({
     const text = rawText.trim();
     if ((!text && !image && !documents.length) || runningRef.current) return;
     runningRef.current = true;
+    stopSpeak();
     cancelAgentTypewriter();
     typewriterTextRef.current = '';
     sawAgentTokenRef.current = false;
@@ -513,7 +541,7 @@ export function useAgentController({
       setAnalyzingImage(false);
       abortRef.current = null;
     }
-  }, [turns, workspace, yoloMode, webSearch, knowledgeSearch, deepResearch, modelMode, handleEvent, cancelAgentTypewriter, queueAgentText, waitForAgentTypewriter, t]);
+  }, [turns, workspace, yoloMode, webSearch, knowledgeSearch, deepResearch, modelMode, handleEvent, cancelAgentTypewriter, queueAgentText, waitForAgentTypewriter, stopSpeak, t]);
 
   const send = useCallback(async () => {
     const image = attachedImage;
@@ -655,9 +683,11 @@ export function useAgentController({
   const startNewSession = useCallback(() => {
     abortRef.current?.abort();
     cancelAgentTypewriter();
+    stopSpeak();
     runningRef.current = false;
     setRunning(false);
     setTurns([]);
+    setSessionResetKey((key) => key + 1);
     setAttachedImage(null);
     setAttachedDocs([]);
     setImageError('');
@@ -665,13 +695,14 @@ export function useAgentController({
     sessionIdRef.current = null;
     history.setActiveId(null);
     setHistoryOpen(false);
-  }, [cancelAgentTypewriter, history]);
+  }, [cancelAgentTypewriter, history, stopSpeak]);
 
   const openSession = useCallback((id: string) => {
     const session = history.sessions.find((s) => s.id === id);
     if (!session) return;
     abortRef.current?.abort();
     cancelAgentTypewriter();
+    stopSpeak();
     runningRef.current = false;
     setRunning(false);
     setTurns(session.turns);
@@ -683,7 +714,7 @@ export function useAgentController({
     sessionIdRef.current = session.id;
     history.selectSession(id);
     setHistoryOpen(false);
-  }, [cancelAgentTypewriter, history]);
+  }, [cancelAgentTypewriter, history, stopSpeak]);
 
   const filteredSessions = history.sessions.filter((s) =>
     !search.trim() || s.title.toLowerCase().includes(search.trim().toLowerCase()),
@@ -791,7 +822,9 @@ export function useAgentController({
     handleYoloChange,
     modelMode,
     setModelMode,
+    modelNames,
     startNewSession,
+    sessionResetKey,
     setWorkspace,
     scrollRef,
     turns,
@@ -832,5 +865,11 @@ export function useAgentController({
     yoloConfirmOpen,
     setYoloMode,
     setYoloConfirmOpen,
+    userDisplayName,
+    ttsSupported,
+    ttsActiveKey,
+    ttsSpeaking,
+    speak: (text: string, key: string) => speak(text, undefined, key),
+    stopSpeak,
   };
 }

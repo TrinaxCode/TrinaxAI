@@ -6,10 +6,17 @@ interface EmptyChatProps {
   motd: string;
   rotation: number;
   chips: DisplayChip[];
+  /** Optional supporting line under the rotating headline (used by the agent). */
+  hint?: string;
+  /** The agent page already owns an h1 in its header. */
+  headingAs?: 'h1' | 'h2';
+  /** Max width of the chip row; the default keeps chat chips compact, the agent widens it to fit three per row. */
+  chipsMaxWidth?: string;
 }
 
-export default function EmptyChat({ isDark, motd, rotation, chips }: EmptyChatProps) {
+export default function EmptyChat({ isDark, motd, rotation, chips, hint, headingAs = 'h1', chipsMaxWidth = 'max-w-md' }: EmptyChatProps) {
   const prefersReducedMotion = useReducedMotion();
+  const Heading = headingAs === 'h2' ? motion.h2 : motion.h1;
   return (
     <div className="empty-chat flex flex-1 flex-col items-center justify-center gap-6 px-6 pb-12 pt-6">
       <div className="empty-chat-visual animate-float">
@@ -18,22 +25,27 @@ export default function EmptyChat({ isDark, motd, rotation, chips }: EmptyChatPr
         </div>
       </div>
       <AnimatePresence mode="wait" initial={false}>
-        <motion.h1
+        <motion.div
           key={motd}
-          className={`chat-empty-motd empty-chat-copy max-w-2xl text-center text-[clamp(1.5rem,3vw,2.25rem)] font-semibold leading-tight tracking-tight ${isDark ? 'text-white/90' : 'text-slate-800'}`}
-          initial={{ opacity: 0, y: prefersReducedMotion ? 0 : 6 }}
+          className="flex max-w-2xl flex-col items-center gap-2"
+          initial={{ opacity: prefersReducedMotion ? 1 : 0, y: prefersReducedMotion ? 0 : 6 }}
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: prefersReducedMotion ? 0 : -6 }}
           transition={{ duration: prefersReducedMotion ? 0 : 0.25, ease: 'easeOut' }}
         >
-          {motd}
-        </motion.h1>
+          <Heading
+            className={`chat-empty-motd empty-chat-copy max-w-2xl text-center text-[clamp(1.5rem,3vw,2.25rem)] font-semibold leading-tight tracking-tight ${isDark ? 'text-white/90' : 'text-slate-800'}`}
+          >
+            {motd}
+          </Heading>
+          {hint && <p className={`text-center text-[15px] leading-relaxed ${isDark ? 'text-white/70' : 'text-gray-600'}`}>{hint}</p>}
+        </motion.div>
       </AnimatePresence>
       <AnimatePresence mode="wait" initial={false}>
         <motion.div
           key={rotation}
-          className="flex max-w-md flex-wrap items-center justify-center gap-1.5 sm:gap-2.5"
-          initial={{ opacity: 0, y: prefersReducedMotion ? 0 : 5 }}
+          className={`flex ${chipsMaxWidth} flex-wrap items-center justify-center gap-1.5 sm:gap-2.5`}
+          initial={{ opacity: prefersReducedMotion ? 1 : 0, y: prefersReducedMotion ? 0 : 5 }}
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: prefersReducedMotion ? 0 : -5 }}
           transition={{ duration: prefersReducedMotion ? 0 : 0.22, ease: 'easeOut' }}

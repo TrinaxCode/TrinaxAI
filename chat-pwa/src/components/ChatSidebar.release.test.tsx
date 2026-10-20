@@ -68,7 +68,11 @@ describe('ChatSidebar release paths', () => {
     await user.click(screen.getByRole('button', { name: 'settings' }));
     expect(props.onBrowser).toHaveBeenCalledOnce();
     expect(props.onSettings).toHaveBeenCalledOnce();
-    expect(screen.queryByRole('button', { name: 'closeMenu' })).not.toBeInTheDocument();
+    // The drawer carries its own close arrow on phones (hidden from lg up via CSS).
+    const closeArrow = screen.getByRole('button', { name: 'closeMenu' });
+    expect(closeArrow).toHaveClass('lg:hidden');
+    await user.click(closeArrow);
+    expect(props.onToggle).toHaveBeenCalledOnce();
 
     const workFilter = screen.getByTitle('Work');
     await user.click(workFilter);

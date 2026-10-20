@@ -264,6 +264,7 @@ export function ChatInterfaceView({ controller }: { controller: ChatController }
               attachedImages={attachedImages}
               imageError={imageError}
               streaming={busy}
+              speaking={ttsSpeaking}
               attachmentMenuOpen={attachmentMenuOpen}
               slashOpen={slashOpen}
               slashFilter={slashFilter}

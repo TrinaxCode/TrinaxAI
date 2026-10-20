@@ -1,5 +1,5 @@
 import { motion, AnimatePresence } from 'framer-motion';
-import { MdChat, MdDelete, MdClose, MdAdd, MdSettings, MdSearch, MdFolder, MdCreateNewFolder, MdVisibilityOff, MdExpandMore, MdMoreHoriz } from 'react-icons/md';
+import { MdChat, MdChevronLeft, MdDelete, MdClose, MdAdd, MdSettings, MdSearch, MdFolder, MdCreateNewFolder, MdVisibilityOff, MdExpandMore, MdMoreHoriz } from 'react-icons/md';
 import { useI18n } from '../i18n/I18nContext';
 import { useTheme } from '../theme/ThemeContext';
 import { useState, useRef, useCallback, useEffect } from 'react';
@@ -252,6 +252,17 @@ export default function ChatSidebar({
               aria-label={t('settings')}
             >
               <MdSettings size={18} />
+            </button>
+            {/* The header toggle sits behind the drawer on phones, so the
+                drawer carries its own close arrow below the desktop breakpoint. */}
+            <button
+              type="button"
+              onClick={onToggle}
+              data-sidebar-close
+              className={`grid min-h-11 min-w-11 place-items-center rounded-lg p-2 lg:hidden ${isDark ? 'text-white/65 hover:text-white' : 'text-gray-600 hover:text-gray-900'} ${hoverBg} transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-[#4aa7ed]`}
+              aria-label={t('closeMenu')}
+            >
+              <MdChevronLeft size={24} />
             </button>
             </div>
           </div>

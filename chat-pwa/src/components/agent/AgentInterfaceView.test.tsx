@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import type { AgentInterfaceViewProps } from './AgentInterfaceView';
 import { AgentInterfaceView } from './AgentInterfaceView';
@@ -13,6 +13,7 @@ vi.mock('../chat/ComposerLayout', () => ({
     <div>{leftActions}<textarea ref={inputRef} name={name} aria-label={placeholder} value={value} disabled={disabled} onChange={onChange} onKeyDown={onKeyDown} />{rightActions}</div>
   ),
 }));
+vi.mock('../chat/SpeakingIndicator', () => ({ default: ({ speaking }: any) => speaking ? <div role="status">speaking</div> : null }));
 vi.mock('../ConfirmModal', () => ({
   default: ({ open, title, onConfirm, onCancel }: any) => open ? (
     <div role="dialog" aria-label={title}><button onClick={onConfirm}>{title}-confirm</button><button onClick={onCancel}>{title}-cancel</button></div>
@@ -36,6 +37,8 @@ function props(overrides: Partial<AgentInterfaceViewProps> = {}): AgentInterface
     attachedImage: null, setAttachedImage: callback(), attachedDocs: [], setAttachedDocs: callback(), imageError: '', setImageError: callback(), imageInputRef: ref(), onPickImage: callback(), docInputRef: ref(), onPickDocs: callback(),
     input: '', placeholder: 'prompt', attachmentMenuRef: ref(), attachmentMenuOpen: false, setAttachmentMenuOpen: callback(), dictationAvailable: false, listening: false, toggleDictation: callback(), stop: callback(), send: callback(),
     yoloConfirmOpen: false, setYoloMode: callback(), setYoloConfirmOpen: callback(),
+    modelNames: { chat: 'chat-model', deep: 'deep-model', fast: 'fast-model' }, sessionResetKey: 0,
+    userDisplayName: 'Ada', ttsSupported: true, ttsActiveKey: null, ttsSpeaking: false, speak: callback(), stopSpeak: callback(),
     ...overrides,
   };
 }
@@ -61,18 +64,19 @@ describe('AgentInterfaceView', () => {
     const p = props({ mobileToolsOpen: true, knowledgeSearch: true, webSearch: true, deepResearch: true, attachmentMenuOpen: true, dictationAvailable: true, input: 'ship it' });
     const view = render(<AgentInterfaceView {...p} />);
     const { container } = view;
-    expect(screen.getByRole('heading', { name: 'agentEmptyTitle' })).toBeVisible();
+    expect(container.querySelector('.agent-empty-state h2')).toBeVisible();
     expect(screen.getByRole('img', { name: 'TrinaxAI' })).toHaveAttribute('src', '/logo-for-ai.webp');
 
-    for (const name of ['back', 'agentHistory', 'agentNewSession', 'agentPickFolder', 'quickChipFindBugs', 'agentVoiceMode', 'agentSend']) {
+    for (const name of ['back', 'agentHistory', 'agentNewSession', 'agentPickFolder', 'agentVoiceMode', 'agentSend']) {
       fireEvent.click(screen.getByRole('button', { name }));
     }
+    fireEvent.click(container.querySelector('.agent-empty-state .chip-elegant')!);
     fireEvent.click(screen.getAllByRole('switch', { name: 'agentYoloModeOff' })[0]);
     expect(p.onBack).toHaveBeenCalled();
     expect(p.openHistory).toHaveBeenCalled();
     expect(p.startNewSession).toHaveBeenCalled();
     expect(p.setPickerOpen).toHaveBeenCalledWith(true);
-    expect(p.setInput).toHaveBeenCalledWith('quickChipFindBugsPrompt');
+    expect(p.setInput).toHaveBeenCalledWith(expect.stringMatching(/^quickChip.*Prompt$|^agentSuggestion.*Prompt$/));
     expect(p.handleYoloChange).toHaveBeenCalledWith(true);
     expect(p.toggleDictation).toHaveBeenCalled();
     expect(p.send).toHaveBeenCalled();
@@ -81,7 +85,7 @@ describe('AgentInterfaceView', () => {
     fireEvent.click(screen.getAllByRole('button', { name: 'agentRagOn' })[1]);
     fireEvent.click(screen.getAllByRole('button', { name: 'agentWebSearchOn' })[1]);
     fireEvent.click(screen.getAllByRole('button', { name: 'agentDeepResearch' })[1]);
-    fireEvent.change(screen.getAllByRole('combobox', { name: 'agentModel' })[0], { target: { value: 'deep' } });
+    fireEvent.click(screen.getByRole('radio', { name: /agentModelDeep/ }));
     expect(p.setKnowledgeSearch).toHaveBeenCalled();
     expect(p.setWebSearch).toHaveBeenCalled();
     expect(p.setDeepResearch).toHaveBeenCalled();
@@ -203,6 +207,73 @@ describe('AgentInterfaceView', () => {
     expect(p.stop).toHaveBeenCalled();
 
     view.rerender(<AgentInterfaceView {...p} agentActivity="working" analyzingImage />);
-    expect(screen.getByRole('status')).toHaveTextContent('agentAnalyzingImage');
+    expect(screen.getByRole('status')).toHaveAccessibleName('agentAnalyzingImage');
+  });
+
+  it('renders turns with the same rows, avatars and bubbles as the chat', () => {
+    const turns = [
+      { role: 'user' as const, content: 'question' },
+      { role: 'assistant' as const, content: 'answer', model: 'qwen' },
+    ];
+    const { container } = render(<AgentInterfaceView {...props({ turns })} />);
+    expect(container.querySelectorAll('.chat-row')).toHaveLength(2);
+    expect(container.querySelector('.chat-assistant-avatar')).toBeInTheDocument();
+    expect(container.querySelector('.chat-bubble-assistant')).toHaveTextContent('answer');
+    expect(screen.getByLabelText('userAvatar')).toHaveTextContent('A');
+    expect(container.querySelector('.tc-agent-shell, .tc-agent-reply')).toBeNull();
+    expect(container.querySelector('.chat-composer')).toHaveClass('max-w-[56rem]');
+  });
+
+  it('reads answers aloud and stops the active one', () => {
+    const turns = [{ role: 'user' as const, content: 'q' }, { role: 'assistant' as const, content: 'spoken answer' }];
+    const p = props({ turns });
+    const view = render(<AgentInterfaceView {...p} />);
+    fireEvent.click(screen.getByRole('button', { name: 'listen' }));
+    expect(p.speak).toHaveBeenCalledWith('spoken answer', 'agent-msg-1');
+
+    view.rerender(<AgentInterfaceView {...p} ttsActiveKey="agent-msg-1" ttsSpeaking />);
+    expect(screen.getByRole('status')).toHaveTextContent('speaking');
+    fireEvent.click(screen.getByRole('button', { name: 'stop' }));
+    expect(p.stopSpeak).toHaveBeenCalled();
+
+    view.rerender(<AgentInterfaceView {...p} ttsSupported={false} />);
+    expect(screen.queryByRole('button', { name: 'listen' })).toBeNull();
+  });
+
+  it('shows YOLO as an explicit switch with a visible active state', () => {
+    const p = props({ yoloMode: true });
+    const { container } = render(<AgentInterfaceView {...p} />);
+    const toggle = screen.getByRole('switch', { name: 'agentYoloModeOn' });
+    expect(toggle).toHaveAttribute('aria-checked', 'true');
+    expect(toggle).toHaveAttribute('data-enabled', 'true');
+    expect(container.querySelector('nav')).toHaveAttribute('data-yolo', 'on');
+    expect(screen.getByText('agentYoloActiveBanner')).toBeInTheDocument();
+    fireEvent.click(toggle);
+    expect(p.handleYoloChange).toHaveBeenCalledWith(false);
+  });
+
+  it('lets the user pick the agent model from a popover that names the model behind each mode', async () => {
+    const p = props({ turns: [{ role: 'assistant', content: 'done', model: 'qwen3.5:4b' }] });
+    render(<AgentInterfaceView {...p} />);
+    const trigger = screen.getByRole('button', { name: 'agentModel: agentModelAuto' });
+    expect(trigger).toHaveAttribute('aria-expanded', 'false');
+    expect(trigger).toHaveTextContent('qwen3.5:4b');
+    fireEvent.click(trigger);
+    expect(trigger).toHaveAttribute('aria-expanded', 'true');
+    const dialog = screen.getByRole('dialog', { name: 'agentModel' });
+    expect(within(dialog).getByRole('radio', { name: /agentModelAuto/ })).toBeChecked();
+    expect(within(dialog).getByText('deep-model')).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole('radio', { name: /agentModelFast/ }));
+    expect(p.setModelMode).toHaveBeenCalledWith('fast');
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'agentModel' })).toBeNull());
+  });
+
+  it('gives the agent history the same surface and new-session action as the chat sidebar', () => {
+    const p = props({ isDark: true, historyOpen: true });
+    render(<AgentInterfaceView {...p} />);
+    const drawer = screen.getByRole('dialog', { name: 'agentHistory' });
+    expect(drawer).toHaveClass('sidebar-surface', 'bg-black/65', 'border-white/[0.06]');
+    fireEvent.click(within(drawer).getByRole('button', { name: 'agentNewSession' }));
+    expect(p.startNewSession).toHaveBeenCalled();
   });
 });

@@ -9,6 +9,7 @@ import { useToast } from './Toast';
 import ConfirmModal from './ConfirmModal';
 import StatusDots from './StatusDots';
 import WatcherCard from './WatcherCard';
+import { usePairedDeviceScope } from '../hooks/usePairedDeviceScope';
 import MemoryPanel from './MemoryPanel';
 import FolderPicker from './FolderPicker';
 import DevicePairingCard from './DevicePairingCard';
@@ -41,6 +42,9 @@ const formatSeconds = (seconds: number) => {
 };
 
 export default function Settings({ onBack, onOpenDocs, initialSection = 'general', onSectionChange, canManageSystem = false }: Props) {
+  // Collections can be cleared by the host or by a paired device the host granted `index`.
+  const pairedCanIndex = usePairedDeviceScope('index');
+  const canIndex = canManageSystem || pairedCanIndex;
   const { t, lang, setLang } = useI18n();
   const { theme, cycleTheme, isDark } = useTheme();
   const toast = useToast();
@@ -913,7 +917,7 @@ export default function Settings({ onBack, onOpenDocs, initialSection = 'general
                 }}
                 className={`min-w-0 flex-1 rounded-md bg-transparent text-sm outline-hidden focus-visible:ring-2 focus-visible:ring-[#006bbd]/50 disabled:opacity-60 ${inputText}`}
               />
-              {canManageSystem && (
+              {canIndex && (
                 <button
                   onClick={() => setCollectionClearId(collection.id)}
                   disabled={clearingCollectionId === collection.id}
@@ -1072,7 +1076,7 @@ ${t('indexMayTakeTime')}`}
         onCancel={() => setCollectionDeleteId(null)}
       />
       <ConfirmModal
-        open={canManageSystem && collectionClearId !== null}
+        open={canIndex && collectionClearId !== null}
         title={t('clearCollection')}
         message={t('clearCollectionConfirm').replace(
           '{collection}',

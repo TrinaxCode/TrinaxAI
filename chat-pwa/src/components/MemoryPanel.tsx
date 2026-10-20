@@ -6,6 +6,7 @@ import { useTheme } from '../theme/ThemeContext';
 import { useToast } from './Toast';
 import { listMemories, addMemory, deleteMemory, refreshMemorySummary, getMemorySummary, updateMemory, userFacingError, type MemoryEntry, type MemorySummary } from '../lib/api';
 import ConfirmModal from './ConfirmModal';
+import { usePairedDeviceScope } from '../hooks/usePairedDeviceScope';
 
 const PROJECT_MEMORY_KEY = 'tc-project-memory';
 
@@ -13,7 +14,10 @@ function loadProjectMemory(): string {
   try { return localStorage.getItem(PROJECT_MEMORY_KEY) || ''; } catch { return ''; }
 }
 
-export default function MemoryPanel({ canManageSystem = false }: { canManageSystem?: boolean }) {
+export default function MemoryPanel({ canManageSystem: hostCanManage = false }: { canManageSystem?: boolean }) {
+  // Editing memory needs the host, or a paired device the host granted `modify`.
+  const pairedGranted = usePairedDeviceScope('modify'); // always called: hooks must not short-circuit
+  const canManageSystem = hostCanManage || pairedGranted;
   const { t, lang } = useI18n();
   const { isDark } = useTheme();
   const { toast: showToast } = useToast();

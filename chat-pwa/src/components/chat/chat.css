@@ -207,7 +207,19 @@ html.light .chip-elegant:hover {
   inline-size: 100%;
   max-inline-size: 100%;
   min-inline-size: 0;
+}
+
+/* `.chat-messages` is the only scroller. Rows and bubble wrappers must clip
+   horizontally without becoming scroll containers: `overflow-x: hidden` alone
+   computes `overflow-y: auto`, which draws a second scrollbar inside a message
+   whenever its content grows a few pixels (sources panel, actions, animations). */
+.chat-messages {
   overflow-x: hidden;
+}
+
+.chat-row {
+  overflow-x: clip;
+  overflow-y: visible;
 }
 
 .chat-row > * {
@@ -219,7 +231,8 @@ html.light .chip-elegant:hover {
   width: fit-content;
   max-width: min(80%, 46rem, calc(100dvw - 5rem));
   min-width: 0;
-  overflow-x: hidden;
+  overflow-x: clip;
+  overflow-y: visible;
 }
 
 .chat-bubble {

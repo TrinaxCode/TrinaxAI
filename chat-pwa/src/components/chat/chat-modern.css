@@ -59,25 +59,6 @@ html.light .sidebar-surface .sidebar-active-indicator {
   transition: background-color 0.22s ease;
 }
 
-/* Agent history drawer rows keep the same active language as the chat sidebar. */
-.agent-page [data-agent-session] {
-  position: relative;
-}
-
-.agent-page .agent-session-indicator {
-  position: absolute;
-  left: 0;
-  top: 0.5rem;
-  bottom: 0.5rem;
-  width: 2px;
-  border-radius: 9999px;
-  background: #168de2;
-}
-
-html.light .agent-page .agent-session-indicator {
-  background: #006bbd;
-}
-
 /* ============================================
    Conversation rhythm — denser rows on a wider reading column.
    ============================================ */
@@ -445,16 +426,8 @@ html.light .tc-sources-score {
 }
 
 /* ============================================
-   Agent — activity timeline + approval cards.
+   Agent — tool step cards (messages reuse the chat rows).
    ============================================ */
-
-.tc-agent-shell {
-  border: 1px solid var(--tc-frame-border-soft);
-  border-radius: 1.1rem;
-  background: var(--tc-frame-surface);
-  padding: 1rem 1.05rem;
-  animation: tc-surface-in 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
-}
 
 .tc-agent-step {
   border: 1px solid var(--tc-frame-border-soft);
@@ -468,18 +441,6 @@ html.light .tc-sources-score {
 .tc-agent-step:hover {
   border-color: var(--tc-frame-border);
   transform: translateY(-1px);
-}
-
-.tc-agent-reply {
-  border: 1px solid var(--tc-frame-border-soft);
-  border-radius: 1rem;
-  background: var(--tc-frame-surface);
-  padding: 0.85rem 1rem;
-  animation: tc-surface-in 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
-}
-
-.tc-agent-reply:hover {
-  border-color: var(--tc-frame-border);
 }
 
 /* ============================================
@@ -557,8 +518,6 @@ html.light .tc-sources-score {
   .chat-bubble-wrap,
   .chat-bubble-assistant,
   .tc-sources-card,
-  .tc-agent-shell,
-  .tc-agent-reply,
   .tc-index-card {
     animation: none !important;
   }

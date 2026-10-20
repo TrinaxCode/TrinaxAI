@@ -34,6 +34,12 @@ const AgentInterface = lazy(() => import('./components/AgentInterface'));
 const PermissionNotice = lazy(() => import('./components/PermissionNotice'));
 
 type NavigateTarget = 'settings' | 'indexing' | 'browser' | 'memory' | 'docs' | 'agent';
+
+// These full-screen routes own the whole viewport, so the chat history drawer
+// must neither show nor open while they are active.
+function pageHidesSidebar(page: AppPage): boolean {
+  return page === 'settings' || page === 'browser' || page === 'agent';
+}
 type InstallationState = 'checking' | 'new' | 'existing' | 'unknown';
 
 function hasCompletedOnboarding(): boolean {
@@ -45,7 +51,7 @@ export default function App() {
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [showDeviceSetup, setShowDeviceSetup] = useState(false);
   const [blockedFeature, setBlockedFeature] = useState<'rag' | 'web' | null>(null);
-  const [sidebarOpen, setSidebarOpen] = useState(() => initialRoute.page !== 'settings' && initialRoute.page !== 'browser' && window.matchMedia('(min-width: 1024px)').matches);
+  const [sidebarOpen, setSidebarOpen] = useState(() => !pageHidesSidebar(initialRoute.page) && window.matchMedia('(min-width: 1024px)').matches);
   const [page, setPage] = useState<AppPage>(initialRoute.page);
   const [settingsSection, setSettingsSection] = useState<SettingsSection>(initialRoute.settingsSection ?? 'general');
   const [docsSection, setDocsSection] = useState<DocsSection>(initialRoute.docsSection ?? 'intro');
@@ -61,13 +67,16 @@ export default function App() {
   const prevPageRef = useRef<AppPage>('chat');
   const lastChatIdRef = useRef<string | undefined>(initialRoute.chatId);
   const [chatAnimKey, setChatAnimKey] = useState(0);
+  // Derived, not stored: whatever flips `sidebarOpen`, the drawer can never be
+  // visible on a route that hides it.
+  const sidebarVisible = sidebarOpen && !pageHidesSidebar(page);
   const closeSidebarOnMobile = useCallback(() => {
     if (!window.matchMedia('(min-width: 1024px)').matches) setSidebarOpen(false);
   }, []);
 
   useEffect(() => {
     const desktop = window.matchMedia('(min-width: 1024px)');
-    const syncSidebar = (event: MediaQueryListEvent) => setSidebarOpen(event.matches && page !== 'settings' && page !== 'browser');
+    const syncSidebar = (event: MediaQueryListEvent) => setSidebarOpen(event.matches && !pageHidesSidebar(page));
     desktop.addEventListener('change', syncSidebar);
     return () => desktop.removeEventListener('change', syncSidebar);
   }, [page]);
@@ -77,7 +86,7 @@ export default function App() {
     if (route.settingsSection) setSettingsSection(route.settingsSection);
     if (route.docsSection) setDocsSection(route.docsSection);
     setRouteChatId(route.chatId);
-    if (route.page === 'settings' || route.page === 'browser') setSidebarOpen(false);
+    if (pageHidesSidebar(route.page)) setSidebarOpen(false);
     else closeSidebarOnMobile();
   }, [closeSidebarOnMobile]);
 
@@ -477,7 +486,7 @@ export default function App() {
             <ChatSidebar
               sessions={sessions.filter((session) => !session.temporary)}
               activeId={activeId}
-              isOpen={sidebarOpen}
+              isOpen={sidebarVisible}
               onToggle={() => setSidebarOpen((v) => !v)}
               onSelect={(id) => {
                 selectSession(id);
@@ -502,7 +511,7 @@ export default function App() {
             id="tc-main-content"
             tabIndex={-1}
             // The sidebar overlays on mobile and docks beside the main column on desktop.
-            className={`relative min-w-0 min-h-0 h-full flex-1 basis-0 overflow-hidden transition-[margin] duration-200 ${sidebarOpen ? 'lg:ml-[280px]' : ''}`}
+            className={`relative min-w-0 min-h-0 h-full flex-1 basis-0 overflow-hidden transition-[margin] duration-200 ${sidebarVisible ? 'lg:ml-[280px]' : ''}`}
             onTouchStart={handleTouchStart}
             onTouchEnd={handleTouchEnd}
           >

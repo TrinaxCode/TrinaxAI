@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useI18n } from '../i18n/I18nContext';
+import { usePairedDeviceScope } from '../hooks/usePairedDeviceScope';
 import { useTheme } from '../theme/ThemeContext';
 import ConfirmModal from './ConfirmModal';
 import ErrorRepairModal from './ErrorRepairModal';
@@ -27,7 +28,10 @@ function rememberedProvider(): Provider {
   try { return validProvider(localStorage.getItem(WEB_SEARCH_PROVIDER_KEY) || undefined); } catch { return 'auto'; }
 }
 
-export default function WebSearchSettings({ canManageSystem, onBack }: { canManageSystem: boolean; onBack?: () => void }) {
+export default function WebSearchSettings({ canManageSystem: hostCanManage, onBack }: { canManageSystem: boolean; onBack?: () => void }) {
+  // Changing search settings needs the host, or a paired device the host granted `modify`.
+  const pairedGranted = usePairedDeviceScope('modify'); // always called: hooks must not short-circuit
+  const canManageSystem = hostCanManage || pairedGranted;
   const { t } = useI18n();
   const { isDark } = useTheme();
   const [settings, setSettings] = useState<Settings | null>(null);

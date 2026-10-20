@@ -168,7 +168,7 @@
   }
 
   #root {
-    height: var(--app-height, 100dvh);
+    height: var(--app-height, 100vh);
     width: 100%;
     max-width: 100%;
     overflow: hidden;
@@ -313,7 +313,7 @@
   }
 
   .app-shell {
-    height: var(--app-height, 100dvh);
+    height: var(--app-height, 100vh);
     min-height: 0;
     isolation: isolate;
     background: #ffffff;
@@ -321,6 +321,17 @@
 
   html.dark .app-shell {
     background: #020406;
+  }
+
+  /* iOS (notably the installed PWA with viewport-fit=cover) reports an
+     innerHeight that stops above the home-indicator area, which left a black
+     strip under the app. Where dynamic viewport units exist they describe the
+     real full-screen height, so they win over the measured fallback. */
+  @supports (height: 100dvh) {
+    #root,
+    .app-shell {
+      height: 100dvh;
+    }
   }
 
   /* Prevent iOS rubber-banding on fixed containers */
@@ -468,6 +479,13 @@ html.light .chat-header [data-header-tools] button[aria-pressed="true"] svg,
 html.light .page-header button[aria-expanded="true"] svg,
 html.light .chat-header button[aria-expanded="true"] svg {
   color: #006bbd !important;
+}
+
+/* The active icon colour is forced on the svg; give it the same transition as
+   the button so toggling fades instead of snapping through the inherited colour. */
+.page-header button svg,
+.chat-header button svg {
+  transition: color 0.15s ease;
 }
 
 .page-header button:active,

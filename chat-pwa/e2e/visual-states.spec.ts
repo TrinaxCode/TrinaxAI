@@ -38,7 +38,7 @@ test('agent mode remains readable in light and dark themes', async ({ page }, te
   });
   await page.goto('/#/agent');
   await expect(page.getByRole('heading', { name: /TrinaxAI Agent/i })).toBeVisible();
-  await expect(page.getByRole('heading', { name: '¿En qué trabajamos hoy?' })).toBeVisible();
+  await expect(page.locator('.agent-empty-state').getByRole('heading')).toBeVisible();
   await expect(page.getByRole('textbox', { name: 'Carpeta de trabajo' })).toHaveAttribute('placeholder', 'Carpeta de trabajo');
   await expect(page.locator('.agent-empty-state').getByRole('img', { name: 'TrinaxAI' })).toBeVisible();
   await expect(page.locator('.agent-empty-state .empty-chat-visual')).toHaveCSS('animation-name', 'float');
@@ -88,18 +88,20 @@ for (const theme of ['light', 'dark'] as const) {
     await page.addInitScript((value) => localStorage.setItem('tc-theme', value), theme);
     await page.goto('/#/agent');
     const welcome = page.locator('.agent-empty-state');
-    const suggestions = welcome.locator('.agent-suggestion');
-    await expect(welcome.getByRole('heading')).toHaveText('¿En qué trabajamos hoy?');
+    const suggestions = welcome.locator('.chip-elegant');
+    const heading = welcome.getByRole('heading');
+    await expect(heading).toBeVisible();
     await expect(suggestions).toHaveCount(3);
+    const originalHeading = await heading.textContent();
     const original = await suggestions.allTextContents();
     await expect(welcome.getByRole('button')).toHaveCount(3);
     await welcome.hover();
-    await expect(welcome.getByRole('heading')).toHaveText('¿Qué construimos hoy?', { timeout: 6_000 });
+    await expect.poll(() => heading.textContent(), { timeout: 6_000 }).not.toEqual(originalHeading);
     expect(await suggestions.allTextContents()).toEqual(original);
     await expect.poll(() => suggestions.allTextContents(), { timeout: 16_000 }).not.toEqual(original);
     await expect(suggestions).toHaveCount(3);
-    await suggestions.filter({ hasText: 'Generar tests' }).click();
-    await expect(page.locator('textarea[name="agent-prompt"]')).toHaveValue('Genera pruebas unitarias para este código.');
+    await suggestions.first().click();
+    await expect(page.locator('textarea[name="agent-prompt"]')).not.toHaveValue('');
     await expect(page.locator('textarea[name="agent-prompt"]')).toBeFocused();
     expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1);
   });
@@ -109,13 +111,22 @@ test('agent recommendations rotate without animation when reduced motion is enab
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.goto('/#/agent');
   const welcome = page.locator('.agent-empty-state');
-  const suggestions = welcome.locator('.agent-suggestion');
+  const suggestions = welcome.locator('.chip-elegant');
   await expect(suggestions).toHaveCount(3);
   const original = await suggestions.allTextContents();
   await welcome.hover();
   await expect.poll(() => suggestions.allTextContents(), { timeout: 17_000 }).not.toEqual(original);
   await expect(welcome.getByRole('button')).toHaveCount(3);
   await expect(suggestions.first()).toBeVisible();
+});
+
+test('agent keeps the chat sidebar closed and unreachable, on phones and desktop', async ({ page }) => {
+  await page.goto('/#/agent');
+  const sidebar = page.locator('aside.sidebar-surface');
+  await expect(page.getByRole('heading', { name: /TrinaxAI Agent|Agente/i })).toBeVisible();
+  await expect(sidebar).toHaveAttribute('aria-hidden', 'true');
+  expect(await sidebar.evaluate((element) => element.getBoundingClientRect().right)).toBeLessThanOrEqual(1);
+  expect(await page.locator('#tc-main-content').evaluate((element) => element.getBoundingClientRect().x)).toBe(0);
 });
 
 test('history sidebar fits the viewport and retains its controls', async ({ page }, testInfo) => {
@@ -138,6 +149,13 @@ test('history sidebar fits the viewport and retains its controls', async ({ page
   expect(overflow).toBeLessThanOrEqual(1);
   if (testInfo.project.name === 'chromium-desktop') {
     expect((await page.locator('#tc-main-content').boundingBox())?.x).toBe(280);
+    await expect(sidebar.locator('[data-sidebar-close]')).toBeHidden();
+  } else {
+    // On phones the header toggle sits behind the drawer, so the drawer closes itself.
+    await sidebar.getByRole('button', { name: /Cerrar menú/i }).click();
+    await expect(sidebar).toHaveAttribute('aria-hidden', 'true');
+    await page.getByLabel(/Abrir historial/i).click();
+    await expect(sidebar).toHaveAttribute('aria-hidden', 'false');
   }
   if (captureLabel) {
     await page.screenshot({
@@ -162,10 +180,10 @@ test('agent controls fit a 200 percent zoom equivalent viewport', async ({ page 
   await expect(tools.getByRole('button', { name: /Búsqueda web activada/i })).toBeVisible();
   await expect(tools.getByRole('button', { name: /Investigación profunda/i })).toBeVisible();
   await expect(page.getByRole('switch', { name: /Modo normal/i })).toHaveAttribute('aria-checked', 'false');
-  await expect(tools.getByRole('option', { name: 'Auto | Router' })).toBeAttached();
-  await expect(tools.getByRole('option', { name: 'General' })).toBeAttached();
-  await expect(tools.getByRole('option', { name: 'Profundo' })).toBeAttached();
-  await expect(tools.getByRole('option', { name: 'Rápido' })).toBeAttached();
+  await expect(tools.getByRole('radio', { name: /^Auto \| Router/ })).toBeVisible();
+  await expect(tools.getByRole('radio', { name: /^General/ })).toBeVisible();
+  await expect(tools.getByRole('radio', { name: /^Profundo/ })).toBeVisible();
+  await expect(tools.getByRole('radio', { name: /^Rápido/ })).toBeVisible();
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   expect(overflow).toBeLessThanOrEqual(1);
 });

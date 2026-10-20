@@ -1,16 +1,19 @@
 import { useState, type ChangeEventHandler, type Dispatch, type RefObject, type SetStateAction } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
-import { MdAdd, MdBuild, MdCheck, MdClose, MdContentCopy, MdDelete, MdEdit, MdFolder, MdHistory, MdImage, MdMic, MdPublic, MdRefresh, MdScience, MdSearch, MdSend, MdStop, MdStorage, MdUploadFile } from 'react-icons/md';
+import { MdAdd, MdClose, MdFolder, MdImage, MdMic, MdSend, MdStop, MdUploadFile } from 'react-icons/md';
 import type { AgentSession } from '../../hooks/useAgentHistory';
 import type { AgentModelMode, AgentStep, AgentTurn, AttachedAgentDocument } from './agentTypes';
 import type { Translate } from '../chat/types';
 import { DOCUMENT_FILE_ACCEPT, IMAGE_FILE_ACCEPT } from '../../lib/attachmentAccept';
 import FolderPicker from '../FolderPicker';
-import BackButton from '../BackButton';
-import ChatMarkdown from '../chat/ChatMarkdown';
 import ComposerLayout from '../chat/ComposerLayout';
 import ConfirmModal from '../ConfirmModal';
+import SpeakingIndicator from '../chat/SpeakingIndicator';
 import AgentEmptyState from './AgentEmptyState';
+import AgentHeader from './AgentHeader';
+import AgentHistoryDrawer from './AgentHistoryDrawer';
+import AgentTurns from './AgentTurns';
+import '../chat/chat.css';
 import '../chat/chat-modern.css';
 
 export interface AgentHistoryView {
@@ -55,7 +58,11 @@ export interface AgentInterfaceViewProps {
   handleYoloChange: (enabled: boolean) => void;
   modelMode: AgentModelMode;
   setModelMode: Dispatch<SetStateAction<AgentModelMode>>;
+  /** Concrete model configured for each non-auto mode, shown in the model picker. */
+  modelNames: Partial<Record<AgentModelMode, string>>;
   startNewSession: () => void;
+  /** Bumps on every new session so the welcome copy reshuffles like a new chat. */
+  sessionResetKey: number;
   setWorkspace: Dispatch<SetStateAction<string>>;
   scrollRef: RefObject<HTMLDivElement | null>;
   turns: AgentTurn[];
@@ -96,6 +103,12 @@ export interface AgentInterfaceViewProps {
   yoloConfirmOpen: boolean;
   setYoloMode: Dispatch<SetStateAction<boolean>>;
   setYoloConfirmOpen: Dispatch<SetStateAction<boolean>>;
+  userDisplayName: string;
+  ttsSupported: boolean;
+  ttsActiveKey: string | null;
+  ttsSpeaking: boolean;
+  speak: (text: string, key: string) => void;
+  stopSpeak: () => void;
 }
 
 export function AgentInterfaceView({
@@ -134,7 +147,9 @@ export function AgentInterfaceView({
   handleYoloChange,
   modelMode,
   setModelMode,
+  modelNames,
   startNewSession,
+  sessionResetKey,
   setWorkspace,
   scrollRef,
   turns,
@@ -175,88 +190,41 @@ export function AgentInterfaceView({
   yoloConfirmOpen,
   setYoloMode,
   setYoloConfirmOpen,
+  userDisplayName,
+  ttsSupported,
+  ttsActiveKey,
+  ttsSpeaking,
+  speak,
+  stopSpeak,
 }: AgentInterfaceViewProps) {
   const surface = isDark ? 'text-white' : 'text-gray-900';
-  const subtle = isDark ? 'text-white/50' : 'text-gray-500';
-  const cardBg = isDark ? 'bg-white/[0.04] border-white/[0.08]' : 'bg-gray-50 border-gray-200';
   const [pendingDeleteSession, setPendingDeleteSession] = useState<AgentSession | null>(null);
   const prefersReducedMotion = useReducedMotion();
   // Real model reported by the backend for the latest turn, so the header never
   // shows a stale or guessed label.
   const activeModelName = [...turns].reverse().find((turn) => turn.role === 'assistant' && turn.model)?.model ?? '';
-  // The locale provider keeps <html lang> in sync with the interface language.
-  const locale = typeof document !== 'undefined' ? document.documentElement.lang || 'en' : 'en';
+  const attachmentSurface = isDark ? 'border-white/[0.08] bg-white/[0.03]' : 'border-gray-200 bg-gray-50';
 
   return (
     <div className={`agent-page relative flex h-full min-h-0 w-full overflow-hidden ${surface}`}>
-      {/* History sidebar */}
       {historyOpen && (
-        <>
-          <div aria-hidden="true" className={`absolute inset-0 z-[55] bg-black/40 ${historyClosing ? 'animate-overlay-out' : 'animate-overlay-in'}`} onClick={closeHistory} />
-          <div
-            ref={historyDialogRef}
-            id={historyDialogId}
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby={historyTitleId}
-            className={`absolute left-0 top-0 z-[60] flex h-full w-[85vw] max-w-[300px] flex-col border-r backdrop-blur-xl sm:w-72 ${historyClosing ? 'animate-drawer-out' : 'animate-drawer-in'} ${isDark ? 'border-white/10 bg-[#101a26]/95' : 'border-gray-200 bg-white/90'}`}
-            style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
-          >
-            <div className={`flex items-center gap-2 border-b px-3 py-3 ${isDark ? 'border-white/10' : 'border-gray-200'}`} style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 0.75rem)' }}>
-              <MdHistory size={18} className="text-[#006bbd]" />
-              <h2 id={historyTitleId} className="text-base font-semibold">{t('agentHistory')}</h2>
-              <button ref={historyCloseButtonRef} onClick={closeHistory} className={`ml-auto grid h-11 w-11 place-items-center rounded-lg ${isDark ? 'hover:bg-white/10' : 'hover:bg-gray-100'}`} aria-label={t('close')}>
-                <MdClose size={18} />
-              </button>
-            </div>
-            <div className="p-2">
-              <div className={`flex min-h-11 items-center gap-2 rounded-lg border px-2.5 py-1.5 ${isDark ? 'border-white/10 bg-white/[0.03]' : 'border-gray-200 bg-gray-50'}`}>
-                <MdSearch size={15} className={subtle} />
-                <input
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder={t('agentSearchHistory')}
-                  aria-label={t('agentSearchHistory')}
-                  className={`min-w-0 flex-1 bg-transparent text-base outline-hidden sm:text-sm ${isDark ? 'text-white/90 placeholder-white/55' : 'text-slate-900 placeholder-slate-500'}`}
-                />
-              </div>
-            </div>
-            <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
-              {filteredSessions.length === 0 ? (
-                <div className={`flex h-full flex-col items-center justify-center gap-3 px-3 text-center text-sm ${subtle}`}>
-                  <span aria-hidden="true" className={`grid h-12 w-12 place-items-center rounded-2xl ${isDark ? 'bg-[#168de2]/10 text-[#4aa7ed]' : 'bg-sky-50 text-[#006bbd]'}`}><MdHistory size={24} /></span>
-                  <p>{t(search.trim() ? 'noChatResults' : 'agentNoHistory')}</p>
-                </div>
-              ) : (
-                filteredSessions.map((session) => {
-                  const active = session.id === history.activeId;
-                  return (
-                    <div
-                      key={session.id}
-                      data-agent-session
-                      className={`group relative my-0.5 flex items-center gap-1 rounded-lg px-2 py-2 text-sm transition-colors ${active ? (isDark ? 'bg-white/10' : 'bg-gray-100') : isDark ? 'hover:bg-white/[0.05]' : 'hover:bg-gray-50'}`}
-                    >
-                      {active && <span aria-hidden="true" className="agent-session-indicator" />}
-                      <button onClick={() => openSession(session.id)} aria-current={active ? 'page' : undefined} className="min-h-11 min-w-0 flex-1 rounded-lg text-left focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-[#4aa7ed]">
-                        <span className="block truncate">{session.title || t('agentUntitled')}</span>
-                        <span className={`mt-0.5 block truncate text-xs ${isDark ? 'text-white/65' : 'text-gray-600'}`}>
-                          {session.turns.length} · {new Date(session.updatedAt).toLocaleDateString(locale === 'es' ? 'es-ES' : 'en-US', { day: 'numeric', month: 'short' })}
-                        </span>
-                      </button>
-                      <button
-                        onClick={() => setPendingDeleteSession(session)}
-                        className={`hover-reveal grid h-11 w-11 shrink-0 place-items-center rounded-lg transition-opacity focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-[#4aa7ed] ${isDark ? 'text-white/65 hover:bg-red-500/10 hover:text-red-300' : 'text-gray-600 hover:bg-red-50 hover:text-red-700'}`}
-                        aria-label={`${t('delete')} ${session.title || t('agentUntitled')}`}
-                      >
-                        <MdDelete size={17} />
-                      </button>
-                    </div>
-                  );
-                })
-              )}
-            </div>
-          </div>
-        </>
+        <AgentHistoryDrawer
+          isDark={isDark}
+          t={t}
+          closing={historyClosing}
+          dialogRef={historyDialogRef}
+          dialogId={historyDialogId}
+          titleId={historyTitleId}
+          closeButtonRef={historyCloseButtonRef}
+          search={search}
+          setSearch={setSearch}
+          sessions={filteredSessions}
+          activeId={history.activeId}
+          close={closeHistory}
+          openSession={openSession}
+          newSession={startNewSession}
+          requestDelete={setPendingDeleteSession}
+        />
       )}
 
       {pickerOpen && (
@@ -268,193 +236,41 @@ export function AgentInterfaceView({
       )}
 
       <div ref={mainContentRef} className="relative z-10 flex h-full min-h-0 w-full flex-col">
-        {/* Header */}
-        <nav
-          className={`page-header relative z-10 flex shrink-0 items-center gap-2 border-b px-3 backdrop-blur-xl ${isDark ? 'border-white/[0.06] bg-black/40' : 'border-gray-200 bg-white/50'}`}
-          style={{ minHeight: '46px', paddingTop: 'env(safe-area-inset-top, 0px)' }}
-        >
-          <BackButton onClick={onBack} label={t('back')} isDark={isDark} />
-          <button
-            onClick={openHistory}
-            className={`grid h-10 w-10 place-items-center rounded-xl transition-colors ${isDark ? 'text-white/60 hover:bg-white/[0.06] hover:text-white' : 'text-gray-500 hover:bg-gray-100 hover:text-gray-800'}`}
-            aria-label={t('agentHistory')}
-          >
-            <MdHistory size={19} />
-          </button>
-          <h1 aria-label={t('agentTitle')} className="animate-brand min-w-0 truncate text-base font-bold tracking-normal sm:text-lg">
-            <span className="md:hidden">{t('agentButton')}</span>
-            <span className="hidden md:inline">{t('agentTitle')}</span>
-          </h1>
-          <div className="ml-auto flex shrink-0 items-center gap-0.5 sm:gap-1">
-            <motion.div
-              data-header-tools
-              initial={prefersReducedMotion ? false : { opacity: 0, x: 10 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ duration: prefersReducedMotion ? 0 : 0.24, delay: prefersReducedMotion ? 0 : 0.04, ease: [0.22, 1, 0.36, 1] }}
-              className="hidden items-center gap-0.5 lg:flex"
-            >
-              <button
-                type="button"
-                onClick={() => setKnowledgeSearch((value) => !value)}
-                disabled={running}
-                className={`flex h-11 w-11 items-center justify-center rounded-lg transition-colors disabled:opacity-40 ${knowledgeSearch ? '' : isDark ? 'text-white/65 hover:bg-white/[0.06] hover:text-white' : 'text-gray-600 hover:bg-gray-100 hover:text-gray-800'}`}
-                aria-label={knowledgeSearch ? t('agentRagOn') : t('agentRagOff')}
-                title={t('agentRag')}
-                aria-pressed={knowledgeSearch}
-              >
-                <MdStorage size={18} />
-              </button>
-              <button
-                type="button"
-                onClick={() => setWebSearch((value) => !value)}
-                disabled={running}
-                className={`flex h-11 w-11 items-center justify-center rounded-lg transition-colors disabled:opacity-40 ${webSearch ? '' : isDark ? 'text-white/65 hover:bg-white/[0.06] hover:text-white' : 'text-gray-600 hover:bg-gray-100 hover:text-gray-800'}`}
-                aria-label={webSearch ? t('agentWebSearchOn') : t('agentWebSearchOff')}
-                title={t('agentWebSearch')}
-                aria-pressed={webSearch}
-              >
-                <MdPublic size={18} />
-              </button>
-              <button
-                type="button"
-                onClick={() => setDeepResearch((value) => !value)}
-                disabled={running}
-                className={`flex h-11 w-11 items-center justify-center rounded-lg transition-colors disabled:opacity-40 ${deepResearch ? '' : isDark ? 'text-white/65 hover:bg-white/[0.06] hover:text-white' : 'text-gray-600 hover:bg-gray-100 hover:text-gray-800'}`}
-                aria-label={t('agentDeepResearch')}
-                title={t('agentDeepResearch')}
-                aria-pressed={deepResearch}
-              >
-                <MdScience size={18} />
-              </button>
-            </motion.div>
-            <div className="hidden lg:contents">
-              <AgentYoloButton enabled={yoloMode} disabled={running} onChange={handleYoloChange} isDark={isDark} t={t} />
-            </div>
-            <div ref={mobileToolsRef} className="relative mr-1 lg:hidden">
-              <button
-                type="button"
-                onClick={() => setMobileToolsOpen((open) => !open)}
-                className={`grid min-h-11 min-w-11 place-items-center rounded-xl transition-colors ${mobileToolsOpen ? '' : isDark ? 'text-white/65 hover:bg-white/[0.06] hover:text-white' : 'text-gray-600 hover:bg-gray-100 hover:text-gray-800'}`}
-                aria-label={t('agentTools')}
-                aria-expanded={mobileToolsOpen}
-                title={t('agentTools')}
-              >
-                <MdBuild size={17} />
-              </button>
-              <AnimatePresence>
-                {mobileToolsOpen && (
-                  <>
-                    <div className="fixed inset-0 z-40" onClick={() => setMobileToolsOpen(false)} />
-                    <motion.div
-                      initial={{ opacity: 0, scale: 0.94, y: -6 }}
-                      animate={{ opacity: 1, scale: 1, y: 0 }}
-                      exit={{ opacity: 0, scale: 0.94, y: -6 }}
-                      transition={{ duration: 0.15 }}
-                      className={`absolute right-[-0.5rem] top-full z-50 mt-1.5 max-h-[calc(100dvh-4rem)] w-[min(17rem,calc(100vw-1rem))] overflow-y-auto overflow-x-hidden rounded-xl border p-1 shadow-lg ${isDark ? 'border-white/[0.08] bg-[#101a26] shadow-black/40' : 'border-gray-200 bg-white shadow-gray-200/80'}`}
-                    >
-                      <button
-                        type="button"
-                        onClick={() => { setKnowledgeSearch((value) => !value); setMobileToolsOpen(false); }}
-                        disabled={running}
-                        className={`flex min-h-11 w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-sm transition-colors disabled:opacity-40 ${knowledgeSearch ? isDark ? 'text-white/90' : 'text-gray-900' : isDark ? 'text-white/75 hover:bg-white/[0.06]' : 'text-gray-700 hover:bg-gray-100'}`}
-                        aria-label={knowledgeSearch ? t('agentRagOn') : t('agentRagOff')}
-                        aria-pressed={knowledgeSearch}
-                      >
-                        <MdStorage size={17} />
-                        <span className="min-w-0 flex-1 truncate">{t('agentRag')}</span>
-                        {knowledgeSearch && <MdCheck size={14} aria-hidden="true" />}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => { setWebSearch((value) => !value); setMobileToolsOpen(false); }}
-                        disabled={running}
-                        className={`flex min-h-11 w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-sm transition-colors disabled:opacity-40 ${webSearch ? isDark ? 'text-white/90' : 'text-gray-900' : isDark ? 'text-white/75 hover:bg-white/[0.06]' : 'text-gray-700 hover:bg-gray-100'}`}
-                        aria-label={webSearch ? t('agentWebSearchOn') : t('agentWebSearchOff')}
-                        aria-pressed={webSearch}
-                      >
-                        <MdPublic size={17} />
-                        <span className="min-w-0 flex-1 truncate">{t('agentWebSearch')}</span>
-                        {webSearch && <MdCheck size={14} aria-hidden="true" />}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => { setDeepResearch((value) => !value); setMobileToolsOpen(false); }}
-                        disabled={running}
-                        className={`flex min-h-11 w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-sm transition-colors disabled:opacity-40 ${deepResearch ? isDark ? 'text-white/90' : 'text-gray-900' : isDark ? 'text-white/75 hover:bg-white/[0.06]' : 'text-gray-700 hover:bg-gray-100'}`}
-                        aria-label={t('agentDeepResearch')}
-                        aria-pressed={deepResearch}
-                      >
-                        <MdScience size={17} />
-                        <span className="min-w-0 flex-1 truncate">{t('agentDeepResearch')}</span>
-                        {deepResearch && <MdCheck size={14} aria-hidden="true" />}
-                      </button>
-                      <div className={`my-1 border-t ${isDark ? 'border-white/[0.08]' : 'border-gray-200'}`} />
-                      <AgentYoloButton enabled={yoloMode} disabled={running} onChange={(enabled) => { handleYoloChange(enabled); setMobileToolsOpen(false); }} isDark={isDark} t={t} mobile />
-                      <div className={`my-1 border-t ${isDark ? 'border-white/[0.08]' : 'border-gray-200'}`} />
-                      <label className={`flex min-h-11 items-center gap-2 rounded-lg px-2.5 py-2 text-sm ${isDark ? 'text-white/75' : 'text-gray-700'}`}>
-                        <span className="min-w-0 flex-1 truncate">{t('agentModel')}</span>
-                        <select
-                          value={modelMode}
-                          onChange={(event) => { setModelMode(event.target.value as AgentModelMode); setMobileToolsOpen(false); }}
-                          disabled={running}
-                          aria-label={t('agentModel')}
-                          className={`min-h-11 max-w-32 rounded-lg border px-2 text-base outline-hidden focus-visible:ring-2 focus-visible:ring-[#4aa7ed] disabled:opacity-40 ${isDark ? 'border-white/10 bg-[#101a26] text-white/85' : 'border-gray-200 bg-white text-gray-700'}`}
-                        >
-                          <option value="auto">{t('agentModelAuto')}</option>
-                          <option value="chat">{t('agentModelChat')}</option>
-                          <option value="deep">{t('agentModelDeep')}</option>
-                          <option value="fast">{t('agentModelFast')}</option>
-                        </select>
-                      </label>
-                    </motion.div>
-                  </>
-                )}
-              </AnimatePresence>
-            </div>
-            <select
-              value={modelMode}
-              onChange={(event) => setModelMode(event.target.value as AgentModelMode)}
-              disabled={running}
-              aria-label={t('agentModel')}
-              title={t('agentModel')}
-              className={`hidden min-h-11 w-36 rounded-lg border px-2 text-sm outline-hidden focus-visible:ring-2 focus-visible:ring-[#4aa7ed] disabled:opacity-40 lg:block ${isDark ? 'border-white/10 bg-[#101a26] text-white/85' : 'border-gray-200 bg-white/70 text-gray-700'}`}
-            >
-              <option value="auto">{t('agentModelAuto')}</option>
-              <option value="chat">{t('agentModelChat')}</option>
-              <option value="deep">{t('agentModelDeep')}</option>
-              <option value="fast">{t('agentModelFast')}</option>
-            </select>
-            {activeModelName && (
-              <span
-                data-agent-model
-                title={`${t('agentModel')}: ${activeModelName}`}
-                className={`hidden max-w-40 truncate rounded-lg border px-2 py-1 font-mono text-xs leading-4 xl:inline-block ${isDark ? 'border-[#168de2]/25 bg-[#168de2]/10 text-[#7cc0f0]' : 'border-[#006bbd]/20 bg-[#006bbd]/[0.06] text-[#006bbd]'}`}
-              >
-                {activeModelName}
-              </span>
-            )}
-          </div>
-          <button
-            onClick={startNewSession}
-            className={`grid h-11 w-11 place-items-center rounded-xl transition-colors ${isDark ? 'text-white/65 hover:bg-white/[0.06] hover:text-white' : 'text-gray-600 hover:bg-gray-100 hover:text-gray-800'}`}
-            aria-label={t('agentNewSession')}
-            title={t('agentNewSession')}
-          >
-            <MdAdd size={20} />
-          </button>
-        </nav>
+        <AgentHeader
+          onBack={onBack}
+          isDark={isDark}
+          t={t}
+          running={running}
+          openHistory={openHistory}
+          startNewSession={startNewSession}
+          knowledgeSearch={knowledgeSearch}
+          setKnowledgeSearch={setKnowledgeSearch}
+          webSearch={webSearch}
+          setWebSearch={setWebSearch}
+          deepResearch={deepResearch}
+          setDeepResearch={setDeepResearch}
+          yoloMode={yoloMode}
+          handleYoloChange={handleYoloChange}
+          modelMode={modelMode}
+          setModelMode={setModelMode}
+          modelNames={modelNames}
+          activeModelName={activeModelName}
+          mobileToolsOpen={mobileToolsOpen}
+          mobileToolsRef={mobileToolsRef}
+          setMobileToolsOpen={setMobileToolsOpen}
+        />
 
         {/* Workspace selector */}
-        <div className={`flex shrink-0 items-center gap-2 border-b px-3 py-2 text-xs backdrop-blur-xl ${isDark ? 'border-white/[0.06] bg-black/30' : 'border-gray-200 bg-white/40'}`}>
+        <div className={`flex shrink-0 items-center gap-2 border-b px-3 py-1.5 text-xs ${isDark ? 'border-white/[0.06]' : 'border-gray-200'}`}>
           <button
             onClick={() => setPickerOpen(true)}
             aria-label={t('agentPickFolder')}
-            className={`grid h-11 w-11 shrink-0 place-items-center rounded-lg border transition-colors ${isDark ? 'border-white/10 text-[#4ea3e0] hover:bg-white/[0.06]' : 'border-gray-200 text-[#006bbd] hover:bg-gray-100'}`}
+            className={`grid h-11 w-11 shrink-0 place-items-center rounded-lg border transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-[#4aa7ed] ${isDark ? 'border-white/10 text-[#4ea3e0] hover:bg-white/[0.06]' : 'border-gray-200 text-[#006bbd] hover:bg-gray-100'}`}
             title={t('agentPickFolder')}
           >
             <MdFolder size={15} />
           </button>
-          <div className={`flex min-h-11 min-w-0 flex-1 items-center gap-1.5 rounded-lg border px-2 py-1 transition-colors ${isDark ? 'border-white/10 bg-white/[0.03] focus-within:border-[#006bbd]/50' : 'border-gray-200 bg-white/70 focus-within:border-[#006bbd]/50'}`}>
+          <div className={`flex min-h-11 min-w-0 flex-1 items-center gap-1.5 rounded-lg border px-2 py-1 transition-colors ${isDark ? 'border-white/10 focus-within:border-[#006bbd]/50' : 'border-gray-200 focus-within:border-[#006bbd]/50'}`}>
             <input
               aria-label={t('agentWorkspaceRootLabel')}
               value={workspace}
@@ -469,151 +285,93 @@ export function AgentInterfaceView({
         </div>
 
         {/* Conversation */}
-        <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-3 py-4 sm:px-4">
-          {turns.length === 0 ? (
+        {turns.length === 0 ? (
+          <div ref={scrollRef} className="flex min-h-0 flex-1 flex-col">
             <AgentEmptyState
               isDark={isDark}
               t={t}
               paused={running || Boolean(input.trim()) || historyOpen || pickerOpen}
+              resetKey={sessionResetKey}
               onSelect={(prompt) => { setInput(prompt); inputRef.current?.focus(); }}
             />
-          ) : (
-            <div className="tc-agent-shell mx-auto flex max-w-3xl flex-col gap-4">
-              {turns.map((turn, idx) => (
-                <div key={idx} className={`animate-fade-up ${turn.role === 'user' ? 'flex justify-end' : 'flex justify-start'}`}>
-                  {turn.role === 'user' ? (
-                    editingIndex === idx ? (
-                      <div className="flex w-full max-w-[85%] flex-col gap-2">
-                        <textarea
-                          aria-label={t('saveAndResend')}
-                          value={editingText}
-                          onChange={(e) => {
-                            setEditingText(e.target.value);
-                            e.target.style.height = 'auto';
-                            e.target.style.height = `${e.target.scrollHeight}px`;
-                          }}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); saveEdit(); }
-                            if (e.key === 'Escape') cancelEdit();
-                          }}
-                          rows={1}
-                          className={`w-full resize-none overflow-hidden rounded-xl border border-[#006bbd]/40 px-3 py-2 text-base outline-hidden focus:border-[#006bbd] sm:text-sm ${isDark ? 'bg-[#006bbd]/20 text-white' : 'bg-[#006bbd]/10 text-gray-900'}`}
-                        />
-                        <div className="flex justify-end gap-2">
-                          <button onClick={saveEdit} className="min-h-11 rounded-lg bg-[#006bbd] px-3 text-sm font-medium text-white hover:bg-[#0059a0]">{t('saveAndResend')}</button>
-                          <button onClick={cancelEdit} className={`min-h-11 rounded-lg px-3 text-sm font-medium ${isDark ? 'bg-white/10 text-white/70 hover:text-white' : 'bg-gray-200 text-gray-700 hover:text-gray-900'}`}>{t('cancel')}</button>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="group flex max-w-[85%] flex-col items-end gap-2">
-                        {turn.image && (
-                          <img src={turn.image} alt={t('agentAttachImage')} className="max-h-48 w-auto rounded-2xl rounded-br-md border border-white/10 object-cover" width={320} height={192} />
-                        )}
-                        {turn.documents?.length ? (
-                          <div className="flex max-w-full flex-wrap justify-end gap-1.5">
-                            {turn.documents.map((document) => (
-                              <div key={document.name} className="max-w-64 overflow-hidden rounded-xl bg-[#006bbd]/80 px-2.5 py-2 text-left text-white/90">
-                                <div className="flex min-w-0 items-center gap-1.5 text-xs font-medium"><MdUploadFile size={14} className="shrink-0" /><span className="truncate">{document.name}</span>{document.truncated && <span className="text-amber-200">{t('truncated')}</span>}</div>
-                                {document.preview && <p className="mt-1 line-clamp-3 whitespace-pre-wrap text-xs leading-relaxed text-white/75">{document.preview}</p>}
-                              </div>
-                            ))}
-                          </div>
-                        ) : null}
-                        {turn.content && (
-                          <div className="rounded-2xl bg-[#006bbd] px-4 py-2.5 text-sm text-white">
-                            {turn.content}
-                          </div>
-                        )}
-                        <div className="hover-reveal flex items-center gap-1 transition-opacity">
-                          <button
-                            onClick={() => startEdit(idx)}
-                            disabled={running}
-                            className={`grid h-11 w-11 place-items-center rounded-lg transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-[#4aa7ed] disabled:opacity-30 ${isDark ? 'text-white/65 hover:bg-white/[0.06] hover:text-white' : 'text-gray-600 hover:bg-gray-100 hover:text-gray-800'}`}
-                            title={t('edit')} aria-label={t('edit')}
-                          >
-                            <MdEdit size={15} />
-                          </button>
-                          <button
-                            onClick={() => copyText(turn.content, `u-${idx}`)}
-                            className={`grid h-11 w-11 place-items-center rounded-lg transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-[#4aa7ed] ${copiedKey === `u-${idx}` ? `bg-[#006bbd]/10 ${isDark ? 'text-[#4aa7ed]' : 'text-[#005a9e]'}` : isDark ? 'text-white/65 hover:bg-white/[0.06] hover:text-white' : 'text-gray-600 hover:bg-gray-100 hover:text-gray-800'}`}
-                            title={copiedKey === `u-${idx}` ? t('copied') : t('copy')} aria-label={copiedKey === `u-${idx}` ? t('copied') : t('copy')}
-                          >
-                            {copiedKey === `u-${idx}` ? <MdCheck size={15} /> : <MdContentCopy size={15} />}
-                          </button>
-                        </div>
-                      </div>
-                    )
-                    ) : (
-                      <div className="tc-agent-reply group w-full min-w-0">
-                        {running && idx === turns.length - 1 && (agentActivity || analyzingImage) && (
-                          <AgentThinkingDisclosure
-                            activity={analyzingImage ? t('agentAnalyzingImage') : agentActivity || t('agentWorking')}
-                            isDark={isDark}
-                          />
-                        )}
-                        {turn.steps?.map((step) => (
-                        <AgentStepCard key={step.id} step={step} isDark={isDark} cardBg={cardBg} subtle={subtle} onApprove={approve} t={t} />
-                      ))}
-                      {turn.content && (
-                        <div className="mt-1">
-                          {running && idx === turns.length - 1
-                            ? <p className="whitespace-pre-wrap text-sm leading-relaxed">{turn.content}</p>
-                            : <ChatMarkdown text={turn.content} isDark={isDark} />}
-                        </div>
-                      )}
-                      {running && idx === turns.length - 1 && !turn.content && !(agentActivity || analyzingImage) && (
-                        <div className={`flex items-center gap-2 text-xs ${subtle}`}>
-                          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[#006bbd]" />
-                          {analyzingImage ? t('agentAnalyzingImage') : agentActivity || t('agentThinking')}
-                        </div>
-                      )}
-                      {turn.content && !(running && idx === turns.length - 1) && (
-                        <div className="hover-reveal mt-1 flex items-center gap-1 transition-opacity">
-                          <button
-                            onClick={() => copyText(turn.content, `a-${idx}`)}
-                            className={`grid h-11 w-11 place-items-center rounded-lg transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-[#4aa7ed] ${copiedKey === `a-${idx}` ? `bg-[#006bbd]/10 ${isDark ? 'text-[#4aa7ed]' : 'text-[#005a9e]'}` : isDark ? 'text-white/65 hover:bg-white/[0.06] hover:text-white' : 'text-gray-600 hover:bg-gray-100 hover:text-gray-800'}`}
-                            title={copiedKey === `a-${idx}` ? t('copied') : t('copy')} aria-label={copiedKey === `a-${idx}` ? t('copied') : t('copy')}
-                          >
-                            {copiedKey === `a-${idx}` ? <MdCheck size={15} /> : <MdContentCopy size={15} />}
-                          </button>
-                          <button
-                            onClick={() => regenerate(idx)}
-                            disabled={running}
-                            className={`grid h-11 w-11 place-items-center rounded-lg transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-[#4aa7ed] disabled:opacity-30 ${isDark ? 'text-white/65 hover:bg-white/[0.06] hover:text-white' : 'text-gray-600 hover:bg-gray-100 hover:text-gray-800'}`}
-                            title={t('regenerate')} aria-label={t('regenerate')}
-                          >
-                            <MdRefresh size={15} />
-                          </button>
-                        </div>
-                      )}
-                      {turn.completionStatus && turn.completionStatus !== 'complete' && (
-                        <p role="status" className={`mt-1 text-sm ${turn.completionStatus === 'error' ? isDark ? 'text-red-300' : 'text-red-700' : isDark ? 'text-amber-300' : 'text-amber-800'}`}>
-                          {turn.completionStatus === 'cancelled' ? t('requestCancelled') : turn.completionStatus === 'pending' ? t('completionPending') : t('completionError')}
-                        </p>
-                      )}
-                      {turn.model && (
-                        <p className={`mt-1 font-mono text-xs ${subtle}`}>{turn.model}</p>
-                      )}
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+          </div>
+        ) : (
+          <AgentTurns
+            isDark={isDark}
+            t={t}
+            scrollRef={scrollRef}
+            turns={turns}
+            running={running}
+            agentActivity={agentActivity}
+            analyzingImage={analyzingImage}
+            userDisplayName={userDisplayName}
+            editingIndex={editingIndex}
+            editingText={editingText}
+            setEditingText={setEditingText}
+            saveEdit={saveEdit}
+            cancelEdit={cancelEdit}
+            startEdit={startEdit}
+            copyText={copyText}
+            copiedKey={copiedKey}
+            regenerate={regenerate}
+            approve={approve}
+            ttsSupported={ttsSupported}
+            ttsActiveKey={ttsActiveKey}
+            speak={speak}
+            stopSpeak={stopSpeak}
+          />
+        )}
 
-        {/* Composer */}
-        <div className="shrink-0 px-3 pt-3 sm:px-4" style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 0.75rem)' }}>
-          <div className="mx-auto flex w-full max-w-3xl flex-col gap-2">
-            <AnimatePresence initial={false}>
-              {attachedImage && (
-                <motion.div
-                  initial={prefersReducedMotion ? false : { opacity: 0, scale: 0.82, y: 8 }}
-                  animate={{ opacity: 1, scale: 1, y: 0 }}
-                  exit={prefersReducedMotion ? { opacity: 1 } : { opacity: 0, scale: 0.82, y: 8 }}
-                  transition={{ duration: prefersReducedMotion ? 0 : 0.2, ease: [0.16, 1, 0.3, 1] }}
-                  className="relative inline-block w-max"
-                >
+        <SpeakingIndicator speaking={ttsSpeaking} />
+
+        {/* Composer — same footprint as the chat composer. */}
+        <div
+          className="chat-composer relative z-40 mx-auto w-full max-w-[56rem] shrink-0 px-3 pt-3 sm:px-6"
+          style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 12px)' }}
+        >
+          <AnimatePresence initial={false}>
+            {attachedDocs.length > 0 && (
+              <motion.div
+                layout
+                initial={prefersReducedMotion ? false : { opacity: 0, height: 0, y: 8 }}
+                animate={{ opacity: 1, height: 'auto', y: 0 }}
+                exit={prefersReducedMotion ? { opacity: 1 } : { opacity: 0, height: 0, y: 8 }}
+                transition={{ duration: prefersReducedMotion ? 0 : 0.22, ease: [0.16, 1, 0.3, 1] }}
+                className={`mb-2 grid max-h-44 grid-cols-1 gap-2 overflow-y-auto rounded-xl border p-2 sm:grid-cols-2 ${attachmentSurface}`}
+              >
+                <AnimatePresence initial={false}>
+                  {attachedDocs.map((document) => (
+                    <motion.div
+                      layout
+                      key={document.name}
+                      initial={prefersReducedMotion ? false : { opacity: 0, scale: 0.94, y: 6 }}
+                      animate={{ opacity: 1, scale: 1, y: 0 }}
+                      exit={prefersReducedMotion ? { opacity: 1 } : { opacity: 0, scale: 0.94, y: 6 }}
+                      transition={{ duration: prefersReducedMotion ? 0 : 0.18, ease: [0.16, 1, 0.3, 1] }}
+                      className={`min-w-0 rounded-lg px-2.5 py-2 text-xs ${isDark ? 'bg-white/[0.06] text-white/75' : 'bg-white text-gray-700'}`}
+                    >
+                      <div className="flex min-w-0 items-center gap-1.5">
+                        <MdUploadFile size={14} className="shrink-0" />
+                        <span className="truncate font-medium">{document.name}</span>
+                        {document.truncated && <span className="text-amber-400">{t('truncated')}</span>}
+                        <button type="button" onClick={() => setAttachedDocs((current) => current.filter((item) => item.name !== document.name))} className="ml-auto grid h-11 w-11 shrink-0 place-items-center rounded-lg text-current/70 hover:bg-white/[0.08] hover:text-current focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-[#4aa7ed]" aria-label={t('removeDocument')}><MdClose size={16} /></button>
+                      </div>
+                      <p className="mt-1 line-clamp-3 whitespace-pre-wrap text-xs leading-relaxed opacity-80">{document.content.slice(0, 180)}</p>
+                    </motion.div>
+                  ))}
+                </AnimatePresence>
+              </motion.div>
+            )}
+          </AnimatePresence>
+          <AnimatePresence initial={false}>
+            {attachedImage && (
+              <motion.div
+                initial={prefersReducedMotion ? false : { opacity: 0, scale: 0.82, y: 8 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={prefersReducedMotion ? { opacity: 1 } : { opacity: 0, scale: 0.82, y: 8 }}
+                transition={{ duration: prefersReducedMotion ? 0 : 0.2, ease: [0.16, 1, 0.3, 1] }}
+                className="relative mb-2 inline-block w-max"
+              >
                 <img src={attachedImage} alt={t('agentAttachImage')} className={`h-20 w-20 rounded-lg border object-cover ${isDark ? 'border-white/10' : 'border-gray-200'}`} width={80} height={80} />
                 <button
                   onClick={() => { setAttachedImage(null); setImageError(''); }}
@@ -622,75 +380,45 @@ export function AgentInterfaceView({
                 >
                   <MdClose size={16} />
                 </button>
-                </motion.div>
-              )}
-            </AnimatePresence>
-            <AnimatePresence initial={false}>
-              {attachedDocs.length > 0 && (
-                <motion.div
-                  layout
-                  initial={prefersReducedMotion ? false : { opacity: 0, height: 0, y: 8 }}
-                  animate={{ opacity: 1, height: 'auto', y: 0 }}
-                  exit={prefersReducedMotion ? { opacity: 1 } : { opacity: 0, height: 0, y: 8 }}
-                  transition={{ duration: prefersReducedMotion ? 0 : 0.22, ease: [0.16, 1, 0.3, 1] }}
-                  className={`grid max-h-44 grid-cols-1 gap-2 overflow-y-auto rounded-xl border p-2 sm:grid-cols-2 ${isDark ? 'border-white/[0.08] bg-white/[0.03]' : 'border-gray-200 bg-gray-50'}`}
-                >
-                  <AnimatePresence initial={false}>
-                    {attachedDocs.map((document) => (
-                      <motion.div
-                        layout
-                        key={document.name}
-                        initial={prefersReducedMotion ? false : { opacity: 0, scale: 0.94, y: 6 }}
-                        animate={{ opacity: 1, scale: 1, y: 0 }}
-                        exit={prefersReducedMotion ? { opacity: 1 } : { opacity: 0, scale: 0.94, y: 6 }}
-                        transition={{ duration: prefersReducedMotion ? 0 : 0.18, ease: [0.16, 1, 0.3, 1] }}
-                        className={`min-w-0 rounded-lg px-2.5 py-2 text-xs ${isDark ? 'bg-white/[0.06] text-white/75' : 'bg-white text-gray-700'}`}
-                      >
-                    <div className="flex min-w-0 items-center gap-1.5"><MdUploadFile size={14} className="shrink-0" /><span className="truncate font-medium">{document.name}</span>{document.truncated && <span className="text-amber-400">{t('truncated')}</span>}<button type="button" onClick={() => setAttachedDocs((current) => current.filter((item) => item.name !== document.name))} className="ml-auto grid h-11 w-11 shrink-0 place-items-center rounded-lg text-current/70 hover:bg-white/[0.08] hover:text-current focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-[#4aa7ed]" aria-label={t('removeDocument')}><MdClose size={16} /></button></div>
-                    <p className="mt-1 line-clamp-3 whitespace-pre-wrap text-xs leading-relaxed opacity-80">{document.content.slice(0, 180)}</p>
-                      </motion.div>
-                    ))}
-                  </AnimatePresence>
-                </motion.div>
-              )}
-            </AnimatePresence>
-            {imageError && <p role="alert" className={`text-sm ${isDark ? 'text-red-300' : 'text-red-700'}`}>{imageError}</p>}
+              </motion.div>
+            )}
+          </AnimatePresence>
+          {imageError && <p role="alert" className={`mb-2 text-sm leading-relaxed ${isDark ? 'text-red-300' : 'text-red-700'}`}>{imageError}</p>}
 
-            <input ref={imageInputRef} type="file" accept={IMAGE_FILE_ACCEPT} aria-label={t('agentAttachImage')} className="hidden" onChange={onPickImage} />
-            <input ref={docInputRef} type="file" accept={DOCUMENT_FILE_ACCEPT} aria-label={t('attachDocument')} multiple className="hidden" onChange={onPickDocs} />
+          <input ref={imageInputRef} type="file" accept={IMAGE_FILE_ACCEPT} aria-label={t('agentAttachImage')} className="hidden" onChange={onPickImage} />
+          <input ref={docInputRef} type="file" accept={DOCUMENT_FILE_ACCEPT} aria-label={t('attachDocument')} multiple className="hidden" onChange={onPickDocs} />
 
-            <ComposerLayout
-              value={input}
-              onChange={(event) => setInput(event.target.value)}
-              onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void send(); } }}
-              placeholder={placeholder}
-              name="agent-prompt"
-              inputRef={inputRef}
-              disabled={running}
-              isDark={isDark}
-              expandLabel={t('expandComposer')}
-              closeLabel={t('closeExpandedComposer')}
-              leftActions={(
-                <div ref={attachmentMenuRef} className="relative grid h-11 w-11 shrink-0 place-items-center">
-                  <button type="button" onClick={() => setAttachmentMenuOpen((open) => !open)} disabled={running} className={`grid h-11 w-11 place-items-center rounded-xl transition-colors disabled:opacity-40 ${isDark ? 'text-white/55 hover:text-white' : 'text-gray-500 hover:text-gray-700'}`} aria-label={`${t('agentAttachImage')} / ${t('attachDocument')}`} aria-expanded={attachmentMenuOpen}><MdAdd size={20} /></button>
-                  <AnimatePresence>
-                    {attachmentMenuOpen && <motion.div initial={{ opacity: 0, y: 8, scale: 0.96 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, y: 8, scale: 0.96 }} transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }} className={`absolute bottom-full left-0 z-40 mb-2 min-w-44 overflow-hidden rounded-xl border p-1 shadow-xl ${isDark ? 'border-white/[0.08] bg-[#101a26]' : 'border-gray-200 bg-white'}`}>
-                      <button type="button" onClick={() => { setAttachmentMenuOpen(false); imageInputRef.current?.click(); }} className={`flex min-h-11 w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm ${isDark ? 'text-white/75 hover:bg-white/[0.08]' : 'text-gray-700 hover:bg-gray-100'}`}><MdImage size={18} /> {t('agentAttachImage')}</button>
-                      <button type="button" onClick={() => { setAttachmentMenuOpen(false); docInputRef.current?.click(); }} className={`flex min-h-11 w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm ${isDark ? 'text-white/75 hover:bg-white/[0.08]' : 'text-gray-700 hover:bg-gray-100'}`}><MdUploadFile size={18} /> {t('attachDocument')}</button>
-                    </motion.div>}
-                  </AnimatePresence>
-                </div>
-              )}
-              rightActions={(
-                <>
-                  <AnimatePresence initial={false}>
-                    {dictationAvailable && !running && <motion.button type="button" initial={{ opacity: 0, scale: 0.72, width: 0 }} animate={{ opacity: 1, scale: 1, width: 44 }} exit={{ opacity: 0, scale: 0.72, width: 0 }} transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }} onClick={toggleDictation} className={`flex h-11 shrink-0 items-center justify-center overflow-hidden rounded-xl transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-[#4aa7ed] ${isDark ? 'text-white/65 hover:text-white' : 'text-gray-600 hover:text-gray-800'}`} aria-label={listening ? t('agentExitVoiceMode') : t('agentVoiceMode')} title={listening ? t('agentExitVoiceMode') : t('agentVoiceMode')} aria-pressed={listening}><MdMic size={19} /></motion.button>}
-                  </AnimatePresence>
-                  {running ? <button onClick={stop} className="composer-action-primary flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-red-500/90 text-white transition-colors hover:bg-red-500 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-[#4aa7ed]" aria-label={t('agentStop')}><MdStop size={20} /></button> : <button onClick={() => void send()} disabled={!input.trim() && !attachedImage && attachedDocs.length === 0} className="composer-action-primary flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#006bbd] text-white transition-colors hover:bg-[#0059a0] focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-[#4aa7ed] disabled:cursor-not-allowed disabled:opacity-40" aria-label={t('agentSend')} title={t('agentSend')}><MdSend size={19} /></button>}
-                </>
-              )}
-            />
-          </div>
+          <ComposerLayout
+            value={input}
+            onChange={(event) => setInput(event.target.value)}
+            onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void send(); } }}
+            placeholder={placeholder}
+            name="agent-prompt"
+            inputRef={inputRef}
+            disabled={running}
+            isDark={isDark}
+            expandLabel={t('expandComposer')}
+            closeLabel={t('closeExpandedComposer')}
+            leftActions={(
+              <div ref={attachmentMenuRef} className="relative grid h-11 w-11 shrink-0 place-items-center">
+                <button type="button" onClick={() => setAttachmentMenuOpen((open) => !open)} disabled={running} className={`grid h-11 w-11 place-items-center rounded-xl transition-colors disabled:opacity-40 ${isDark ? 'text-white/55 hover:text-white' : 'text-gray-500 hover:text-gray-700'}`} aria-label={`${t('agentAttachImage')} / ${t('attachDocument')}`} aria-expanded={attachmentMenuOpen}><MdAdd size={18} /></button>
+                <AnimatePresence>
+                  {attachmentMenuOpen && <motion.div initial={{ opacity: 0, y: 8, scale: 0.96 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, y: 8, scale: 0.96 }} transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }} className={`absolute bottom-full left-0 z-40 mb-2 min-w-44 overflow-hidden rounded-xl border p-1 shadow-xl ${isDark ? 'border-white/[0.08] bg-[#101a26]' : 'border-gray-200 bg-white'}`}>
+                    <button type="button" onClick={() => { setAttachmentMenuOpen(false); imageInputRef.current?.click(); }} className={`flex min-h-11 w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm ${isDark ? 'text-white/75 hover:bg-white/[0.08]' : 'text-gray-700 hover:bg-gray-100'}`}><MdImage size={18} /> {t('agentAttachImage')}</button>
+                    <button type="button" onClick={() => { setAttachmentMenuOpen(false); docInputRef.current?.click(); }} className={`flex min-h-11 w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm ${isDark ? 'text-white/75 hover:bg-white/[0.08]' : 'text-gray-700 hover:bg-gray-100'}`}><MdUploadFile size={18} /> {t('attachDocument')}</button>
+                  </motion.div>}
+                </AnimatePresence>
+              </div>
+            )}
+            rightActions={(
+              <>
+                <AnimatePresence initial={false}>
+                  {dictationAvailable && !running && <motion.button type="button" initial={{ opacity: 0, scale: 0.72, width: 0 }} animate={{ opacity: 1, scale: 1, width: 44 }} exit={{ opacity: 0, scale: 0.72, width: 0 }} transition={{ duration: prefersReducedMotion ? 0 : 0.18, ease: [0.16, 1, 0.3, 1] }} onClick={toggleDictation} className={`grid h-11 shrink-0 place-items-center overflow-hidden rounded-xl transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-[#4aa7ed] ${isDark ? 'text-white/50 hover:text-white' : 'text-gray-500 hover:text-gray-700'}`} aria-label={listening ? t('agentExitVoiceMode') : t('agentVoiceMode')} title={listening ? t('agentExitVoiceMode') : t('agentVoiceMode')} aria-pressed={listening}><MdMic size={18} /></motion.button>}
+                </AnimatePresence>
+                {running ? <button onClick={stop} className="composer-action-primary grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-red-500/20 text-red-400 transition-colors hover:bg-red-500/30 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-[#4aa7ed]" aria-label={t('agentStop')}><MdStop size={18} /></button> : <button onClick={() => void send()} disabled={!input.trim() && !attachedImage && attachedDocs.length === 0} className="composer-action-primary grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-[#006bbd] text-white transition-colors hover:bg-[#0059a0] focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-[#4aa7ed] disabled:cursor-not-allowed disabled:opacity-40" aria-label={t('agentSend')} title={t('agentSend')}><MdSend size={18} /></button>}
+              </>
+            )}
+          />
         </div>
       </div>
       <ConfirmModal
@@ -714,148 +442,6 @@ export function AgentInterfaceView({
         onConfirm={() => { setYoloMode(true); setYoloConfirmOpen(false); }}
         onCancel={() => setYoloConfirmOpen(false)}
       />
-    </div>
-  );
-}
-
-function AgentThinkingDisclosure({
-  activity,
-  isDark,
-}: {
-  activity: string;
-  isDark: boolean;
-}) {
-  if (!activity) return null;
-  return (
-    <div className={`agent-activity mb-2 flex items-center gap-2 text-xs ${isDark ? 'text-white/55' : 'text-gray-500'}`} role="status" aria-live="polite">
-      <span className="agent-activity-dot" aria-hidden="true" />
-      <AnimatePresence initial={false} mode="wait">
-        <motion.span
-          key={activity}
-          initial={{ opacity: 0, y: 5 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -5 }}
-          transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
-        >
-          {activity}
-        </motion.span>
-      </AnimatePresence>
-    </div>
-  );
-}
-
-const DANGEROUS_HINT: Record<string, 'toolWrite' | 'toolEdit' | 'toolRun'> = {
-  write_file: 'toolWrite',
-  edit_file: 'toolEdit',
-  run_command: 'toolRun',
-};
-
-function argSummary(tool: string, args: Record<string, string>): string {
-  if (tool === 'run_command') return args.command ?? '';
-  if (tool === 'write_file') return args.path ?? '';
-  if (tool === 'edit_file') return args.path ?? '';
-  if (tool === 'read_file' || tool === 'list_dir') return args.path ?? '.';
-  if (tool === 'glob' || tool === 'grep') return args.pattern ?? '';
-  if (tool === 'search_knowledge' || tool === 'web_search') return args.query ?? '';
-  return Object.values(args).join(' ');
-}
-
-interface AgentYoloButtonProps {
-  enabled: boolean;
-  disabled: boolean;
-  onChange: (enabled: boolean) => void;
-  isDark: boolean;
-  t: Translate;
-  mobile?: boolean;
-}
-
-function AgentYoloButton({ enabled, disabled, onChange, isDark, t, mobile = false }: AgentYoloButtonProps) {
-  return (
-    <div className={mobile ? 'w-full' : 'contents'}>
-      <button
-        type="button"
-        role="switch"
-        data-yolo-switch={mobile ? 'mobile' : 'header'}
-        aria-checked={enabled}
-        aria-label={enabled ? t('agentYoloModeOn') : t('agentYoloModeOff')}
-        title={enabled ? t('agentYoloModeOn') : t('agentYoloModeOff')}
-        onClick={() => onChange(!enabled)}
-        disabled={disabled}
-        className={`${mobile ? 'flex w-full items-center px-2.5 text-left' : 'flex items-center px-2'} min-h-11 rounded-lg text-xs font-bold uppercase tracking-wide transition-[background-color,color,transform] active:scale-95 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-red-500/70 disabled:opacity-40 ${enabled ? isDark ? 'bg-transparent text-red-300 hover:bg-red-500/10' : 'bg-transparent text-red-700 hover:bg-red-500/10' : isDark ? 'text-white/70 hover:bg-white/[0.06] hover:text-white' : 'text-gray-600 hover:bg-gray-100 hover:text-gray-800'}`}
-      >
-        {t('agentYoloMode')}
-      </button>
-    </div>
-  );
-}
-
-interface StepCardProps {
-  step: AgentStep;
-  isDark: boolean;
-  cardBg: string;
-  subtle: string;
-  onApprove: (step: AgentStep, approved: boolean) => void | Promise<void>;
-  t: Translate;
-}
-
-function AgentStepCard({ step, isDark, cardBg, subtle, onApprove, t }: StepCardProps) {
-  const statusIcon = {
-    running: <span className="h-2 w-2 animate-pulse rounded-full bg-[#006bbd]" />,
-    awaiting: <span className="h-2 w-2 rounded-full bg-amber-400" />,
-    done: <MdCheck size={14} className="text-green-500" />,
-    denied: <MdClose size={14} className="text-red-500" />,
-  }[step.status];
-
-  const summary = argSummary(step.tool, step.args);
-  const dangerKey = DANGEROUS_HINT[step.tool];
-
-  return (
-    <div className={`tc-agent-step mb-1.5 animate-fade-up rounded-xl border px-3 py-3 text-sm ${cardBg}`}>
-      <div className="flex items-center gap-2">
-        {statusIcon}
-        <span className={`font-mono font-semibold ${isDark ? 'text-white/80' : 'text-gray-700'}`}>{step.tool}</span>
-        {summary && <span className={`min-w-0 flex-1 truncate font-mono ${subtle}`} title={summary}>{summary}</span>}
-      </div>
-
-      {/* Preview for dangerous actions awaiting approval */}
-      {step.status === 'awaiting' && (
-        <div className="mt-2">
-          {step.tool === 'write_file' && (
-            <pre className={`mb-2 max-h-40 overflow-auto rounded-lg p-2 font-mono text-sm leading-relaxed ${isDark ? 'bg-black/40 text-white/80' : 'bg-gray-100 text-gray-800'}`}>{(step.args.content ?? '').slice(0, 1200)}</pre>
-          )}
-          {step.tool === 'edit_file' && (
-            <pre className={`mb-2 max-h-40 overflow-auto rounded-lg p-2 font-mono text-sm leading-relaxed ${isDark ? 'bg-black/40' : 'bg-gray-100'}`}>
-              <span className="text-red-400">- {(step.args.old ?? '').slice(0, 400)}</span>{'\n'}
-              <span className="text-green-400">+ {(step.args.new ?? '').slice(0, 400)}</span>
-            </pre>
-          )}
-          {step.tool === 'run_command' && (
-            <pre className={`mb-2 max-h-40 overflow-auto rounded-lg p-2 font-mono text-sm leading-relaxed ${isDark ? 'bg-black/40 text-white/80' : 'bg-gray-100 text-gray-800'}`}>$ {step.args.command}</pre>
-          )}
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-            <span className={`min-w-0 flex-1 leading-relaxed ${dangerKey ? isDark ? 'text-amber-200' : 'text-amber-800' : subtle}`}>{dangerKey ? t(dangerKey) : t('agentApprovePrompt')}</span>
-            <div className="flex w-full gap-2 sm:w-auto">
-              <button
-                onClick={() => onApprove(step, false)}
-                className={`min-h-11 min-w-0 flex-1 rounded-lg px-3 text-sm font-medium transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-[#4aa7ed] sm:flex-none ${isDark ? 'bg-white/[0.06] text-white/80 hover:bg-white/10' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
-              >
-                {t('agentReject')}
-              </button>
-              <button
-                onClick={() => onApprove(step, true)}
-                className="min-h-11 min-w-0 flex-1 rounded-lg bg-[#006bbd] px-3 text-sm font-medium text-white transition-colors hover:bg-[#0059a0] focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-[#4aa7ed] sm:flex-none"
-              >
-                {t('agentApprove')}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Result line for completed / denied steps */}
-      {step.result && step.status !== 'awaiting' && (
-        <pre className={`mt-2 max-h-32 overflow-auto whitespace-pre-wrap break-words rounded-lg p-2 font-mono text-sm leading-relaxed ${isDark ? 'bg-black/30 text-white/75' : 'bg-gray-100 text-gray-700'}`}>{step.result.slice(0, 800)}</pre>
-      )}
     </div>
   );
 }

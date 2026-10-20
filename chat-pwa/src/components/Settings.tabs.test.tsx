@@ -163,7 +163,7 @@ describe('Settings section tabs', () => {
     await user.click(language);
     await user.click(screen.getByRole('button', { name: /dark mode|light mode|modo oscuro|modo claro|oscuro|claro/i }));
     await user.click(screen.getByRole('button', { name: /advanced|avanzado/i }));
-    expect(screen.getByRole('note')).toHaveTextContent(/paired devices cannot administer|dispositivos vinculados no pueden administrar/i);
+    expect(screen.getByRole('note')).toHaveTextContent(/this device cannot administer|este dispositivo no puede administrar/i);
     expect(screen.queryByRole('button', { name: /unlock|desbloquear/i })).not.toBeInTheDocument();
     window.dispatchEvent(new CustomEvent('tc-open-section', { detail: { section: 'help' } }));
     expect(await screen.findByText(/open source|código abierto/i)).toBeInTheDocument();

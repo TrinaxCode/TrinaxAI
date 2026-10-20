@@ -45,7 +45,7 @@ describe('release-facing status surfaces', () => {
     const onBack = vi.fn();
     render(<PermissionNotice feature={feature} onBack={onBack} />);
     expect(screen.getByText(copy)).toBeInTheDocument();
-    expect(screen.getByText(feature === 'index' || feature === 'agent' ? 'permissionHostOnly' : 'permissionTutorial')).toBeInTheDocument();
+    expect(screen.getByText(feature === 'index' || feature === 'agent' ? 'permissionGrantTutorial' : 'permissionTutorial')).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button'));
     expect(onBack).toHaveBeenCalledOnce();
   });

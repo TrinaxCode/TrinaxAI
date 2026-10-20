@@ -1,5 +1,5 @@
 import { APP_CONFIG } from './config';
-import { systemRequestHeaders } from './authHeaders';
+import { isLocalHostBrowser, systemRequestHeaders } from './authHeaders';
 import { ApiError, apiErrorFromPayload } from './api_errors';
 import { apiJson, RAG_BASE } from './api_http';
 import { readStreamLines } from './api_streams';
@@ -66,7 +66,7 @@ export async function runAgent(
       workspace: opts.workspace ?? agentWorkspaceRoot(),
       model: opts.model,
       max_steps: opts.maxSteps ?? 25,
-      yolo: opts.yolo ?? false,
+      yolo: (opts.yolo ?? false) && isLocalHostBrowser(),
       web_search: opts.webSearch ?? false,
       knowledge_search: opts.knowledgeSearch ?? false,
       deep_research: opts.deepResearch ?? false,

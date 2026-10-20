@@ -64,6 +64,10 @@ export function useChatVoice({
   const ttsRunRef = useRef(0);
   const voiceToastAtRef = useRef(0);
   const ttsCancellingRef = useRef(false);
+  // Completion handler of the native utterance currently playing. iOS Safari can
+  // skip `onend`, which left "TrinaxAI is speaking" on screen forever; a watchdog
+  // below finishes the speech when the synthesizer is idle but no event arrived.
+  const ttsNativeFinishRef = useRef<{ finish: () => void; startedAt: number } | null>(null);
   const wakeLockRef = useRef<WakeLockSentinel | null>(null);
   const wakeLockRequestRef = useRef(0);
   const backendRecorderRef = useRef<AudioRecorder | null>(null);
@@ -267,6 +271,7 @@ export function useChatVoice({
   }, []);
 
   const clearTtsState = useCallback(() => {
+    ttsNativeFinishRef.current = null;
     ttsActiveKeyRef.current = null;
     setTtsActiveKey(null);
     ttsTailRef.current = '';
@@ -296,6 +301,19 @@ export function useChatVoice({
   }, [stopTtsPump, ttsSupported]);
 
   useEffect(() => () => stopTtsPump(), [stopTtsPump]);
+
+  useEffect(() => {
+    if (!ttsSpeaking || !ttsSupported) return undefined;
+    const id = window.setInterval(() => {
+      const pending = ttsNativeFinishRef.current;
+      if (!pending || Date.now() - pending.startedAt < 1500) return;
+      const synth = window.speechSynthesis;
+      if (synth.speaking || synth.pending || synth.paused) return;
+      ttsNativeFinishRef.current = null;
+      pending.finish();
+    }, 600);
+    return () => window.clearInterval(id);
+  }, [ttsSpeaking, ttsSupported]);
 
   const cleanupVoiceResources = useCallback(() => {
     callModeRef.current = false;
@@ -369,8 +387,11 @@ export function useChatVoice({
     const runId = ttsRunRef.current;
     ttsSpeakingRef.current = true;
     setTtsSpeaking(true);
+    let chunkDone = false;
     const onComplete = () => {
-      if (runId !== ttsRunRef.current) return;
+      if (chunkDone || runId !== ttsRunRef.current) return;
+      chunkDone = true;
+      ttsNativeFinishRef.current = null;
       ttsSpeakingRef.current = false;
       if (ttsQueueRef.current.length || ttsSourceDoneRef.current) pumpCallSpeech();
       else setTtsSpeaking(false);
@@ -390,6 +411,7 @@ export function useChatVoice({
         if (!ttsCancellingRef.current) showVoiceToast(t('ttsUnavailable'));
         onComplete();
       };
+      ttsNativeFinishRef.current = { finish: onComplete, startedAt: Date.now() };
       try {
         window.speechSynthesis.resume();
         window.speechSynthesis.speak(utterance);
@@ -513,6 +535,7 @@ export function useChatVoice({
       finish();
       return;
     }
+    ttsNativeFinishRef.current = { finish, startedAt: Date.now() };
     parts.forEach((part, index) => {
       const utterance = new SpeechSynthesisUtterance(part);
       utterance.lang = voiceLang;

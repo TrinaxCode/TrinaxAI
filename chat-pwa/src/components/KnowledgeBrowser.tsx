@@ -8,6 +8,7 @@ import { escapeRegExp } from '../utils/str';
 import { getCollections, getCollectionSources, getFileChunks, deleteCollectionSources, deleteSource, userFacingError, type Collection, type CollectionSourceRow, type FileChunk } from '../lib/api';
 import BackButton from './BackButton';
 import ConfirmModal from './ConfirmModal';
+import { usePairedDeviceScope } from '../hooks/usePairedDeviceScope';
 import ErrorRepairModal from './ErrorRepairModal';
 import './chat/chat-modern.css';
 
@@ -35,7 +36,10 @@ function formatBytes(n: number): string {
   return `${(n / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-export default function KnowledgeBrowser({ onBack, canManageSystem = false, initialCollection, initialFile }: Props) {
+export default function KnowledgeBrowser({ onBack, canManageSystem: hostCanManage = false, initialCollection, initialFile }: Props) {
+  // Deleting sources and opening indexing needs the host, or a paired device the host granted `index`.
+  const pairedGranted = usePairedDeviceScope('index'); // always called: hooks must not short-circuit
+  const canManageSystem = hostCanManage || pairedGranted;
   const { isDark } = useTheme();
   const { t } = useI18n();
   const prefersReducedMotion = useReducedMotion();

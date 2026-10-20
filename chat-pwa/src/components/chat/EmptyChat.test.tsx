@@ -32,4 +32,14 @@ describe('EmptyChat', () => {
     );
   });
 
+  it('keeps chat chips compact by default and lets the agent widen the row', () => {
+    const chips = [{ label: 'Explicar código', icon: '', action: vi.fn(), idx: 0 }];
+    const { rerender } = render(<EmptyChat isDark motd="Hola" rotation={0} chips={chips} />);
+    expect(screen.getByRole('button', { name: /explicar código/i }).parentElement).toHaveClass('max-w-md');
+
+    rerender(<EmptyChat isDark motd="Hola" rotation={0} chips={chips} chipsMaxWidth="max-w-4xl" />);
+    const row = screen.getByRole('button', { name: /explicar código/i }).parentElement;
+    expect(row).toHaveClass('max-w-4xl');
+    expect(row).not.toHaveClass('max-w-md');
+  });
 });

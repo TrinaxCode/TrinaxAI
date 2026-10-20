@@ -30,7 +30,7 @@ const collection: Collection = {
   updated_at: 1,
 };
 
-function renderComposer(engine: 'ollama' | 'rag', onToggleCollection = vi.fn()) {
+function renderComposer(engine: 'ollama' | 'rag', onToggleCollection = vi.fn(), overrides: Partial<ComponentProps<typeof ChatComposer>> = {}) {
   const props: ComponentProps<typeof ChatComposer> = {
     engine,
     isDark: false,
@@ -71,6 +71,7 @@ function renderComposer(engine: 'ollama' | 'rag', onToggleCollection = vi.fn()) 
     onToggleDictation: vi.fn(),
     onStop: vi.fn(),
     onSend: vi.fn(),
+    ...overrides,
   };
   return render(<ChatComposer {...props} />);
 }
@@ -82,7 +83,7 @@ describe('ChatComposer RAG context bar', () => {
     const bar = container.querySelector('.chat-active-collections');
 
     expect(bar).toHaveClass('absolute', 'bottom-full', 'pointer-events-none');
-    expect(bar).not.toHaveClass('bg-[#151515]/95', 'bg-white/95', 'backdrop-blur-xl', 'shadow-lg');
+    expect(bar).not.toHaveClass('bg-[#151515]/95', 'bg-white/95', 'bg-white', 'bg-[#020406]', 'backdrop-blur-xl', 'shadow-lg');
     expect(bar?.parentElement).toHaveClass('relative');
     expect(bar?.nextElementSibling).toHaveClass('relative', 'w-full', 'z-30');
 
@@ -91,6 +92,13 @@ describe('ChatComposer RAG context bar', () => {
     expect(general).toHaveAttribute('aria-pressed', 'true');
     await userEvent.click(general);
     expect(onToggleCollection).toHaveBeenCalledWith('default');
+  });
+
+  it('moves the collection bar into the layout while TrinaxAI speaks so it cannot cover the speaking banner', () => {
+    const { container } = renderComposer('rag', vi.fn(), { speaking: true });
+    const bar = container.querySelector('.chat-active-collections');
+    expect(bar).toHaveClass('relative');
+    expect(bar).not.toHaveClass('absolute');
   });
 
   it('does not render the collection bar in Ollama mode', () => {

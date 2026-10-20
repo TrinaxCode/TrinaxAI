@@ -59,4 +59,34 @@ describe('Sources accessibility', () => {
     expect(screen.queryByRole('link')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'copy: docs/guide.md' })).toBeInTheDocument();
   });
+
+  it('offers the Knowledge Browser only for indexed (RAG) sources, never for web results', async () => {
+    const user = userEvent.setup();
+    const onOpenInBrowser = vi.fn();
+    const web = {
+      file: 'example.com/post',
+      url: 'https://example.com/post',
+      title: 'Example post',
+      kind: 'web',
+      provider: 'duckduckgo',
+      project: 'web',
+      snippet: 'From the internet',
+      score: null,
+    };
+    const { unmount } = render(<Sources sources={[web]} onOpenInBrowser={onOpenInBrowser} />);
+    await user.click(screen.getByRole('button', { name: /1 source/i }));
+    expect(screen.queryByText('openInKnowledgeBrowser')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'openInBrowser' })).not.toBeInTheDocument();
+    unmount();
+
+    render(<Sources sources={[web, {
+      file: 'docs/guide.md',
+      project: 'TrinaxAI',
+      collection_id: 'docs',
+      snippet: 'Grounded evidence',
+      score: 0.9,
+    }]} onOpenInBrowser={onOpenInBrowser} />);
+    await user.click(screen.getByText('openInKnowledgeBrowser'));
+    expect(onOpenInBrowser).toHaveBeenCalledWith('docs/guide.md', 'docs');
+  });
 });

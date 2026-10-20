@@ -21,6 +21,8 @@ interface ChatComposerProps {
   attachedImages: Array<{ dataUrl: string; file: File }>;
   imageError: string;
   streaming: boolean;
+  /** While TrinaxAI speaks, the speaking banner sits right above the composer. */
+  speaking?: boolean;
   attachmentMenuOpen: boolean;
   slashOpen: boolean;
   slashFilter: string;
@@ -63,6 +65,7 @@ export default function ChatComposer({
   attachedImages,
   imageError,
   streaming,
+  speaking = false,
   attachmentMenuOpen,
   slashOpen,
   slashFilter,
@@ -247,7 +250,7 @@ export default function ChatComposer({
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 10, scale: 0.985 }}
               transition={{ duration: prefersReducedMotion ? 0 : 0.2, ease: [0.16, 1, 0.3, 1] }}
-              className={`chat-active-collections pointer-events-none z-20 mb-2 flex items-center gap-2 overflow-x-auto rounded-xl px-2 py-1.5 ${hasAttachmentSurface ? 'relative' : 'absolute bottom-full left-0 right-0'} ${isDark ? 'bg-[#020406] text-white/70' : 'bg-white text-gray-600'}`}
+              className={`chat-active-collections pointer-events-none z-20 mb-2 flex items-center gap-2 overflow-x-auto rounded-xl px-2 py-1.5 ${hasAttachmentSurface || speaking ? 'relative' : 'absolute bottom-full left-0 right-0'} ${isDark ? 'text-white/70' : 'text-gray-600'}`}
             >
               <span className={`shrink-0 text-[11px] uppercase tracking-wider ${isDark ? 'text-white/65' : 'text-gray-600'}`}>{t('activeCollections')}</span>
               {collections.map((collection) => {
@@ -256,7 +259,7 @@ export default function ChatComposer({
                   <button
                     key={collection.id}
                     onClick={() => onToggleCollection(collection.id)}
-                    className={`pointer-events-auto min-h-11 max-w-36 shrink-0 truncate rounded-full border px-3 text-sm font-medium transition-[background-color,color,border-color,transform] focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-[#4aa7ed] active:scale-95 ${active ? `animate-soft-pulse border-[#006bbd]/50 ${isDark ? 'text-[#4aa7ed]' : 'text-[#005a9e]'}` : isDark ? 'border-white/[0.08] bg-white/[0.03] text-white/65 hover:text-white/90' : 'border-gray-200 bg-gray-50 text-gray-600 hover:text-gray-900'}`}
+                    className={`pointer-events-auto min-h-11 max-w-36 shrink-0 truncate rounded-full border px-3 text-sm font-medium transition-[background-color,color,border-color,transform] focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-[#4aa7ed] active:scale-95 ${active ? `animate-soft-pulse border-[#006bbd]/50 ${isDark ? 'text-[#4aa7ed]' : 'text-[#005a9e]'}` : isDark ? 'border-white/[0.14] text-white/65 hover:text-white/90' : 'border-gray-300 text-gray-600 hover:text-gray-900'}`}
                     title={collection.name}
                     aria-pressed={active}
                   >

@@ -86,7 +86,7 @@ test(`chat context and composer menus stay above a populated conversation in ${t
   await page.goto('/#/chat/layers');
   const context = page.locator('.chat-active-collections');
   await expect(context).toBeVisible();
-  await expect(context).toHaveCSS('background-color', theme === 'dark' ? 'rgb(2, 4, 6)' : 'rgb(255, 255, 255)');
+  await expect(context).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
   await expect(page.locator('.chat-assistant-avatar')).toHaveCSS('background-color', theme === 'dark' ? 'rgb(0, 0, 0)' : 'rgb(255, 255, 255)');
   const general = context.getByRole('button', { name: 'General' });
   await expect.poll(() => general.evaluate((element) => {

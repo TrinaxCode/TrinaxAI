@@ -160,6 +160,43 @@ describe('chat voice hook', () => {
     expect(synthesis.cancel).toHaveBeenCalled();
   });
 
+  it('clears the speaking state when the browser never fires onend (iOS Safari)', async () => {
+    vi.useFakeTimers();
+    try {
+      const synthesis = {
+        speaking: false,
+        pending: false,
+        paused: false,
+        getVoices: vi.fn(() => [{ lang: 'en-US' }]),
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        resume: vi.fn(),
+        cancel: vi.fn(),
+        // Plays, then goes idle without ever invoking utterance.onend.
+        speak: vi.fn(() => { synthesis.speaking = true; }),
+      };
+      Object.defineProperty(window, 'speechSynthesis', { configurable: true, value: synthesis });
+      Object.defineProperty(window, 'SpeechSynthesisUtterance', { configurable: true, value: FakeUtterance });
+      voice.detectSpeechSynthesis.mockReturnValue(true);
+      const onDone = vi.fn();
+      const { result } = renderHook(() => useChatVoice(options()));
+      act(() => result.current.speak('A short answer.', onDone, 'answer-ios'));
+      expect(result.current.ttsSpeaking).toBe(true);
+
+      // Still playing: the watchdog must not cut the speech.
+      await act(async () => { vi.advanceTimersByTime(3000); });
+      expect(result.current.ttsSpeaking).toBe(true);
+
+      synthesis.speaking = false;
+      await act(async () => { vi.advanceTimersByTime(2400); });
+      expect(result.current.ttsSpeaking).toBe(false);
+      expect(result.current.ttsActiveKey).toBeNull();
+      expect(onDone).toHaveBeenCalledOnce();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('uses backend TTS when the browser exposes no voices', async () => {
     const synthesis = {
       speaking: false,

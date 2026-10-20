@@ -51,6 +51,9 @@ export default function ChatHeader({
   const [mobileToolsOpen, setMobileToolsOpen] = useState(false);
   const mobileToolsRef = useRef<HTMLDivElement>(null);
   const exportMenuRef = useRef<HTMLDivElement>(null);
+  // An explicit colour on the active state keeps the colour transition on the
+  // same blue<->grey path; an inherited colour made the icon flash white on toggle.
+  const activeTone = isDark ? 'text-[#168de2]' : 'text-[#006bbd]';
 
   useEffect(() => {
     if (!mobileToolsOpen) return undefined;
@@ -169,7 +172,7 @@ export default function ChatHeader({
           </div>
           <button
             onClick={() => onResearchModeChange(!researchMode)}
-            className={`flex min-h-11 min-w-11 items-center justify-center rounded-xl transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-[#4aa7ed] ${researchMode ? '' : isDark ? 'text-white/70 hover:bg-white/[0.08] hover:text-white' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'}`}
+            className={`flex min-h-11 min-w-11 items-center justify-center rounded-xl transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-[#4aa7ed] ${researchMode ? activeTone : isDark ? 'text-white/70 hover:bg-white/[0.08] hover:text-white' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'}`}
             aria-label={t('toggleDeepResearch')}
             title={t('deepResearchTitle')}
             aria-pressed={researchMode}
@@ -179,7 +182,7 @@ export default function ChatHeader({
           {webSearchAvailable && (
             <button
               onClick={() => onWebSearchModeChange(!webSearchMode)}
-              className={`flex min-h-11 min-w-11 items-center justify-center rounded-xl transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-[#4aa7ed] ${webSearchMode ? '' : isDark ? 'text-white/70 hover:bg-white/[0.08] hover:text-white' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'}`}
+              className={`flex min-h-11 min-w-11 items-center justify-center rounded-xl transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-[#4aa7ed] ${webSearchMode ? activeTone : isDark ? 'text-white/70 hover:bg-white/[0.08] hover:text-white' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'}`}
               aria-label={t('toggleWebSearch')}
               title={t('webSearchTitle')}
               aria-pressed={webSearchMode}

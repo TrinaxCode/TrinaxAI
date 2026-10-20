@@ -3,6 +3,7 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { I18nProvider } from '../i18n/I18nContext';
 import { ThemeProvider } from '../theme/ThemeContext';
+import { ToastProvider } from './Toast';
 import { DOCUMENT_FILE_ACCEPT, IMAGE_FILE_ACCEPT } from '../lib/attachmentAccept';
 import AgentInterface from './AgentInterface';
 import { expectNoA11yViolations } from '../test/a11y';
@@ -37,9 +38,9 @@ describe('AgentInterface handoff', () => {
   it('uses separate native filters for images and documents', async () => {
     const { container } = render(
       <ThemeProvider>
-        <I18nProvider>
+        <I18nProvider><ToastProvider>
           <AgentInterface onBack={vi.fn()} />
-        </I18nProvider>
+        </ToastProvider></I18nProvider>
       </ThemeProvider>,
     );
 
@@ -56,16 +57,19 @@ describe('AgentInterface handoff', () => {
   it('uses the TrinaxAI logo in the empty state', () => {
     render(
       <ThemeProvider>
-        <I18nProvider>
+        <I18nProvider><ToastProvider>
           <AgentInterface onBack={vi.fn()} />
-        </I18nProvider>
+        </ToastProvider></I18nProvider>
       </ThemeProvider>,
     );
 
     expect(screen.getByRole('img', { name: 'TrinaxAI' })).toHaveAttribute('src', '/logo-for-ai.webp');
 
-    fireEvent.click(screen.getByRole('button', { name: 'Find bugs' }));
-    expect(screen.getByRole('textbox', { name: /Ask the agent/ })).toHaveValue('Find potential bugs in my code.');
+    // Quick-start chips are shuffled per session, like a new chat: any chip must fill the prompt.
+    const chip = document.querySelector('.agent-empty-state .chip-elegant') as HTMLButtonElement;
+    expect(chip).toBeInTheDocument();
+    fireEvent.click(chip);
+    expect((screen.getByRole('textbox', { name: /Ask the agent/ }) as HTMLTextAreaElement).value).not.toBe('');
   });
 
   it('keeps the agent history keyboard-accessible as a modal drawer', async () => {
@@ -79,9 +83,9 @@ describe('AgentInterface handoff', () => {
     }]));
     const { container } = render(
       <ThemeProvider>
-        <I18nProvider>
+        <I18nProvider><ToastProvider>
           <AgentInterface onBack={vi.fn()} />
-        </I18nProvider>
+        </ToastProvider></I18nProvider>
       </ThemeProvider>,
     );
 
@@ -125,9 +129,9 @@ describe('AgentInterface handoff', () => {
     try {
       render(
         <ThemeProvider>
-          <I18nProvider>
+          <I18nProvider><ToastProvider>
             <AgentInterface onBack={vi.fn()} />
-          </I18nProvider>
+          </ToastProvider></I18nProvider>
         </ThemeProvider>,
       );
 
@@ -153,9 +157,9 @@ describe('AgentInterface handoff', () => {
 
     const { container } = render(
       <ThemeProvider>
-        <I18nProvider>
+        <I18nProvider><ToastProvider>
           <AgentInterface onBack={vi.fn()} />
-        </I18nProvider>
+        </ToastProvider></I18nProvider>
       </ThemeProvider>,
     );
 
@@ -176,9 +180,9 @@ describe('AgentInterface handoff', () => {
 
     const { container } = render(
       <ThemeProvider>
-        <I18nProvider>
+        <I18nProvider><ToastProvider>
           <AgentInterface onBack={vi.fn()} />
-        </I18nProvider>
+        </ToastProvider></I18nProvider>
       </ThemeProvider>,
     );
 
@@ -189,11 +193,11 @@ describe('AgentInterface handoff', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Enable YOLO' }));
     const yoloButton = screen.getByRole('switch', { name: 'YOLO mode enabled' });
     expect(yoloButton).toHaveAttribute('aria-checked', 'true');
-    expect(yoloButton).toHaveClass('text-red-300');
-    // Enabled YOLO is red text only: no filled red square behind the label.
-    expect(yoloButton).toHaveClass('bg-transparent');
-    expect(yoloButton.className).not.toMatch(/(^|\s)bg-red-500\/\d+/);
+    // Enabled YOLO reads as a red pill with a bolt and a real toggle, not just a label.
+    expect(yoloButton).toHaveClass('text-red-200');
+    expect(yoloButton).toHaveAttribute('data-enabled', 'true');
     expect(yoloButton).toHaveAttribute('data-yolo-switch', 'header');
+    expect(container.querySelector('nav')).toHaveAttribute('data-yolo', 'on');
     expect(localStorage.getItem('tc-agent-yolo-mode')).toBe('1');
 
     fireEvent.change(container.querySelector('textarea[name="agent-prompt"]') as HTMLTextAreaElement, { target: { value: 'Ejecuta la tarea' } });
@@ -205,9 +209,9 @@ describe('AgentInterface handoff', () => {
   it('keeps the send control filled so its icon stays visible in light mode', () => {
     render(
       <ThemeProvider>
-        <I18nProvider>
+        <I18nProvider><ToastProvider>
           <AgentInterface onBack={vi.fn()} />
-        </I18nProvider>
+        </ToastProvider></I18nProvider>
       </ThemeProvider>,
     );
 
@@ -221,9 +225,9 @@ describe('AgentInterface handoff', () => {
   it('does not enable yolo when its warning is cancelled', () => {
     render(
       <ThemeProvider>
-        <I18nProvider>
+        <I18nProvider><ToastProvider>
           <AgentInterface onBack={vi.fn()} />
-        </I18nProvider>
+        </ToastProvider></I18nProvider>
       </ThemeProvider>,
     );
 
@@ -252,9 +256,9 @@ describe('AgentInterface handoff', () => {
     try {
       render(
         <ThemeProvider>
-          <I18nProvider>
+          <I18nProvider><ToastProvider>
             <AgentInterface onBack={vi.fn()} />
-          </I18nProvider>
+          </ToastProvider></I18nProvider>
         </ThemeProvider>,
       );
 
@@ -262,10 +266,10 @@ describe('AgentInterface handoff', () => {
       fireEvent.click(toolsButton);
       const toolsMenu = toolsButton.parentElement;
       expect(toolsMenu).toBeInTheDocument();
-      expect(within(toolsMenu as HTMLElement).getByRole('option', { name: 'Auto | Router' })).toBeInTheDocument();
-      expect(within(toolsMenu as HTMLElement).getByRole('option', { name: 'General' })).toBeInTheDocument();
-      expect(within(toolsMenu as HTMLElement).getByRole('option', { name: 'Deep' })).toBeInTheDocument();
-      expect(within(toolsMenu as HTMLElement).getByRole('option', { name: 'Fast' })).toBeInTheDocument();
+      expect(within(toolsMenu as HTMLElement).getByRole('radio', { name: /^Auto \| Router/ })).toBeChecked();
+      expect(within(toolsMenu as HTMLElement).getByRole('radio', { name: /^General/ })).toBeInTheDocument();
+      expect(within(toolsMenu as HTMLElement).getByRole('radio', { name: /^Deep/ })).toBeInTheDocument();
+      expect(within(toolsMenu as HTMLElement).getByRole('radio', { name: /^Fast/ })).toBeInTheDocument();
       expect(within(toolsMenu as HTMLElement).getByRole('button', { name: 'RAG enabled' })).toBeInTheDocument();
       expect(within(toolsMenu as HTMLElement).getByRole('button', { name: 'Web search on' })).toBeInTheDocument();
       expect(within(toolsMenu as HTMLElement).getByRole('button', { name: 'Deep research' })).toBeInTheDocument();
@@ -288,7 +292,7 @@ describe('AgentInterface handoff', () => {
     render(
       <StrictMode>
         <ThemeProvider>
-          <I18nProvider>
+          <I18nProvider><ToastProvider>
             <AgentInterface
               onBack={vi.fn()}
               initialRequest={{
@@ -298,7 +302,7 @@ describe('AgentInterface handoff', () => {
               }}
               onRequestConsumed={onRequestConsumed}
             />
-          </I18nProvider>
+          </ToastProvider></I18nProvider>
         </ThemeProvider>
       </StrictMode>,
     );
@@ -337,9 +341,9 @@ describe('AgentInterface handoff', () => {
 
     const { container } = render(
       <ThemeProvider>
-        <I18nProvider>
+        <I18nProvider><ToastProvider>
           <AgentInterface onBack={vi.fn()} />
-        </I18nProvider>
+        </ToastProvider></I18nProvider>
       </ThemeProvider>,
     );
 
@@ -383,9 +387,9 @@ describe('AgentInterface handoff', () => {
 
     const { container } = render(
       <ThemeProvider>
-        <I18nProvider>
+        <I18nProvider><ToastProvider>
           <AgentInterface onBack={vi.fn()} />
-        </I18nProvider>
+        </ToastProvider></I18nProvider>
       </ThemeProvider>,
     );
     const composer = () => container.querySelector('textarea[name="agent-prompt"]') as HTMLTextAreaElement;
@@ -421,9 +425,9 @@ describe('AgentInterface handoff', () => {
 
     const { container } = render(
       <ThemeProvider>
-        <I18nProvider>
+        <I18nProvider><ToastProvider>
           <AgentInterface onBack={vi.fn()} />
-        </I18nProvider>
+        </ToastProvider></I18nProvider>
       </ThemeProvider>,
     );
     fireEvent.change(container.querySelector('textarea[name="agent-prompt"]') as HTMLTextAreaElement, { target: { value: 'Lista los archivos' } });

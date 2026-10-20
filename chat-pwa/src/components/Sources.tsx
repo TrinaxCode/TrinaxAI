@@ -41,6 +41,11 @@ function safeExternalUrl(value: string | null | undefined): string | null {
   }
 }
 
+/** Web results have no place in the indexed knowledge base; only RAG hits do. */
+function isLocalSource(source: Source): boolean {
+  return source.kind !== 'web' && !source.provider;
+}
+
 function highlight(text: string, terms: string[]): React.ReactNode {
   if (terms.length === 0) return text;
   const pattern = new RegExp(`(${terms.map(escapeRegExp).join('|')})`, 'gi');
@@ -70,6 +75,7 @@ export default function Sources({ sources, model, project, query, onOpenInBrowse
   }, []);
 
   const hasSources = sources && sources.length > 0;
+  const firstLocalSource = (sources || []).find(isLocalSource);
   const webProviders = [...new Set((sources || []).map((source) => source.provider).filter(Boolean))];
   if (!model && !hasSources) return null;
 
@@ -171,7 +177,7 @@ export default function Sources({ sources, model, project, query, onOpenInBrowse
                       >
                         <MdOpenInNew size={16} />
                       </a>
-                    ) : onOpenInBrowser ? (
+                    ) : onOpenInBrowser && isLocalSource(s) ? (
                       <button
                         type="button"
                         onClick={() => onOpenInBrowser(s.file, s.collection_id)}
@@ -195,10 +201,10 @@ export default function Sources({ sources, model, project, query, onOpenInBrowse
           <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
             {project && <span className={`text-xs ${isDark ? 'text-white/65' : 'text-gray-600'}`}>{project}</span>}
             {webProviders.length > 0 && <span className={`text-xs ${isDark ? 'text-white/65' : 'text-gray-600'}`}>{t('sourceWeb')}: {webProviders.join(', ')}</span>}
-            {onOpenInBrowser && (
+            {onOpenInBrowser && firstLocalSource && (
               <button
                 type="button"
-                onClick={() => onOpenInBrowser(sources![0].file, sources![0].collection_id)}
+                onClick={() => onOpenInBrowser(firstLocalSource.file, firstLocalSource.collection_id)}
                 className={`ml-auto inline-flex min-h-10 items-center gap-1 text-sm font-medium transition-colors ${isDark ? 'text-[#4ea3e0] hover:text-[#7cc0f0]' : 'text-[#005a9e] hover:text-[#004d8a]'}`}
               >
                 <MdLibraryBooks size={12} aria-hidden="true" />

@@ -24,6 +24,19 @@ afterEach(() => {
 });
 
 describe('agent API', () => {
+  it('never asks for auto-approve from a paired device, only from the localhost host', async () => {
+    const send = async (hostname: string) => {
+      const fetchMock = vi.fn().mockResolvedValue(sseResponse('data: {"type":"done","answer":"ok"}\n'));
+      vi.stubGlobal('fetch', fetchMock);
+      vi.stubGlobal('window', { location: { hostname } });
+      await runAgent([{ role: 'user', content: 'go' }], () => undefined, { yolo: true, workspace: '/tmp/work' });
+      return JSON.parse(fetchMock.mock.calls[0][1].body).yolo;
+    };
+
+    expect(await send('localhost')).toBe(true);
+    expect(await send('192.168.1.20')).toBe(false);
+  });
+
   it('streams valid events and sends all run options', async () => {
     const fetchMock = vi.fn().mockResolvedValue(sseResponse([
       'ignored',
