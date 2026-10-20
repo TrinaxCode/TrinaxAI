@@ -31,6 +31,7 @@ import re
 import shutil
 import signal
 import subprocess
+import sys
 import tempfile
 import urllib.error
 from dataclasses import dataclass
@@ -735,6 +736,17 @@ def _bubblewrap_argv(workspace_root: Path, command: str) -> list[str] | None:
         )
     )
     return argv
+
+
+def shell_sandbox_status() -> tuple[bool, str]:
+    """Report whether the Agent's terminal tool can run, and why not if it can't."""
+    if _bubblewrap_argv(Path.cwd(), ":") is not None:
+        return True, "bubblewrap sandbox available (networkless)"
+    if _is_enabled(_UNSANDBOXED_COMMAND_ENV):
+        return True, f"UNSANDBOXED opt-in via {_UNSANDBOXED_COMMAND_ENV}"
+    if not sys.platform.startswith("linux"):
+        return False, "terminal tool disabled: OS command sandbox is Linux-only (file tools still work)"
+    return False, "terminal tool disabled: install the 'bubblewrap' package (file tools still work)"
 
 
 def _run_process(argv: list[str], *, cwd: Path) -> tuple[int, str, str]:

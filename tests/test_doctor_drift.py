@@ -116,7 +116,15 @@ def test_doctor_marks_fresh_unindexed_install_as_info(monkeypatch, tmp_path):
         def panel(self, *_args, **_kwargs):
             pass
 
+    monkeypatch.setattr(
+        "trinaxai_agent.tools.shell_sandbox_status",
+        lambda: (False, "terminal tool disabled: install the 'bubblewrap' package (file tools still work)"),
+    )
+
     ui = Ui()
     assert doctor.run(SimpleNamespace(json=False, strict=True), client, ui, None) == 0
     index_row = next(row for row in ui.rows if row[0] == "Index built")
     assert index_row[1:] == ["INFO", "run: trinaxai index ."]
+    # A missing optional sandbox is surfaced but must not fail --strict.
+    sandbox_row = next(row for row in ui.rows if row[0] == "Agent shell sandbox")
+    assert sandbox_row[1] == "INFO" and "bubblewrap" in sandbox_row[2]

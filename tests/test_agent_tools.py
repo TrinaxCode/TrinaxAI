@@ -136,3 +136,23 @@ def test_default_tool_schemas_are_machine_readable() -> None:
     schemas = [tool.schema() for tool in agent_tools.DEFAULT_TOOLS]
     assert schemas and all(item["function"]["parameters"]["type"] == "object" for item in schemas)
     assert {tool.name for tool in agent_tools.DEFAULT_TOOLS} >= {"read_file", "write_file", "run_command"}
+
+
+def test_shell_sandbox_status_reports_each_host_state(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.delenv("TRINAXAI_AGENT_ALLOW_UNSANDBOXED_COMMANDS", raising=False)
+    monkeypatch.setattr(agent_tools, "_bubblewrap_argv", lambda *_args: ["bwrap"])
+    ok, detail = agent_tools.shell_sandbox_status()
+    assert ok and "bubblewrap" in detail
+
+    monkeypatch.setattr(agent_tools, "_bubblewrap_argv", lambda *_args: None)
+    monkeypatch.setattr(agent_tools.sys, "platform", "linux")
+    ok, detail = agent_tools.shell_sandbox_status()
+    assert not ok and "install the 'bubblewrap' package" in detail
+
+    monkeypatch.setattr(agent_tools.sys, "platform", "darwin")
+    ok, detail = agent_tools.shell_sandbox_status()
+    assert not ok and "Linux-only" in detail
+
+    monkeypatch.setenv("TRINAXAI_AGENT_ALLOW_UNSANDBOXED_COMMANDS", "1")
+    ok, detail = agent_tools.shell_sandbox_status()
+    assert ok and "UNSANDBOXED" in detail

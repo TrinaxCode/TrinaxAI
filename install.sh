@@ -55,6 +55,10 @@ tr_text_es() {
       '--install-dir requires a path') echo 'Se requiere una ruta para --install-dir' ;;
       'Unknown option:'*) echo "Opción desconocida:${1#Unknown option:}" ;;
       'Privacy') echo 'Privacidad' ;;
+      'Installing bubblewrap (sandbox for the Agent terminal tool)...') echo 'Instalando bubblewrap (sandbox para la terminal del Agente)...' ;;
+      'bubblewrap available: the Agent terminal tool is sandboxed') echo 'bubblewrap disponible: la terminal del Agente se ejecuta aislada' ;;
+      'bubblewrap is not installed: the Agent terminal tool stays disabled (file tools still work).') echo 'bubblewrap no está instalado: la terminal del Agente seguirá desactivada (las herramientas de archivos funcionan).' ;;
+      "Install the 'bubblewrap' package with your package manager to enable it.") echo "Instala el paquete 'bubblewrap' con tu gestor de paquetes para activarla." ;;
       'Local-first; web search and downloads use the network') echo 'Prioridad local; la búsqueda web y las descargas usan Internet' ;;
       'Detected RAM') echo 'RAM detectada' ;;
       'Recommended profile') echo 'Perfil recomendado' ;;
@@ -904,6 +908,31 @@ install_linux_deps() {
   fi
 }
 
+# The Agent's terminal tool runs commands inside a networkless bubblewrap
+# sandbox and refuses to run without one. Installing it is best-effort: the
+# rest of TrinaxAI works without it, and `trinaxai doctor` reports the gap.
+ensure_bubblewrap() {
+  command -v bwrap >/dev/null 2>&1 && return 0
+  print_info "Installing bubblewrap (sandbox for the Agent terminal tool)..."
+  if command -v apt-get >/dev/null 2>&1; then
+    as_root apt-get install -y bubblewrap || true
+  elif command -v dnf >/dev/null 2>&1; then
+    as_root dnf install -y bubblewrap || true
+  elif command -v pacman >/dev/null 2>&1; then
+    as_root pacman -S --needed --noconfirm bubblewrap || true
+  elif command -v zypper >/dev/null 2>&1; then
+    as_root zypper --non-interactive install bubblewrap || true
+  elif command -v apk >/dev/null 2>&1; then
+    as_root apk add bubblewrap || true
+  fi
+  if command -v bwrap >/dev/null 2>&1; then
+    print_ok "bubblewrap available: the Agent terminal tool is sandboxed"
+  else
+    print_warn "bubblewrap is not installed: the Agent terminal tool stays disabled (file tools still work)."
+    print_info "Install the 'bubblewrap' package with your package manager to enable it."
+  fi
+}
+
 OS="unknown"
 case "$(uname -s)" in
   Linux*)  OS="linux";;
@@ -1244,6 +1273,7 @@ print_header "1/6 System Dependencies"
 
 if [ "$OS" = "linux" ]; then
   install_linux_deps
+  ensure_bubblewrap
   print_ok "Linux dependencies ready"
 elif [ "$OS" = "macos" ]; then
   if ! command -v brew &>/dev/null; then

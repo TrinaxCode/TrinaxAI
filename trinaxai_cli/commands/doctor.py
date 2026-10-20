@@ -203,6 +203,14 @@ def run(args: Any, client: Any, ui: Any, config: Any) -> int:
         add("Services", False, str(exc), critical=True)
 
     try:
+        from trinaxai_agent.tools import shell_sandbox_status
+
+        sandbox_ok, sandbox_detail = shell_sandbox_status()
+        add("Agent shell sandbox", sandbox_ok, sandbox_detail, status="OK" if sandbox_ok else "INFO")
+    except Exception as exc:  # noqa: BLE001 - diagnostics must never abort the doctor
+        add("Agent shell sandbox", False, f"cannot determine: {exc}", status="INFO")
+
+    try:
         health = client.health()
         indexed = bool(health.get("indexed"))
         projects = health.get("projects", []) or []

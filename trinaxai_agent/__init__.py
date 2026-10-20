@@ -12,6 +12,7 @@ from trinaxai_agent.tools import (
     format_tool_failure,
     is_degraded_tool_result,
     normalize_tool_result,
+    shell_sandbox_status,
 )
 
 __all__ = [
@@ -25,4 +26,5 @@ __all__ = [
     "format_tool_failure",
     "is_degraded_tool_result",
     "normalize_tool_result",
+    "shell_sandbox_status",
 ]
