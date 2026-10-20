@@ -1065,8 +1065,10 @@ async def system_delete_index_import(req: IndexImportDeleteRequest, request: Req
     raw_path = (req.path or "").strip()
     if not raw_path:
         raise HTTPException(status_code=400, detail="Missing import path.")
-    root = os.path.abspath(os.path.join(config.LOCAL_SOURCES_DIR, "collections"))
-    target = os.path.abspath(os.path.expanduser(raw_path))
+    # realpath, not abspath: a symlink inside the imports folder must not let
+    # a caller (now including a device granted ``index``) point this at host files.
+    root = os.path.realpath(os.path.join(config.LOCAL_SOURCES_DIR, "collections"))
+    target = os.path.realpath(os.path.expanduser(raw_path))
     rel_to_root = os.path.relpath(target, root)
     parts = [] if rel_to_root in {".", ""} else rel_to_root.split(os.sep)
     if rel_to_root.startswith("..") or os.path.isabs(rel_to_root) or len(parts) < 2:

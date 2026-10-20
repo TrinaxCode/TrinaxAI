@@ -48,20 +48,23 @@ describe('protected proxy request helpers', () => {
     expect(headers.get('X-TrinaxAI-Device-Token')).toBeNull();
   });
 
-  it('does not retain retired elevated scopes from an older pairing response', () => {
-    setDeviceSessionScopes(['chat', 'read_private', 'web', 'system', 'index', 'agent', 'agent_yolo']);
+  it('keeps grantable scopes but drops host-only ones from a pairing response', () => {
+    setDeviceSessionScopes(['chat', 'read_private', 'web', 'index', 'agent', 'modify', 'system', 'agent_yolo']);
 
     expect(JSON.parse(sessionStorage.getItem('trinaxai-device-scopes') || '[]')).toEqual([
-      'chat', 'read_private', 'web',
+      'chat', 'read_private', 'web', 'index', 'agent', 'modify',
     ]);
   });
 
-  it('ignores retired scopes left in storage by an older PWA', () => {
-    sessionStorage.setItem('trinaxai-device-scopes', JSON.stringify(['chat', 'system', 'agent']));
+  it('honors granted elevated scopes but never host-only ones left in storage', () => {
+    sessionStorage.setItem('trinaxai-device-scopes', JSON.stringify(['chat', 'system', 'agent', 'agent_yolo']));
     vi.stubGlobal('window', { location: { hostname: '192.168.1.20' } });
 
     expect(deviceSessionHasScope('chat')).toBe(true);
+    expect(deviceSessionHasScope('agent')).toBe(true);
+    expect(deviceSessionHasScope('index')).toBe(false);
+    expect(deviceSessionHasScope('modify')).toBe(false);
     expect(deviceSessionHasScope('system')).toBe(false);
-    expect(deviceSessionHasScope('agent')).toBe(false);
+    expect(deviceSessionHasScope('agent_yolo')).toBe(false);
   });
 });

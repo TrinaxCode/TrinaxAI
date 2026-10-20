@@ -3,7 +3,14 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import DevicePairingCard from './DevicePairingCard';
-import { claimDevice, createPairingCode, getCurrentPairedDevice, listPairedDevices, revokeCurrentPairedDevice } from '../lib/devicePairing';
+import {
+  claimDevice,
+  createPairingCode,
+  getCurrentPairedDevice,
+  listPairedDevices,
+  revokeCurrentPairedDevice,
+  updatePairedDeviceScopes,
+} from '../lib/devicePairing';
 
 vi.mock('../i18n/I18nContext', () => ({ useI18n: () => ({ t: (key: string) => key }) }));
 vi.mock('../theme/ThemeContext', () => ({ useTheme: () => ({ isDark: true }) }));
@@ -13,6 +20,8 @@ vi.mock('../lib/devicePairing', () => ({
   getCurrentPairedDevice: vi.fn(),
   listPairedDevices: vi.fn(),
   revokeCurrentPairedDevice: vi.fn(),
+  revokePairedDevice: vi.fn(),
+  updatePairedDeviceScopes: vi.fn(),
 }));
 
 const device = {
@@ -37,6 +46,7 @@ describe('DevicePairingCard', () => {
     vi.mocked(createPairingCode).mockResolvedValue({ code: 'ABCD-EFGH', expires_at: 1, scopes: ['chat'] });
     vi.mocked(listPairedDevices).mockResolvedValue([]);
     vi.mocked(revokeCurrentPairedDevice).mockResolvedValue();
+    vi.mocked(updatePairedDeviceScopes).mockResolvedValue({ ...device, scopes: ['chat'] });
   });
 
   it('refreshes the linked-device list while the card stays open', async () => {
@@ -132,5 +142,107 @@ describe('DevicePairingCard', () => {
     await user.click(within(dialog).getByRole('button', { name: 'deviceRevoke' }));
     await waitFor(() => expect(revokeCurrentPairedDevice).toHaveBeenCalled());
     expect(await screen.findByRole('button', { name: 'devicePair' })).toBeInTheDocument();
+  });
+  describe('per-device permissions', () => {
+    const checkbox = (name: string) => screen.getByRole('checkbox', { name: new RegExp(name) });
+
+    it('offers everyday permissions by default and generates a code with exactly the chosen ones', async () => {
+      const user = userEvent.setup();
+      render(<DevicePairingCard isDark canManageSystem />);
+      await screen.findByRole('button', { name: 'devicePairingGenerate' });
+
+      expect(checkbox('deviceScope_chat')).toBeChecked();
+      expect(checkbox('deviceScope_read_private')).toBeChecked();
+      expect(checkbox('deviceScope_web')).toBeChecked();
+      for (const elevated of ['deviceScope_index', 'deviceScope_agent', 'deviceScope_modify']) {
+        expect(checkbox(elevated)).not.toBeChecked();
+      }
+
+      await user.click(checkbox('deviceScope_web'));
+      await user.click(screen.getByRole('button', { name: 'devicePairingGenerate' }));
+
+      await waitFor(() => expect(createPairingCode).toHaveBeenCalledWith(['chat', 'read_private']));
+      expect(screen.queryByRole('dialog', { name: 'devicePermissionsGrantTitle' })).not.toBeInTheDocument();
+    });
+
+    it('asks for confirmation before issuing a code that can change the host', async () => {
+      const user = userEvent.setup();
+      render(<DevicePairingCard isDark canManageSystem />);
+      await screen.findByRole('button', { name: 'devicePairingGenerate' });
+
+      await user.click(checkbox('deviceScope_agent'));
+      await user.click(screen.getByRole('button', { name: 'devicePairingGenerate' }));
+
+      const dialog = await screen.findByRole('dialog', { name: 'devicePermissionsGrantTitle' });
+      expect(createPairingCode).not.toHaveBeenCalled();
+      expect(dialog).toHaveTextContent('deviceScopeDesc_agent');
+
+      await user.click(within(dialog).getByRole('button', { name: 'cancelDefault' }));
+      expect(createPairingCode).not.toHaveBeenCalled();
+
+      await user.click(screen.getByRole('button', { name: 'devicePairingGenerate' }));
+      await user.click(within(await screen.findByRole('dialog', { name: 'devicePermissionsGrantTitle' })).getByRole('button', { name: 'devicePermissionsGrantConfirm' }));
+      await waitFor(() => expect(createPairingCode).toHaveBeenCalledWith(['chat', 'read_private', 'web', 'agent']));
+    });
+
+    it('does not allow a code without any permission', async () => {
+      const user = userEvent.setup();
+      render(<DevicePairingCard isDark canManageSystem />);
+      await screen.findByRole('button', { name: 'devicePairingGenerate' });
+      for (const scope of ['chat', 'read_private', 'web']) await user.click(checkbox(`deviceScope_${scope}`));
+
+      expect(screen.getByRole('button', { name: 'devicePairingGenerate' })).toBeDisabled();
+      expect(screen.getByText('devicePermissionsMin')).toBeInTheDocument();
+    });
+
+    it('edits one authorized device and saves only after confirming new elevated permissions', async () => {
+      const user = userEvent.setup();
+      vi.mocked(listPairedDevices).mockResolvedValue([device]);
+      vi.mocked(updatePairedDeviceScopes).mockResolvedValue({ ...device, scopes: ['chat', 'read_private', 'index'] });
+      render(<DevicePairingCard isDark canManageSystem />);
+
+      const edit = await screen.findByRole('button', { name: 'devicePermissionsFor Kitchen tablet' });
+      expect(edit).toHaveAttribute('aria-expanded', 'false');
+      await user.click(edit);
+      expect(edit).toHaveAttribute('aria-expanded', 'true');
+
+      const editor = screen.getByRole('group', { name: 'devicePermissionsFor Kitchen tablet' });
+      expect(within(editor).getByRole('checkbox', { name: /deviceScope_chat/ })).toBeChecked();
+      expect(within(editor).getByRole('checkbox', { name: /deviceScope_index/ })).not.toBeChecked();
+
+      await user.click(within(editor).getByRole('checkbox', { name: /deviceScope_index/ }));
+      await user.click(screen.getByRole('button', { name: 'devicePermissionsSave' }));
+      expect(updatePairedDeviceScopes).not.toHaveBeenCalled();
+
+      await user.click(within(await screen.findByRole('dialog', { name: 'devicePermissionsGrantTitle' })).getByRole('button', { name: 'devicePermissionsGrantConfirm' }));
+
+      await waitFor(() => expect(updatePairedDeviceScopes).toHaveBeenCalledWith(device.id, ['chat', 'read_private', 'index']));
+      expect(await screen.findByRole('status')).toHaveTextContent('devicePermissionsSaved');
+      expect(screen.queryByRole('group', { name: 'devicePermissionsFor Kitchen tablet' })).not.toBeInTheDocument();
+    });
+
+    it('saves removals without a confirmation and reports a failed change', async () => {
+      const user = userEvent.setup();
+      vi.mocked(listPairedDevices).mockResolvedValue([{ ...device, scopes: ['chat', 'agent'] }]);
+      vi.mocked(updatePairedDeviceScopes).mockRejectedValue(new Error('offline'));
+      render(<DevicePairingCard isDark canManageSystem />);
+
+      await user.click(await screen.findByRole('button', { name: 'devicePermissionsFor Kitchen tablet' }));
+      await user.click(within(screen.getByRole('group', { name: 'devicePermissionsFor Kitchen tablet' })).getByRole('checkbox', { name: /deviceScope_agent/ }));
+      await user.click(screen.getByRole('button', { name: 'devicePermissionsSave' }));
+
+      await waitFor(() => expect(updatePairedDeviceScopes).toHaveBeenCalledWith(device.id, ['chat']));
+      expect(screen.queryByRole('dialog', { name: 'devicePermissionsGrantTitle' })).not.toBeInTheDocument();
+      expect(await screen.findByRole('alert')).toBeInTheDocument();
+      expect(screen.queryByText('devicePermissionsSaved')).not.toBeInTheDocument();
+    });
+
+    it('never shows a permission editor to a remote paired device', async () => {
+      render(<DevicePairingCard isDark />);
+      await act(async () => { await Promise.resolve(); });
+
+      expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'devicePairingGenerate' })).not.toBeInTheDocument();
+    });
   });
 });

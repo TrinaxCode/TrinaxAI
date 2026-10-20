@@ -27,6 +27,7 @@ from app.security.device_auth import (
     device_for_token,
     list_devices,
     revoke_device,
+    update_device_scopes,
     validate_device_token,
 )
 
@@ -38,9 +39,13 @@ _CLAIM_WINDOW_SECONDS = 300.0
 
 
 class PairingStartRequest(BaseModel):
-    scopes: list[str] = Field(default_factory=lambda: ["chat", "read_private"], max_length=6)
+    scopes: list[str] = Field(default_factory=lambda: ["chat", "read_private"], max_length=8)
     ttl_seconds: int = Field(default=300, ge=60, le=900)
     device_ttl_days: int | None = Field(default=None, ge=1, le=3650)
+
+
+class DeviceScopesRequest(BaseModel):
+    scopes: list[str] = Field(min_length=1, max_length=8)
 
 
 class PairingClaimRequest(BaseModel):
@@ -178,6 +183,23 @@ async def pairing_devices(request: Request):
         return {"ok": True, "devices": list_devices()}
     except DeviceRegistryError as exc:
         raise HTTPException(status_code=503, detail="Pairing storage is unavailable. Try again shortly.") from exc
+
+
+@router.patch("/devices/{device_id}")
+async def pairing_update_scopes(device_id: str, req: DeviceScopesRequest, request: Request):
+    """Change one device's permissions. Only the localhost operator may do this."""
+    if not _is_local_client(_client_host(request)):
+        raise HTTPException(status_code=403, detail="Only the localhost host can change device permissions.")
+    authorize_scope(request, "system")
+    try:
+        device = update_device_scopes(device_id, req.scopes)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="Unknown or empty device permission set.") from exc
+    except DeviceRegistryError as exc:
+        raise HTTPException(status_code=503, detail="Pairing storage is unavailable. Try again shortly.") from exc
+    if device is None:
+        raise HTTPException(status_code=404, detail="Unknown or revoked device.")
+    return {"ok": True, "device": device}
 
 
 @router.delete("/devices/{device_id}")

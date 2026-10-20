@@ -16,6 +16,7 @@ import {
   isAuthorizedScopedProxyPeer,
   isAuthorizedSystemProxyPeer,
   deviceTokenHasScope,
+  isElevatedDeviceScope,
   isLoopbackAddress,
   normalizeAddress,
   needsInferenceLock,
@@ -327,6 +328,7 @@ function installProxyBoundary(server: any): void {
         process.env.TRINAXAI_ADMIN_TOKEN || '',
         deviceToken,
         pairedDeviceGrants(deviceToken, requiredScope),
+        isElevatedDeviceScope(requiredScope),
       )) {
         sendProxyError(res, 403, 'proxy_scope_required');
         return;

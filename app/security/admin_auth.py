@@ -18,7 +18,11 @@ from urllib.parse import urlsplit
 
 from fastapi import HTTPException, Request
 
-from app.security.device_auth import DEVICE_TOKEN_HEADER, authenticate_device_token
+from app.security.device_auth import (
+    DEVICE_TOKEN_HEADER,
+    ELEVATED_DEVICE_SCOPES,
+    authenticate_device_token,
+)
 
 # ``app.main`` imports this module before the rest of the application imports
 # ``config.py``.  Load the project environment here so the authorization
@@ -75,10 +79,12 @@ LEGACY_DEVICE_TOKEN_COOKIE_PATH = "/api/rag"
 # longer grants authority: host administration is always loopback-only.
 ALLOW_LAN_SYSTEM: bool = os.getenv("TRINAXAI_ALLOW_LAN_SYSTEM", "0").strip().lower() not in {"0", "false", "no", "off"}
 
-# These capabilities can mutate or execute against the host. Keep the
-# restriction here so every legacy caller of ``authorize_system`` shares the
-# same loopback boundary.
-LOCAL_ONLY_SCOPES = frozenset({"system", "index", "agent", "agent_yolo"})
+# Host lifecycle/administration and agent auto-approve never leave the
+# loopback boundary. Keep the restriction here so every legacy caller of
+# ``authorize_system`` shares it. ``index``, ``agent`` and ``modify`` are
+# different: the localhost operator can grant them to a specific paired device
+# (see ``ELEVATED_DEVICE_SCOPES``), and nothing else can grant them remotely.
+LOCAL_ONLY_SCOPES = frozenset({"system", "agent_yolo"})
 
 
 def _is_lan_client(host: str) -> bool:
@@ -136,6 +142,11 @@ def _proxy_secret_path() -> Path:
     if configured:
         return Path(configured).expanduser()
     return Path(__file__).resolve().parents[2] / "storage" / ".proxy_secret"
+
+
+def proxy_secret_file() -> Path:
+    """Location of the gateway HMAC key (never exposed to a paired device)."""
+    return _proxy_secret_path()
 
 
 def _load_proxy_secret() -> bytes:
@@ -354,16 +365,16 @@ def required_scopes_for_request(request: Request) -> tuple[str, ...]:
     if path == "/app-state" and method == "DELETE":
         return ("system",)
     if path.startswith("/attachments"):
-        if method == "DELETE" or path.endswith("/open"):
+        if path.endswith("/open"):
             return ("system",)
-        return ("read_private",)
+        return ("modify",) if method == "DELETE" else ("read_private",)
     if path.startswith("/v1/memory"):
         read_only_memory = method == "GET" or (method == "POST" and path.endswith("/context"))
-        return ("read_private",) if read_only_memory else ("system",)
+        return ("read_private",) if read_only_memory else ("modify",)
     if path.startswith(("/app-state", "/v1/stats")):
         return ("read_private",)
     if path.startswith("/v1/settings/web-search"):
-        return ("system",)
+        return ("modify",)
     if path.startswith("/v1/settings"):
         return ("system",)
     if path.startswith("/v1/usage"):
@@ -394,7 +405,9 @@ def authorize_scope(
     valid_admin = False
     if admin_token:
         if _valid_admin_token(request):
-            valid_admin = True
+            # A shared admin token must not unlock per-device elevated scopes
+            # over the network; only a device the host granted them to can.
+            valid_admin = required_scope not in ELEVATED_DEVICE_SCOPES or _is_local_client(client_ip)
         else:
             raise HTTPException(status_code=403, detail="Invalid admin token.")
     if required_scope in LOCAL_ONLY_SCOPES:
@@ -425,7 +438,12 @@ def authorize_scope(
     if allow_local and _is_local_client(client_ip):
         request.state.trinaxai_identity = {"kind": "local", "scopes": ["*"]}
         return
-    if ADMIN_TOKEN:
+    if required_scope in ELEVATED_DEVICE_SCOPES:
+        detail = (
+            f"Remote access requires a paired device the localhost host granted the {required_scope} permission to. "
+            "Change it from Settings > Advanced > Paired devices on the host."
+        )
+    elif ADMIN_TOKEN:
         detail = f"Remote access requires X-Admin-Token or a paired device with the {required_scope} scope."
     else:
         detail = f"Remote access requires a paired device with the {required_scope} scope."

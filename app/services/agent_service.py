@@ -30,7 +30,8 @@ from pathlib import Path
 from typing import Any
 
 from app.schemas import AgentCancelRequest
-from app.security.admin_auth import authorize_scope
+from app.security.admin_auth import authorize_scope, proxy_secret_file
+from app.security.device_auth import credential_files
 from trinaxai_agent import DEFAULT_TOOLS, AgentEngine, Tool, format_tool_failure  # noqa: E402
 from trinaxai_agent.engine import AgentCancelled  # noqa: E402
 from trinaxai_agent.tools import _bubblewrap_argv  # noqa: E402
@@ -159,6 +160,78 @@ def _default_workspace(roots: tuple[Path, ...]) -> Path:
     raise HTTPException(
         status_code=503,
         detail="No narrow agent project root is configured; choose a project folder explicitly.",
+    )
+
+
+def _protected_state_paths() -> tuple[Path, ...]:
+    """TrinaxAI's own install, index and credential locations.
+
+    They hold ``.env``, the device registry and the HMAC secrets, so a paired
+    device must never read or write them through the Agent, whatever roots the
+    host configured for itself.
+    """
+    candidates: list[Any] = [config.BASE_DIR, config.PERSIST_DIR, config.LOCAL_SOURCES_DIR]
+    candidates += [file.parent for file in (*credential_files(), proxy_secret_file())]
+    paths: list[Path] = []
+    for candidate in candidates:
+        try:
+            resolved = Path(candidate).expanduser().resolve()
+        except (OSError, RuntimeError, TypeError):
+            continue
+        if resolved not in paths:
+            paths.append(resolved)
+    return tuple(paths)
+
+
+def _is_device_request(request: Request) -> bool:
+    identity = getattr(getattr(request, "state", None), "trinaxai_identity", None)
+    return isinstance(identity, dict) and identity.get("kind") == "device"
+
+
+def _inside_protected(path: Path) -> bool:
+    return any(path == protected or protected in path.parents for protected in _protected_state_paths())
+
+
+def _contains_protected(path: Path) -> bool:
+    return any(path in protected.parents for protected in _protected_state_paths())
+
+
+def _device_safe_default(roots: tuple[Path, ...]) -> Path:
+    candidates = [
+        root
+        for root in roots
+        if not _is_broad_workspace(root) and not _inside_protected(root) and not _contains_protected(root)
+    ]
+    if candidates:
+        return min(candidates, key=lambda root: (len(root.parts), str(root)))
+    raise HTTPException(
+        status_code=403,
+        detail="No project folder is available to this device. Ask the host to set TRINAXAI_AGENT_WORKSPACE_ROOTS.",
+    )
+
+
+def _device_browse_home(roots: tuple[Path, ...]) -> Path:
+    """Where a device's folder picker starts: a safe root, else a root it can only navigate."""
+    try:
+        return _device_safe_default(roots)
+    except HTTPException:
+        navigable = [root for root in roots if not _is_broad_workspace(root) and not _inside_protected(root)]
+        if navigable:
+            return min(navigable, key=lambda root: (len(root.parts), str(root)))
+        raise
+
+
+def _confine_device_workspace(workspace: Path, request: Request, *, explicit: bool) -> Path:
+    """Keep a paired device's workspace disjoint from TrinaxAI's own files."""
+    if not _is_device_request(request):
+        return workspace
+    if not _inside_protected(workspace) and not _contains_protected(workspace):
+        return workspace
+    if not explicit:
+        return _device_safe_default(_configured_workspace_roots())
+    raise HTTPException(
+        status_code=403,
+        detail="This device cannot use a workspace that contains TrinaxAI's own files. Pick a project folder.",
     )
 
 
@@ -952,7 +1025,11 @@ async def agent(req: AgentRequest, request: Request):
     _authorize_system(request)
     _authorize_http_yolo(req, request)
     enforce_rate_limit(request, bucket="chat")
-    workspace = _resolve_workspace(req.workspace)
+    workspace = _confine_device_workspace(
+        _resolve_workspace(req.workspace),
+        request,
+        explicit=bool((req.workspace or "").strip()),
+    )
     model = _resolve_model(req.model, req.messages)
     tools = _agent_tools(
         web_search=req.web_search,
@@ -1015,6 +1092,11 @@ async def agent_browse(request: Request):
     _authorize_system(request)
     resolved = _browse_start_dir(request.query_params.get("path"))
     roots = _configured_workspace_roots()
+    device = _is_device_request(request)
+    if device and _inside_protected(resolved):
+        if (request.query_params.get("path") or "").strip():
+            raise HTTPException(status_code=403, detail="This folder holds TrinaxAI's own files.")
+        resolved = _device_browse_home(roots)
     enclosing_root = next(root for root in roots if resolved == root or root in resolved.parents)
     entries = []
     try:
@@ -1027,6 +1109,8 @@ async def agent_browse(request: Request):
                 continue
             if not _workspace_is_allowed(safe_child, roots):
                 continue
+            if device and _inside_protected(safe_child):
+                continue
             try:
                 readable = os.access(safe_child, os.R_OK)
             except OSError:
@@ -1035,7 +1119,8 @@ async def agent_browse(request: Request):
     except PermissionError:
         raise HTTPException(status_code=403, detail=f"Permission denied: {resolved}") from None
     parent = str(resolved.parent) if resolved != enclosing_root else None
-    return {"path": str(resolved), "parent": parent, "home": str(_default_workspace(roots)), "directories": entries}
+    home = _device_browse_home(roots) if device else _default_workspace(roots)
+    return {"path": str(resolved), "parent": parent, "home": str(home), "directories": entries}
 
 
 __all__ = [name for name in globals() if not name.startswith("__")]

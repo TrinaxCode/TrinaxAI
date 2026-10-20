@@ -8,6 +8,7 @@ import {
   deviceTokenHasScope,
   deviceTokenFromCookie,
   isAuthorizedOllamaProxyPeer,
+  isElevatedDeviceScope,
   isAuthorizedScopedProxyPeer,
   isAuthorizedSystemProxyPeer,
   isLoopbackAddress,
@@ -60,13 +61,24 @@ describe('Vite security boundary', () => {
     expect(requiredRagProxyScope('/api/rag/v1/pairing/start', 'POST')).toBe('system');
     expect(requiredRagProxyScope('/api/rag/v1/pairing/devices', 'GET')).toBe('system');
     expect(requiredRagProxyScope('/api/rag/v1/pairing/devices/id', 'DELETE')).toBe('system');
-    expect(requiredRagProxyScope('/api/rag/v1/agent')).toBe('system');
-    expect(requiredRagProxyScope('/api/rag/system/index-upload')).toBe('system');
+    expect(requiredRagProxyScope('/api/rag/v1/pairing/devices/id', 'PATCH')).toBe('system');
+    expect(requiredRagProxyScope('/api/rag/v1/agent')).toBe('agent');
+    expect(requiredRagProxyScope('/api/rag/v1/agent/approve', 'POST')).toBe('agent');
+    expect(requiredRagProxyScope('/api/rag/system/index-upload')).toBe('index');
+    expect(requiredRagProxyScope('/api/rag/v1/watch/start', 'POST')).toBe('index');
+    expect(requiredRagProxyScope('/api/rag/system/shutdown', 'POST')).toBe('system');
+    expect(requiredRagProxyScope('/api/rag/collections', 'GET')).toBe('read_private');
+    expect(requiredRagProxyScope('/api/rag/collections', 'POST')).toBe('index');
     expect(requiredRagProxyScope('/api/rag/v1/sources')).toBe('read_private');
-    expect(requiredRagProxyScope('/api/rag/v1/sources/file.txt/chunks', 'DELETE')).toBe('system');
+    expect(requiredRagProxyScope('/api/rag/v1/sources/file.txt/chunks', 'DELETE')).toBe('index');
     expect(requiredRagProxyScope('/api/rag/attachments/id/open', 'POST')).toBe('system');
-    expect(requiredRagProxyScope('/api/rag/v1/settings/web-search', 'GET')).toBe('system');
-    expect(requiredRagProxyScope('/api/rag/v1/settings/web-search', 'PUT')).toBe('system');
+    expect(requiredRagProxyScope('/api/rag/attachments/id', 'DELETE')).toBe('modify');
+    expect(requiredRagProxyScope('/api/rag/v1/memory', 'GET')).toBe('read_private');
+    expect(requiredRagProxyScope('/api/rag/v1/memory', 'POST')).toBe('modify');
+    expect(requiredRagProxyScope('/api/rag/app-state', 'DELETE')).toBe('system');
+    expect(requiredRagProxyScope('/api/rag/v1/settings/web-search', 'GET')).toBe('modify');
+    expect(requiredRagProxyScope('/api/rag/v1/settings/web-search', 'PUT')).toBe('modify');
+    expect(requiredRagProxyScope('/api/rag/v1/settings', 'PUT')).toBe('system');
     expect(requiredRagProxyScope('/api/rag/v1/chat/completions')).toBe('chat');
   });
 
@@ -136,5 +148,69 @@ describe('Vite security boundary', () => {
     expect(deviceTokenHasScope(`${token}bad`, 'chat', registry, secret)).toBe(false);
     registry.devices[id].revoked_at = 123;
     expect(deviceTokenHasScope(token, 'chat', registry, secret)).toBe(false);
+  });
+
+  describe('per-device elevated scopes', () => {
+    const secret = 'cd'.repeat(32);
+    const id = 'fedcba9876543210fedcba98';
+    const token = `txd_${id}_${'y'.repeat(43)}`;
+    const tokenHash = createHmac('sha256', Buffer.from(secret, 'hex'))
+      .update(`device-token\0${token}`)
+      .digest('hex');
+    const registryWith = (scopes: string[], grantsVersion?: number) => ({
+      schema_version: 1,
+      devices: {
+        [id]: {
+          id,
+          token_hash: tokenHash,
+          scopes,
+          ...(grantsVersion === undefined ? {} : { grants_version: grantsVersion }),
+          expires_at: null,
+          revoked_at: null,
+        },
+      },
+    });
+
+    it('honors index, agent and modify only on records the host explicitly granted', () => {
+      const granted = registryWith(['chat', 'index', 'agent', 'modify'], 2);
+      for (const scope of ['chat', 'index', 'agent', 'modify']) {
+        expect(deviceTokenHasScope(token, scope, granted, secret)).toBe(true);
+      }
+      // Never grantable, even if a record claims them.
+      const forged = registryWith(['system', 'agent_yolo'], 2);
+      expect(deviceTokenHasScope(token, 'system', forged, secret)).toBe(false);
+      expect(deviceTokenHasScope(token, 'agent_yolo', forged, secret)).toBe(false);
+      // Scope not present in a granted record.
+      expect(deviceTokenHasScope(token, 'agent', registryWith(['chat', 'index'], 2), secret)).toBe(false);
+    });
+
+    it('ignores elevated scopes on legacy records without the grants marker', () => {
+      for (const legacy of [registryWith(['chat', 'index', 'agent', 'modify']), registryWith(['chat', 'agent'], 1)]) {
+        expect(deviceTokenHasScope(token, 'chat', legacy, secret)).toBe(true);
+        for (const scope of ['index', 'agent', 'modify']) {
+          expect(deviceTokenHasScope(token, scope, legacy, secret)).toBe(false);
+        }
+      }
+    });
+
+    it('classifies only index, agent and modify as elevated', () => {
+      expect(['index', 'agent', 'modify'].every(isElevatedDeviceScope)).toBe(true);
+      expect(['chat', 'read_private', 'web', 'system', 'agent_yolo'].some(isElevatedDeviceScope)).toBe(false);
+      expect(isElevatedDeviceScope(null)).toBe(false);
+    });
+
+    it('never lets an admin token unlock elevated scopes over the network', () => {
+      const remote = '192.168.1.20';
+      // Elevated: a valid remote admin token alone is not enough.
+      expect(isAuthorizedScopedProxyPeer(remote, 'admin', 'admin', '', false, true)).toBe(false);
+      // ...but a device the host granted the scope to still works.
+      expect(isAuthorizedScopedProxyPeer(remote, 'admin', 'admin', token, true, true)).toBe(true);
+      expect(isAuthorizedScopedProxyPeer(remote, 'admin', 'admin', token, false, true)).toBe(false);
+      // A wrong admin credential is never rescued by a device token.
+      expect(isAuthorizedScopedProxyPeer(remote, 'wrong', 'admin', token, true, true)).toBe(false);
+      // The same operator on the host itself is unaffected, and so is a non-elevated scope.
+      expect(isAuthorizedScopedProxyPeer('127.0.0.1', 'admin', 'admin', '', false, true)).toBe(true);
+      expect(isAuthorizedScopedProxyPeer(remote, 'admin', 'admin', '', false, false)).toBe(true);
+    });
   });
 });

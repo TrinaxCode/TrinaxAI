@@ -352,6 +352,101 @@ test('production gateway rejects LAN host administration even with legacy creden
   }
 });
 
+test('production gateway lets only explicitly granted devices reach index, agent and modify routes', async (t) => {
+  const lanAddress = privateLanAddress();
+  if (!lanAddress) return t.skip('no private LAN interface is available');
+  ensureFrontendFixture();
+  const upstreamPaths = [];
+  const backend = http.createServer((req, res) => {
+    upstreamPaths.push(`${req.method} ${req.url}`);
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end('{"ok":true}');
+  });
+  const backendPort = await listen(backend);
+  const gatewayPort = await unusedPort();
+  const credentialsRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'trinaxai-granted-device-'));
+  const secret = 'cd'.repeat(32);
+  const hash = (token) => createHmac('sha256', Buffer.from(secret, 'hex')).update(`device-token\0${token}`).digest('hex');
+  const device = (id, scopes, extra = {}) => {
+    const token = `txd_${id}_${'q'.repeat(43)}`;
+    return { token, record: { id, token_hash: hash(token), scopes, expires_at: null, revoked_at: null, ...extra } };
+  };
+  const granted = device('aaaaaaaaaaaaaaaaaaaaaaaa', ['chat', 'index', 'agent', 'modify'], { grants_version: 2 });
+  const agentOnly = device('bbbbbbbbbbbbbbbbbbbbbbbb', ['chat', 'agent'], { grants_version: 2 });
+  const legacy = device('cccccccccccccccccccccccc', ['chat', 'index', 'agent', 'modify']);
+  const forged = device('dddddddddddddddddddddddd', ['chat', 'system', 'agent_yolo'], { grants_version: 2 });
+  const registryPath = path.join(credentialsRoot, 'registry.json');
+  const secretPath = path.join(credentialsRoot, 'secret');
+  fs.writeFileSync(registryPath, JSON.stringify({
+    schema_version: 1,
+    pairing_codes: {},
+    devices: Object.fromEntries([granted, agentOnly, legacy, forged].map((item) => [item.record.id, item.record])),
+  }));
+  fs.writeFileSync(secretPath, secret);
+  const gateway = spawn(process.execPath, ['server.mjs'], {
+    cwd: new URL('.', import.meta.url),
+    env: {
+      ...process.env,
+      CI: 'true',
+      TRINAXAI_PWA_HOST: '0.0.0.0',
+      TRINAXAI_PWA_PORT: String(gatewayPort),
+      TRINAXAI_ALLOW_INSECURE_HTTP: '1',
+      TRINAXAI_ADMIN_TOKEN: 'remote-admin',
+      TRINAXAI_PROXY_SECRET: 'integration-proxy-secret',
+      TRINAXAI_RAG_TARGET: `http://127.0.0.1:${backendPort}`,
+      TRINAXAI_DEVICE_REGISTRY: registryPath,
+      TRINAXAI_DEVICE_SECRET_FILE: secretPath,
+    },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  try {
+    await new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error('gateway startup timed out')), 5000);
+      gateway.once('exit', (code) => reject(new Error(`gateway exited with ${code}`)));
+      gateway.stdout.on('data', (chunk) => {
+        if (!String(chunk).includes('listening')) return;
+        clearTimeout(timeout);
+        resolve();
+      });
+    });
+    const base = `http://${lanAddress}:${gatewayPort}`;
+    const call = (item, method, route, extra = {}) => fetch(`${base}${route}`, {
+      method,
+      headers: { ...(item ? { 'X-TrinaxAI-Device-Token': item.token } : {}), ...extra },
+    }).then((response) => response.status);
+
+    // Each granted scope reaches only its own area.
+    assert.equal(await call(granted, 'POST', '/api/rag/v1/agent'), 200);
+    assert.equal(await call(granted, 'POST', '/api/rag/system/index-upload'), 200);
+    assert.equal(await call(granted, 'POST', '/api/rag/v1/memory'), 200);
+    assert.equal(await call(agentOnly, 'POST', '/api/rag/v1/agent'), 200);
+    assert.equal(await call(agentOnly, 'POST', '/api/rag/system/index-upload'), 403);
+    assert.equal(await call(agentOnly, 'POST', '/api/rag/v1/memory'), 403);
+
+    // Nothing makes host-only operations reachable remotely.
+    for (const route of ['/api/rag/system/shutdown', '/api/rag/v1/pairing/devices']) {
+      assert.equal(await call(granted, 'POST', route), 403);
+      assert.equal(await call(forged, 'POST', route), 403);
+      assert.equal(await call(null, 'POST', route, { 'X-Admin-Token': 'remote-admin' }), 403);
+    }
+    assert.equal(await call(granted, 'PATCH', `/api/rag/v1/pairing/devices/${granted.record.id}`), 403);
+
+    // Records from before per-device grants, forged host-only scopes and a bare
+    // remote admin token never unlock elevated routes.
+    assert.equal(await call(legacy, 'POST', '/api/rag/v1/agent'), 403);
+    assert.equal(await call(legacy, 'POST', '/api/rag/system/index-upload'), 403);
+    assert.equal(await call(forged, 'POST', '/api/rag/v1/agent'), 403);
+    assert.equal(await call(null, 'POST', '/api/rag/v1/agent', { 'X-Admin-Token': 'remote-admin' }), 403);
+    assert.equal(await call(null, 'POST', '/api/rag/v1/agent'), 403);
+
+    assert.ok(upstreamPaths.every((entry) => !entry.includes('shutdown') && !entry.includes('pairing')));
+  } finally {
+    gateway.kill();
+    backend.close();
+    fs.rmSync(credentialsRoot, { recursive: true, force: true });
+  }
+});
+
 test('production gateway releases abandoned inference streams and keeps tags responsive', async () => {
   ensureFrontendFixture();
   let chatRequests = 0;

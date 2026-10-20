@@ -698,9 +698,33 @@ def _reset_watch_job_state() -> None:
     )
 
 
+def _enforce_remote_watch_paths(req: WatchStartRequest, request: Request) -> None:
+    """Keep a paired device inside the host's configured indexing roots.
+
+    The localhost operator may watch any directory. A device granted ``index``
+    could otherwise point the watcher at any readable host folder and then read
+    it back through private search, so it may only pick roots the host already
+    configured.
+    """
+    identity = getattr(getattr(request, "state", None), "trinaxai_identity", None)
+    if not isinstance(identity, dict) or identity.get("kind") != "device":
+        return
+    allowed = [os.path.realpath(root) for root in config.PROJECTS_DIRS if root]
+    for raw in req.paths or []:
+        if not raw:
+            continue
+        resolved = os.path.realpath(os.path.expandvars(os.path.expanduser(raw)))
+        if not any(resolved == root or resolved.startswith(root + os.sep) for root in allowed):
+            raise HTTPException(
+                status_code=403,
+                detail="This device may only watch folders inside the host's configured indexing roots.",
+            )
+
+
 def watch_start(req: WatchStartRequest, request: Request):
     """Start one observer and one coalescing index worker."""
     _authorize_system(request)
+    _enforce_remote_watch_paths(req, request)
     Observer = _watch_try_import()
     if Observer is None:
         raise HTTPException(status_code=501, detail="watchdog is not installed. Run: pip install watchdog")

@@ -882,3 +882,24 @@ def test_system_runtime_shutdown_spawn_upload_and_endpoint_error_edges(tmp_path,
     with pytest.raises(HTTPException) as missing_retry:
         asyncio.run(system_service.system_retry_index_job(object(), "missing-retry"))
     assert missing_retry.value.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_delete_index_import_refuses_symlinks_that_leave_the_imports_folder(tmp_path, monkeypatch) -> None:
+    sources = tmp_path / "local_sources"
+    (sources / "collections" / "docs").mkdir(parents=True)
+    outside = tmp_path / "private"
+    outside.mkdir()
+    (outside / "notes.txt").write_text("keep me", encoding="utf-8")
+    link = sources / "collections" / "docs" / "escape"
+    link.symlink_to(outside, target_is_directory=True)
+    monkeypatch.setattr(system_service.config, "LOCAL_SOURCES_DIR", str(sources))
+    monkeypatch.setattr(system_service, "_authorize_system", lambda _request: None)
+
+    with pytest.raises(HTTPException) as unsafe:
+        await system_service.system_delete_index_import(
+            IndexImportDeleteRequest(path=str(link), collection_id="docs"),
+            object(),
+        )
+    assert unsafe.value.status_code == 400
+    assert (outside / "notes.txt").read_text(encoding="utf-8") == "keep me"

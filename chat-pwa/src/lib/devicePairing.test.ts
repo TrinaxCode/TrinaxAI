@@ -9,6 +9,7 @@ import {
   getCurrentPairedDevice,
   revokeCurrentPairedDevice,
   startDeviceRevocationMonitor,
+  updatePairedDeviceScopes,
 } from './devicePairing';
 
 const device = {
@@ -62,6 +63,47 @@ describe('device pairing client', () => {
       scopes: ['chat', 'read_private', 'web'],
       ttl_seconds: 300,
     });
+  });
+
+  it('requests exactly the permissions the host chose, in a stable order, and drops unknown ones', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      ok: true,
+      code: 'ABCD-EFGH',
+      expires_at: 123,
+      scopes: ['chat', 'agent'],
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await createPairingCode(['agent', 'system', 'chat', 'agent_yolo']);
+
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body).scopes).toEqual(['chat', 'agent']);
+    await expect(createPairingCode(['system'])).rejects.toThrow(/at least one permission/);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('updates one device with PATCH and never sends host-only scopes', async () => {
+    const updated = { ...device, scopes: ['chat', 'index'] };
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ ok: true, device: updated }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(updatePairedDeviceScopes(device.id, ['index', 'chat', 'system'])).resolves.toEqual(updated);
+
+    expect(fetchMock.mock.calls[0][0]).toContain(`/v1/pairing/devices/${device.id}`);
+    expect(fetchMock.mock.calls[0][1]).toMatchObject({ method: 'PATCH', credentials: 'include' });
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ scopes: ['chat', 'index'] });
+    await expect(updatePairedDeviceScopes(device.id, [])).rejects.toThrow(/at least one permission/);
+  });
+
+  it('surfaces a rejected permission change instead of pretending it worked', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ detail: 'Only the localhost host can change device permissions.' }), {
+      status: 403,
+      headers: { 'Content-Type': 'application/json' },
+    })));
+
+    await expect(updatePairedDeviceScopes(device.id, ['chat'])).rejects.toBeTruthy();
   });
 
   it('creates a chat/web-only session for an unsynced new device', async () => {

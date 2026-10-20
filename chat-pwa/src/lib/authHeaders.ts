@@ -6,7 +6,17 @@
 export const DEVICE_TOKEN_STORAGE_KEY = 'trinaxai-device-token';
 const ADMIN_TOKEN_STORAGE_KEY = 'trinaxai-admin-token';
 const DEVICE_SCOPES_STORAGE_KEY = 'trinaxai-device-scopes';
-const REMOTE_DEVICE_SCOPES = new Set(['chat', 'read_private', 'web']);
+/** Always-safe permissions every paired device can hold. */
+export const BASE_DEVICE_SCOPES = ['chat', 'read_private', 'web'] as const;
+/**
+ * Permissions that let a device change the host. Only the localhost operator
+ * can grant them, one device at a time. `system` (power, models, reset, device
+ * administration) and the Agent's auto-approve mode are never grantable.
+ */
+export const ELEVATED_DEVICE_SCOPES = ['index', 'agent', 'modify'] as const;
+export const GRANTABLE_DEVICE_SCOPES = [...BASE_DEVICE_SCOPES, ...ELEVATED_DEVICE_SCOPES] as const;
+export type DeviceScope = (typeof GRANTABLE_DEVICE_SCOPES)[number];
+const REMOTE_DEVICE_SCOPES = new Set<string>(GRANTABLE_DEVICE_SCOPES);
 export const DEVICE_ACCESS_REVOKED_EVENT = 'trinaxai-device-access-revoked';
 
 export function isLocalHostBrowser(): boolean {

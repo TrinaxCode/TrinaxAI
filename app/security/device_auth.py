@@ -23,9 +23,19 @@ from typing import Any
 from trinaxai_core import exclusive_process_lock
 
 SCHEMA_VERSION = 1
+# Records written once the host can grant elevated scopes carry this marker.
+# Older records keep their stored scope list but never regain index/agent/modify
+# silently; the host has to grant them again explicitly.
+ELEVATED_GRANTS_VERSION = 2
 DEVICE_TOKEN_HEADER = "X-TrinaxAI-Device-Token"
-ALL_DEVICE_SCOPES = frozenset({"chat", "read_private", "web"})
-RETIRED_DEVICE_SCOPES = frozenset({"system", "index", "agent", "agent_yolo"})
+BASE_DEVICE_SCOPES = frozenset({"chat", "read_private", "web"})
+# Granted per device by the localhost operator. ``agent`` never includes
+# auto-approve: every dangerous action still needs an explicit confirmation.
+ELEVATED_DEVICE_SCOPES = frozenset({"index", "agent", "modify"})
+ALL_DEVICE_SCOPES = BASE_DEVICE_SCOPES | ELEVATED_DEVICE_SCOPES
+# Host administration and auto-approve stay loopback-only and can never be
+# stored on a device.
+HOST_ONLY_DEVICE_SCOPES = frozenset({"system", "agent_yolo"})
 DEFAULT_DEVICE_SCOPES = ("chat", "read_private")
 NEW_DEVICE_SCOPES = ("chat", "web")
 _CODE_ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ"
@@ -173,6 +183,23 @@ def validate_scopes(scopes: Iterable[str] | None) -> tuple[str, ...]:
     return requested
 
 
+def credential_files() -> tuple[Path, Path]:
+    """Locations of the device registry and its hashing secret."""
+    return _registry_path(), _secret_path()
+
+
+def effective_scopes(device: dict[str, Any]) -> list[str]:
+    """Return the scopes a stored record actually grants.
+
+    Elevated scopes count only on records the host wrote after the grants
+    marker existed, so an old record cannot regain them by accident.
+    """
+    stored = [scope for scope in device.get("scopes") or [] if scope in ALL_DEVICE_SCOPES]
+    if device.get("grants_version") == ELEVATED_GRANTS_VERSION:
+        return stored
+    return [scope for scope in stored if scope not in ELEVATED_DEVICE_SCOPES]
+
+
 def sanitize_device_name(name: str) -> str:
     cleaned = " ".join(str(name).split()).strip()
     if not cleaned or len(cleaned) > 80 or any(ord(char) < 32 for char in cleaned):
@@ -257,6 +284,7 @@ def claim_pairing_code(code: str, device_name: str, *, now: float | None = None)
             "name": name,
             "token_hash": _keyed_hash(secret, "device-token", token),
             "scopes": list(validate_scopes(record.get("scopes"))),
+            "grants_version": ELEVATED_GRANTS_VERSION,
             "created_at": stamp,
             "last_seen_at": None,
             "expires_at": expires_at,
@@ -296,7 +324,7 @@ def public_device(device: dict[str, Any]) -> dict[str, Any]:
     return {
         "id": str(device.get("id") or ""),
         "name": str(device.get("name") or ""),
-        "scopes": [scope for scope in device.get("scopes") or [] if scope in ALL_DEVICE_SCOPES],
+        "scopes": effective_scopes(device),
         "created_at": float(device.get("created_at") or 0),
         "last_seen_at": device.get("last_seen_at"),
         "expires_at": device.get("expires_at"),
@@ -311,7 +339,7 @@ def authenticate_device_token(
     now: float | None = None,
 ) -> dict[str, Any] | None:
     """Return the matching active device if its token grants ``required_scope``."""
-    if required_scope in RETIRED_DEVICE_SCOPES:
+    if required_scope in HOST_ONLY_DEVICE_SCOPES:
         return None
     if required_scope not in ALL_DEVICE_SCOPES:
         raise ValueError(f"Unknown device scope: {required_scope}")
@@ -340,7 +368,7 @@ def authenticate_device_token(
             expires_at = device.get("expires_at")
             if expires_at is not None and float(expires_at) <= stamp:
                 return None
-            if required_scope not in set(device.get("scopes") or []):
+            if required_scope not in effective_scopes(device):
                 return None
             last_seen = float(device.get("last_seen_at") or 0)
             if stamp - last_seen >= 300:
@@ -377,6 +405,34 @@ def revoke_device(device_id: str, *, now: float | None = None) -> dict[str, Any]
         return public_device(device)
 
 
+def update_device_scopes(
+    device_id: str,
+    scopes: Iterable[str],
+    *,
+    now: float | None = None,
+) -> dict[str, Any] | None:
+    """Replace the scopes of one active device; ``None`` if it is unknown or revoked.
+
+    Callers must already have established localhost operator authority: a
+    device can never change its own permissions.
+    """
+    if not re.fullmatch(r"[0-9a-f]{24}", str(device_id)):
+        return None
+    granted = validate_scopes(scopes)
+    path = _registry_path()
+    with _LOCK, _process_lock(path):
+        registry = _read_registry(path)
+        device = registry["devices"].get(device_id)
+        if not isinstance(device, dict) or device.get("revoked_at") is not None:
+            return None
+        if effective_scopes(device) != list(granted) or device.get("grants_version") != ELEVATED_GRANTS_VERSION:
+            device["scopes"] = list(granted)
+            device["grants_version"] = ELEVATED_GRANTS_VERSION
+            device["scopes_updated_at"] = float(time.time() if now is None else now)
+            _write_registry(path, registry)
+        return public_device(device)
+
+
 def device_for_token(token: str) -> dict[str, Any] | None:
     """Identify a device token without granting a scope (used by ``/me``)."""
     for scope in ALL_DEVICE_SCOPES:
@@ -388,17 +444,22 @@ def device_for_token(token: str) -> dict[str, Any] | None:
 
 __all__ = [
     "ALL_DEVICE_SCOPES",
+    "BASE_DEVICE_SCOPES",
     "DEFAULT_DEVICE_SCOPES",
     "DEVICE_TOKEN_HEADER",
-    "RETIRED_DEVICE_SCOPES",
+    "ELEVATED_DEVICE_SCOPES",
+    "HOST_ONLY_DEVICE_SCOPES",
     "DeviceRegistryError",
     "authenticate_device_token",
     "claim_pairing_code",
     "create_pairing_code",
+    "credential_files",
     "device_for_token",
+    "effective_scopes",
     "list_devices",
     "normalize_pairing_code",
     "revoke_device",
+    "update_device_scopes",
     "validate_scopes",
     "validate_device_token",
 ]

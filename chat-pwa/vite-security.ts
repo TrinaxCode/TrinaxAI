@@ -8,7 +8,11 @@ const OLLAMA_PROXY_ALLOWLIST = new Map<string, ReadonlySet<string>>([
   ['/api/ollama/api/pull', new Set(['POST'])],
   ['/api/ollama/api/delete', new Set(['DELETE'])],
 ]);
-const REMOTE_DEVICE_SCOPES = new Set(['chat', 'read_private', 'web']);
+/** Granted per device by the localhost operator; never by an admin token over the network. */
+const ELEVATED_DEVICE_SCOPES = new Set(['index', 'agent', 'modify']);
+const REMOTE_DEVICE_SCOPES = new Set(['chat', 'read_private', 'web', ...ELEVATED_DEVICE_SCOPES]);
+/** Registry records at or above this version may carry elevated scopes. */
+const ELEVATED_GRANTS_VERSION = 2;
 export const DEVICE_TOKEN_COOKIE = 'trinaxai-device-token';
 
 /** Extract the exact device cookie without exposing any other cookie values. */
@@ -53,6 +57,10 @@ export function isAllowedOllamaProxyRequest(method: string, pathname: string): b
   return OLLAMA_PROXY_ALLOWLIST.get(pathname)?.has(method.toUpperCase()) ?? false;
 }
 
+export function isElevatedDeviceScope(scope: string | null): boolean {
+  return scope !== null && ELEVATED_DEVICE_SCOPES.has(scope);
+}
+
 export function requiredOllamaProxyScope(pathname: string): 'chat' | 'system' {
   return pathname === '/api/ollama/api/pull' || pathname === '/api/ollama/api/delete'
     ? 'system'
@@ -66,15 +74,18 @@ export function requiredRagProxyScope(pathname: string, method = 'GET'): string 
   if (pathname === '/api/rag/v1/pairing/claim' || pathname === '/api/rag/v1/pairing/me' || pathname === '/api/rag/v1/pairing/new-device') return null;
   if (pathname === '/api/rag/v1/pairing/start' || pathname === '/api/rag/v1/pairing/devices') return 'system';
   if (pathname.startsWith('/api/rag/v1/pairing/devices/')) return 'system';
-  if (pathname.startsWith('/api/rag/v1/agent')) return 'system';
-  if (pathname.startsWith('/api/rag/system/index') || pathname.startsWith('/api/rag/v1/watch/')) return 'system';
+  if (pathname.startsWith('/api/rag/v1/agent')) return 'agent';
+  if (pathname.startsWith('/api/rag/system/index') || pathname.startsWith('/api/rag/v1/watch/')) return 'index';
   if (pathname.startsWith('/api/rag/system/')) return 'system';
-  if (pathname.startsWith('/api/rag/collections')) return verb === 'GET' ? 'read_private' : 'system';
-  if (pathname.startsWith('/api/rag/v1/sources')) return verb === 'DELETE' ? 'system' : 'read_private';
-  if (pathname.startsWith('/api/rag/attachments')) return verb === 'DELETE' || pathname.endsWith('/open') ? 'system' : 'read_private';
-  if (pathname.startsWith('/api/rag/v1/memory')) return verb === 'GET' || (verb === 'POST' && pathname.endsWith('/context')) ? 'read_private' : 'system';
+  if (pathname.startsWith('/api/rag/collections')) return verb === 'GET' ? 'read_private' : 'index';
+  if (pathname.startsWith('/api/rag/v1/sources')) return verb === 'DELETE' ? 'index' : 'read_private';
+  if (pathname.startsWith('/api/rag/attachments')) {
+    if (pathname.endsWith('/open')) return 'system';
+    return verb === 'DELETE' ? 'modify' : 'read_private';
+  }
+  if (pathname.startsWith('/api/rag/v1/memory')) return verb === 'GET' || (verb === 'POST' && pathname.endsWith('/context')) ? 'read_private' : 'modify';
   if (pathname === '/api/rag/app-state' || pathname.startsWith('/api/rag/v1/stats')) return verb === 'DELETE' ? 'system' : 'read_private';
-  if (pathname.startsWith('/api/rag/v1/settings/web-search')) return 'system';
+  if (pathname.startsWith('/api/rag/v1/settings/web-search')) return 'modify';
   if (pathname.startsWith('/api/rag/v1/settings')) return 'system';
   if (pathname.startsWith('/api/rag/v1/usage') || pathname.startsWith('/api/rag/v1/chat') || pathname.startsWith('/api/rag/v1/research') || pathname.startsWith('/api/rag/v1/voice') || pathname.startsWith('/api/rag/documents')) return 'chat';
   return 'system';
@@ -94,6 +105,7 @@ type DeviceRecord = {
   id?: unknown;
   token_hash?: unknown;
   scopes?: unknown;
+  grants_version?: unknown;
   expires_at?: unknown;
   revoked_at?: unknown;
 };
@@ -119,6 +131,8 @@ export function deviceTokenHasScope(
     if (typeof record.expires_at !== 'number' || record.expires_at <= nowSeconds) return false;
   }
   if (!Array.isArray(record.scopes) || !record.scopes.includes(requiredScope)) return false;
+  // Records from before per-device grants never regain elevated scopes silently.
+  if (ELEVATED_DEVICE_SCOPES.has(requiredScope) && record.grants_version !== ELEVATED_GRANTS_VERSION) return false;
   try {
     const secret = Buffer.from(secretHex, 'hex');
     if (secret.length < 32) return false;
@@ -148,12 +162,16 @@ export function isAuthorizedScopedProxyPeer(
   configuredAdminToken: string,
   suppliedDeviceToken: string,
   deviceGrantsScope: boolean,
+  elevated = false,
 ): boolean {
   if (suppliedAdminToken) {
-    return Boolean(
+    const adminMatches = Boolean(
       configuredAdminToken
       && constantTimeTokenEqual(suppliedAdminToken, configuredAdminToken),
     );
+    // A wrong admin credential is never rescued by a device token, and a right
+    // one does not unlock per-device elevated scopes over the network.
+    if (!adminMatches || !elevated || isLoopbackAddress(peer)) return adminMatches;
   }
   if (suppliedDeviceToken) return deviceGrantsScope;
   return isLoopbackAddress(peer);

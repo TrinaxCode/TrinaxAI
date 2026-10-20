@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { MdCheck, MdContentCopy, MdDevices, MdLink, MdLinkOff } from 'react-icons/md';
+import { MdCheck, MdContentCopy, MdDevices, MdLink, MdLinkOff, MdTune } from 'react-icons/md';
 
 import { useI18n } from '../i18n/I18nContext';
 import { userFacingError } from '../lib/api';
@@ -11,10 +11,17 @@ import {
   listPairedDevices,
   revokePairedDevice,
   revokeCurrentPairedDevice,
+  updatePairedDeviceScopes,
   type PairedDevice,
 } from '../lib/devicePairing';
-import { isLocalHostBrowser } from '../lib/authHeaders';
+import {
+  BASE_DEVICE_SCOPES,
+  ELEVATED_DEVICE_SCOPES,
+  isLocalHostBrowser,
+  type DeviceScope,
+} from '../lib/authHeaders';
 import ConfirmModal from './ConfirmModal';
+import DeviceScopePicker from './DeviceScopePicker';
 import ErrorRepairModal from './ErrorRepairModal';
 
 function pairingCodeFromLocation(): string {
@@ -39,6 +46,13 @@ function formatPairingCode(value: string): string {
   const compact = value.replace(/[^a-z0-9]/gi, '').slice(0, 8).toUpperCase();
   return compact.length > 4 ? `${compact.slice(0, 4)}-${compact.slice(4)}` : compact;
 }
+
+/** Elevated permissions in `next` that `current` does not already have. */
+function newlyElevated(next: readonly string[], current: readonly string[] = []): string[] {
+  return ELEVATED_DEVICE_SCOPES.filter((scope) => next.includes(scope) && !current.includes(scope));
+}
+
+type PendingGrant = { scopes: string[]; run: () => void };
 
 const MANAGED_DEVICE_RETRY_DELAY_MS = 30_000;
 const MANAGED_DEVICE_MAX_RETRY_DELAY_MS = 5 * 60_000;
@@ -69,6 +83,13 @@ export default function DevicePairingCard({
   const [pendingRevokeId, setPendingRevokeId] = useState<string | null>(null);
   const [canManageDevices, setCanManageDevices] = useState(false);
   const [repairOpen, setRepairOpen] = useState(false);
+  const [newDeviceScopes, setNewDeviceScopes] = useState<DeviceScope[]>([...BASE_DEVICE_SCOPES]);
+  const [generatedScopes, setGeneratedScopes] = useState<string[]>([]);
+  const [editingId, setEditingId] = useState('');
+  const [draftScopes, setDraftScopes] = useState<DeviceScope[]>([]);
+  const [savingScopes, setSavingScopes] = useState(false);
+  const [scopesNotice, setScopesNotice] = useState('');
+  const [pendingGrant, setPendingGrant] = useState<PendingGrant | null>(null);
 
   const loadManagedDevices = async (): Promise<boolean> => {
     if (!isLocalAuthority) return false;
@@ -144,13 +165,41 @@ export default function DevicePairingCard({
   const generate = async () => {
     setGenerating(true); setError('');
     try {
-      const result = await createPairingCode();
+      const result = await createPairingCode(newDeviceScopes);
       setGeneratedCode(result.code);
+      setGeneratedScopes(result.scopes);
       setCopiedCode(false);
       setShowGeneratedCode(true);
     } catch (reason) {
       setError(userFacingError(reason, 'authentication_failed'));
     } finally { setGenerating(false); }
+  };
+
+  /** Ask before handing out permissions that let a device change the host. */
+  const confirmGrant = (scopes: readonly string[], current: readonly string[], run: () => void) => {
+    const added = newlyElevated(scopes, current);
+    if (added.length) setPendingGrant({ scopes: added, run });
+    else run();
+  };
+
+  const startEditing = (item: PairedDevice) => {
+    setScopesNotice('');
+    setEditingId(item.id);
+    setDraftScopes(item.scopes.filter((scope): scope is DeviceScope => (
+      (BASE_DEVICE_SCOPES as readonly string[]).includes(scope) || (ELEVATED_DEVICE_SCOPES as readonly string[]).includes(scope)
+    )));
+  };
+
+  const saveScopes = async (deviceId: string) => {
+    setSavingScopes(true); setError(''); setScopesNotice('');
+    try {
+      await updatePairedDeviceScopes(deviceId, draftScopes);
+      await loadManagedDevices();
+      setEditingId('');
+      setScopesNotice(t('devicePermissionsSaved'));
+    } catch (reason) {
+      setError(userFacingError(reason, 'authentication_failed'));
+    } finally { setSavingScopes(false); }
   };
 
   const revokeManaged = async (deviceId: string) => {
@@ -214,14 +263,24 @@ export default function DevicePairingCard({
         <div className="space-y-2">
           <p className={`text-sm leading-relaxed ${muted}`}>{t('devicePairingHint')}</p>
           {canManageDevices && (
-            <button
-              type="button"
-              disabled={generating}
-              onClick={() => { void generate(); }}
-              className={`inline-flex min-h-11 items-center rounded-lg border border-[#006bbd]/40 px-3 py-2 text-sm font-medium hover:bg-[#006bbd]/10 disabled:opacity-50 ${accent}`}
-            >
-              {generating ? t('loading') : t('devicePairingGenerate')}
-            </button>
+            <div className="space-y-3">
+              <DeviceScopePicker
+                legend={t('deviceNewPermissions')}
+                value={newDeviceScopes}
+                onChange={setNewDeviceScopes}
+                isDark={isDark}
+                disabled={generating}
+              />
+              <button
+                type="button"
+                disabled={generating || newDeviceScopes.length === 0}
+                onClick={() => confirmGrant(newDeviceScopes, [], () => { void generate(); })}
+                className={`inline-flex min-h-11 items-center rounded-lg border border-[#006bbd]/40 px-3 py-2 text-sm font-medium hover:bg-[#006bbd]/10 disabled:opacity-50 ${accent}`}
+              >
+                {generating ? t('loading') : t('devicePairingGenerate')}
+              </button>
+              {newDeviceScopes.length === 0 && <p className={`text-sm ${muted}`}>{t('devicePermissionsMin')}</p>}
+            </div>
           )}
           {!isLocalAuthority && <>
             <div className="grid gap-2 sm:grid-cols-2">
@@ -261,20 +320,68 @@ export default function DevicePairingCard({
         <div className={`border-t pt-3 ${border}`}>
           <p className={`mb-2 text-xs font-medium uppercase tracking-wider ${muted}`}>{t('devicePairedDevices')}</p>
           <div className="space-y-2">
-            {managedDevices.filter((item) => item.revoked_at === null).map((item) => (
-              <div key={item.id} className={`flex items-center justify-between gap-2 rounded-lg border px-3 py-2 ${border}`}>
-                <div className="min-w-0">
-                  <p className={`truncate text-sm ${text}`}>{item.name}</p>
-                  <p className={`truncate text-sm ${muted}`} title={item.scopes.join(', ')}>{item.scopes.join(', ')}</p>
+            {managedDevices.filter((item) => item.revoked_at === null).map((item) => {
+              const editing = editingId === item.id;
+              const scopeSummary = item.scopes.map((scope) => (
+                (BASE_DEVICE_SCOPES as readonly string[]).includes(scope) || (ELEVATED_DEVICE_SCOPES as readonly string[]).includes(scope)
+                  ? t(`deviceScope_${scope as DeviceScope}`)
+                  : scope
+              )).join(', ');
+              return (
+                <div key={item.id} className={`space-y-3 rounded-lg border px-3 py-2 ${border}`}>
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="min-w-0">
+                      <p className={`break-words text-sm ${text}`}>{item.name}</p>
+                      <p className={`break-words text-sm leading-relaxed ${muted}`}>{scopeSummary || '—'}</p>
+                    </div>
+                    <div className="flex flex-wrap gap-2 sm:shrink-0 sm:justify-end">
+                      <button
+                        type="button"
+                        aria-expanded={editing}
+                        aria-label={`${t('devicePermissionsFor')} ${item.name}`}
+                        disabled={Boolean(revokingId) || savingScopes}
+                        onClick={() => (editing ? setEditingId('') : startEditing(item))}
+                        className={`inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-[#006bbd]/40 px-3 text-sm font-medium hover:bg-[#006bbd]/10 disabled:opacity-50 ${accent}`}
+                      >
+                        <MdTune size={15} aria-hidden="true" /> {t('devicePermissionsEdit')}
+                      </button>
+                      <button type="button" disabled={Boolean(revokingId) || savingScopes} onClick={() => setPendingRevokeId(item.id)} className={`min-h-11 rounded-lg border border-red-500/20 px-3 text-sm font-medium hover:bg-red-500/10 disabled:opacity-50 ${danger}`}>
+                        {revokingId === item.id ? t('loading') : t('deviceRevoke')}
+                      </button>
+                    </div>
+                  </div>
+                  {editing && (
+                    <div className={`space-y-3 border-t pt-3 ${border}`}>
+                      <DeviceScopePicker
+                        legend={`${t('devicePermissionsFor')} ${item.name}`}
+                        value={draftScopes}
+                        onChange={setDraftScopes}
+                        isDark={isDark}
+                        disabled={savingScopes}
+                      />
+                      {draftScopes.length === 0 && <p className={`text-sm ${danger}`}>{t('devicePermissionsMin')}</p>}
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          disabled={savingScopes || draftScopes.length === 0}
+                          onClick={() => confirmGrant(draftScopes, item.scopes, () => { void saveScopes(item.id); })}
+                          className="inline-flex min-h-11 items-center rounded-lg bg-[#006bbd] px-3 py-2 text-sm font-medium text-white hover:bg-[#005ca3] disabled:opacity-50"
+                        >
+                          {savingScopes ? t('loading') : t('devicePermissionsSave')}
+                        </button>
+                        <button type="button" disabled={savingScopes} onClick={() => setEditingId('')} className={`min-h-11 rounded-lg border px-3 text-sm font-medium disabled:opacity-50 ${border} ${text}`}>
+                          {t('cancel')}
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
-                <button type="button" disabled={Boolean(revokingId)} onClick={() => setPendingRevokeId(item.id)} className={`min-h-11 shrink-0 rounded-lg border border-red-500/20 px-3 text-sm font-medium hover:bg-red-500/10 disabled:opacity-50 ${danger}`}>
-                  {revokingId === item.id ? t('loading') : t('deviceRevoke')}
-                </button>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}
+      {scopesNotice && <p role="status" className={`text-sm ${accent}`}>{scopesNotice}</p>}
       <AnimatePresence initial={false}>
         {error && (
           <motion.div
@@ -305,10 +412,28 @@ export default function DevicePairingCard({
         }}
         onCancel={() => setPendingRevokeId(null)}
       />
+      <ConfirmModal
+        open={pendingGrant !== null}
+        title={t('devicePermissionsGrantTitle')}
+        message={`${t('devicePermissionsGrantMessage')}${(pendingGrant?.scopes ?? []).map((scope) => t(`deviceScopeDesc_${scope as DeviceScope}`)).join(' ')}`}
+        confirmLabel={t('devicePermissionsGrantConfirm')}
+        danger
+        onConfirm={() => {
+          const grant = pendingGrant;
+          setPendingGrant(null);
+          grant?.run();
+        }}
+        onCancel={() => setPendingGrant(null)}
+      />
       {showGeneratedCode && (
         <ConfirmModal open title={t('devicePairingGenerated')} message={t('devicePairingGeneratedHint')} confirmLabel={t('close')} showCancel={false} onConfirm={() => setShowGeneratedCode(false)} onCancel={() => setShowGeneratedCode(false)}>
           <div className={`rounded-xl border px-4 py-3 text-center ${border}`}>
             <code className={`block text-2xl tracking-[0.24em] ${text}`}>{generatedCode}</code>
+            {generatedScopes.length > 0 && (
+              <p className={`mt-2 text-sm leading-relaxed ${muted}`}>
+                {t('deviceScopes')}: {generatedScopes.map((scope) => t(`deviceScope_${scope as DeviceScope}`)).join(', ')}
+              </p>
+            )}
             <button type="button" onClick={() => { void copyGeneratedCode(); }} disabled={!navigator.clipboard?.writeText} className={`mt-3 inline-flex min-h-11 items-center gap-1 text-sm hover:underline disabled:opacity-50 ${accent}`} aria-label={copiedCode ? t('copied') : t('copy')}>
               {copiedCode ? <MdCheck size={14} aria-hidden="true" /> : <MdContentCopy size={14} aria-hidden="true" />} {copiedCode ? t('copied') : t('copy')}
             </button>

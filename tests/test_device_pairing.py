@@ -30,6 +30,7 @@ from app.security.device_auth import (
     normalize_pairing_code,
     revoke_device,
     sanitize_device_name,
+    update_device_scopes,
     validate_scopes,
 )
 
@@ -423,7 +424,9 @@ def test_retired_host_scopes_are_removed_from_legacy_devices(pairing_store: Path
     created = create_pairing_code(["chat"], now=100)
     claimed = claim_pairing_code(created["code"], "Legacy device", now=101)
     document = json.loads(pairing_store.read_text(encoding="utf-8"))
-    document["devices"][claimed["device"]["id"]]["scopes"] = ["system", "index", "agent"]
+    legacy = document["devices"][claimed["device"]["id"]]
+    legacy["scopes"] = ["system", "index", "agent", "modify"]
+    legacy.pop("grants_version", None)  # records written before per-device grants
     pairing_store.write_text(json.dumps(document), encoding="utf-8")
 
     assert authenticate_device_token(claimed["token"], "system", now=102) is None
@@ -431,3 +434,168 @@ def test_retired_host_scopes_are_removed_from_legacy_devices(pairing_store: Path
     assert authenticate_device_token(claimed["token"], "agent", now=102) is None
     assert device_for_token(claimed["token"]) is None
     assert list_devices()[0]["scopes"] == []
+
+
+ALL_ELEVATED = ["chat", "read_private", "web", "index", "agent", "modify"]
+
+
+def _elevated_token(**kwargs) -> str:
+    code = create_pairing_code(kwargs.get("scopes", ALL_ELEVATED), now=100)["code"]
+    return claim_pairing_code(code, "Granted laptop", now=101)["token"]
+
+
+def test_host_can_grant_elevated_scopes_but_never_host_only_ones(pairing_store: Path) -> None:
+    token = _elevated_token()
+    for scope in ("chat", "read_private", "web", "index", "agent", "modify"):
+        assert authenticate_device_token(token, scope, now=102) is not None
+    assert authenticate_device_token(token, "system", now=102) is None
+    assert authenticate_device_token(token, "agent_yolo", now=102) is None
+    with pytest.raises(ValueError):
+        create_pairing_code(["chat", "system"])
+    with pytest.raises(ValueError):
+        create_pairing_code(["agent", "agent_yolo"])
+
+
+def test_update_device_scopes_grants_revokes_and_upgrades_legacy_records(pairing_store: Path) -> None:
+    claimed = claim_pairing_code(create_pairing_code(["chat"], now=100)["code"], "Tablet", now=101)
+    device_id, token = claimed["device"]["id"], claimed["token"]
+    assert authenticate_device_token(token, "agent", now=102) is None
+
+    updated = update_device_scopes(device_id, ["chat", "agent"], now=103)
+    assert updated is not None and updated["scopes"] == ["chat", "agent"]
+    assert authenticate_device_token(token, "agent", now=104) is not None
+    assert authenticate_device_token(token, "index", now=104) is None
+
+    updated = update_device_scopes(device_id, ["chat"], now=105)
+    assert updated is not None and updated["scopes"] == ["chat"]
+    assert authenticate_device_token(token, "agent", now=106) is None
+
+    for invalid in ([], ["system"], ["agent_yolo"], ["bogus"]):
+        with pytest.raises(ValueError):
+            update_device_scopes(device_id, invalid)
+    assert update_device_scopes("f" * 24, ["chat"]) is None
+    assert update_device_scopes("not-an-id", ["chat"]) is None
+
+    # A legacy record is upgraded by an explicit host grant, not before.
+    document = json.loads(pairing_store.read_text(encoding="utf-8"))
+    document["devices"][device_id]["scopes"] = ["chat", "index"]
+    document["devices"][device_id].pop("grants_version", None)
+    pairing_store.write_text(json.dumps(document), encoding="utf-8")
+    assert authenticate_device_token(token, "index", now=107) is None
+    assert update_device_scopes(device_id, ["chat", "index"], now=108)["scopes"] == ["chat", "index"]
+    assert authenticate_device_token(token, "index", now=109) is not None
+
+    revoke_device(device_id, now=110)
+    assert update_device_scopes(device_id, ["chat", "agent"], now=111) is None
+
+
+@pytest.mark.parametrize(
+    ("scope", "allowed", "denied"),
+    [
+        (
+            "index",
+            [
+                ("POST", "/system/index-upload"),
+                ("POST", "/v1/watch/start"),
+                ("POST", "/collections"),
+                ("DELETE", "/v1/sources/default/a.txt"),
+                ("GET", "/system/index-jobs/abc"),
+            ],
+            [("POST", "/v1/agent"), ("POST", "/v1/memory"), ("PUT", "/v1/settings/web-search")],
+        ),
+        (
+            "agent",
+            [("POST", "/v1/agent"), ("POST", "/v1/agent/approve"), ("GET", "/v1/agent/browse")],
+            [("POST", "/system/index-upload"), ("POST", "/v1/memory"), ("DELETE", "/attachments/abc")],
+        ),
+        (
+            "modify",
+            [
+                ("POST", "/v1/memory"),
+                ("PATCH", "/v1/memory/abc"),
+                ("DELETE", "/v1/memory/abc"),
+                ("PUT", "/v1/settings/web-search"),
+                ("DELETE", "/attachments/abc"),
+            ],
+            [("POST", "/v1/agent"), ("POST", "/collections"), ("POST", "/v1/watch/start")],
+        ),
+    ],
+)
+def test_each_elevated_scope_unlocks_only_its_own_routes(
+    pairing_store: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    scope: str,
+    allowed: list[tuple[str, str]],
+    denied: list[tuple[str, str]],
+) -> None:
+    monkeypatch.setattr(admin_auth, "ADMIN_TOKEN", "")
+    token = _elevated_token(scopes=["chat", scope])
+    for method, path in allowed:
+        admin_auth.authorize_system(_request(path, method=method, token=token))
+    for method, path in denied:
+        with pytest.raises(HTTPException) as raised:
+            admin_auth.authorize_system(_request(path, method=method, token=token))
+        assert raised.value.status_code == 403, (method, path)
+
+
+def test_host_only_operations_stay_loopback_even_with_every_grant(
+    pairing_store: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(admin_auth, "ADMIN_TOKEN", "")
+    token = _elevated_token()
+    for method, path in [
+        ("POST", "/system/shutdown"),
+        ("POST", "/system/stop-all"),
+        ("DELETE", "/app-state"),
+        ("POST", "/attachments/abc/open"),
+        ("PUT", "/v1/settings/other"),
+        ("POST", "/not-a-known-route"),
+    ]:
+        with pytest.raises(HTTPException) as raised:
+            admin_auth.authorize_system(_request(path, method=method, token=token))
+        assert raised.value.status_code == 403, (method, path)
+    with pytest.raises(HTTPException) as yolo:
+        admin_auth.authorize_scope(_request("/v1/agent", method="POST", token=token), "agent_yolo")
+    assert yolo.value.status_code == 403
+
+
+def test_admin_token_over_the_network_does_not_unlock_elevated_scopes(
+    pairing_store: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(admin_auth, "ADMIN_TOKEN", "root-secret")
+    for path, method in [("/v1/agent", "POST"), ("/system/index-upload", "POST"), ("/v1/memory", "POST")]:
+        with pytest.raises(HTTPException) as raised:
+            admin_auth.authorize_system(_request(path, method=method, admin_token="root-secret"))
+        assert raised.value.status_code == 403, path
+    # The same operator on the host itself is unaffected.
+    admin_auth.authorize_system(_request("/v1/agent", method="POST", client="127.0.0.1", admin_token="root-secret"))
+
+
+def test_only_localhost_can_change_device_permissions(pairing_store: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.services import shared_runtime
+
+    monkeypatch.setattr(shared_runtime, "initialize_runtime", lambda: None)
+    monkeypatch.setattr(admin_auth, "ADMIN_TOKEN", "admin")
+    app = create_app()
+    with TestClient(app, client=("127.0.0.1", 50100)) as local:
+        code = local.post("/v1/pairing/start", json={"scopes": ["chat", "agent"]}).json()["code"]
+    with TestClient(app, client=("192.168.1.44", 50101)) as remote:
+        claim = remote.post("/v1/pairing/claim", json={"code": code, "device_name": "Phone"})
+        device = claim.json()["device"]
+        assert device["scopes"] == ["chat", "agent"]
+        cookie = {"Cookie": claim.headers["set-cookie"].split(";", 1)[0]}
+        path = f"/v1/pairing/devices/{device['id']}"
+        # The device itself, and a remote admin token, cannot escalate.
+        assert remote.patch(path, json={"scopes": ALL_ELEVATED}, headers=cookie).status_code == 403
+        assert remote.patch(path, json={"scopes": ALL_ELEVATED}, headers={"X-Admin-Token": "admin"}).status_code == 403
+    with TestClient(app, client=("127.0.0.1", 50102)) as local:
+        updated = local.patch(path, json={"scopes": ["chat", "index"]})
+        assert updated.status_code == 200
+        assert updated.json()["device"]["scopes"] == ["chat", "index"]
+        assert local.patch(path, json={"scopes": ["system"]}).status_code == 422
+        assert local.patch(path, json={"scopes": []}).status_code == 422
+        assert local.patch(f"/v1/pairing/devices/{'f' * 24}", json={"scopes": ["chat"]}).status_code == 404
+        assert [d["scopes"] for d in local.get("/v1/pairing/devices").json()["devices"]] == [["chat", "index"]]
+    with TestClient(app, client=("192.168.1.44", 50103)) as remote:
+        me = remote.get("/v1/pairing/me", headers=cookie)
+        assert me.json()["device"]["scopes"] == ["chat", "index"]

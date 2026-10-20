@@ -12,6 +12,7 @@ import { acquireInferenceProcessLock } from './server-dist/inference-lock.js';
 import { PWA_SECURITY_HEADERS } from './server-dist/security-headers.js';
 import {
   deviceTokenHasScope,
+  isElevatedDeviceScope,
   isAllowedOllamaProxyRequest,
   isAuthorizedScopedProxyPeer,
   isAuthorizedSystemProxyPeer,
@@ -271,6 +272,7 @@ async function proxyRequest(req, res, url, prefix) {
         process.env.TRINAXAI_ADMIN_TOKEN || '',
         device,
         pairedDeviceGrants(device, requiredScope),
+        isElevatedDeviceScope(requiredScope),
       );
     if (requiredScope && !authorized) {
       sendError(res, 403, 'proxy_scope_required');

@@ -393,3 +393,26 @@ def test_worker_survives_batch_failure_and_processes_next_batch(monkeypatch, tmp
         assert handler._worker.is_alive()
     finally:
         handler.shutdown()
+
+
+def test_device_identity_can_only_watch_inside_configured_indexing_roots(tmp_path: Path, monkeypatch) -> None:
+    allowed = tmp_path / "projects"
+    outside = tmp_path / "private"
+    (allowed / "app").mkdir(parents=True)
+    outside.mkdir()
+    monkeypatch.setattr(watcher_service.config, "PROJECTS_DIRS", [str(allowed)])
+
+    def request(kind: str):
+        return SimpleNamespace(state=SimpleNamespace(trinaxai_identity={"kind": kind}))
+
+    guard = watcher_service._enforce_remote_watch_paths
+    # Omitted paths fall back to the host's configured roots, so they are allowed.
+    guard(watcher_service.WatchStartRequest(), request("device"))
+    guard(watcher_service.WatchStartRequest(paths=[str(allowed / "app")]), request("device"))
+    for escape in (str(outside), str(allowed / ".." / "private"), str(allowed) + "-sibling"):
+        with pytest.raises(HTTPException) as denied:
+            guard(watcher_service.WatchStartRequest(paths=[escape]), request("device"))
+        assert denied.value.status_code == 403
+    # The localhost operator keeps full freedom.
+    guard(watcher_service.WatchStartRequest(paths=[str(outside)]), request("local"))
+    guard(watcher_service.WatchStartRequest(paths=[str(outside)]), object())

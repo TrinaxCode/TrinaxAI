@@ -1,7 +1,9 @@
 import { APP_CONFIG } from './config';
 import { apiErrorFromPayload } from './api';
 import {
+  BASE_DEVICE_SCOPES,
   DEVICE_TOKEN_STORAGE_KEY,
+  GRANTABLE_DEVICE_SCOPES,
   clearRevokedDeviceSession,
   clearLegacyDeviceToken,
   deviceSessionHasScope,
@@ -110,12 +112,19 @@ export function startDeviceRevocationMonitor(): () => void {
   return revocationMonitorCleanup;
 }
 
+/** Keep only permissions the host is allowed to grant, in a stable order. */
+function grantableScopes(scopes: readonly string[]): string[] {
+  return GRANTABLE_DEVICE_SCOPES.filter((scope) => scopes.includes(scope));
+}
+
 /** Generate a one-time code from the local host PWA. */
-export async function createPairingCode(): Promise<PairingCode> {
+export async function createPairingCode(scopes: readonly string[] = BASE_DEVICE_SCOPES): Promise<PairingCode> {
+  const granted = grantableScopes(scopes);
+  if (!granted.length) throw new Error('Choose at least one permission for the new device.');
   const response = await pairingFetch(`${APP_CONFIG.ragBase}/v1/pairing/start`, {
     method: 'POST',
     headers: systemRequestHeaders({ 'Content-Type': 'application/json' }),
-    body: JSON.stringify({ scopes: ['chat', 'read_private', 'web'], ttl_seconds: 300 }),
+    body: JSON.stringify({ scopes: granted, ttl_seconds: 300 }),
   });
   const payload = await responseJson(response);
   if (typeof payload.code !== 'string') throw new Error('Pairing code was not generated.');
@@ -133,6 +142,20 @@ export async function listPairedDevices(): Promise<PairedDevice[]> {
   });
   const payload = await responseJson(response);
   return Array.isArray(payload.devices) ? payload.devices as PairedDevice[] : [];
+}
+
+/** Replace one device's permissions. Only the localhost host may call this. */
+export async function updatePairedDeviceScopes(deviceId: string, scopes: readonly string[]): Promise<PairedDevice> {
+  const granted = grantableScopes(scopes);
+  if (!granted.length) throw new Error('Choose at least one permission for the device.');
+  const response = await pairingFetch(`${APP_CONFIG.ragBase}/v1/pairing/devices/${encodeURIComponent(deviceId)}`, {
+    method: 'PATCH',
+    headers: systemRequestHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify({ scopes: granted }),
+  });
+  const payload = await responseJson(response);
+  if (!payload.device) throw new Error('Permission update did not return the device.');
+  return payload.device as PairedDevice;
 }
 
 export async function revokePairedDevice(deviceId: string): Promise<void> {
