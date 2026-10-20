@@ -216,10 +216,13 @@ TRINAXAI_AGGRESSIVE_QUANT = os.getenv("TRINAXAI_AGGRESSIVE_QUANT", "0").strip() 
 # OCR for scanned PDFs (Phase 5.1). Off by default; tesseract is a heavy system dep.
 TRINAXAI_OCR = os.getenv("TRINAXAI_OCR", "0").strip() in {"1", "true", "yes", "on"}
 
-# Context window. Must fit: prompt + top_k chunks + response.
+# Context window. Must fit: prompt + top_k chunks + response. The 8 GB profile
+# retrieves 3 chunks of up to ~900 tokens, so 2048 left no room to answer: with
+# retrieved context the model could emit a single token before the window filled
+# (measured with qwen3.5:2b, finish_reason "length"). 4096 fits context and answer.
 NUM_CTX = _env_int(
     "TRINAXAI_NUM_CTX",
-    8192 if _LARGE_PROFILE else 2048 if _MEMORY_CONSTRAINED_PROFILE else 4096,
+    8192 if _LARGE_PROFILE else 4096,
     minimum=512,
     maximum=131072,
 )

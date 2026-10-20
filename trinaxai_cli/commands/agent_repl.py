@@ -294,6 +294,10 @@ def _git_diff(workspace: Path, *args: str) -> subprocess.CompletedProcess[str]:
         "core.pager=cat",
         "-c",
         "diff.external=",
+        # A bare-repository layout (HEAD, objects/, refs/, config) written by the Agent
+        # must never be discovered implicitly and have its config honoured.
+        "-c",
+        "safe.bareRepository=explicit",
         "diff",
         "--no-ext-diff",
         "--no-textconv",
