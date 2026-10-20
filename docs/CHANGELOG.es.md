@@ -54,6 +54,8 @@ el formato de [Keep a Changelog](https://keepachangelog.com/).
 
 ### Cambiado
 
+- El perfil `8gb` usa ahora una ventana de 4096 tokens por defecto. Con 2048,
+  tres fragmentos recuperados la llenaban y el modelo podía detenerse tras un token.
 - El README y la guía de seguridad indican que la terminal del Agente solo está
   aislada en Linux y permanece desactivada en macOS y Windows salvo
   `TRINAXAI_AGENT_ALLOW_UNSANDBOXED_COMMANDS=1`; las herramientas de archivos
@@ -63,6 +65,11 @@ el formato de [Keep a Changelog](https://keepachangelog.com/).
 
 ### Seguridad
 
+- Endurecimiento del Agente: «no volver a preguntar» ya no se amplía a ejecutores
+  de pruebas ni verificadores de tipos, las reglas de comandos que ejecutan
+  código del workspace caducan una a una cuando el Agente edita un archivo, las
+  herramientas de archivo rechazan cualquier grafía de `.git` y `/diff` ejecuta
+  git dentro del sandbox (o con configuración forzada).
 - `system` y el modo de autoaprobación (YOLO) del Agente siguen sin poder
   concederse a un dispositivo. Los permisos elevados solo los concede el
   operador en localhost, se ignoran en registros anteriores a este cambio hasta

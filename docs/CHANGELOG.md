@@ -51,6 +51,8 @@ All notable changes to TrinaxAI are documented here. This project follows the
 
 ### Changed
 
+- The `8gb` profile now defaults to a 4096-token window. With 2048, three
+  retrieved chunks filled it and the model could stop after one token.
 - The README and security guide now state that the Agent's terminal tool is
   sandboxed only on Linux and stays disabled on macOS and Windows unless
   `TRINAXAI_AGENT_ALLOW_UNSANDBOXED_COMMANDS=1`; file tools work everywhere.
@@ -59,6 +61,10 @@ All notable changes to TrinaxAI are documented here. This project follows the
 
 ### Security
 
+- Agent hardening: "don't ask again" no longer widens to test runners or type
+  checkers, rules for commands that run workspace code expire individually
+  after the Agent edits a file, the Agent's file tools refuse every spelling of
+  `.git`, and `/diff` runs git inside the sandbox (or with config overrides).
 - `system` and the Agent's auto-approve (YOLO) mode remain impossible to grant
   to a device. Elevated permissions are granted only by the localhost operator,
   are ignored on records created before this change until granted again, and an
