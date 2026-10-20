@@ -43,7 +43,12 @@ def _tool(name: str, dangerous: bool = False) -> Tool:
 @pytest.mark.parametrize(
     ("command", "rule"),
     [
-        ("pytest -q", "pytest"),
+        ("ls -la", "ls"),
+        ("rg TODO src", "rg"),
+        ("rg --pre ./evil TODO", "rg --pre ./evil TODO"),
+        ("rg --search-zip x", "rg --search-zip x"),
+        ("pytest -q", "pytest -q"),
+        ("mypy .", "mypy ."),
         ("git status --short", "git status"),
         ("git diff --stat", "git diff"),
         ("git diff --output=/tmp/x", "git diff --output=/tmp/x"),
@@ -70,9 +75,13 @@ def test_policy_modes_and_remembered_rules() -> None:
     policy = ApprovalPolicy()
     assert policy.auto_decision(edit, {}) is None
 
+    policy.remember(shell, {"command": "ls -la"})
+    assert policy.auto_decision(shell, {"command": "ls src"}) is True
+    assert policy.auto_decision(shell, {"command": "ls; rm -rf ."}) is None
+    # Runners that execute workspace code are remembered verbatim, never by program.
     policy.remember(shell, {"command": "pytest -q"})
-    assert policy.auto_decision(shell, {"command": "pytest tests/x.py"}) is True
-    assert policy.auto_decision(shell, {"command": "pytest; rm -rf ."}) is None
+    assert policy.auto_decision(shell, {"command": "pytest -q"}) is True
+    assert policy.auto_decision(shell, {"command": "pytest tests/agent_wrote_this.py"}) is None
     assert policy.auto_decision(shell, {"command": "rm -rf ."}) is None
 
     policy.remember(edit, {"path": "a"})

@@ -41,7 +41,12 @@ EDIT_TOOLS = frozenset({"write_file", "edit_file"})
 _SHELL_META = re.compile(r"[;&|<>`$()\n\\]")
 # "Don't ask again" may widen only for commands that cannot execute other code or
 # write outside what the user just saw. Everything else is remembered verbatim.
-_SAFE_PROGRAMS = {"ls", "pwd", "cat", "head", "tail", "wc", "echo", "grep", "rg", "pytest", "ruff", "mypy", "tsc"}
+# Test runners and type checkers (pytest, mypy, ruff, tsc) are deliberately absent:
+# they load conftest files, plugins and configs from the workspace, so approving
+# one run must not approve whatever the agent wrote there afterwards.
+_SAFE_PROGRAMS = {"ls", "pwd", "cat", "head", "tail", "wc", "echo", "grep", "rg"}
+# Flags that make an otherwise passive program run another program.
+_RISKY_FLAGS = {"rg": ("--pre", "--pre-glob", "-z", "--search-zip", "--hostname-bin")}
 _SAFE_GIT = {"status", "diff", "log", "show"}
 _RISKY_GIT_FLAGS = ("--output", "--ext-diff", "--textconv", "--exec", "-c", "--config")
 
@@ -80,6 +85,8 @@ def command_rule(command: str) -> str | None:
             return f"git {argv[1]}"
         return exact
     if program in _SAFE_PROGRAMS:
+        if any(a.startswith(_RISKY_FLAGS.get(program, ())) for a in argv[1:]):
+            return exact
         return program
     return exact
 
