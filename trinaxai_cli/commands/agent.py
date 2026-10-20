@@ -11,6 +11,8 @@ touch anything outside it.
 
 from __future__ import annotations
 
+import json
+import sys
 import time
 import uuid
 from pathlib import Path
@@ -18,7 +20,16 @@ from types import SimpleNamespace
 from typing import Any
 
 import config as runtime_config
-from trinaxai_agent import DEFAULT_TOOLS, AgentEngine, Tool, format_tool_failure
+from trinaxai_agent import DEFAULT_TOOLS, AgentEngine, Tool, default_system_prompt, format_tool_failure
+from trinaxai_cli.agent_ui import (
+    TODO_PROMPT,
+    AgentRenderer,
+    ApprovalPolicy,
+    TodoStore,
+    build_todo_tool,
+    load_project_instructions,
+    normalize_mode,
+)
 from trinaxai_cli.commands import _system
 from trinaxai_cli.i18n import text
 from trinaxai_cli.session import Session
@@ -195,79 +206,52 @@ def _format_args(args: dict[str, Any]) -> str:
     return ", ".join(parts)
 
 
-def _preview_dangerous(ui: Any, tool: Tool, args: dict[str, Any]) -> None:
-    """Show what a dangerous action will do before asking to confirm."""
-    language = getattr(ui, "language", "en")
-    if tool.name == "write_file":
-        content = str(args.get("content", ""))
-        ui.print(text("write_preview", language, path=args.get("path", "?"), chars=len(content)))
-        ui.code("\n".join(content.splitlines()[:20]) or "(empty)")
-    elif tool.name == "edit_file":
-        ui.print(text("edit_preview", language, path=args.get("path", "?")))
-        ui.code(f"- {str(args.get('old', ''))[:400]}\n+ {str(args.get('new', ''))[:400]}", "diff")
-    elif tool.name == "run_command":
-        ui.print(text("run_command_preview", language))
-        ui.code(str(args.get("command", "")), "bash")
+def _make_callbacks(
+    ui: Any,
+    yolo: bool,
+    policy: ApprovalPolicy | None = None,
+    renderer: AgentRenderer | None = None,
+) -> dict[str, Any]:
+    """Callbacks for the dedicated ``trinaxai agent`` command.
+
+    ``yolo`` keeps its historical meaning: ``on_confirm`` is ``None`` so the engine
+    never asks. Pass ``policy``/``renderer`` to share them with the REPL.
+    """
+    policy = policy or ApprovalPolicy(mode=normalize_mode(None, yolo=yolo))
+    renderer = renderer or AgentRenderer(ui, policy)
+    callbacks = renderer.callbacks()
+    if yolo:
+        callbacks["on_confirm"] = None
+    return callbacks
 
 
-def _make_callbacks(ui: Any, yolo: bool) -> dict[str, Any]:
-    def on_tool_start(tool: Tool, args: dict[str, Any]) -> None:
-        marker = "[!]" if tool.dangerous else "[*]"
-        ui.print(f"{marker} {tool.name}({_format_args(args)})")
-
-    def on_tool_result(tool: Tool, result: str) -> None:
-        first = result.splitlines()[0] if result else ""
-        ui.print(f"    {first[:160]}")
-
-    def on_confirm(tool: Tool, args: dict[str, Any]) -> bool:
-        _preview_dangerous(ui, tool, args)
-        hint = _DANGER_HINT.get(tool.name, "will run a side-effecting action")
-        return ui.confirm(f"Allow {tool.name}? ({hint})", default=False)
-
-    def on_token(text: str) -> None:
-        ui.print(text, end="")
-
-    return {
-        "on_tool_start": on_tool_start,
-        "on_tool_result": on_tool_result,
-        "on_confirm": None if yolo else on_confirm,
-        "on_token": on_token,
-    }
-
-
-def make_dynamic_callbacks(ui: Any, yolo_getter: Any) -> dict[str, Any]:
+def make_dynamic_callbacks(
+    ui: Any,
+    yolo_getter: Any,
+    policy: ApprovalPolicy | None = None,
+    renderer: AgentRenderer | None = None,
+) -> dict[str, Any]:
     """Callbacks whose auto-approve state is read live from ``yolo_getter()``.
 
     Used by the unified REPL where ``/yolo`` toggles approval mid-session, so we
     cannot bake the flag in at engine-construction time the way the dedicated
     ``trinaxai agent`` subcommand does.
     """
-
-    def on_tool_start(tool: Tool, args: dict[str, Any]) -> None:
-        marker = "[!]" if tool.dangerous else "[*]"
-        ui.print(f"{marker} {tool.name}({_format_args(args)})")
-
-    def on_tool_result(tool: Tool, result: str) -> None:
-        first = result.splitlines()[0] if result else ""
-        ui.print(f"    {first[:160]}")
+    policy = policy or ApprovalPolicy()
+    renderer = renderer or AgentRenderer(ui, policy)
+    callbacks = renderer.callbacks()
+    ask = renderer.on_confirm
 
     def on_confirm(tool: Tool, args: dict[str, Any]) -> bool:
         if yolo_getter():
             return True
-        _preview_dangerous(ui, tool, args)
-        hint = _DANGER_HINT.get(tool.name, "will run a side-effecting action")
-        return ui.confirm(f"Allow {tool.name}? ({hint})", default=False)
+        if policy.yolo:  # the toggle was switched off: fall back to asking
+            policy.mode = "default"
+        return ask(tool, args)
 
-    def on_token(text: str) -> None:
-        ui.print(text, end="")
-
-    return {
-        "on_tool_start": on_tool_start,
-        "on_tool_result": on_tool_result,
-        # Always route through on_confirm; it consults yolo_getter() each call.
-        "on_confirm": on_confirm,
-        "on_token": on_token,
-    }
+    # Always route through on_confirm; it consults yolo_getter() each call.
+    callbacks["on_confirm"] = on_confirm
+    return callbacks
 
 
 def build_agent_engine(
@@ -280,11 +264,15 @@ def build_agent_engine(
     config: Any = None,
     callbacks: dict[str, Any] | None = None,
     tools: tuple[Tool, ...] | None = None,
+    renderer: AgentRenderer | None = None,
+    policy: ApprovalPolicy | None = None,
 ) -> AgentEngine:
     """Construct an :class:`AgentEngine` for the REPL or the subcommand.
 
     ``callbacks`` lets the caller supply dynamic (live-yolo) callbacks; when
-    omitted, static confirming callbacks are used.
+    omitted they come from ``renderer`` (or a fresh confirming one). The engine
+    also gets the ``todo_write`` checklist tool and any ``TRINAXAI.md`` /
+    ``AGENTS.md`` / ``CLAUDE.md`` guidance found in the workspace.
     """
     root = Path(workspace or ".").expanduser().resolve()
     if not root.is_dir():
@@ -292,17 +280,35 @@ def build_agent_engine(
     ollama_url = _system.env_value("OLLAMA_BASE_URL") or "http://localhost:11434"
     resolved_model = model or _resolve_model(SimpleNamespace(model=model))
     resolved_ctx = num_ctx if num_ctx is not None else _resolve_num_ctx(config)
-    cbs = callbacks if callbacks is not None else _make_callbacks(ui, False)
-    return AgentEngine(
+    todos = TodoStore()
+    if renderer is not None:
+        renderer.workspace_root = root
+        renderer.todos = todos
+    if callbacks is not None:
+        cbs = callbacks
+    elif renderer is not None:
+        cbs = renderer.callbacks()
+    else:
+        cbs = _make_callbacks(ui, False)
+    instructions, project_files = load_project_instructions(root)
+    base_tools = tools if tools is not None else DEFAULT_TOOLS
+    engine = AgentEngine(
         model=resolved_model,
         verifier_model=_resolve_verifier_model(),
         workspace_root=root,
         ollama_url=ollama_url,
         max_steps=max_steps,
         num_ctx=resolved_ctx,
-        tools=tools if tools is not None else DEFAULT_TOOLS,
+        tools=(*base_tools, build_todo_tool(todos)),
+        system_prompt=default_system_prompt(root) + TODO_PROMPT + instructions,
         **cbs,
     )
+    # Plain attributes: the CLI reads them for /status, /todos and Shift+Tab.
+    engine.todos = todos
+    engine.project_files = project_files
+    engine.renderer = renderer
+    engine.policy = policy
+    return engine
 
 
 def _resolve_num_ctx(config: Any) -> int:
@@ -320,35 +326,82 @@ def _resolve_num_ctx(config: Any) -> int:
     return max(8192, min(configured, 16384))
 
 
+def _task_from_args(args: Any) -> str:
+    """Non-interactive task: ``--prompt``, positional words, then piped stdin."""
+    prompt = getattr(args, "prompt", None)
+    if prompt:
+        return str(prompt)
+    words = getattr(args, "task", None)
+    if words:
+        return " ".join(words)
+    if getattr(args, "read_stdin", False):
+        try:
+            return sys.stdin.read(1_048_577)[:1_048_576].strip()
+        except (OSError, ValueError):
+            return ""
+    return ""
+
+
 def _build_engine(args: Any, ui: Any, yolo: bool, config: Any = None) -> AgentEngine:
     invocation_cwd = Path(getattr(args, "invocation_cwd", None) or ".").expanduser().resolve()
     requested = Path(getattr(args, "workspace", None) or ".").expanduser()
     workspace = (requested if requested.is_absolute() else invocation_cwd / requested).resolve()
     if not workspace.is_dir():
         raise ValueError(f"workspace does not exist or is not a directory: {workspace}")
-    ollama_url = _system.env_value("OLLAMA_BASE_URL") or "http://localhost:11434"
     max_steps = int(getattr(args, "max_steps", None) or 25)
-    callbacks = _make_callbacks(ui, yolo)
-    return AgentEngine(
-        model=_resolve_model(args, config, getattr(args, "prompt", None) or ""),
-        verifier_model=_resolve_verifier_model(),
+    mode = normalize_mode(getattr(args, "permission_mode", None), yolo=yolo)
+    policy = ApprovalPolicy(mode=mode)
+    one_shot = bool(_task_from_args_peek(args))
+    output_format = str(getattr(args, "output_format", "text") or "text")
+    # A task run from a script prints only the answer; progress chatter would
+    # corrupt pipes and JSON consumers.
+    quiet = output_format == "json" or (one_shot and not sys.stdout.isatty())
+    renderer = AgentRenderer(
+        ui,
+        policy,
         workspace_root=workspace,
-        ollama_url=ollama_url,
+        quiet=quiet,
+        interactive=sys.stdin.isatty() and output_format != "json",
+    )
+    return build_agent_engine(
+        ui,
+        workspace=str(workspace),
+        model=_resolve_model(args, config, getattr(args, "prompt", None) or ""),
         max_steps=max_steps,
         num_ctx=_resolve_num_ctx(config),
-        **callbacks,
+        config=config,
+        callbacks=renderer.callbacks() if not policy.yolo else _make_callbacks(ui, True, policy, renderer),
+        renderer=renderer,
+        policy=policy,
     )
 
 
-def _run_task(engine: AgentEngine, ui: Any, messages: list[dict[str, Any]], task: str, session: Session) -> None:
-    messages.append({"role": "user", "content": task})
-    session.append("user", task)
-    ui.print("")
-    answer = engine.run(messages)
-    ui.print("")
-    session.append("assistant", answer)
-    if getattr(engine, "completion_status", "complete") == "degraded":
-        ui.warn("Agent response is degraded: the model request failed, so the displayed answer may be incomplete.")
+def _task_from_args_peek(args: Any) -> bool:
+    """True when the invocation carries a task (without consuming stdin)."""
+    return bool(getattr(args, "prompt", None) or getattr(args, "task", None) or getattr(args, "read_stdin", False))
+
+
+def _run_task(engine: AgentEngine, ui: Any, messages: list[dict[str, Any]], task: str, session: Session) -> str:
+    """Run one turn with Claude-Code-style rollback when interrupted."""
+    from trinaxai_cli.commands.agent_repl import run_turn
+
+    return run_turn(engine, ui, messages, task, session)
+
+
+def _load_resume(args: Any) -> tuple[str | None, list[dict[str, Any]]]:
+    """Return ``(session_name, messages)`` for ``--resume`` / ``--continue``."""
+    name = getattr(args, "resume", None)
+    if not name and getattr(args, "continue_last", False):
+        recent = Session.list_recent("agent-", limit=1)
+        name = recent[0]["name"] if recent else None
+    if not name:
+        return None, []
+    history = [
+        {"role": record["role"], "content": str(record.get("content") or "")}
+        for record in Session.load(name)
+        if record.get("role") in {"user", "assistant"} and record.get("content")
+    ]
+    return name, history
 
 
 def run(args: Any, client: Any, ui: Any, config: Any) -> int:
@@ -359,72 +412,60 @@ def run(args: Any, client: Any, ui: Any, config: Any) -> int:
         ui.failure("Agent setup", exc)
         return 1
 
-    session_name = getattr(args, "session", None) or _new_session_name()
-    messages: list[dict[str, Any]] = []
+    resumed_name, messages = _load_resume(args)
+    session_name = getattr(args, "session", None) or resumed_name or _new_session_name()
+    task = _task_from_args(args)
 
     with Session(session_name) as session:
-        prompt = getattr(args, "prompt", None)
-        if prompt:
-            try:
-                _run_task(engine, ui, messages, prompt, session)
-            except Exception as exc:  # noqa: BLE001
-                ui.failure("Agent task", exc)
-                return 1
-            return 0
+        if task:
+            return _run_one_shot(engine, ui, messages, task, session, session_name, args)
+        from trinaxai_cli.commands.agent_repl import run_repl
 
-        ui.clear()
-        ui.set_title("TrinaxAI Agent")
-        ui.banner()
-        is_es = getattr(ui, "language", "en") == "es"
-        ui.panel(
-            "\n".join(
-                [
-                    "Agente de TrinaxAI - agente de código local-first."
-                    if is_es
-                    else "TrinaxAI Agent - local-first coding agent.",
-                    "",
-                    f"Workspace: {engine.workspace_root}",
-                    f"Modelo: {engine.model}" + ("  (yolo: aprobación automática)" if yolo else "")
-                    if is_es
-                    else f"Model: {engine.model}" + ("  (yolo: auto-approve)" if yolo else ""),
-                    "",
-                    "Describe una tarea y el agente leerá, escribirá y ejecutará código para resolverla."
-                    if is_es
-                    else "Describe a task and the agent will read, write and run code to do it.",
-                    "Las acciones peligrosas piden confirmación salvo que uses --yolo."
-                    if is_es
-                    else "Dangerous actions ask for confirmation unless you passed --yolo.",
-                    "",
-                    "Comandos:  /exit  salir   |   /clear  borrar conversación"
-                    if is_es
-                    else "Commands:  /exit  quit   |   /clear  reset conversation",
-                ]
-            ),
-            title="Agente de TrinaxAI" if is_es else "TrinaxAI Agent",
+        return run_repl(args, client, ui, config, engine, session, session_name, messages, resumed=bool(resumed_name))
+
+
+def _run_one_shot(
+    engine: Any,
+    ui: Any,
+    messages: list[dict[str, Any]],
+    task: str,
+    session: Session,
+    session_name: str,
+    args: Any,
+) -> int:
+    started = time.monotonic()
+    usage_before = dict(getattr(engine, "usage", {}) or {})
+    try:
+        answer = _run_task(engine, ui, messages, task, session)
+    except KeyboardInterrupt:
+        ui.warn("\ninterrupted.")
+        return 130
+    except Exception as exc:  # noqa: BLE001
+        ui.failure("Agent task", exc)
+        return 1
+    degraded = getattr(engine, "completion_status", "complete") == "degraded"
+    renderer = getattr(engine, "renderer", None)
+    if getattr(args, "output_format", "text") == "json":
+        usage = dict(getattr(engine, "usage", {}) or {})
+        ui.say(
+            json.dumps(
+                {
+                    "result": answer,
+                    "status": "degraded" if degraded else "complete",
+                    "session": session_name,
+                    "model": getattr(engine, "model", ""),
+                    "tool_calls": getattr(renderer, "tool_calls", 0),
+                    "duration_s": round(time.monotonic() - started, 2),
+                    "tokens": {
+                        "prompt": usage.get("prompt", 0) - usage_before.get("prompt", 0),
+                        "completion": usage.get("completion", 0) - usage_before.get("completion", 0),
+                    },
+                },
+                ensure_ascii=False,
+            )
         )
-        while True:
-            try:
-                task = ui.prompt("agent")
-            except (EOFError, KeyboardInterrupt):
-                ui.info("\nbye.")
-                return 0
-            if not task:
-                continue
-            lowered = task.strip().lower()
-            if lowered in {"/exit", "/quit", "exit", "quit"}:
-                ui.info("bye.")
-                return 0
-            if lowered == "/clear":
-                messages.clear()
-                ui.success("Conversation cleared.")
-                continue
-            try:
-                engine.model = _resolve_model(args, config, task)
-                _run_task(engine, ui, messages, task, session)
-            except KeyboardInterrupt:
-                ui.warn("\ninterrupted.")
-                continue
-            except Exception as exc:  # noqa: BLE001
-                ui.failure("Agent task", exc)
-                ui.info("Is TrinaxAI running? Start it with: trinaxai start")
-                continue
+    elif renderer is not None and renderer.quiet:
+        ui.say(answer)
+    if degraded:
+        ui.warn("Agent response is degraded: the model request failed, so the displayed answer may be incomplete.")
+    return 0

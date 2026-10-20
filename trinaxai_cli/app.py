@@ -135,7 +135,8 @@ def _build_parser(language: str | None = None) -> argparse.ArgumentParser:
         "agent",
         help="Agentic assistant: read, write and run code in a workspace.",
     )
-    agent_p.add_argument("--prompt", help="Run a single task and exit.")
+    agent_p.add_argument("task", nargs="*", help="Task to run non-interactively (or pipe it on stdin).")
+    agent_p.add_argument("-p", "--prompt", help="Run a single task and exit.")
     agent_p.add_argument("--workspace", help="Directory the agent operates in (default: current dir).")
     agent_p.add_argument("--model", help="Ollama model to use (default: the tool-calling coder model).")
     agent_p.add_argument("--session", help="Session name. A unique name is created when omitted.")
@@ -145,6 +146,28 @@ def _build_parser(language: str | None = None) -> argparse.ArgumentParser:
         action="store_true",
         help="Auto-approve every action without confirmation (dangerous).",
     )
+    agent_p.add_argument(
+        "--permission-mode",
+        dest="permission_mode",
+        choices=("default", "accept-edits", "plan", "yolo"),
+        default="default",
+        help="default asks before changes; accept-edits auto-approves file edits; plan blocks changes.",
+    )
+    agent_p.add_argument(
+        "--output-format",
+        dest="output_format",
+        choices=("text", "json"),
+        default="text",
+        help="With a task: print only the answer (text) or a JSON result object (json).",
+    )
+    agent_p.add_argument(
+        "-c",
+        "--continue",
+        dest="continue_last",
+        action="store_true",
+        help="Resume the most recent agent session.",
+    )
+    agent_p.add_argument("-r", "--resume", metavar="SESSION", help="Resume a named agent session.")
 
     idx_p = sub.add_parser("index", help="Index a folder into the local RAG store.")
     idx_p.add_argument("path", nargs="?", help="Folder to index, for example: trinaxai index .")
@@ -197,12 +220,22 @@ def _build_parser(language: str | None = None) -> argparse.ArgumentParser:
     pair_start.add_argument(
         "--scopes",
         default="chat,read_private",
-        help="Comma-separated scopes granted to the device.",
+        help=(
+            "Comma-separated permissions: chat, read_private, web, index, agent, modify. "
+            "index/agent/modify let that device change the host; system and agent auto-approve stay host-only."
+        ),
     )
     pair_start.add_argument("--ttl", type=int, default=300, help="Code lifetime in seconds (60-900).")
     pair_start.add_argument("--device-ttl-days", type=int, help="Optional device credential lifetime.")
     pair_start.add_argument("--pwa-url", help="PWA origin used in the displayed pairing link.")
     pair_sub.add_parser("list", help="List paired and revoked devices.")
+    pair_set = pair_sub.add_parser("set", help="Replace the permissions of one paired device.")
+    pair_set.add_argument("device_id", help="Device id shown by 'trinaxai pair list'.")
+    pair_set.add_argument(
+        "--scopes",
+        required=True,
+        help="Comma-separated permissions: chat, read_private, web, index, agent, modify.",
+    )
     pair_revoke = pair_sub.add_parser("revoke", help="Revoke one paired device.")
     pair_revoke.add_argument("device_id", help="Device id shown by 'trinaxai pair list'.")
     sub.add_parser("config", help="Show active CLI and environment configuration.")
@@ -335,6 +368,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     # Preserve where the person invoked TrinaxAI before config/imports or an
     # installation wrapper can change process context.
     args.invocation_cwd = invocation_cwd
+    # ``trinaxai agent`` accepts a piped task (``echo "fix it" | trinaxai agent``).
+    args.read_stdin = not sys.stdin.isatty()
 
     if args.install_root:
         os.environ["TRINAXAI_HOME"] = str(Path(args.install_root).expanduser())

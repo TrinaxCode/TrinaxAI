@@ -288,6 +288,9 @@ class TrinaxAPIClient:
     def list_paired_devices(self) -> list[dict[str, Any]]:
         return list(self._get("/v1/pairing/devices").get("devices") or [])
 
+    def set_paired_device_scopes(self, device_id: str, scopes: list[str]) -> dict[str, Any]:
+        return self._patch(f"/v1/pairing/devices/{device_id}", {"scopes": scopes}).get("device") or {}
+
     def revoke_paired_device(self, device_id: str) -> dict[str, Any]:
         return self._delete(f"/v1/pairing/devices/{device_id}").get("device") or {}
 

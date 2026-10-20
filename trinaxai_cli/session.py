@@ -110,6 +110,32 @@ class Session:
         return records
 
     @staticmethod
+    def list_recent(prefix: str = "", dir: Path | str | None = None, limit: int = 15) -> list[dict[str, Any]]:
+        """Most recent sessions first: ``name``, ``mtime``, first user ``preview``, ``turns``."""
+        directory = _resolve_dir(dir)
+        if not directory.is_dir():
+            return []
+        files = [f for f in directory.glob("*.jsonl") if f.stem.startswith(prefix)]
+        files.sort(key=lambda f: f.stat().st_mtime, reverse=True)
+        found: list[dict[str, Any]] = []
+        for path in files[:limit]:
+            preview, turns = "", 0
+            try:
+                with path.open("r", encoding="utf-8") as fh:
+                    for raw in fh:
+                        try:
+                            record = json.loads(raw)
+                        except json.JSONDecodeError:
+                            continue
+                        if record.get("role") == "user":
+                            turns += 1
+                            preview = preview or str(record.get("content") or "").strip()
+            except OSError:
+                continue
+            found.append({"name": path.stem, "mtime": path.stat().st_mtime, "preview": preview[:80], "turns": turns})
+        return found
+
+    @staticmethod
     def delete(name: str, dir: Path | str | None = None) -> bool:
         """Delete the named session file.  Returns ``True`` if removed."""
         path = _file_for(name, _resolve_dir(dir))

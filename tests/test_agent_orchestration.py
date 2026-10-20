@@ -6,6 +6,9 @@ from contextlib import contextmanager
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
+import pytest
+from fastapi import HTTPException
+
 from app.schemas import AgentRequest
 from app.services import agent_service, memory_service, research_service, web_search_service
 from trinaxai_cli.agent import Tool
@@ -256,3 +259,100 @@ def test_agent_inference_slot_uses_both_local_and_process_guards(monkeypatch) ->
         entered.append("body")
 
     assert entered == ["slot", "process", "body"]
+
+
+def _device_request(**query) -> SimpleNamespace:
+    return SimpleNamespace(
+        query_params=query,
+        state=SimpleNamespace(trinaxai_identity={"kind": "device", "id": "dev1", "scopes": ["agent"]}),
+    )
+
+
+@pytest.fixture
+def install_layout(monkeypatch, tmp_path):
+    """A projects root that also contains the TrinaxAI install, like a real host."""
+    projects = tmp_path / "projects"
+    install = projects / "ai-rag"
+    (install / "storage").mkdir(parents=True)
+    (install / ".env").write_text("TRINAXAI_ADMIN_TOKEN=secret", encoding="utf-8")
+    (install / "storage" / ".device_secret").write_text("ab" * 32, encoding="ascii")
+    other = projects / "client-site"
+    other.mkdir()
+    monkeypatch.setattr(agent_service.config, "BASE_DIR", str(install))
+    monkeypatch.setattr(agent_service.config, "PERSIST_DIR", str(install / "storage"))
+    monkeypatch.setattr(agent_service.config, "LOCAL_SOURCES_DIR", str(install / "local_sources"))
+    monkeypatch.setattr(
+        agent_service, "credential_files", lambda: (install / "storage" / "r.json", install / "storage" / ".s")
+    )
+    monkeypatch.setattr(agent_service, "proxy_secret_file", lambda: install / "storage" / ".proxy_secret")
+    monkeypatch.setattr(agent_service, "_configured_workspace_roots", lambda: (projects.resolve(), install.resolve()))
+    monkeypatch.setattr(agent_service, "_authorize_system", lambda _request: None)
+    return SimpleNamespace(projects=projects.resolve(), install=install.resolve(), other=other.resolve())
+
+
+def test_device_workspace_never_includes_trinaxai_own_files(install_layout) -> None:
+    confine = agent_service._confine_device_workspace
+    device = _device_request()
+    # An explicit request for the install, its storage, or a parent that contains it is refused.
+    for path in (install_layout.install, install_layout.install / "storage", install_layout.projects):
+        with pytest.raises(HTTPException) as denied:
+            confine(path, device, explicit=True)
+        assert denied.value.status_code == 403
+    # A sibling project is fine.
+    assert confine(install_layout.other, device, explicit=True) == install_layout.other
+    # Here every root holds the install, so there is no default to fall back to.
+    with pytest.raises(HTTPException):
+        confine(install_layout.install, device, explicit=False)
+    # The localhost operator is unaffected.
+    local = SimpleNamespace(state=SimpleNamespace(trinaxai_identity={"kind": "local"}))
+    assert confine(install_layout.install, local, explicit=True) == install_layout.install
+    assert confine(install_layout.install, SimpleNamespace(), explicit=True) == install_layout.install
+
+
+def test_device_default_workspace_is_replaced_by_a_root_that_is_safe(monkeypatch, install_layout) -> None:
+    monkeypatch.setattr(
+        agent_service, "_configured_workspace_roots", lambda: (install_layout.install, install_layout.other)
+    )
+    chosen = agent_service._confine_device_workspace(install_layout.install, _device_request(), explicit=False)
+    assert chosen == install_layout.other
+    monkeypatch.setattr(agent_service, "_configured_workspace_roots", lambda: (install_layout.install,))
+    with pytest.raises(HTTPException) as denied:
+        agent_service._confine_device_workspace(install_layout.install, _device_request(), explicit=False)
+    assert denied.value.status_code == 403
+
+
+def test_device_browse_hides_trinaxai_own_folders_and_refuses_to_enter_them(install_layout) -> None:
+    listing = asyncio.run(agent_service.agent_browse(_device_request(path=str(install_layout.projects))))
+    assert [entry["name"] for entry in listing["directories"]] == ["client-site"]
+
+    for inside in (install_layout.install, install_layout.install / "storage"):
+        with pytest.raises(HTTPException) as denied:
+            asyncio.run(agent_service.agent_browse(_device_request(path=str(inside))))
+        assert denied.value.status_code == 403
+
+    # No path given: the default would be the install, so a navigable root is offered instead.
+    default = asyncio.run(agent_service.agent_browse(_device_request()))
+    assert default["path"] == str(install_layout.projects)
+    assert default["home"] == str(install_layout.projects)
+
+    # The host still sees everything.
+    local = SimpleNamespace(
+        query_params={"path": str(install_layout.projects)},
+        state=SimpleNamespace(trinaxai_identity={"kind": "local"}),
+    )
+    names = [entry["name"] for entry in asyncio.run(agent_service.agent_browse(local))["directories"]]
+    assert names == ["ai-rag", "client-site"]
+
+
+def test_agent_endpoint_refuses_a_device_workspace_that_holds_credentials(monkeypatch, install_layout) -> None:
+    monkeypatch.setattr(agent_service, "_authorize_http_yolo", lambda *_args: None)
+    monkeypatch.setattr(agent_service, "enforce_rate_limit", lambda *_args, **_kwargs: None)
+    request = _device_request()
+    with pytest.raises(HTTPException) as denied:
+        asyncio.run(
+            agent_service.agent(
+                AgentRequest(messages=[{"role": "user", "content": "x"}], workspace=str(install_layout.install)),
+                request,
+            )
+        )
+    assert denied.value.status_code == 403

@@ -138,6 +138,9 @@ class AgentEngine:
     # Public, additive run outcome for callers that need to distinguish a
     # useful local fallback from a model-complete answer.
     completion_status: str = field(init=False, default="complete")
+    # Cumulative Ollama token accounting (``prompt_eval_count`` / ``eval_count``)
+    # for the engine's lifetime, so CLIs can show usage without parsing streams.
+    usage: dict[str, int] = field(init=False, default_factory=lambda: {"prompt": 0, "completion": 0, "requests": 0})
 
     def __post_init__(self) -> None:
         self.workspace_root = Path(self.workspace_root).expanduser().resolve()
@@ -158,6 +161,66 @@ class AgentEngine:
         return max(4000, int(self.num_ctx * 3.5 * 0.6))
 
     # ------------------------------------------------------------------ public
+    def _record_usage(self, data: dict[str, Any]) -> None:
+        """Accumulate token counts from a final Ollama chunk / response."""
+        try:
+            self.usage["prompt"] += int(data.get("prompt_eval_count") or 0)
+            self.usage["completion"] += int(data.get("eval_count") or 0)
+            self.usage["requests"] += 1
+        except (TypeError, ValueError):
+            pass
+
+    def estimate_context_tokens(self, messages: list[dict[str, Any]]) -> int:
+        """Rough token footprint (~3.5 chars/token) of what the next request carries."""
+        chars = len(self.system_prompt or "") + sum(_message_chars(m) for m in self._fit_to_budget(messages))
+        return int(chars / 3.5)
+
+    def compact(self, messages: list[dict[str, Any]]) -> str | None:
+        """Summarise ``messages`` with the model and replace them in place.
+
+        Returns the summary, or ``None`` when there is nothing to compact or the
+        model request failed (the history is then left untouched).
+        """
+        if len(messages) < 2:
+            return None
+        transcript = _code_review_evidence(self._fit_to_budget(messages))
+        payload = {
+            "model": self.model,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": (
+                        "Summarise a coding-agent conversation so work can continue from the summary alone. "
+                        "Keep: the user's goals, decisions, files read or changed (exact paths), commands run "
+                        "and their outcomes, open problems and next steps. Be concise; output only the summary."
+                    ),
+                },
+                {"role": "user", "content": transcript},
+            ],
+            "stream": False,
+            "think": False,
+            "keep_alive": self.keep_alive,
+            "options": {"num_ctx": self.num_ctx, "temperature": 0.0},
+        }
+        try:
+            with self._inference_scope():
+                data = self._post_with_cancellation(f"{self.ollama_url.rstrip('/')}/api/chat", payload)
+        except AgentCancelled:
+            raise
+        except Exception:  # noqa: BLE001 - compaction is best-effort
+            return None
+        if data.get("error"):
+            return None
+        self._record_usage(data)
+        summary = str((data.get("message") or {}).get("content") or "").strip()
+        if not summary:
+            return None
+        messages[:] = [
+            {"role": "user", "content": f"Summary of the conversation so far:\n\n{summary}"},
+            {"role": "assistant", "content": "Understood. I will continue from this summary."},
+        ]
+        return summary
+
     def run(self, messages: list[dict[str, Any]]) -> str:
         """Run the tool-calling loop until the model produces a final answer.
 
@@ -172,7 +235,16 @@ class AgentEngine:
         self.completion_status = "complete"
         final_answer = ""
         degraded_results: list[str] = []
+        # Subset worth appending to the final answer. A failed exploratory read
+        # (wrong path, missing file) is already visible in the tool transcript
+        # and fed back to the model; repeating it under the answer is noise.
+        reported_results: list[str] = []
         nudged = False
+        claim_nudged = False
+        mutated = False
+        wants_change = _requests_change(_latest_user_text(messages)) and any(
+            name in self._tool_map for name in _MUTATING_TOOLS
+        )
         # Code reviews get a second, code-specialized evidence audit. Suppress
         # the planner's draft so the UI never flashes unverified claims before
         # the corrected answer replaces them.
@@ -227,8 +299,24 @@ class AgentEngine:
                 used_tools = any(m.get("role") == "tool" for m in messages)
                 streamed = bool(reply.get("_streamed"))
                 # A final answer with real substance ends the loop.
+                # Small models often read a file, then *describe* the fix they never
+                # made. Force one real attempt instead of reporting a phantom edit.
+                if wants_change and not mutated and not claim_nudged and used_tools and _claims_change(content):
+                    claim_nudged = True
+                    messages.append({"role": "assistant", "content": content})
+                    messages.append(
+                        {
+                            "role": "user",
+                            "content": (
+                                "No file has been modified yet: you only read files. Make the change now by "
+                                "calling edit_file or write_file, then report what you actually changed. If "
+                                "the change is not possible, say so plainly instead."
+                            ),
+                        }
+                    )
+                    continue
                 if _is_final_answer(content, used_tools):
-                    content = _append_degradation_notes(content, degraded_results)
+                    content = _append_degradation_notes(content, reported_results)
                     if review_mode and used_tools:
                         content = self._verify_code_answer(messages, content)
                     # Skip re-emitting when _chat already streamed the tokens.
@@ -251,7 +339,7 @@ class AgentEngine:
                     )
                     continue
                 # Already nudged once — stop rather than loop on junk.
-                fallback = _append_degradation_notes(final_answer or content or "(no answer)", degraded_results)
+                fallback = _append_degradation_notes(final_answer or content or "(no answer)", reported_results)
                 if self.on_token and fallback != content:
                     self.on_token(fallback)
                 messages.append({"role": "assistant", "content": fallback})
@@ -265,8 +353,16 @@ class AgentEngine:
                 result = self._execute_call(call)
                 name, args = _parse_tool_call(call)
                 tool = self._tool_map.get(name)
-                if is_degraded_tool_result(result) and result not in degraded_results:
+                # A refusal by the user is a decision, not an outage: do not
+                # bolt a "what happened / still works" block onto the answer.
+                if (
+                    is_degraded_tool_result(result)
+                    and result not in degraded_results
+                    and "was denied by user" not in result
+                ):
                     degraded_results.append(result)
+                    if name not in _EXPLORATION_TOOLS:
+                        reported_results.append(result)
                 messages.append(
                     {
                         "role": "tool",
@@ -300,10 +396,10 @@ class AgentEngine:
             if content:
                 final_answer = content
         # Ran out of steps.
-        note = _append_degradation_notes(f"(stopped after {self.max_steps} steps without finishing)", degraded_results)
+        note = _append_degradation_notes(f"(stopped after {self.max_steps} steps without finishing)", reported_results)
         if self.on_token:
             self.on_token("\n" + note)
-        final_content = _append_degradation_notes(final_answer, degraded_results) if final_answer else note
+        final_content = _append_degradation_notes(final_answer, reported_results) if final_answer else note
         messages.append({"role": "assistant", "content": final_content})
         return final_content
 
@@ -496,6 +592,7 @@ class AgentEngine:
                 data = self._post_with_cancellation(f"{self.ollama_url.rstrip('/')}/api/chat", payload)
                 if data.get("error"):
                     raise RuntimeError(str(data["error"]))
+                self._record_usage(data)
                 return data.get("message") or {}
             return self._chat_stream(f"{self.ollama_url.rstrip('/')}/api/chat", payload)
 
@@ -557,6 +654,7 @@ class AgentEngine:
                         tool_calls.extend(calls)
                     if chunk.get("done"):
                         saw_done = True
+                        self._record_usage(chunk)
                     # Stream prose live, but only while no tool call has appeared
                     # in this reply — once it's a tool turn, suppress trailing text.
                     if piece:
@@ -677,6 +775,34 @@ def _message_chars(message: dict[str, Any]) -> int:
         total += len(str(function.get("name") or ""))
         total += len(str(function.get("arguments") or ""))
     return total
+
+
+_MUTATING_TOOLS = frozenset({"write_file", "edit_file", "run_command"})
+# Workspace exploration: a miss here is routine and visible in the transcript.
+_EXPLORATION_TOOLS = frozenset({"read_file", "list_dir", "glob", "grep"})
+
+_CHANGE_REQUEST_RE = re.compile(
+    r"\b(?:fix|change|edit|modify|update|replace|rename|refactor|implement|patch|correct|"
+    r"arregla\w*|corrige\w*|cambia\w*|edita\w*|modifica\w*|actualiza\w*|reemplaza\w*|renombra\w*|"
+    r"implementa\w*|soluciona\w*|repara\w*)\b",
+    re.IGNORECASE,
+)
+_CHANGE_CLAIM_RE = re.compile(
+    r"\b(?:i (?:have )?(?:changed|fixed|updated|modified|edited|replaced|renamed|applied)|"
+    r"(?:change|fix|edit|update)s? (?:made|applied)|(?:was|has been|is now|now) (?:fixed|changed|updated)|"
+    r"(?:he|ya) (?:cambiado|corregido|actualizado|modificado|editado|arreglado)|"
+    r"cambi[eé]|correg[ií]|actualic[eé]|modifiqu[eé]|arregl[eé]|se (?:cambi[oó]|corrigi[oó]|actualiz[oó]))\b"
+    r"|\*\*(?:change|changes|cambios?) (?:made|applied|realizados?)\*\*",
+    re.IGNORECASE,
+)
+
+
+def _requests_change(user_text: str) -> bool:
+    return bool(_CHANGE_REQUEST_RE.search(user_text or ""))
+
+
+def _claims_change(answer: str) -> bool:
+    return bool(_CHANGE_CLAIM_RE.search(answer or ""))
 
 
 _CODE_REVIEW_TERMS = (

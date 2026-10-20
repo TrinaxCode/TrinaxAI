@@ -40,7 +40,7 @@ def test_agent_single_task_and_interactive_recovery(monkeypatch) -> None:
     assert agent.run(SimpleNamespace(prompt="single", session="test"), None, ui, object()) == 0
     assert _Session.entries == [("user", "single"), ("assistant", "single answer")]
 
-    ui.prompt.side_effect = ["", "/clear", "interrupted", "works", "/exit"]
+    ui.agent_prompt.side_effect = ["", "/clear", "interrupted", "works", "/exit"]
     assert agent.run(SimpleNamespace(prompt=None, session="test"), None, ui, object()) == 0
     ui.success.assert_called_with("Conversation cleared.")
     ui.warn.assert_called_with("\ninterrupted.")
@@ -60,7 +60,7 @@ def test_agent_setup_task_failure_and_eof_are_safe(monkeypatch) -> None:
     monkeypatch.setattr(agent, "Session", _Session)
     assert agent.run(SimpleNamespace(prompt="task", session="test"), None, ui, object()) == 1
 
-    ui.prompt.side_effect = EOFError
+    ui.agent_prompt.side_effect = EOFError
     assert agent.run(SimpleNamespace(prompt=None, session="test"), None, ui, object()) == 0
 
 

@@ -13,8 +13,12 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import sys
+import threading
+import time
 from contextlib import contextmanager
+from pathlib import Path
 from typing import Any, Callable, Iterator, Sequence
 
 from trinaxai_cli.i18n import resolve_lang, text, translate
@@ -23,7 +27,8 @@ try:
     from prompt_toolkit import PromptSession
     from prompt_toolkit.completion import Completer, Completion
     from prompt_toolkit.formatted_text import HTML
-    from prompt_toolkit.history import InMemoryHistory
+    from prompt_toolkit.history import FileHistory, InMemoryHistory
+    from prompt_toolkit.key_binding import KeyBindings
 
     _PROMPT_TOOLKIT = True
 except ImportError:  # pragma: no cover - fallback for minimal installations
@@ -32,6 +37,8 @@ except ImportError:  # pragma: no cover - fallback for minimal installations
     Completion = None  # type: ignore[assignment,misc]
     HTML = None  # type: ignore[assignment,misc]
     InMemoryHistory = None  # type: ignore[assignment,misc]
+    FileHistory = None  # type: ignore[assignment,misc]
+    KeyBindings = None  # type: ignore[assignment,misc]
     _PROMPT_TOOLKIT = False
 
 
@@ -49,6 +56,53 @@ class SlashCommandCompleter(Completer):
         for name, summary in self.commands:
             if name.casefold().startswith(needle):
                 yield Completion(name, start_position=-len(before), display_meta=summary)
+
+
+_AT_SKIP_DIRS = {
+    ".git",
+    "node_modules",
+    "__pycache__",
+    ".venv",
+    "venv",
+    ".mypy_cache",
+    ".pytest_cache",
+    "dist",
+    "build",
+}
+
+
+class AtFileCompleter(Completer):
+    """Complete ``@path`` mentions with entries from inside the workspace."""
+
+    def __init__(self, workspace: Any = ".", limit: int = 40) -> None:
+        self.workspace = workspace
+        self.limit = limit
+
+    def get_completions(self, document: Any, complete_event: Any) -> Iterator[Any]:
+        match = re.search(r"(?:^|\s)@([^\s]*)$", document.text_before_cursor)
+        if not match:
+            return
+        fragment = match.group(1)
+        root = Path(self.workspace).expanduser().resolve()
+        directory_part, _, prefix = fragment.rpartition("/")
+        try:
+            directory = (root / directory_part).resolve() if directory_part else root
+            if directory != root and root not in directory.parents:
+                return
+            entries = sorted(directory.iterdir(), key=lambda p: (p.is_file(), p.name.lower()))
+        except OSError:
+            return
+        shown = 0
+        for entry in entries:
+            if entry.name in _AT_SKIP_DIRS or not entry.name.casefold().startswith(prefix.casefold()):
+                continue
+            if entry.name.startswith(".") and not prefix.startswith("."):
+                continue
+            completed = (f"{directory_part}/" if directory_part else "") + entry.name + ("/" if entry.is_dir() else "")
+            yield Completion(completed, start_position=-len(fragment), display_meta="dir" if entry.is_dir() else "")
+            shown += 1
+            if shown >= self.limit:
+                return
 
 
 # ----------------------------------------------------------------- rich import
@@ -97,6 +151,11 @@ def _want_color(no_color: bool) -> bool:
     return not os.environ.get("TRINAXAI_NO_COLOR")
 
 
+def _default_history_path() -> Path:
+    base = os.environ.get("XDG_DATA_HOME") or os.path.join("~", ".local", "share")
+    return Path(base).expanduser() / "trinaxai" / "agent_history"
+
+
 def get_console(no_color: bool = False, language: str | None = None) -> "Console":
     """Return a console honoring color settings and the selected locale."""
     return Console(no_color=no_color, language=language)
@@ -133,6 +192,34 @@ class Console:
             self._rich_console.print(msg, end=end)
         else:
             print(msg, end=end)
+
+    def say(self, msg: Any = "", *, style: str | None = None, end: str = "\n") -> None:
+        """Print model/tool/user text verbatim: no rich markup, no auto-highlight.
+
+        ``print`` interprets ``[bold]``-style markup, which silently eats
+        bracketed text in streamed answers and file contents. Anything that is
+        not authored by the CLI itself must go through this method.
+        """
+        if self._rich_console is not None:
+            self._rich_console.print(
+                msg,
+                style=style if (style and self._color_enabled) else None,
+                end=end,
+                markup=False,
+                highlight=False,
+                soft_wrap=True,
+            )
+        else:
+            print(msg, end=end)
+        if end != "\n":
+            try:
+                sys.stdout.flush()
+            except (OSError, ValueError):  # pragma: no cover - closed pipe
+                pass
+
+    def stream(self, chunk: str) -> None:
+        """Append a streamed fragment without a trailing newline."""
+        self.say(chunk, end="")
 
     def info(self, msg: Any) -> None:
         self._styled(msg, "info")
@@ -225,6 +312,80 @@ class Console:
         if not raw:
             return default
         return raw in {"y", "yes", "s", "si"}
+
+    def choose(
+        self,
+        question: str,
+        options: Sequence[tuple[str, str]],
+        default: int = 0,
+    ) -> str | None:
+        """Numbered single-choice prompt; returns the chosen value or ``None``.
+
+        ``None`` means the user cancelled (``q``/``Esc``-style input, EOF or
+        Ctrl-C), so callers can treat it as a refusal. Typing a number or the
+        first letters of a label both work.
+        """
+        if not options:
+            return None
+        default = default if 0 <= default < len(options) else 0
+        self.say(translate(question, self.language), style="bold")
+        for index, (_, label) in enumerate(options, start=1):
+            marker = "›" if index - 1 == default else " "
+            self.say(f" {marker} {index}. {translate(label, self.language)}")
+        hint = text("choose_hint", self.language, default=default + 1)
+        try:
+            raw = input(f"{hint} ").strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            return None
+        if not raw:
+            return options[default][0]
+        if raw in {"q", "esc", "cancel", "c"}:
+            return None
+        if raw.isdigit() and 1 <= int(raw) <= len(options):
+            return options[int(raw) - 1][0]
+        for value, label in options:
+            if raw == value.lower() or label.lower().startswith(raw):
+                return value
+        return None
+
+    class _LiveStatus:
+        """Transient ``Working… (12s)`` line that must be stopped before printing."""
+
+        def __init__(self, console: "Console", label: str) -> None:
+            self._status: Any = None
+            self._stop = threading.Event()
+            self._thread: threading.Thread | None = None
+            rich_console = console._rich_console
+            if rich_console is None or not console._color_enabled or not sys.stdout.isatty():
+                return
+            started = time.monotonic()
+            hint = text("status_interrupt_hint", console.language)
+            self._status = rich_console.status(f"{label} (0s · {hint})", spinner="dots")
+            self._status.start()
+
+            def tick() -> None:
+                while not self._stop.wait(1.0):
+                    elapsed = int(time.monotonic() - started)
+                    try:
+                        self._status.update(f"{label} ({elapsed}s · {hint})")
+                    except Exception:  # pragma: no cover - display only
+                        return
+
+            self._thread = threading.Thread(target=tick, daemon=True)
+            self._thread.start()
+
+        def stop(self) -> None:
+            self._stop.set()
+            status, self._status = self._status, None
+            if status is not None:
+                try:
+                    status.stop()
+                except Exception:  # pragma: no cover - display only
+                    pass
+
+    def live_status(self, label: str = "Working…") -> "Console._LiveStatus":
+        """Start an animated status line; call ``.stop()`` before any output."""
+        return Console._LiveStatus(self, translate(label, self.language))
 
     # --------------------------------------------------------------- spinner
     @contextmanager
@@ -365,6 +526,97 @@ class Console:
                 pass
         print("")
         return input(f"● {you}{hint}  ").strip()
+
+    def agent_prompt(
+        self,
+        *,
+        slash_commands: Sequence[tuple[str, str]] = (),
+        workspace: Any = ".",
+        toolbar: Callable[[], str] | None = None,
+        on_cycle_mode: Callable[[], None] | None = None,
+        history_path: Path | str | None = None,
+        label: str = "agent",
+    ) -> str:
+        """Prompt for one agent task.
+
+        Enter submits, ``Alt+Enter`` (or a trailing ``\\``) inserts a newline,
+        ``Shift+Tab`` cycles the permission mode, ``/`` completes slash commands
+        and ``@`` completes workspace paths. History persists across sessions.
+        Raises ``EOFError``/``KeyboardInterrupt`` so callers can exit cleanly.
+        """
+        self._agent_ctx = {"toolbar": toolbar, "on_cycle": on_cycle_mode, "commands": tuple(slash_commands)}
+        self._agent_workspace = workspace
+        if _PROMPT_TOOLKIT and sys.stdin.isatty() and sys.stdout.isatty():
+            try:
+                if getattr(self, "_agent_session", None) is None:
+                    self._agent_session = self._build_agent_session(history_path)
+                if self._color_enabled:
+                    message = HTML(f"<b><ansigreen>● {label} ›</ansigreen></b> ")
+                else:
+                    message = f"● {label} › "
+                return self._agent_session.prompt(message).strip()
+            except (EOFError, KeyboardInterrupt):
+                raise
+            except Exception:
+                logging.getLogger("trinaxai_cli").debug("agent prompt fell back to plain input", exc_info=True)
+        return self.prompt(label)
+
+    def _build_agent_session(self, history_path: Path | str | None) -> Any:
+        from prompt_toolkit.completion import merge_completers
+
+        history: Any
+        try:
+            path = Path(history_path) if history_path else _default_history_path()
+            path.parent.mkdir(parents=True, exist_ok=True)
+            history = FileHistory(str(path))
+        except OSError:
+            history = InMemoryHistory()
+
+        class _Dynamic(Completer):
+            def __init__(inner, console: "Console") -> None:  # noqa: N805
+                inner.console = console
+
+            def get_completions(inner, document: Any, complete_event: Any) -> Iterator[Any]:  # noqa: N805
+                ctx = inner.console._agent_ctx
+                merged = merge_completers(
+                    [SlashCommandCompleter(ctx["commands"]), AtFileCompleter(inner.console._agent_workspace)]
+                )
+                yield from merged.get_completions(document, complete_event)
+
+        bindings = KeyBindings()
+
+        @bindings.add("escape", "enter")
+        def _newline(event: Any) -> None:
+            event.current_buffer.insert_text("\n")
+
+        @bindings.add("enter")
+        def _submit(event: Any) -> None:
+            buffer = event.current_buffer
+            if buffer.text.endswith("\\"):
+                buffer.delete_before_cursor(1)
+                buffer.insert_text("\n")
+            else:
+                buffer.validate_and_handle()
+
+        @bindings.add("s-tab")
+        def _cycle(event: Any) -> None:
+            callback = self._agent_ctx.get("on_cycle")
+            if callable(callback):
+                callback()
+            event.app.invalidate()
+
+        def _toolbar() -> str:
+            provider = self._agent_ctx.get("toolbar")
+            return provider() if callable(provider) else ""
+
+        return PromptSession(
+            history=history,
+            completer=_Dynamic(self),
+            complete_while_typing=True,
+            key_bindings=bindings,
+            bottom_toolbar=_toolbar,
+            reserve_space_for_menu=8,
+        )
 
     def assistant_label(self, name: str = "TrinaxAI") -> None:
         """Print the blue ``● TrinaxAI`` speaker label on its own line.

@@ -1270,7 +1270,10 @@ def test_agent_command_tools_callbacks_and_repl_edges(monkeypatch: pytest.Monkey
     tool = agent_command.Tool("write_file", "write", {}, lambda *_args, **_kwargs: "ok", True)
     dynamic["on_tool_start"](tool, {"path": "a"})
     dynamic["on_tool_result"](tool, "result")
-    assert dynamic["on_confirm"](tool, {"path": "a"}) is callback_ui.confirm.return_value
+    callback_ui.choose.return_value = "yes"
+    assert dynamic["on_confirm"](tool, {"path": "a"}) is True
+    callback_ui.choose.return_value = None  # cancelled prompt is a refusal
+    assert dynamic["on_confirm"](tool, {"path": "a"}) is False
     dynamic["on_token"]("token")
     assert agent_command.make_dynamic_callbacks(callback_ui, lambda: True)["on_confirm"](tool, {}) is True
 
@@ -1311,11 +1314,11 @@ def test_agent_command_tools_callbacks_and_repl_edges(monkeypatch: pytest.Monkey
     )
     monkeypatch.setattr(agent_command, "Session", SessionStub)
     monkeypatch.setattr(agent_command, "_build_engine", lambda *_args: repl_engine)
-    callback_ui.prompt.side_effect = ["do it", "/exit"]
+    callback_ui.agent_prompt.side_effect = ["do it", "/exit"]
     assert (
         agent_command.run(SimpleNamespace(prompt=None, session="agent-edge", yolo=False), None, callback_ui, None) == 0
     )
-    callback_ui.prompt.side_effect = [EOFError()]
+    callback_ui.agent_prompt.side_effect = [EOFError()]
     assert (
         agent_command.run(SimpleNamespace(prompt=None, session="agent-edge", yolo=False), None, callback_ui, None) == 0
     )

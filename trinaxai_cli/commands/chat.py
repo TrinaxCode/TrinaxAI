@@ -540,10 +540,14 @@ def _build_web_query(query: str, history: list[dict[str, str]]) -> tuple[str, st
 
 def _run_agent_turn(state: ChatState, client: Any, ui: Any, task: str, config: Any) -> str:
     """Run one agent turn, lazily building the engine on first use."""
+    from trinaxai_cli.agent_ui import AgentRenderer, ApprovalPolicy
     from trinaxai_cli.commands import agent as agent_cmd
+    from trinaxai_cli.commands.agent_repl import run_turn
 
     if state.agent_engine is None:
-        callbacks = agent_cmd.make_dynamic_callbacks(ui, lambda: state.yolo)
+        policy = ApprovalPolicy()
+        renderer = AgentRenderer(ui, policy)
+        callbacks = agent_cmd.make_dynamic_callbacks(ui, lambda: state.yolo, policy, renderer)
         state.agent_engine = agent_cmd.build_agent_engine(
             ui,
             workspace=state.workspace,
@@ -551,16 +555,15 @@ def _run_agent_turn(state: ChatState, client: Any, ui: Any, task: str, config: A
             config=config,
             callbacks=callbacks,
             tools=agent_cmd.build_api_tools(client, state.collections),
+            renderer=renderer,
+            policy=policy,
         )
         ui.info(
             f"Agent workspace: {state.agent_engine.workspace_root} | model: {state.agent_engine.model}"
             + ("  (yolo: auto-approve)" if state.yolo else "")
         )
-    state.agent_messages.append({"role": "user", "content": task})
-    ui.print("")
-    answer = state.agent_engine.run(state.agent_messages)
-    ui.print("")
-    return answer
+    # run_turn rolls the history back when the turn is interrupted or fails.
+    return run_turn(state.agent_engine, ui, state.agent_messages, task, None)
 
 
 def _handle_cd(user: str, state: ChatState, ui: Any) -> bool:
