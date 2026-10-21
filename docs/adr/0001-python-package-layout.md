@@ -66,7 +66,7 @@ are not rewritten by an upgrade:
    itself in `sys.modules` with the real module:
 
    ```python
-   sys.modules[__name__] = trinaxai.config      # module identity is preserved
+   sys.modules[__name__] = trinaxai.config  # module identity is preserved
    ```
 
    `import config`, `from config import X`, `monkeypatch.setattr(config, …)`,
