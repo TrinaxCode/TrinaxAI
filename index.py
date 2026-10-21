@@ -40,6 +40,12 @@ from trinaxai import config
 from trinaxai.core import (
     exclusive_process_lock,
 )
+from trinaxai.indexing.storage import (
+    new_storage_context,
+    publish_index_generation,
+    recover_interrupted_transaction,
+    storage_context_for_persist_dir,
+)
 from trinaxai_cli.i18n import resolve_lang
 from trinaxai_cli.i18n import text as _text
 from trinaxai_index_documents import (
@@ -110,12 +116,6 @@ from trinaxai_index_documents import (
 )
 from trinaxai_index_documents import (
     source_key as _documents_source_key,
-)
-from trinaxai_index_storage import (
-    new_storage_context,
-    publish_index_generation,
-    recover_interrupted_transaction,
-    storage_context_for_persist_dir,
 )
 
 MANIFEST_SCHEMA_VERSION = 2

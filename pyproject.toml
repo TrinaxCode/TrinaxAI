@@ -113,7 +113,7 @@ files = [
   "app/generation",
   "app/schemas",
   "trinaxai_agent",
-  "trinaxai_index_storage.py",
+  "trinaxai/indexing/storage.py",
   "index.py",
 ]
 follow_imports = "skip"

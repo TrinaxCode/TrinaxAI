@@ -10,7 +10,7 @@ from app.security.admin_auth import (
 from app.security.admin_auth import (
     authorize_system as _authorize_system,
 )
-from trinaxai_index_storage import (
+from trinaxai.indexing.storage import (
     SQLiteVectorStore,
     atomic_write_json,
     publish_index_generation,
