@@ -18,7 +18,7 @@ import threading
 import wave
 from typing import Any
 
-import config
+from trinaxai import config
 
 LOG = logging.getLogger("trinaxai.voice_service")
 

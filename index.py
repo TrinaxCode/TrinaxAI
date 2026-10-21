@@ -36,7 +36,7 @@ if sys.platform == "win32" and hasattr(sys.stdout, "buffer"):
 
     sys.stdout = codecs.getwriter("utf-8")(sys.stdout.buffer, "replace")  # type: ignore[assignment]
 
-import config
+from trinaxai import config
 from trinaxai.core import (
     exclusive_process_lock,
 )

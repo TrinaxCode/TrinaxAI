@@ -14,7 +14,6 @@ from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
 
-import config
 from app.security.admin_auth import require_scope
 from app.security.rate_limit import enforce_rate_limit
 from app.services.voice_service import (
@@ -24,6 +23,7 @@ from app.services.voice_service import (
     tts_available_backends,
     tts_preferred,
 )
+from trinaxai import config
 from trinaxai.core import _positive_int
 
 router = APIRouter(

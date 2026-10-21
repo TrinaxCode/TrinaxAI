@@ -78,7 +78,7 @@ sys.modules[__name__].__class__ = _CompatibilityModule
 if __name__ == "__main__":
     import uvicorn
 
-    import config
+    from trinaxai import config
 
     configured_host = os.getenv("TRINAXAI_HOST", "127.0.0.1")
     allow_unsafe_bind = os.getenv("TRINAXAI_UNSAFE_BIND_BACKEND", "0").strip().lower() in {

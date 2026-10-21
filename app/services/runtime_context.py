@@ -37,7 +37,6 @@ from llama_index.core.vector_stores import FilterCondition, MetadataFilter, Meta
 from llama_index.retrievers.bm25 import BM25Retriever
 from starlette.concurrency import run_in_threadpool
 
-import config
 from app.generation.presets import build_task_spec
 from app.generation.prompts import (
     build_generation_prompt,
@@ -78,6 +77,7 @@ from app.services.engine_state import lru_set as _lru_set
 from app.services.engine_state import (
     state,
 )
+from trinaxai import config
 from trinaxai.core import exclusive_process_lock, sanitize_collection_id, source_id_for_root
 
 if sys.platform == "win32" and hasattr(sys.stdout, "buffer"):

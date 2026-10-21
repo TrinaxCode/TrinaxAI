@@ -24,7 +24,7 @@ from urllib.parse import parse_qs, quote, unquote, urljoin, urlparse, urlsplit
 import httpx
 from defusedxml import ElementTree as ET
 
-import config
+from trinaxai import config
 
 LOG = logging.getLogger("trinaxai.web_search")
 

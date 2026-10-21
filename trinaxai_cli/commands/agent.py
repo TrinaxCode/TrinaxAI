@@ -19,7 +19,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
-import config as runtime_config
+from trinaxai import config as runtime_config
 from trinaxai_agent import DEFAULT_TOOLS, AgentEngine, Tool, default_system_prompt, format_tool_failure
 from trinaxai_cli.agent_ui import (
     TODO_PROMPT,

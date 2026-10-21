@@ -25,7 +25,7 @@ try:
 except ImportError:
     pass
 
-from config import create_ssl_context
+from trinaxai.config import create_ssl_context
 
 GREEN = "\033[92m"
 RED = "\033[91m"

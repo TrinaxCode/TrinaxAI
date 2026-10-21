@@ -6,7 +6,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-import config
+from trinaxai import config
 
 
 class ChatRequest(BaseModel):

@@ -10,10 +10,10 @@ from pathlib import Path
 import httpx
 from fastapi import HTTPException, Request
 
-import config
 from app.schemas.api import WebSearchConnectionTest, WebSearchSettingsUpdate
 from app.security.admin_auth import authorize_system
 from app.services import web_search_service
+from trinaxai import config
 
 _PATH = Path(config.PERSIST_DIR) / "web_search_settings.json"
 _PROVIDERS = {"auto", "duckduckgo", "brave", "searxng"}

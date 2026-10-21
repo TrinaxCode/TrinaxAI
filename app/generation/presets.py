@@ -14,10 +14,10 @@ from __future__ import annotations
 
 import re
 
-import config
 from app.generation.classifier import classify, strip_attachment_context
 from app.generation.scoring import complexity_score
 from app.generation.spec import Regime, TaskSpec
+from trinaxai import config
 
 
 def _env_int(name: str, default: int) -> int:
