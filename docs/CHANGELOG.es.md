@@ -62,6 +62,17 @@ el formato de [Keep a Changelog](https://keepachangelog.com/).
   funcionan en todas.
 - Los módulos de tests de casos límite se nombran por dominio en vez de
   `*_coverage*`; se eliminó el prototipo `trinaxai-ui-preview`, sin uso.
+- Los módulos Python planos de la raíz (`config`, `trinaxai_core`,
+  `trinaxai_errors`, `trinaxai_index_{documents,state,storage}`, el indexador,
+  `service_manager` y `recovery_server`) viven ahora en el paquete `trinaxai`
+  ([ADR 0001](adr/0001-python-package-layout.md), en inglés). Se conservan todas
+  las rutas antiguas: los nombres de biblioteca son alias del mismo objeto de
+  módulo, y `index.py`, `service_manager.py`, `recovery_server.py` y `rag_api.py`
+  siguen en la raíz como lanzadores, de modo que instaladores, unidades, tareas
+  programadas y la CLI que los ejecutan por ruta siguen funcionando tras una
+  actualización, incluso antes de que `pip install -e .` renueve la instalación
+  editable. Los scripts de instalación y actualización no cambian; el nuevo
+  diseño solo se ha ejecutado en Linux, no en macOS ni en Windows.
 
 ### Seguridad
 

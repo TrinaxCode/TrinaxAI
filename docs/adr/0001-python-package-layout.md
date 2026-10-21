@@ -164,3 +164,18 @@ scaffold → `errors` → `core` → `config` → `indexing/storage` →
 `indexing/documents` → `indexing/state` → `indexing/indexer` →
 `supervisor/recovery_server` → `supervisor/service_manager` → packaging,
 CI, Docker and documentation references.
+
+## Implementation notes
+
+- Coverage, bandit and `py_compile` scopes were translated one to one
+  (`--cov=trinaxai.core --cov=trinaxai.supervisor.service_manager
+  --cov=trinaxai.indexing.indexer`, bandit on the two former root files)
+  rather than widened to the whole package, so the gates measure what they
+  measured before. Widening them is a separate decision. On the development
+  machine the aggregate stayed at 96.63 % against 96.65 % before the move (the
+  8 extra statements are the new `main()` in `recovery_server` and the
+  `PROJECT_ROOT` import).
+- `.github/CODEOWNERS` gained `trinaxai/config.py` and `/trinaxai/supervisor/`
+  so the protection that followed the old paths follows the moved files.
+- `pyproject.toml` keeps `py-modules = [config, trinaxai_core, trinaxai_errors]`
+  (now the shims) so wheel consumers that import the old names are unaffected.

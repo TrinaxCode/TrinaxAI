@@ -58,6 +58,16 @@ All notable changes to TrinaxAI are documented here. This project follows the
   `TRINAXAI_AGENT_ALLOW_UNSANDBOXED_COMMANDS=1`; file tools work everywhere.
 - Edge-case test modules are named after the domain they exercise instead of
   `*_coverage*`; the unused `trinaxai-ui-preview` prototype was removed.
+- The flat root Python modules (`config`, `trinaxai_core`, `trinaxai_errors`,
+  `trinaxai_index_{documents,state,storage}`, the indexer, `service_manager` and
+  `recovery_server`) now live in the `trinaxai` package
+  ([ADR 0001](adr/0001-python-package-layout.md)). Every old path is kept:
+  library names are aliases of the same module object, and `index.py`,
+  `service_manager.py`, `recovery_server.py` and `rag_api.py` stay at the root as
+  launchers, so installers, units, scheduled tasks and the CLI that run them by
+  path keep working across an upgrade, even before `pip install -e .` refreshes
+  the editable install. Installer and updater scripts are unchanged; the new
+  layout has only been run on Linux, not on macOS or Windows.
 
 ### Security
 

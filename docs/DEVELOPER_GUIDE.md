@@ -48,9 +48,10 @@ cp .env.example .env
 
 ```
 .
-├── config.py              # Central configuration (models, profiles, chunking)
+├── trinaxai/              # Shared package: config, core, errors, indexing/, supervisor/
+├── config.py              # Compatibility alias of trinaxai.config (same for trinaxai_core/errors/index_*)
 ├── rag_api.py             # Backward-compatible API entry point
-├── index.py               # Document indexer (AST-aware, incremental)
+├── index.py               # Indexer launcher + alias of trinaxai.indexing.indexer
 ├── app/
 │   ├── main.py            # Canonical FastAPI application factory
 │   ├── routes/            # Small HTTP routers grouped by domain
@@ -59,7 +60,7 @@ cp .env.example .env
 │   └── security/          # Authorization and rate limiting
 ├── trinaxai_agent/        # Shared agent engine, tools and document extraction
 ├── trinaxai_cli/          # Terminal interface (modular, subcommands)
-├── service_manager.py     # Cross-platform service supervisor
+├── service_manager.py     # Supervisor launcher + alias of trinaxai.supervisor.service_manager
 ├── test_system.py         # Automated health checks
 │
 ├── chat-pwa/              # React PWA frontend
@@ -107,7 +108,7 @@ cp .env.example .env
 
 ## Adding a New Model
 
-1. Add the model constant in `config.py`:
+1. Add the model constant in `trinaxai/config.py`:
    ```python
    MODEL_MY_NEW = os.getenv("TRINAXAI_MODEL_MY_NEW", "my-model:latest")
    ```

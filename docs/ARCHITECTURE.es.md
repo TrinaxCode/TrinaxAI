@@ -44,7 +44,32 @@ modelos, investigación opt-in y endpoints externos usan red.
 
 ## Arquitectura de Componentes
 
-### `config.py` — Centro de Configuración Central
+### `trinaxai/` — Paquete Python Compartido
+
+Los módulos de implementación viven en el paquete `trinaxai`; los archivos
+planos que eran antes (`config.py`, `trinaxai_core.py`, `index.py`, ...) siguen
+en la raíz del repositorio como shims de compatibilidad y lanzadores. La
+decisión, el mecanismo de los shims y el análisis de actualización están en el
+[ADR 0001](adr/0001-python-package-layout.md) (en inglés).
+
+| Módulo | Archivo anterior en la raíz |
+|---|---|
+| `trinaxai/config.py` | `config.py` |
+| `trinaxai/core.py` | `trinaxai_core.py` |
+| `trinaxai/errors.py` | `trinaxai_errors.py` |
+| `trinaxai/indexing/{documents,state,storage}.py` | `trinaxai_index_{documents,state,storage}.py` |
+| `trinaxai/indexing/indexer.py` | `index.py` |
+| `trinaxai/supervisor/{service_manager,recovery_server}.py` | `service_manager.py`, `recovery_server.py` |
+
+`import config` y similares siguen funcionando y devuelven el *mismo objeto de
+módulo* que la ruta nueva. `index.py`, `service_manager.py`,
+`recovery_server.py` y `rag_api.py` se quedan en la raíz a propósito: los
+instaladores, las entradas de systemd/launchd/Programador de tareas, la CLI y el
+vigilante de archivos los ejecutan o detectan por ruta. El wheel de la CLI solo
+incluye `trinaxai.{paths,config,core,errors}`; `indexing` y `supervisor` son
+solo para instalaciones desde código fuente.
+
+### `trinaxai/config.py` — Centro de Configuración Central
 
 La fuente única de verdad para todos los subsistemas. Define:
 
@@ -86,12 +111,13 @@ Subsistemas clave:
 | **Estadísticas de uso** | Analítica local basada en JSONL |
 | **Sincronización de estado** | Operaciones schema-v2, deletes explícitos, revisión server, ETag/CAS y merge de conflicto |
 
-### `index.py` — Punto de Entrada del Indexador
+### `trinaxai/indexing/indexer.py` — Indexador
 
-`index.py` sigue siendo el punto de entrada CLI y la fachada compatible. Sus
-responsabilidades están separadas en `trinaxai_index_documents.py` (descubrimiento
-y extracción de formatos), `trinaxai_index_state.py` (manifiestos, fingerprints,
-diffs y actualizaciones de nodos) y `trinaxai_index_storage.py` (publicación y
+`index.py` sigue siendo el lanzador en la raíz y el alias compatible de
+`trinaxai.indexing.indexer`. Sus responsabilidades están separadas en
+`trinaxai/indexing/documents.py` (descubrimiento y extracción de formatos),
+`state.py` (manifiestos, fingerprints, diffs y actualizaciones de nodos) y
+`storage.py` (publicación y
 recuperación durable). Las funciones históricas siguen disponibles a través de
 `index.py`, sin migración obligatoria para scripts o tests.
 
@@ -143,7 +169,9 @@ extracción de documentos viven en este paquete para que API y CLI compartan una
 sola implementación. `trinaxai_cli.agent` permanece como superficie de
 compatibilidad para integraciones existentes.
 
-### `service_manager.py` — Supervisor Multiplataforma
+### `trinaxai/supervisor/service_manager.py` — Supervisor Multiplataforma
+
+(`service_manager.py` en la raíz es el lanzador que invocan las unidades y los instaladores.)
 
 Abstrae el ciclo de vida de los servicios en distintos sistemas operativos:
 - **Linux**: systemd con fallback a subprocess
@@ -281,7 +309,7 @@ Esta sección ayuda a los contribuidores a encontrar los archivos correctos para
 | Recuperación RAG + síntesis | `app/services/rag_service.py` (`run_rag`, `prepare_query`) + `app/services/rag_generation.py` |
 | Streaming SSE | `app/services/rag_streaming.py` + `chat-pwa/src/lib/api_streams.ts` (`api.ts` conserva la fachada pública) |
 | Plantilla de prompt | `app/generation/prompts.py` (`GROUNDED_QA_TEMPLATE`) |
-| Enrutamiento automático de modelos | `config.py` `route_model()` |
+| Enrutamiento automático de modelos | `trinaxai/config.py` `route_model()` |
 | Frontera de chat en frontend | `chat-pwa/src/components/ChatInterface.tsx` + `chat-pwa/src/components/chat/ChatInterfaceView.tsx` |
 | Estado y envío del chat | `chat-pwa/src/hooks/useChatController.ts` + `chat-pwa/src/hooks/useChatSend.ts` |
 | Acciones de mensajes | `chat-pwa/src/hooks/useChatMessageActions.ts` |
@@ -293,11 +321,11 @@ Esta sección ayuda a los contribuidores a encontrar los archivos correctos para
 
 | Qué cambiar | Dónde |
 |---|---|
-| Indexación de documentos | `index.py` (punto de entrada), `trinaxai_index_documents.py` (descubrimiento/extracción), `config.py` (configuración de chunking) |
-| Estrategia de chunking | `index.py` + `trinaxai_index_documents.py` — `CodeSplitter` para código, `SentenceSplitter` para prosa |
-| Modelo de embeddings | `config.py` `make_embed()` |
-| Indexación incremental | `trinaxai_index_state.py` lógica de manifiestos/fingerprints + `config.py` `MANIFEST_PATH` |
-| Publicación/recuperación transaccional | `trinaxai_index_storage.py` |
+| Indexación de documentos | `trinaxai/indexing/indexer.py` (punto de entrada, se lanza con `index.py`), `trinaxai/indexing/documents.py` (descubrimiento/extracción), `trinaxai/config.py` (configuración de chunking) |
+| Estrategia de chunking | `trinaxai/indexing/indexer.py` + `documents.py` — `CodeSplitter` para código, `SentenceSplitter` para prosa |
+| Modelo de embeddings | `trinaxai/config.py` `make_embed()` |
+| Indexación incremental | `trinaxai/indexing/state.py` lógica de manifiestos/fingerprints + `trinaxai/config.py` `MANIFEST_PATH` |
+| Publicación/recuperación transaccional | `trinaxai/indexing/storage.py` |
 | Subida de índice (carpeta del navegador) | `app/routes/system.py` + `app/services/system_service.py` |
 | Vigilante de archivos | `app/services/watcher_service.py` + `app/routes/watcher.py` |
 
@@ -327,7 +355,7 @@ Esta sección ayuda a los contribuidores a encontrar los archivos correctos para
 | Subcomandos individuales | `trinaxai_cli/commands/*.py` |
 | Configuración CLI | `trinaxai_cli/config.py` |
 | Gestión de sesiones CLI | `trinaxai_cli/session.py` |
-| Utilidades compartidas | `trinaxai_core.py` |
+| Utilidades compartidas | `trinaxai/core.py` |
 
 ### Instaladores
 
@@ -338,7 +366,7 @@ Esta sección ayuda a los contribuidores a encontrar los archivos correctos para
 | Configuración del release en Windows | `install.ps1` |
 | Actualización | `update.sh` / `update.ps1` |
 | Desinstalación | `uninstall.sh` / `uninstall.ps1` |
-| Gestión de servicios | `service_manager.py` + `startup_ai.sh` / `shutdown_ai.sh` |
+| Gestión de servicios | `trinaxai/supervisor/service_manager.py` (se lanza con `service_manager.py`) + `startup_ai.sh` / `shutdown_ai.sh` |
 
 ---
 

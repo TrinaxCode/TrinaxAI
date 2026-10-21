@@ -45,7 +45,31 @@ the network.
 
 ## Component Architecture
 
-### `config.py` — Central Configuration Hub
+### `trinaxai/` — Shared Python Package
+
+Implementation modules live in the `trinaxai` package; the flat files they used
+to be (`config.py`, `trinaxai_core.py`, `index.py`, ...) remain at the repository
+root as thin compatibility shims and launchers. The decision, the shim
+mechanism and the upgrade analysis are in
+[ADR 0001](adr/0001-python-package-layout.md).
+
+| Module | Former root file |
+|---|---|
+| `trinaxai/config.py` | `config.py` |
+| `trinaxai/core.py` | `trinaxai_core.py` |
+| `trinaxai/errors.py` | `trinaxai_errors.py` |
+| `trinaxai/indexing/{documents,state,storage}.py` | `trinaxai_index_{documents,state,storage}.py` |
+| `trinaxai/indexing/indexer.py` | `index.py` |
+| `trinaxai/supervisor/{service_manager,recovery_server}.py` | `service_manager.py`, `recovery_server.py` |
+
+`import config` and friends keep working and return the *same module object*
+as the new path. `index.py`, `service_manager.py`, `recovery_server.py` and
+`rag_api.py` stay at the root on purpose: installers, systemd/launchd/Task
+Scheduler entries, the CLI and the file watcher run or detect them by path.
+The CLI wheel ships only `trinaxai.{paths,config,core,errors}`; `indexing` and
+`supervisor` are source-install only.
+
+### `trinaxai/config.py` — Central Configuration Hub
 
 The single source of truth for all subsystems. Defines:
 
@@ -87,13 +111,13 @@ Key subsystems:
 | **Usage stats** | JSONL-based local analytics |
 | **App state sync** | Schema-v2 operations with explicit deletes, server revision, ETag/CAS and conflict merge |
 
-### `index.py` — Document Indexer Entry Point
+### `trinaxai/indexing/indexer.py` — Document Indexer
 
-`index.py` remains the CLI entry point and compatibility facade. Its indexing
-responsibilities are split into `trinaxai_index_documents.py` (discovery and
-format extraction), `trinaxai_index_state.py` (manifests, fingerprints, diffs,
-and node updates), and `trinaxai_index_storage.py` (durable publication and
-recovery). The legacy functions stay available through `index.py` so scripts
+`index.py` remains the root launcher and compatibility alias of
+`trinaxai.indexing.indexer`. Its indexing responsibilities are split into
+`trinaxai/indexing/documents.py` (discovery and format extraction),
+`state.py` (manifests, fingerprints, diffs, and node updates), and `storage.py`
+(durable publication and recovery). The legacy functions stay available through `index.py` so scripts
 and tests do not need a flag-day migration.
 
 - **File collection** — Aggressive directory pruning skips `node_modules`, `.git`, `venv`, etc.
@@ -144,7 +168,9 @@ The UI-agnostic agent engine, sandboxed tools, and document extraction live in
 this package so the API and CLI share one implementation. `trinaxai_cli.agent`
 remains a compatibility import surface for existing integrations.
 
-### `service_manager.py` — Cross-Platform Supervisor
+### `trinaxai/supervisor/service_manager.py` — Cross-Platform Supervisor
+
+(`service_manager.py` at the root is the launcher that units and installers invoke.)
 
 Abstracts service lifecycle across OSes:
 - **Linux**: systemd with subprocess fallback
@@ -282,7 +308,7 @@ This section helps contributors find the right files for common tasks.
 | RAG retrieval + synthesis | `app/services/rag_service.py` (`run_rag`, `prepare_query`) + `app/services/rag_generation.py` |
 | SSE streaming | `app/services/rag_streaming.py` + `chat-pwa/src/lib/api_streams.ts` (`api.ts` remains the public facade) |
 | Prompt template | `app/generation/prompts.py` (`GROUNDED_QA_TEMPLATE`) |
-| Model auto-routing | `config.py` `route_model()` |
+| Model auto-routing | `trinaxai/config.py` `route_model()` |
 | Frontend chat boundary | `chat-pwa/src/components/ChatInterface.tsx` + `chat-pwa/src/components/chat/ChatInterfaceView.tsx` |
 | Chat state and sending | `chat-pwa/src/hooks/useChatController.ts` + `chat-pwa/src/hooks/useChatSend.ts` |
 | Chat message actions | `chat-pwa/src/hooks/useChatMessageActions.ts` |
@@ -294,11 +320,11 @@ This section helps contributors find the right files for common tasks.
 
 | What to change | Where |
 |---|---|
-| Document indexing | `index.py` (entry point), `trinaxai_index_documents.py` (discovery/extraction), `config.py` (chunking settings) |
-| Chunking strategy | `index.py` + `trinaxai_index_documents.py` — `CodeSplitter` for code, `SentenceSplitter` for prose |
-| Embeddings model | `config.py` `make_embed()` |
-| Incremental indexing | `trinaxai_index_state.py` manifest/fingerprint logic + `config.py` `MANIFEST_PATH` |
-| Transaction publication/recovery | `trinaxai_index_storage.py` |
+| Document indexing | `trinaxai/indexing/indexer.py` (entry point, launched via `index.py`), `trinaxai/indexing/documents.py` (discovery/extraction), `trinaxai/config.py` (chunking settings) |
+| Chunking strategy | `trinaxai/indexing/indexer.py` + `documents.py` — `CodeSplitter` for code, `SentenceSplitter` for prose |
+| Embeddings model | `trinaxai/config.py` `make_embed()` |
+| Incremental indexing | `trinaxai/indexing/state.py` manifest/fingerprint logic + `trinaxai/config.py` `MANIFEST_PATH` |
+| Transaction publication/recovery | `trinaxai/indexing/storage.py` |
 | Index upload (browser folder) | `app/routes/system.py` + `app/services/system_service.py` |
 | File watcher | `app/services/watcher_service.py` + `app/routes/watcher.py` |
 
@@ -328,7 +354,7 @@ This section helps contributors find the right files for common tasks.
 | Individual subcommands | `trinaxai_cli/commands/*.py` |
 | CLI config | `trinaxai_cli/config.py` |
 | CLI session management | `trinaxai_cli/session.py` |
-| Shared helpers | `trinaxai_core.py` |
+| Shared helpers | `trinaxai/core.py` |
 
 ### Installers
 
@@ -339,7 +365,7 @@ This section helps contributors find the right files for common tasks.
 | Windows release setup | `install.ps1` |
 | Update | `update.sh` / `update.ps1` |
 | Uninstall | `uninstall.sh` / `uninstall.ps1` |
-| Service management | `service_manager.py` + `startup_ai.sh` / `shutdown_ai.sh` |
+| Service management | `trinaxai/supervisor/service_manager.py` (launched via `service_manager.py`) + `startup_ai.sh` / `shutdown_ai.sh` |
 
 ---
 
