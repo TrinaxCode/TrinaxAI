@@ -48,7 +48,7 @@ dev:
 	cd chat-pwa && npm run dev
 
 build:
-	$(VENV_PYTHON) -m py_compile rag_api.py config.py index.py trinaxai_index_documents.py trinaxai_index_state.py trinaxai_cli/app.py
+	$(VENV_PYTHON) -m compileall -q rag_api.py config.py index.py service_manager.py recovery_server.py trinaxai trinaxai_cli/app.py
 	cd chat-pwa && npm run build && npm run check:bundle
 
 lint:
@@ -60,8 +60,8 @@ test: test-python test-frontend
 
 test-python:
 	$(VENV_PYTHON) -m pytest -q \
-		--cov=app --cov=trinaxai_agent --cov=trinaxai_cli --cov=trinaxai_core \
-		--cov=service_manager --cov=index \
+		--cov=app --cov=trinaxai_agent --cov=trinaxai_cli --cov=trinaxai.core \
+		--cov=trinaxai.supervisor.service_manager --cov=trinaxai.indexing.indexer \
 		--cov-branch --cov-report=term --cov-fail-under=98
 
 test-frontend:
@@ -74,7 +74,7 @@ rag-eval:
 	$(VENV_PYTHON) scripts/evaluate_rag.py --api-url "$(RAG_API_URL)" --output "$(RAG_EVAL_OUTPUT)"
 
 typecheck:
-	$(VENV_PYTHON) -m py_compile rag_api.py config.py index.py trinaxai_index_documents.py trinaxai_index_state.py trinaxai_core.py
+	$(VENV_PYTHON) -m compileall -q rag_api.py config.py index.py service_manager.py recovery_server.py trinaxai trinaxai_cli/app.py
 	$(VENV_PYTHON) -m mypy
 	cd chat-pwa && npx tsc --noEmit
 

@@ -19,6 +19,7 @@ RUN groupadd --gid "${APP_GID}" trinaxai \
 COPY app ./app
 COPY trinaxai_agent ./trinaxai_agent
 COPY trinaxai_cli ./trinaxai_cli
+COPY trinaxai ./trinaxai
 COPY config.py index.py rag_api.py recovery_server.py service_manager.py trinaxai_core.py trinaxai_errors.py trinaxai_index_documents.py trinaxai_index_state.py trinaxai_index_storage.py pyproject.toml ./
 RUN mkdir -p /app/storage /data/projects \
   && chown -R trinaxai:trinaxai /app /data /tmp/trinaxai

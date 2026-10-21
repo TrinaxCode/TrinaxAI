@@ -10,3 +10,5 @@
 config.py @TrinaxCode
 rag_api.py @TrinaxCode
 service_manager.py @TrinaxCode
+trinaxai/config.py @TrinaxCode
+/trinaxai/supervisor/ @TrinaxCode

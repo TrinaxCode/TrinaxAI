@@ -54,8 +54,8 @@ jobs:
           - os: ubuntu-24.04
             pytest-command: >-
               pytest -q
-              --cov=app --cov=trinaxai_agent --cov=trinaxai_cli --cov=trinaxai_core
-              --cov=service_manager --cov=index
+              --cov=app --cov=trinaxai_agent --cov=trinaxai_cli --cov=trinaxai.core
+              --cov=trinaxai.supervisor.service_manager --cov=trinaxai.indexing.indexer
               --cov-branch
               --cov-report=xml:coverage.xml --cov-fail-under=98
           - os: macos-15
@@ -85,7 +85,7 @@ jobs:
           python -m pip install -e .
 
       - name: Python syntax check
-        run: python -m py_compile rag_api.py config.py index.py trinaxai_index_documents.py trinaxai_index_state.py trinaxai_cli/app.py
+        run: python -m compileall -q rag_api.py config.py index.py service_manager.py recovery_server.py trinaxai trinaxai_cli/app.py
 
       - name: Ruff lint
         run: ruff check .
@@ -525,7 +525,7 @@ jobs:
 
       - name: Bandit high-severity gate
         run: >-
-          bandit -r app trinaxai_agent trinaxai_cli service_manager.py index.py
+          bandit -r app trinaxai_agent trinaxai_cli trinaxai/supervisor/service_manager.py trinaxai/indexing/indexer.py
           --severity-level high --confidence-level high
 
   gitleaks:
