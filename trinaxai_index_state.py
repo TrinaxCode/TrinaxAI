@@ -9,10 +9,10 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from trinaxai.core import sanitize_collection_id
+from trinaxai.indexing.documents import SourceContext
 from trinaxai.indexing.storage import atomic_write_json
 from trinaxai_cli.i18n import resolve_lang
 from trinaxai_cli.i18n import text as _text
-from trinaxai_index_documents import SourceContext
 
 if TYPE_CHECKING:
     from llama_index.core import VectorStoreIndex

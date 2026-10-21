@@ -6,7 +6,7 @@ import signal
 from dataclasses import dataclass
 
 from trinaxai.core import source_id_for_root
-from trinaxai_index_documents import _SENSITIVE_EXTENSIONS, _SENSITIVE_NAMES, is_indexable_file
+from trinaxai.indexing.documents import _SENSITIVE_EXTENSIONS, _SENSITIVE_NAMES, is_indexable_file
 
 # ruff: noqa: F405
 from .app_state_service import _read_app_state

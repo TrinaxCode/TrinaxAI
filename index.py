@@ -40,6 +40,75 @@ from trinaxai import config
 from trinaxai.core import (
     exclusive_process_lock,
 )
+from trinaxai.indexing.documents import (
+    COLLECTION_ID,
+    EXTRACTOR_EXTS,
+    SourceContext,
+    emit_progress,
+)
+from trinaxai.indexing.documents import (
+    COLLECTION_NAME as _documents_collection_name,
+)
+from trinaxai.indexing.documents import (
+    _html_to_text as _documents_html_to_text,
+)
+from trinaxai.indexing.documents import (
+    _load_converted_office_document as _documents_load_converted_office_document,
+)
+from trinaxai.indexing.documents import (
+    _load_email_document as _documents_load_email_document,
+)
+from trinaxai.indexing.documents import (
+    _load_epub_document as _documents_load_epub_document,
+)
+from trinaxai.indexing.documents import (
+    _load_extracted_documents as _documents_load_extracted_documents,
+)
+from trinaxai.indexing.documents import (
+    _load_html_document as _documents_load_html_document,
+)
+from trinaxai.indexing.documents import (
+    _load_notebook_document as _documents_load_notebook_document,
+)
+from trinaxai.indexing.documents import (
+    _load_odf_document as _documents_load_odf_document,
+)
+from trinaxai.indexing.documents import (
+    _load_pdf_documents as _documents_load_pdf_documents,
+)
+from trinaxai.indexing.documents import (
+    _load_pptx_document as _documents_load_pptx_document,
+)
+from trinaxai.indexing.documents import (
+    _load_rtf_document as _documents_load_rtf_document,
+)
+from trinaxai.indexing.documents import (
+    _load_text_document as _documents_load_text_document,
+)
+from trinaxai.indexing.documents import (
+    _load_xlsx_document as _documents_load_xlsx_document,
+)
+from trinaxai.indexing.documents import (
+    collect_files as _documents_collect_files,
+)
+from trinaxai.indexing.documents import (
+    decode_text_bytes as _documents_decode_text_bytes,
+)
+from trinaxai.indexing.documents import (
+    default_source_context as _default_source_context,
+)
+from trinaxai.indexing.documents import (
+    document as _documents_document,
+)
+from trinaxai.indexing.documents import (
+    is_probably_text_file as _documents_is_probably_text_file,
+)
+from trinaxai.indexing.documents import (
+    relative_path as _documents_relative_path,
+)
+from trinaxai.indexing.documents import (
+    source_key as _documents_source_key,
+)
 from trinaxai.indexing.storage import (
     new_storage_context,
     publish_index_generation,
@@ -48,75 +117,6 @@ from trinaxai.indexing.storage import (
 )
 from trinaxai_cli.i18n import resolve_lang
 from trinaxai_cli.i18n import text as _text
-from trinaxai_index_documents import (
-    COLLECTION_ID,
-    EXTRACTOR_EXTS,
-    SourceContext,
-    emit_progress,
-)
-from trinaxai_index_documents import (
-    COLLECTION_NAME as _documents_collection_name,
-)
-from trinaxai_index_documents import (
-    _html_to_text as _documents_html_to_text,
-)
-from trinaxai_index_documents import (
-    _load_converted_office_document as _documents_load_converted_office_document,
-)
-from trinaxai_index_documents import (
-    _load_email_document as _documents_load_email_document,
-)
-from trinaxai_index_documents import (
-    _load_epub_document as _documents_load_epub_document,
-)
-from trinaxai_index_documents import (
-    _load_extracted_documents as _documents_load_extracted_documents,
-)
-from trinaxai_index_documents import (
-    _load_html_document as _documents_load_html_document,
-)
-from trinaxai_index_documents import (
-    _load_notebook_document as _documents_load_notebook_document,
-)
-from trinaxai_index_documents import (
-    _load_odf_document as _documents_load_odf_document,
-)
-from trinaxai_index_documents import (
-    _load_pdf_documents as _documents_load_pdf_documents,
-)
-from trinaxai_index_documents import (
-    _load_pptx_document as _documents_load_pptx_document,
-)
-from trinaxai_index_documents import (
-    _load_rtf_document as _documents_load_rtf_document,
-)
-from trinaxai_index_documents import (
-    _load_text_document as _documents_load_text_document,
-)
-from trinaxai_index_documents import (
-    _load_xlsx_document as _documents_load_xlsx_document,
-)
-from trinaxai_index_documents import (
-    collect_files as _documents_collect_files,
-)
-from trinaxai_index_documents import (
-    decode_text_bytes as _documents_decode_text_bytes,
-)
-from trinaxai_index_documents import (
-    default_source_context as _default_source_context,
-)
-from trinaxai_index_documents import (
-    document as _documents_document,
-)
-from trinaxai_index_documents import (
-    is_probably_text_file as _documents_is_probably_text_file,
-)
-from trinaxai_index_documents import (
-    relative_path as _documents_relative_path,
-)
-from trinaxai_index_documents import (
-    source_key as _documents_source_key,
-)
 
 MANIFEST_SCHEMA_VERSION = 2
 FINGERPRINT_ALGORITHM = "blake2b-256"
