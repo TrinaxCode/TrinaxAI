@@ -10,7 +10,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from trinaxai_errors import ErrorCategory, ErrorInfo, classify_error
+from trinaxai.errors import ErrorCategory, ErrorInfo, classify_error
 
 LOG = logging.getLogger("trinaxai.errors")
 

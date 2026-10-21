@@ -15,8 +15,8 @@ from pathlib import Path
 from typing import Any, Iterable
 from urllib.parse import urlencode, urlparse, urlunparse
 
+from trinaxai.errors import classify_error
 from trinaxai_cli.i18n import normalize_lang
-from trinaxai_errors import classify_error
 
 try:
     import httpx  # type: ignore

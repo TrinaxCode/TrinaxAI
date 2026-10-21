@@ -13,8 +13,8 @@ import httpx
 from app.generation.presets import build_task_spec
 from app.security.admin_auth import authorize_scope
 from app.security.rate_limit import enforce_rate_limit
+from trinaxai.errors import ErrorCategory, classify_error
 from trinaxai_agent.tools import external_failure_message, format_tool_failure
-from trinaxai_errors import ErrorCategory, classify_error
 
 from .shared_runtime import (
     LOG,

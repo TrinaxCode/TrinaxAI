@@ -32,10 +32,10 @@ from typing import Any
 from app.schemas import AgentCancelRequest
 from app.security.admin_auth import authorize_scope, proxy_secret_file
 from app.security.device_auth import credential_files
+from trinaxai.errors import ErrorCategory, classify_error
 from trinaxai_agent import DEFAULT_TOOLS, AgentEngine, Tool, format_tool_failure  # noqa: E402
 from trinaxai_agent.engine import AgentCancelled  # noqa: E402
 from trinaxai_agent.tools import _bubblewrap_argv  # noqa: E402
-from trinaxai_errors import ErrorCategory, classify_error
 
 from .app_state_service import _read_app_state
 from .shared_runtime import (

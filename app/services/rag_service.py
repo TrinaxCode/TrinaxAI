@@ -12,7 +12,7 @@ from contextvars import ContextVar
 from typing import Callable
 
 from app.security.admin_auth import authorize_scope
-from trinaxai_errors import classify_error as _classify_error_impl
+from trinaxai.errors import classify_error as _classify_error_impl
 
 from .rag_generation import AsyncTextResponse as _AsyncTextResponse_impl
 from .rag_generation import TextResponse as _TextResponse
