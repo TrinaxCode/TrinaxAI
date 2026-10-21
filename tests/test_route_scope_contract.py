@@ -72,7 +72,7 @@ EXPECTED_SCOPES: dict[tuple[str, str], str] = {
     ("POST", "/v1/research"): "chat",
     ("POST", "/v1/research/preflight"): "chat",
     ("DELETE", "/v1/settings/web-search"): "modify",
-    ("GET", "/v1/settings/web-search"): "modify",
+    ("GET", "/v1/settings/web-search"): "read_private",
     ("PUT", "/v1/settings/web-search"): "modify",
     ("DELETE", "/v1/settings/web-search/credentials/{provider}"): "modify",
     ("POST", "/v1/settings/web-search/test"): "modify",

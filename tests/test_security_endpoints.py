@@ -141,6 +141,8 @@ def test_admin_helper_scope_mapping_origin_and_proxy_secret(tmp_path, monkeypatc
     assert required_scopes_for_request(request("/v1/memory/abc", "DELETE")) == ("modify",)
     assert required_scopes_for_request(request("/v1/memory/context", "POST")) == ("read_private",)
     assert required_scopes_for_request(request("/v1/settings/web-search", "PUT")) == ("modify",)
+    assert required_scopes_for_request(request("/v1/settings/web-search", "GET")) == ("read_private",)
+    assert required_scopes_for_request(request("/v1/settings/web-search/test", "POST")) == ("modify",)
     assert required_scopes_for_request(request("/v1/settings", "PUT")) == ("system",)
     assert required_scopes_for_request(request("/unknown")) == ("system",)
 

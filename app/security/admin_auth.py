@@ -374,7 +374,9 @@ def required_scopes_for_request(request: Request) -> tuple[str, ...]:
     if path.startswith(("/app-state", "/v1/stats")):
         return ("read_private",)
     if path.startswith("/v1/settings/web-search"):
-        return ("modify",)
+        # Reading the masked settings is a private read; changing the provider, key or
+        # SearXNG URL redirects where the user's queries go, so it needs ``modify``.
+        return ("read_private",) if method == "GET" else ("modify",)
     if path.startswith("/v1/settings"):
         return ("system",)
     if path.startswith("/v1/usage"):
