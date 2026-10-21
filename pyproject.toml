@@ -114,7 +114,7 @@ files = [
   "app/schemas",
   "trinaxai_agent",
   "trinaxai/indexing/storage.py",
-  "index.py",
+  "trinaxai/indexing/indexer.py",
 ]
 follow_imports = "skip"
 ignore_missing_imports = true

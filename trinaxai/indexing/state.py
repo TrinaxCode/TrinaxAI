@@ -19,14 +19,14 @@ if TYPE_CHECKING:
 
 
 def _runtime():
-    """Resolve the legacy ``index`` facade at call time.
+    """Resolve the ``indexer`` facade (legacy name ``index``) at call time.
 
     The facade is intentionally late-bound: tests and older integrations patch
     indexer helpers, and those patches must remain effective after the split.
     """
-    import index
+    from trinaxai.indexing import indexer
 
-    return index
+    return indexer
 
 
 def _manifest_entry(value: object, context: SourceContext, relative: str) -> dict:
