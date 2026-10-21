@@ -32,6 +32,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, ContextManager
 
+from trinaxai.core import normalize_http_base_url
 from trinaxai_agent.tools import (
     DEFAULT_TOOLS,
     SandboxError,
@@ -41,7 +42,6 @@ from trinaxai_agent.tools import (
     is_degraded_tool_result,
     normalize_tool_result,
 )
-from trinaxai_core import normalize_http_base_url
 
 ConfirmFn = Callable[[Tool, dict[str, Any]], bool]
 NotifyFn = Callable[[Tool, dict[str, Any]], None]

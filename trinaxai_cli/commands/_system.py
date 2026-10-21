@@ -7,10 +7,10 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from trinaxai.core import normalize_http_base_url
 from trinaxai_cli.i18n import translate
 from trinaxai_cli.processes import run_process_group
 from trinaxai_cli.runtime import find_install_root
-from trinaxai_core import normalize_http_base_url
 
 
 def project_root() -> Path | None:

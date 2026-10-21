@@ -18,9 +18,9 @@ if TYPE_CHECKING:
     from llama_index.core.schema import Document
 
 import config
+from trinaxai.core import sanitize_collection_id, source_id_for_root
 from trinaxai_cli.i18n import resolve_lang
 from trinaxai_cli.i18n import text as _text
-from trinaxai_core import sanitize_collection_id, source_id_for_root
 
 EXTRACTOR_EXTS = {".pdf", ".docx"}
 TEXT_ENCODINGS = ("utf-8-sig", "utf-8", "cp1252", "latin-1")

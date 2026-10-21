@@ -108,12 +108,14 @@ for name in (
     "config",
     "trinaxai_core",
     "trinaxai_errors",
+    "trinaxai.core",
     "trinaxai.errors",
     "trinaxai_cli.app",
 ):
     module = importlib.import_module(name)
     assert target in module.__file__, (name, module.__file__)
 # The legacy names are aliases of the packaged modules, not copies.
+assert sys.modules["trinaxai_core"] is sys.modules["trinaxai.core"]
 assert sys.modules["trinaxai_errors"] is sys.modules["trinaxai.errors"]
 
 blocked = {

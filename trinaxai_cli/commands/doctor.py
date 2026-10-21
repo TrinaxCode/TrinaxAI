@@ -12,9 +12,9 @@ import urllib.error
 import urllib.request
 from typing import Any
 
+from trinaxai.core import normalize_http_base_url
 from trinaxai_cli.commands import _system
 from trinaxai_cli.processes import run_process_group
-from trinaxai_core import normalize_http_base_url
 
 
 def _process_command(pid: int | None) -> str:

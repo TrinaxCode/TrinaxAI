@@ -19,7 +19,7 @@ from fastapi import HTTPException, Request
 
 from app.security.admin_auth import _client_host
 from app.services.engine_state import state
-from trinaxai_core import _positive_float, _positive_int
+from trinaxai.core import _positive_float, _positive_int
 
 LOG = logging.getLogger("trinaxai.rate_limit")
 

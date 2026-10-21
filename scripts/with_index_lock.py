@@ -6,9 +6,14 @@ from __future__ import annotations
 import argparse
 import os
 import subprocess
+import sys
 from pathlib import Path
 
-from trinaxai_core import exclusive_process_lock
+# Run by path from backup.sh: do not depend on the venv's editable-install
+# mapping, which predates the ``trinaxai`` package on upgraded installs.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from trinaxai.core import exclusive_process_lock  # noqa: E402
 
 
 def main() -> int:

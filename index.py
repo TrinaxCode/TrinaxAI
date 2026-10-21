@@ -37,11 +37,11 @@ if sys.platform == "win32" and hasattr(sys.stdout, "buffer"):
     sys.stdout = codecs.getwriter("utf-8")(sys.stdout.buffer, "replace")  # type: ignore[assignment]
 
 import config
-from trinaxai_cli.i18n import resolve_lang
-from trinaxai_cli.i18n import text as _text
-from trinaxai_core import (
+from trinaxai.core import (
     exclusive_process_lock,
 )
+from trinaxai_cli.i18n import resolve_lang
+from trinaxai_cli.i18n import text as _text
 from trinaxai_index_documents import (
     COLLECTION_ID,
     EXTRACTOR_EXTS,

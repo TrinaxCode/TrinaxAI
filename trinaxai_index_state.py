@@ -8,9 +8,9 @@ import os
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+from trinaxai.core import sanitize_collection_id
 from trinaxai_cli.i18n import resolve_lang
 from trinaxai_cli.i18n import text as _text
-from trinaxai_core import sanitize_collection_id
 from trinaxai_index_documents import SourceContext
 from trinaxai_index_storage import atomic_write_json
 

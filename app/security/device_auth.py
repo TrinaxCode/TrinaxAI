@@ -20,7 +20,7 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
-from trinaxai_core import exclusive_process_lock
+from trinaxai.core import exclusive_process_lock
 
 SCHEMA_VERSION = 1
 # Records written once the host can grant elevated scopes carry this marker.

@@ -24,7 +24,7 @@ from app.services.voice_service import (
     tts_available_backends,
     tts_preferred,
 )
-from trinaxai_core import _positive_int
+from trinaxai.core import _positive_int
 
 router = APIRouter(
     prefix="/v1/voice",

@@ -5,7 +5,7 @@ from __future__ import annotations
 import signal
 from dataclasses import dataclass
 
-from trinaxai_core import source_id_for_root
+from trinaxai.core import source_id_for_root
 from trinaxai_index_documents import _SENSITIVE_EXTENSIONS, _SENSITIVE_NAMES, is_indexable_file
 
 # ruff: noqa: F405

@@ -9,7 +9,7 @@ import re
 import httpx
 
 # ruff: noqa: F405
-from trinaxai_core import _process_is_alive
+from trinaxai.core import _process_is_alive
 from trinaxai_index_documents import _SENSITIVE_EXTENSIONS, _SENSITIVE_NAMES
 
 from .app_state_service import _read_app_state

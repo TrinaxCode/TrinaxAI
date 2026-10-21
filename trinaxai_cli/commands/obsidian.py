@@ -10,8 +10,8 @@ import shutil
 from pathlib import Path
 from typing import Any
 
+from trinaxai.core import sanitize_collection_id
 from trinaxai_cli.runtime import find_install_root
-from trinaxai_core import sanitize_collection_id
 
 
 def run(args: Any, client: Any, ui: Any, config: Any) -> int:

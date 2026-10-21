@@ -78,7 +78,7 @@ from app.services.engine_state import lru_set as _lru_set
 from app.services.engine_state import (
     state,
 )
-from trinaxai_core import exclusive_process_lock, sanitize_collection_id, source_id_for_root
+from trinaxai.core import exclusive_process_lock, sanitize_collection_id, source_id_for_root
 
 if sys.platform == "win32" and hasattr(sys.stdout, "buffer"):
     import codecs

@@ -15,7 +15,7 @@ import re
 import ssl
 from typing import TYPE_CHECKING, Any
 
-from trinaxai_core import (
+from trinaxai.core import (
     VALID_PROFILES,
     _positive_float,
     _positive_int,
@@ -40,7 +40,7 @@ if TYPE_CHECKING:
 def _env_int(name: str, default: int, *, minimum: int = 1, maximum: int | None = None) -> int:
     """Read an int env var, clamped to [minimum, maximum]; falls back on bad input.
 
-    Thin wrapper over ``trinaxai_core._positive_int`` so parsing/clamping stays
+    Thin wrapper over ``trinaxai.core._positive_int`` so parsing/clamping stays
     consistent across config/index/core.
     """
     return _positive_int(os.getenv(name, default), default, minimum=minimum, maximum=maximum)
