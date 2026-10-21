@@ -571,55 +571,55 @@ def prepare_batch(
     return prepared
 
 
-from trinaxai_index_state import (
+from trinaxai.indexing.state import (
     IndexUpdateResult as _state_index_update_result,
 )
-from trinaxai_index_state import (
+from trinaxai.indexing.state import (
     _content_hash as _state_content_hash,
 )
-from trinaxai_index_state import (
+from trinaxai.indexing.state import (
     _entry_belongs_to_source as _state_entry_belongs_to_source,
 )
-from trinaxai_index_state import (
+from trinaxai.indexing.state import (
     _expand_stored_manifest as _state_expand_stored_manifest,
 )
-from trinaxai_index_state import (
+from trinaxai.indexing.state import (
     _manifest_entry as _state_manifest_entry,
 )
-from trinaxai_index_state import (
+from trinaxai.indexing.state import (
     _manifest_for_storage as _state_manifest_for_storage,
 )
-from trinaxai_index_state import (
+from trinaxai.indexing.state import (
     _migrate_manifest_for_context as _state_migrate_manifest_for_context,
 )
-from trinaxai_index_state import (
+from trinaxai.indexing.state import (
     _relative_from_source_key as _state_relative_from_source_key,
 )
-from trinaxai_index_state import (
+from trinaxai.indexing.state import (
     apply_file_updates as _state_apply_file_updates,
 )
-from trinaxai_index_state import (
+from trinaxai.indexing.state import (
     current_state as _state_current_state,
 )
-from trinaxai_index_state import (
+from trinaxai.indexing.state import (
     diff_manifest as _state_diff_manifest,
 )
-from trinaxai_index_state import (
+from trinaxai.indexing.state import (
     insert_files as _state_insert_files,
 )
-from trinaxai_index_state import (
+from trinaxai.indexing.state import (
     merge_final_state as _state_merge_final_state,
 )
-from trinaxai_index_state import (
+from trinaxai.indexing.state import (
     read_manifest as _state_read_manifest,
 )
-from trinaxai_index_state import (
+from trinaxai.indexing.state import (
     remove_obsolete_nodes as _state_remove_obsolete_nodes,
 )
-from trinaxai_index_state import (
+from trinaxai.indexing.state import (
     state_after_failures as _state_after_failures_impl,
 )
-from trinaxai_index_state import (
+from trinaxai.indexing.state import (
     write_manifest as _state_write_manifest,
 )
 
