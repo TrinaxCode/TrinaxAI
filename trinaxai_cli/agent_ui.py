@@ -90,8 +90,6 @@ def command_rule(command: str) -> str | None:
         argv = shlex.split(raw)
     except ValueError:
         return None
-    if not argv:
-        return None
     exact = " ".join(argv)
     if argv[0] != Path(argv[0]).name:  # ./tool or /abs/tool: could be anything in the workspace
         return exact
