@@ -623,7 +623,7 @@ def test_systemd_setup_templates_escape_installation_paths() -> None:
 def test_installers_bind_privileged_backends_to_loopback() -> None:
     posix = (ROOT / "install.sh").read_text(encoding="utf-8")
     windows = (ROOT / "install.ps1").read_text(encoding="utf-8")
-    manager = (ROOT / "service_manager.py").read_text(encoding="utf-8")
+    manager = (ROOT / "trinaxai" / "supervisor" / "service_manager.py").read_text(encoding="utf-8")
 
     for text in (posix, windows):
         assert "TRINAXAI_HOST=127.0.0.1" in text

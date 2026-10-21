@@ -686,7 +686,7 @@ def check_release_contract() -> list[str]:
     if settings.is_file() and "qwen3-embedding:8b" in settings.read_text(encoding="utf-8", errors="ignore"):
         errors.append("PWA model settings still advertise the retired qwen3-embedding:8b model")
     matrix_files = (
-        "config.py",
+        "trinaxai/config.py",
         "install.sh",
         "install.ps1",
         "setup_trinaxai.sh",
