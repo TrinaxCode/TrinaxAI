@@ -1366,7 +1366,7 @@ def test_doctor_helpers_and_degraded_paths(
     monkeypatch.setattr(builtins, "open", real_open)
 
     assert doctor._frontend_mode_from_command("node server.mjs") == "serve"
-    assert doctor._frontend_mode_from_command("npm run preview") == "preview"
+    assert doctor._frontend_mode_from_command("npm run preview") == "serve"
     assert doctor._frontend_mode_from_command("vite --host 0.0.0.0") == "dev"
     assert doctor._frontend_mode_from_command("unknown") is None
     assert doctor._safe_backend_command("") is None

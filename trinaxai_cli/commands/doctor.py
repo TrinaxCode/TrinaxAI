@@ -44,9 +44,13 @@ def _process_command(pid: int | None) -> str:
 
 def _frontend_mode_from_command(command: str) -> str | None:
     normalized = " ".join(command.lower().split())
+    # ``npm run preview`` and ``npm run serve`` are the same script (chat-pwa/package.json), so
+    # a unit written by an older installer that still calls ``preview`` is serving, not drifting.
     if "node server.mjs" in normalized or "chat-pwa/server.mjs" in normalized:
         return "serve"
-    if "vite preview" in normalized or "npm run preview" in normalized:
+    if "npm run preview" in normalized or "npm run serve" in normalized:
+        return "serve"
+    if "vite preview" in normalized:
         return "preview"
     if ("vite" in normalized and "--host" in normalized) or "npm run dev" in normalized:
         return "dev"
