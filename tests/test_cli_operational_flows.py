@@ -180,6 +180,8 @@ def test_doctor_reports_healthy_services_and_optional_state(monkeypatch, tmp_pat
     monkeypatch.setattr(doctor._system, "env_value", lambda _key: "http://localhost:11434")
     monkeypatch.setattr(doctor._system, "load_dotenv_values", lambda: {"TRINAXAI_FRONTEND_MODE": "serve"})
     monkeypatch.setattr(doctor, "_find_ollama", lambda: "/usr/bin/ollama")
+    # The sandbox row depends on the host (GitHub runners have no bubblewrap), so pin it.
+    monkeypatch.setattr("trinaxai_agent.tools.shell_sandbox_status", lambda: (True, "bubblewrap sandbox available"))
     monkeypatch.setattr(doctor, "_ollama_api_ok", lambda _url: True)
     monkeypatch.setattr(
         doctor,
