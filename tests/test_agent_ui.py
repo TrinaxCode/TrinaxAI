@@ -675,9 +675,10 @@ def test_slash_diff_ignores_agent_written_git_config(tmp_path: Path) -> None:
     hook.write_text(f"#!/bin/sh\ntouch {marker}\n")
     hook.chmod(0o755)
     with (repo / ".git" / "config").open("a") as config:
-        config.write(f"[core]\n\tfsmonitor = {hook}\n[diff]\n\texternal = {hook}\n")
+        # as_posix: backslashes are escapes in git config and would make the file unparseable on Windows
+        config.write(f"[core]\n\tfsmonitor = {hook.as_posix()}\n[diff]\n\texternal = {hook.as_posix()}\n")
 
     result = _git_diff(repo, "--stat")
 
-    assert result.returncode == 0
+    assert result.returncode == 0, result.stderr
     assert not marker.exists(), "/diff executed a program named in the workspace's .git/config"

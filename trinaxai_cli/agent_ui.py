@@ -323,7 +323,7 @@ def expand_file_mentions(task: str, workspace_root: Path) -> tuple[str, list[tup
             continue
         if target in seen or total >= _MAX_MENTION_TOTAL:
             continue
-        rel = str(target.relative_to(workspace_root.resolve())) or "."
+        rel = target.relative_to(workspace_root.resolve()).as_posix()  # "/" on every OS: the model sees one form
         try:
             if target.is_dir():
                 names = sorted(

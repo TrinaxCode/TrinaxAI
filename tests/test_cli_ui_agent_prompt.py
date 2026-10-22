@@ -14,6 +14,18 @@ from prompt_toolkit.document import Document
 from trinaxai_cli import ui as cli_ui
 
 
+@pytest.fixture
+def headless_prompt_toolkit(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Build real PromptSessions without a console (Windows runners have none)."""
+    from prompt_toolkit.input import DummyInput
+    from prompt_toolkit.output import DummyOutput
+
+    real = cli_ui.PromptSession
+    monkeypatch.setattr(
+        cli_ui, "PromptSession", lambda **kwargs: real(input=DummyInput(), output=DummyOutput(), **kwargs)
+    )
+
+
 def _completions(workspace: Path, text: str, limit: int = 40) -> list[tuple[str, str]]:
     completer = cli_ui.AtFileCompleter(workspace, limit=limit)
     return [(c.text, c.display_meta_text) for c in completer.get_completions(Document(text), None)]
@@ -51,7 +63,7 @@ def test_default_history_path_honours_xdg_data_home(tmp_path: Path, monkeypatch:
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
     assert cli_ui._default_history_path() == tmp_path / "trinaxai" / "agent_history"
     monkeypatch.delenv("XDG_DATA_HOME")
-    assert cli_ui._default_history_path().parts[-3:] == ("share", "trinaxai", "agent_history") or True
+    assert cli_ui._default_history_path().parts[-2:] == ("trinaxai", "agent_history")
 
 
 def _plain_console(monkeypatch: pytest.MonkeyPatch) -> cli_ui.Console:
@@ -175,7 +187,9 @@ def test_agent_prompt_uses_prompt_toolkit_on_a_tty_and_falls_back_on_failure(
     assert console.agent_prompt() == "plain fallback"
 
 
-def test_agent_session_key_bindings_and_dynamic_completion(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_agent_session_key_bindings_and_dynamic_completion(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, headless_prompt_toolkit: None
+) -> None:
     console = _plain_console(monkeypatch)
     cycled: list[int] = []
     (tmp_path / "pkg").mkdir()
@@ -223,7 +237,7 @@ def test_agent_session_key_bindings_and_dynamic_completion(monkeypatch: pytest.M
 
 
 def test_agent_session_survives_unwritable_history_and_missing_callbacks(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, headless_prompt_toolkit: None
 ) -> None:
     console = _plain_console(monkeypatch)
     console._agent_ctx = {"toolbar": None, "on_cycle": None, "commands": ()}
