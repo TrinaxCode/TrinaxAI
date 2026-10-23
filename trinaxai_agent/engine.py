@@ -1012,14 +1012,17 @@ def _grounding_violations(answer: str, evidence: str) -> list[str]:
     ):
         violations.append("contradicts valid syntax")
 
-    tuple_is_valid = "goto((x, y))" in facts and "a pair (tuple) of coordinates" in facts
+    # CPython 3.13 reworded the turtle docstrings these facts quote, so accept both wordings.
+    tuple_is_valid = ("goto((x, y))" in facts and "a pair (tuple) of coordinates" in facts) or bool(
+        re.search(r"turtle\.goto\(self, x, y=none\).{0,300}x must be a pair of coordinates", facts)
+    )
     if tuple_is_valid and re.search(
         r"goto.{0,100}(no (?:acepta|admite)|incorrect|inválid|expects? two|requires? two|espera dos|requiere dos)",
         text,
     ):
         violations.append("contradicts goto tuple signature")
 
-    goto_draws = "if the pen is down, a line will be drawn" in facts
+    goto_draws = bool(re.search(r"if the pen is down, a line (?:will be|is) drawn", facts))
     if goto_draws and re.search(
         r"(?:goto|volver|vuelve|regresa|retorn).{0,140}(?:borr|erase|no queda ningún|no deja ningún)",
         text,

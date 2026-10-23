@@ -3,6 +3,7 @@ from __future__ import annotations
 import builtins
 import io
 import json
+import re
 import types
 import urllib.error
 from contextlib import nullcontext
@@ -151,7 +152,7 @@ def test_tool_helpers_cover_external_and_workspace_failures(monkeypatch: pytest.
     monkeypatch.setattr(tools_module.importlib, "import_module", blocked_turtle_import)
     turtle_facts = _python_stdlib_facts("import turtle\nt = turtle.Turtle()\nt.speed(500)\nt.goto((1, 2))\n")
     assert any("verified turtle.Turtle.goto" in fact for fact in turtle_facts)
-    assert any("a pair (tuple) of coordinates" in fact for fact in turtle_facts)
+    assert any(re.search(r"a pair (?:\(tuple\) )?of coordinates", fact) for fact in turtle_facts)
 
     monkeypatch.setattr(tools_module.importlib.util, "find_spec", lambda _name: None)
     assert tools_module._static_turtle_api() == (set(), {})

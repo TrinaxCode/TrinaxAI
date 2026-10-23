@@ -4,7 +4,7 @@
 
 <p align="center">
   <a href="https://github.com/TrinaxCode/TrinaxAI"><img src="https://img.shields.io/github/stars/TrinaxCode/TrinaxAI?style=flat&amp;label=%E2%98%85&amp;color=006bbd" alt="GitHub stars"></a>
-  <a href="https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.2.6"><img src="https://img.shields.io/badge/version-1.2.6-006bbd" alt="Release estable: 1.2.6"></a>
+  <a href="https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.3.0"><img src="https://img.shields.io/badge/version-1.3.0-006bbd" alt="Release estable: 1.3.0"></a>
   <a href="https://github.com/TrinaxCode/TrinaxAI/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/TrinaxCode/TrinaxAI/ci.yml?branch=main&amp;label=CI" alt="CI status"></a>
   <a href="https://github.com/TrinaxCode/TrinaxAI/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0--or--later-006bbd" alt="License: AGPL-3.0-or-later"></a>
   <img src="https://img.shields.io/badge/macOS%20%7C%20Windows%20%7C%20Linux-4493F8?style=flat-square" alt="Supported platforms: macOS, Windows, and Linux">
@@ -73,6 +73,14 @@ el formato de [Keep a Changelog](https://keepachangelog.com/).
   actualización, incluso antes de que `pip install -e .` renueve la instalación
   editable. Los scripts de instalación y actualización no cambian; el nuevo
   diseño solo se ha ejecutado en Linux, no en macOS ni en Windows.
+
+### Corregido
+
+- La guarda de verificación de revisiones del Agente ya no se desactiva en
+  silencio con Python 3.13, cuyas docstrings de `turtle` tienen otra redacción
+  que en 3.12; ahora reconoce ambas, y los tests ya no dependen de las
+  docstrings del intérprete.
+- El badge de versión del changelog apunta ahora a 1.3.0 en ambos idiomas.
 
 ### Seguridad
 
