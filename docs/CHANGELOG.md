@@ -96,6 +96,10 @@ All notable changes to TrinaxAI are documented here. This project follows the
 
 ### Security
 
+- The API and the PWA gateway now reject requests whose `Host` header names a
+  foreign domain (`421`). This blocks DNS-rebinding pages from reading private
+  data when TrinaxAI runs over plain HTTP (no local certificate, or Docker).
+  Add custom host names to `TRINAXAI_ALLOWED_HOSTS`.
 - Agent hardening: "don't ask again" no longer widens to test runners or type
   checkers, rules for commands that run workspace code expire individually
   after the Agent edits a file, the Agent's file tools refuse every spelling of

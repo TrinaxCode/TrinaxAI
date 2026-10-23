@@ -46,6 +46,7 @@ Si un override provoca un fallo, usa la [guía de solución de problemas y recup
 | `TRINAXAI_STOP_ALL_DELAY` | `0` (`0.25` durante el handoff API) | Retardo interno breve para enviar la respuesta de detener todo antes de cerrar el supervisor. |
 | `TRINAXAI_TLS_VERIFY` | `0` | Verifica certificados TLS para ciertas solicitudes salientes del backend. La CLI siempre verifica TLS; usa `--ca-file` o `TRINAXAI_CA_FILE` para una CA privada. |
 | `TRINAXAI_CORS_ORIGINS` | orígenes locales seguros | Orígenes exactos del navegador separados por comas. CORS no es autenticación. |
+| `TRINAXAI_ALLOWED_HOSTS` | vacío | Nombres de host extra, separados por comas, que la API y el gateway de la PWA aceptan en la cabecera `Host` (`*` acepta cualquiera). Siempre se aceptan direcciones IP, `localhost`, nombres de una sola etiqueta, `*.localhost` y `*.local`; otros dominios reciben `421` para bloquear el DNS rebinding. |
 | `TRINAXAI_CORS_ORIGIN_REGEX` | regex de LAN privada | Expresión regular adicional de orígenes FastAPI. Revísala antes de ampliarla. |
 | `TRINAXAI_ALLOW_LAN_SYSTEM` | `0` | Variable de compatibilidad obsoleta; ya no concede administración del host por LAN. |
 | `TRINAXAI_ADMIN_TOKEN` | vacío | Credencial admin para operaciones protegidas de bajo riesgo. Nunca evita el requisito loopback para administrar el host. |

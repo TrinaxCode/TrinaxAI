@@ -18,6 +18,7 @@ from app.errors import (
 )
 from app.routes import ROUTERS
 from app.security.admin_auth import SAFE_DEFAULT_ORIGIN_REGEX, SAFE_DEFAULT_ORIGINS
+from app.security.host_guard import TrustedHostGuardMiddleware
 from app.security.observability import SecurityObservabilityMiddleware
 from app.services import shared_runtime as runtime
 from app.services import system_service as lifecycle_runtime
@@ -51,6 +52,9 @@ async def lifespan(_app: FastAPI):
 
 def create_app() -> FastAPI:
     application = FastAPI(title="TrinaxAI RAG API", lifespan=lifespan)
+    # Added first so it runs innermost: rejected requests still get the
+    # observability headers and log line.
+    application.add_middleware(TrustedHostGuardMiddleware)
     application.add_middleware(SecurityObservabilityMiddleware)
     application.add_middleware(
         CORSMiddleware,

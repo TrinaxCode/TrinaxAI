@@ -13,6 +13,7 @@ import {
   isAuthorizedSystemProxyPeer,
   isLoopbackAddress,
   isPrivateLanAddress,
+  isTrustedHostHeader,
   needsInferenceLock,
   requiredOllamaProxyScope,
   requiredRagProxyScope,
@@ -107,6 +108,18 @@ describe('Vite security boundary', () => {
     expect(isPrivateLanAddress('fd00::1')).toBe(true);
     expect(isPrivateLanAddress('8.8.8.8')).toBe(false);
     expect(isPrivateLanAddress('2001:4860:4860::8888')).toBe(false);
+  });
+
+  it('rejects DNS-rebinding Host headers but keeps local and LAN names', () => {
+    for (const host of [undefined, '', 'localhost:3334', 'LOCALHOST.', '127.0.0.1:3334', '[::1]:3334', '::1', 'app.localhost', 'laptop.local:3334', '192.168.1.5:3334']) {
+      expect(isTrustedHostHeader(host)).toBe(true);
+    }
+    for (const host of ['evil.example', 'evil.example.:3334', '[::1', '[]:3334']) {
+      expect(isTrustedHostHeader(host)).toBe(false);
+    }
+    expect(isTrustedHostHeader('AI.home.arpa:3334', ' ai.home.arpa. , ')).toBe(true);
+    expect(isTrustedHostHeader('evil.example', 'ai.home.arpa')).toBe(false);
+    expect(isTrustedHostHeader('evil.example', '*')).toBe(true);
   });
 
   it('keeps every system-control operation on the real loopback peer', () => {

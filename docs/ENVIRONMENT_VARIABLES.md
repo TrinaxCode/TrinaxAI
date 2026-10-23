@@ -56,6 +56,7 @@ child processes and normally should not be added to `.env`.
 | `TRINAXAI_STOP_ALL_DELAY` | `0` (`0.25` during API handoff) | Short internal delay that lets the stop-all response flush before the supervisor exits. |
 | `TRINAXAI_TLS_VERIFY` | `0` | Verify TLS certificates for selected outgoing backend requests. The CLI always verifies TLS; use `--ca-file` or `TRINAXAI_CA_FILE` for a private CA. |
 | `TRINAXAI_CORS_ORIGINS` | safe local origins | Comma-separated exact browser origins. CORS is not authentication. |
+| `TRINAXAI_ALLOWED_HOSTS` | empty | Extra comma-separated host names the API and PWA gateway accept in the `Host` header (`*` accepts any). IP addresses, `localhost`, single-label names, `*.localhost` and `*.local` are always accepted; other domains get `421` to block DNS rebinding. |
 | `TRINAXAI_CORS_ORIGIN_REGEX` | private-LAN regex | Additional FastAPI origin regular expression. Review carefully before widening it. |
 | `TRINAXAI_ALLOW_LAN_SYSTEM` | `0` | Deprecated compatibility variable; it no longer grants LAN host administration. |
 | `TRINAXAI_ADMIN_TOKEN` | empty | Administrator credential for protected low-risk operations. It never overrides the loopback requirement for host administration. |
