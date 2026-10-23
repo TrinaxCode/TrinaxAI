@@ -90,9 +90,10 @@ function Invoke-NativeChecked([string]$FilePath, [string[]]$Arguments, [string]$
 }
 function Read-YesNo($Prompt, [bool]$DefaultYes = $true) {
   if ($NonInteractive) { return $DefaultYes }
-  $Suffix = if ($DefaultYes) { "[Y/n]" } else { "[y/N]" }
+  $Suffix = if ($Language -eq 'es') { if ($DefaultYes) { "[S/n]" } else { "[s/N]" } } else { if ($DefaultYes) { "[Y/n]" } else { "[y/N]" } }
   $Reply = Read-Host "$Prompt $Suffix"
   if ([string]::IsNullOrWhiteSpace($Reply)) { return $DefaultYes }
+  if ($Language -eq 'es') { return ($Reply -match "^[YySs]") }
   return ($Reply -match "^[Yy]")
 }
 function Get-PythonExe {

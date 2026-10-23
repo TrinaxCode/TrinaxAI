@@ -109,8 +109,11 @@ def test_cli_lifecycle_help() -> None:
     uninstall = run_cli("uninstall", "--help")
     assert update.returncode == 0
     assert "--no-backup" in update.stdout
+    assert "--dry-run" in update.stdout
     assert uninstall.returncode == 0
     assert "--purge" in uninstall.stdout
+    for option in ("--remove-app", "--remove-env", "--remove-certs", "--dry-run"):
+        assert option in uninstall.stdout
 
 
 def test_agent_auto_router_uses_fast_tool_model_for_simple_code_tasks() -> None:

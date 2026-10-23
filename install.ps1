@@ -8,6 +8,7 @@
   [switch]$NoStart,
   [switch]$DryRun,
   [switch]$LanSystem,
+  [switch]$PreferencesCollected,
   [string]$InstallDir = "",
   [string]$SourceUrl = "",
   [string]$SourceSha256 = "",
@@ -33,8 +34,13 @@ Run in PowerShell:
 #>
 
 $ErrorActionPreference = "Stop"
+$LanguageExplicit = -not [string]::IsNullOrWhiteSpace($Language) -or -not [string]::IsNullOrWhiteSpace($env:TRINAXAI_LANG)
 if ([string]::IsNullOrWhiteSpace($Language)) { $Language = if ($env:TRINAXAI_LANG -match '^es') { 'es' } elseif ((Get-Culture).Name -match '^es') { 'es' } else { 'en' } }
 function T($English, $Spanish) { if ($Language -eq 'es') { return $Spanish }; return $English }
+if (-not $LanguageExplicit -and -not $NonInteractive -and -not $DryRun -and -not $PreferencesCollected) {
+  $LanguageReply = Read-Host "Select language / Selecciona idioma [en/es, default: $Language]"
+  if ($LanguageReply -match '^es') { $Language = 'es' } elseif ($LanguageReply -match '^en') { $Language = 'en' }
+}
 $ReleaseVersion = if (-not [string]::IsNullOrWhiteSpace($env:TRINAXAI_RELEASE_VERSION)) { $env:TRINAXAI_RELEASE_VERSION } else { "1.3.0" }
 if ($ReleaseVersion -notmatch '^[0-9]+\.[0-9]+\.[0-9]+$') { throw (T "Invalid TrinaxAI release version: $ReleaseVersion" "Versión de lanzamiento de TrinaxAI no válida: $ReleaseVersion") }
 $DefaultSourceArchiveName = "TrinaxAI-$ReleaseVersion.zip"
@@ -163,9 +169,10 @@ function Read-ModelValue($Label, $Default) {
 }
 function Read-YesNo($Prompt, [bool]$DefaultYes = $true) {
   if ($NonInteractive) { return $DefaultYes }
-  $Suffix = if ($DefaultYes) { "[Y/n]" } else { "[y/N]" }
+  $Suffix = if ($Language -eq 'es') { if ($DefaultYes) { "[S/n]" } else { "[s/N]" } } else { if ($DefaultYes) { "[Y/n]" } else { "[y/N]" } }
   $Reply = Read-Host "$Prompt $Suffix"
   if ([string]::IsNullOrWhiteSpace($Reply)) { return $DefaultYes }
+  if ($Language -eq 'es') { return ($Reply -match "^[YySs]") }
   return ($Reply -match "^[Yy]")
 }
 function Install-WingetPackage($Id, $Name) {
@@ -740,6 +747,86 @@ if ($LocalRepo -and $InstallDirWasProvided) {
   $LocalRepoIsTarget = ([IO.Path]::GetFullPath($LocalRepo) -eq [IO.Path]::GetFullPath($InstallDir))
 }
 
+$UsesLocalRepo = [bool]($LocalRepo -and (Test-Path (Join-Path $LocalRepo "pyproject.toml")) -and -not ($InstallDirWasProvided -and -not $LocalRepoIsTarget))
+$PlanDir = if ($UsesLocalRepo) { $LocalRepo } else { [IO.Path]::GetFullPath($InstallDir) }
+$NeedsSourceDownload = (-not $UsesLocalRepo) -and -not (Test-Path (Join-Path $PlanDir "pyproject.toml"))
+
+function Get-FreeDiskGb([string]$Path) {
+  try {
+    $Probe = $Path
+    while ($Probe -and -not (Test-Path -LiteralPath $Probe)) { $Probe = Split-Path -Parent $Probe }
+    if (-not $Probe) { return 0 }
+    $Drive = (Get-Item -LiteralPath $Probe).PSDrive
+    if ($null -eq $Drive -or $null -eq $Drive.Free) { return 0 }
+    return [int][math]::Floor($Drive.Free / 1GB)
+  } catch { return 0 }
+}
+function Test-GitHubReachable {
+  try {
+    Invoke-WebRequest -Uri "https://github.com" -Method Head -UseBasicParsing -TimeoutSec 15 | Out-Null
+    return $true
+  } catch {
+    # Any HTTP answer, even an error status, proves the connection works.
+    return [bool]$_.Exception.Response
+  }
+}
+function Write-YesNo([bool]$Value) { if ($Value) { return (T "Yes" "Sí") }; return "No" }
+
+if (-not $PreferencesCollected) {
+  Write-Step (T "Preflight checks" "Comprobaciones previas")
+  $FreeGb = Get-FreeDiskGb $PlanDir
+  Write-Host (T "  Free disk space: $FreeGb GB" "  Espacio libre en disco: $FreeGb GB")
+  if ($FreeGb -gt 0 -and $FreeGb -lt 3) {
+    Write-Warn (T "Not enough free disk space at $($PlanDir): $FreeGb GB" "No hay espacio libre suficiente en el disco en $($PlanDir): $FreeGb GB")
+    Write-Warn (T "At least 3 GB are needed for the application; models need 6 GB to 50 GB more depending on your profile." "Se necesitan al menos 3 GB para la aplicación; los modelos necesitan entre 6 y 50 GB más según tu perfil.")
+    Write-Warn (T "Free some space or choose another location with -InstallDir PATH." "Libera espacio o elige otra ubicación con -InstallDir RUTA.")
+    exit 1
+  }
+  if (Test-GitHubReachable) {
+    Write-Ok (T "Internet connection to GitHub works" "La conexión a Internet con GitHub funciona")
+  } elseif ($NeedsSourceDownload) {
+    Write-Warn (T "Cannot reach github.com. Check your internet connection or proxy settings and run the installer again." "No se puede conectar con github.com. Revisa tu conexión a Internet o tu proxy y ejecuta el instalador de nuevo.")
+    exit 1
+  } else {
+    Write-Warn (T "Cannot reach github.com; continuing because the source is already on this computer." "No se puede conectar con github.com; se continúa porque el código ya está en este equipo.")
+  }
+
+  if (-not $NonInteractive) {
+    Write-Step (T "Your choices" "Tus elecciones")
+    Write-Host (T "  Answer a few questions now; the rest of the installation runs on its own." "  Responde unas preguntas ahora; el resto de la instalación se hace sola.") -ForegroundColor Cyan
+    if (-not $NoModels) {
+      Write-Host (T "  Models are large (several GB); your hardware profile decides which ones." "  Los modelos son grandes (varios GB); tu perfil de hardware decide cuáles.") -ForegroundColor Cyan
+      if (-not (Read-YesNo (T "Download the configured Ollama models now? Choose N to defer model downloads." "¿Descargar ahora los modelos Ollama configurados? Elige N para dejar las descargas para después.") $true)) { $NoModels = $true }
+    }
+    if (-not $NoStart) {
+      if (-not (Read-YesNo (T "Start TrinaxAI now after install?" "¿Iniciar TrinaxAI ahora al terminar?") $true)) { $NoStart = $true }
+    }
+    if (-not $NoStart -and -not $NoAutostart) {
+      Write-Host (T "  You can change this later in the PWA Settings page." "  Puedes cambiarlo después en la página Configuración de la PWA.") -ForegroundColor Cyan
+      if (-not (Read-YesNo (T "Start TrinaxAI automatically when Windows starts?" "¿Iniciar TrinaxAI automáticamente al iniciar Windows?") $true)) { $NoAutostart = $true }
+    }
+    if (-not $NoAutoUpdate) {
+      if (-not (Read-YesNo (T "Check for TrinaxAI updates every week? It only checks; it never installs anything without you." "¿Comprobar cada semana si hay actualizaciones de TrinaxAI? Solo comprueba; nunca instala nada sin ti.") $true)) { $NoAutoUpdate = $true }
+    }
+  }
+
+  Write-Step (T "Installation plan" "Plan de instalación")
+  Write-Host ("  " + (T "Location" "Ubicación") + ": $PlanDir")
+  Write-Host ("  " + (T "Language" "Idioma") + ": " + $(if ($Language -eq 'es') { "Español" } else { "English" }))
+  Write-Host ("  " + (T "Download models now" "Descargar modelos ahora") + ": " + (Write-YesNo (-not $NoModels)))
+  Write-Host ("  " + (T "Start TrinaxAI when finished" "Iniciar TrinaxAI al terminar") + ": " + (Write-YesNo (-not $NoStart)))
+  Write-Host ("  " + (T "Start with your computer" "Iniciar con tu equipo") + ": " + (Write-YesNo ((-not $NoStart) -and (-not $NoAutostart))))
+  Write-Host ("  " + (T "Weekly update check" "Comprobación semanal de actualizaciones") + ": " + (Write-YesNo (-not $NoAutoUpdate)))
+  Write-Host ""
+  if (-not $NonInteractive) {
+    if (-not (Read-YesNo (T "Continue with this installation?" "¿Continuar con esta instalación?") $true)) {
+      Write-Warn (T "Cancelled. Nothing was changed." "Cancelado. No se cambió nada.")
+      exit 0
+    }
+  }
+  $PreferencesCollected = $true
+}
+
 # Support the remote flow after downloading the script to a local file. Verify
 # the exact release asset before executing it:
 #   $version = "1.3.0"; $base = "https://github.com/TrinaxCode/TrinaxAI/releases/download/v$version"
@@ -773,6 +860,7 @@ if (
   if ($SourceSha256) { $Forward += @("-SourceSha256", $SourceSha256) }
   if ($Profile) { $Forward += @("-Profile", $Profile) }
   if ($Language) { $Forward += @("-Language", $Language) }
+  if ($PreferencesCollected) { $Forward += "-PreferencesCollected" }
   $PowerShellHost = try { (Get-Process -Id $PID).Path } catch { "powershell.exe" }
   & $PowerShellHost @Forward
   exit $LASTEXITCODE
@@ -997,7 +1085,7 @@ Write-Host "  $(T 'Code' 'Código'):         $ModelCode"
 Write-Host "  $(T 'Deep' 'Profundo'):       $ModelDeep"
 Write-Host "  $(T 'Embeddings' 'Embeddings'):   $EmbedModel"
 Write-Host "  $(T 'Vision' 'Visión'):       $VisionModel ($(T 'downloads on first image analysis' 'se descarga al analizar la primera imagen'))"
-if (-not $NonInteractive) {
+if ((-not $NonInteractive) -and (-not $PreferencesCollected)) {
   $SkipModels = Read-Host (T "Download these configured Ollama models now? Choose N to defer model downloads. [Y/n]" "¿Descargar ahora estos modelos Ollama configurados? Elige N para dejar las descargas para después. [Y/n]")
   if ($SkipModels -match "^[Nn]") {
     $NoModels = $true
@@ -1025,7 +1113,7 @@ Write-Host (T "  Vision model $VisionModel will download on first image analysis
 
 Write-Step (T "6/6 Start" "6/6 Inicio")
 if (-not $NoStart) {
-  if (Read-YesNo (T "Start TrinaxAI now after install?" "¿Iniciar TrinaxAI ahora al terminar?" ) $true) {
+  if ($PreferencesCollected -or (Read-YesNo (T "Start TrinaxAI now after install?" "¿Iniciar TrinaxAI ahora al terminar?" ) $true)) {
     Invoke-NativeChecked ".\.venv\Scripts\python.exe" @("service_manager.py", "start", "--base-dir", $Repo) (T "TrinaxAI services" "servicios de TrinaxAI")
     Write-Ok (T "TrinaxAI started" "TrinaxAI iniciado")
     Assert-RuntimeReady
@@ -1034,7 +1122,7 @@ if (-not $NoStart) {
     Write-Warn (T "Start skipped. Run .\.venv\Scripts\trinaxai.exe start when ready." "Se omitió el inicio. Ejecuta .\.venv\Scripts\trinaxai.exe start cuando estés listo.")
   }
 }
-if (-not $NoStart -and -not $NoAutostart) {
+if (-not $NoStart -and -not $NoAutostart -and -not $PreferencesCollected) {
   if (-not (Read-YesNo (T "Start TrinaxAI automatically when Windows starts?" "¿Iniciar TrinaxAI automáticamente al iniciar Windows?" ) $true)) {
     $NoAutostart = $true
   }

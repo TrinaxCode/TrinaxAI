@@ -33,8 +33,14 @@ trinaxai setup
 
 The launcher downloads the matching official release, verifies its SHA-256
 checksum, and starts the platform setup. The setup flow prepares the backend,
-PWA, Ollama, and recommended models. It asks before optional model downloads
-and autostart changes.
+PWA, Ollama, and recommended models.
+
+Setup opens with a welcome and asks for your language (English or Spanish).
+It then checks your disk space and connection, asks every optional question up
+front (model downloads, start now, autostart, weekly update check), and shows
+an installation plan to confirm before it changes anything. Run
+`trinaxai setup` again on an existing installation to repair, update, or
+uninstall it.
 
 The npm launcher is the only supported end-user installation path. The
 platform scripts in this repository implement the release behind the launcher;
@@ -69,7 +75,8 @@ you are ready. Use `trinaxai --help` to see every available command.
 | Prepare without starting services | `trinaxai setup --no-start` |
 | Choose a hardware profile | `trinaxai setup --profile 16gb` |
 | Preview changes | `trinaxai setup --dry-run` |
-| Automate setup | `trinaxai setup --non-interactive` |
+| Skip the language question | `trinaxai setup --language es` |
+| Automate setup | `trinaxai setup --yes` (or `--non-interactive`) |
 
 The installer detects CPU, memory, GPU, and VRAM. The default profile is safe
 for the detected machine. See [configuration](docs/CONFIGURATION.md) when you
