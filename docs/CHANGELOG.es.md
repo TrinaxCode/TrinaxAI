@@ -20,6 +20,18 @@ el formato de [Keep a Changelog](https://keepachangelog.com/).
 
 ### Añadido
 
+- Instalación guiada y centrada en el cliente. `trinaxai setup` empieza con una
+  bienvenida y la elección de idioma (español o inglés), comprueba el espacio
+  libre en disco y la conexión con GitHub, hace todas las preguntas opcionales
+  al principio y muestra un plan de instalación para confirmar antes de cambiar
+  nada. Sobre una instalación existente ofrece repararla, actualizarla o
+  desinstalarla, y un `trinaxai` suelto antes de instalar ofrece configurarlo.
+  El instalador de Windows ahora también pregunta el idioma. El lanzador
+  reintenta las descargas fallidas, recurre a `curl` detrás de un proxy, acepta
+  `--yes`, `--interactive` y `--language`, y responde en tu idioma.
+- `trinaxai uninstall` acepta `--remove-app`, `--remove-env`, `--remove-certs`
+  y `--dry-run`; `trinaxai update` acepta `--dry-run`.
+
 - `trinaxai agent` ahora funciona como otros agentes de código para terminal:
   transcripción `● herramienta(args)` / `⎿ resultado` con estado "Trabajando…",
   diffs unificados reales al pedir aprobación, aprobación en tres opciones
@@ -93,6 +105,16 @@ el formato de [Keep a Changelog](https://keepachangelog.com/).
   incluyan.
 - Borrar una fuente importada resuelve los symlinks antes de comprobar que la
   ruta sigue dentro de la carpeta de importaciones.
+
+### Corregido
+
+- Pasar `--language es` (en dos palabras) al instalador, actualizador o
+  desinstalador ya no vuelve a preguntar el idioma.
+- Responder "sí" o "s" a una pregunta con valor por defecto No ya no cuenta como
+  No, y los avisos en español ahora muestran `[S/n]`.
+- Los mensajes del instalador que aparecían en inglés en modo español están
+  traducidos, y una instalación fallida indica que se puede ejecutar de nuevo
+  sin riesgo.
 
 ## [1.3.0] — 2026-10-18
 

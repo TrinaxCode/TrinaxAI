@@ -260,6 +260,7 @@ def _build_parser(language: str | None = None) -> argparse.ArgumentParser:
     update_p.add_argument("--no-models", action="store_true")
     update_p.add_argument("--restart", action="store_true")
     update_p.add_argument("--no-restart", action="store_true")
+    update_p.add_argument("--dry-run", action="store_true", help="Show what would change; modify nothing.")
 
     uninstall_p = sub.add_parser("uninstall", help="Guided, safe TrinaxAI uninstaller.")
     uninstall_p.add_argument("-y", "--yes", action="store_true", help="Confirm and use safe defaults.")
@@ -268,6 +269,10 @@ def _build_parser(language: str | None = None) -> argparse.ArgumentParser:
     uninstall_p.add_argument("--remove-models", action="store_true")
     uninstall_p.add_argument("--remove-ollama", action="store_true")
     uninstall_p.add_argument("--keep-env", action="store_true")
+    uninstall_p.add_argument("--remove-env", action="store_true", help="Also remove the generated .env.")
+    uninstall_p.add_argument("--remove-certs", action="store_true", help="Also remove generated HTTPS certificates.")
+    uninstall_p.add_argument("--remove-app", action="store_true", help="Also remove the managed application files.")
+    uninstall_p.add_argument("--dry-run", action="store_true", help="Show what would be removed; delete nothing.")
     # Keep the reserved command parseable for compatibility, but do not
     # advertise an integration that does not exist yet.
     sub.add_parser("mcp", help=argparse.SUPPRESS)

@@ -33,8 +33,15 @@ trinaxai setup
 
 El lanzador descarga el release oficial correspondiente, verifica su checksum
 SHA-256 e inicia la configuración de la plataforma. El flujo prepara el
-backend, la PWA, Ollama y los modelos recomendados. Pregunta antes de descargar
-modelos opcionales o cambiar el autoarranque.
+backend, la PWA, Ollama y los modelos recomendados.
+
+La instalación empieza con una bienvenida y te pregunta el idioma (español o
+inglés). Luego comprueba el espacio en disco y la conexión, te hace todas las
+preguntas opcionales al principio (descargar modelos, iniciar ahora,
+autoarranque, comprobación semanal de actualizaciones) y muestra un plan de
+instalación para que lo confirmes antes de cambiar nada. Ejecuta `trinaxai setup`
+de nuevo sobre una instalación existente para repararla, actualizarla o
+desinstalarla.
 
 El lanzador npm es la única ruta de instalación pública para usuarios finales.
 Los scripts de plataforma del repositorio implementan el release por debajo;
@@ -69,7 +76,8 @@ listo. Usa `trinaxai --help` para consultar todos los comandos.
 | Preparar sin iniciar servicios | `trinaxai setup --no-start` |
 | Elegir un perfil | `trinaxai setup --profile 16gb` |
 | Previsualizar cambios | `trinaxai setup --dry-run` |
-| Automatizar | `trinaxai setup --non-interactive` |
+| Omitir la pregunta de idioma | `trinaxai setup --language es` |
+| Automatizar | `trinaxai setup --yes` (o `--non-interactive`) |
 
 El instalador detecta CPU, memoria, GPU y VRAM. Consulta
 [configuración](docs/CONFIGURATION.es.md) para ajustar modelos, límites o proveedores.
