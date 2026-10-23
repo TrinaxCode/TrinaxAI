@@ -41,6 +41,8 @@ Si un override provoca un fallo, usa la [guía de solución de problemas y recup
 | `TRINAXAI_PWA_DIST` | `dist` | Directorio opcional de salida/build frontend relativo a `chat-pwa`; útil para previews y E2E paralelos aislados. |
 | `TRINAXAI_ALLOW_INSECURE_HTTP` | `0` | Escape solo para pruebas que permite HTTP en una interfaz PWA no loopback. Déjalo desactivado; HTTP loopback sigue disponible para pruebas locales. |
 | `TRINAXAI_FRONTEND_MODE` | `serve` | Gateway Node de producción usado por el gestor de servicios; `dev` selecciona Vite HMR. |
+| `TRINAXAI_DRY_RUN` | `0` | Modo de diagnóstico del instalador/actualizador que evita aplicar cambios al sistema. |
+| `TRINAXAI_START_SUPERVISOR` | sin definir | Indicador interno de traspaso de recuperación que restaura el supervisor de servicios tras un inicio local correcto. |
 | `TRINAXAI_STOP_ALL_DELAY` | `0` (`0.25` durante el handoff API) | Retardo interno breve para enviar la respuesta de detener todo antes de cerrar el supervisor. |
 | `TRINAXAI_TLS_VERIFY` | `0` | Verifica certificados TLS para ciertas solicitudes salientes del backend. La CLI siempre verifica TLS; usa `--ca-file` o `TRINAXAI_CA_FILE` para una CA privada. |
 | `TRINAXAI_CORS_ORIGINS` | orígenes locales seguros | Orígenes exactos del navegador separados por comas. CORS no es autenticación. |
@@ -110,6 +112,7 @@ Estos valores los consume `compose.yaml`; son ajustes de despliegue, no opciones
 | `TRINAXAI_GEN_TEMPERATURE_CREATIVE` | `0.5` | Override de temperatura para tareas creativas. |
 | `TRINAXAI_GEN_TEMPERATURE_EXPLAIN` | `0.4` | Override de temperatura para explicaciones. |
 | `TRINAXAI_GEN_TEMPERATURE_GROUNDED_QA` | `0.0` | Override de temperatura para respuestas RAG fundamentadas. |
+| `TRINAXAI_GEN_TEMPERATURE_<REGIME>` | derivado del régimen | Forma general que consume el cargador de presets de generación. |
 | `TRINAXAI_EMBED_PRESET` | derivado del perfil | Preset de embeddings: `balanced` (0.6B), `quality` (4B), `lite` o `fast`. Los valores legacy `max` migran a `quality`. |
 | `TRINAXAI_EMBED` | derivado del preset | Modelo Ollama de embeddings. Cambiarlo requiere reindexar. |
 | `TRINAXAI_EMBED_DIMS` | derivado del preset | Dimensiones del vector de embeddings. Cambiarlo requiere reindexar. |
@@ -118,7 +121,8 @@ Estos valores los consume `compose.yaml`; son ajustes de despliegue, no opciones
 | `TRINAXAI_EMBED_KEEP_ALIVE` | derivado del perfil | Permanencia del modelo de embeddings. |
 | `TRINAXAI_AGGRESSIVE_QUANT` | `0` | Activa hints de quantization/runtime agresivos. |
 
-Ollama también consume `OLLAMA_BASE_URL`, `OLLAMA_HOST` y `OLLAMA_NUM_GPU`.
+Ollama también consume `OLLAMA_BASE_URL` (endpoint del backend), `OLLAMA_HOST`
+(dirección de enlace del servidor) y `OLLAMA_NUM_GPU` (indicación de descarga a GPU).
 
 ## Búsqueda web
 
@@ -146,6 +150,7 @@ Ollama también consume `OLLAMA_BASE_URL`, `OLLAMA_HOST` y `OLLAMA_NUM_GPU`.
 | `TRINAXAI_INDEX_BATCH_SIZE` | `100` | Archivos cargados por lote. |
 | `TRINAXAI_INDEX_NODE_BATCH_SIZE` | `32` | Nodos embebidos por lote de construcción. |
 | `TRINAXAI_INDEX_STAGE_TIMEOUT` | `900` | Máximo de segundos por etapa sin progreso estructurado. |
+| `TRINAXAI_PROGRESS` | marcador estructurado en stdout | **Interna:** prefijo que emite el indexador y que interpreta su supervisor; no es un ajuste de usuario. |
 | `TRINAXAI_INDEX_LOAD_WORKERS` | hasta `8` | Cargadores simultáneos de archivos fuente. |
 | `TRINAXAI_INDEX_LOCK_TIMEOUT` | `60` | Segundos de espera del lock del escritor del índice. |
 | `TRINAXAI_INDEX_TIMEOUT` | `3600` | Segundos que la CLI espera al proceso indexador. |
@@ -183,7 +188,10 @@ Ollama también consume `OLLAMA_BASE_URL`, `OLLAMA_HOST` y `OLLAMA_NUM_GPU`.
 | `TRINAXAI_OCR_MAX_PIXELS` | `100000000` | Máximo estimado de píxeles rasterizados procesados por OCR para un documento. |
 
 El indexador reconoce código, prosa/datos, PDF y Office, HTML, EPUB, correo,
-subtítulos, calendarios, contactos y notebooks. Los binarios opacos se omiten.
+subtítulos, calendarios, contactos y notebooks. También indexa archivos con
+extensiones poco comunes cuando sus bytes se detectan con seguridad como texto;
+los binarios o archivos multimedia opacos se omiten en lugar de incrustarse como
+basura.
 
 ## Memoria persistente
 
@@ -209,8 +217,8 @@ subtítulos, calendarios, contactos y notebooks. Los binarios opacos se omiten.
 | Variable | Predeterminado | Propósito |
 |---|---|---|
 | `TRINAXAI_VOICE_STT_MODEL` | `base` | Modelo Whisper para voz a texto local. |
-| `TRINAXAI_VOICE_DEVICE` | `auto` | Dispositivo de ejecución, por ejemplo `cpu` o `cuda`. |
-| `TRINAXAI_VOICE_COMPUTE_TYPE` | `default` | Tipo de cómputo compatible con el dispositivo. |
+| `TRINAXAI_VOICE_DEVICE` | `auto` | Dispositivo de ejecución de `faster-whisper`, por ejemplo `cpu` o `cuda`. |
+| `TRINAXAI_VOICE_COMPUTE_TYPE` | `default` | Tipo de cómputo de `faster-whisper`. Usa solo un valor compatible con el dispositivo/runtime elegido. |
 | `TRINAXAI_VOICE_TTS_ENGINE` | autodetectado | Fuerza un backend local de texto a voz. |
 | `TRINAXAI_VOICE_MAX_AUDIO_BYTES` | `31457280` | Tamaño máximo de audio STT. |
 | `TRINAXAI_VOICE_TTS_MAX_CHARS` | `1200` | Texto máximo por solicitud TTS. |
@@ -229,7 +237,9 @@ subtítulos, calendarios, contactos y notebooks. Los binarios opacos se omiten.
 
 Las herramientas resuelven symlinks y rechazan rutas fuera del workspace. En
 Linux, los comandos requieren bubblewrap, no tienen red y solo ven el workspace
-como árbol escribible. Sin aislamiento compatible, la ejecución queda desactivada.
+como árbol escribible. En hosts sin aislamiento compatible, la ejecución de
+terminal queda desactivada salvo que el operador acepte explícitamente el acceso
+completo al host con permisos de usuario mediante la variable anterior.
 
 ## Gateway PWA y build de Vite
 
@@ -259,6 +269,10 @@ cambiarlas. Los destinos sin `VITE_*` se leen al ejecutar el gateway.
 | `VITE_TRINAXAI_KEEP_ALIVE` | `10m` | Keep-alive de Ollama enviado por el navegador. |
 
 ## Instalación, actualización, backup y ciclo de vida
+
+Estas variables son interruptores de automatización acotados a un comando.
+Defínelas solo para el instalador o el comando de mantenimiento que las consume;
+no ajustan el runtime de RAG.
 
 | Variable | Predeterminado | Propósito |
 |---|---|---|
@@ -300,4 +314,4 @@ una generación publicada; no reconstruye vectores. Nunca confirmes `.env`, toke
 certificados locales, `storage/` ni `local_sources/`. Consulta la [guía de
 solución de problemas](TROUBLESHOOTING.es.md) para el orden seguro de recuperación.
 
-[English version](ENVIRONMENT_VARIABLES.md) · [Documentation index](README.es.md)
+[English version](ENVIRONMENT_VARIABLES.md) · [Índice de documentación](README.es.md)

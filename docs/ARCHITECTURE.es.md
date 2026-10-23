@@ -50,7 +50,7 @@ Los módulos de implementación viven en el paquete `trinaxai`; los archivos
 planos que eran antes (`config.py`, `trinaxai_core.py`, `index.py`, ...) siguen
 en la raíz del repositorio como shims de compatibilidad y lanzadores. La
 decisión, el mecanismo de los shims y el análisis de actualización están en el
-[ADR 0001](adr/0001-python-package-layout.md) (en inglés).
+[ADR 0001](adr/0001-python-package-layout.es.md).
 
 | Módulo | Archivo anterior en la raíz |
 |---|---|

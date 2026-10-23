@@ -34,7 +34,7 @@ Nuestro objetivo es responder en un plazo de **72 horas** y publicar un parche e
 
 - Una descripción clara de la vulnerabilidad
 - Pasos para reproducirla (el código de prueba de concepto es de gran ayuda)
-- Componentes afectados (RAG API, PWA frontend, scripts de shell, etc.)
+- Componentes afectados (RAG API, PWA frontend, scripts de shell, CLI, instalador)
 - Si crees que es explotable de forma remota o solo localmente
 - Cualquier mitigación sugerida
 
@@ -91,9 +91,10 @@ El modelo de amenazas de TrinaxAI asume:
   un bearer nuevo en JSON ni lo persiste en almacenamiento web. FastAPI conserva
   solo un hash con clave y el host/admin puede revocarlo. El almacenamiento
   legacy solo se consume durante la migración explícita de
-  `/v1/pairing/me` y se limpia tras una respuesta exitosa. Empareja equipos
-  controlados y revoca uno perdido con `trinaxai pair revoke`; la CLI sigue usando
-  cabecera.
+  `/v1/pairing/me` y se limpia tras una respuesta exitosa. Los bearers legacy de
+  la CLI siguen usando solo cabecera y nunca se copian a una cookie de respuesta.
+  Empareja equipos controlados y revoca uno perdido con `trinaxai pair revoke`;
+  la CLI sigue usando cabecera.
 - **Identidad de proxy falsificada:** El gateway quita cabeceras de identidad
   aportadas por cliente. FastAPI solo acepta una firma HMAC fresca y de un uso
   desde loopback o un peer privado de runtime configurado explícitamente;

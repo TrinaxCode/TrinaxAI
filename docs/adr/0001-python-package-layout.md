@@ -1,5 +1,7 @@
 # ADR 0001 — Move the flat root Python modules into a `trinaxai` package
 
+**English** · [Español](0001-python-package-layout.es.md)
+
 - **Status:** Accepted, implemented in the same change set (see [Rollout](#rollout)).
 - **Date:** 2026-10-20
 - **Scope:** `config.py`, `index.py`, `rag_api.py`, `service_manager.py`,

@@ -60,9 +60,17 @@ All notable changes to TrinaxAI are documented here. This project follows the
   queries, abstention cases), run live in CI next to the smoke corpus.
 - `tests/test_route_scope_contract.py` pins the device scope of every HTTP
   route, so adding or re-scoping an endpoint is an explicit, reviewed change.
+- Spanish counterparts for `npm-package/README.md` and ADR 0001, plus a
+  `public_readiness.py` check that every Markdown document has a `.es.md` twin
+  with the same headings and code blocks.
 
 ### Changed
 
+- English/Spanish documentation parity: `CONFIGURATION`, `API_REFERENCE`,
+  `CLI_REFERENCE`, `ENVIRONMENT_VARIABLES`, `SECURITY` and the PWA README now
+  carry the same sections in both languages, and the Spanish CLI localizes the
+  remaining help text (`pair`, `agent --permission-mode`), table headers and
+  status lines.
 - The `8gb` profile now defaults to a 4096-token window. With 2048, three
   retrieved chunks filled it and the model could stop after one token.
 - The README and security guide now state that the Agent's terminal tool is

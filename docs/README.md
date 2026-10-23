@@ -87,6 +87,8 @@ private unless you understand the LAN pairing and certificate flow. The
 - [API reference](API_REFERENCE.md): HTTP contracts, SSE, uploads, pairing, and errors
 - [Model benchmark](MODEL_BENCHMARK.md): checked-in local measurements and limitations
 - [PWA documentation](../chat-pwa/README.md): frontend flows, caching, and testing
+- [npm launcher](../npm-package/README.md): verified installer and command launcher
+- [ADR 0001](adr/0001-python-package-layout.md): why the Python modules moved into the `trinaxai` package
 
 ## Recovery and support
 

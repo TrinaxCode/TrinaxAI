@@ -90,6 +90,8 @@ confianza.
 - [Referencia de API](API_REFERENCE.es.md): contratos HTTP, SSE, subidas, pairing y errores
 - [Benchmark de modelos](MODEL_BENCHMARK.es.md): mediciones locales versionadas y limitaciones
 - [Documentación de la PWA](../chat-pwa/README.es.md): flujos frontend, caché y pruebas
+- [Lanzador npm](../npm-package/README.es.md): instalador verificado y lanzador de comandos
+- [ADR 0001](adr/0001-python-package-layout.es.md): por qué los módulos Python pasaron al paquete `trinaxai`
 
 ## Recuperación y soporte
 

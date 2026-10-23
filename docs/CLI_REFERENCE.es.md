@@ -41,6 +41,59 @@ trinaxai --api-url https://localhost:3333 --ca-file /ruta/rootCA.pem ask "Estado
 | `-v`, `--verbose` | Activa logs de depuración. |
 | `--version` | Muestra la versión. |
 
+## Mapa de comandos
+
+```bash
+trinaxai chat [--prompt TEXTO] [--file RUTA] [--engine MOTOR] [--collections IDS] [--thinking]
+trinaxai ask [PREGUNTA ...] [--file RUTA] [--engine MOTOR] [--collections IDS] [--thinking]
+trinaxai agent [TAREA ...] [-p TEXTO] [--workspace RUTA] [--model NOMBRE] [--max-steps N]
+               [--permission-mode MODO] [--output-format text|json] [-c | -r SESIÓN] [--yolo]
+trinaxai research --query TEXTO [--session NOMBRE] [--depth PROFUNDIDAD] [--collections IDS] [--thinking]
+trinaxai index [RUTA] [--collection ID] [--append]
+trinaxai browse list-collections
+trinaxai browse list-files [--collection ID]
+trinaxai browse show-chunks --file RUTA [--collection ID] [--limit N]
+trinaxai memory ACCIÓN
+trinaxai collections ACCIÓN
+trinaxai watch ACCIÓN
+trinaxai pair [start] [--scopes LISTA] [--ttl SEGUNDOS] [--device-ttl-days DÍAS] [--pwa-url URL]
+trinaxai pair list
+trinaxai pair set ID_DISPOSITIVO --scopes LISTA
+trinaxai pair revoke ID_DISPOSITIVO
+trinaxai obsidian --vault RUTA [--collection ID]
+trinaxai export [--session NOMBRE] [--format FORMATO] [--output RUTA]
+trinaxai status
+trinaxai start
+trinaxai restart
+trinaxai models
+trinaxai config
+trinaxai doctor
+trinaxai version
+trinaxai stop
+trinaxai stop --all
+trinaxai network
+trinaxai network refresh
+trinaxai update
+trinaxai uninstall
+```
+
+`MOTOR` es `general`, `ollama` o `rag`; `PROFUNDIDAD` es `1`, `2` o `3`.
+`--no-thinking` es el inverso de `--thinking`. El mapa muestra la forma común;
+ejecuta `trinaxai COMANDO --help` para ver cada opción y su valor predeterminado.
+
+`trinaxai stop --all` detiene la PWA y el resto de la pila, y deja solo la
+página de recuperación por loopback en `https://localhost:3334`; la LAN
+permanece cerrada hasta iniciar TrinaxAI desde esa página local.
+
+Usa `--append` solo cuando los archivos fuente eliminados deban seguir
+indexados. Cada raíz tiene un `source_id` estable e independiente, así que
+sincronizar otra raíz en la misma colección ya no reemplaza rutas homónimas de la
+primera. El watcher requiere la dependencia de servidor `watchdog`. La
+exportación de sesiones admite Markdown, PDF y Word (`docx`, también aceptado
+como `word`) y conserva los metadatos públicos y las fuentes de DeepResearch. El
+comando reservado `trinaxai mcp` devuelve el código de salida `2` y no inicia un
+servidor MCP en esta versión; usa la API HTTP o los comandos de CLI compatibles.
+
 ## Chat y consultas
 
 ```bash
@@ -65,6 +118,69 @@ no sube el archivo.
 extracto del buscador como fallback (`snippet_only`); las fuentes indican cuál
 se usó. Añade `--session NOMBRE` para guardar la pregunta, la respuesta, los
 metadatos públicos y las fuentes, y después exportar la sesión.
+
+## Indexación y exploración
+
+```bash
+trinaxai index . --collection default
+trinaxai index ~/Documents --collection documentos --append
+trinaxai browse list-collections
+trinaxai browse list-files --collection default
+trinaxai browse show-chunks --collection default --file README.md --limit 20
+trinaxai obsidian --vault ~/Notas --collection notas
+```
+
+`--append` añade cambios sin eliminar del índice los archivos ausentes. Sin esta
+opción sincroniza esa raíz. Cada raíz tiene `source_id` estable e independiente,
+por lo que otra raíz de la misma colección ya no reemplaza rutas homónimas.
+
+## Memoria y colecciones
+
+```bash
+trinaxai memory list
+trinaxai memory add --text "Prefiero respuestas breves" --tags preferencia,estilo
+trinaxai memory forget --memory-id ID
+trinaxai memory refresh
+trinaxai memory summary
+
+trinaxai collections list
+trinaxai collections create --name "Documentación"
+trinaxai collections use --collection-id documentacion
+trinaxai collections delete --collection-id documentacion
+```
+
+## Vigilancia y exportación
+
+```bash
+trinaxai watch start --paths ~/proyectos/app --collection default
+trinaxai watch status
+trinaxai watch stop
+trinaxai export --session SESSION --format md --output conversacion
+```
+
+El watcher requiere `watchdog`, incluido en las dependencias de servidor. La exportación conserva metadatos públicos, fuentes y citas de investigación; admite `md`, `markdown`, `pdf`, `doc`, `docx` y `word`.
+
+## Ciclo de vida y diagnóstico
+
+```bash
+trinaxai status
+trinaxai start
+trinaxai restart
+trinaxai stop            # mantiene la PWA disponible
+trinaxai stop --all      # también detiene la PWA
+trinaxai models
+trinaxai config
+trinaxai doctor
+trinaxai doctor --strict --json
+trinaxai update
+trinaxai uninstall
+```
+
+`trinaxai stop --all` detiene la PWA y el resto de la pila; después solo queda
+la página de recuperación por loopback en `https://localhost:3334`. La LAN
+permanece cerrada hasta iniciar TrinaxAI desde esa página local.
+
+Consulta `trinaxai update --help` y `trinaxai uninstall --help` antes de automatizar mantenimiento. `uninstall --purge` puede eliminar datos, modelos, certificados y Ollama.
 
 ## Comandos slash interactivos
 
@@ -92,21 +208,6 @@ registro actual incluye:
 | `/collections` | Lista colecciones indexadas. |
 | `/watch` | Muestra el estado del watcher. |
 | `/status` | Muestra el estado de servicios. |
-
-## Indexación y exploración
-
-```bash
-trinaxai index . --collection default
-trinaxai index ~/Documents --collection documentos --append
-trinaxai browse list-collections
-trinaxai browse list-files --collection default
-trinaxai browse show-chunks --collection default --file README.md --limit 20
-trinaxai obsidian --vault ~/Notas --collection notas
-```
-
-`--append` añade cambios sin eliminar del índice los archivos ausentes. Sin esta
-opción sincroniza esa raíz. Cada raíz tiene `source_id` estable e independiente,
-por lo que otra raíz de la misma colección ya no reemplaza rutas homónimas.
 
 ## Emparejar dispositivos LAN
 
@@ -184,54 +285,6 @@ permisos del usuario y no debe usarse en servicios alcanzables remotamente.
 
 El agente HTTP restringe además raíces con `TRINAXAI_AGENT_WORKSPACE_ROOTS`; yolo
 HTTP está apagado y nunca se permite desde un cliente no-loopback.
-
-## Memoria y colecciones
-
-```bash
-trinaxai memory list
-trinaxai memory add --text "Prefiero respuestas breves" --tags preferencia,estilo
-trinaxai memory forget --memory-id ID
-trinaxai memory refresh
-trinaxai memory summary
-
-trinaxai collections list
-trinaxai collections create --name "Documentación"
-trinaxai collections use --collection-id documentacion
-trinaxai collections delete --collection-id documentacion
-```
-
-## Vigilancia y exportación
-
-```bash
-trinaxai watch start --paths ~/proyectos/app --collection default
-trinaxai watch status
-trinaxai watch stop
-trinaxai export --session SESSION --format md --output conversacion
-```
-
-El watcher requiere `watchdog`, incluido en las dependencias de servidor. La exportación conserva metadatos públicos, fuentes y citas de investigación; admite `md`, `markdown`, `pdf`, `doc`, `docx` y `word`.
-
-## Ciclo de vida y diagnóstico
-
-```bash
-trinaxai status
-trinaxai start
-trinaxai restart
-trinaxai stop            # mantiene la PWA disponible
-trinaxai stop --all      # también detiene la PWA
-trinaxai models
-trinaxai config
-trinaxai doctor
-trinaxai doctor --strict --json
-trinaxai update
-trinaxai uninstall
-```
-
-`trinaxai stop --all` detiene la PWA y el resto de la pila; después solo queda
-la página de recuperación por loopback en `https://localhost:3334`. La LAN
-permanece cerrada hasta iniciar TrinaxAI desde esa página local.
-
-Consulta `trinaxai update --help` y `trinaxai uninstall --help` antes de automatizar mantenimiento. `uninstall --purge` puede eliminar datos, modelos, certificados y Ollama.
 
 ## Configuración TOML
 

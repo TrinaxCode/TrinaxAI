@@ -31,6 +31,22 @@ reúne todas las variables `TRINAXAI_*` y `VITE_TRINAXAI_*` admitidas.
 - Las preferencias elegidas en la PWA se guardan con claves `tc-*` y pueden sobrescribir sus modelos de interfaz sin modificar `.env`.
 - La CLI tiene un TOML independiente; consulta [CLI_REFERENCE.es.md](CLI_REFERENCE.es.md).
 
+## Grupos principales
+
+| Grupo | Variables |
+|---|---|
+| Hardware | `TRINAXAI_PROFILE` (`8gb`, `16gb`, `32gb`, `64gb`; autodetectado desde CPU/RAM/GPU), `TRINAXAI_PERFORMANCE_MODE` (`fast`, `balanced`, `quality`) |
+| Razonamiento | `TRINAXAI_THINKING_MODE` (valor de respaldo del backend cuando un cliente omite `think`; la investigación web de profundidad 1 lo desactiva por defecto salvo que `think` sea explícito) |
+| Modelos | `TRINAXAI_MODEL_GENERAL`, `TRINAXAI_MODEL_CODE`, `TRINAXAI_MODEL_DEEP`, `TRINAXAI_MODEL_FAST`, `TRINAXAI_AUTO_ROUTE` |
+| Ollama | `OLLAMA_BASE_URL`, `TRINAXAI_NUM_CTX`, `TRINAXAI_NUM_THREAD`, `TRINAXAI_KEEP_ALIVE`, `TRINAXAI_TIMEOUT` |
+| Embeddings | `TRINAXAI_EMBED_PRESET`, `TRINAXAI_EMBED`, `TRINAXAI_EMBED_DIMS`, `TRINAXAI_EMBED_WORKERS`, `TRINAXAI_EMBED_BATCH`, `TRINAXAI_EMBED_KEEP_ALIVE` |
+| Recuperación | `TRINAXAI_SIMILARITY_TOP_K`, ajustes de fusión/rerank, TTL de recuperación y el LRU acotado de combinaciones de recuperadores |
+| Indexación | `TRINAXAI_INDEX_DIR`, `TRINAXAI_SOURCE_ID`, `TRINAXAI_INDEX_APPEND`, bloqueo/timeouts, límites de chunks y subidas |
+| Red | `TRINAXAI_HOST`, `TRINAXAI_PORT`, `TRINAXAI_RAG_HTTPS`, `TRINAXAI_CORS_ORIGINS` |
+| Seguridad | Credenciales admin/de dispositivo, registro y secreto de pairing, HMAC del gateway, raíces y aislamiento del agente, límites de tasa y escapes inseguros |
+| Proxy PWA | Destinos loopback, allowlist y límite de tasa de Ollama, lock/cola de inferencia compartidos, bases y modelos `VITE_TRINAXAI_*` |
+| Voz | `TRINAXAI_VOICE_STT_MODEL`, dispositivo/tipo de cómputo de faster-whisper, motor TTS, límites de audio/texto |
+
 ## Perfil y rendimiento
 
 | Variable | Predeterminado | Valores / efecto |
@@ -60,12 +76,39 @@ El backend detecta modelo/núcleos de CPU, RAM, GPU y VRAM, y guarda la instant�
 
 Los nombres deben coincidir con `ollama list`. Descarga manualmente un modelo con `ollama pull NOMBRE`.
 
-El autorouter es determinista y local: clasifica la intención y las capacidades
-necesarias sin hacer otra llamada al modelo. Respeta un modelo explícito si es
-compatible e instalado; si no, elige un modelo instalado apto para chat, código,
-razonamiento o herramientas. En el perfil normal `16gb`, `qwen3.5:4b` es el
-predeterminado general, de código y de razonamiento profundo; `qwen3.5:2b` queda
-para saludos y consultas triviales.
+## Reglas operativas importantes
+
+- Cambiar el modelo o las dimensiones de embeddings, o la estrategia de chunking, exige una reindexación completa. Haz backup de `storage/` antes. Una recarga simple del índice solo refresca en memoria una generación publicada; no reconstruye vectores.
+- Cada raíz sincronizada recibe un `source_id` estable. La sincronización normal solo elimina
+  los archivos ausentes de esa raíz; otra raíz de la colección permanece intacta.
+  `TRINAXAI_INDEX_APPEND=1` conserva las entradas ausentes incluso en la raíz seleccionada.
+- El reranking requiere `requirements-rerank.txt` y bastante más RAM.
+- OCR es opcional. El OCR de PDF rasterizados también necesita dependencias Python y del sistema compatibles; la extracción de PDF sigue funcionando sin OCR.
+- CORS no es autenticación. FastAPI y Ollama administrados se enlazan a loopback; el
+  gateway PWA es la única frontera expuesta a la LAN. Deja
+  `TRINAXAI_UNSAFE_BIND_BACKEND=0`, bloquea los puertos directos 3333/11434 y usa una VPN.
+- `/api/rag` del mismo origen reenvía una identidad de peer firmada con el secreto
+  HMAC de la instalación. `/api/ollama` es una fachada estrecha por método/ruta, no un
+  proxy genérico; el uso remoto exige la credencial configurada y participa en el lock
+  de inferencia entre procesos.
+- Las lecturas protegidas que no vienen de loopback requieren un token de dispositivo emparejado con el
+  scope exacto `chat`, `read_private` o `web`, o una credencial de administrador.
+  Las rutas de indexación, Agente y modificación de datos exigen un dispositivo al que el anfitrión haya concedido el
+  scope `index`, `agent` o `modify` (una credencial admin por red
+  no cuenta). La administración de modelos/dispositivos, los controles de ciclo de vida y la
+  autoaprobación del Agente exigen loopback original verificado sea cual sea la credencial.
+- Genera un código de un solo uso con `trinaxai pair start`, revisa los dispositivos con
+  `trinaxai pair list` y revócalos desde el anfitrión. Un claim nuevo de la PWA recibe
+  el bearer del dispositivo solo en una cookie `HttpOnly; SameSite=Strict` con alcance
+  `/api`; el JSON del claim contiene metadatos del dispositivo, no un bearer. La PWA
+  no persiste tokens de dispositivo nuevos en el almacenamiento del navegador. Los bearers
+  legacy de la CLI siguen usando solo la cabecera `X-TrinaxAI-Device-Token`; el pairing es
+  administración de capabilities de dispositivo, no un sistema de cuentas multiusuario.
+- Las herramientas de archivo permanecen dentro de las raíces registradas del agente. Las llamadas de terminal en Linux exigen
+  bubblewrap sin red; los hosts no compatibles fallan cerrados salvo que el operador
+  acepte explícitamente el acceso completo del usuario al host.
+- La búsqueda web es opt-in. `TRINAXAI_WEB_SEARCH_PROVIDER=auto` prefiere una clave de Brave configurada (`TRINAXAI_BRAVE_SEARCH_API_KEY`), luego una URL de SearXNG (`TRINAXAI_SEARXNG_URL`) y, si no hay ninguna, usa DuckDuckGo sin credenciales. Ajusta `TRINAXAI_WEB_SEARCH_TIMEOUT` y `TRINAXAI_WEB_SEARCH_MAX_RESULTS` cuando haga falta.
+- Los mismos proveedores se administran en **PWA → Configuración → Búsqueda web**. Los valores administrados solo los guarda el backend en `storage/web_search_settings.json` con modo `0600`; las respuestas GET exponen booleanos de disponibilidad, nunca claves API. La precedencia es: variables de entorno, configuración administrada y valores predeterminados. Un campo de clave vacío conserva la existente; eliminar y restablecer son acciones explícitas. Las URLs de SearXNG introducidas en la PWA deben resolver a endpoints HTTP(S) públicos o al endpoint loopback local documentado `http://127.0.0.1:8080`, y no pueden contener credenciales.
 
 ## Sonidos de la PWA
 
@@ -103,6 +146,17 @@ la ventana del modelo. El timeout del backend aplica a un bloqueo de lectura de
 Ollama, no al tiempo total de un stream largo. La PWA usa un margen amplio para
 el primer token y Search Mode permite hasta 15 minutos para dependencias,
 recuperación y síntesis.
+
+## Autorouter y modelo predeterminado
+
+Con `TRINAXAI_AUTO_ROUTE=1`, un clasificador local determinista selecciona el modelo
+general, de código, profundo o rápido configurado según la intención de la tarea y las
+capacidades necesarias; no hace una solicitud extra al modelo. Un modelo explícito
+compatible sigue siendo la autoridad, y las opciones no disponibles o incompatibles con
+herramientas recurren a un modelo instalado apto. En el perfil normal `16gb` de CPU,
+`qwen3.5:4b` es el predeterminado general, de código y profundo; `qwen3.5:2b` es la
+ruta rápida (saludos y consultas triviales). El benchmark incluido en el repositorio
+registra la compensación de latencia medida.
 
 ## Embeddings, recuperación e indexación
 
@@ -151,8 +205,6 @@ manifest se publican como generación con journal y rollback tras interrupción.
 
 En `auto`, TrinaxAI prefiere Brave si hay una clave, luego SearXNG si hay una URL y finalmente DuckDuckGo sin credenciales. La consulta sale de la máquina únicamente cuando el botón del mundo está activo o el usuario pide explícitamente buscar en Internet. SearXNG puede usar el endpoint local documentado `http://127.0.0.1:8080` (o otro endpoint HTTP loopback validado en el puerto `8080`); esta excepción solo aplica al proveedor SearXNG configurado. La lectura general de páginas web sigue bloqueando credenciales y destinos privados, revalidando redirecciones y aplicando límites de bytes, texto y tiempo.
 
-Los mismos proveedores se administran en **PWA → Configuración → Búsqueda web**. Los valores se guardan únicamente en el backend, en `storage/web_search_settings.json` con permisos `0600`; la API solo devuelve estados de disponibilidad y nunca las claves. La precedencia es: variables de entorno, configuración administrada y valores predeterminados. Un campo de clave vacío conserva la existente; eliminar credencial y restablecer son acciones explícitas. Las URLs de SearXNG introducidas en la PWA deben ser HTTP(S) públicas o el endpoint loopback local documentado en `127.0.0.1:8080`, sin credenciales; ese loopback es la única excepción para destinos privados.
-
 ## Límites de archivos y extracción
 
 | Variable | Predeterminado |
@@ -168,21 +220,9 @@ Los mismos proveedores se administran en **PWA → Configuración → Búsqueda 
 | `TRINAXAI_CHAT_ATTACHMENTS_MAX_FILES` | `1000` |
 | `TRINAXAI_OCR` | `0` |
 
+Las subidas grandes se validan y se guardan en etapas antes de devolver un trabajo en segundo plano. `TRINAXAI_INDEX_STAGE_TIMEOUT` limita el silencio en una etapa y `TRINAXAI_INDEX_TIMEOUT` limita todo el trabajo de indexación. Los trabajos cancelados o fallidos descartan datos no publicados y pueden reintentarse mientras permanezca su fuente staged.
+
 OCR es opcional. Además de Tesseract, la extracción rasterizada necesita dependencias Python y del sistema compatibles; si no están disponibles, la extracción de PDF continúa sin OCR.
-
-Las subidas reciben un identificador de trabajo después de validarse y
-guardarse; la conexión HTTP no permanece abierta durante extracción y
-embeddings. PDFs, chunks y embeddings se procesan en lotes acotados. La PWA
-muestra etapa persistida, tiempo, actividad reciente, páginas, chunks y lotes;
-si una etapa no tiene denominador exacto se muestra como indeterminada. Los
-timeouts `TRINAXAI_INDEX_STAGE_TIMEOUT` y `TRINAXAI_INDEX_TIMEOUT` son
-configurables. Cancelar o fallar descarta generaciones no publicadas y limpia
-temporales; los trabajos elegibles se pueden reintentar.
-
-Search Mode informa proveedor deshabilitado/bloqueado, timeout o falta de
-fuentes. RAG informa índice/modelo ausente, SSE interrumpido o timeout del primer
-token. Son errores recuperables: la interfaz sale de espera, conserva la
-conversación y permite reintentar; nunca inventa un resultado silencioso.
 
 ## Red, TLS y seguridad
 
@@ -273,6 +313,36 @@ compatible, falla cerrado salvo el opt-in explícito anterior.
 | `TRINAXAI_VOICE_TTS_MAX_CHARS` | `1200` | Máximo de texto TTS. |
 | `TRINAXAI_VOICE_RATE_LIMIT_PER_MINUTE` | `30` | Reservado por la configuración de voz. |
 | `TRINAXAI_PIPER_MODEL` | vacío | Ruta explícita a un modelo Piper. |
+
+## Valores comunes
+
+| Ajuste | Valor predeterminado o de la plantilla |
+|---|---|
+| Puertos API / PWA / Ollama | `3333` / `3334` / `11434` |
+| Perfil / modo de rendimiento | `16gb` / `fast` |
+| Límite de tasa | capacidad del token bucket 30, recargado en 60 segundos, por IP verificada/bucket |
+| Tamaño máximo normal de archivo indexado | 3 MiB |
+| Límites de documentos/subidas | 512 MiB por documento; lote de subida de 2 GiB |
+| Límite de adjuntos de chat respaldados por el host | 512 MiB por archivo; 4 GiB conservados en total |
+| Texto temporal extraído | 120 000 caracteres |
+| Enlace de backend / Ollama | solo loopback |
+| Acceso LAN protegido | scope de dispositivo coincidente (`chat`, `read_private`, `web` y, concedidos por el anfitrión, `index`, `agent`, `modify`); token admin solo para lecturas; la administración del host sigue siendo solo loopback |
+
+## Procesamiento de archivos grandes y fallos recuperables
+
+Las subidas reciben un identificador de trabajo después de validarse y
+guardarse; la conexión HTTP no permanece abierta durante extracción y
+embeddings. PDFs, chunks y embeddings se procesan en lotes acotados. La PWA
+muestra etapa persistida, tiempo, actividad reciente, páginas, chunks y lotes;
+si una etapa no tiene denominador exacto se muestra como indeterminada. Los
+timeouts `TRINAXAI_INDEX_STAGE_TIMEOUT` y `TRINAXAI_INDEX_TIMEOUT` son
+configurables. Cancelar o fallar descarta generaciones no publicadas y limpia
+temporales; los trabajos elegibles se pueden reintentar.
+
+Search Mode informa proveedor deshabilitado/bloqueado, timeout o falta de
+fuentes. RAG informa índice/modelo ausente, SSE interrumpido o timeout del primer
+token. Son errores recuperables: la interfaz sale de espera, conserva la
+conversación y permite reintentar; nunca inventa un resultado silencioso.
 
 ## Diagnóstico de configuración
 

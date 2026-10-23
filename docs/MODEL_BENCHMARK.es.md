@@ -50,4 +50,4 @@ Los números de latencia son específicos de este host. Repite el benchmark en
 hardware, cuantización o versiones de Ollama materialmente diferentes antes de
 cambiar perfiles.
 
-[English version](MODEL_BENCHMARK.md) · [Documentation index](README.es.md)
+[English version](MODEL_BENCHMARK.md) · [Índice de documentación](README.es.md)

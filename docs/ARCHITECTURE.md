@@ -470,8 +470,9 @@ These areas require extra care when modifying:
   and, per device, `index`, `agent` and `modify`. `system` and `agent_yolo`
   can never be stored on a device.
   New clear tokens are held only in an `HttpOnly; SameSite=Strict` cookie scoped
-  to `/api`; legacy CLI values remain in the device-token header and are
-  never copied into a response cookie.
+  to `/api`; a legacy browser-stored value is read only for the explicit
+  `/v1/pairing/me` migration and then removed. Legacy CLI values remain in the
+  device-token header and are never copied into a response cookie.
 - `TRINAXAI_ALLOW_LAN_SYSTEM` — deprecated and ignored for authorization.
 
 **Testing the security model:**

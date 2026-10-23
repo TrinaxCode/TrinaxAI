@@ -1,5 +1,7 @@
 # TrinaxAI
 
+**English** · [Español](https://github.com/TrinaxCode/TrinaxAI/blob/main/npm-package/README.es.md)
+
 Install TrinaxAI on Linux, macOS, or Windows with npm:
 
 ~~~bash
