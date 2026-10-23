@@ -967,6 +967,20 @@ class CodeReviewRoutingTests(unittest.TestCase):
         self.assertIn("contradicts goto drawing semantics", violations)
         self.assertIn("contradicts call-site arguments", violations)
 
+    def test_grounding_accepts_both_cpython_turtle_docstring_wordings(self) -> None:
+        answer = "goto no acepta una tupla y volver al origen borra el dibujo."
+        py312 = "syntax=valid; goto((x, y)) # a pair (tuple) of coordinates; If the pen is down, a line will be drawn"
+        py313 = (
+            "syntax=valid; verified turtle.Turtle.goto(self, x, y=None); Move the turtle to an absolute "
+            "position. If y is None, x must be a pair of coordinates or a Vec2D. "
+            "If the pen is down, a line is drawn."
+        )
+
+        for evidence in (py312, py313):
+            violations = _grounding_violations(answer, evidence)
+            self.assertIn("contradicts goto tuple signature", violations)
+            self.assertIn("contradicts goto drawing semantics", violations)
+
 
 class StreamingChatTests(unittest.TestCase):
     """Exercise the NDJSON streaming path with a stubbed Ollama response."""
