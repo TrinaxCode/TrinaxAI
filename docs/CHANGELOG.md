@@ -98,6 +98,9 @@ All notable changes to TrinaxAI are documented here. This project follows the
 
 ### Security
 
+- Updated `pypdf` to 6.21.2 (CVE-2026-115572, CVE-2026-115580,
+  CVE-2026-115585) and `setuptools` to 84.1.0 (GHSA-xmj3-9gf7-h52w) in the
+  dependency lock.
 - The Agent's terminal sandbox now mounts the workspace's `.git` read-only. The
   file tools already refused to write git metadata, but a shell command could
   edit `.git/config` or hooks that git later runs for you. Reading history

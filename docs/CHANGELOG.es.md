@@ -103,6 +103,9 @@ el formato de [Keep a Changelog](https://keepachangelog.com/).
 
 ### Seguridad
 
+- Se actualizaron `pypdf` a 6.21.2 (CVE-2026-115572, CVE-2026-115580,
+  CVE-2026-115585) y `setuptools` a 84.1.0 (GHSA-xmj3-9gf7-h52w) en el lock de
+  dependencias.
 - El sandbox del terminal del Agente ahora monta el `.git` del workspace en solo
   lectura. Las herramientas de archivo ya se negaban a escribir metadatos de
   git, pero un comando de shell podía editar `.git/config` o los hooks que git
