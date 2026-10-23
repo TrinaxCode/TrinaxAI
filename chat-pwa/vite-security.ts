@@ -180,3 +180,30 @@ export function isAuthorizedScopedProxyPeer(
 export function isAuthorizedSystemProxyPeer(peer: string): boolean {
   return isLoopbackAddress(peer);
 }
+
+/**
+ * Reject a Host header that names a foreign DNS domain (DNS rebinding).
+ *
+ * IP literals, single-label names (`localhost`), `*.localhost` and mDNS
+ * `*.local` names cannot be served by a remote attacker's DNS. Any other name
+ * must be listed in `TRINAXAI_ALLOWED_HOSTS` (comma-separated, `*` allows all).
+ */
+export function isTrustedHostHeader(hostHeader: string | undefined, allowedHosts = ''): boolean {
+  if (!hostHeader) return true;
+  const configured = new Set(
+    allowedHosts.split(',').map((item) => item.trim().toLowerCase().replace(/\.$/, '')).filter(Boolean),
+  );
+  if (configured.has('*')) return true;
+  let hostname = hostHeader.trim().toLowerCase();
+  if (hostname.startsWith('[')) {
+    const end = hostname.indexOf(']');
+    hostname = end > 0 ? hostname.slice(1, end) : '';
+  } else if (hostname.split(':').length === 2) {
+    hostname = hostname.split(':', 1)[0];
+  }
+  hostname = hostname.replace(/\.$/, '');
+  if (!hostname) return false;
+  if (net.isIP(hostname)) return true;
+  if (!hostname.includes('.') || hostname.endsWith('.localhost') || hostname.endsWith('.local')) return true;
+  return configured.has(hostname);
+}

@@ -101,6 +101,10 @@ el formato de [Keep a Changelog](https://keepachangelog.com/).
 
 ### Seguridad
 
+- La API y el gateway de la PWA ahora rechazan peticiones cuya cabecera `Host`
+  nombra un dominio ajeno (`421`). Esto impide que páginas con DNS rebinding
+  lean datos privados cuando TrinaxAI funciona por HTTP (sin certificado local o
+  en Docker). Añade nombres de host propios en `TRINAXAI_ALLOWED_HOSTS`.
 - Endurecimiento del Agente: «no volver a preguntar» ya no se amplía a ejecutores
   de pruebas ni verificadores de tipos, las reglas de comandos que ejecutan
   código del workspace caducan una a una cuando el Agente edita un archivo, las

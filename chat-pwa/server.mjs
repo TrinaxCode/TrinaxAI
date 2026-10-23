@@ -18,6 +18,7 @@ import {
   isAuthorizedSystemProxyPeer,
   isLoopbackAddress,
   isPrivateLanAddress,
+  isTrustedHostHeader,
   normalizeAddress,
   needsInferenceLock,
   requiredOllamaProxyScope,
@@ -662,7 +663,10 @@ function requestHandler(req, res) {
     sendError(res, 400, 'invalid_request_url');
     return;
   }
-  if (url.pathname === '/api/rag' || url.pathname.startsWith('/api/rag/')) {
+  // A rebound foreign domain must never reach the API with a loopback identity.
+  if (url.pathname.startsWith('/api/') && !isTrustedHostHeader(req.headers.host, process.env.TRINAXAI_ALLOWED_HOSTS || '')) {
+    sendError(res, 421, 'untrusted_host');
+  } else if (url.pathname === '/api/rag' || url.pathname.startsWith('/api/rag/')) {
     void proxyRequest(req, res, url, '/api/rag');
   } else if (url.pathname === '/api/ollama' || url.pathname.startsWith('/api/ollama/')) {
     void proxyRequest(req, res, url, '/api/ollama');

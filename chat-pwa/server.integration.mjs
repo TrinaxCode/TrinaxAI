@@ -202,6 +202,18 @@ test('production gateway preserves credentials, replaces proxy identity, and rej
     assert.equal(oversized.status, 413);
     assert.deepEqual((await oversized.json()).error, { code: 'proxy_body_too_large' });
 
+    // fetch() cannot override Host, so send the rebinding request with http.get.
+    const rebound = await new Promise((resolve, reject) => {
+      http.get({ host: '127.0.0.1', port: gatewayPort, path: '/api/rag/app-state', headers: { Host: `evil.example:${gatewayPort}` } }, (res) => {
+        let body = '';
+        res.on('data', (chunk) => { body += chunk; });
+        res.on('end', () => resolve({ status: res.statusCode, body }));
+      }).on('error', reject);
+    });
+    assert.equal(rebound.status, 421);
+    assert.deepEqual(JSON.parse(rebound.body).error, { code: 'untrusted_host' });
+    assert.equal(received.path, '/private%20file?value=1');
+
     const missing = await fetch(`http://127.0.0.1:${gatewayPort}/assets/missing.js`);
     assert.equal(missing.status, 404);
 
