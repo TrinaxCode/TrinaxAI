@@ -4,7 +4,7 @@
 
 <p align="center">
   <a href="https://github.com/TrinaxCode/TrinaxAI"><img src="https://img.shields.io/github/stars/TrinaxCode/TrinaxAI?style=flat&amp;label=%E2%98%85&amp;color=006bbd" alt="GitHub stars"></a>
-  <a href="https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.2.6"><img src="https://img.shields.io/badge/version-1.2.6-006bbd" alt="Stable release: 1.2.6"></a>
+  <a href="https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.3.0"><img src="https://img.shields.io/badge/version-1.3.0-006bbd" alt="Stable release: 1.3.0"></a>
   <a href="https://github.com/TrinaxCode/TrinaxAI/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/TrinaxCode/TrinaxAI/ci.yml?branch=main&amp;label=CI" alt="CI status"></a>
   <a href="https://github.com/TrinaxCode/TrinaxAI/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0--or--later-006bbd" alt="License: AGPL-3.0-or-later"></a>
   <img src="https://img.shields.io/badge/macOS%20%7C%20Windows%20%7C%20Linux-4493F8?style=flat-square" alt="Supported platforms: macOS, Windows, and Linux">
@@ -19,6 +19,18 @@ All notable changes to TrinaxAI are documented here. This project follows the
 ## [Unreleased]
 
 ### Added
+
+- Guided, client-first setup. `trinaxai setup` opens with a welcome and a
+  language choice (English or Spanish), checks free disk space and the GitHub
+  connection, asks every optional question up front, and shows an installation
+  plan to confirm before anything changes. On an existing installation it
+  offers to repair, update, or uninstall it, and a bare `trinaxai` before
+  installing offers to set it up. The Windows installer now asks for a
+  language too. The launcher retries failed downloads, falls back to `curl`
+  behind proxies, accepts `--yes`, `--interactive`, and `--language`, and
+  answers in your language.
+- `trinaxai uninstall` accepts `--remove-app`, `--remove-env`,
+  `--remove-certs`, and `--dry-run`; `trinaxai update` accepts `--dry-run`.
 
 - `trinaxai agent` now works like other terminal coding agents: a
   `● tool(args)` / `⎿ result` transcript with a live "Working…" status, real
@@ -51,8 +63,6 @@ All notable changes to TrinaxAI are documented here. This project follows the
 - Spanish counterparts for `npm-package/README.md` and ADR 0001, plus a
   `public_readiness.py` check that every Markdown document has a `.es.md` twin
   with the same headings and code blocks.
-- The npm launcher now prints its messages in English or Spanish
-  (`--language`, `TRINAXAI_LANG`, or the system locale).
 
 ### Changed
 
@@ -79,6 +89,11 @@ All notable changes to TrinaxAI are documented here. This project follows the
   the editable install. Installer and updater scripts are unchanged; the new
   layout has only been run on Linux, not on macOS or Windows.
 
+### Fixed
+
+- The agent's code-review grounding checks recognize the Python 3.13 wording of the `turtle` docstrings, so verified evidence still catches false claims about `goto` on every supported interpreter.
+- The changelog release badge now points to 1.3.0 in both languages.
+
 ### Security
 
 - Agent hardening: "don't ask again" no longer widens to test runners or type
@@ -96,6 +111,15 @@ All notable changes to TrinaxAI are documented here. This project follows the
   secrets), even when the host's workspace roots include them.
 - Deleting an imported source resolves symlinks before checking that the path
   stays inside the imports folder.
+
+### Fixed
+
+- Passing `--language es` (two words) to the installer, updater, or uninstaller
+  no longer asks for the language a second time.
+- Answering "sí" or "s" to a default-No question no longer counts as No, and
+  Spanish prompts now read `[S/n]`.
+- Installer messages that appeared in English in Spanish mode are translated,
+  and a failed install says it is safe to run again.
 
 ## [1.3.0] — 2026-10-18
 

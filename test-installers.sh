@@ -167,6 +167,56 @@ for script in install.sh update.sh uninstall.sh; do
 ok "dry-run passed: $script"
 done
 
+# Client-first guided flow: language, up-front questions, plan, and Spanish answers.
+for script in install.sh update.sh uninstall.sh; do
+  grep -Fq 'language_prev' "$ROOT/$script" || fail "--language VALUE is not recognised before the language question: $script"
+  grep -Fq '" [S/n]"' "$ROOT/$script" || fail "Spanish yes/no prompt suffix is missing: $script"
+done
+for script in install.ps1 update.ps1 uninstall.ps1; do
+  grep -Fq '"[S/n]"' "$ROOT/$script" || fail "Spanish yes/no prompt suffix is missing: $script"
+done
+grep -Fq 'Select language / Selecciona idioma' "$ROOT/install.ps1" || fail "PowerShell installer does not ask for a language"
+grep -Fq 'PreferencesCollected' "$ROOT/install.ps1" || fail "PowerShell installer asks its questions twice"
+grep -Fq 'collect_preferences' "$ROOT/install.sh" || fail "POSIX installer does not ask its questions up front"
+grep -Fq 'preflight_checks' "$ROOT/install.sh" || fail "POSIX installer has no preflight checks"
+for script in install.sh update.sh uninstall.sh; do
+  yes_no_test="$TMP_DIR/yes-no-$script"
+  awk '/^ask_yes_no\(\) \{/{capture=1} capture{print} capture && /^\}/{exit}' "$ROOT/$script" > "$yes_no_test"
+  [ -s "$yes_no_test" ] || fail "ask_yes_no not found: $script"
+  answer() { # language, default, reply
+    (
+      LANGUAGE="$1" INTERACTIVE=1
+      ask() { printf '%s' "$REPLY_TEXT"; }
+      source "$yes_no_test"
+      REPLY_TEXT="$3"
+      ask_yes_no "question" "$2"
+    )
+  }
+  answer es n "sí" || fail "Spanish 'sí' was read as no: $script"
+  answer es n "S" || fail "Spanish 'S' was read as no: $script"
+  answer es n "n" && fail "Spanish 'n' was read as yes: $script"
+  answer es n "" && fail "Spanish default-no changed: $script"
+  answer es y "n" && fail "Spanish 'n' was read as yes on default-yes: $script"
+  answer es y "" || fail "Spanish default-yes changed: $script"
+  answer en n "y" || fail "English 'y' was read as no: $script"
+  answer en n "s" && fail "English 's' was read as yes: $script"
+done
+ok "Yes/no answers work in English and Spanish"
+
+plan_output="$TMP_DIR/install-plan.out"
+(cd "$ROOT" && bash install.sh --dry-run --language es --no-models --no-autostart >"$plan_output" 2>&1) || fail "install dry-run with a language failed"
+grep -Fq 'Plan de instalación' "$plan_output" || fail "installer plan is not localized"
+grep -Fq 'Descargar modelos ahora: No' "$plan_output" || fail "installer plan ignores --no-models"
+grep -Fq 'Iniciar con tu equipo: No' "$plan_output" || fail "installer plan ignores --no-autostart"
+(cd "$ROOT" && bash install.sh --dry-run --language en >"$plan_output" 2>&1) || fail "english install dry-run failed"
+grep -Fq 'Installation plan' "$plan_output" || fail "installer plan is missing in English"
+ok "Installer shows a localized plan before it changes anything"
+
+if command -v node >/dev/null 2>&1 && [ -f "$ROOT/npm-package/test/cli.test.js" ]; then
+  (cd "$ROOT/npm-package" && node test/cli.test.js >/dev/null) || fail "npm launcher checks failed"
+  ok "npm launcher checks passed"
+fi
+
 if command -v python3 >/dev/null 2>&1; then
   generated="$TMP_DIR/continue-config.yaml"
   python3 "$ROOT/scripts/generate_continue_config.py" --root "$ROOT" --output "$generated" --profile 8gb >/dev/null

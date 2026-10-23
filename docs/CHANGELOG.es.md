@@ -4,7 +4,7 @@
 
 <p align="center">
   <a href="https://github.com/TrinaxCode/TrinaxAI"><img src="https://img.shields.io/github/stars/TrinaxCode/TrinaxAI?style=flat&amp;label=%E2%98%85&amp;color=006bbd" alt="GitHub stars"></a>
-  <a href="https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.2.6"><img src="https://img.shields.io/badge/version-1.2.6-006bbd" alt="Release estable: 1.2.6"></a>
+  <a href="https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.3.0"><img src="https://img.shields.io/badge/version-1.3.0-006bbd" alt="Release estable: 1.3.0"></a>
   <a href="https://github.com/TrinaxCode/TrinaxAI/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/TrinaxCode/TrinaxAI/ci.yml?branch=main&amp;label=CI" alt="CI status"></a>
   <a href="https://github.com/TrinaxCode/TrinaxAI/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0--or--later-006bbd" alt="License: AGPL-3.0-or-later"></a>
   <img src="https://img.shields.io/badge/macOS%20%7C%20Windows%20%7C%20Linux-4493F8?style=flat-square" alt="Supported platforms: macOS, Windows, and Linux">
@@ -19,6 +19,18 @@ el formato de [Keep a Changelog](https://keepachangelog.com/).
 ## [Sin publicar]
 
 ### Añadido
+
+- Instalación guiada y centrada en el cliente. `trinaxai setup` empieza con una
+  bienvenida y la elección de idioma (español o inglés), comprueba el espacio
+  libre en disco y la conexión con GitHub, hace todas las preguntas opcionales
+  al principio y muestra un plan de instalación para confirmar antes de cambiar
+  nada. Sobre una instalación existente ofrece repararla, actualizarla o
+  desinstalarla, y un `trinaxai` suelto antes de instalar ofrece configurarlo.
+  El instalador de Windows ahora también pregunta el idioma. El lanzador
+  reintenta las descargas fallidas, recurre a `curl` detrás de un proxy, acepta
+  `--yes`, `--interactive` y `--language`, y responde en tu idioma.
+- `trinaxai uninstall` acepta `--remove-app`, `--remove-env`, `--remove-certs`
+  y `--dry-run`; `trinaxai update` acepta `--dry-run`.
 
 - `trinaxai agent` ahora funciona como otros agentes de código para terminal:
   transcripción `● herramienta(args)` / `⎿ resultado` con estado "Trabajando…",
@@ -54,8 +66,6 @@ el formato de [Keep a Changelog](https://keepachangelog.com/).
 - Equivalentes en español de `npm-package/README.md` y del ADR 0001, más una
   comprobación de `public_readiness.py` que exige que cada documento Markdown
   tenga su gemelo `.es.md` con los mismos encabezados y bloques de código.
-- El lanzador npm ahora muestra sus mensajes en inglés o español
-  (`--language`, `TRINAXAI_LANG` o la configuración regional del sistema).
 
 ### Cambiado
 
@@ -84,6 +94,11 @@ el formato de [Keep a Changelog](https://keepachangelog.com/).
   editable. Los scripts de instalación y actualización no cambian; el nuevo
   diseño solo se ha ejecutado en Linux, no en macOS ni en Windows.
 
+### Corregido
+
+- Las comprobaciones de fundamentación de revisión de código del agente reconocen la redacción de los docstrings de `turtle` en Python 3.13, de modo que la evidencia verificada sigue detectando afirmaciones falsas sobre `goto` en todos los intérpretes compatibles.
+- El badge de versión del changelog apunta ahora a 1.3.0 en ambos idiomas.
+
 ### Seguridad
 
 - Endurecimiento del Agente: «no volver a preguntar» ya no se amplía a ejecutores
@@ -103,6 +118,16 @@ el formato de [Keep a Changelog](https://keepachangelog.com/).
   incluyan.
 - Borrar una fuente importada resuelve los symlinks antes de comprobar que la
   ruta sigue dentro de la carpeta de importaciones.
+
+### Corregido
+
+- Pasar `--language es` (en dos palabras) al instalador, actualizador o
+  desinstalador ya no vuelve a preguntar el idioma.
+- Responder "sí" o "s" a una pregunta con valor por defecto No ya no cuenta como
+  No, y los avisos en español ahora muestran `[S/n]`.
+- Los mensajes del instalador que aparecían en inglés en modo español están
+  traducidos, y una instalación fallida indica que se puede ejecutar de nuevo
+  sin riesgo.
 
 ## [1.3.0] — 2026-10-18
 

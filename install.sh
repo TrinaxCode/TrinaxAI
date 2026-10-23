@@ -25,10 +25,19 @@ LANGUAGE="${TRINAXAI_LANG:-${LANG:-en}}"
 LANGUAGE_EXPLICIT="${TRINAXAI_LANG:-}"
 LANGUAGE_LOWER="$(printf '%s' "$LANGUAGE" | tr '[:upper:]' '[:lower:]')"
 case "$LANGUAGE_LOWER" in es*|*_es*) LANGUAGE=es ;; *) LANGUAGE=en ;; esac
+language_prev=""
 for language_arg in "$@"; do
+  language_value=""
   case "$language_arg" in
-    --language=*|--lang=*) LANGUAGE_EXPLICIT="${language_arg#*=}"; LANGUAGE_LOWER="$(printf '%s' "$LANGUAGE_EXPLICIT" | tr '[:upper:]' '[:lower:]')"; case "$LANGUAGE_LOWER" in es*) LANGUAGE=es ;; *) LANGUAGE=en ;; esac ;;
+    --language=*|--lang=*) language_value="${language_arg#*=}" ;;
+    *) case "$language_prev" in --language|--lang) language_value="$language_arg" ;; esac ;;
   esac
+  if [ -n "$language_value" ]; then
+    LANGUAGE_EXPLICIT="$language_value"
+    LANGUAGE_LOWER="$(printf '%s' "$language_value" | tr '[:upper:]' '[:lower:]')"
+    case "$LANGUAGE_LOWER" in es*) LANGUAGE=es ;; *) LANGUAGE=en ;; esac
+  fi
+  language_prev="$language_arg"
 done
 ARG_NONINTERACTIVE=0
 ARG_HELP=0
@@ -60,6 +69,36 @@ tr_text_es() {
       'bubblewrap is not installed: the Agent terminal tool stays disabled (file tools still work).') echo 'bubblewrap no está instalado: la terminal del Agente seguirá desactivada (las herramientas de archivos funcionan).' ;;
       "Install the 'bubblewrap' package with your package manager to enable it.") echo "Instala el paquete 'bubblewrap' con tu gestor de paquetes para activarla." ;;
       'Local-first; web search and downloads use the network') echo 'Prioridad local; la búsqueda web y las descargas usan Internet' ;;
+      'Repository ready at '*) echo "Repositorio listo en${1#Repository ready at}" ;;
+      'Setup mode: Normal recommended or Advanced manual? [N/a]') echo 'Modo de instalación: Normal recomendado o Avanzado manual? [N/a]' ;;
+      'Choose profile [default: '*) echo "Elige el perfil [por defecto: ${1#Choose profile [default: }" ;;
+      'Use recommended Ollama models, or configure your own? [R/o]') echo '¿Usar los modelos de Ollama recomendados o configurar los tuyos? [R/o]' ;;
+      'Model pull failed:') echo 'Falló la descarga del modelo:' ;;
+      'Preflight checks') echo 'Comprobaciones previas' ;;
+      'Free disk space: '*) echo "Espacio libre en disco: ${1#Free disk space: }" ;;
+      'Not enough free disk space at '*) echo "No hay espacio libre suficiente en el disco: ${1#Not enough free disk space at }" ;;
+      'At least 3GB are needed for the application; models need 6GB to 50GB more depending on your profile.') echo 'Se necesitan al menos 3 GB para la aplicación; los modelos necesitan entre 6 y 50 GB más según tu perfil.' ;;
+      'Free some space or choose another location with --install-dir PATH.') echo 'Libera espacio o elige otra ubicación con --install-dir RUTA.' ;;
+      'Internet connection to GitHub works') echo 'La conexión a Internet con GitHub funciona' ;;
+      'Cannot reach github.com. Check your internet connection or proxy settings and run the installer again.') echo 'No se puede conectar con github.com. Revisa tu conexión a Internet o tu proxy y ejecuta el instalador de nuevo.' ;;
+      'Cannot reach github.com; continuing because the source is already on this computer.') echo 'No se puede conectar con github.com; se continúa porque el código ya está en este equipo.' ;;
+      'Your choices') echo 'Tus elecciones' ;;
+      'Answer a few questions now; the rest of the installation runs on its own.') echo 'Responde unas preguntas ahora; el resto de la instalación se hace sola.' ;;
+      'Models are large (several GB); your hardware profile decides which ones.') echo 'Los modelos son grandes (varios GB); tu perfil de hardware decide cuáles.' ;;
+      'Check for TrinaxAI updates every week? It only checks; it never installs anything without you.') echo '¿Comprobar cada semana si hay actualizaciones de TrinaxAI? Solo comprueba; nunca instala nada sin ti.' ;;
+      'Installation plan') echo 'Plan de instalación' ;;
+      'Location') echo 'Ubicación' ;;
+      'Language') echo 'Idioma' ;;
+      'Download models now') echo 'Descargar modelos ahora' ;;
+      'Start TrinaxAI when finished') echo 'Iniciar TrinaxAI al terminar' ;;
+      'Start with your computer') echo 'Iniciar con tu equipo' ;;
+      'Weekly update check') echo 'Comprobación semanal de actualizaciones' ;;
+      'Yes') echo 'Sí' ;;
+      'No') echo 'No' ;;
+      'Continue with this installation?') echo '¿Continuar con esta instalación?' ;;
+      'Cancelled. Nothing was changed.') echo 'Cancelado. No se cambió nada.' ;;
+      'It is safe to run the installer again; it resumes and keeps your data and settings.') echo 'Puedes ejecutar el instalador de nuevo sin riesgo; continúa donde quedó y conserva tus datos y configuración.' ;;
+      'Check your setup with: trinaxai doctor') echo 'Comprueba tu instalación con: trinaxai doctor' ;;
       'Detected RAM') echo 'RAM detectada' ;;
       'Recommended profile') echo 'Perfil recomendado' ;;
       '  1) 8gb     About 8GB RAM') echo '  1) 8gb     Aproximadamente 8 GB de RAM' ;;
@@ -528,6 +567,12 @@ ask() {
     suffix=" [y/N]"
     prompt="${prompt:0:${#prompt}-${#suffix}}"
   fi
+  if [ "$LANGUAGE" = "es" ]; then
+    case "$suffix" in
+      " [Y/n]") suffix=" [S/n]" ;;
+      " [y/N]") suffix=" [s/N]" ;;
+    esac
+  fi
   prompt="$(tr_text "$prompt")$suffix"
   if [ "${INTERACTIVE:-1}" != "1" ]; then
     echo ""
@@ -565,6 +610,7 @@ ask_yes_no() {
   fi
   reply="$(ask "$prompt [y/N]")"
   [[ "$reply" =~ ^[Yy] ]] && return 0
+  [ "$LANGUAGE" = "es" ] && [[ "$reply" =~ ^[Ss] ]] && return 0
   return 1
 }
 
@@ -615,6 +661,76 @@ lan_ip() {
 
 free_disk_gb() {
   df -Pk . 2>/dev/null | awk 'NR==2 { printf "%.0f", $4/1024/1024 }' || echo "0"
+}
+
+free_disk_gb_at() {
+  local target="$1"
+  while [ -n "$target" ] && [ ! -d "$target" ] && [ "$target" != "/" ]; do target="$(dirname "$target")"; done
+  df -Pk "${target:-/}" 2>/dev/null | awk 'NR==2 { printf "%.0f", $4/1024/1024 }' || echo "0"
+}
+
+yes_no_label() {
+  if [ "$1" = "1" ]; then tr_text "Yes"; else tr_text "No"; fi
+}
+
+# Fail early, in the user's language, before anything is downloaded or changed.
+preflight_checks() {
+  local free need_download="$1"
+  print_header "Preflight checks"
+  free="$(free_disk_gb_at "$PLAN_DIR")"
+  print_info "Free disk space: ${free:-0}GB"
+  if [ "${free:-0}" -gt 0 ] && [ "$free" -lt 3 ]; then
+    print_err "Not enough free disk space at $PLAN_DIR: ${free}GB"
+    print_info "At least 3GB are needed for the application; models need 6GB to 50GB more depending on your profile."
+    print_info "Free some space or choose another location with --install-dir PATH."
+    return 1
+  fi
+  if command -v curl >/dev/null 2>&1; then
+    if curl -sS -o /dev/null --connect-timeout 10 --max-time 20 https://github.com >/dev/null 2>&1; then
+      print_ok "Internet connection to GitHub works"
+    elif [ "$need_download" = "1" ]; then
+      print_err "Cannot reach github.com. Check your internet connection or proxy settings and run the installer again."
+      return 1
+    else
+      print_warn "Cannot reach github.com; continuing because the source is already on this computer."
+    fi
+  fi
+}
+
+# Ask every optional question up front so the long steps that follow need no attention.
+PREFS_COLLECTED=0
+collect_preferences() {
+  [ "${INTERACTIVE:-1}" = "1" ] || return 0
+  print_header "Your choices"
+  print_info "Answer a few questions now; the rest of the installation runs on its own."
+  if [ "$INSTALL_MODELS" = "1" ]; then
+    print_info "Models are large (several GB); your hardware profile decides which ones."
+    ask_yes_no "Download the configured Ollama models now? Choose N to defer model downloads." y || INSTALL_MODELS=0
+  fi
+  if [ "$START_NOW" = "1" ]; then
+    ask_yes_no "Start TrinaxAI now after install?" y || START_NOW=0
+  fi
+  if [ "$START_NOW" = "1" ] && [ "$ENABLE_AUTOSTART" = "1" ]; then
+    print_info "You can change this later in the PWA Settings page."
+    ask_yes_no "Enable auto-start on boot?" y || ENABLE_AUTOSTART=0
+  fi
+  if [ "$ENABLE_AUTO_UPDATE" = "1" ]; then
+    ask_yes_no "Check for TrinaxAI updates every week? It only checks; it never installs anything without you." y || ENABLE_AUTO_UPDATE=0
+  fi
+  PREFS_COLLECTED=1
+}
+
+print_plan() {
+  local language_name="English"
+  [ "$LANGUAGE" = "es" ] && language_name="Español"
+  print_header "Installation plan"
+  echo "  $(tr_text 'Location'): $PLAN_DIR"
+  echo "  $(tr_text 'Language'): $language_name"
+  echo "  $(tr_text 'Download models now'): $(yes_no_label "$INSTALL_MODELS")"
+  echo "  $(tr_text 'Start TrinaxAI when finished'): $(yes_no_label "$START_NOW")"
+  echo "  $(tr_text 'Start with your computer'): $(yes_no_label "$([ "$START_NOW" = "1" ] && echo "$ENABLE_AUTOSTART" || echo 0)")"
+  echo "  $(tr_text 'Weekly update check'): $(yes_no_label "$ENABLE_AUTO_UPDATE")"
+  echo ""
 }
 
 ensure_ollama_running() {
@@ -943,8 +1059,11 @@ esac
 pause_on_macos_failure() {
   local status=$?
   trap - EXIT
-  if [ "$status" -ne 0 ] && [ "$OS" = "macos" ] && [ "${INTERACTIVE:-0}" = "1" ] && [ -r /dev/tty ]; then
+  if [ "$status" -ne 0 ] && [ "${INSTALL_STARTED:-0}" = "1" ]; then
     printf '\n[!] %s\n' "$(tr_text "Installer failed with exit code $status. The error is above.")" >&2
+    printf '[i] %s\n' "$(tr_text 'It is safe to run the installer again; it resumes and keeps your data and settings.')" >&2
+  fi
+  if [ "$status" -ne 0 ] && [ "$OS" = "macos" ] && [ "${INTERACTIVE:-0}" = "1" ] && [ -r /dev/tty ]; then
     read -r -p "$(tr_text 'Press Enter to close this window...')" _ </dev/tty || true
   fi
   exit "$status"
@@ -1096,8 +1215,9 @@ run_dry_run() {
   echo ""
   echo -e "${YELLOW}${BOLD}$(tr_text 'DRY-RUN: nothing will be downloaded, installed, or changed.')${NC}"
   echo ""
+  print_plan
   print_header "0/6 Repository"
-  print_info "Would use repository directory: ${INSTALL_DIR:-<auto-detected>}"
+  print_info "Would use repository directory: $PLAN_DIR"
   print_ok "Source package download simulated"
   print_header "1/6 System Dependencies"
   print_info "Would check/install Python 3.10+, Node.js 22+, npm, curl, unzip, and OpenSSL"
@@ -1129,7 +1249,7 @@ run_dry_run() {
   else
     echo "  LAN:             https://[YOUR-LAN-IP]:3334"
   fi
-  echo "  $(tr_text 'RAG health'):      https://localhost:3333/health"
+  echo "  $(tr_text 'RAG health'): https://localhost:3333/health"
   echo ""
   print_ok "Dry-run finished; no changes were made"
   return 0
@@ -1145,6 +1265,16 @@ if [ -z "$INSTALL_DIR" ]; then
   fi
 fi
 validate_install_dir
+
+# Where the application will live, and whether the source still has to be downloaded.
+NEEDS_SOURCE_DOWNLOAD=1
+PLAN_DIR="$INSTALL_DIR"
+if [ -n "$SCRIPT_DIR" ] && [ -f "$SCRIPT_DIR/rag_api.py" ] && [ -f "$SCRIPT_DIR/pyproject.toml" ]; then
+  NEEDS_SOURCE_DOWNLOAD=0
+  PLAN_DIR="$SCRIPT_DIR"
+elif [ -f "$INSTALL_DIR/rag_api.py" ] && [ -f "$INSTALL_DIR/pyproject.toml" ]; then
+  NEEDS_SOURCE_DOWNLOAD=0
+fi
 
 if [ "$DRY_RUN" = "1" ]; then
   run_dry_run
@@ -1173,6 +1303,16 @@ echo -e "  ${CYAN}OS:${NC} ${GREEN}${OS}${NC}"
 echo -e "  ${CYAN}$(tr_text 'Privacy'):${NC} $(tr_text 'Local-first; web search and downloads use the network')"
 echo ""
 
+preflight_checks "$NEEDS_SOURCE_DOWNLOAD" || exit 1
+collect_preferences
+print_plan
+if [ "$INTERACTIVE" = "1" ] && ! ask_yes_no "Continue with this installation?" y; then
+  print_info "Cancelled. Nothing was changed."
+  exit 0
+fi
+
+INSTALL_STARTED=1
+
 # Download the source package when running from a piped script.
 REPO_DIR="$INSTALL_DIR"
 MANAGED_INSTALL=0
@@ -1189,7 +1329,7 @@ if [ -z "$SCRIPT_DIR" ] || [ ! -f "$SCRIPT_DIR/rag_api.py" ] || [ ! -f "$SCRIPT_
   else
     mkdir -p "$(dirname "$REPO_DIR")"
     temp_dir="$(mktemp -d "${TMPDIR:-/tmp}/trinaxai.XXXXXX")"
-    trap 'rm -rf -- "$temp_dir"' EXIT
+    trap 'download_status=$?; rm -rf -- "$temp_dir"; (exit "$download_status"); pause_on_macos_failure' EXIT
     release_version="${TRINAXAI_RELEASE_VERSION:-1.3.0}"
     if [ -n "$release_version" ] && [[ ! "$release_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
       print_err "TRINAXAI_RELEASE_VERSION must be a semantic version."
@@ -1239,7 +1379,7 @@ if [ -z "$SCRIPT_DIR" ] || [ ! -f "$SCRIPT_DIR/rag_api.py" ] || [ ! -f "$SCRIPT_
     extract_source_archive "$temp_dir/trinaxai.tar.gz" "$temp_dir/extracted"
     mv "$temp_dir/extracted/$SOURCE_ARCHIVE_ROOT" "$REPO_DIR"
     rm -rf -- "$temp_dir"
-    trap - EXIT
+    trap pause_on_macos_failure EXIT
     MANAGED_INSTALL=1
     cd "$REPO_DIR"
     print_ok "Repository ready at $REPO_DIR"
@@ -1600,7 +1740,7 @@ echo "  $(tr_text 'Embeddings:')     $EMBED_MODEL"
 echo "  $(tr_text 'Vision (lazy):')  $VISION_MODEL"
 echo ""
 
-if [ "$INSTALL_MODELS" = "1" ]; then
+if [ "$INSTALL_MODELS" = "1" ] && [ "$PREFS_COLLECTED" != "1" ]; then
   if ask_yes_no "Download the configured Ollama models now? Choose N to defer model downloads." y; then
     INSTALL_MODELS=1
   else
@@ -1640,7 +1780,7 @@ fi
 print_header "6/6 Auto-Start on Boot"
 
 if [ "$START_NOW" = "1" ]; then
-  if ask_yes_no "Start TrinaxAI now after install?" y; then
+  if [ "$PREFS_COLLECTED" = "1" ] || ask_yes_no "Start TrinaxAI now after install?" y; then
     print_info "Starting TrinaxAI services..."
     if ! python service_manager.py start --base-dir "$SCRIPT_DIR"; then
       print_err "TrinaxAI services failed to start."
@@ -1655,7 +1795,7 @@ if [ "$START_NOW" = "1" ]; then
   fi
 fi
 
-if [ "$START_NOW" = "1" ] && [ "$ENABLE_AUTOSTART" = "1" ]; then
+if [ "$START_NOW" = "1" ] && [ "$ENABLE_AUTOSTART" = "1" ] && [ "$PREFS_COLLECTED" != "1" ]; then
   echo ""
   echo -e "${YELLOW}$(tr_text 'Start TrinaxAI automatically when your computer turns on?')${NC}"
   echo "$(tr_text 'You can change this later in the PWA Settings page.')"
@@ -1709,6 +1849,7 @@ echo -e "  ${BLUE}$(tr_text 'Quick start'):${NC}   ./startup_ai.sh"
 echo -e "  ${BLUE}$(tr_text 'CLI'):${NC}           trinaxai"
 echo -e "  ${BLUE}$(tr_text 'New terminal'):${NC}  $(tr_text 'Open one if your current shell cannot find the new CLI yet')"
 echo -e "  ${BLUE}$(tr_text 'Shutdown'):${NC}     ./shutdown_ai.sh"
+echo -e "  ${BLUE}Doctor:${NC}         trinaxai doctor"
 echo -e "  ${BLUE}$(tr_text 'System test'):${NC}   python test_system.py --verbose"
 echo -e "  ${BLUE}$(tr_text 'Updates'):${NC}       $(tr_text 'Automatic check every week')"
 echo -e "  ${BLUE}$(tr_text 'Docs'):${NC}         https://github.com/TrinaxCode/TrinaxAI"
