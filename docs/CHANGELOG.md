@@ -96,6 +96,11 @@ All notable changes to TrinaxAI are documented here. This project follows the
 
 ### Security
 
+- The Agent's terminal sandbox now mounts the workspace's `.git` read-only. The
+  file tools already refused to write git metadata, but a shell command could
+  edit `.git/config` or hooks that git later runs for you. Reading history
+  (`git status`, `git diff`, `git log`) still works; `git add` and `git commit`
+  are no longer possible from the Agent.
 - The API and the PWA gateway now reject requests whose `Host` header names a
   foreign domain (`421`). This blocks DNS-rebinding pages from reading private
   data when TrinaxAI runs over plain HTTP (no local certificate, or Docker).

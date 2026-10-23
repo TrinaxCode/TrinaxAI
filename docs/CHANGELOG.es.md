@@ -101,6 +101,12 @@ el formato de [Keep a Changelog](https://keepachangelog.com/).
 
 ### Seguridad
 
+- El sandbox del terminal del Agente ahora monta el `.git` del workspace en solo
+  lectura. Las herramientas de archivo ya se negaban a escribir metadatos de
+  git, pero un comando de shell podía editar `.git/config` o los hooks que git
+  ejecuta después por ti. Leer el historial (`git status`, `git diff`,
+  `git log`) sigue funcionando; `git add` y `git commit` ya no son posibles
+  desde el Agente.
 - La API y el gateway de la PWA ahora rechazan peticiones cuya cabecera `Host`
   nombra un dominio ajeno (`421`). Esto impide que páginas con DNS rebinding
   lean datos privados cuando TrinaxAI funciona por HTTP (sin certificado local o
