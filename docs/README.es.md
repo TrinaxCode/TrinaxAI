@@ -3,7 +3,7 @@
 </h1>
 
 <p align="center">
-  <a href="https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.3.0"><img src="https://img.shields.io/badge/version-1.3.0-006bbd" alt="Release estable: 1.3.0"></a>
+  <a href="https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.4.0"><img src="https://img.shields.io/badge/version-1.4.0-006bbd" alt="Release estable: 1.4.0"></a>
   <a href="https://github.com/TrinaxCode/TrinaxAI/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/TrinaxCode/TrinaxAI/ci.yml?branch=main&amp;label=CI" alt="Estado de CI"></a>
   <a href="https://github.com/TrinaxCode/TrinaxAI/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0--or--later-006bbd" alt="Licencia AGPL-3.0-or-later"></a>
 </p>
@@ -13,7 +13,7 @@
 
 Este centro te lleva desde una instalación npm funcional hasta el uso diario,
 la configuración, el emparejamiento, la recuperación y el desarrollo. Describe
-TrinaxAI v1.3.0, el release estable actual.
+TrinaxAI v1.4.0, el release estable actual.
 
 ## Instalar una vez
 

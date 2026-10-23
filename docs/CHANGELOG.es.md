@@ -18,6 +18,8 @@ el formato de [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Sin publicar]
 
+## [1.4.0] — 2026-10-23
+
 ### Añadido
 
 - Instalación guiada y centrada en el cliente. `trinaxai setup` empieza con una

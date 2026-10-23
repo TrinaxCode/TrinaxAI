@@ -18,6 +18,8 @@ All notable changes to TrinaxAI are documented here. This project follows the
 
 ## [Unreleased]
 
+## [1.4.0] — 2026-10-23
+
 ### Added
 
 - Guided, client-first setup. `trinaxai setup` opens with a welcome and a

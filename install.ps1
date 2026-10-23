@@ -22,7 +22,7 @@
 TrinaxAI - Windows one-command installer
 Run in PowerShell:
   $ErrorActionPreference = "Stop"
-  $version = "1.3.0"; $base = "https://github.com/TrinaxCode/TrinaxAI/releases/download/v$version"
+  $version = "1.4.0"; $base = "https://github.com/TrinaxCode/TrinaxAI/releases/download/v$version"
   $installer = Join-Path $env:TEMP "TrinaxAI-$version-installer.ps1"; $manifest = Join-Path $env:TEMP "TrinaxAI-$version-SHA256SUMS"
   Invoke-WebRequest -Uri "$base/TrinaxAI-$version-installer.ps1" -OutFile $installer; Invoke-WebRequest -Uri "$base/SHA256SUMS" -OutFile $manifest
   $line = Get-Content -LiteralPath $manifest | Where-Object { $fields = $_ -split '\s+'; $fields.Count -ge 2 -and (($fields[1] -replace '^\*', '') -eq "TrinaxAI-$version-installer.ps1") } | Select-Object -First 1; $expected = if ($line) { ($line -split '\s+')[0] } else { "" }
@@ -41,7 +41,7 @@ if (-not $LanguageExplicit -and -not $NonInteractive -and -not $DryRun -and -not
   $LanguageReply = Read-Host "Select language / Selecciona idioma [en/es, default: $Language]"
   if ($LanguageReply -match '^es') { $Language = 'es' } elseif ($LanguageReply -match '^en') { $Language = 'en' }
 }
-$ReleaseVersion = if (-not [string]::IsNullOrWhiteSpace($env:TRINAXAI_RELEASE_VERSION)) { $env:TRINAXAI_RELEASE_VERSION } else { "1.3.0" }
+$ReleaseVersion = if (-not [string]::IsNullOrWhiteSpace($env:TRINAXAI_RELEASE_VERSION)) { $env:TRINAXAI_RELEASE_VERSION } else { "1.4.0" }
 if ($ReleaseVersion -notmatch '^[0-9]+\.[0-9]+\.[0-9]+$') { throw (T "Invalid TrinaxAI release version: $ReleaseVersion" "Versión de lanzamiento de TrinaxAI no válida: $ReleaseVersion") }
 $DefaultSourceArchiveName = "TrinaxAI-$ReleaseVersion.zip"
 $DefaultSourceArchiveUrl = "https://github.com/TrinaxCode/TrinaxAI/releases/download/v$ReleaseVersion/$DefaultSourceArchiveName"
@@ -829,7 +829,7 @@ if (-not $PreferencesCollected) {
 
 # Support the remote flow after downloading the script to a local file. Verify
 # the exact release asset before executing it:
-#   $version = "1.3.0"; $base = "https://github.com/TrinaxCode/TrinaxAI/releases/download/v$version"
+#   $version = "1.4.0"; $base = "https://github.com/TrinaxCode/TrinaxAI/releases/download/v$version"
 #   $p = Join-Path $env:TEMP "TrinaxAI-$version-installer.ps1"; $m = Join-Path $env:TEMP "TrinaxAI-$version-SHA256SUMS"
 #   Invoke-WebRequest -Uri "$base/TrinaxAI-$version-installer.ps1" -OutFile $p; Invoke-WebRequest -Uri "$base/SHA256SUMS" -OutFile $m
 #   $line = Get-Content -LiteralPath $m | Where-Object { $fields = $_ -split '\s+'; $fields.Count -ge 2 -and (($fields[1] -replace '^\*', '') -eq "TrinaxAI-$version-installer.ps1") } | Select-Object -First 1; $expected = if ($line) { ($line -split '\s+')[0] } else { "" }
