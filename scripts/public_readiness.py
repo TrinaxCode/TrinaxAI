@@ -2,7 +2,8 @@
 """TrinaxAI public readiness audit.
 
 Checks for the release blockers that are easy to reintroduce:
-missing setup files, local machine paths/IPs, and incomplete i18n keys.
+missing setup files, local machine paths/IPs, incomplete i18n keys, and
+English/Spanish documentation that has drifted apart.
 """
 
 from __future__ import annotations
@@ -51,6 +52,7 @@ REQUIRED_FILES = [
     "chat-pwa/package.json",
     "npm-package/package.json",
     "npm-package/bin/trinaxai.js",
+    "npm-package/README.es.md",
     "chat-pwa/public/manifest.en.webmanifest",
     "chat-pwa/public/manifest.es.webmanifest",
     "chat-pwa/public/offline.html",
@@ -459,6 +461,80 @@ def check_documentation_pairs() -> list[str]:
     return errors
 
 
+DOC_PARITY_SKIP_DIRS = SKIP_PARTS | {"tests"}
+DOC_PARITY_HIDDEN_DIRS_ALLOWED = {".github"}
+_FENCE = re.compile(r"^\s*(```|~~~)")
+_HEADING = re.compile(r"^(#{1,6})\s+\S")
+
+
+def _markdown_outline(text: str) -> tuple[list[int], int]:
+    """Return the heading levels and the number of fenced code blocks of a Markdown file."""
+    levels: list[int] = []
+    fences = 0
+    in_fence = False
+    for line in text.splitlines():
+        if _FENCE.match(line):
+            in_fence = not in_fence
+            if in_fence:
+                fences += 1
+            continue
+        if not in_fence:
+            match = _HEADING.match(line)
+            if match:
+                levels.append(len(match.group(1)))
+    return levels, fences
+
+
+def _doc_parity_dirs(dirnames: list[str]) -> list[str]:
+    return [
+        d
+        for d in dirnames
+        if d not in DOC_PARITY_SKIP_DIRS and (not d.startswith(".") or d in DOC_PARITY_HIDDEN_DIRS_ALLOWED)
+    ]
+
+
+def _paired_markdown_files() -> list[Path]:
+    """Every English Markdown document in the repository that must have a Spanish pair."""
+    found: list[Path] = []
+    for dirpath, dirnames, filenames in os.walk(ROOT):
+        dirnames[:] = _doc_parity_dirs(dirnames)
+        for filename in filenames:
+            if filename.endswith(".md") and not filename.endswith(".es.md"):
+                found.append(Path(dirpath) / filename)
+    return sorted(found)
+
+
+def check_documentation_parity() -> list[str]:
+    """Every Markdown document needs a `.es.md` twin with the same outline."""
+    errors: list[str] = []
+    for english in _paired_markdown_files():
+        rel = english.relative_to(ROOT)
+        spanish = english.with_name(f"{english.stem}.es.md")
+        if not spanish.exists():
+            errors.append(f"missing Spanish documentation pair for {rel.as_posix()}")
+            continue
+        english_outline = _markdown_outline(english.read_text(encoding="utf-8"))
+        spanish_outline = _markdown_outline(spanish.read_text(encoding="utf-8"))
+        if english_outline[0] != spanish_outline[0]:
+            errors.append(
+                f"{rel.as_posix()} and {spanish.relative_to(ROOT).as_posix()} have different heading structure "
+                f"({len(english_outline[0])} vs {len(spanish_outline[0])} headings)"
+            )
+        if english_outline[1] != spanish_outline[1]:
+            errors.append(
+                f"{rel.as_posix()} and {spanish.relative_to(ROOT).as_posix()} have a different number of "
+                f"code blocks ({english_outline[1]} vs {spanish_outline[1]})"
+            )
+    for dirpath, dirnames, filenames in os.walk(ROOT):
+        dirnames[:] = _doc_parity_dirs(dirnames)
+        for filename in sorted(filenames):
+            if filename.endswith(".es.md"):
+                spanish = Path(dirpath) / filename
+                if not spanish.with_name(f"{filename[: -len('.es.md')]}.md").exists():
+                    errors.append(f"missing English documentation pair for {spanish.relative_to(ROOT).as_posix()}")
+    return errors
+
+
 def check_pwa_locales() -> list[str]:
     errors: list[str] = []
     for name in ("manifest.en.webmanifest", "manifest.es.webmanifest"):
@@ -709,6 +785,7 @@ def main() -> int:
     errors.extend(check_hardcodes(files))
     errors.extend(check_i18n())
     errors.extend(check_documentation_pairs())
+    errors.extend(check_documentation_parity())
     errors.extend(check_pwa_locales())
     secret_errors = check_secrets(files)
     if secret_errors:

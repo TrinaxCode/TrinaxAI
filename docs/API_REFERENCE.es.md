@@ -66,12 +66,10 @@ un peer LAN en localhost. Una credencial inválida nunca se ignora por ser loopb
 | `POST /v1/agent`, `/v1/agent/approve`, `/v1/agent/cancel`, `GET /v1/agent/browse` | `agent` (loopback o dispositivo autorizado) | Stream de agente, aprobación/cancelación y raíces registradas. `yolo: true` exige además loopback (`agent_yolo`). |
 | `GET/POST /v1/voice/*` | `chat` + rate limit | Reconocimiento y síntesis de voz. |
 | `POST /documents/extract` | LAN/VPN o `chat` + rate limit | Extracción temporal sin persistencia. |
-| `GET /v1/sources` | `read_private` | Archivos indexados por colección. |
-| `GET /v1/sources/{collection}/{file}/chunks` | `read_private` | Chunks paginados. |
-| `DELETE /v1/sources/*` | `index` | Elimina archivo o colección de fuentes. |
-| `GET /v1/memory/*`, `POST /v1/memory/context` / escrituras de memoria | `read_private` / `modify` | Lectura versus mutación de memoria privada. |
-| `POST/GET /v1/watch/*` | `index` | Administra watcher. Un dispositivo solo puede vigilar carpetas dentro de las raíces de indexación configuradas. |
-| `POST /v1/usage`, `GET /v1/stats` | `chat` / `read_private` | Métricas locales. |
+| `GET /v1/sources/*`, `GET /v1/memory/*`, `POST /v1/memory/context`, `GET /v1/stats` | `read_private` | Datos privados indexados y del usuario. |
+| `DELETE /v1/sources/*`, `/v1/watch/*`, mutaciones de colecciones | `index` | Administración de fuentes, watcher y colecciones. Un dispositivo solo puede vigilar carpetas dentro de las raíces de indexación configuradas. |
+| Escrituras de memoria (`POST/PATCH/DELETE /v1/memory*`) | `modify` | Editar la memoria privada. |
+| `POST /v1/usage` | `chat` | Métricas de uso locales. |
 | `GET /health`, `GET /ready`, `GET /resources` | Pública | Vida del servicio, disponibilidad de Ollama y RAM local. |
 | `GET/PUT/DELETE /v1/settings/web-search*` | `modify` | Configuración local del proveedor web y borrado de credenciales. |
 | `GET/PUT /app-state` / `DELETE /app-state` | `read_private` / loopback (`system`) | Estado PWA versionado / reset total. |
@@ -124,7 +122,7 @@ una versión anterior solo se envía como cabecera
 `X-TrinaxAI-Device-Token` durante la migración explícita de
 `GET /v1/pairing/me`; después de una respuesta exitosa la PWA elimina el valor
 legacy. La CLI sigue usando esa cabecera, por ejemplo mediante
-`TRINAXAI_DEVICE_TOKEN`. Registro y secreto de hashing son archivos atómicos
+`TRINAXAI_DEVICE_TOKEN`; `GET /v1/pairing/me` nunca copia esa cabecera a una cookie de respuesta. Registro y secreto de hashing son archivos atómicos
 separados modo `0600`. Pairing autentica dispositivo/capability; no es sistema
 multiusuario.
 
@@ -217,7 +215,8 @@ informativo sin fuentes en vez de fallar.
 }
 ```
 
-`depth` se normaliza a 1–3. La respuesta añade `web_search`, `web_provider` y
+`depth` se normaliza a 1–3 y `POST /v1/research` devuelve los campos JSON `answer`,
+`sub_questions`, `sources`, `passes`, `model`, `web_search`, `web_provider` y
 `search_query`. La investigación web busca y después intenta leer un conjunto
 acotado de páginas. Cada fuente marca `content_scope: full_page` cuando extrajo
 texto de página o `snippet_only` con `fetch_error` cuando solo quedó el extracto
@@ -247,6 +246,8 @@ La ruta puede contener `/` y debe codificarse. Una colección puede incluir la
 misma ruta relativa desde varias raíces; usa el `source_id` de la lista para
 seleccionar una sin eliminar su homónima. La lista responde
 `{collection,sources}` y chunks incluye también `source_id`. `limit`: 1–500.
+`DELETE /v1/sources/{collection}` elimina todas las fuentes de una colección;
+vaciar por completo la colección `default` se rechaza.
 
 Colecciones:
 

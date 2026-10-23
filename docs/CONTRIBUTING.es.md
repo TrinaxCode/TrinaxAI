@@ -59,6 +59,7 @@ TrinaxAI admite múltiples idiomas. Para añadir o mejorar traducciones:
 - Edita `chat-pwa/src/i18n/translations.ts`
 - Añade tu idioma siguiendo el patrón existente (ES, EN)
 - Verifica que todos los elementos de la interfaz se muestren correctamente
+- Mantén también bilingüe el resto de superficies visibles para el usuario: la salida y la ayuda de la CLI en `trinaxai_cli/i18n.py` (pares inglés/español), el contrato localizado de errores de la API en `trinaxai/errors.py` (`message_es`/`recovery_es`), los manifests de la PWA y la página offline en `chat-pwa/public/`, los mensajes del lanzador npm en `npm-package/bin/trinaxai.js` y los scripts de instalación, actualización y desinstalación (ayudantes `tr_text`/`T`)
 
 ### Documentación
 
@@ -70,7 +71,7 @@ TrinaxAI admite múltiples idiomas. Para añadir o mejorar traducciones:
 - `README.md` (descripción general del proyecto)
 - `README.es.md` (versión en español)
 
-Mantén alineadas las versiones en inglés y `.es.md`. Verifica comandos en `trinaxai_cli/app.py`, rutas HTTP en `/openapi.json`, scripts PWA en `chat-pwa/package.json` y acciones visibles de recuperación en `chat-pwa/src/lib/api_errors.ts` y `chat-pwa/src/components/chat/MessageList.tsx`.
+Cada documento Markdown necesita su equivalente `.es.md` con los mismos encabezados y bloques de código; `python3 scripts/public_readiness.py` falla cuando falta un par o se han desalineado (incluye `npm-package/README.md`, `chat-pwa/README.md`, los ADR de `docs/adr/` y las plantillas de issues/PR de GitHub). Mantén alineadas las versiones en inglés y `.es.md`. Verifica comandos en `trinaxai_cli/app.py`, rutas HTTP en `/openapi.json`, scripts PWA en `chat-pwa/package.json` y acciones visibles de recuperación en `chat-pwa/src/lib/api_errors.ts` y `chat-pwa/src/components/chat/MessageList.tsx`.
 
 ---
 

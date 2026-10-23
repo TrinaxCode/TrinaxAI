@@ -88,6 +88,8 @@ tr_text_es() {
       'TrinaxAI backend is not ready on port '*) echo "El backend de TrinaxAI no está listo en el puerto${1#TrinaxAI backend is not ready on port }" ;;
       'TrinaxAI PWA is not ready on port '*) echo "La PWA de TrinaxAI no está lista en el puerto${1#TrinaxAI PWA is not ready on port }" ;;
       'TrinaxAI smoke inference failed.') echo 'Falló la inferencia de prueba de TrinaxAI.' ;;
+      'Backend, PWA, and smoke inference are ready') echo 'El backend, la PWA y la inferencia de prueba están listos' ;;
+      'Continue configuration regenerated') echo 'Configuración de Continue regenerada' ;;
       'curl not found; cannot run official Ollama installer.') echo 'No se encontró curl; no se puede ejecutar el instalador oficial de Ollama.' ;;
       'HOME is unsafe or unset; Ollama data was not removed.') echo 'HOME no es seguro o no está definido; no se eliminaron los datos de Ollama.' ;;
       'Ollama data path is a symbolic link; it was not removed.') echo 'La ruta de datos de Ollama es un enlace simbólico; no se eliminó.' ;;

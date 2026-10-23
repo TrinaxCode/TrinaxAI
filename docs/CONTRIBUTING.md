@@ -59,6 +59,7 @@ TrinaxAI supports multiple languages. To add or improve translations:
 - Edit `chat-pwa/src/i18n/translations.ts`
 - Add your language following the existing pattern (ES, EN)
 - Test that all UI elements display correctly
+- Keep every other user-visible surface bilingual as well: CLI output and help in `trinaxai_cli/i18n.py` (English/Spanish pairs), the localized API error contract in `trinaxai/errors.py` (`message_es`/`recovery_es`), the PWA manifests and offline page in `chat-pwa/public/`, the npm launcher messages in `npm-package/bin/trinaxai.js`, and the installer/updater/uninstaller scripts (`tr_text`/`T` helpers)
 
 ### Documentation
 
@@ -70,7 +71,7 @@ Documentation improvements are always welcome! The docs live in:
 - `README.md` (project overview)
 - `README.es.md` (Spanish version)
 
-Keep English and `.es.md` counterparts aligned. Verify command names against `trinaxai_cli/app.py`, API paths against `/openapi.json`, PWA scripts against `chat-pwa/package.json`, and user-facing recovery actions against `chat-pwa/src/lib/api_errors.ts` and `chat-pwa/src/components/chat/MessageList.tsx`.
+Every Markdown document needs a `.es.md` counterpart with the same headings and code blocks; `python3 scripts/public_readiness.py` fails when a pair is missing or has drifted apart (this includes `npm-package/README.md`, `chat-pwa/README.md`, the ADRs in `docs/adr/`, and the GitHub issue/PR templates). Keep English and `.es.md` counterparts aligned. Verify command names against `trinaxai_cli/app.py`, API paths against `/openapi.json`, PWA scripts against `chat-pwa/package.json`, and user-facing recovery actions against `chat-pwa/src/lib/api_errors.ts` and `chat-pwa/src/components/chat/MessageList.tsx`.
 
 ---
 

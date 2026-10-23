@@ -167,6 +167,13 @@ MESSAGES: dict[str, tuple[str, str]] = {
     "table_check": ("check", "comprobación"),
     "table_id": ("id", "id"),
     "table_name": ("name", "nombre"),
+    "table_installed": ("installed", "instalado"),
+    "table_recommended": ("recommended", "recomendado"),
+    "table_file": ("file", "archivo"),
+    "table_size": ("size", "tamaño"),
+    "table_mtime": ("mtime", "modificado"),
+    "table_created": ("created", "creado"),
+    "table_text": ("text", "texto"),
     "provide_either_collection": (
         "Provide either --collection-id or --name, not both.",
         "Indica --collection-id o --name, no ambos.",
@@ -374,6 +381,26 @@ def text(key: str, lang: str = "en", **values: Any) -> str:
     return result.format(**values)
 
 
+_ACTION_VERBS = {
+    "list": "listar",
+    "add": "añadir",
+    "forget": "olvidar",
+    "refresh": "actualizar",
+    "summary": "resumen",
+    "create": "crear",
+    "use": "usar",
+    "delete": "eliminar",
+    "start": "iniciar",
+    "stop": "detener",
+    "status": "estado",
+    "revoke": "revocar",
+    "set": "configurar",
+    "list-collections": "listar colecciones",
+    "list-files": "listar archivos",
+    "show-chunks": "mostrar chunks",
+}
+
+
 def translate(message: Any, lang: str = "en") -> Any:
     if not isinstance(message, str):
         return message
@@ -524,7 +551,17 @@ def translate(message: Any, lang: str = "en") -> Any:
             r"^Automatic mode routing enabled\. TrinaxAI picks the best mode per turn\.$",
             "Routing automático activado. TrinaxAI elige el mejor modo en cada turno.",
         ),
+        (
+            r"^Agent mode pinned \| Workspace: (.+) \| auto-approve ON$",
+            r"Modo agente fijado | Workspace: \1 | aprobación automática ACTIVA",
+        ),
+        (
+            r"^Agent mode pinned \| Workspace: (.+) \| confirm each action$",
+            r"Modo agente fijado | Workspace: \1 | confirmar cada acción",
+        ),
         (r"^Agent mode pinned \| Workspace: (.+) \| (.+)$", r"Modo agente fijado | Workspace: \1 | \2"),
+        (r"^AI boot preference: on$", "Preferencia de arranque de la IA: activada"),
+        (r"^AI boot preference: off$", "Preferencia de arranque de la IA: desactivada"),
         (r"^Web-search mode pinned\.$", "Modo de búsqueda web fijado."),
         (r"^Deep-research mode pinned\.$", "Modo de investigación profunda fijado."),
         (r"^Agent workspace set to: (.+)$", r"Workspace del agente: \1"),
@@ -642,12 +679,6 @@ def translate(message: Any, lang: str = "en") -> Any:
         (r"^Analyze attached file: (.+)$", r"Analizar archivo adjunto: \1"),
         (r"^Load session '(.+)'$", r"Cargar sesión '\1'"),
         (r"^Write '(.+)'$", r"Escribir '\1'"),
-        (r"^Browse (.+)$", r"Explorar \1"),
-        (r"^Collections (.+)$", r"Colecciones \1"),
-        (r"^Memory (.+)$", r"Memoria \1"),
-        (r"^Watch (.+)$", r"Vigilar \1"),
-        (r"^Pair (.+)$", r"Emparejar \1"),
-        (r"^Import (.+)$", r"Importar \1"),
         (
             r"^Agent workspace: (.+) \| model: (.+)\s+\(yolo: auto-approve\)$",
             r"Workspace del agente: \1 | modelo: \2 (yolo: aprobación automática)",
@@ -707,6 +738,17 @@ def translate(message: Any, lang: str = "en") -> Any:
         ),
         (r"^\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\] restarted (.+)$", r"[\1] reiniciado \2"),
     )
+    action_label = re.match(r"^(Browse|Collections|Memory|Watch|Pair|Import) (.+)$", normalized)
+    if action_label:
+        noun = {
+            "Browse": "Explorar",
+            "Collections": "Colecciones",
+            "Memory": "Memoria",
+            "Watch": "Vigilar",
+            "Pair": "Emparejar",
+            "Import": "Importar",
+        }[action_label.group(1)]
+        return f"{noun} {_ACTION_VERBS.get(action_label.group(2), action_label.group(2))}"
     for pattern, replacement in patterns:
         matched = re.match(pattern, normalized)
         if matched:
@@ -833,10 +875,21 @@ def help_text(value: str, lang: str = "en") -> str:
         "Select a source when file paths are duplicated.": "Selecciona una fuente cuando haya rutas de archivo duplicadas.",
         "Device id shown by 'trinaxai pair list'.": "ID del dispositivo que muestra 'trinaxai pair list'.",
         "Collection name.": "Nombre de colección.",
+        "Replace the permissions of one paired device.": "Reemplazar los permisos de un dispositivo vinculado.",
+        "Comma-separated permissions: chat, read_private, web, index, agent, modify. "
+        "index/agent/modify let that device change the host; system and agent auto-approve stay host-only.": (
+            "Permisos separados por comas: chat, read_private, web, index, agent, modify. "
+            "index/agent/modify permiten que ese dispositivo cambie el anfitrión; system y la aprobación "
+            "automática del agente quedan solo para el anfitrión."
+        ),
+        "Comma-separated permissions: chat, read_private, web, index, agent, modify.": (
+            "Permisos separados por comas: chat, read_private, web, index, agent, modify."
+        ),
     }
     for source, target in replacements.items():
         value = value.replace(source, target)
-        pattern = re.escape(source).replace(r"\ ", r"\s+")
+        # argparse may wrap a long help string at a space or right after a hyphen.
+        pattern = re.escape(source).replace(r"\ ", r"\s+").replace(r"\-", r"-\s*")
         value = re.sub(pattern, target, value)
     value = re.sub(r"(?m)^\s*mcp\s+==SUPPRESS==\s*$\n?", "", value)
     value = re.sub(

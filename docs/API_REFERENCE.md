@@ -13,7 +13,7 @@
 <p align="center"><sub><strong>English</strong> · <a href="API_REFERENCE.es.md">Español</a></sub></p>
 <p align="center"><sub><a href="https://www.trinaxai.app/">Website</a> · <a href="README.md">Documentation</a> · <a href="../README.md">Home</a> · <a href="CHANGELOG.md">Changelog</a></sub></p>
 
-The FastAPI service connects the PWA and CLI to RAG, memory, voice, and local administration. Its default managed URL is `https://localhost:3333`. Live schema endpoints are `/docs`, `/redoc`, and `/openapi.json`.
+The FastAPI service connects the PWA and CLI to RAG, memory, voice, and local administration. Its default managed URL is `https://localhost:3333`; the URL depends on `TRINAXAI_HOST`, `TRINAXAI_PORT`, and TLS. Live schema endpoints on a running instance are `/docs` (Swagger UI), `/redoc` (ReDoc), and `/openapi.json` (OpenAPI JSON).
 
 Managed installations prefer HTTPS. Use the public CA printed by `trinaxai
 network` with API clients; direct HTTP is only a loopback development fallback.
@@ -121,7 +121,7 @@ mode-0600 files. Pairing authenticates a device/capability; it is not a
 multi-user account or authorization delegation system.
 
 `GET /v1/pairing/me` and `DELETE /v1/pairing/me` accept the cookie; the legacy
-header remains supported for CLI clients only. `GET /v1/pairing/devices`,
+header remains supported for CLI clients and for the explicit PWA migration, after which the PWA removes the legacy stored value. `GET /v1/pairing/devices`,
 `PATCH /v1/pairing/devices/{id}` and `DELETE /v1/pairing/devices/{id}` are
 loopback-only operations. Revocation takes effect for FastAPI and the Ollama
 gateway.
@@ -140,10 +140,9 @@ next request, in FastAPI and in the PWA gateway.
 
 ## RAG chat
 
-```http
-POST /v1/chat/completions
-Content-Type: application/json
-```
+### `POST /v1/chat/completions`
+
+Basically compatible with OpenAI chat completions:
 
 ```json
 {
@@ -160,7 +159,7 @@ Content-Type: application/json
 
 `messages` accepts 1–100 `system`, `user`, or `assistant` objects, requires a
 user message, limits each message to 100,000 characters and the conversation to
-200,000 characters. A null/empty model enables routing. Up to 50 collection IDs
+200,000 characters. A null/empty `model` enables routing; an Ollama model name is also accepted. Up to 50 collection IDs
 are accepted. `mode` is one of:
 
 - `auto`: classify whether indexed evidence is needed;
@@ -174,23 +173,32 @@ In automatic conversational routing, the client selects the capability before ca
 `true` permits it only for analytical or complex tasks; omitted uses
 `TRINAXAI_THINKING_MODE`. Simple turns never need the reasoning channel.
 
-With `stream=false`, the result is an OpenAI-shaped `chat.completion` plus
+With `stream=false`, the result is an OpenAI-shaped `chat.completion` JSON (with `choices` and `trinaxai.sources`) plus
 `trinaxai` metadata (`mode`, `rag_used`, `abstained`, collections, result count,
 request ID and sources) and an explicitly estimated `usage`. `abstained` is
 `true` for deterministic no-index, empty-collection, or no-relevant-evidence
 responses, and for a clear model refusal to answer from the supplied context.
-With `stream=true`, SSE emits
+With `stream=true`, the response is `text/event-stream` and SSE emits
 the plan, content deltas, sources, retrieval metadata, estimated usage, timing,
 post-stream **quality heuristics**, and finally `[DONE]`. These heuristics detect
 likely omissions or malformed output; they are not a compiler, type checker,
 browser test or proof of correctness. A missing index produces an informative
-response rather than an HTTP failure.
+response without sources rather than an HTTP failure.
 
-## Research
+Possible SSE events:
+
+```text
+data: {"trinaxai":{"model":"...","project":null,"phase":"retrieving"}}
+data: {"choices":[{"delta":{"content":"text"}}]}
+data: {"trinaxai_sources":[{"file":"...","snippet":"...","score":0.8}]}
+data: [DONE]
+```
 
 ### Web-search settings
 
 `GET|PUT|DELETE /v1/settings/web-search` reads, updates or resets host-local search settings. `POST /v1/settings/web-search/test` tests the selected provider from the backend, and `DELETE /v1/settings/web-search/credentials/brave` explicitly removes the managed Brave key. Every route is host-only and requires verified loopback provenance. Secret values are write-only and never serialized.
+
+### `POST /v1/research`
 
 ```json
 {
@@ -204,7 +212,7 @@ response rather than an HTTP failure.
 }
 ```
 
-`POST /v1/research` clamps depth to 1–3 and returns JSON fields `answer`,
+`depth` is clamped to 1–3 and `POST /v1/research` returns JSON fields `answer`,
 `sub_questions`, `sources`, `passes`, `model`, `web_search`, `web_provider` and
 `search_query`. Web research searches first, then attempts to read a bounded set
 of pages. Each web source reports `content_scope: "full_page"` when bounded page
@@ -249,7 +257,18 @@ Collection listing returns `{ok, collections}`. The default collection cannot be
 
 ## Browser indexing
 
-`POST /system/index-upload` accepts multipart `files` plus optional `label`, `collection_id`, `embed_model`, `aggressive_quant`, and `watch_id`. It returns a `job_id` and upload summary while indexing continues in the background.
+`POST /system/index-upload` receives `multipart/form-data`:
+
+| Field | Type / default |
+|---|---|
+| `files` | One or more files; required. |
+| `label` | Text; `import`. |
+| `collection_id` | Text; `default`. |
+| `embed_model` | Optional text. |
+| `aggressive_quant` | Boolean; `false`. |
+| `watch_id` | Optional text for synchronized imports. |
+
+The response contains the `job_id`, local path, saved/skipped files, bytes, and collection while indexing continues in the background:
 
 ```http
 GET  /system/index-jobs/{job_id}
@@ -286,6 +305,8 @@ entries as untrusted data rather than instructions. The global summary is a
 human-facing overview only and is never injected into a turn. The PWA confirms
 deletion and exposes edit, provenance, kind, and expiry controls. Its local
 `tc-project-memory` scratchpad is not prompt context.
+
+Creating, editing, and deleting memories updates the summary immediately from the recent active entries. `POST /v1/memory/refresh` synthesizes a summary with the model only when explicitly requested.
 
 The watcher requires `watchdog` and existing directories. Usage data never leaves local storage.
 
@@ -341,7 +362,7 @@ networkless bubblewrap and expose only the workspace as writable; on unsupported
 hosts terminal execution fails closed unless the operator explicitly accepts
 full user-level access with `TRINAXAI_AGENT_ALLOW_UNSANDBOXED_COMMANDS=1`.
 
-`POST /documents/extract` accepts one multipart file and returns `{ok, name, text, chars, truncated}`. PDF, DOCX, and PPTX have specialized extraction; text formats are decoded directly. Extraction does not index or persist the document, so an unauthenticated peer may use it from the local network or VPN. Public-network callers still require the `chat` scope.
+`POST /documents/extract` accepts one multipart file and returns `{ok, name, text, chars, truncated}`. PDF, DOCX, and PPTX have specialized extraction; text formats are decoded directly. Extraction does not index or persist the document, so an unauthenticated peer may use it from the local network or VPN. Public-network callers still require the `chat` scope. Limits are documented in [CONFIGURATION.md](CONFIGURATION.md).
 
 ```http
 GET  /v1/voice/capabilities
@@ -364,9 +385,12 @@ TTS returns audio bytes with the detected content type. STT/TTS return `501` if 
 | `GET /ready` | Same status payload; returns `503` until Ollama responds. |
 | `GET /resources` | RAM and detected VRAM values in bytes, plus the hardware snapshot. |
 
+## Errors
+
 FastAPI errors use `{"detail": {...}, "error": {...}, "request_id": "..."}`.
 `detail` may also include a safe legacy code or field hint for client
 compatibility; it never contains raw exception text. Retryable responses include
-`Retry-After: 1`. Common statuses are `400`, `403`, `404`, `409`, `413`, `422`,
-`429`, `500`, `501`, and `503`. See [Troubleshooting](TROUBLESHOOTING.md) and
+`Retry-After: 1`. The most relevant statuses are `400` (invalid input), `403`
+(authorization), `404`, `409` (confirmation required), `413` (limit), `422`
+(validation/extraction), `429`, `500`, `501`, and `503`. See [Troubleshooting](TROUBLESHOOTING.md) and
 [configuration](CONFIGURATION.md) for recovery, limits, and network settings.

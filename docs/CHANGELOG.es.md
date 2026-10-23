@@ -51,9 +51,19 @@ el formato de [Keep a Changelog](https://keepachangelog.com/).
 - `tests/test_route_scope_contract.py` fija el scope de dispositivo de cada
   ruta HTTP, de modo que añadir o reescopar un endpoint sea un cambio explícito
   y revisado.
+- Equivalentes en español de `npm-package/README.md` y del ADR 0001, más una
+  comprobación de `public_readiness.py` que exige que cada documento Markdown
+  tenga su gemelo `.es.md` con los mismos encabezados y bloques de código.
+- El lanzador npm ahora muestra sus mensajes en inglés o español
+  (`--language`, `TRINAXAI_LANG` o la configuración regional del sistema).
 
 ### Cambiado
 
+- Paridad de documentación inglés/español: `CONFIGURATION`, `API_REFERENCE`,
+  `CLI_REFERENCE`, `ENVIRONMENT_VARIABLES`, `SECURITY` y el README de la PWA
+  tienen ahora las mismas secciones en ambos idiomas, y la CLI en español
+  localiza el texto de ayuda restante (`pair`, `agent --permission-mode`),
+  los encabezados de tablas y las líneas de estado.
 - El perfil `8gb` usa ahora una ventana de 4096 tokens por defecto. Con 2048,
   tres fragmentos recuperados la llenaban y el modelo podía detenerse tras un token.
 - El README y la guía de seguridad indican que la terminal del Agente solo está
@@ -65,7 +75,7 @@ el formato de [Keep a Changelog](https://keepachangelog.com/).
 - Los módulos Python planos de la raíz (`config`, `trinaxai_core`,
   `trinaxai_errors`, `trinaxai_index_{documents,state,storage}`, el indexador,
   `service_manager` y `recovery_server`) viven ahora en el paquete `trinaxai`
-  ([ADR 0001](adr/0001-python-package-layout.md), en inglés). Se conservan todas
+  ([ADR 0001](adr/0001-python-package-layout.es.md)). Se conservan todas
   las rutas antiguas: los nombres de biblioteca son alias del mismo objeto de
   módulo, y `index.py`, `service_manager.py`, `recovery_server.py` y `rag_api.py`
   siguen en la raíz como lanzadores, de modo que instaladores, unidades, tareas

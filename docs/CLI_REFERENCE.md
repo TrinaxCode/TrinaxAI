@@ -20,6 +20,7 @@ The `trinaxai` CLI provides direct Ollama chat, RAG queries, indexing, memory an
 ```bash
 python -m pip install -e .
 trinaxai --help
+trinaxai help
 trinaxai COMMAND --help
 ```
 
@@ -84,15 +85,6 @@ common shape; run `trinaxai COMMAND --help` for every flag and default.
 the loopback recovery page at `https://localhost:3334`; LAN access stays closed
 until TrinaxAI is started from that local page.
 
-Use `trinaxai chat --file PATH --prompt "Describe this"` to analyze one local
-image or text/document file. The attachment path is validated locally and the
-file is not uploaded by the CLI.
-
-In automatic chat mode, TrinaxAI routes each turn by capability: direct public lookups go to web search, questions about your own projects or files go to RAG, and complex multi-source requests go to deep research. Agent execution is explicit: use `/agent` (or `trinaxai agent`) before asking it to write files. Use `/chat`, `/web`, `/research`, `/rag`, or `/agent` when you want to pin a mode.
-
-Add `--session NAME` to `trinaxai research` to save the question, answer,
-public research metadata, and sources for a later `trinaxai export`.
-
 Use `--append` only when deleted source files should remain indexed. Each root
 has an independent stable `source_id`, so syncing another root into the same
 collection no longer replaces namesake paths from the first. The watcher
@@ -102,16 +94,40 @@ DeepResearch metadata and sources. The reserved `trinaxai mcp` command returns
 exit code `2` and does not start an MCP server in this release; use the HTTP API
 or the supported CLI commands instead.
 
+## Chat and queries
+
+```bash
+trinaxai chat
+trinaxai chat --prompt "Summarize this project" --engine rag --collections default,docs --thinking
+trinaxai chat --file ./photo.png --prompt "Describe this image"
+trinaxai ask --file ./manual.pdf "Summarize this document"
+trinaxai ask "Write a test for this function" --engine ollama --no-thinking
+trinaxai agent --workspace . --prompt "Fix the tests"
+trinaxai research --query "Compare the security modules" --session security --depth 2 --collections default --thinking
+```
+
+In automatic chat mode, TrinaxAI routes each turn by capability: direct public lookups go to web search, questions about your own projects or files go to RAG, and complex multi-source requests go to deep research. Agent execution is explicit: use `/agent` (or `trinaxai agent`) before asking it to write files. Use `/chat`, `/web`, `/research`, `/rag`, or `/agent` when you want to pin a mode.
+
+`--engine general` is an alias of direct Ollama chat; `rag` uses indexed documents. `--collections` accepts comma-separated IDs.
+
+Use `trinaxai chat --file PATH --prompt "Describe this"` to analyze one local
+image or text/document file. The attachment path is validated locally and the
+file is not uploaded by the CLI.
+
+`research` tries to read bounded page text (`full_page`) and keeps the search
+excerpt as a fallback (`snippet_only`); the sources say which one was used. Add `--session NAME` to save the question, answer,
+public research metadata, and sources for a later `trinaxai export`.
+
 ## Indexing and exploration
 
-~~~bash
+```bash
 trinaxai index . --collection default
 trinaxai index ~/Documents --collection documents --append
 trinaxai browse list-collections
 trinaxai browse list-files --collection default
 trinaxai browse show-chunks --collection default --file README.md --limit 20
 trinaxai obsidian --vault ~/Notes --collection notes
-~~~
+```
 
 Use `--append` to keep files that no longer exist on disk. Without it, the
 command synchronizes the selected root. Each root has an independent stable
@@ -119,7 +135,7 @@ command synchronizes the selected root. Each root has an independent stable
 
 ## Memory and collections
 
-~~~bash
+```bash
 trinaxai memory list
 trinaxai memory add --text "I prefer concise answers" --tags preference,style
 trinaxai memory forget --memory-id MEMORY_ID
@@ -130,16 +146,16 @@ trinaxai collections list
 trinaxai collections create --name "Documentation"
 trinaxai collections use --collection-id documentation
 trinaxai collections delete --collection-id documentation
-~~~
+```
 
 ## Watcher and export
 
-~~~bash
+```bash
 trinaxai watch start --paths ~/projects/app --collection default
 trinaxai watch status
 trinaxai watch stop
 trinaxai export --session SESSION --format md --output conversation
-~~~
+```
 
 The watcher requires the `watchdog` server dependency. Session export supports
 Markdown, PDF, and Word formats while retaining public research metadata,
@@ -147,7 +163,7 @@ sources, and citations.
 
 ## Lifecycle and diagnostics
 
-~~~bash
+```bash
 trinaxai status
 trinaxai start
 trinaxai restart
@@ -159,7 +175,7 @@ trinaxai doctor
 trinaxai doctor --strict --json
 trinaxai update
 trinaxai uninstall
-~~~
+```
 
 `trinaxai stop --all` stops the PWA and the rest of the stack. Only the local
 recovery page remains at `https://localhost:3334`, and LAN access stays closed
@@ -274,9 +290,6 @@ HTTP agent workspaces are separately restricted by
 `TRINAXAI_AGENT_WORKSPACE_ROOTS`; HTTP yolo is disabled by default and cannot be
 used from a non-loopback client.
 
-`research` can return bounded page text (`full_page`) or fall back to a search
-excerpt (`snippet_only`); the source metadata says which one was used.
-
 ## Configuration file
 
 Resolution order is `--config`, `TRINAXAI_CONFIG`, then the native platform path:
@@ -304,8 +317,13 @@ enabled = false
 dir = ""
 ```
 
-Exit codes are `0` for success, `1` for a command/service/configuration error,
-and `130` for `Ctrl+C`. Human `doctor` remains a diagnostic report; automation
+## Exit codes
+
+- `0`: success.
+- `1`: command, service, network, or configuration error.
+- `130`: interrupted with `Ctrl+C`.
+
+Human `doctor` remains a diagnostic report; automation
 should run `trinaxai doctor --strict --json`, which emits one JSON document and
 returns nonzero when a critical check fails. See the [troubleshooting guide](TROUBLESHOOTING.md)
 and [developer guide](DEVELOPER_GUIDE.md). `update` and `uninstall` can change

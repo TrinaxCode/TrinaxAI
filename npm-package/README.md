@@ -1,11 +1,13 @@
 # TrinaxAI
 
+**English** · [Español](https://github.com/TrinaxCode/TrinaxAI/blob/main/npm-package/README.es.md)
+
 Install TrinaxAI on Linux, macOS, or Windows with npm:
 
-~~~bash
+```bash
 npm install -g trinaxai@latest
 trinaxai setup
-~~~
+```
 
 The package is a verified launcher. It does not bundle the backend or the PWA.
 The setup command downloads the matching official release installer from GitHub,
@@ -15,10 +17,10 @@ verifies its SHA-256 checksum, and runs the platform setup.
 
 Check the installation and open the local app:
 
-~~~bash
+```bash
 trinaxai doctor
 trinaxai status
-~~~
+```
 
 Open https://localhost:3334. The first visit may ask you to trust the local
 HTTPS certificate.
@@ -27,27 +29,28 @@ HTTPS certificate.
 
 Pass options after setup when you need to change the default flow:
 
-~~~bash
+```bash
 trinaxai setup --no-models
 trinaxai setup --no-start
 trinaxai setup --profile 16gb
+trinaxai setup --language es
 trinaxai setup --dry-run
-~~~
+```
 
-Run `trinaxai setup --help` for the complete option list.
+Run `trinaxai setup --help` for the complete option list. The launcher and the installer follow `--language en|es` (or `TRINAXAI_LANG`, or your system locale) for their messages.
 
 ## After setup
 
 The launcher forwards commands to the installed TrinaxAI CLI:
 
-~~~bash
+```bash
 trinaxai chat
 trinaxai ask "Summarize my indexed files" --engine rag
 trinaxai index ./documents
 trinaxai doctor --strict
 trinaxai update
 trinaxai uninstall
-~~~
+```
 
 Use `trinaxai --help` for the complete command list and the
 [CLI reference](https://github.com/TrinaxCode/TrinaxAI/blob/main/docs/CLI_REFERENCE.md)

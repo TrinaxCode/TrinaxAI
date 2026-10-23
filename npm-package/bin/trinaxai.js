@@ -14,9 +14,83 @@ const RELEASE_REPOSITORY = "TrinaxCode/TrinaxAI";
 const RELEASE_HOST = "https://github.com";
 const MAX_DOWNLOAD_BYTES = 10 * 1024 * 1024;
 
+// Human-facing launcher output is available in English and Spanish.
+const MESSAGES = {
+  invalidVersion: ["Invalid TrinaxAI version: {0}", "Versión de TrinaxAI no válida: {0}"],
+  invalidChecksum: ["Invalid SHA-256 entry for {0}", "Entrada SHA-256 no válida para {0}"],
+  missingChecksum: ["SHA256SUMS does not contain {0}", "SHA256SUMS no contiene {0}"],
+  tooManyRedirects: [
+    "Too many redirects while downloading TrinaxAI",
+    "Demasiadas redirecciones al descargar TrinaxAI",
+  ],
+  httpsRequired: ["TrinaxAI downloads must use HTTPS", "Las descargas de TrinaxAI deben usar HTTPS"],
+  downloadFailed: ["Download failed with HTTP {0}", "La descarga falló con HTTP {0}"],
+  downloadTooLarge: [
+    "TrinaxAI download is unexpectedly large",
+    "La descarga de TrinaxAI es inesperadamente grande",
+  ],
+  downloadTimeout: ["TrinaxAI download timed out", "La descarga de TrinaxAI agotó el tiempo de espera"],
+  optionRequiresValue: ["{0} requires a value", "{0} requiere un valor"],
+  unknownSetupOption: ["Unknown setup option: {0}", "Opción de setup desconocida: {0}"],
+  downloading: ["Downloading TrinaxAI {0} installer...", "Descargando el instalador de TrinaxAI {0}..."],
+  checksumMismatch: ["Installer SHA-256 verification failed", "Falló la verificación SHA-256 del instalador"],
+  notInstalled: [
+    "TrinaxAI is not installed. Run: trinaxai setup",
+    "TrinaxAI no está instalado. Ejecuta: trinaxai setup",
+  ],
+  help: [
+    `TrinaxAI {0}
+
+Usage:
+  trinaxai setup [options]   Install this release
+  trinaxai <command>          Run the installed TrinaxAI CLI
+
+Setup options:
+  --no-models, --no-start, --no-autostart, --no-auto-update
+  --non-interactive, --dry-run, --profile PROFILE, --install-dir PATH
+  --language en|es
+`,
+    `TrinaxAI {0}
+
+Uso:
+  trinaxai setup [opciones]   Instala esta versión
+  trinaxai <comando>           Ejecuta la CLI de TrinaxAI instalada
+
+Opciones de setup:
+  --no-models, --no-start, --no-autostart, --no-auto-update
+  --non-interactive, --dry-run, --profile PERFIL, --install-dir RUTA
+  --language en|es
+`,
+  ],
+};
+
+function normalizeLanguage(value) {
+  return /^es([^a-z]|$)/i.test(String(value || "").trim().replace(/_/g, "-")) ? "es" : "en";
+}
+
+function detectLanguage(args = [], env = process.env) {
+  for (let index = 0; index < args.length; index += 1) {
+    const argument = args[index];
+    if (argument === "--language" || argument === "--lang") return normalizeLanguage(args[index + 1]);
+    const match = /^--(?:language|lang)=(.*)$/.exec(argument);
+    if (match) return normalizeLanguage(match[1]);
+  }
+  for (const name of ["TRINAXAI_LANG", "LC_ALL", "LC_MESSAGES", "LANG"]) {
+    if (env[name]) return normalizeLanguage(env[name]);
+  }
+  return "en";
+}
+
+let language = detectLanguage();
+
+function message(key, ...values) {
+  const text = MESSAGES[key][language === "es" ? 1 : 0];
+  return text.replace(/\{(\d+)\}/g, (_match, index) => String(values[Number(index)]));
+}
+
 function releaseBase(version) {
   if (!/^\d+\.\d+\.\d+$/.test(version)) {
-    throw new Error(`Invalid TrinaxAI version: ${version}`);
+    throw new Error(message("invalidVersion", version));
   }
   return `${RELEASE_HOST}/${RELEASE_REPOSITORY}/releases/download/v${version}`;
 }
@@ -30,22 +104,22 @@ function checksumFor(manifest, asset) {
     const fields = line.trim().split(/\s+/);
     if (fields.length >= 2 && fields[1].replace(/^\*/, "") === asset) {
       if (!/^[a-f\d]{64}$/i.test(fields[0])) {
-        throw new Error(`Invalid SHA-256 entry for ${asset}`);
+        throw new Error(message("invalidChecksum", asset));
       }
       return fields[0].toLowerCase();
     }
   }
-  throw new Error(`SHA256SUMS does not contain ${asset}`);
+  throw new Error(message("missingChecksum", asset));
 }
 
 function download(url, redirectCount = 0) {
   if (redirectCount > 5) {
-    return Promise.reject(new Error("Too many redirects while downloading TrinaxAI"));
+    return Promise.reject(new Error(message("tooManyRedirects")));
   }
 
   const target = new URL(url);
   if (target.protocol !== "https:") {
-    return Promise.reject(new Error("TrinaxAI downloads must use HTTPS"));
+    return Promise.reject(new Error(message("httpsRequired")));
   }
 
   return new Promise((resolve, reject) => {
@@ -58,7 +132,7 @@ function download(url, redirectCount = 0) {
       }
       if (response.statusCode !== 200) {
         response.resume();
-        reject(new Error(`Download failed with HTTP ${response.statusCode}`));
+        reject(new Error(message("downloadFailed", response.statusCode)));
         return;
       }
 
@@ -67,7 +141,7 @@ function download(url, redirectCount = 0) {
       response.on("data", (chunk) => {
         size += chunk.length;
         if (size > MAX_DOWNLOAD_BYTES) {
-          response.destroy(new Error("TrinaxAI download is unexpectedly large"));
+          response.destroy(new Error(message("downloadTooLarge")));
           return;
         }
         chunks.push(chunk);
@@ -75,7 +149,7 @@ function download(url, redirectCount = 0) {
       response.on("end", () => resolve(Buffer.concat(chunks)));
       response.on("error", reject);
     });
-    request.setTimeout(30000, () => request.destroy(new Error("TrinaxAI download timed out")));
+    request.setTimeout(30000, () => request.destroy(new Error(message("downloadTimeout"))));
     request.on("error", reject);
   });
 }
@@ -109,7 +183,7 @@ function setupArgs(args, platform = process.platform) {
     if (values.has(argument)) {
       const value = args[index + 1];
       if (!value || value.startsWith("-")) {
-        throw new Error(`${argument} requires a value`);
+        throw new Error(message("optionRequiresValue", argument));
       }
       result.push(values.get(argument), value);
       index += 1;
@@ -119,7 +193,7 @@ function setupArgs(args, platform = process.platform) {
     if (equalsIndex > 0 && values.has(argument.slice(0, equalsIndex))) {
       const option = argument.slice(0, equalsIndex);
       const value = argument.slice(equalsIndex + 1);
-      if (!value) throw new Error(`${option} requires a value`);
+      if (!value) throw new Error(message("optionRequiresValue", option));
       result.push(values.get(option), value);
       continue;
     }
@@ -127,7 +201,7 @@ function setupArgs(args, platform = process.platform) {
       result.push(windows ? "-?" : argument);
       continue;
     }
-    throw new Error(`Unknown setup option: ${argument}`);
+    throw new Error(message("unknownSetupOption", argument));
   }
   return result;
 }
@@ -181,14 +255,14 @@ async function install(version, args) {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "trinaxai-installer-"));
   const installerPath = path.join(tempDir, asset);
   try {
-    process.stdout.write(`Downloading TrinaxAI ${version} installer...\n`);
+    process.stdout.write(`${message("downloading", version)}\n`);
     const [installer, manifest] = await Promise.all([
       download(`${base}/${asset}`),
       download(`${base}/SHA256SUMS`),
     ]);
     const expected = checksumFor(manifest.toString("utf8"), asset);
     const actual = crypto.createHash("sha256").update(installer).digest("hex");
-    if (actual !== expected) throw new Error("Installer SHA-256 verification failed");
+    if (actual !== expected) throw new Error(message("checksumMismatch"));
     fs.writeFileSync(installerPath, installer, { mode: 0o700 });
 
     const environment = { ...process.env, TRINAXAI_RELEASE_VERSION: version };
@@ -205,19 +279,11 @@ async function install(version, args) {
 }
 
 function printHelp() {
-  console.log(`TrinaxAI ${PACKAGE_VERSION}
-
-Usage:
-  trinaxai setup [options]   Install this release
-  trinaxai <command>          Run the installed TrinaxAI CLI
-
-Setup options:
-  --no-models, --no-start, --no-autostart, --no-auto-update
-  --non-interactive, --dry-run, --profile PROFILE, --install-dir PATH
-`);
+  console.log(message("help", PACKAGE_VERSION));
 }
 
 async function main(args = process.argv.slice(2)) {
+  language = detectLanguage(args);
   if (args[0] === "--help" || args[0] === "-h") {
     printHelp();
     return 0;
@@ -236,7 +302,7 @@ async function main(args = process.argv.slice(2)) {
 
   const root = findInstallation();
   if (!root) {
-    console.error("TrinaxAI is not installed. Run: trinaxai setup");
+    console.error(message("notInstalled"));
     return 1;
   }
   return runInstalled(args, root);
@@ -253,7 +319,9 @@ if (require.main === module) {
 
 module.exports = {
   checksumFor,
+  detectLanguage,
   installerAsset,
+  message,
   releaseBase,
   setupArgs,
 };

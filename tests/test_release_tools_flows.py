@@ -203,3 +203,32 @@ def test_auto_update_main_routes_actions(monkeypatch, tmp_path: Path, capsys) ->
     monkeypatch.setattr(auto_update, "disable", lambda path: f"disabled {path}")
     assert auto_update.main() == 0
     assert "disabled" in capsys.readouterr().out
+
+
+def test_documentation_parity_requires_a_spanish_twin_with_the_same_outline(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(public_readiness, "ROOT", tmp_path)
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs" / "GUIDE.md").write_text(
+        "# Guide\n\n## Install\n\n```bash\n# not a heading\nmake\n```\n", encoding="utf-8"
+    )
+    assert public_readiness.check_documentation_parity() == [
+        "missing Spanish documentation pair for docs/GUIDE.md",
+    ]
+
+    (tmp_path / "docs" / "GUIDE.es.md").write_text("# Guía\n\n## Instalar\n\n```bash\nmake\n```\n", encoding="utf-8")
+    assert public_readiness.check_documentation_parity() == []
+
+    (tmp_path / "docs" / "GUIDE.es.md").write_text("# Guía\n\n```bash\nmake\n```\n", encoding="utf-8")
+    errors = public_readiness.check_documentation_parity()
+    assert len(errors) == 1 and "different heading structure" in errors[0]
+
+    (tmp_path / "docs" / "GUIDE.es.md").write_text("# Guía\n\n## Instalar\n", encoding="utf-8")
+    errors = public_readiness.check_documentation_parity()
+    assert len(errors) == 1 and "different number of code blocks" in errors[0]
+
+    (tmp_path / "docs" / "ORPHAN.es.md").write_text("# Huérfano\n", encoding="utf-8")
+    assert "missing English documentation pair for docs/ORPHAN.es.md" in public_readiness.check_documentation_parity()
+
+
+def test_repository_documentation_is_fully_bilingual() -> None:
+    assert public_readiness.check_documentation_parity() == []

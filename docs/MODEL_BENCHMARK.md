@@ -46,3 +46,5 @@ instruction to queries and embeds stored passages without it.
 
 The local latency numbers are host-specific. Repeat the benchmark on materially
 different CPU, GPU, RAM, quantization, or Ollama versions before changing profiles.
+
+[Spanish version](MODEL_BENCHMARK.es.md) · [Documentation index](README.md)

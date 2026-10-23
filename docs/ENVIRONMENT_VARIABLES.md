@@ -324,3 +324,5 @@ reindex. `POST /system/reload` only refreshes a published generation in memory;
 it does not rebuild vectors. Never commit `.env`, tokens, local certificates,
 `storage/`, or `local_sources/`. See [Troubleshooting](TROUBLESHOOTING.md) for
 the safe recovery order.
+
+[Spanish version](ENVIRONMENT_VARIABLES.es.md) · [Documentation index](README.md)

@@ -18,7 +18,8 @@
   },
   "files": [
     "bin",
-    "README.md"
+    "README.md",
+    "README.es.md"
   ],
   "scripts": {
     "test": "node test/cli.test.js"
