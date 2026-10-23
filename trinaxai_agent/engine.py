@@ -991,6 +991,14 @@ def _code_review_evidence(messages: list[dict[str, Any]]) -> str:
     return "\n\n".join(parts)
 
 
+# CPython rewords the turtle docstrings between releases (3.13 dropped the
+# "goto((x, y))" call forms), so the verified-evidence checks accept both.
+_GOTO_TUPLE_FACT = re.compile(
+    r"goto\(\(x, ?y\)\).{0,40}a pair \(tuple\) of coordinates|x must be a pair of coordinates"
+)
+_GOTO_DRAWS_FACT = re.compile(r"if the pen is down, a line (?:will be |is )drawn")
+
+
 def _grounding_violations(answer: str, evidence: str) -> list[str]:
     """Detect high-confidence contradictions with machine-verified evidence."""
     text = " ".join(answer.lower().split())
@@ -1012,17 +1020,14 @@ def _grounding_violations(answer: str, evidence: str) -> list[str]:
     ):
         violations.append("contradicts valid syntax")
 
-    # CPython 3.13 reworded the turtle docstrings these facts quote, so accept both wordings.
-    tuple_is_valid = ("goto((x, y))" in facts and "a pair (tuple) of coordinates" in facts) or bool(
-        re.search(r"turtle\.goto\(self, x, y=none\).{0,300}x must be a pair of coordinates", facts)
-    )
+    tuple_is_valid = bool(_GOTO_TUPLE_FACT.search(facts))
     if tuple_is_valid and re.search(
         r"goto.{0,100}(no (?:acepta|admite)|incorrect|inválid|expects? two|requires? two|espera dos|requiere dos)",
         text,
     ):
         violations.append("contradicts goto tuple signature")
 
-    goto_draws = bool(re.search(r"if the pen is down, a line (?:will be|is) drawn", facts))
+    goto_draws = bool(_GOTO_DRAWS_FACT.search(facts))
     if goto_draws and re.search(
         r"(?:goto|volver|vuelve|regresa|retorn).{0,140}(?:borr|erase|no queda ningún|no deja ningún)",
         text,

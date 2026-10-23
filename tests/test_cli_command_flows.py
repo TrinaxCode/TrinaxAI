@@ -267,6 +267,28 @@ def test_lifecycle_commands_forward_platform_flags(monkeypatch, ui) -> None:
     ]
 
 
+def test_lifecycle_commands_forward_every_script_option(monkeypatch, ui) -> None:
+    calls: list[tuple[str, list[str]]] = []
+    monkeypatch.setattr(uninstall, "run_script", lambda name, flags, _ui: calls.append((name, flags)) or 0)
+    monkeypatch.setattr(update, "run_script", lambda name, flags, _ui: calls.append((name, flags)) or 0)
+    for module, platform in ((uninstall, "linux"), (uninstall, "win32"), (update, "linux"), (update, "win32")):
+        monkeypatch.setattr(module.sys, "platform", platform)
+        namespace = SimpleNamespace(
+            remove_env=True,
+            remove_certs=True,
+            remove_app=True,
+            dry_run=True,
+        )
+        assert module.run(namespace, None, ui, None) == 0
+
+    assert calls == [
+        ("uninstall", ["--remove-env", "--remove-certs", "--remove-app", "--dry-run"]),
+        ("uninstall", ["-RemoveEnv", "-RemoveCerts", "-RemoveApp", "-DryRun"]),
+        ("update", ["--dry-run"]),
+        ("update", ["-DryRun"]),
+    ]
+
+
 def test_help_and_mcp_have_stable_exit_contracts(monkeypatch, ui) -> None:
     monkeypatch.setattr(help, "_build_parser", lambda: SimpleNamespace(format_help=lambda: "usage"))
 

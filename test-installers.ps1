@@ -58,6 +58,11 @@ Assert-Contains $Install "Assert-RuntimeReady" "Installer readiness gate is miss
 Assert-Contains $Install "Test-OllamaModel" "Installer model readiness check is missing"
 Assert-Contains $Install "chat-pwa\dist\index.html" "Installer PWA artifact check is missing"
 Assert-Contains $Install "Installation prepared; TrinaxAI is not running." "Installer no-start status is misleading"
+Assert-Contains $Install "Select language / Selecciona idioma" "Installer does not ask for a language"
+Assert-Contains $Install "PreferencesCollected" "Installer asks its questions twice"
+Assert-Contains $Install "Installation plan" "Installer does not show a plan before changing the system"
+Assert-Contains $Install "Test-GitHubReachable" "Installer has no connectivity preflight"
+foreach ($Text in @($Install, $Update, $Uninstall)) { Assert-Contains $Text '"[S/n]"' "Spanish yes/no suffix is missing" }
 Assert-Contains $Install 'if ($NoStart) {' "Installer live URLs are not conditional on startup"
 Assert-Contains $Install "function Get-ConfiguredModels" "Installer does not read persisted model configuration"
 Assert-Contains $Install '$Models = @(Get-ConfiguredModels)' "Installer model checks do not use persisted models"

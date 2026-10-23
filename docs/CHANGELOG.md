@@ -20,6 +20,18 @@ All notable changes to TrinaxAI are documented here. This project follows the
 
 ### Added
 
+- Guided, client-first setup. `trinaxai setup` opens with a welcome and a
+  language choice (English or Spanish), checks free disk space and the GitHub
+  connection, asks every optional question up front, and shows an installation
+  plan to confirm before anything changes. On an existing installation it
+  offers to repair, update, or uninstall it, and a bare `trinaxai` before
+  installing offers to set it up. The Windows installer now asks for a
+  language too. The launcher retries failed downloads, falls back to `curl`
+  behind proxies, accepts `--yes`, `--interactive`, and `--language`, and
+  answers in your language.
+- `trinaxai uninstall` accepts `--remove-app`, `--remove-env`,
+  `--remove-certs`, and `--dry-run`; `trinaxai update` accepts `--dry-run`.
+
 - `trinaxai agent` now works like other terminal coding agents: a
   `● tool(args)` / `⎿ result` transcript with a live "Working…" status, real
   unified diffs on approval prompts, three-way approvals (yes / don't ask again
@@ -71,9 +83,7 @@ All notable changes to TrinaxAI are documented here. This project follows the
 
 ### Fixed
 
-- The Agent's review-grounding guard no longer goes silent on Python 3.13,
-  whose `turtle` docstrings are worded differently from 3.12; it now recognises
-  both wordings, and the tests no longer depend on the interpreter's docstrings.
+- The agent's code-review grounding checks recognize the Python 3.13 wording of the `turtle` docstrings, so verified evidence still catches false claims about `goto` on every supported interpreter.
 - The changelog release badge now points to 1.3.0 in both languages.
 
 ### Security
@@ -93,6 +103,15 @@ All notable changes to TrinaxAI are documented here. This project follows the
   secrets), even when the host's workspace roots include them.
 - Deleting an imported source resolves symlinks before checking that the path
   stays inside the imports folder.
+
+### Fixed
+
+- Passing `--language es` (two words) to the installer, updater, or uninstaller
+  no longer asks for the language a second time.
+- Answering "sí" or "s" to a default-No question no longer counts as No, and
+  Spanish prompts now read `[S/n]`.
+- Installer messages that appeared in English in Spanish mode are translated,
+  and a failed install says it is safe to run again.
 
 ## [1.3.0] — 2026-10-18
 

@@ -6,10 +6,19 @@ LANGUAGE="${TRINAXAI_LANG:-${LANG:-en}}"
 LANGUAGE_EXPLICIT="${TRINAXAI_LANG:-}"
 LANGUAGE_LOWER="$(printf '%s' "$LANGUAGE" | tr '[:upper:]' '[:lower:]')"
 case "$LANGUAGE_LOWER" in es*|*_es*) LANGUAGE=es ;; *) LANGUAGE=en ;; esac
+language_prev=""
 for language_arg in "$@"; do
+  language_value=""
   case "$language_arg" in
-    --language=*|--lang=*) LANGUAGE_EXPLICIT="${language_arg#*=}"; LANGUAGE_LOWER="$(printf '%s' "$LANGUAGE_EXPLICIT" | tr '[:upper:]' '[:lower:]')"; case "$LANGUAGE_LOWER" in es*) LANGUAGE=es ;; *) LANGUAGE=en ;; esac ;;
+    --language=*|--lang=*) language_value="${language_arg#*=}" ;;
+    *) case "$language_prev" in --language|--lang) language_value="$language_arg" ;; esac ;;
   esac
+  if [ -n "$language_value" ]; then
+    LANGUAGE_EXPLICIT="$language_value"
+    LANGUAGE_LOWER="$(printf '%s' "$language_value" | tr '[:upper:]' '[:lower:]')"
+    case "$LANGUAGE_LOWER" in es*) LANGUAGE=es ;; *) LANGUAGE=en ;; esac
+  fi
+  language_prev="$language_arg"
 done
 ARG_NONINTERACTIVE=0
 ARG_HELP=0
@@ -32,6 +41,8 @@ tr_text_es() {
       'Source Code') echo 'Código fuente' ;;
       'Backup') echo 'Copia de seguridad' ;;
       'Python Dependencies') echo 'Dependencias de Python' ;;
+      'Backend, PWA, and smoke inference are ready') echo 'El backend, la PWA y la inferencia de prueba están listos' ;;
+      'Continue configuration regenerated') echo 'Configuración de Continue regenerada' ;;
       'Web App') echo 'Aplicación web' ;;
       'Ollama Models') echo 'Modelos de Ollama' ;;
       'Autostart and Audit') echo 'Inicio automático y auditoría' ;;
@@ -286,6 +297,12 @@ ask() {
     suffix=" [y/N]"
     prompt="${prompt:0:${#prompt}-${#suffix}}"
   fi
+  if [ "$LANGUAGE" = "es" ]; then
+    case "$suffix" in
+      " [Y/n]") suffix=" [S/n]" ;;
+      " [y/N]") suffix=" [s/N]" ;;
+    esac
+  fi
   prompt="$(tr_text "$prompt")$suffix"
   if [ "$INTERACTIVE" != "1" ]; then
     echo ""
@@ -314,6 +331,7 @@ ask_yes_no() {
   fi
   reply="$(ask "$prompt [y/N]")"
   [[ "$reply" =~ ^[Yy] ]] && return 0
+  [ "$LANGUAGE" = "es" ] && [[ "$reply" =~ ^[Ss] ]] && return 0
   return 1
 }
 

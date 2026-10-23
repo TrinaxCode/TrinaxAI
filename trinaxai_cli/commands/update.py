@@ -15,6 +15,7 @@ def run(args: Any, client: Any, ui: Any, config: Any) -> int:
         "no_models": "-NoModels" if sys.platform == "win32" else "--no-models",
         "restart": "-Restart" if sys.platform == "win32" else "--restart",
         "no_restart": "-NoRestart" if sys.platform == "win32" else "--no-restart",
+        "dry_run": "-DryRun" if sys.platform == "win32" else "--dry-run",
     }
     forwarded = [flag for name, flag in mapping.items() if getattr(args, name, False)]
     ui.info("Updating TrinaxAI...")
