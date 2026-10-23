@@ -81,6 +81,10 @@ All notable changes to TrinaxAI are documented here. This project follows the
   the editable install. Installer and updater scripts are unchanged; the new
   layout has only been run on Linux, not on macOS or Windows.
 
+### Fixed
+
+- The agent's code-review grounding checks recognize the Python 3.13 wording of the `turtle` docstrings, so verified evidence still catches false claims about `goto` on every supported interpreter.
+
 ### Security
 
 - Agent hardening: "don't ask again" no longer widens to test runners or type
