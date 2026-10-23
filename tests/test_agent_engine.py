@@ -188,8 +188,8 @@ class ToolHandlerTests(unittest.TestCase):
 
         self.assertIn("verified local stdlib API evidence", result)
         self.assertIn("turtle.Turtle.goto", result)
-        self.assertIn("a pair (tuple) of coordinates", result)
-        self.assertIn("If the pen is down, a line will be drawn", result)
+        self.assertRegex(result, r"a pair (\(tuple\) )?of coordinates")
+        self.assertRegex(result, r"If the pen is down, a line (will be |is )drawn")
         self.assertIn("greater than 10", result)
 
     def test_python_read_reports_real_syntax_error(self) -> None:

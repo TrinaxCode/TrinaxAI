@@ -74,6 +74,10 @@ el formato de [Keep a Changelog](https://keepachangelog.com/).
   editable. Los scripts de instalación y actualización no cambian; el nuevo
   diseño solo se ha ejecutado en Linux, no en macOS ni en Windows.
 
+### Corregido
+
+- Las comprobaciones de fundamentación de revisión de código del agente reconocen la redacción de los docstrings de `turtle` en Python 3.13, de modo que la evidencia verificada sigue detectando afirmaciones falsas sobre `goto` en todos los intérpretes compatibles.
+
 ### Seguridad
 
 - Endurecimiento del Agente: «no volver a preguntar» ya no se amplía a ejecutores
