@@ -60,7 +60,7 @@ Open `https://localhost:3334` when local certificates exist; without them the ga
 | `npx tsc --noEmit` | Type-check without building. |
 
 Bundle limits are 350 KiB per JavaScript chunk, 1536 KiB of JavaScript,
-132 KiB of CSS, and 4096 KiB for all build assets.
+140 KiB of CSS, and 4096 KiB for all build assets.
 
 The dev server binds to loopback by default. For an intentional LAN test, set
 `TRINAXAI_PWA_HOST=0.0.0.0`, use HTTPS, and pair every remote browser; never

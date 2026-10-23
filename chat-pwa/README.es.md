@@ -60,7 +60,7 @@ Abre `https://localhost:3334` cuando existan certificados locales; sin ellos, el
 | `npx tsc --noEmit` | Verifica tipos sin construir. |
 
 Los límites del bundle son 350 KiB por archivo JavaScript, 1536 KiB de
-JavaScript total, 132 KiB de CSS y 4096 KiB para todos los archivos del build.
+JavaScript total, 140 KiB de CSS y 4096 KiB para todos los archivos del build.
 
 El servidor de desarrollo escucha en loopback por defecto. Para una prueba LAN
 intencional, establece `TRINAXAI_PWA_HOST=0.0.0.0`, usa HTTPS y vincula cada
