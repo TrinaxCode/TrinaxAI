@@ -787,3 +787,30 @@ def test_a_failed_run_gets_chances_to_be_fixed_before_success_is_reported(tmp_pa
     )
     assert quiet.startswith("It failed")
     assert not any("The last command you ran failed" in str(m.get("content")) for m in seen[-1])
+
+
+def test_a_failed_run_is_not_reported_once_a_later_run_passes(tmp_path: Path) -> None:
+    from trinaxai_agent.tools import format_tool_failure
+
+    run = {"function": {"name": "run_command", "arguments": {"command": "pytest"}}}
+    results = iter(
+        [format_tool_failure("run_command", "[exit 1; sandboxed] 1 failed"), "[exit 0; sandboxed]\n1 passed"]
+    )
+
+    class Fixer(AgentEngine):
+        replies = [
+            {"tool_calls": [run]},
+            {"tool_calls": [run]},
+            {"content": "Fixed; the tests pass."},
+        ]
+
+        def _chat(self, messages):
+            return self.replies.pop(0)
+
+        def _execute_call(self, call):
+            return next(results)
+
+    answer = Fixer(model="m", workspace_root=tmp_path, on_confirm=None).run(
+        [{"role": "user", "content": "Fix it and run the tests"}]
+    )
+    assert answer == "Fixed; the tests pass."

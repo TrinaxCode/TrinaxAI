@@ -130,6 +130,8 @@ el formato de [Keep a Changelog](https://keepachangelog.com/).
 
 ### Corregido
 
+- El agente ya no lista una ejecución de pruebas fallida bajo la respuesta cuando una ejecución posterior
+  pasó (decía que el comando falló después de haberse corregido).
 - Cuando un comando que ejecutó el agente falla (por ejemplo una prueba que rompió su cambio) y está por
   reportar éxito, ahora se le pide, hasta dos veces, que lea el error, corrija la causa y lo ejecute de
   nuevo. En un renombrado real en tres archivos dejó una llamada sin renombrar y aun así dijo "funcional".

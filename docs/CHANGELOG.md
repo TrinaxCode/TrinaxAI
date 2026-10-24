@@ -124,6 +124,8 @@ All notable changes to TrinaxAI are documented here. This project follows the
 
 ### Fixed
 
+- The agent no longer lists an earlier failed test run under an answer once a later run passed (it said
+  the command failed after it had been fixed).
 - When a command the agent ran fails (for example a test its change broke) and it is about to report
   success, it is now asked, up to twice, to read the error, fix the cause and run it again. In a real
   rename across three files it had left one call unrenamed and still reported "functional".

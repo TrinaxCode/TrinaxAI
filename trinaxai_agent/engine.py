@@ -400,6 +400,12 @@ class AgentEngine:
                 if name == "run_command":
                     ran_command = True
                     last_run_failed = is_degraded_tool_result(result)
+                    if not last_run_failed:
+                        # A later passing run supersedes the earlier failed ones: reporting them under the
+                        # answer would say the command failed when it has since succeeded.
+                        marker = "tool=run_command]"
+                        reported_results[:] = [r for r in reported_results if marker not in r[:80]]
+                        degraded_results[:] = [r for r in degraded_results if marker not in r[:80]]
                 # A refusal by the user is a decision, not an outage: do not
                 # bolt a "what happened / still works" block onto the answer.
                 if (
