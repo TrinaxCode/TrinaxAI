@@ -92,6 +92,9 @@ class TrinaxAPIError(RuntimeError):
         self.retryable = info.retryable
 
 
+_CREDENTIAL_HEADERS = frozenset({"X-Admin-Token", "X-TrinaxAI-Device-Token"})
+
+
 def _cli_timeout() -> float | None:
     """Seconds from ``TRINAXAI_CLI_TIMEOUT`` for long requests, or None to use the built-in limits."""
     try:
@@ -293,6 +296,11 @@ class TrinaxAPIClient:
                     return False
         except Exception:  # noqa: BLE001 - a failed probe just means there is no plain-HTTP API
             return False
+        # The port could not be verified with TLS, so no secret travels to it in clear text. A local
+        # program squatting on the port would otherwise receive the admin or device token.
+        self._request_headers = {
+            key: value for key, value in self._request_headers.items() if key not in _CREDENTIAL_HEADERS
+        }
         self._switch_base_url(candidate)
         return True
 

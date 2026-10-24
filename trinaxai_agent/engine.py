@@ -954,6 +954,8 @@ def _leftover_name_hits(root: Path, name: str, *, limit: int = 8) -> list[str]:
             if checked > 500:
                 return hits
             path = Path(current) / filename
+            if path.is_symlink():
+                continue  # a link could lead outside the workspace, which the file tools never read
             try:
                 if path.stat().st_size > 1_000_000:
                     continue

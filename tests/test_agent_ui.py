@@ -830,7 +830,13 @@ def test_rename_parsing_and_leftover_search(tmp_path: Path) -> None:
     (tmp_path / "node_modules").mkdir()
     (tmp_path / "node_modules" / "x.js").write_text("calcula()\n")
     (tmp_path / "blob.bin").write_bytes(b"\xff\xfe calcula")
-    assert _leftover_name_hits(tmp_path, "calcula") == ["main.py:1: print(calcula(1, 2))"]  # whole word only
+    outside = tmp_path.parent / f"{tmp_path.name}-outside.txt"
+    outside.write_text("calcula secret\n")
+    try:
+        (tmp_path / "link.txt").symlink_to(outside)
+    except OSError:
+        pass
+    assert _leftover_name_hits(tmp_path, "calcula") == ["main.py:1: print(calcula(1, 2))"]  # whole word, no links
     assert _leftover_name_hits(tmp_path, "nothing_here") == []
 
 

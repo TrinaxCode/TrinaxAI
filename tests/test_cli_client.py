@@ -438,3 +438,21 @@ def test_cli_timeout_overrides_the_research_wait(monkeypatch) -> None:
         monkeypatch.setenv("TRINAXAI_CLI_TIMEOUT", bad)
         client.research("q", depth=1)
         assert client._post.call_args.kwargs["timeout"] == 180.0, bad
+
+
+def test_the_plain_http_fallback_never_sends_credentials(monkeypatch) -> None:
+    monkeypatch.setenv("TRINAXAI_ADMIN_TOKEN", "secret-admin")
+    monkeypatch.setenv("TRINAXAI_DEVICE_TOKEN", "secret-device")
+    server = _serve_plain_http()
+    try:
+        client = TrinaxAPIClient(f"https://127.0.0.1:{server.server_port}", verify_tls=None, language="en")
+        assert client._request_headers["X-Admin-Token"] == "secret-admin"
+        assert client._get("/health") == {"ok": True}
+        assert client.base_url.startswith("http://")
+        assert "X-Admin-Token" not in client._request_headers
+        assert "X-TrinaxAI-Device-Token" not in client._request_headers
+        assert "X-Admin-Token" not in client._client.headers
+        assert client._client.headers.get("Accept-Language") == "en"  # harmless headers are kept
+    finally:
+        server.shutdown()
+        server.server_close()

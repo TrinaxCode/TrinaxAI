@@ -245,6 +245,9 @@ All notable changes to TrinaxAI are documented here. This project follows the
 
 ### Security
 
+- The CLI's automatic fall-back to a plain-HTTP local API no longer sends the admin or device token, which
+  could not be verified with TLS. The agent's search for a renamed identifier skips symbolic links, as the
+  file tools do.
 - Updated `nltk` to 3.10.4 (GHSA-8mgp-746c-j5xp, path traversal in its model
   APIs) and removed the audit exception: `pip-audit` now fails on any known
   vulnerability.

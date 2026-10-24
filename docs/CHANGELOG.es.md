@@ -255,6 +255,9 @@ el formato de [Keep a Changelog](https://keepachangelog.com/).
 
 ### Seguridad
 
+- El respaldo automático de la CLI a una API local en HTTP simple ya no envía el token de administrador ni
+  de dispositivo, que no se pudo verificar con TLS. La búsqueda de un identificador renombrado del agente
+  omite los enlaces simbólicos, igual que las herramientas de archivos.
 - `nltk` actualizado a 3.10.4 (GHSA-8mgp-746c-j5xp, recorrido de rutas en sus
   API de modelos) y eliminada la excepción de auditoría: `pip-audit` falla ante
   cualquier vulnerabilidad conocida.
