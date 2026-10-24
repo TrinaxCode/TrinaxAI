@@ -399,6 +399,11 @@ MESSAGES: dict[str, tuple[str, str]] = {
     "idx_chunking_changes": ("✂️  Splitting changes...", "✂️  Troceando cambios..."),
     "idx_files_found_progress": ("   📂 {count} files found...", "   📂 {count} archivos encontrados..."),
     "idx_files_found_total": ("   📂 {count} files found in total", "   📂 {count} archivos encontrados en total"),
+    "idx_skipped_big_file": (
+        "      - {name} ({size} MB; limit {limit} MB)",
+        "      - {name} ({size} MB; límite {limit} MB)",
+    ),
+    "idx_skipped_big_more": ("      ... and {count} more", "      ... y {count} más"),
     "idx_skipped_big": (
         "   ⏭️  {count} files skipped by size (above the configured limit for their file type)",
         "   ⏭️  {count} archivos omitidos por tamaño (sobre el límite configurado para su tipo de archivo)",

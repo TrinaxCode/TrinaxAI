@@ -121,6 +121,8 @@ All notable changes to TrinaxAI are documented here. This project follows the
 
 ### Fixed
 
+- Indexing names the files it skips for being too large, with their size and the limit
+  (`huge.txt (5.7 MB; limit 3.0 MB)`), instead of only counting them.
 - The CLI works when the local API runs without HTTPS (no certificate could be created for
   it): it now follows the port to plain HTTP on this computer instead of reporting that
   the service is stopped. A server that does speak HTTPS is never downgraded.

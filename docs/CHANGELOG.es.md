@@ -127,6 +127,8 @@ el formato de [Keep a Changelog](https://keepachangelog.com/).
 
 ### Corregido
 
+- La indexación nombra los archivos que omite por ser demasiado grandes, con su tamaño y el
+  límite (`huge.txt (5.7 MB; límite 3.0 MB)`), en vez de solo contarlos.
 - La CLI funciona cuando la API local corre sin HTTPS (no se pudo crear un certificado):
   ahora sigue el puerto a HTTP simple en este equipo en vez de decir que el servicio está
   detenido. Un servidor que sí habla HTTPS nunca se degrada.
