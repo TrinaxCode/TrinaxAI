@@ -73,6 +73,7 @@ trinaxai stop
 trinaxai stop --all
 trinaxai network
 trinaxai network refresh
+trinaxai network off
 trinaxai update
 trinaxai uninstall
 ```
@@ -247,6 +248,10 @@ After changing Wi-Fi, router, or LAN address, run `trinaxai network refresh` on
 the host to renew HTTPS, CORS, and the active service configuration. This does
 not erase data or grant every device access; existing pairing scopes remain in
 force.
+
+`trinaxai network` also says whether other devices may reach TrinaxAI. If you
+allowed that and change your mind, run `trinaxai network off` to keep it on this
+computer only (it restarts the web app); `trinaxai network refresh` allows it again.
 
 ## Agent workflow
 

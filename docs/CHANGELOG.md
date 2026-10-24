@@ -22,6 +22,9 @@ All notable changes to TrinaxAI are documented here. This project follows the
 
 ### Added
 
+- `trinaxai network off` returns TrinaxAI to this computer only after you allowed
+  other devices, and `trinaxai network` now says whether that access is on. Before,
+  undoing the installer's "allow other devices" answer meant editing `.env` by hand.
 - `trinaxai ask` and the RAG chat list the files an answer comes from
   (`Sources: aurora.md, manual.pdf (p. 3)`), as the web app already did. An
   answer that says the information is missing lists none.

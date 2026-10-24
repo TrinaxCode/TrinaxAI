@@ -22,6 +22,9 @@ el formato de [Keep a Changelog](https://keepachangelog.com/).
 
 ### Añadido
 
+- `trinaxai network off` devuelve TrinaxAI a «solo este equipo» después de haber
+  permitido otros dispositivos, y `trinaxai network` indica si ese acceso está
+  activado. Antes, deshacer la respuesta del instalador exigía editar `.env` a mano.
 - `trinaxai ask` y el chat con RAG listan los archivos de los que sale la
   respuesta (`Fuentes: aurora.md, manual.pdf (p. 3)`), como ya hacía la app web.
   Una respuesta que dice que falta la información no lista ninguno.

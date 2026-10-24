@@ -118,6 +118,44 @@ def update_env(root: Path, addresses: list[str]) -> None:
     os.replace(temporary, path)
 
 
+_LOOPBACK_HOSTS = {"", "127.0.0.1", "localhost", "::1"}
+
+
+def _env_host(root: Path) -> str | None:
+    """The web app's bind address from ``.env`` (the last assignment wins)."""
+    try:
+        lines = (root / ".env").read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return None
+    value: str | None = None
+    for raw in lines:
+        if raw.startswith("TRINAXAI_PWA_HOST="):
+            value = raw.split("=", 1)[1].strip().strip("'\"")
+    return value
+
+
+def lan_access_enabled(root: Path) -> bool:
+    """True when other devices on the local network may reach the web app."""
+    host = _env_host(root)
+    return host is not None and host.lower() not in _LOOPBACK_HOSTS
+
+
+def disable_lan_access(root: Path) -> bool:
+    """Bind the web app to this computer only. Returns False when it already was."""
+    path = root / ".env"
+    if not path.is_file():
+        raise FileNotFoundError(f"Missing TrinaxAI environment file: {path}")
+    if not lan_access_enabled(root):
+        return False
+    lines = path.read_text(encoding="utf-8").splitlines()
+    lines = ["TRINAXAI_PWA_HOST=127.0.0.1" if raw.startswith("TRINAXAI_PWA_HOST=") else raw for raw in lines]
+    temporary = path.with_suffix(".env.tmp")
+    temporary.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    os.chmod(temporary, path.stat().st_mode & 0o777)
+    os.replace(temporary, path)
+    return True
+
+
 def refresh_certificate(root: Path, addresses: list[str]) -> None:
     cert_dir = root / "chat-pwa" / "certs"
     cert_dir.mkdir(parents=True, exist_ok=True)

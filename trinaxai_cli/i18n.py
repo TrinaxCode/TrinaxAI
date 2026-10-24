@@ -137,6 +137,29 @@ MESSAGES: dict[str, tuple[str, str]] = {
     "doctor_title": ("TrinaxAI doctor", "Doctor de TrinaxAI"),
     "python_package": ("Python package", "Paquete de Python"),
     "agent_shell_sandbox": ("Agent shell sandbox", "Sandbox de la terminal del agente"),
+    "lan_allowed": (
+        "Access from other devices: allowed (each device must be paired)",
+        "Acceso desde otros dispositivos: permitido (cada dispositivo debe vincularse)",
+    ),
+    "lan_this_computer": (
+        "Access from other devices: this computer only",
+        "Acceso desde otros dispositivos: solo este equipo",
+    ),
+    "lan_off_hint": (
+        "Use 'trinaxai network off' to keep TrinaxAI on this computer only.",
+        "Usa 'trinaxai network off' para mantener TrinaxAI solo en este equipo.",
+    ),
+    "lan_already_off": (
+        "Already limited to this computer; nothing to change.",
+        "Ya está limitado a este equipo; no hay nada que cambiar.",
+    ),
+    "lan_off_confirm": ("Keep TrinaxAI on this computer only?", "¿Mantener TrinaxAI solo en este equipo?"),
+    "lan_off_done": ("TrinaxAI is now limited to this computer.", "TrinaxAI quedó limitado a este equipo."),
+    "lan_off_restart": ("Restart TrinaxAI to apply it.", "Reinicia TrinaxAI para aplicarlo."),
+    "lan_off_saved": (
+        "Configuration saved. Restart the PWA and RAG services to apply it.",
+        "Configuración guardada. Reinicia la PWA y la API RAG para aplicarla.",
+    ),
     "sandbox_available": (
         "bubblewrap sandbox available (networkless)",
         "sandbox bubblewrap disponible (sin red)",
@@ -825,8 +848,11 @@ def help_text(value: str, lang: str = "en") -> str:
         "Stop AI services and keep them off after reboot.": "Detener los servicios de IA y mantenerlos apagados tras reiniciar.",
         "Also stop the PWA frontend.": "Detener también el frontend PWA.",
         "Restart TrinaxAI local services.": "Reiniciar los servicios locales de TrinaxAI.",
-        "Show or refresh local-network access.": "Mostrar o renovar el acceso de red local.",
+        "Show, refresh or turn off local-network access.": "Mostrar, renovar o desactivar el acceso de red local.",
         "Renew HTTPS and allow the current LAN.": "Renovar HTTPS y permitir la LAN actual.",
+        "Keep TrinaxAI on this computer only (undo allowing other devices).": (
+            "Mantener TrinaxAI solo en este equipo (deshacer el acceso desde otros dispositivos)."
+        ),
         "Update files without restarting services.": "Actualizar archivos sin reiniciar servicios.",
         "List installed and recommended local models.": "Listar modelos locales instalados y recomendados.",
         "Pair and manage trusted LAN devices.": "Vincular y administrar dispositivos LAN confiables.",

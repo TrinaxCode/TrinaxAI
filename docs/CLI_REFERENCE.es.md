@@ -73,6 +73,7 @@ trinaxai stop
 trinaxai stop --all
 trinaxai network
 trinaxai network refresh
+trinaxai network off
 trinaxai update
 trinaxai uninstall
 ```
@@ -245,6 +246,11 @@ versionado. Pairing representa una capability revocable, no una cuenta.
 refresh` en el host para renovar HTTPS, CORS y la configuración activa. No borra
 datos ni autoriza a todos los dispositivos; los scopes de pairing siguen
 vigentes.
+
+`trinaxai network` también indica si otros dispositivos pueden llegar a TrinaxAI.
+Si lo permitiste y cambias de opinión, ejecuta `trinaxai network off` para
+mantenerlo solo en este equipo (reinicia la app web); `trinaxai network refresh`
+lo vuelve a permitir.
 
 ## Flujo del agente
 

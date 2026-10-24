@@ -17,7 +17,8 @@ The PWA gateway is loopback-only by default. The installer asks whether other
 devices on your home or local network may open TrinaxAI (the default is this
 computer only); you can also run `trinaxai network refresh` later to
 enable intentional LAN access (`TRINAXAI_PWA_HOST=0.0.0.0`) and restart the
-gateway; FastAPI and Ollama remain on loopback. A device on the same Wi-Fi must
+gateway, and `trinaxai network off` returns to this computer only; FastAPI and
+Ollama remain on loopback. A device on the same Wi-Fi must
 trust the host certificate and either start a chat/web-only new-device session
 or use a one-time pairing code before reading private data.
 
