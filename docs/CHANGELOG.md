@@ -99,6 +99,21 @@ All notable changes to TrinaxAI are documented here. This project follows the
 
 ### Fixed
 
+- `trinaxai stop`, `restart` and `status` no longer touch processes that are not
+  TrinaxAI's. They used to match words such as `npm run dev`, `vite --host`,
+  `node server.mjs` or `ollama` anywhere in a command line, so `status` could
+  report the PWA as running because of another project's dev server, and `stop`
+  ended that dev server. A process now counts only when it is the expected
+  program and runs from this installation's folder (Linux and macOS; Windows
+  keeps the previous matching).
+- `uninstall.sh --remove-ollama` and `update.sh --remove-ollama` ended themselves:
+  they stopped Ollama with `pkill -f ollama`, which also matches their own
+  `--remove-ollama` argument, so the removal stopped half-way. They (and the
+  Windows scripts) now stop Ollama by exact process name.
+- The research preflight no longer blocks the API while it probes Ollama.
+- The Agent's prompt now tells the model to use the `git` tool for git, and a
+  `git` call that can never succeed (a refused option, an unknown subcommand) is
+  reported to the model at once instead of asking you to approve it first.
 - The agent's code-review grounding checks recognize the Python 3.13 wording of the `turtle` docstrings, so verified evidence still catches false claims about `goto` on every supported interpreter.
 - The changelog release badge now points to 1.3.0 in both languages.
 

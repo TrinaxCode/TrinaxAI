@@ -104,6 +104,23 @@ el formato de [Keep a Changelog](https://keepachangelog.com/).
 
 ### Corregido
 
+- `trinaxai stop`, `restart` y `status` ya no tocan procesos que no son de
+  TrinaxAI. Buscaban palabras como `npm run dev`, `vite --host`, `node server.mjs`
+  u `ollama` en cualquier parte de la línea de comandos, así que `status` podía
+  dar la PWA por activa por el servidor de desarrollo de otro proyecto y `stop`
+  terminaba ese servidor. Ahora un proceso cuenta solo si es el programa esperado
+  y corre desde la carpeta de esta instalación (Linux y macOS; Windows conserva la
+  coincidencia anterior).
+- `uninstall.sh --remove-ollama` y `update.sh --remove-ollama` se terminaban a sí
+  mismos: detenían Ollama con `pkill -f ollama`, que también coincide con su
+  propio argumento `--remove-ollama`, y la eliminación quedaba a medias. Ahora
+  (igual que los scripts de Windows) detienen Ollama por el nombre exacto del
+  proceso.
+- La comprobación previa de investigación ya no bloquea la API mientras consulta
+  a Ollama.
+- El prompt del Agente ahora indica usar la herramienta `git` para git, y una
+  llamada a `git` que nunca puede funcionar (opción rechazada, subcomando
+  desconocido) se informa al modelo de inmediato en vez de pedirte aprobarla.
 - Las comprobaciones de fundamentación de revisión de código del agente reconocen la redacción de los docstrings de `turtle` en Python 3.13, de modo que la evidencia verificada sigue detectando afirmaciones falsas sobre `goto` en todos los intérpretes compatibles.
 - El badge de versión del changelog apunta ahora a 1.3.0 en ambos idiomas.
 
