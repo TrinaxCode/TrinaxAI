@@ -22,6 +22,12 @@ All notable changes to TrinaxAI are documented here. This project follows the
 
 ### Added
 
+- The installer asks whether other devices on your home or local network may open
+  TrinaxAI. The default is this computer only; a yes sets
+  `TRINAXAI_PWA_HOST=0.0.0.0`, and every device still needs a one-time pairing
+  code. Use `--lan-access` / `--no-lan-access` (or `TRINAXAI_LAN_ACCESS`) to
+  answer without being asked. Host administration stays on this computer
+  whatever you choose.
 - Guided, client-first setup. `trinaxai setup` opens with a welcome and a
   language choice (English or Spanish), checks free disk space and the GitHub
   connection, asks every optional question up front, and shows an installation
@@ -101,12 +107,22 @@ All notable changes to TrinaxAI are documented here. This project follows the
 - Updated `pypdf` to 6.21.2 (CVE-2026-115572, CVE-2026-115580,
   CVE-2026-115585) and `setuptools` to 84.1.0 (GHSA-xmj3-9gf7-h52w) in the
   dependency lock, and the development-only `zod` to 4.6.7 (GHSA-mrhx-c7xc-m3w5)
-  in the PWA lockfile.
-- The Agent's terminal sandbox now mounts the workspace's `.git` read-only. The
-  file tools already refused to write git metadata, but a shell command could
-  edit `.git/config` or hooks that git later runs for you. Reading history
-  (`git status`, `git diff`, `git log`) still works; `git add` and `git commit`
-  are no longer possible from the Agent.
+  in the PWA lockfile, plus the development-only `undici` (7.30.1),
+  `fast-uri` (3.1.9) and `serialize-javascript` (7.1.4) after new advisories.
+- The Agent's terminal sandbox now mounts the workspace's `.git/config` and
+  `.git/hooks` read-only. The file tools already refused to write git metadata,
+  but a shell command could plant aliases or hooks that git later runs for you
+  outside the sandbox. `git add` and `git commit` keep working in the sandbox,
+  using your git name and email (it cannot see your global git configuration
+  otherwise).
+- The Agent has a `git` tool that runs git on your computer with your own git
+  setup, so it can commit, push and pull when you ask. Reading commands (status,
+  diff, log) run freely, changing commands ask first, and anything that contacts
+  a remote asks every time (no "don't ask again"; only `--yolo` skips it). It
+  accepts a fixed list of subcommands, refuses options that run programs or read
+  outside the repository, keeps hooks off unless `TRINAXAI_AGENT_GIT_HOOKS=1`,
+  needs the workspace to be the repository root, and refuses remote commands
+  from paired devices.
 - The API and the PWA gateway now reject requests whose `Host` header names a
   foreign domain (`421`). This blocks DNS-rebinding pages from reading private
   data when TrinaxAI runs over plain HTTP (no local certificate, or Docker).

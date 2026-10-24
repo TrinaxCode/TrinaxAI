@@ -181,12 +181,25 @@ def test_write_tools_refuse_git_metadata(tmp_path: Path) -> None:
     assert "created" in agent_tools._write_file(tmp_path, ".gitignore", "x\n")
 
 
-def test_git_metadata_is_mounted_read_only_in_the_command_sandbox(tmp_path: Path) -> None:
+def test_only_git_config_and_hooks_are_read_only_in_the_command_sandbox(tmp_path: Path) -> None:
     assert agent_tools._git_metadata_mounts(tmp_path) == ()
 
-    (tmp_path / ".git").mkdir()
-    git_dir = str(tmp_path / ".git")
-    assert agent_tools._git_metadata_mounts(tmp_path) == ("--ro-bind", git_dir, git_dir)
+    git_dir = tmp_path / ".git"
+    git_dir.mkdir()
+    assert agent_tools._git_metadata_mounts(tmp_path) == ()
+
+    (git_dir / "config").write_text("[core]\n", encoding="utf-8")
+    assert agent_tools._git_metadata_mounts(tmp_path) == ("--ro-bind", str(git_dir / "config"), str(git_dir / "config"))
+
+    (git_dir / "hooks").mkdir()
+    assert agent_tools._git_metadata_mounts(tmp_path) == (
+        "--ro-bind",
+        str(git_dir / "config"),
+        str(git_dir / "config"),
+        "--ro-bind",
+        str(git_dir / "hooks"),
+        str(git_dir / "hooks"),
+    )
 
     other = tmp_path / "worktree"
     other.mkdir()
@@ -195,33 +208,81 @@ def test_git_metadata_is_mounted_read_only_in_the_command_sandbox(tmp_path: Path
 
     linked = tmp_path / "linked"
     linked.mkdir()
-    (linked / ".git").symlink_to(tmp_path / ".git")
+    (linked / ".git").symlink_to(git_dir)
     assert agent_tools._git_metadata_mounts(linked) == ()
 
+    odd = tmp_path / "odd"
+    (odd / ".git").mkdir(parents=True)
+    (odd / ".git" / "config").symlink_to(git_dir / "config")
+    assert agent_tools._git_metadata_mounts(odd) == ()
 
-def test_command_sandbox_places_the_git_mount_after_the_workspace_bind(tmp_path: Path) -> None:
+
+def test_git_identity_is_forwarded_into_the_command_sandbox(monkeypatch, tmp_path: Path) -> None:
+    assert agent_tools._git_identity_env(tmp_path) == ()
     (tmp_path / ".git").mkdir()
+
+    answers = {"user.name": "Ana Dev", "user.email": "ana@example.com"}
+
+    def fake_run(argv, **_kwargs):
+        value = answers.get(argv[-1], "")
+        return agent_tools.subprocess.CompletedProcess(argv, 0 if value else 1, stdout=f"{value}\n", stderr="")
+
+    monkeypatch.setattr(agent_tools.subprocess, "run", fake_run)
+    assert agent_tools._git_identity_env(tmp_path) == (
+        "--setenv",
+        "GIT_AUTHOR_NAME",
+        "Ana Dev",
+        "--setenv",
+        "GIT_COMMITTER_NAME",
+        "Ana Dev",
+        "--setenv",
+        "GIT_AUTHOR_EMAIL",
+        "ana@example.com",
+        "--setenv",
+        "GIT_COMMITTER_EMAIL",
+        "ana@example.com",
+    )
+
+    answers.pop("user.name")
+    assert agent_tools._git_identity_env(tmp_path)[2::3] == ("ana@example.com", "ana@example.com")
+    answers.clear()
+    assert agent_tools._git_identity_env(tmp_path) == ()
+
+    def missing_git(*_args, **_kwargs):
+        raise FileNotFoundError("git")
+
+    monkeypatch.setattr(agent_tools.subprocess, "run", missing_git)
+    assert agent_tools._git_identity_env(tmp_path) == ()
+
+
+def test_command_sandbox_mounts_git_config_after_the_workspace_bind(tmp_path: Path) -> None:
+    (tmp_path / ".git").mkdir()
+    (tmp_path / ".git" / "config").write_text("[core]\n", encoding="utf-8")
     argv = _bubblewrap_argv(tmp_path, "true")
     if argv is None:
         pytest.skip("bubblewrap is not available on this host")
     root = str(tmp_path.resolve())
     workspace_bind = argv.index("--bind")
     assert argv[workspace_bind : workspace_bind + 3] == ["--bind", root, root]
-    assert argv[workspace_bind + 3 : workspace_bind + 6] == ["--ro-bind", f"{root}/.git", f"{root}/.git"]
+    assert argv[workspace_bind + 3 : workspace_bind + 6] == ["--ro-bind", f"{root}/.git/config", f"{root}/.git/config"]
 
 
-def test_terminal_cannot_write_git_metadata_but_can_write_the_workspace(tmp_path: Path) -> None:
-    if _bubblewrap_argv(tmp_path, "true") is None:
-        pytest.skip("bubblewrap is not available on this host")
-    (tmp_path / ".git" / "hooks").mkdir(parents=True)
-    (tmp_path / ".git" / "config").write_text("[core]\n", encoding="utf-8")
+def test_terminal_can_commit_but_cannot_plant_git_config_or_hooks(tmp_path: Path) -> None:
+    if _bubblewrap_argv(tmp_path, "true") is None or agent_tools.shutil.which("git") is None:
+        pytest.skip("bubblewrap and git are required")
+    agent_tools.subprocess.run(["git", "init", "-q", "."], cwd=tmp_path, check=True)
+    for key, value in (("user.name", "Ana Dev"), ("user.email", "ana@example.com")):
+        agent_tools.subprocess.run(["git", "config", key, value], cwd=tmp_path, check=True)
+    before = (tmp_path / ".git" / "config").read_text(encoding="utf-8")
 
     result = _run_command(
         tmp_path,
-        "echo ok > note.txt; echo '[alias]' >> .git/config; echo x > .git/hooks/pre-commit; cat .git/config",
+        "echo ok > note.txt; git add note.txt; git commit -qm first; "
+        "echo '[alias]' >> .git/config; echo x > .git/hooks/pre-commit; git log --format=%an",
     )
 
-    assert (tmp_path / "note.txt").read_text(encoding="utf-8") == "ok\n"
-    assert (tmp_path / ".git" / "config").read_text(encoding="utf-8") == "[core]\n"
-    assert not (tmp_path / ".git" / "hooks" / "pre-commit").exists()
+    assert "Ana Dev" in result
     assert "Read-only file system" in result
+    assert (tmp_path / "note.txt").read_text(encoding="utf-8") == "ok\n"
+    assert (tmp_path / ".git" / "config").read_text(encoding="utf-8") == before
+    assert not (tmp_path / ".git" / "hooks" / "pre-commit").exists()

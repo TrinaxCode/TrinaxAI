@@ -21,8 +21,9 @@ Setup is guided and available in English and Spanish:
 2. Preflight checks: free disk space and a connection to GitHub. If a proxy
    blocks the direct download, the launcher retries through `curl`.
 3. All optional questions up front: model downloads, start now, start with your
-   computer, and a weekly update check that only checks and never installs
-   without you.
+   computer, a weekly update check that only checks and never installs
+   without you, and whether other devices on your network may open TrinaxAI
+   (off by default).
 4. An installation plan to confirm. Nothing changes before you accept it.
 5. The installation itself, which runs without further attention.
 

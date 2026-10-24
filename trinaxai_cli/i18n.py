@@ -36,6 +36,10 @@ MESSAGES: dict[str, tuple[str, str]] = {
         "Yes, and don't ask again for `{rule}` this session",
         "Sí, y no volver a preguntar por `{rule}` en esta sesión",
     ),
+    "perm_git_network": (
+        "This contacts a remote with your own git credentials.",
+        "Esto contacta un remoto con tus propias credenciales de git.",
+    ),
     "perm_plan_blocked": (
         "Plan mode is on: nothing was changed. Describe the plan instead.",
         "Modo plan activo: no se cambió nada. Describe el plan.",

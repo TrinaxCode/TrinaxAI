@@ -246,6 +246,7 @@ garbage.
 | `TRINAXAI_AGENT_WORKSPACE_ROOTS` | configured indexing roots, then repository | Platform-path-separator-delimited allowlist for HTTP-agent workspaces. Filesystem roots are rejected. |
 | `TRINAXAI_AGENT_HTTP_YOLO` | `0` | Enables HTTP auto-approval after the caller also proves `agent_yolo`; with the normal remote gate disabled, this remains loopback-only. |
 | `TRINAXAI_AGENT_ALLOW_UNSANDBOXED_COMMANDS` | `0` | Explicit high-risk compatibility escape hatch when an OS command sandbox is unavailable. With the default `0`, terminal execution fails closed. |
+| `TRINAXAI_AGENT_GIT_HOOKS` | `0` | Let the Agent's `git` tool run the repository's git hooks (pre-commit, pre-push ...). Off by default because hooks run on the host with your credentials and can be redirected into the workspace (`core.hooksPath`), where the Agent can write files. |
 
 File tools resolve symlinks and reject paths outside the selected workspace.
 On Linux, terminal commands require bubblewrap, run without network access, and
@@ -305,6 +306,7 @@ runtime.
 | `TRINAXAI_UPDATE_RESTART` | auto/prompted | Restarts services after update when enabled. |
 | `TRINAXAI_UPDATE_AUDIT` | `1` | Runs the post-update readiness audit. |
 | `TRINAXAI_RELEASE_VERSION` | `1.4.0` | **Installer:** semantic GitHub release version used for the versioned source archive. The installer never falls back to `main`. |
+| `TRINAXAI_LAN_ACCESS` | unset | **Installer:** answers the network question without asking. `1` lets other devices on the local network open the PWA (writes `TRINAXAI_PWA_HOST=0.0.0.0`); `0` keeps TrinaxAI on this computer only (`127.0.0.1`). Unset: ask when interactive, otherwise keep the existing value or this computer only. Same as `--lan-access` / `--no-lan-access`. |
 | `TRINAXAI_SOURCE_URL` | pinned GitHub release archive | **Install source:** HTTPS archive URL used for a custom source package. |
 | `TRINAXAI_SOURCE_SHA256` | unset | **Installer:** SHA-256 for a custom source archive URL; required with `TRINAXAI_SOURCE_URL`. |
 | `TRINAXAI_UPDATE_SOURCE_URL` | pinned GitHub release archive | **Updater:** HTTPS source archive URL used for an update. |

@@ -22,6 +22,12 @@ el formato de [Keep a Changelog](https://keepachangelog.com/).
 
 ### Añadido
 
+- El instalador pregunta si otros dispositivos de tu red doméstica o local pueden
+  abrir TrinaxAI. Por defecto, solo este equipo; un sí escribe
+  `TRINAXAI_PWA_HOST=0.0.0.0` y cada dispositivo sigue necesitando un código de
+  emparejamiento de un solo uso. Usa `--lan-access` / `--no-lan-access` (o
+  `TRINAXAI_LAN_ACCESS`) para responder sin que pregunte. La administración del
+  equipo se queda en este equipo elijas lo que elijas.
 - Instalación guiada y centrada en el cliente. `trinaxai setup` empieza con una
   bienvenida y la elección de idioma (español o inglés), comprueba el espacio
   libre en disco y la conexión con GitHub, hace todas las preguntas opcionales
@@ -106,13 +112,23 @@ el formato de [Keep a Changelog](https://keepachangelog.com/).
 - Se actualizaron `pypdf` a 6.21.2 (CVE-2026-115572, CVE-2026-115580,
   CVE-2026-115585) y `setuptools` a 84.1.0 (GHSA-xmj3-9gf7-h52w) en el lock de
   dependencias, y `zod` (solo desarrollo) a 4.6.7 (GHSA-mrhx-c7xc-m3w5) en el
-  lockfile de la PWA.
-- El sandbox del terminal del Agente ahora monta el `.git` del workspace en solo
-  lectura. Las herramientas de archivo ya se negaban a escribir metadatos de
-  git, pero un comando de shell podía editar `.git/config` o los hooks que git
-  ejecuta después por ti. Leer el historial (`git status`, `git diff`,
-  `git log`) sigue funcionando; `git add` y `git commit` ya no son posibles
-  desde el Agente.
+  lockfile de la PWA, además de `undici` (7.30.1), `fast-uri` (3.1.9) y
+  `serialize-javascript` (7.1.4), solo de desarrollo, tras nuevos avisos.
+- El sandbox del terminal del Agente ahora monta `.git/config` y `.git/hooks`
+  del workspace en solo lectura. Las herramientas de archivo ya se negaban a
+  escribir metadatos de git, pero un comando de shell podía plantar alias o
+  hooks que git ejecuta después por ti fuera del sandbox. `git add` y
+  `git commit` siguen funcionando en el sandbox, con tu nombre y correo de git
+  (si no, no ve tu configuración global de git).
+- El Agente tiene una herramienta `git` que ejecuta git en tu equipo con tu
+  propia configuración de git, así que puede hacer commit, push y pull cuando lo
+  pides. Los comandos de lectura (status, diff, log) corren sin preguntar, los
+  que cambian algo preguntan antes y todo lo que contacta un remoto pregunta
+  siempre (sin «no volver a preguntar»; solo `--yolo` lo omite). Acepta una lista
+  fija de subcomandos, rechaza opciones que ejecutan programas o leen fuera del
+  repositorio, mantiene los hooks apagados salvo con `TRINAXAI_AGENT_GIT_HOOKS=1`,
+  exige que el workspace sea la raíz del repositorio y rechaza los comandos
+  remotos desde dispositivos emparejados.
 - La API y el gateway de la PWA ahora rechazan peticiones cuya cabecera `Host`
   nombra un dominio ajeno (`421`). Esto impide que páginas con DNS rebinding
   lean datos privados cuando TrinaxAI funciona por HTTP (sin certificado local o

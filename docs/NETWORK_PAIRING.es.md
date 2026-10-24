@@ -13,7 +13,9 @@
 <p align="center"><sub><a href="NETWORK_PAIRING.md">English</a> · <strong>Español</strong></sub></p>
 <p align="center"><sub><a href="https://www.trinaxai.app/">Sitio web</a> · <a href="README.es.md">Documentación</a> · <a href="../README.es.md">Inicio</a> · <a href="CHANGELOG.es.md">Cambios</a></sub></p>
 
-El gateway PWA escucha en loopback por defecto. Ejecuta `trinaxai network refresh`
+El gateway PWA escucha en loopback por defecto. El instalador pregunta si otros
+dispositivos de tu red doméstica o local pueden abrir TrinaxAI (por defecto, solo
+este equipo); también puedes ejecutar `trinaxai network refresh` más tarde
 para habilitar el acceso LAN intencional (`TRINAXAI_PWA_HOST=0.0.0.0`) y reiniciar
 el gateway; FastAPI y Ollama permanecen en loopback. Un dispositivo de la misma
 Wi-Fi debe confiar en el certificado del anfitrión y usar un código de

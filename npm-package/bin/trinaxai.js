@@ -68,6 +68,8 @@ Setup options:
   --install-dir PATH          Where to install the application
   --no-models                 Prepare models later
   --no-start, --no-autostart, --no-auto-update
+  --lan-access                Let other devices on your local network open TrinaxAI
+  --no-lan-access             Use TrinaxAI on this computer only (default)
   --dry-run                   Show what would happen; change nothing
 `,
   },
@@ -122,6 +124,8 @@ Opciones de instalación:
   --install-dir RUTA          Dónde instalar la aplicación
   --no-models                 Preparar los modelos más tarde
   --no-start, --no-autostart, --no-auto-update
+  --lan-access                Permitir que otros dispositivos de tu red local abran TrinaxAI
+  --no-lan-access             Usar TrinaxAI solo en este equipo (por defecto)
   --dry-run                   Mostrar qué pasaría; no cambia nada
 `,
   },
@@ -280,6 +284,8 @@ function setupArgs(args, platform = process.platform, language = "en") {
     ["--no-auto-update", windows ? "-NoAutoUpdate" : "--no-auto-update"],
     ["--no-start", windows ? "-NoStart" : "--no-start"],
     ["--dry-run", windows ? "-DryRun" : "--dry-run"],
+    ["--lan-access", windows ? "-LanAccess" : "--lan-access"],
+    ["--no-lan-access", windows ? "-NoLanAccess" : "--no-lan-access"],
     ["--lan-system", windows ? "-LanSystem" : "--lan-system"],
   ]);
   const values = new Map([

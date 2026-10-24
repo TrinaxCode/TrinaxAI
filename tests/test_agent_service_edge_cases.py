@@ -337,6 +337,7 @@ async def test_agent_endpoint_and_cancel_pending_approval(monkeypatch, tmp_path:
     monkeypatch.setattr(agent_service, "_resolve_workspace", lambda _workspace: tmp_path)
     monkeypatch.setattr(agent_service, "_resolve_model", lambda *_args: "model")
     monkeypatch.setattr(agent_service, "_agent_tools", lambda **_kwargs: ())
+    monkeypatch.setattr(agent_service, "_client_host", lambda _request: "127.0.0.1")
     request = _request({"kind": "device", "id": "device-a"})
     req = AgentRequest(messages=[{"role": "user", "content": "hello"}], workspace=str(tmp_path))
     response = await agent_service.agent(req, request)
@@ -477,3 +478,26 @@ def test_agent_external_tool_output_edges(monkeypatch) -> None:
     assert "tool_status=degraded" in agent_service._deep_research(None, "query")
     monkeypatch.setattr(research_service, "_research_sync", lambda _request: {"answer": "fallback", "sources": []})
     assert "fallback" in agent_service._deep_research(None, "query")
+
+
+@pytest.mark.asyncio
+async def test_agent_endpoint_keeps_git_remote_commands_on_the_host(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(agent_service, "_authorize_system", lambda _request: None)
+    monkeypatch.setattr(agent_service, "_authorize_http_yolo", lambda *_args: None)
+    monkeypatch.setattr(agent_service, "enforce_rate_limit", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(agent_service, "_resolve_workspace", lambda _workspace: tmp_path)
+    monkeypatch.setattr(agent_service, "_resolve_model", lambda *_args: "model")
+    seen: list[bool] = []
+
+    def record(**kwargs):
+        seen.append(kwargs["allow_git_network"])
+        return ()
+
+    monkeypatch.setattr(agent_service, "_agent_tools", record)
+    req = AgentRequest(messages=[{"role": "user", "content": "hello"}], workspace=str(tmp_path))
+    for host in ("127.0.0.1", "192.168.1.20"):
+        monkeypatch.setattr(agent_service, "_client_host", lambda _request, host=host: host)
+        request = _request({"kind": "device", "id": "device-a"})
+        await agent_service.agent(req, request)
+        agent_service._drop_session(next(reversed(agent_service._SESSIONS)))
+    assert seen == [True, False]

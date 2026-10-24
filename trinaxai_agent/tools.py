@@ -40,6 +40,14 @@ from pathlib import Path
 from typing import Any, Callable
 
 from trinaxai_agent.extract import extract_document_text, is_document
+from trinaxai_agent.git_tool import (
+    NETWORK,
+    GitUsageError,
+    classify_git,
+    git_argv,
+    git_env,
+    hooks_enabled,
+)
 
 # Cap tool output so a huge file or noisy command cannot blow the model's
 # context window. Handlers truncate and append a clear marker when they hit it.
@@ -686,19 +694,64 @@ def _is_enabled(name: str) -> bool:
 
 
 def _git_metadata_mounts(root: Path) -> tuple[str, ...]:
-    """Mount the workspace's own ``.git`` read-only inside the command sandbox.
+    """Mount the parts of the workspace's ``.git`` that can run programs read-only.
 
-    The file tools already refuse to write git metadata because ``.git/config``
-    and hooks can make git run programs for the *user* later. Without this the
-    terminal tool could write the same files. A real directory or file is
-    mounted (a worktree's ``.git`` is a file); a symlink is skipped because its
-    target is not part of the sandbox anyway. Repositories nested deeper than
-    the workspace root are not covered here.
+    ``.git/config`` (aliases, ``core.fsmonitor``, filter drivers) and
+    ``.git/hooks`` make git run programs for the *user* the next time they use
+    the repository, outside this sandbox. The file tools already refuse to
+    write git metadata; without these mounts a shell command could still plant
+    them. Everything else in ``.git`` (objects, refs, index) stays writable, so
+    ``git add`` and ``git commit`` work when the user asks for them. A ``.git``
+    file (worktree pointer) is mounted read-only as a whole; a symlink is
+    skipped because its target is not part of the sandbox anyway. Repositories
+    nested deeper than the workspace root are not covered.
     """
     git_path = root / ".git"
     if git_path.is_symlink() or not git_path.exists():
         return ()
-    return ("--ro-bind", str(git_path), str(git_path))
+    if not git_path.is_dir():
+        return ("--ro-bind", str(git_path), str(git_path))
+    mounts: list[str] = []
+    for name in ("config", "hooks"):
+        target = git_path / name
+        if target.exists() and not target.is_symlink():
+            mounts.extend(("--ro-bind", str(target), str(target)))
+    return tuple(mounts)
+
+
+def _git_identity_env(root: Path) -> tuple[str, ...]:
+    """Pass the user's git name and email into the sandbox as ``--setenv`` pairs.
+
+    The sandbox has a private ``$HOME``, so the user's global git identity is
+    invisible and ``git commit`` would stop with "Author identity unknown". Only
+    the two effective values (repository setting first, then global) are read
+    on the host and forwarded; the rest of the user's git configuration stays
+    outside the sandbox. ``git config`` only reads files; it never runs hooks.
+    """
+    if not (root / ".git").exists():
+        return ()
+    values: dict[str, str] = {}
+    for key in ("user.name", "user.email"):
+        try:
+            result = subprocess.run(
+                ["git", "config", "--get", key],
+                cwd=str(root),
+                capture_output=True,
+                text=True,
+                timeout=3,
+                check=False,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return ()
+        value = result.stdout.strip() if result.returncode == 0 else ""
+        if value:
+            values[key] = value
+    pairs: list[str] = []
+    for key, role in (("user.name", "NAME"), ("user.email", "EMAIL")):
+        if key in values:
+            for who in ("AUTHOR", "COMMITTER"):
+                pairs.extend(("--setenv", f"GIT_{who}_{role}", values[key]))
+    return tuple(pairs)
 
 
 def _bubblewrap_argv(workspace_root: Path, command: str) -> list[str] | None:
@@ -780,6 +833,7 @@ def _bubblewrap_argv(workspace_root: Path, command: str) -> list[str] | None:
             "--setenv",
             "PYTHONNOUSERSITE",
             "1",
+            *_git_identity_env(root),
             "--setenv",
             "PIP_NO_INDEX",
             "1",
@@ -805,14 +859,17 @@ def shell_sandbox_status() -> tuple[bool, str]:
     return False, "terminal tool disabled: install the 'bubblewrap' package (file tools still work)"
 
 
-def _run_process(argv: list[str], *, cwd: Path) -> tuple[int, str, str]:
+def _run_process(argv: list[str], *, cwd: Path, env: dict[str, str] | None = None) -> tuple[int, str, str]:
     """Run a command and reliably terminate its complete process group."""
     kwargs: dict[str, Any] = {
         "cwd": str(cwd),
         "text": True,
+        "stdin": subprocess.DEVNULL,
         "stdout": subprocess.PIPE,
         "stderr": subprocess.PIPE,
     }
+    if env is not None:
+        kwargs["env"] = env
     if os.name == "posix":
         kwargs["start_new_session"] = True
     elif hasattr(subprocess, "CREATE_NEW_PROCESS_GROUP"):
@@ -862,6 +919,71 @@ def _run_command(workspace_root: Path, command: str, **_: Any) -> str:
         return f"error: cannot run command: {exc}"
     out = stdout + (("\n[stderr]\n" + stderr) if stderr else "")
     status = f"[exit {returncode}; {'sandboxed, network=off' if sandboxed else 'UNSANDBOXED opt-in'}]"
+    return _truncate(f"{status}\n{out}".strip()) or status
+
+
+# ------------------------------------------------------------------- git tool
+
+_NO_HOOKS_DIR: str | None = None
+
+
+def _no_hooks_dir() -> str:
+    """An empty directory used as ``core.hooksPath`` so no hook ever runs."""
+    global _NO_HOOKS_DIR
+    if _NO_HOOKS_DIR is None or not os.path.isdir(_NO_HOOKS_DIR):
+        _NO_HOOKS_DIR = tempfile.mkdtemp(prefix="trinaxai-no-hooks-")
+    return _NO_HOOKS_DIR
+
+
+def _git_run(executable: str, args: tuple[str, ...], root: Path) -> tuple[int, str, str]:
+    argv = git_argv(executable, args, hooks_dir=_no_hooks_dir(), hooks=hooks_enabled())
+    return _run_process(argv, cwd=root, env=git_env(dict(os.environ)))
+
+
+def _git_toplevel(executable: str, root: Path) -> Path | None:
+    try:
+        code, out, _ = _git_run(executable, ("rev-parse", "--show-toplevel"), root)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if code != 0 or not out.strip():
+        return None
+    return Path(out.strip().splitlines()[0]).resolve()
+
+
+def _git(workspace_root: Path, args: Any = None, command: Any = None, allow_network: bool = True, **_: Any) -> str:
+    """Run git on the host (outside the command sandbox) for one validated call."""
+    try:
+        parsed = classify_git(args if args is not None else command)
+    except GitUsageError as exc:
+        return f"error: {exc}"
+    if parsed.kind == NETWORK and not allow_network:
+        return (
+            "error: git commands that contact a remote (push, pull, fetch) can only run from the "
+            "computer that hosts TrinaxAI, not from a paired device."
+        )
+    executable = shutil.which("git")
+    if executable is None:
+        return "error: git is not installed on this computer."
+    root = workspace_root.resolve()
+    for name in parsed.files:
+        _resolve_in_workspace(root, name)
+    if parsed.subcommand != "init":
+        top = _git_toplevel(executable, root)
+        if top is None:
+            return "error: this workspace folder is not a git repository (use git init first)."
+        if top != root:
+            return (
+                f"error: git only runs when the workspace folder is the repository root, but the repository "
+                f"root is {top}. Choose that folder as the workspace."
+            )
+    try:
+        returncode, stdout, stderr = _git_run(executable, parsed.args, root)
+    except subprocess.TimeoutExpired:
+        return f"error: git timed out after {RUN_TIMEOUT_SECONDS}s: git {' '.join(parsed.args)}"
+    except OSError as exc:
+        return f"error: cannot run git: {exc}"
+    out = stdout + (("\n[stderr]\n" + stderr) if stderr else "")
+    status = f"[exit {returncode}; git on this computer, outside the sandbox]"
     return _truncate(f"{status}\n{out}".strip()) or status
 
 
@@ -995,6 +1117,30 @@ DEFAULT_TOOLS: tuple[Tool, ...] = (
             "required": ["command"],
         },
         handler=_run_command,
+        dangerous=True,
+    ),
+    Tool(
+        name="git",
+        description=(
+            "Run a git command on this computer with the user's own git setup, outside the command sandbox. "
+            "Use it for status, diff, log, add, commit, branch, switch, merge, push, pull and fetch whenever the "
+            "user asks. Pass the subcommand and its options as a list, for example "
+            '["commit", "-m", "Fix the parser"]; always give commit messages with -m. '
+            "Reading commands run freely; changing commands and anything that contacts a remote ask the user first. "
+            "Hooks, aliases, global options (-c, -C) and options that run programs are not available."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "args": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": 'Git subcommand followed by its options, e.g. ["status", "--short"].',
+                },
+            },
+            "required": ["args"],
+        },
+        handler=_git,
         dangerous=True,
     ),
 )

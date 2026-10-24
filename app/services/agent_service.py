@@ -22,7 +22,11 @@ approval over HTTP unless the separately gated localhost-only yolo policy is on.
 from __future__ import annotations
 
 # ruff: noqa: F405
+import dataclasses
+import functools
 import queue
+import shlex
+import shutil
 import threading
 import uuid
 from contextlib import contextmanager
@@ -35,6 +39,8 @@ from app.security.device_auth import credential_files
 from trinaxai.errors import ErrorCategory, classify_error
 from trinaxai_agent import DEFAULT_TOOLS, AgentEngine, Tool, format_tool_failure  # noqa: E402
 from trinaxai_agent.engine import AgentCancelled  # noqa: E402
+from trinaxai_agent.git_tool import READ as _GIT_READ  # noqa: E402
+from trinaxai_agent.git_tool import git_input, git_risk  # noqa: E402
 from trinaxai_agent.tools import _bubblewrap_argv  # noqa: E402
 
 from .app_state_service import _read_app_state
@@ -560,7 +566,7 @@ def _safe_args(args: dict) -> dict:
     """Trim large tool arguments so a huge file body doesn't bloat the SSE event."""
     out: dict = {}
     for key, value in args.items():
-        text = str(value)
+        text = shlex.join(str(item) for item in value) if isinstance(value, (list, tuple)) else str(value)
         out[key] = text if len(text) <= 1200 else text[:1200] + "…(truncated)"
     return out
 
@@ -779,10 +785,21 @@ def _agent_tools(
     knowledge_search: bool = True,
     deep_research: bool = True,
     available_names: set[str] | frozenset[str] | None = None,
+    allow_git_network: bool = True,
 ) -> tuple[Tool, ...]:
-    """Build the registered tool list; flags and capabilities only restrict it."""
+    """Build the registered tool list; flags and capabilities only restrict it.
+
+    ``git push/pull/fetch`` use the host user's own credentials, so a request
+    that does not come from the host itself gets a ``git`` tool that refuses them.
+    """
+    base = tuple(
+        tool
+        if tool.name != "git" or allow_git_network
+        else dataclasses.replace(tool, handler=functools.partial(tool.handler, allow_network=False))
+        for tool in DEFAULT_TOOLS
+    )
     tools = (
-        *DEFAULT_TOOLS,
+        *base,
         _SEARCH_MEMORY_TOOL,
         _LIST_COLLECTIONS_TOOL,
     )
@@ -834,6 +851,8 @@ def _available_agent_tool_names(
             names.add("deep_research")
     if workspace is not None and _bubblewrap_argv(workspace, "true") is None:
         names.discard("run_command")
+    if shutil.which("git") is None:
+        names.discard("git")
     return frozenset(names)
 
 
@@ -864,6 +883,8 @@ def _run_engine_worker(
     def on_confirm(tool: Tool, args: dict) -> bool:
         if session.get("closed"):
             return False
+        if tool.name == "git" and git_risk(git_input(args)) == _GIT_READ:
+            return True  # status, diff, log ...: nothing changes, so there is nothing to approve
         return _wait_for_approval(session, tool, args)
 
     @contextmanager
@@ -1036,6 +1057,7 @@ async def agent(req: AgentRequest, request: Request):
         knowledge_search=req.knowledge_search,
         deep_research=req.deep_research,
         available_names=_available_agent_tool_names(req, request, workspace),
+        allow_git_network=_is_local_client(_client_host(request)),
     )
     session_id, session = _register_session(_identity_key(request))
     return StreamingResponse(

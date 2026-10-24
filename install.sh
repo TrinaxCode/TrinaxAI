@@ -93,6 +93,11 @@ tr_text_es() {
       'Start TrinaxAI when finished') echo 'Iniciar TrinaxAI al terminar' ;;
       'Start with your computer') echo 'Iniciar con tu equipo' ;;
       'Weekly update check') echo 'Comprobación semanal de actualizaciones' ;;
+      'Allow other devices on your home or local network to open TrinaxAI? Each device must be paired with a one-time code. Choose N to keep TrinaxAI on this computer only.') echo '¿Permitir que otros dispositivos de tu red doméstica o local abran TrinaxAI? Cada dispositivo debe emparejarse con un código de un solo uso. Elige N para usar TrinaxAI solo en este equipo.' ;;
+      'Host administration always stays on this computer, whatever you choose.') echo 'La administración del equipo siempre queda en este equipo, elijas lo que elijas.' ;;
+      'Access from other devices') echo 'Acceso desde otros dispositivos' ;;
+      'This computer only. To allow other devices later, run: trinaxai network refresh') echo 'Solo este equipo. Para permitir otros dispositivos más tarde, ejecuta: trinaxai network refresh' ;;
+      'Other devices: trust the certificate (trinaxai network), then pair with a one-time code from Settings > Advanced.') echo 'Otros dispositivos: confía en el certificado (trinaxai network) y empareja con un código de un solo uso desde Configuración > Avanzado.' ;;
       'Yes') echo 'Sí' ;;
       'No') echo 'No' ;;
       'Continue with this installation?') echo '¿Continuar con esta instalación?' ;;
@@ -362,6 +367,8 @@ $(tr_text usage):
   ./install.sh --no-autostart  No activar el arranque automático
   ./install.sh --no-auto-update No activar la actualización semanal automática
   ./install.sh --no-start      No iniciar TrinaxAI después de instalar
+  ./install.sh --lan-access    Permitir que otros dispositivos de la red local abran TrinaxAI
+  ./install.sh --no-lan-access Usar TrinaxAI solo en este equipo
   ./install.sh --dry-run      Simular todos los pasos sin modificar el sistema
   ./install.sh --lan-system    Compatibilidad obsoleta; se ignora y el host sigue siendo solo localhost
   ./install.sh --profile 8gb|16gb|32gb|64gb
@@ -381,7 +388,7 @@ Qué hace:
 
 Variables adicionales: TRINAXAI_PROFILE, TRINAXAI_INTERACTIVE, TRINAXAI_NONINTERACTIVE,
 TRINAXAI_INSTALL_MODELS, TRINAXAI_INSTALL_VISION, TRINAXAI_ENABLE_AUTOSTART,
-TRINAXAI_ENABLE_AUTO_UPDATE, TRINAXAI_START_NOW, TRINAXAI_ALLOW_LAN_SYSTEM (obsoleta e ignorada),
+TRINAXAI_ENABLE_AUTO_UPDATE, TRINAXAI_START_NOW, TRINAXAI_LAN_ACCESS, TRINAXAI_ALLOW_LAN_SYSTEM (obsoleta e ignorada),
 TRINAXAI_ADMIN_TOKEN, TRINAXAI_HOME y TRINAXAI_LANG.
 EOF
   else
@@ -397,6 +404,8 @@ $(tr_text usage):
   ./install.sh --no-autostart  Do not enable boot autostart
   ./install.sh --no-auto-update Do not enable the weekly automatic update
   ./install.sh --no-start      Do not start TrinaxAI after install
+  ./install.sh --lan-access    Let other devices on the local network open TrinaxAI
+  ./install.sh --no-lan-access Use TrinaxAI on this computer only
   ./install.sh --dry-run      Simulate every step without changing the system
   ./install.sh --lan-system    Deprecated compatibility flag; ignored, host administration stays localhost-only
   ./install.sh --profile 8gb|16gb|32gb|64gb
@@ -416,7 +425,7 @@ What it does:
 
 Additional variables: TRINAXAI_PROFILE, TRINAXAI_INTERACTIVE, TRINAXAI_NONINTERACTIVE,
 TRINAXAI_INSTALL_MODELS, TRINAXAI_INSTALL_VISION, TRINAXAI_ENABLE_AUTOSTART,
-TRINAXAI_ENABLE_AUTO_UPDATE, TRINAXAI_START_NOW, TRINAXAI_ALLOW_LAN_SYSTEM (deprecated and ignored),
+TRINAXAI_ENABLE_AUTO_UPDATE, TRINAXAI_START_NOW, TRINAXAI_LAN_ACCESS, TRINAXAI_ALLOW_LAN_SYSTEM (deprecated and ignored),
 TRINAXAI_ADMIN_TOKEN, TRINAXAI_HOME, TRINAXAI_NPM_CACHE and TRINAXAI_LANG.
 EOF
   fi
@@ -432,6 +441,12 @@ INSTALL_MODELS="${TRINAXAI_INSTALL_MODELS:-1}"
 INSTALL_VISION="${TRINAXAI_INSTALL_VISION:-1}"
 ENABLE_AUTOSTART="${TRINAXAI_ENABLE_AUTOSTART:-1}"
 ENABLE_AUTO_UPDATE="${TRINAXAI_ENABLE_AUTO_UPDATE:-1}"
+# Empty means "not decided": ask when interactive, otherwise keep this computer only.
+case "$(printf '%s' "${TRINAXAI_LAN_ACCESS:-}" | tr '[:upper:]' '[:lower:]')" in
+  1|true|yes|on) LAN_ACCESS=1 ;;
+  0|false|no|off) LAN_ACCESS=0 ;;
+  *) LAN_ACCESS="" ;;
+esac
 START_NOW="${TRINAXAI_START_NOW:-1}"
 DRY_RUN="${TRINAXAI_DRY_RUN:-0}"
 PROFILE_OVERRIDE="${TRINAXAI_PROFILE:-}"
@@ -451,6 +466,8 @@ while [ "$#" -gt 0 ]; do
     --no-autostart) ENABLE_AUTOSTART=0;;
     --no-auto-update) ENABLE_AUTO_UPDATE=0;;
     --no-start) START_NOW=0;;
+    --lan-access) LAN_ACCESS=1;;
+    --no-lan-access) LAN_ACCESS=0;;
     --dry-run) DRY_RUN=1; INTERACTIVE=0; NONINTERACTIVE=1; INSTALL_MODELS=1;;
     --lan-system) LEGACY_LAN_SYSTEM_REQUEST=1;;
     --profile)
@@ -717,6 +734,12 @@ collect_preferences() {
   if [ "$ENABLE_AUTO_UPDATE" = "1" ]; then
     ask_yes_no "Check for TrinaxAI updates every week? It only checks; it never installs anything without you." y || ENABLE_AUTO_UPDATE=0
   fi
+  if [ -z "$LAN_ACCESS" ]; then
+    print_info "Host administration always stays on this computer, whatever you choose."
+    local lan_default=n
+    [ "$(env_file_value TRINAXAI_PWA_HOST)" = "0.0.0.0" ] && lan_default=y
+    if ask_yes_no "Allow other devices on your home or local network to open TrinaxAI? Each device must be paired with a one-time code. Choose N to keep TrinaxAI on this computer only." "$lan_default"; then LAN_ACCESS=1; else LAN_ACCESS=0; fi
+  fi
   PREFS_COLLECTED=1
 }
 
@@ -730,6 +753,7 @@ print_plan() {
   echo "  $(tr_text 'Start TrinaxAI when finished'): $(yes_no_label "$START_NOW")"
   echo "  $(tr_text 'Start with your computer'): $(yes_no_label "$([ "$START_NOW" = "1" ] && echo "$ENABLE_AUTOSTART" || echo 0)")"
   echo "  $(tr_text 'Weekly update check'): $(yes_no_label "$ENABLE_AUTO_UPDATE")"
+  echo "  $(tr_text 'Access from other devices'): $(yes_no_label "$([ "$LAN_ACCESS" = "1" ] && echo 1 || echo 0)")"
   echo ""
 }
 
@@ -752,6 +776,23 @@ env_file_value() {
   local key="$1"
   [ -f ".env" ] || return 0
   awk -F= -v key="$key" '$1 == key { sub(/^[^=]*=/, ""); gsub(/\r$/, ""); print; exit }' .env
+}
+
+# Set or add KEY=VALUE in .env without touching other lines (keeps mode 600).
+set_env_file_value() {
+  local key="$1" value="$2" tmp
+  [ -f ".env" ] && [ ! -L ".env" ] || return 1
+  tmp="$(mktemp "${SCRIPT_DIR:-.}/.env.tmp.XXXXXX")" || return 1
+  if awk -F= -v key="$key" -v value="$value" '
+      BEGIN { done = 0 }
+      $1 == key { if (!done) { print key "=" value; done = 1 } next }
+      { print }
+      END { if (!done) print key "=" value }
+    ' .env > "$tmp" && chmod 600 "$tmp" && mv -f -- "$tmp" .env; then
+    return 0
+  fi
+  rm -f -- "$tmp"
+  return 1
 }
 
 add_unique_model() {
@@ -1290,6 +1331,8 @@ if [ "$OS" = "windows" ] && [ -n "$SCRIPT_DIR" ] && [ -f "$SCRIPT_DIR/install.ps
   [ "$ENABLE_AUTOSTART" = "1" ] || PS_ARGS+=("-NoAutostart")
   [ "$ENABLE_AUTO_UPDATE" = "1" ] || PS_ARGS+=("-NoAutoUpdate")
   [ "$START_NOW" = "1" ] || PS_ARGS+=("-NoStart")
+  [ "$LAN_ACCESS" = "1" ] && PS_ARGS+=("-LanAccess")
+  [ "$LAN_ACCESS" = "0" ] && PS_ARGS+=("-NoLanAccess")
   [ -z "$PROFILE_OVERRIDE" ] || PS_ARGS+=("-Profile" "$PROFILE_OVERRIDE")
   [ -z "$LANGUAGE_EXPLICIT" ] || PS_ARGS+=("-Language" "$LANGUAGE")
   [ -z "$INSTALL_DIR" ] || PS_ARGS+=("-InstallDir" "$INSTALL_DIR")
@@ -1403,6 +1446,8 @@ if [ "$OS" = "windows" ] && [ -f "install.ps1" ] && command -v powershell.exe >/
   [ "$ENABLE_AUTOSTART" = "1" ] || PS_ARGS+=("-NoAutostart")
   [ "$ENABLE_AUTO_UPDATE" = "1" ] || PS_ARGS+=("-NoAutoUpdate")
   [ "$START_NOW" = "1" ] || PS_ARGS+=("-NoStart")
+  [ "$LAN_ACCESS" = "1" ] && PS_ARGS+=("-LanAccess")
+  [ "$LAN_ACCESS" = "0" ] && PS_ARGS+=("-NoLanAccess")
   [ -z "$PROFILE_OVERRIDE" ] || PS_ARGS+=("-Profile" "$PROFILE_OVERRIDE")
   [ -z "$LANGUAGE_EXPLICIT" ] || PS_ARGS+=("-Language" "$LANGUAGE")
   [ -z "$INSTALL_DIR" ] || PS_ARGS+=("-InstallDir" "$INSTALL_DIR")
@@ -1540,6 +1585,10 @@ if [ -L .env ]; then
 fi
 if [ -f .env ]; then
   print_ok ".env already exists; preserving the existing configuration"
+  if [ -n "$LAN_ACCESS" ]; then
+    if [ "$LAN_ACCESS" = "1" ]; then set_env_file_value TRINAXAI_PWA_HOST 0.0.0.0; else set_env_file_value TRINAXAI_PWA_HOST 127.0.0.1; fi \
+      || print_warn "Could not update TRINAXAI_PWA_HOST in .env; set it by hand (0.0.0.0 allows other devices)."
+  fi
 else
   umask 077
   env_tmp="$(mktemp "$SCRIPT_DIR/.env.tmp.XXXXXX")"
@@ -1583,6 +1632,10 @@ VITE_TRINAXAI_VISION_MODEL=$VISION_MODEL
 
 # Reranking (off by default — enable for better precision)
 TRINAXAI_RERANK=0
+
+# Network: 127.0.0.1 = this computer only; 0.0.0.0 = other devices on your local network can open the PWA.
+# Change it later with: trinaxai network refresh
+TRINAXAI_PWA_HOST=$([ "$LAN_ACCESS" = "1" ] && echo 0.0.0.0 || echo 127.0.0.1)
 
 # Security
 TRINAXAI_CORS_ORIGINS=https://localhost:3334,http://localhost:3334,https://127.0.0.1:3334,http://127.0.0.1:3334,https://localhost:3335,http://localhost:3335,https://127.0.0.1:3335,http://127.0.0.1:3335,https://$LAN_HOSTNAME.local:3334,http://$LAN_HOSTNAME.local:3334,https://$LAN_HOSTNAME.local:3335,http://$LAN_HOSTNAME.local:3335${LAN_IP:+,https://$LAN_IP:3334,http://$LAN_IP:3334,https://$LAN_IP:3335,http://$LAN_IP:3335}
@@ -1830,7 +1883,9 @@ if [ "$START_NOW" = "1" ]; then
   echo ""
   echo -e "${BOLD}${CYAN}$(tr_text 'Links to enter')${NC}"
   echo -e "  ${BLUE}$(tr_text 'Localhost'):${NC}     https://localhost:3334"
-  if [ -n "${LAN_IP:-}" ]; then
+  if [ "$(env_file_value TRINAXAI_PWA_HOST)" != "0.0.0.0" ]; then
+    echo -e "  ${BLUE}$(tr_text 'LAN / Red local'):${NC} $(tr_text 'This computer only. To allow other devices later, run: trinaxai network refresh')"
+  elif [ -n "${LAN_IP:-}" ]; then
     echo -e "  ${BLUE}$(tr_text 'LAN / Red local'):${NC} https://${LAN_IP}:3334"
   else
     if [ "$LANGUAGE" = "es" ]; then
@@ -1854,8 +1909,9 @@ echo -e "  ${BLUE}$(tr_text 'System test'):${NC}   python test_system.py --verbo
 echo -e "  ${BLUE}$(tr_text 'Updates'):${NC}       $(tr_text 'Automatic check every week')"
 echo -e "  ${BLUE}$(tr_text 'Docs'):${NC}         https://github.com/TrinaxCode/TrinaxAI"
 echo ""
-if [ "$START_NOW" = "1" ]; then
+if [ "$START_NOW" = "1" ] && [ "$(env_file_value TRINAXAI_PWA_HOST)" = "0.0.0.0" ]; then
   echo -e "  ($(tr_text 'Same WiFi network required. Check firewall: ports 3333, 3334'))"
+  echo -e "  $(tr_text 'Other devices: trust the certificate (trinaxai network), then pair with a one-time code from Settings > Advanced.')"
   echo ""
 fi
 echo -e "  ${YELLOW}$(tr_text 'LAN system control remains localhost-only')${NC}"
