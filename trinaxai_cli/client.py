@@ -272,6 +272,16 @@ class TrinaxAPIClient:
         self._switch_base_url(candidate)
         return True
 
+    def ensure_reachable(self) -> None:
+        """Settle http vs https before a streamed request, which bypasses ``_send``."""
+        try:
+            self._client.get("/health", timeout=min(float(self.timeout), 1.5))
+        except httpx.TransportError as exc:
+            if _speaks_no_tls(exc):
+                self._use_plain_http_if_served()
+        except Exception:  # noqa: BLE001 - the real request reports whatever is wrong
+            pass
+
     # ── internal details ──
     def _send(
         self,

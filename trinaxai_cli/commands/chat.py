@@ -60,12 +60,28 @@ class BackendStreamError(RuntimeError):
 
     def __init__(self, info: dict[str, Any]) -> None:
         self.category = str(info.get("category") or "")
+        self.code = str(info.get("code") or "")
+        self.collection = str(info.get("collection") or "")
         self.public = " ".join(str(info[key]) for key in ("message", "recovery") if info.get(key))
         super().__init__(self.public or str(info))
 
 
+def _typed_error_detail(body: str) -> dict[str, Any] | None:
+    """The API's structured error from an HTTP failure body, if it sent one."""
+    try:
+        detail = json.loads(body).get("detail")
+    except (ValueError, AttributeError):
+        return None
+    return detail if isinstance(detail, dict) and (detail.get("message") or detail.get("code")) else None
+
+
 def report_local_ai_failure(ui: Any, exc: BaseException) -> None:
     """Explain a failed local AI request with the fix that matches its cause."""
+    if isinstance(exc, BackendStreamError) and exc.code == "collection_not_found":
+        # The API's generic 404 text talks about a file; the user named a collection.
+        ui.error(f"The collection '{exc.collection}' does not exist.")
+        ui.info("See your collections with: trinaxai collections list")
+        return
     if isinstance(exc, BackendStreamError) and exc.public:
         # The API is running and already wrote a safe explanation; do not tell the
         # user to start it.
@@ -278,11 +294,15 @@ def _stream_from_rag(
     sources: list[Any] = []
     started = False
     saw_done = False
+    client.ensure_reachable()
     with ui.thinking() as ready:
         with client._client.stream("POST", "/v1/chat/completions", json=payload, timeout=900.0) as response:  # noqa: SLF001
             if response.status_code >= 400:
-                detail = response.read().decode("utf-8", errors="replace")[:200]
-                raise RuntimeError(f"chat: HTTP {response.status_code} — {detail}")
+                body = response.read().decode("utf-8", errors="replace")
+                typed = _typed_error_detail(body)
+                if typed is not None:
+                    raise BackendStreamError(typed)
+                raise RuntimeError(f"chat: HTTP {response.status_code} — {body[:200]}")
             for line in response.iter_lines():
                 text = line.strip()
                 if not text or not text.startswith("data: "):

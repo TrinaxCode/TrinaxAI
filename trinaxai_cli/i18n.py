@@ -482,6 +482,8 @@ def translate(message: Any, lang: str = "en") -> Any:
         ),
         (r"^Files in '(.+)' \((.+)\)$", r"Archivos en '\1' (\2)"),
         (r"^The model '(.+)' is not installed\.$", r"El modelo '\1' no está instalado."),
+        (r"^The collection '(.+)' does not exist\.$", r"La colección '\1' no existe."),
+        (r"^See your collections with: (.+)$", r"Consulta tus colecciones con: \1"),
         (r"^Install it with: (.+)$", r"Instálalo con: \1"),
         (r"^Sources: (.+)$", r"Fuentes: \1"),
         (r"^UNSANDBOXED opt-in via (.+)$", r"SIN SANDBOX por activación explícita con \1"),

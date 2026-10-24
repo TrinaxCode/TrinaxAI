@@ -127,6 +127,10 @@ el formato de [Keep a Changelog](https://keepachangelog.com/).
 
 ### Corregido
 
+- `trinaxai ask --collection x` dice "La colección 'x' no existe" y cómo listarlas, en vez
+  de "Inicia TrinaxAI con: trinaxai start". Los errores tipados de la API durante una
+  respuesta RAG muestran su propio mensaje, y la CLI también encuentra una API local
+  servida por HTTP simple al transmitir una respuesta.
 - La indexación nombra los archivos que omite por ser demasiado grandes, con su tamaño y el
   límite (`huge.txt (5.7 MB; límite 3.0 MB)`), en vez de solo contarlos.
 - La CLI funciona cuando la API local corre sin HTTPS (no se pudo crear un certificado):

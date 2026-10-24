@@ -389,3 +389,18 @@ def test_the_plain_http_fallback_is_only_for_a_local_server_that_answers() -> No
     already_plain = _client()
     already_plain.base_url = "http://localhost:3333"
     assert already_plain._use_plain_http_if_served() is False
+
+
+def test_ensure_reachable_settles_the_scheme_before_a_streamed_request() -> None:
+    server = _serve_plain_http()
+    try:
+        client = TrinaxAPIClient(f"https://127.0.0.1:{server.server_port}", verify_tls=None)
+        client.ensure_reachable()
+        assert client.base_url.startswith("http://")
+    finally:
+        server.shutdown()
+        server.server_close()
+    # Anything else (here: nothing listening) is left for the real request to report.
+    refused = TrinaxAPIClient("https://127.0.0.1:9", verify_tls=None)
+    refused.ensure_reachable()
+    assert refused.base_url.startswith("https://")

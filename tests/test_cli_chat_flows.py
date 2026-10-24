@@ -51,7 +51,9 @@ def test_rag_stream_ignores_noise_and_reports_safe_protocol_errors() -> None:
             "data: [DONE]",
         ]
     )
-    client = SimpleNamespace(_client=SimpleNamespace(stream=lambda *_args, **_kwargs: response))
+    client = SimpleNamespace(
+        ensure_reachable=lambda: None, _client=SimpleNamespace(stream=lambda *_args, **_kwargs: response)
+    )
 
     assert chat._stream_from_rag(client, ui, [], ["docs"], "model") == "hello"
 
@@ -456,7 +458,9 @@ def test_typed_api_errors_are_shown_as_written_and_do_not_say_to_start_the_servi
         "recovery": "Check that the model is installed and the AI service is running.",
     }
     line = 'data: {"trinaxai_error": %s}' % __import__("json").dumps(error)
-    client = SimpleNamespace(_client=SimpleNamespace(stream=lambda *_a, **_k: _Response([line])))
+    client = SimpleNamespace(
+        ensure_reachable=lambda: None, _client=SimpleNamespace(stream=lambda *_a, **_k: _Response([line]))
+    )
 
     with pytest.raises(chat.BackendStreamError) as raised:
         chat._stream_from_rag(client, ui, [], ["docs"], "m")
@@ -496,7 +500,7 @@ def test_rag_answers_list_the_files_they_cite() -> None:
             "data: [DONE]",
         ]
     )
-    client = SimpleNamespace(_client=SimpleNamespace(stream=lambda *_a, **_k: response))
+    client = SimpleNamespace(ensure_reachable=lambda: None, _client=SimpleNamespace(stream=lambda *_a, **_k: response))
 
     assert chat._stream_from_rag(client, ui, [], ["docs"], "m") == "hello"
     ui.info.assert_called_once_with("Sources: aurora.md, manual.pdf (p. 3)")
@@ -504,10 +508,48 @@ def test_rag_answers_list_the_files_they_cite() -> None:
     # An abstained answer carries no sources, so nothing is listed.
     ui = _ui()
     response = _Response(['data: {"choices":[{"delta":{"content":"no data"}}]}', "data: [DONE]"])
-    client = SimpleNamespace(_client=SimpleNamespace(stream=lambda *_a, **_k: response))
+    client = SimpleNamespace(ensure_reachable=lambda: None, _client=SimpleNamespace(stream=lambda *_a, **_k: response))
     chat._stream_from_rag(client, ui, [], ["docs"], "m")
     ui.info.assert_not_called()
 
     from trinaxai_cli.i18n import translate
 
     assert translate("Sources: aurora.md", "es") == "Fuentes: aurora.md"
+
+
+def test_a_missing_collection_is_named_instead_of_blaming_the_service() -> None:
+    body = (
+        b'{"detail":{"code":"collection_not_found","collection":"messy","category":"file_not_found",'
+        b'"message":"The requested file was not found.","recovery":"Check the file location."}}'
+    )
+    client = SimpleNamespace(
+        ensure_reachable=lambda: None,
+        _client=SimpleNamespace(stream=lambda *_a, **_k: _Response(status=404, body=body)),
+    )
+    with pytest.raises(chat.BackendStreamError) as raised:
+        chat._stream_from_rag(client, _ui(), [], ["messy"])
+
+    ui = _ui()
+    chat.report_local_ai_failure(ui, raised.value)
+    ui.error.assert_called_once_with("The collection 'messy' does not exist.")
+    ui.info.assert_called_once_with("See your collections with: trinaxai collections list")
+
+
+def test_other_typed_http_errors_show_their_own_message() -> None:
+    body = b'{"detail":{"category":"ai_model_unavailable","message":"The model is busy.","recovery":"Try later."}}'
+    client = SimpleNamespace(
+        ensure_reachable=lambda: None,
+        _client=SimpleNamespace(stream=lambda *_a, **_k: _Response(status=503, body=body)),
+    )
+    with pytest.raises(chat.BackendStreamError, match="The model is busy. Try later."):
+        chat._stream_from_rag(client, _ui(), [])
+    assert chat._typed_error_detail("not json") is None
+    assert chat._typed_error_detail('{"detail":"plain text"}') is None
+    assert chat._typed_error_detail("[1]") is None
+
+
+def test_missing_collection_messages_are_translated() -> None:
+    from trinaxai_cli.i18n import translate
+
+    assert translate("The collection 'messy' does not exist.", "es") == "La colección 'messy' no existe."
+    assert translate("See your collections with: trinaxai collections list", "es").startswith("Consulta tus")

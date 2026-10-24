@@ -86,6 +86,7 @@ class FakeClient:
     def __init__(self, response: FakeResponse, *, models: list[dict[str, Any]] | None = None) -> None:
         self.response = response
         self.base_url = ""
+        self.ensure_reachable = lambda: None
         self.payload: dict[str, Any] = {}
         self.models = models or []
         self.collections = [

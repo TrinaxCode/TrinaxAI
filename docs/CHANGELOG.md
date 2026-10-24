@@ -121,6 +121,10 @@ All notable changes to TrinaxAI are documented here. This project follows the
 
 ### Fixed
 
+- `trinaxai ask --collection x` says "The collection 'x' does not exist" and how to list
+  collections, instead of "Start TrinaxAI with: trinaxai start". Typed API errors during a
+  RAG answer now show their own message, and the CLI also finds a local API served over
+  plain HTTP when it streams an answer.
 - Indexing names the files it skips for being too large, with their size and the limit
   (`huge.txt (5.7 MB; limit 3.0 MB)`), instead of only counting them.
 - The CLI works when the local API runs without HTTPS (no certificate could be created for

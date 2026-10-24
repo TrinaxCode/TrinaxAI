@@ -1652,7 +1652,9 @@ def test_chat_attachment_and_stream_error_edges(monkeypatch: pytest.MonkeyPatch,
     response.__enter__.return_value = response
     response.__exit__.return_value = False
     ui = _ui()
-    client = SimpleNamespace(_client=SimpleNamespace(stream=lambda *_args, **_kwargs: response))
+    client = SimpleNamespace(
+        ensure_reachable=lambda: None, _client=SimpleNamespace(stream=lambda *_args, **_kwargs: response)
+    )
     image_message = {"role": "user", "content": "image", "images": ["x"]}
     with pytest.raises(RuntimeError, match="image attachments"):
         chat_command._stream_from_rag(client, ui, [image_message])
