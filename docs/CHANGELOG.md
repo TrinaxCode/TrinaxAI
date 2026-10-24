@@ -121,6 +121,8 @@ All notable changes to TrinaxAI are documented here. This project follows the
 
 ### Fixed
 
+- `trinaxai doctor` no longer repeats the start command when TrinaxAI is stopped
+  ("Start it with: trinaxai start; run: trinaxai start").
 - In the web app's coding agent, a tool that ran but failed (for example a `git commit`
   that exited with an error, or a command with a non-zero exit code) no longer shows a
   green check next to its error text; it shows a warning icon.

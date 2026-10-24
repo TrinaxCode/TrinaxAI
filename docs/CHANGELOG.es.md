@@ -127,6 +127,8 @@ el formato de [Keep a Changelog](https://keepachangelog.com/).
 
 ### Corregido
 
+- `trinaxai doctor` ya no repite el comando de arranque cuando TrinaxAI está detenido
+  («Inícialo con: trinaxai start; run: trinaxai start»).
 - En el agente de código de la app web, una herramienta que se ejecutó pero falló (por
   ejemplo un `git commit` con error, o un comando con código de salida distinto de cero)
   ya no muestra una marca verde junto a su mensaje de error; muestra un icono de aviso.
