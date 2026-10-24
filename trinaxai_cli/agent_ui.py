@@ -19,6 +19,7 @@ import difflib
 import json
 import re
 import shlex
+import sys
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -632,6 +633,10 @@ class AgentRenderer:
         if not self.interactive:
             if not self.quiet:
                 self.ui.say("  ⎿ " + text("perm_noninteractive", lang), style="yellow")
+            else:
+                # A script run keeps stdout for the answer, but the user still has to learn why nothing
+                # was changed: the model alone tends to say "a system restriction".
+                print(f"[trinaxai] {tool.name}: " + text("perm_noninteractive", lang), file=sys.stderr)
             return False
         rule = self.policy.rule_for(tool, args)
         options = [("yes", text("perm_yes", lang))]

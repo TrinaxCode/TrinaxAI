@@ -125,6 +125,8 @@ All notable changes to TrinaxAI are documented here. This project follows the
 
 ### Fixed
 
+- A script run of `trinaxai agent -p` without `--yolo` now says on stderr why an edit or command was refused (no
+  terminal to ask), instead of leaving the model to blame "a system restriction". Stdout still has only the answer.
 - Agent follow-through is stricter about what it chases: a failed command is no longer chased after the file
   was edited, a passing `echo` no longer hides a failed test run, "rename the variable to total" is not
   treated as renaming a variable called `variable`, and "create a test file x.txt" stays a one-file request.
