@@ -868,11 +868,16 @@ async def research_preflight(req: ResearchRequest, request: Request):
     model = (req.model or "").strip() or (
         config.MODEL_FAST if use_web and int(req.depth or 2) == 1 else config.MODEL_GENERAL
     )
-    try:
+
+    def _installed_models() -> list[str]:
         with httpx.Client(trust_env=False, timeout=2.0, follow_redirects=False) as client:
             response = client.get(f"{config.OLLAMA_BASE_URL.rstrip('/')}/api/tags")
             response.raise_for_status()
-            installed = [str(item.get("name") or "") for item in response.json().get("models", [])]
+            return [str(item.get("name") or "") for item in response.json().get("models", [])]
+
+    try:
+        # A blocking HTTP call in an async handler would freeze every other request.
+        installed = await run_in_threadpool(_installed_models)
     except (httpx.HTTPError, ValueError, TypeError) as exc:
         info = classify_error(exc, status_code=503, category=ErrorCategory.AI_MODEL_UNAVAILABLE)
         return {
