@@ -323,8 +323,8 @@ MESSAGES: dict[str, tuple[str, str]] = {
         "   ⚠️  Error leyendo {name}, se reintentará: {error}",
     ),
     "idx_no_text": (
-        "   ⚠️  {name} contains no extractable text; will retry",
-        "   ⚠️  {name} no contiene texto extraíble; se reintentará",
+        "   ⚠️  {name} has no text to index (empty, or a scan that needs OCR); checked again on the next run",
+        "   ⚠️  {name} no tiene texto que indexar (vacío, o un escaneo que necesita OCR); se revisa en la próxima ejecución",
     ),
     "idx_ast_failed": (
         "   ⚠️  AST failed on {name} ({language}): {error} — falling back to text splitting",

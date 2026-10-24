@@ -121,6 +121,8 @@ All notable changes to TrinaxAI are documented here. This project follows the
 
 ### Fixed
 
+- Indexing says a file with no text is "empty, or a scan that needs OCR" and is checked
+  again on the next run, instead of the vaguer "will retry".
 - `trinaxai ask --collection x` says "The collection 'x' does not exist" and how to list
   collections, instead of "Start TrinaxAI with: trinaxai start". Typed API errors during a
   RAG answer now show their own message, and the CLI also finds a local API served over

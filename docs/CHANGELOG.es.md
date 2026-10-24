@@ -127,6 +127,8 @@ el formato de [Keep a Changelog](https://keepachangelog.com/).
 
 ### Corregido
 
+- La indexación dice que un archivo sin texto está "vacío, o es un escaneo que necesita
+  OCR" y se revisa en la próxima ejecución, en vez del impreciso "se reintentará".
 - `trinaxai ask --collection x` dice "La colección 'x' no existe" y cómo listarlas, en vez
   de "Inicia TrinaxAI con: trinaxai start". Los errores tipados de la API durante una
   respuesta RAG muestran su propio mensaje, y la CLI también encuentra una API local
