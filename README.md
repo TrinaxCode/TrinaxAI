@@ -93,9 +93,10 @@ Use the CLI from any directory after setup:
 | Open the interactive assistant | `trinaxai chat` |
 | Ask one question | `trinaxai ask "..." --engine rag` |
 | Index a folder | `trinaxai index ./documents` |
-| Run deep research | `trinaxai research --query "..." --depth 2` |
+| Run deep research (add `--web` to ground it on web search) | `trinaxai research "..." --depth 2` |
 | Use the coding agent | `trinaxai agent --workspace .` |
 | Check services | `trinaxai status` |
+| See or change who can reach TrinaxAI | `trinaxai network` / `trinaxai network off` |
 | Start or stop services | `trinaxai start` / `trinaxai stop` |
 | Diagnose a problem | `trinaxai doctor --strict` |
 | Update the installation | `trinaxai update` |

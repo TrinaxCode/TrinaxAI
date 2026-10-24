@@ -86,6 +86,7 @@ el formato de [Keep a Changelog](https://keepachangelog.com/).
 
 ### Cambiado
 
+- La tabla de comandos del README lista `trinaxai research "..."` con `--web`, y `trinaxai network` / `network off`.
 - El agente ya no te pide aprobar un `git commit -m ...` sencillo cuando no hay nada preparado
   (el primer intento habitual de los modelos locales pequeños, que siempre falla): se rechaza
   de antemano con la solución (`add <archivo>` o `commit -a`). Los commits con `-a`, `--amend`,

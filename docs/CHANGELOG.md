@@ -83,6 +83,7 @@ All notable changes to TrinaxAI are documented here. This project follows the
 
 ### Changed
 
+- The README command table lists `trinaxai research "..."` with `--web`, and `trinaxai network` / `network off`.
 - The agent no longer asks you to approve a plain `git commit -m ...` when nothing is staged
   (the usual first attempt of small local models, which always fails): it is refused up front
   with the fix (`add <file>` or `commit -a`). Commits with `-a`, `--amend`, `--allow-empty`,
