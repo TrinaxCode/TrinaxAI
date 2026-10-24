@@ -124,6 +124,9 @@ All notable changes to TrinaxAI are documented here. This project follows the
 
 ### Fixed
 
+- The agent no longer stops after the first file when it was also asked to run something ("create the
+  module and its tests, run them"): if nothing has been run it is asked once to run it. Its
+  "you claimed a change you did not make" check also stops firing after a real edit.
 - `trinaxai research` no longer sends the CLI's default "thinking on" preference: on a CPU the model
   spent its whole budget reasoning and the web synthesis never finished (2.5 minutes, then only
   a list of sources). It now lets the server choose, as the web app does, and `--thinking` /

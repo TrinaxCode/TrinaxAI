@@ -682,3 +682,53 @@ def test_slash_diff_ignores_agent_written_git_config(tmp_path: Path) -> None:
 
     assert result.returncode == 0, result.stderr
     assert not marker.exists(), "/diff executed a program named in the workspace's .git/config"
+
+
+def test_a_real_edit_is_not_second_guessed_as_a_phantom_claim(tmp_path: Path) -> None:
+    (tmp_path / "calc.py").write_text("def add(a, b):\n    return a - b\n")
+    edit = {"function": {"name": "edit_file", "arguments": {"path": "calc.py", "old": "a - b", "new": "a + b"}}}
+
+    class Honest(AgentEngine):
+        replies = [
+            {"tool_calls": [{"function": {"name": "read_file", "arguments": {"path": "calc.py"}}}]},
+            {"tool_calls": [edit]},
+            {"content": "I fixed it: add now returns a + b."},
+        ]
+
+        def _chat(self, messages):
+            return self.replies.pop(0)  # an unexpected extra nudge would run out of replies
+
+    engine = Honest(model="m", workspace_root=tmp_path, on_confirm=None)
+    answer = engine.run([{"role": "user", "content": "Fix the bug in add in calc.py"}])
+    assert answer == "I fixed it: add now returns a + b."
+    assert "a + b" in (tmp_path / "calc.py").read_text()
+
+
+def test_the_agent_is_asked_once_to_run_what_it_was_asked_to_run(tmp_path: Path) -> None:
+    write = {"function": {"name": "write_file", "arguments": {"path": "primos.py", "content": "x = 1\n"}}}
+    seen: list[list[dict]] = []
+
+    class Skipper(AgentEngine):
+        replies = [
+            {"tool_calls": [write]},
+            {"content": "Created primos.py."},  # never ran anything
+            {"content": "Created primos.py, I did not run it."},
+        ]
+
+        def _chat(self, messages):
+            seen.append([dict(m) for m in messages])
+            return self.replies.pop(0)
+
+    task = "Create primos.py with is_prime and run the tests"
+    answer = Skipper(model="m", workspace_root=tmp_path, on_confirm=None).run([{"role": "user", "content": task}])
+    assert answer == "Created primos.py, I did not run it."
+    assert any("no command has been run yet" in str(m.get("content")) for m in seen[-1])
+
+    # Without a request to run anything, nothing extra is asked.
+    seen.clear()
+    Skipper.replies = [{"tool_calls": [write]}, {"content": "Created primos.py."}]
+    quiet = Skipper(model="m", workspace_root=tmp_path, on_confirm=None).run(
+        [{"role": "user", "content": "Create primos.py with is_prime"}]
+    )
+    assert quiet == "Created primos.py."
+    assert not any("no command has been run yet" in str(m.get("content")) for m in seen[-1])

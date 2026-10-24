@@ -244,10 +244,13 @@ class AgentEngine:
         reported_results: list[str] = []
         nudged = False
         claim_nudged = False
+        run_nudged = False
         mutated = False
+        ran_command = False
         wants_change = _requests_change(_latest_user_text(messages)) and any(
             name in self._tool_map for name in _MUTATING_TOOLS
         )
+        wants_run = _requests_run(_latest_user_text(messages)) and "run_command" in self._tool_map
         # Code reviews get a second, code-specialized evidence audit. Suppress
         # the planner's draft so the UI never flashes unverified claims before
         # the corrected answer replaces them.
@@ -318,6 +321,21 @@ class AgentEngine:
                         }
                     )
                     continue
+                # A small model often creates the files and then reports "done" without running what
+                # it was asked to run. Ask once for the run it skipped.
+                if wants_run and not ran_command and not run_nudged and used_tools:
+                    run_nudged = True
+                    messages.append({"role": "assistant", "content": content})
+                    messages.append(
+                        {
+                            "role": "user",
+                            "content": (
+                                "You were also asked to run it, and no command has been run yet. Run it now "
+                                "with run_command, then report the real output."
+                            ),
+                        }
+                    )
+                    continue
                 if _is_final_answer(content, used_tools):
                     content = _append_degradation_notes(content, reported_results)
                     if review_mode and used_tools:
@@ -356,6 +374,12 @@ class AgentEngine:
                 result = self._execute_call(call)
                 name, args = _parse_tool_call(call)
                 tool = self._tool_map.get(name)
+                if not is_degraded_tool_result(result):
+                    # `mutated` gates the "you claimed a change you never made" nudge, so it must
+                    # turn true once a file really changed.
+                    mutated = mutated or name in ("write_file", "edit_file")
+                if name == "run_command":
+                    ran_command = True
                 # A refusal by the user is a decision, not an outage: do not
                 # bolt a "what happened / still works" block onto the answer.
                 if (
@@ -843,6 +867,21 @@ _CHANGE_CLAIM_RE = re.compile(
 
 def _requests_change(user_text: str) -> bool:
     return bool(_CHANGE_REQUEST_RE.search(user_text or ""))
+
+
+_RUN_REQUEST_RE = re.compile(
+    r"\b(?:ejecuta\w*|corre|correr|corra|lanza\w*|run|execute)\b.{0,60}"
+    r"\b(?:pruebas?|tests?|pytest|script|comando|command|programa|program|npm|make)\b",
+    re.IGNORECASE,
+)
+_RUN_NEGATION_RE = re.compile(
+    r"\b(?:no|sin|don't|do not|never|nunca)\b.{0,20}\b(?:ejecut\w*|corr\w*|run|execute)\b", re.I
+)
+
+
+def _requests_run(user_text: str) -> bool:
+    text = user_text or ""
+    return bool(_RUN_REQUEST_RE.search(text)) and not _RUN_NEGATION_RE.search(text)
 
 
 def _claims_change(answer: str) -> bool:

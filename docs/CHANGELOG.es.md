@@ -130,6 +130,9 @@ el formato de [Keep a Changelog](https://keepachangelog.com/).
 
 ### Corregido
 
+- El agente ya no se detiene tras el primer archivo cuando también se le pidió ejecutar algo ("crea el
+  módulo y sus pruebas, ejecútalas"): si no ha corrido nada, se le pide una vez que lo ejecute. Su
+  comprobación "afirmaste un cambio que no hiciste" también deja de dispararse tras una edición real.
 - `trinaxai research` ya no envía la preferencia por defecto "razonamiento activado" de la CLI: en CPU
   el modelo gastaba todo su presupuesto razonando y la síntesis web nunca terminaba (2,5 minutos y
   solo una lista de fuentes). Ahora deja que decida el servidor, como la app web, y `--thinking` /
