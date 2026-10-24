@@ -118,6 +118,9 @@ el formato de [Keep a Changelog](https://keepachangelog.com/).
 
 ### Corregido
 
+- En el agente de código de la app web, una herramienta que se ejecutó pero falló (por
+  ejemplo un `git commit` con error, o un comando con código de salida distinto de cero)
+  ya no muestra una marca verde junto a su mensaje de error; muestra un icono de aviso.
 - Una respuesta larga y correcta ya no se confunde con una negativa (ni pierde sus
   fuentes) solo porque una frase como «no está disponible» aparezca a mitad de la
   explicación. Las negativas solo se reconocen al comienzo de la respuesta.

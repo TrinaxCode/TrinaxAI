@@ -113,6 +113,9 @@ All notable changes to TrinaxAI are documented here. This project follows the
 
 ### Fixed
 
+- In the web app's coding agent, a tool that ran but failed (for example a `git commit`
+  that exited with an error, or a command with a non-zero exit code) no longer shows a
+  green check next to its error text; it shows a warning icon.
 - A correct, long answer is no longer mistaken for a refusal (and stripped of its
   sources) just because a phrase like "is not available" appears in the middle of
   the explanation. Refusals are only recognised at the start of an answer.
