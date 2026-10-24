@@ -149,6 +149,9 @@ def test_version_control_orders_go_to_the_agent_but_questions_about_them_do_not(
         "sube los cambios",
         "run git status and tell me what changed",
         "ejecuta git diff",
+        "show me the git diff",
+        "muéstrame el git log",
+        "dame el git status",
     ):
         assert decide_mode(prompt).mode == "agent", prompt
     for prompt in (
@@ -157,6 +160,8 @@ def test_version_control_orders_go_to_the_agent_but_questions_about_them_do_not(
         "commit message conventions",
         "cómo hago un push seguro?",
         "don't push anything yet, just explain git status",
+        "show me how git rebase works",
+        "what does git diff show?",
     ):
         assert decide_mode(prompt).mode == "chat", prompt
     # With documents attached the turn stays about them, as for every other workspace action.

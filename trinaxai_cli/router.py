@@ -123,6 +123,7 @@ _GIT_SUBCOMMAND = r"git\s+(?:status|diff|log|add|commit|push|pull|fetch|branch|c
 GIT_ACTION = re.compile(
     rf"^(?:por favor |please )?{_GIT_SUBCOMMAND}"
     rf"|\b(?:run|ejecuta|execute|usa|use|haz|hacer|do)\s+(?:un\s+|a\s+|el\s+|the\s+)?{_GIT_SUBCOMMAND}"
+    rf"|^(?:por favor |please )?(?:show(?: me)?|muestra(?:me)?|ensename|dame|give me)\s+(?:the\s+|el\s+|mi\s+|my\s+)?{_GIT_SUBCOMMAND}"
     r"|^(?:por favor |please )?(?:haz(?:me)? (?:un )?(?:commit|push)|hacer (?:un )?commit|commitea|"
     r"commit\s+(?:these|this|the|my|all|everything|changes|los|las|mis|todo|estos|este)\b|"
     r"push\s+(?:these|this|the|my|all|everything|changes|to|los|las|mis|todo|estos|este)\b|"

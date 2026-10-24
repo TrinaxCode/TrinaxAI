@@ -121,6 +121,8 @@ All notable changes to TrinaxAI are documented here. This project follows the
 
 ### Fixed
 
+- "Show me the git diff" and "muéstrame el git log" now go to the agent, which can run
+  them, instead of being answered as a chat question.
 - `trinaxai` no longer treats a URL such as `https://example.com/page.html` as a
   file in your workspace, and questions about git or files ("why does git push
   fail?", "how do I read data.csv in pandas?") stay a conversation instead of

@@ -127,6 +127,8 @@ el formato de [Keep a Changelog](https://keepachangelog.com/).
 
 ### Corregido
 
+- "Muéstrame el git diff" y "show me the git log" ahora van al agente, que puede
+  ejecutarlos, en vez de responderse como una pregunta de chat.
 - `trinaxai` ya no toma una URL como `https://example.com/pagina.html` por un
   archivo de tu espacio de trabajo, y las preguntas sobre git o archivos ("¿por qué
   falla git push?", "¿cómo leo data.csv en pandas?") siguen siendo una conversación
