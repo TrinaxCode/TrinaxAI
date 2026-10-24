@@ -110,6 +110,10 @@ All notable changes to TrinaxAI are documented here. This project follows the
 
 ### Fixed
 
+- The terminal assistant now sends file and version-control requests to the coding
+  agent instead of answering them as plain chat: "fix the bug in calc.py",
+  "read main.py and tell me what it does", "commit these changes". Questions about
+  those topics ("what is a git commit?", "what does next.js do?") stay in chat.
 - `trinaxai status` shows a service that is not running as `stopped` instead of the
   contradictory `stopped not found`.
 - The web app no longer asks you to "prepare this network" when TrinaxAI is kept

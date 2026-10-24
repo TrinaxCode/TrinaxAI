@@ -114,3 +114,50 @@ def test_english_prompts_route_like_spanish() -> None:
 def test_mode_label_is_bilingual() -> None:
     assert mode_label("web", "es") == "búsqueda web"
     assert mode_label("web", "en") == "web search"
+
+
+def test_a_named_file_is_a_workspace_target() -> None:
+    for prompt in (
+        "arregla el bug en calc.py",
+        "fix the failing test in src/app.test.ts",
+        "refactoriza utils/helpers.py",
+        "update config.yaml with the new port",
+    ):
+        d = decide_mode(prompt)
+        assert d.mode == "agent" and d.reason == "workspace_action", prompt
+
+
+def test_reading_a_named_file_goes_to_the_agent_but_plain_reading_does_not() -> None:
+    assert decide_mode("lee el archivo main.py y dime qué hace").mode == "agent"
+    assert decide_mode("open README.md and summarize it").mode == "agent"
+    # Reading in general, or about something, is ordinary chat; so is a framework name.
+    assert decide_mode("read about the history of Rome").mode == "chat"
+    assert decide_mode("lee mis archivos").mode != "agent"  # "my files" means the indexed documents
+    assert decide_mode("what is the latest version of node.js").mode == "web"
+    assert decide_mode("explica qué hace next.js").mode == "chat"
+    assert decide_mode("install node.js on my laptop").mode == "chat"
+    assert decide_mode("visit example.com/index.html").mode == "chat"
+
+
+def test_version_control_orders_go_to_the_agent_but_questions_about_them_do_not() -> None:
+    for prompt in (
+        "commit these changes",
+        "haz commit de los cambios",
+        "git status",
+        "git push origin main",
+        "please commit my changes with a good message",
+        "sube los cambios",
+        "run git status and tell me what changed",
+        "ejecuta git diff",
+    ):
+        assert decide_mode(prompt).mode == "agent", prompt
+    for prompt in (
+        "explain what a git commit is",
+        "what is a good commit message convention?",
+        "commit message conventions",
+        "cómo hago un push seguro?",
+        "don't push anything yet, just explain git status",
+    ):
+        assert decide_mode(prompt).mode == "chat", prompt
+    # With documents attached the turn stays about them, as for every other workspace action.
+    assert decide_mode("commit these changes", RouteContext(has_documents=True)).mode != "agent"

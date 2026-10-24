@@ -108,6 +108,27 @@ AGENT_TARGET = re.compile(
     r"component|command|dependencies|web interface)\b",
     re.I,
 )
+# A file name with a code/text extension is a workspace target on its own ("arregla el bug en
+# calc.py"). Framework names that end in ".js" (node.js, next.js, ...) are not files.
+FILE_REFERENCE = re.compile(
+    r"(?<![\w./\\-])(?!(?:node|next|vue|react|nuxt|express|three|d3|angular|ember|backbone|socket|chart|p5|alpine|"
+    r"svelte|deno|bun)\.js\b)[\w/\\-][\w./\\-]*\.(?:py|pyi|js|jsx|ts|tsx|mjs|cjs|json|ya?ml|toml|md|txt|html|css|scss|"
+    r"sh|bash|ps1|rs|go|java|kt|c|h|cpp|hpp|cs|rb|php|sql|ini|cfg|env|lock|csv)\b",
+    re.I,
+)
+READ_ACTION = re.compile(r"\b(?:lee|leer|abre|abrir|revisa|resume|read|open|review|inspect|summari[sz]e)\b", re.I)
+# Version-control orders. A bare "commit"/"push" is usually a noun in a question, so they must
+# open the message or follow `git`.
+_GIT_SUBCOMMAND = r"git\s+(?:status|diff|log|add|commit|push|pull|fetch|branch|checkout|switch|merge|rebase|stash|tag|reset|restore)\b"
+GIT_ACTION = re.compile(
+    rf"^(?:por favor |please )?{_GIT_SUBCOMMAND}"
+    rf"|\b(?:run|ejecuta|execute|usa|use|haz|hacer|do)\s+(?:un\s+|a\s+|el\s+|the\s+)?{_GIT_SUBCOMMAND}"
+    r"|^(?:por favor |please )?(?:haz(?:me)? (?:un )?(?:commit|push)|hacer (?:un )?commit|commitea|"
+    r"commit\s+(?:these|this|the|my|all|everything|changes|los|las|mis|todo|estos|este)\b|"
+    r"push\s+(?:these|this|the|my|all|everything|changes|to|los|las|mis|todo|estos|este)\b|"
+    r"sube\s+(?:los |mis |estos )?cambios|make a commit)",
+    re.I,
+)
 EDUCATIONAL_ONLY = re.compile(
     r"\b(?:explica(?:me|r)?|como|ejemplo|ensena(?:me|r)?|explain|how to|example|teach)\b.{0,100}"
     r"\b(?:editar|modificar|corregir|ejecutar|instalar|crear|construir|disenar|desarrollar|"
@@ -137,7 +158,12 @@ def decide_mode(prompt: str, context: RouteContext | None = None) -> RouteDecisi
     local_grounding = bool(LOCAL_GROUNDING.search(contextual) or PERSONAL_KNOWLEDGE.search(contextual))
     direct_lookup = bool(DIRECT_LOOKUP.search(current))
     explicit_web = bool(EXPLICIT_WEB.search(current))
-    agent_task = bool(AGENT_ACTION.search(current)) and bool(AGENT_TARGET.search(contextual))
+    file_named = bool(FILE_REFERENCE.search(current))
+    agent_task = (
+        (bool(AGENT_ACTION.search(current)) and (bool(AGENT_TARGET.search(contextual)) or file_named))
+        or (bool(READ_ACTION.search(current)) and file_named)
+        or bool(GIT_ACTION.search(current))
+    )
     needs_web_evidence = bool(explicit_web or CURRENT_INFO.search(current) or DEEP.search(current))
     needs_combined_evidence = local_grounding and needs_web_evidence
     educational_only = bool(EDUCATIONAL_ONLY.search(current) or EXPLICIT_NEGATION.search(current))

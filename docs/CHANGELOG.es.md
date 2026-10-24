@@ -115,6 +115,11 @@ el formato de [Keep a Changelog](https://keepachangelog.com/).
 
 ### Corregido
 
+- El asistente de terminal ahora envía al agente de código las peticiones sobre
+  archivos y control de versiones en vez de responderlas como chat normal:
+  «arregla el bug en calc.py», «lee main.py y dime qué hace», «haz commit de los
+  cambios». Las preguntas sobre esos temas («¿qué es un commit de git?», «¿qué
+  hace next.js?») siguen en el chat.
 - `trinaxai status` muestra un servicio que no está en marcha como `detenido` en
   lugar del contradictorio `detenido no encontrado`.
 - La app web ya no te pide «preparar esta red» cuando TrinaxAI está solo en este
