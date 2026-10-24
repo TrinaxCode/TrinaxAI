@@ -115,6 +115,8 @@ el formato de [Keep a Changelog](https://keepachangelog.com/).
 
 ### Corregido
 
+- `trinaxai status` muestra un servicio que no está en marcha como `detenido` en
+  lugar del contradictorio `detenido no encontrado`.
 - La app web ya no te pide «preparar esta red» cuando TrinaxAI está solo en este
   equipo. Un cambio de dirección Wi-Fi o un certificado de red local
   desactualizado solo importa si otros dispositivos pueden conectarse, así que el

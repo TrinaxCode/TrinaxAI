@@ -1538,7 +1538,10 @@ def main(argv: list[str] | None = None) -> int:
             )
         else:
             for item in items:
-                print(f"{service_display_name(item.name)}: {'running' if item.running else 'stopped'} {item.detail}")
+                state = "running" if item.running else "stopped"
+                # "stopped not found" reads as a contradiction; a missing process is just stopped.
+                detail = "" if not item.running and item.detail == "not found" else item.detail
+                print(f"{service_display_name(item.name)}: {state}{f' {detail}' if detail else ''}")
     elif args.action == "watch":
         watch(args.base_dir, args.interval)
     elif args.action == "enable-autostart":

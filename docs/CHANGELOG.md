@@ -110,6 +110,8 @@ All notable changes to TrinaxAI are documented here. This project follows the
 
 ### Fixed
 
+- `trinaxai status` shows a service that is not running as `stopped` instead of the
+  contradictory `stopped not found`.
 - The web app no longer asks you to "prepare this network" when TrinaxAI is kept
   on this computer only. A changed Wi-Fi address or an out-of-date LAN
   certificate only matters when other devices can connect, so the notice now
