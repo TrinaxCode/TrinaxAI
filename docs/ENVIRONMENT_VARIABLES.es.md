@@ -100,6 +100,7 @@ Estos valores los consume `compose.yaml`; son ajustes de despliegue, no opciones
 | `OLLAMA_NUM_GPU` | autodetectado | Hints de capas GPU de Ollama; `0` usa CPU y un valor alto descarga las capas que caben en la GPU detectada. |
 | `TRINAXAI_KEEP_ALIVE` | derivado del perfil | Duración de permanencia de modelos Ollama. |
 | `TRINAXAI_TIMEOUT` | `300` | Timeout de solicitudes Ollama en segundos. |
+| `TRINAXAI_CLI_TIMEOUT` | (sin definir) | Segundos que la CLI espera a `trinaxai research` antes de rendirse (5 a 86400). Sin definir usa de 3 a 5 minutos según la profundidad; súbelo en equipos más lentos. |
 | `TRINAXAI_MODEL_MAX_CONCURRENCY` | `1` | Tareas de modelo simultáneas; mantenlo bajo para evitar thrashing de RAM/VRAM. |
 | `TRINAXAI_INFERENCE_QUEUE_TIMEOUT` | `600` | Segundos que FastAPI y el gateway esperan el lock de inferencia compartido. |
 | `TRINAXAI_INFERENCE_LOCK_FILE` | `storage/.inference.lock` | Ruta del lock atómico compartido por el gateway. |

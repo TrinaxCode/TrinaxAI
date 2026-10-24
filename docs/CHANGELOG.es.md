@@ -127,6 +127,9 @@ el formato de [Keep a Changelog](https://keepachangelog.com/).
 
 ### Corregido
 
+- Cuando `trinaxai research` agota su tiempo de espera en un equipo lento, la CLI ya no culpa a la
+  red ("The network request timed out"): dice que TrinaxAI no terminó a tiempo y sugiere
+  `--depth 1`. `TRINAXAI_CLI_TIMEOUT` sube el límite.
 - `trinaxai research "tu pregunta"` acepta el tema como palabras sueltas, igual que `ask`; `--query`
   sigue funcionando. Olvidarlo ahora explica cómo escribir el comando en vez de "--query es obligatorio".
 - En Debian y Ubuntu la terminal del agente no encontraba `python3`, `python`, `cc` ni `awk`

@@ -311,10 +311,10 @@ def test_unreachable_local_service_is_not_blamed_on_the_internet() -> None:
     assert str(spanish) == "No se puede conectar con el servicio local de TrinaxAI. Inícialo con: trinaxai start"
 
     # A timeout and real HTTP failures keep their own messages.
-    assert (
-        "too long" in str(TrinaxAPIError(0, "request timed out")).lower()
-        or "timed out" in str(TrinaxAPIError(0, "request timed out")).lower()
-    )
+    waited = str(TrinaxAPIError(0, "request timed out"))
+    assert "did not finish within the wait limit" in waited and "network" not in waited.lower()
+    assert "TRINAXAI_CLI_TIMEOUT" in waited and "--depth 1" in waited
+    assert str(TrinaxAPIError(0, "request timed out", language="es")).startswith("TrinaxAI no terminó")
     assert "Start it with" not in str(TrinaxAPIError(404, "not found"))
 
 
@@ -424,3 +424,17 @@ def test_ensure_reachable_probes_only_once_per_client() -> None:
     client.ensure_reachable()
     client.ensure_reachable()
     assert client._client.get.call_count == 1
+
+
+def test_cli_timeout_overrides_the_research_wait(monkeypatch) -> None:
+    client = _client()
+    client._post = MagicMock(return_value={})
+    client.research("q", depth=1)
+    assert client._post.call_args.kwargs["timeout"] == 180.0
+    monkeypatch.setenv("TRINAXAI_CLI_TIMEOUT", "900")
+    client.research("q", depth=1)
+    assert client._post.call_args.kwargs["timeout"] == 900.0
+    for bad in ("soon", "1", "999999", ""):
+        monkeypatch.setenv("TRINAXAI_CLI_TIMEOUT", bad)
+        client.research("q", depth=1)
+        assert client._post.call_args.kwargs["timeout"] == 180.0, bad

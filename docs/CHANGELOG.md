@@ -121,6 +121,9 @@ All notable changes to TrinaxAI are documented here. This project follows the
 
 ### Fixed
 
+- When `trinaxai research` runs out of its wait limit on a slow computer, the CLI no longer blames
+  the network ("The network request timed out"): it says TrinaxAI did not finish in time and
+  suggests `--depth 1`. `TRINAXAI_CLI_TIMEOUT` raises the limit.
 - `trinaxai research "your question"` takes the topic as plain words, like `ask`; `--query` still
   works. Forgetting it now says how to write the command instead of "--query is required".
 - On Debian and Ubuntu the agent's terminal could not find `python3`, `python`, `cc` or `awk`

@@ -61,6 +61,19 @@ class TrinaxAPIError(RuntimeError):
                 if spanish
                 else ("This computer does not trust the local TrinaxAI certificate.", "Run: trinaxai doctor")
             )
+        elif status == 0 and message == "request timed out":
+            # The wait limit ended while the local model was still working; the network is fine.
+            public_message, public_recovery = (
+                (
+                    "TrinaxAI no terminó dentro del tiempo de espera; este equipo puede necesitar más tiempo para esto.",
+                    "Prueba una petición más pequeña (en research: --depth 1) o sube TRINAXAI_CLI_TIMEOUT (segundos).",
+                )
+                if spanish
+                else (
+                    "TrinaxAI did not finish within the wait limit; this computer may need more time for this.",
+                    "Try a smaller request (for research: --depth 1) or raise TRINAXAI_CLI_TIMEOUT (seconds).",
+                )
+            )
         elif info.category is ErrorCategory.INTERNET_UNAVAILABLE:
             # This client only ever talks to the local TrinaxAI API, so a refused or
             # failed connection means the service is not running, not that the
@@ -77,6 +90,15 @@ class TrinaxAPIError(RuntimeError):
         self.category = info.category.value
         self.error_code = info.code
         self.retryable = info.retryable
+
+
+def _cli_timeout() -> float | None:
+    """Seconds from ``TRINAXAI_CLI_TIMEOUT`` for long requests, or None to use the built-in limits."""
+    try:
+        value = float(os.getenv("TRINAXAI_CLI_TIMEOUT", "").strip())
+    except ValueError:
+        return None
+    return value if 5.0 <= value <= 86400.0 else None
 
 
 def _speaks_no_tls(exc: BaseException) -> bool:
@@ -535,7 +557,7 @@ class TrinaxAPIClient:
         return self._post(
             "/v1/research",
             body,
-            timeout=max(float(self.timeout), 120.0 + 60.0 * max(1, min(depth, 3))),
+            timeout=_cli_timeout() or max(float(self.timeout), 120.0 + 60.0 * max(1, min(depth, 3))),
         )
 
     # ── Stats ──
