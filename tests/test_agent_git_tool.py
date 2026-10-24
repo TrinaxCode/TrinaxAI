@@ -254,8 +254,14 @@ def test_environment_drops_git_redirection_and_never_prompts() -> None:
             "GIT_ASKPASS": "/usr/bin/askpass",
             "GIT_EXEC_PATH": "/evil",
             "GIT_EDITOR": "vim",
+            "LANGUAGE": "es",
+            "LC_ALL": "es_ES.UTF-8",
+            "LANG": "es_ES.UTF-8",
         }
     )
+    # Git speaks English here, so the failure hints recognise its messages.
+    assert env["LC_MESSAGES"] == "C" and "LANGUAGE" not in env and "LC_ALL" not in env
+    assert env["LANG"] == "es_ES.UTF-8"
     assert env["PATH"] == "/usr/bin" and env["HOME"] == "/home/u"
     assert "GIT_DIR" not in env and "git_work_tree" not in env and "GIT_EXEC_PATH" not in env
     assert env["GIT_SSH_COMMAND"] == "ssh -i key" and env["GIT_ASKPASS"] == "/usr/bin/askpass"

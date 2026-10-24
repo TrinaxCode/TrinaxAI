@@ -127,6 +127,25 @@ el formato de [Keep a Changelog](https://keepachangelog.com/).
 
 ### Corregido
 
+- `trinaxai` ya no toma una URL como `https://example.com/pagina.html` por un
+  archivo de tu espacio de trabajo, y las preguntas sobre git o archivos ("¿por qué
+  falla git push?", "¿cómo leo data.csv en pandas?") siguen siendo una conversación
+  en vez de iniciar el agente de código.
+- `trinaxai network` y `network off` leen `.env` igual que el servicio (líneas con
+  sangría, `CLAVE = valor`, comillas), así que ya no pasan por alto un ajuste que el
+  servicio sí respeta.
+- Una respuesta corta que indica que falta la información tras una frase de contexto
+  ("Los documentos tratan de X, pero Y no se menciona") ya no lista fuentes para lo
+  que falta.
+- Los errores de git del agente se reconocen sea cual sea el idioma del sistema, de
+  modo que la pista que le dice al modelo qué hacer siempre aparece.
+- `trinaxai doctor` y los demás comandos dicen "Este equipo no confía en el
+  certificado del servicio local de TrinaxAI. Ejecuta: trinaxai doctor" cuando el
+  problema es el certificado, en vez de afirmar que el servicio está detenido.
+- Un archivo de configuración guardado por una versión anterior, que fijaba
+  `qwen3.5:2b`, vuelve a significar "automático", así que `ask`/`chat` usan el modelo
+  que eligió el instalador. Para fijar uno, escribe
+  `model = "<nombre>"` en `[defaults]` del archivo de configuración o usa `--model`.
 - `trinaxai doctor` ya no repite el comando de arranque cuando TrinaxAI está detenido
   («Inícialo con: trinaxai start; run: trinaxai start»).
 - En el agente de código de la app web, una herramienta que se ejecutó pero falló (por

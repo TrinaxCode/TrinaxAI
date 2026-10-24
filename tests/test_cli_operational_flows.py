@@ -244,6 +244,8 @@ def test_doctor_does_not_repeat_the_start_hint_the_error_already_gives(monkeypat
 
     stopped = detail_for(TrinaxAPIError(0, "local service unavailable"))
     assert stopped == "Cannot reach the local TrinaxAI service. Start it with: trinaxai start"
+    untrusted = detail_for(TrinaxAPIError(0, "x", certificate_problem=True))
+    assert untrusted == "This computer does not trust the local TrinaxAI certificate. Run: trinaxai doctor"
     assert detail_for(RuntimeError("boom")) == "boom; run: trinaxai start"  # other failures still get the hint
     spanish = detail_for(TrinaxAPIError(0, "local service unavailable", language="es"))
     assert spanish == "No se puede conectar con el servicio local de TrinaxAI. Inícialo con: trinaxai start"

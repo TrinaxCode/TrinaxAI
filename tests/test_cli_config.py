@@ -88,3 +88,13 @@ def test_fallback_parser_reads_the_format_written_by_the_cli(monkeypatch) -> Non
     assert parsed["defaults"]["collections"] == ["docs", "code, examples"]
     assert parsed["defaults"]["empty"] == []
     assert parsed["session"]["enabled"] is False
+
+
+def test_the_model_older_versions_saved_by_default_means_automatic(tmp_path: Path) -> None:
+    legacy = tmp_path / "legacy.toml"
+    legacy.write_text('[defaults]\nmodel = "qwen3.5:2b"\n', encoding="utf-8")
+    chosen = tmp_path / "chosen.toml"
+    chosen.write_text('[defaults]\nmodel = "qwen3.5:9b"\n', encoding="utf-8")
+
+    assert CLIConfig.load(legacy).model == ""
+    assert CLIConfig.load(chosen).model == "qwen3.5:9b"

@@ -106,7 +106,8 @@ NO_RELEVANT_RESULTS_MSG = "No relevant information was found in the selected col
 # lowest near-zero candidates as evidence.
 RAG_MIN_SCORE = config._env_float("TRINAXAI_RAG_MIN_SCORE", 0.015, minimum=0.0, maximum=1.0)
 _ABSTENTION_MESSAGES = frozenset({NO_INDEX_MSG, NO_INDEX_MSG_ES, EMPTY_COLLECTION_MSG, NO_RELEVANT_RESULTS_MSG})
-_ABSTENTION_WINDOW = 300  # characters at the start of an answer where a refusal can appear
+_ABSTENTION_WINDOW = 300  # characters at the start of a long answer where a refusal can appear
+_SHORT_ANSWER = 500  # a refusal can come anywhere in an answer this short
 _ABSTENTION_MARKERS = (
     "no se encontró",
     "no encontre",
@@ -275,7 +276,8 @@ def _is_rag_abstention(content: str, *, rag_requested: bool) -> bool:
     # A refusal opens the answer or is all of it. The same words deep inside a long
     # explanation ("... if it fails or is not available, fall back to ...") belong to a
     # grounded answer, whose sources must not be dropped.
-    return any(marker in normalized[:_ABSTENTION_WINDOW] for marker in _ABSTENTION_MARKERS)
+    scanned = normalized if len(normalized) <= _SHORT_ANSWER else normalized[:_ABSTENTION_WINDOW]
+    return any(marker in scanned for marker in _ABSTENTION_MARKERS)
 
 
 def _thinking_preference(value: bool | None) -> bool:

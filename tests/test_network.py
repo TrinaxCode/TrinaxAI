@@ -354,3 +354,22 @@ def test_network_off_messages_are_translated() -> None:
     )
     assert translate("TrinaxAI is now limited to this computer.", "es") == "TrinaxAI quedó limitado a este equipo."
     assert translate("Keep TrinaxAI on this computer only?", "es") == "¿Mantener TrinaxAI solo en este equipo?"
+
+
+def test_env_lines_are_read_the_way_the_service_reads_them(tmp_path: Path) -> None:
+    for index, line in enumerate(
+        ("  TRINAXAI_PWA_HOST=0.0.0.0", "TRINAXAI_PWA_HOST = 0.0.0.0", "TRINAXAI_PWA_HOST='0.0.0.0'")
+    ):
+        root = _install_with_host(tmp_path / str(index), line)
+        assert network.lan_access_enabled(root) is True, line
+        assert network.disable_lan_access(root) is True, line
+        assert network.lan_access_enabled(root) is False, line
+        assert "0.0.0.0" not in (root / ".env").read_text(encoding="utf-8")
+
+
+def test_update_env_rewrites_indented_or_spaced_assignments_instead_of_duplicating_them(tmp_path: Path) -> None:
+    root = _install_with_host(tmp_path, "  TRINAXAI_PWA_HOST = 127.0.0.1")
+    network.update_env(root, ["192.168.1.20"])
+    lines = (root / ".env").read_text(encoding="utf-8").splitlines()
+    assert sum(1 for raw in lines if raw.split("=", 1)[0].strip() == "TRINAXAI_PWA_HOST") == 1
+    assert "TRINAXAI_PWA_HOST=0.0.0.0" in lines

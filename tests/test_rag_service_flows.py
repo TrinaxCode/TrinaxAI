@@ -117,6 +117,16 @@ def test_rag_abstention_signal_is_limited_to_deterministic_messages() -> None:
         + "El documento solo trata del animal guardi\u00e1n. " * 8
     )
     assert rag_service._is_rag_abstention(opening, rag_requested=True)
+    # A short answer that states the gap after a preamble is a refusal too.
+    short = (
+        "Seg\u00fan los documentos, el proyecto trata de recetas, listas de compra y notas de viaje. "
+        "Hay secciones sobre cocina, mercados, rutas, horarios, transporte y alojamiento. "
+        "Tambi\u00e9n se describen varios contactos y direcciones de inter\u00e9s. "
+        "Todo ello est\u00e1 organizado por d\u00edas. "
+        "Sin embargo, el presupuesto de 2025 no se menciona en ninguna parte."
+    )
+    assert rag_service._ABSTENTION_WINDOW < len(short) <= rag_service._SHORT_ANSWER
+    assert rag_service._is_rag_abstention(short, rag_requested=True)
     # Answers that merely use similar words about the topic stay grounded.
     assert not rag_service._is_rag_abstention(
         "The launch key is AURORA-17 and the plan includes access.", rag_requested=True

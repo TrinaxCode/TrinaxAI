@@ -316,3 +316,26 @@ def test_unreachable_local_service_is_not_blamed_on_the_internet() -> None:
         or "timed out" in str(TrinaxAPIError(0, "request timed out")).lower()
     )
     assert "Start it with" not in str(TrinaxAPIError(404, "not found"))
+
+
+def test_an_untrusted_certificate_is_not_reported_as_a_stopped_service(monkeypatch) -> None:
+    client = _client()
+    client._client = MagicMock()
+    monkeypatch.setattr(client_module.time, "sleep", lambda _seconds: None)
+    rejected = httpx.ConnectError("[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed")
+    rejected.__cause__ = ssl.SSLCertVerificationError(1, "certificate verify failed")
+    client._client.request.side_effect = rejected
+
+    with pytest.raises(TrinaxAPIError) as raised:
+        client._send("GET", "/health")
+
+    message = str(raised.value)
+    assert message == "This computer does not trust the local TrinaxAI certificate. Run: trinaxai doctor"
+    assert "start" not in message.lower() and raised.value.recovery_included is True
+    spanish = TrinaxAPIError(0, "x", language="es", certificate_problem=True)
+    assert str(spanish).startswith("Este equipo no conf")
+    # A plain refused connection is still a stopped service.
+    client._client.request.side_effect = httpx.ConnectError("refused")
+    with pytest.raises(TrinaxAPIError) as stopped:
+        client._send("GET", "/health")
+    assert "trinaxai start" in str(stopped.value)

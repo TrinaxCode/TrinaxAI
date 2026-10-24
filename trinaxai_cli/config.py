@@ -225,6 +225,9 @@ def _split_list(inner: str) -> list[str]:
     return items
 
 
+_LEGACY_DEFAULT_MODEL = "qwen3.5:2b"
+
+
 def _apply_section(cfg: CLIConfig, parsed: dict[str, Any]) -> None:
     api = parsed.get("api") or {}
     if isinstance(api, dict):
@@ -238,7 +241,10 @@ def _apply_section(cfg: CLIConfig, parsed: dict[str, Any]) -> None:
         if "engine" in defaults:
             cfg.engine = str(defaults["engine"])
         if "model" in defaults:
-            cfg.model = str(defaults["model"])
+            model = str(defaults["model"])
+            # Older versions wrote their built-in default into every saved file, which kept
+            # `ask`/`chat` on the smallest model after the installer chose a better one.
+            cfg.model = "" if model == _LEGACY_DEFAULT_MODEL else model
         if "collections" in defaults:
             cols = defaults["collections"]
             if isinstance(cols, list):

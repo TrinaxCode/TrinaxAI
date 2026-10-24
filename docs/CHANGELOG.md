@@ -121,6 +121,24 @@ All notable changes to TrinaxAI are documented here. This project follows the
 
 ### Fixed
 
+- `trinaxai` no longer treats a URL such as `https://example.com/page.html` as a
+  file in your workspace, and questions about git or files ("why does git push
+  fail?", "how do I read data.csv in pandas?") stay a conversation instead of
+  starting the coding agent.
+- `trinaxai network` and `network off` read `.env` the way the service does
+  (indented lines, `KEY = value`, quotes), so they no longer miss a setting the
+  service honours.
+- A short answer that states the information is missing after a sentence of
+  context ("The documents cover X, but Y is not mentioned") no longer lists
+  sources for the missing information.
+- The agent's git errors are recognised whatever language the system speaks, so the
+  hint that tells the model what to do next always appears.
+- `trinaxai doctor` and every command say "This computer does not trust the local
+  TrinaxAI certificate. Run: trinaxai doctor" when the certificate is the problem,
+  instead of claiming the service is stopped.
+- A config file saved by an older version, which pinned `qwen3.5:2b`, now means
+  "automatic" again, so `ask`/`chat` use the model the installer chose. To pin one, set
+  `model = "<name>"` under `[defaults]` in the config file or pass `--model`.
 - `trinaxai doctor` no longer repeats the start command when TrinaxAI is stopped
   ("Start it with: trinaxai start; run: trinaxai start").
 - In the web app's coding agent, a tool that ran but failed (for example a `git commit`

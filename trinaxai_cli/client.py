@@ -34,17 +34,38 @@ class TrinaxAPIError(RuntimeError):
     response was ever received.
     """
 
-    def __init__(self, status: int, message: str, payload: Any | None = None, *, language: str = "en") -> None:
+    def __init__(
+        self,
+        status: int,
+        message: str,
+        payload: Any | None = None,
+        *,
+        language: str = "en",
+        certificate_problem: bool = False,
+    ) -> None:
         self.technical_message = message
         self.language = normalize_lang(language)
         info = classify_error(RuntimeError(message), status_code=status, hint=message)
         spanish = self.language == "es"
         public_message = info.definition.message_es if spanish else info.definition.message
         public_recovery = info.definition.recovery_es if spanish else info.definition.recovery
-        if info.category is ErrorCategory.INTERNET_UNAVAILABLE:
+        # True when the message already tells the user what to do next.
+        self.recovery_included = False
+        if certificate_problem:
+            self.recovery_included = True
+            public_message, public_recovery = (
+                (
+                    "Este equipo no confía en el certificado del servicio local de TrinaxAI.",
+                    "Ejecuta: trinaxai doctor",
+                )
+                if spanish
+                else ("This computer does not trust the local TrinaxAI certificate.", "Run: trinaxai doctor")
+            )
+        elif info.category is ErrorCategory.INTERNET_UNAVAILABLE:
             # This client only ever talks to the local TrinaxAI API, so a refused or
             # failed connection means the service is not running, not that the
             # internet is down.
+            self.recovery_included = True
             public_message, public_recovery = (
                 ("No se puede conectar con el servicio local de TrinaxAI.", "Inícialo con: trinaxai start")
                 if spanish
@@ -56,6 +77,18 @@ class TrinaxAPIError(RuntimeError):
         self.category = info.category.value
         self.error_code = info.code
         self.retryable = info.retryable
+
+
+def _is_certificate_problem(exc: BaseException) -> bool:
+    """True when a transport failure was the TLS handshake rejecting the server's certificate."""
+    seen: set[int] = set()
+    current: BaseException | None = exc
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        if isinstance(current, ssl.SSLCertVerificationError) or "certificate verify failed" in str(current).lower():
+            return True
+        current = current.__cause__ or current.__context__
+    return False
 
 
 class TrinaxAPIClient:
@@ -225,8 +258,13 @@ class TrinaxAPIClient:
                 return self._handle(r, language=getattr(self, "language", "en"))
             except httpx.TimeoutException:
                 error = TrinaxAPIError(0, "request timed out", language=getattr(self, "language", "en"))
-            except httpx.TransportError:
-                error = TrinaxAPIError(0, "local service unavailable", language=getattr(self, "language", "en"))
+            except httpx.TransportError as exc:
+                error = TrinaxAPIError(
+                    0,
+                    "local service unavailable",
+                    language=getattr(self, "language", "en"),
+                    certificate_problem=_is_certificate_problem(exc),
+                )
             except TrinaxAPIError as caught:
                 error = caught
                 if not (retryable_method and error.retryable and attempt == 0):

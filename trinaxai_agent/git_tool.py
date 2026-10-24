@@ -405,8 +405,12 @@ _KEPT_GIT_ENV = frozenset(
 def git_env(base: dict[str, str]) -> dict[str, str]:
     """Environment for a git run: no stray ``GIT_*`` redirection, never interactive."""
     env = {k: v for k, v in base.items() if not k.upper().startswith("GIT_") or k.upper() in _KEPT_GIT_ENV}
+    # Error hints match git's English messages, whatever language the user's system speaks.
+    env.pop("LANGUAGE", None)
+    env.pop("LC_ALL", None)
     env.update(
         {
+            "LC_MESSAGES": "C",
             "GIT_TERMINAL_PROMPT": "0",
             "GIT_PAGER": "cat",
             "PAGER": "cat",

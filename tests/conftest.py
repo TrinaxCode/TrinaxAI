@@ -32,27 +32,39 @@ def _tests_never_signal_processes_they_did_not_start(monkeypatch: pytest.MonkeyP
 
     ``trinaxai stop`` finds TrinaxAI's processes by program and install folder, so a test that
     calls it for real on a machine where TrinaxAI is running from the same checkout would shut
-    that installation down. Tests that need to signal something start it themselves (or replace
-    ``_signal_process`` and ``_process_table`` with fakes, which overrides this guard).
+    that installation down. Every real signal (``os.kill``/``os.killpg``, however it is reached)
+    must hit a process the test run started. Tests that need to signal something start it
+    themselves, or replace ``os.kill`` with a fake, which overrides this guard.
     """
     if os.name != "posix":
         yield
         return
-    from trinaxai.supervisor import service_manager
 
-    real = service_manager._signal_process
     real_kill = os.kill
+    real_killpg = os.killpg
 
-    def guarded(pid: int, sig: int) -> None:
-        # A test that replaced os.kill with a fake cannot hurt anything.
-        if os.kill is real_kill and pid not in _descendant_pids():
-            raise AssertionError(
-                f"a test tried to signal pid {pid}, which it did not start; "
-                "replace service_manager._process_table with a fake so discovery stays inside the test"
-            )
-        real(pid, sig)
+    def allowed(pid: int) -> bool:
+        return pid == os.getpid() or pid in _descendant_pids()
 
-    monkeypatch.setattr(service_manager, "_signal_process", guarded)
+    def refuse(pid: int) -> AssertionError:
+        return AssertionError(
+            f"a test tried to signal pid {pid}, which it did not start; "
+            "replace service_manager._process_table with a fake so discovery stays inside the test"
+        )
+
+    def guarded_kill(pid: int, sig: int) -> None:
+        # Signal 0 only asks whether the process exists.
+        if sig != 0 and not allowed(pid):
+            raise refuse(pid)
+        real_kill(pid, sig)
+
+    def guarded_killpg(pgid: int, sig: int) -> None:
+        if sig != 0 and pgid != os.getpgrp() and not any(os.getpgid(p) == pgid for p in _descendant_pids()):
+            raise refuse(pgid)
+        real_killpg(pgid, sig)
+
+    monkeypatch.setattr(os, "kill", guarded_kill)
+    monkeypatch.setattr(os, "killpg", guarded_killpg)
     yield
 
 
