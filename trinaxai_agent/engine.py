@@ -25,6 +25,7 @@ auto-approve (used by ``--yolo``).
 from __future__ import annotations
 
 import json
+import os
 import re
 import threading
 from contextlib import nullcontext
@@ -245,6 +246,8 @@ class AgentEngine:
         nudged = False
         claim_nudged = False
         run_nudged = False
+        rename_nudges = 0
+        rename = _rename_request(_latest_user_text(messages))
         failed_run_nudges = 0
         last_run_failed = False
         mutated = False
@@ -338,6 +341,25 @@ class AgentEngine:
                         }
                     )
                     continue
+                # A rename that left the old name behind (a call no test covers) is found by searching
+                # for it, not by trusting the model's "all updated".
+                if rename and mutated and rename_nudges < 2 and used_tools:
+                    leftovers = _leftover_name_hits(self.workspace_root, rename[0])
+                    if leftovers:
+                        rename_nudges += 1
+                        messages.append({"role": "assistant", "content": content})
+                        messages.append(
+                            {
+                                "role": "user",
+                                "content": (
+                                    f"The old name `{rename[0]}` still appears in the project:\n"
+                                    + "\n".join(leftovers)
+                                    + f"\nUpdate each one to `{rename[1]}` (or say why it must stay), then "
+                                    "report what you changed."
+                                ),
+                            }
+                        )
+                        continue
                 # The last command failed (for example a test the change broke) and the model is about to
                 # report success. Give it up to two chances to fix the cause and run it again.
                 if last_run_failed and (wants_run or wants_change) and failed_run_nudges < 2 and used_tools:
@@ -903,6 +925,47 @@ _RUN_REQUEST_RE = re.compile(
 _RUN_NEGATION_RE = re.compile(
     r"\b(?:no|sin|don't|do not|never|nunca)\b.{0,20}\b(?:ejecut\w*|corr\w*|run|execute)\b", re.I
 )
+
+
+_RENAME_RE = re.compile(
+    r"\b(?:renombra\w*|rename)\s+(?:la\s+|el\s+|the\s+)?(?:funci[oó]n\s+|function\s+|clase\s+|class\s+|"
+    r"variable\s+|m[eé]todo\s+|method\s+)?[`'\"]?([A-Za-z_]\w*)[`'\"]?\s+(?:a|como|to|por|->)\s+[`'\"]?([A-Za-z_]\w*)",
+    re.IGNORECASE,
+)
+_SKIP_DIRS = frozenset({".git", "node_modules", ".venv", "venv", "__pycache__", "dist", "build", ".mypy_cache"})
+
+
+def _rename_request(user_text: str) -> tuple[str, str] | None:
+    match = _RENAME_RE.search(user_text or "")
+    if not match or match.group(1) == match.group(2):
+        return None
+    return match.group(1), match.group(2)
+
+
+def _leftover_name_hits(root: Path, name: str, *, limit: int = 8) -> list[str]:
+    """``file:line`` places in the workspace that still use ``name`` as a whole word."""
+    pattern = re.compile(rf"(?<![\w]){re.escape(name)}(?![\w])")
+    hits: list[str] = []
+    checked = 0
+    for current, dirs, files in os.walk(root):
+        dirs[:] = [d for d in dirs if d not in _SKIP_DIRS]
+        for filename in files:
+            checked += 1
+            if checked > 500:
+                return hits
+            path = Path(current) / filename
+            try:
+                if path.stat().st_size > 1_000_000:
+                    continue
+                text = path.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError):
+                continue
+            for number, line in enumerate(text.splitlines(), start=1):
+                if pattern.search(line):
+                    hits.append(f"{path.relative_to(root)}:{number}: {line.strip()[:100]}")
+                    if len(hits) >= limit:
+                        return hits
+    return hits
 
 
 _RUN_VERB_RE = re.compile(

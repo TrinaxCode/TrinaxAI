@@ -814,3 +814,49 @@ def test_a_failed_run_is_not_reported_once_a_later_run_passes(tmp_path: Path) ->
         [{"role": "user", "content": "Fix it and run the tests"}]
     )
     assert answer == "Fixed; the tests pass."
+
+
+def test_rename_parsing_and_leftover_search(tmp_path: Path) -> None:
+    from trinaxai_agent.engine import _leftover_name_hits, _rename_request
+
+    assert _rename_request("Renombra la función calcula a multiplica en todo el proyecto") == ("calcula", "multiplica")
+    assert _rename_request("rename `parse_args` to read_args everywhere") == ("parse_args", "read_args")
+    assert _rename_request("renombra la clase Foo como Bar") == ("Foo", "Bar")
+    assert _rename_request("explica qué hace calcula") is None
+    assert _rename_request("rename foo to foo") is None
+
+    (tmp_path / "main.py").write_text("print(calcula(1, 2))\nrecalcula = 1\n")
+    (tmp_path / "util.py").write_text("def multiplica(a, b):\n    return a * b\n")
+    (tmp_path / "node_modules").mkdir()
+    (tmp_path / "node_modules" / "x.js").write_text("calcula()\n")
+    (tmp_path / "blob.bin").write_bytes(b"\xff\xfe calcula")
+    assert _leftover_name_hits(tmp_path, "calcula") == ["main.py:1: print(calcula(1, 2))"]  # whole word only
+    assert _leftover_name_hits(tmp_path, "nothing_here") == []
+
+
+def test_a_rename_that_left_the_old_name_behind_is_sent_back(tmp_path: Path) -> None:
+    (tmp_path / "util.py").write_text("def calcula(a, b):\n    return a * b\n")
+    (tmp_path / "main.py").write_text("from util import calcula\n\nprint(calcula(3, 4))\n")
+    seen: list[list[dict]] = []
+
+    def edit(path: str, old: str, new: str) -> dict:
+        return {"function": {"name": "edit_file", "arguments": {"path": path, "old": old, "new": new}}}
+
+    class Careless(AgentEngine):
+        replies = [
+            {"tool_calls": [edit("util.py", "def calcula", "def multiplica")]},
+            {"tool_calls": [edit("main.py", "from util import calcula", "from util import multiplica")]},
+            {"content": "Renamed everywhere."},  # main.py still calls calcula(3, 4)
+            {"tool_calls": [edit("main.py", "print(calcula(3, 4))", "print(multiplica(3, 4))")]},
+            {"content": "Now it really is everywhere."},
+        ]
+
+        def _chat(self, messages):
+            seen.append([dict(m) for m in messages])
+            return self.replies.pop(0)
+
+    engine = Careless(model="m", workspace_root=tmp_path, on_confirm=None)
+    answer = engine.run([{"role": "user", "content": "Renombra la función calcula a multiplica en todo el proyecto"}])
+    assert answer == "Now it really is everywhere."
+    assert any("main.py:3: print(calcula(3, 4))" in str(m.get("content")) for m in seen[3])
+    assert "calcula" not in (tmp_path / "main.py").read_text()

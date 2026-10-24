@@ -124,6 +124,8 @@ All notable changes to TrinaxAI are documented here. This project follows the
 
 ### Fixed
 
+- After "rename X to Y" the agent searches the project for the old name and, if any whole-word use is left
+  (a call no test covers), sends itself back to update it instead of reporting "renamed everywhere".
 - The agent no longer lists an earlier failed test run under an answer once a later run passed (it said
   the command failed after it had been fixed).
 - When a command the agent ran fails (for example a test its change broke) and it is about to report

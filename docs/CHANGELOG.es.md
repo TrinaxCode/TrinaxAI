@@ -130,6 +130,8 @@ el formato de [Keep a Changelog](https://keepachangelog.com/).
 
 ### Corregido
 
+- Tras "renombra X a Y" el agente busca el nombre antiguo en el proyecto y, si queda algún uso como palabra
+  completa (una llamada que ninguna prueba cubre), vuelve a corregirlo en vez de decir "renombrado en todas partes".
 - El agente ya no lista una ejecución de pruebas fallida bajo la respuesta cuando una ejecución posterior
   pasó (decía que el comando falló después de haberse corregido).
 - Cuando un comando que ejecutó el agente falla (por ejemplo una prueba que rompió su cambio) y está por
