@@ -244,8 +244,8 @@ def run(args: Any, client: Any, ui: Any, config: Any) -> int:
             pass
     except Exception as exc:
         # The unreachable-service error already says how to start it; do not repeat the hint.
-        detail = str(exc) if "trinaxai start" in str(exc) else f"{exc}; run: trinaxai start"
-        add("RAG API", False, detail, critical=True)
+        says_how_to_start = getattr(exc, "category", None) == "internet_unavailable" and hasattr(exc, "status")
+        add("RAG API", False, str(exc) if says_how_to_start else f"{exc}; run: trinaxai start", critical=True)
 
     healthy = all(check["ok"] for check in checks if check["critical"])
     if json_output:

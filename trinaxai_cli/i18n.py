@@ -137,6 +137,10 @@ MESSAGES: dict[str, tuple[str, str]] = {
     "doctor_title": ("TrinaxAI doctor", "Doctor de TrinaxAI"),
     "python_package": ("Python package", "Paquete de Python"),
     "agent_shell_sandbox": ("Agent shell sandbox", "Sandbox de la terminal del agente"),
+    "service_unreachable": (
+        "Cannot reach the local TrinaxAI service. Start it with: trinaxai start",
+        "No se puede conectar con el servicio local de TrinaxAI. Inícialo con: trinaxai start",
+    ),
     "lan_allowed": (
         "Access from other devices: allowed (each device must be paired)",
         "Acceso desde otros dispositivos: permitido (cada dispositivo debe vincularse)",

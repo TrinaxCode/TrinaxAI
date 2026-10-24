@@ -245,6 +245,19 @@ def test_doctor_does_not_repeat_the_start_hint_the_error_already_gives(monkeypat
     stopped = detail_for(TrinaxAPIError(0, "local service unavailable"))
     assert stopped == "Cannot reach the local TrinaxAI service. Start it with: trinaxai start"
     assert detail_for(RuntimeError("boom")) == "boom; run: trinaxai start"  # other failures still get the hint
+    spanish = detail_for(TrinaxAPIError(0, "local service unavailable", language="es"))
+    assert spanish == "No se puede conectar con el servicio local de TrinaxAI. Inícialo con: trinaxai start"
+    assert spanish.count("trinaxai start") == 1
+    # An HTTP failure, a timeout, and an error that merely mentions the command keep the hint.
+    assert detail_for(TrinaxAPIError(500, "boom")).endswith("; run: trinaxai start")
+    assert detail_for(TrinaxAPIError(0, "request timed out")).endswith("; run: trinaxai start")
+    assert detail_for(RuntimeError("see trinaxai start docs")) == "see trinaxai start docs; run: trinaxai start"
+
+    from trinaxai_cli.i18n import translate
+
+    assert translate("Cannot reach the local TrinaxAI service. Start it with: trinaxai start", "es").startswith(
+        "No se puede"
+    )
 
 
 def test_collections_cover_empty_create_delete_validation_and_failure(tmp_path: Path) -> None:
