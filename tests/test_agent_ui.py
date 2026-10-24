@@ -732,3 +732,20 @@ def test_the_agent_is_asked_once_to_run_what_it_was_asked_to_run(tmp_path: Path)
     )
     assert quiet == "Created primos.py."
     assert not any("no command has been run yet" in str(m.get("content")) for m in seen[-1])
+
+
+def test_one_file_request_ends_after_the_write_but_a_bigger_request_does_not(tmp_path: Path) -> None:
+    from trinaxai_agent.engine import _is_simple_file_creation as simple
+
+    def ask(text: str) -> list[dict]:
+        return [{"role": "user", "content": text}]
+
+    assert simple(ask("Crea un archivo clima.md que explique el calentamiento global"))
+    assert simple(ask("create a file notes.md with a todo list"))
+    for bigger in (
+        "Crea un archivo primos.py con es_primo y un archivo test_primos.py con pruebas. Ejecuta las pruebas.",
+        "Crea un archivo index.html y otro style.css",
+        "write a file a.py and run it",
+        "Crea un archivo app.py y pruébalo",
+    ):
+        assert not simple(ask(bigger)), bigger

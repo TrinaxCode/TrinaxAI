@@ -130,6 +130,9 @@ el formato de [Keep a Changelog](https://keepachangelog.com/).
 
 ### Corregido
 
+- El atajo "crear un archivo" del agente (que termina el turno tras la primera escritura) ahora solo
+  se aplica cuando se pide exactamente un archivo y nada que ejecutar, así que "crea el módulo y sus
+  pruebas y ejecútalas" ya no se corta con "Archivo creado: primos.py".
 - El agente ya no se detiene tras el primer archivo cuando también se le pidió ejecutar algo ("crea el
   módulo y sus pruebas, ejecútalas"): si no ha corrido nada, se le pide una vez que lo ejecute. Su
   comprobación "afirmaste un cambio que no hiciste" también deja de dispararse tras una edición real.

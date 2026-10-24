@@ -124,6 +124,9 @@ All notable changes to TrinaxAI are documented here. This project follows the
 
 ### Fixed
 
+- The agent's "create one file" shortcut (which ends the turn right after the first write) now applies
+  only when exactly one file is requested and nothing is to be run, so "create the module and its
+  tests, then run them" is no longer cut short with "Created primos.py".
 - The agent no longer stops after the first file when it was also asked to run something ("create the
   module and its tests, run them"): if nothing has been run it is asked once to run it. Its
   "you claimed a change you did not make" check also stops firing after a real edit.

@@ -879,6 +879,11 @@ _RUN_NEGATION_RE = re.compile(
 )
 
 
+_RUN_VERB_RE = re.compile(
+    r"\b(?:ejecut\w*|corre|correr|pru[eé]ba\w*|prueb[ae]|lanza\w*|run|execute|test)\b", re.IGNORECASE
+)
+
+
 def _requests_run(user_text: str) -> bool:
     text = user_text or ""
     return bool(_RUN_REQUEST_RE.search(text)) and not _RUN_NEGATION_RE.search(text)
@@ -1020,8 +1025,16 @@ def _latest_user_text(messages: list[dict[str, Any]]) -> str:
     )
 
 
+_FILE_WORD_RE = re.compile(r"\b(?:archivos?|files?)\b", re.IGNORECASE)
+_FILE_NAME_RE = re.compile(r"\b[\w-]+\.[a-z][a-z0-9]{0,5}\b", re.IGNORECASE)
+
+
 def _is_simple_file_creation(messages: list[dict[str, Any]]) -> bool:
-    return bool(_SIMPLE_FILE_CREATION_RE.search(_latest_user_text(messages)))
+    """One file to create and nothing else: only then may the first write end the turn."""
+    text = _latest_user_text(messages)
+    if not _SIMPLE_FILE_CREATION_RE.search(text) or _RUN_VERB_RE.search(text):
+        return False
+    return len(_FILE_WORD_RE.findall(text)) <= 1 and len(set(_FILE_NAME_RE.findall(text))) <= 1
 
 
 def _is_simple_root_listing(messages: list[dict[str, Any]]) -> bool:
