@@ -117,9 +117,17 @@ el formato de [Keep a Changelog](https://keepachangelog.com/).
   del workspace en solo lectura. Las herramientas de archivo ya se negaban a
   escribir metadatos de git, pero un comando de shell podía plantar alias o
   hooks que git ejecuta después por ti fuera del sandbox. `git add` y
-  `git commit` siguen funcionando cuando lo pides, con tu nombre y correo de git
-  (si no, el sandbox no ve tu configuración global de git). `git push` sigue
-  necesitando red, que el sandbox no tiene.
+  `git commit` siguen funcionando en el sandbox, con tu nombre y correo de git
+  (si no, no ve tu configuración global de git).
+- El Agente tiene una herramienta `git` que ejecuta git en tu equipo con tu
+  propia configuración de git, así que puede hacer commit, push y pull cuando lo
+  pides. Los comandos de lectura (status, diff, log) corren sin preguntar, los
+  que cambian algo preguntan antes y todo lo que contacta un remoto pregunta
+  siempre (sin «no volver a preguntar»; solo `--yolo` lo omite). Acepta una lista
+  fija de subcomandos, rechaza opciones que ejecutan programas o leen fuera del
+  repositorio, mantiene los hooks apagados salvo con `TRINAXAI_AGENT_GIT_HOOKS=1`,
+  exige que el workspace sea la raíz del repositorio y rechaza los comandos
+  remotos desde dispositivos emparejados.
 - La API y el gateway de la PWA ahora rechazan peticiones cuya cabecera `Host`
   nombra un dominio ajeno (`421`). Esto impide que páginas con DNS rebinding
   lean datos privados cuando TrinaxAI funciona por HTTP (sin certificado local o

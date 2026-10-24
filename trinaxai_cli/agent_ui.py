@@ -25,6 +25,7 @@ from pathlib import Path
 from typing import Any
 
 from trinaxai_agent import Tool, is_degraded_tool_result
+from trinaxai_agent.git_tool import LOCAL, NETWORK, READ, git_display, git_input, git_risk, parse_git_args
 from trinaxai_agent.tools import SandboxError, _resolve_in_workspace
 from trinaxai_cli.i18n import text
 
@@ -37,6 +38,9 @@ PERMISSION_MODES = (MODE_DEFAULT, MODE_ACCEPT_EDITS, MODE_PLAN, MODE_YOLO)
 _CYCLE = (MODE_DEFAULT, MODE_ACCEPT_EDITS, MODE_PLAN)
 
 EDIT_TOOLS = frozenset({"write_file", "edit_file"})
+# "Don't ask again" is offered only for these git subcommands: they add or record work and
+# cannot discard it. Anything that rewrites, deletes or talks to a remote is asked every time.
+_REMEMBERABLE_GIT = frozenset({"add", "commit"})
 
 _SHELL_META = re.compile(r"[;&|<>`$()\n\\]")
 # "Don't ask again" may widen only for commands that cannot execute other code or
@@ -136,12 +140,26 @@ class ApprovalPolicy:
         if tool.name == "run_command":
             rule = command_rule(str(args.get("command", "")))
             return f"run_command:{rule}" if rule else None
+        if tool.name == "git":
+            return self._git_rule(args)
         return tool.name
+
+    @staticmethod
+    def _git_rule(args: dict[str, Any]) -> str | None:
+        try:
+            parsed = parse_git_args(git_input(args))
+        except ValueError:
+            return None
+        if git_risk(git_input(args)) == LOCAL and parsed[0] in _REMEMBERABLE_GIT:
+            return f"git:{parsed[0]}"
+        return None
 
     def auto_decision(self, tool: Tool, args: dict[str, Any]) -> bool | None:
         """``True`` run, ``False`` refuse, ``None`` ask the user."""
         if tool.name in EDIT_TOOLS:
             self.edit_generation += 1
+        if tool.name == "git" and git_risk(git_input(args)) == READ:
+            return True  # status, diff, log ...: nothing changes, so no prompt, even in plan mode
         if self.mode == MODE_YOLO:
             return True
         if self.mode == MODE_PLAN:
@@ -377,6 +395,8 @@ def _clip(value: str, limit: int) -> str:
 
 def tool_title(tool: Tool, args: dict[str, Any]) -> str:
     """``read_file(app.py)`` — the one argument that matters, not a kwargs dump."""
+    if tool.name == "git":
+        return f"git({_clip(git_display(args).removeprefix('git '), 100)})"
     key = _PRIMARY_ARG.get(tool.name)
     if key and key in args:
         extra = ""
@@ -418,7 +438,7 @@ def summarize_result(tool: Tool, result: str, max_lines: int = 8) -> tuple[list[
         hits = [line for line in lines if not line.startswith("...")]
         noun = "file" if name == "glob" else "match"
         return [f"{len(hits)} {noun}{'' if len(hits) == 1 else ('es' if noun == 'match' else 's')}"], False
-    if name == "run_command":
+    if name in {"run_command", "git"}:
         header = lines[0] if lines else ""
         output = lines[1:]
         shown = [_clip(line, 200) for line in output[:max_lines]]
@@ -602,6 +622,10 @@ class AgentRenderer:
             self.ui.code(build_diff(self.workspace_root, tool, args), "diff")
         elif tool.name == "run_command":
             self.ui.code(str(args.get("command", "")), "bash")
+        elif tool.name == "git":
+            self.ui.code(git_display(args), "bash")
+            if git_risk(git_input(args)) == NETWORK:
+                self.ui.say("  ⎿ " + text("perm_git_network", self.language), style="yellow")
 
     def _ask(self, tool: Tool, args: dict[str, Any]) -> bool:
         lang = self.language
@@ -614,7 +638,8 @@ class AgentRenderer:
         if rule == "edits":
             options.append(("always", text("perm_always_edits", lang)))
         elif rule:
-            label = rule.split(":", 1)[1] if rule.startswith("run_command:") else rule
+            label = rule.split(":", 1)[1] if rule.startswith(("run_command:", "git:")) else rule
+            label = f"git {label}" if rule.startswith("git:") else label
             options.append(("always", text("perm_always_rule", lang, rule=label)))
         options.append(("no", text("perm_no", lang)))
         choice = self.ui.choose(text("perm_title", lang, action=tool.name), options, default=0)

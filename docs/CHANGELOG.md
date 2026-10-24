@@ -111,10 +111,17 @@ All notable changes to TrinaxAI are documented here. This project follows the
 - The Agent's terminal sandbox now mounts the workspace's `.git/config` and
   `.git/hooks` read-only. The file tools already refused to write git metadata,
   but a shell command could plant aliases or hooks that git later runs for you
-  outside the sandbox. `git add` and `git commit` keep working when you ask for
-  them, using your git name and email (the sandbox cannot see your global git
-  configuration otherwise). `git push` still needs network access, which the
-  sandbox does not have.
+  outside the sandbox. `git add` and `git commit` keep working in the sandbox,
+  using your git name and email (it cannot see your global git configuration
+  otherwise).
+- The Agent has a `git` tool that runs git on your computer with your own git
+  setup, so it can commit, push and pull when you ask. Reading commands (status,
+  diff, log) run freely, changing commands ask first, and anything that contacts
+  a remote asks every time (no "don't ask again"; only `--yolo` skips it). It
+  accepts a fixed list of subcommands, refuses options that run programs or read
+  outside the repository, keeps hooks off unless `TRINAXAI_AGENT_GIT_HOOKS=1`,
+  needs the workspace to be the repository root, and refuses remote commands
+  from paired devices.
 - The API and the PWA gateway now reject requests whose `Host` header names a
   foreign domain (`421`). This blocks DNS-rebinding pages from reading private
   data when TrinaxAI runs over plain HTTP (no local certificate, or Docker).

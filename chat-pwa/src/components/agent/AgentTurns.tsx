@@ -232,14 +232,18 @@ function AgentGeneratingIndicator({ label }: { label: string }) {
   );
 }
 
-const DANGEROUS_HINT: Record<string, 'toolWrite' | 'toolEdit' | 'toolRun'> = {
+const DANGEROUS_HINT: Record<string, 'toolWrite' | 'toolEdit' | 'toolRun' | 'toolGit'> = {
   write_file: 'toolWrite',
   edit_file: 'toolEdit',
   run_command: 'toolRun',
+  git: 'toolGit',
 };
+
+const GIT_REMOTE_COMMAND = /^(push|pull|fetch)(\s|$)/;
 
 function argSummary(tool: string, args: Record<string, string>): string {
   if (tool === 'run_command') return args.command ?? '';
+  if (tool === 'git') return `git ${args.args ?? args.command ?? ''}`;
   if (tool === 'write_file') return args.path ?? '';
   if (tool === 'edit_file') return args.path ?? '';
   if (tool === 'read_file' || tool === 'list_dir') return args.path ?? '.';
@@ -266,7 +270,9 @@ function AgentStepCard({ step, isDark, cardBg, subtle, onApprove, t }: StepCardP
   }[step.status];
 
   const summary = argSummary(step.tool, step.args);
-  const dangerKey = DANGEROUS_HINT[step.tool];
+  const dangerKey = step.tool === 'git' && GIT_REMOTE_COMMAND.test(step.args.args ?? step.args.command ?? '')
+    ? 'toolGitRemote'
+    : DANGEROUS_HINT[step.tool];
 
   return (
     <div className={`tc-agent-step mb-1.5 w-full min-w-0 animate-fade-up rounded-xl border px-3 py-3 text-sm ${cardBg}`}>
@@ -287,6 +293,9 @@ function AgentStepCard({ step, isDark, cardBg, subtle, onApprove, t }: StepCardP
               <span className="text-red-400">- {(step.args.old ?? '').slice(0, 400)}</span>{'\n'}
               <span className="text-green-400">+ {(step.args.new ?? '').slice(0, 400)}</span>
             </pre>
+          )}
+          {step.tool === 'git' && (
+            <pre className={`mb-2 max-h-40 overflow-auto rounded-lg p-2 font-mono text-sm leading-relaxed ${isDark ? 'bg-black/40 text-white/80' : 'bg-gray-100 text-gray-800'}`}>$ git {step.args.args ?? step.args.command}</pre>
           )}
           {step.tool === 'run_command' && (
             <pre className={`mb-2 max-h-40 overflow-auto rounded-lg p-2 font-mono text-sm leading-relaxed ${isDark ? 'bg-black/40 text-white/80' : 'bg-gray-100 text-gray-800'}`}>$ {step.args.command}</pre>

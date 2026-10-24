@@ -38,6 +38,7 @@ _DANGER_HINT = {
     "write_file": "will create/overwrite a file",
     "edit_file": "will modify a file",
     "run_command": "will run a shell command",
+    "git": "will run git on this computer",
 }
 
 

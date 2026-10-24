@@ -180,6 +180,20 @@ describe('AgentInterfaceView', () => {
     expect(screen.getByRole('button', { name: 'copied' })).toBeInTheDocument();
   });
 
+  it('shows git commands with their own hint and a remote warning for push, pull and fetch', () => {
+    const steps = [
+      { id: 'g1', tool: 'git', dangerous: true, args: { args: "commit -m 'Fix parser'" }, status: 'awaiting' as const },
+      { id: 'g2', tool: 'git', dangerous: true, args: { args: 'push origin main' }, status: 'awaiting' as const },
+    ];
+    render(<AgentInterfaceView {...props({ turns: [{ role: 'assistant' as const, content: '', steps }] })} />);
+
+    expect(screen.getByText('toolGit')).toBeInTheDocument();
+    expect(screen.getByText('toolGitRemote')).toBeInTheDocument();
+    // Each call is shown in the step summary and in the approval preview.
+    expect(screen.getAllByText(/git commit -m 'Fix parser'/)).toHaveLength(2);
+    expect(screen.getAllByText(/git push origin main/)).toHaveLength(2);
+  });
+
   it('covers editing, running activity, attached files, and stop states', () => {
     const p = props({
       isDark: true, running: true, editingIndex: 0, editingText: 'edit me',
