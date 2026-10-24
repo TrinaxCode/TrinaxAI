@@ -100,6 +100,10 @@ fi
 USER_NAME="${SUDO_USER:-${USER:-$(id -un)}}"
 PROJ="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 GREEN='\033[0;32m'; BLUE='\033[0;34m'; RED='\033[0;31m'; YELLOW='\033[0;33m'; NC='\033[0m'
+# Plain text for logs, pipes and NO_COLOR (https://no-color.org).
+if [ -n "${NO_COLOR:-}" ] || [ ! -t 1 ]; then
+  GREEN=''; BLUE=''; RED=''; YELLOW=''; NC=''=''
+fi
 for required_command in awk cat chown chmod curl install npm ollama stat sudo systemctl visudo; do
     require_command "$required_command"
 done

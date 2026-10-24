@@ -34,6 +34,10 @@ fi
 
 GREEN='\033[0;32m'; BLUE='\033[0;34m'
 YELLOW='\033[1;33m'; CYAN='\033[0;36m'; NC='\033[0m'; BOLD='\033[1m'
+# Plain text for logs, pipes and NO_COLOR (https://no-color.org).
+if [ -n "${NO_COLOR:-}" ] || [ ! -t 1 ]; then
+  GREEN=''; BLUE=''; YELLOW=''; CYAN=''; NC=''; BOLD=''=''
+fi
 tr_text_es() {
     case "$1" in
       'TrinaxAI - Clean Uninstaller') echo 'Desinstalador limpio de TrinaxAI' ;;

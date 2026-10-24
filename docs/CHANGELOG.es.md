@@ -127,7 +127,7 @@ el formato de [Keep a Changelog](https://keepachangelog.com/).
 
 ### Corregido
 
-- `install.sh` imprime texto plano (sin códigos de color) cuando su salida se redirige o
+- `install.sh`, `update.sh` y `uninstall.sh` imprimen texto plano (sin códigos de color) cuando su salida se redirige o
   `NO_COLOR` está definido, para que los registros y la salida de CI sean legibles.
 - La indexación dice que un archivo sin texto está "vacío, o es un escaneo que necesita
   OCR" y se revisa en la próxima ejecución, en vez del impreciso "se reintentará".
