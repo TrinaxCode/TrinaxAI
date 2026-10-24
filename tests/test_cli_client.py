@@ -339,3 +339,53 @@ def test_an_untrusted_certificate_is_not_reported_as_a_stopped_service(monkeypat
     with pytest.raises(TrinaxAPIError) as stopped:
         client._send("GET", "/health")
     assert "trinaxai start" in str(stopped.value)
+
+
+def _serve_plain_http(status: int = 200):
+    import http.server
+    import threading
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self) -> None:  # noqa: N802 - http.server API
+            body = b'{"status":"ok"}'
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *_args) -> None:
+            pass
+
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    return server
+
+
+def test_a_local_api_without_https_is_reached_over_plain_http() -> None:
+    server = _serve_plain_http()
+    try:
+        client = TrinaxAPIClient(f"https://127.0.0.1:{server.server_port}", verify_tls=None)
+        assert client._get("/health") == {"status": "ok"}
+        assert client.base_url == f"http://127.0.0.1:{server.server_port}"
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_the_plain_http_fallback_is_only_for_a_local_server_that_answers() -> None:
+    server = _serve_plain_http(status=503)
+    try:
+        client = TrinaxAPIClient(f"https://127.0.0.1:{server.server_port}", verify_tls=None)
+        with pytest.raises(TrinaxAPIError):
+            client._get("/health")
+        assert client.base_url.startswith("https://")  # an unhealthy server is not adopted
+    finally:
+        server.shutdown()
+        server.server_close()
+    remote = _client()
+    remote.base_url = "https://example.com:3333"
+    assert remote._use_plain_http_if_served() is False
+    already_plain = _client()
+    already_plain.base_url = "http://localhost:3333"
+    assert already_plain._use_plain_http_if_served() is False

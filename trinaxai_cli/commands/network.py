@@ -57,11 +57,14 @@ def run(args: Any, _client: Any, ui: Any, _config: Any) -> int:
     addresses = network.lan_addresses()
     urls = network.pwa_urls(addresses)
     if getattr(args, "network_command", None) != "refresh":
-        if network.lan_access_enabled(root):
-            ui.info("Access from other devices: allowed (each device must be paired)")
-            ui.info("Use 'trinaxai network off' to keep TrinaxAI on this computer only.")
-        else:
+        if not network.lan_access_enabled(root):
+            # LAN addresses would only mislead here: nothing listens on them.
             ui.info("Access from other devices: this computer only")
+            ui.print("https://localhost:3334")
+            ui.info("To open TrinaxAI from a phone or another computer, run: trinaxai network refresh")
+            return 0
+        ui.info("Access from other devices: allowed (each device must be paired)")
+        ui.info("Use 'trinaxai network off' to keep TrinaxAI on this computer only.")
         ui.info(f"Host: {network.local_hostname()}")
         ui.info(f"LAN addresses: {', '.join(addresses) if addresses else '(none detected)'}")
         for url in urls:

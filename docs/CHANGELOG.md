@@ -121,6 +121,12 @@ All notable changes to TrinaxAI are documented here. This project follows the
 
 ### Fixed
 
+- The CLI works when the local API runs without HTTPS (no certificate could be created for
+  it): it now follows the port to plain HTTP on this computer instead of reporting that
+  the service is stopped. A server that does speak HTTPS is never downgraded.
+- `trinaxai network` no longer lists LAN addresses to open while access is limited to
+  this computer, where nothing listens on them. It shows `https://localhost:3334` and
+  how to allow other devices.
 - "Show me the git diff" and "muéstrame el git log" now go to the agent, which can run
   them, instead of being answered as a chat question.
 - `trinaxai` no longer treats a URL such as `https://example.com/page.html` as a

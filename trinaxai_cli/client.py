@@ -79,6 +79,19 @@ class TrinaxAPIError(RuntimeError):
         self.retryable = info.retryable
 
 
+def _speaks_no_tls(exc: BaseException) -> bool:
+    """True when the handshake failed because the other end is a plain-HTTP server."""
+    seen: set[int] = set()
+    current: BaseException | None = exc
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        text = str(current).lower()
+        if isinstance(current, ssl.SSLError) and ("wrong version number" in text or "http request" in text):
+            return True
+        current = current.__cause__ or current.__context__
+    return False
+
+
 def _is_certificate_problem(exc: BaseException) -> bool:
     """True when a transport failure was the TLS handshake rejecting the server's certificate."""
     seen: set[int] = set()
@@ -240,6 +253,25 @@ class TrinaxAPIClient:
         except Exception:
             pass
 
+    def _use_plain_http_if_served(self) -> bool:
+        """Follow a local API that runs without HTTPS (no certificate was created for it).
+
+        Only a loopback address, and only when the port answers plain HTTP: the handshake
+        proved nothing was sent, and verification is never relaxed for an HTTPS server.
+        """
+        parsed = urlparse(self.base_url)
+        if parsed.scheme != "https" or parsed.hostname not in {"localhost", "127.0.0.1"}:
+            return False
+        candidate = urlunparse(parsed._replace(scheme="http"))
+        try:
+            with httpx.Client(base_url=candidate, timeout=min(float(self.timeout), 1.5)) as probe:
+                if probe.get("/health").status_code >= 500:
+                    return False
+        except Exception:  # noqa: BLE001 - a failed probe just means there is no plain-HTTP API
+            return False
+        self._switch_base_url(candidate)
+        return True
+
     # ── internal details ──
     def _send(
         self,
@@ -259,6 +291,8 @@ class TrinaxAPIClient:
             except httpx.TimeoutException:
                 error = TrinaxAPIError(0, "request timed out", language=getattr(self, "language", "en"))
             except httpx.TransportError as exc:
+                if _speaks_no_tls(exc) and self._use_plain_http_if_served():
+                    return self._send(method, url, json=json, timeout=timeout)
                 error = TrinaxAPIError(
                     0,
                     "local service unavailable",

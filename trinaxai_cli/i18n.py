@@ -153,6 +153,10 @@ MESSAGES: dict[str, tuple[str, str]] = {
         "Use 'trinaxai network off' to keep TrinaxAI on this computer only.",
         "Usa 'trinaxai network off' para mantener TrinaxAI solo en este equipo.",
     ),
+    "lan_enable_hint": (
+        "To open TrinaxAI from a phone or another computer, run: trinaxai network refresh",
+        "Para abrir TrinaxAI desde un teléfono u otro equipo, ejecuta: trinaxai network refresh",
+    ),
     "lan_already_off": (
         "Already limited to this computer; nothing to change.",
         "Ya está limitado a este equipo; no hay nada que cambiar.",

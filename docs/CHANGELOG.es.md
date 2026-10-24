@@ -127,6 +127,12 @@ el formato de [Keep a Changelog](https://keepachangelog.com/).
 
 ### Corregido
 
+- La CLI funciona cuando la API local corre sin HTTPS (no se pudo crear un certificado):
+  ahora sigue el puerto a HTTP simple en este equipo en vez de decir que el servicio está
+  detenido. Un servidor que sí habla HTTPS nunca se degrada.
+- `trinaxai network` ya no lista direcciones LAN para abrir mientras el acceso está
+  limitado a este equipo, donde nada escucha en ellas. Muestra `https://localhost:3334`
+  y cómo permitir otros dispositivos.
 - "Muéstrame el git diff" y "show me the git log" ahora van al agente, que puede
   ejecutarlos, en vez de responderse como una pregunta de chat.
 - `trinaxai` ya no toma una URL como `https://example.com/pagina.html` por un

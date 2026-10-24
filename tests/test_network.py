@@ -305,6 +305,10 @@ def test_network_status_and_off_command(monkeypatch, tmp_path: Path) -> None:
     ui = UI()
     assert network_command.run(SimpleNamespace(network_command=None), None, ui, None) == 0
     assert "Access from other devices: this computer only" in ui.messages
+    # Nothing listens on the LAN addresses now, so they are not offered as places to open it.
+    assert "https://localhost:3334" in ui.messages
+    assert not any("192.168.0.18" in message for message in ui.messages)
+    assert "To open TrinaxAI from a phone or another computer, run: trinaxai network refresh" in ui.messages
     ui = UI()
     assert network_command.run(SimpleNamespace(network_command="off", yes=True), None, ui, None) == 0
     assert "Already limited to this computer; nothing to change." in ui.messages
@@ -352,6 +356,9 @@ def test_network_off_messages_are_translated() -> None:
     assert translate("Access from other devices: this computer only", "es") == (
         "Acceso desde otros dispositivos: solo este equipo"
     )
+    assert translate(
+        "To open TrinaxAI from a phone or another computer, run: trinaxai network refresh", "es"
+    ).startswith("Para abrir TrinaxAI desde")
     assert translate("TrinaxAI is now limited to this computer.", "es") == "TrinaxAI quedó limitado a este equipo."
     assert translate("Keep TrinaxAI on this computer only?", "es") == "¿Mantener TrinaxAI solo en este equipo?"
 
