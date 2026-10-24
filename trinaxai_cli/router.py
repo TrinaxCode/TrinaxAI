@@ -53,7 +53,9 @@ def _normalize(value: str) -> str:
     return re.sub(r"\s+", " ", without_accents).strip().lower()
 
 
-# Bilingual intent patterns — kept in lockstep with modeRouter.ts. They run
+# Bilingual intent patterns, shared with modeRouter.ts for chat/web/research/RAG. The web app has no
+# workspace-action routing (its agent is a mode the user turns on); the terminal does, so the
+# agent/file/git patterns below exist only here. They run
 # against the accent-stripped, lowercased text so the Spanish variants omit
 # their accents on purpose.
 EXPLICIT_AGENT = re.compile(r"\b(?:modo agente|agente trinax|usa(?:r)? el agente|agent mode|use the agent)\b", re.I)
@@ -130,10 +132,17 @@ GIT_ACTION = re.compile(
     r"sube\s+(?:los |mis |estos )?cambios|make a commit)",
     re.I,
 )
-# Wording of a question about how something works, as opposed to an order to do it.
+# A question about how something works, as opposed to an order to do it: it opens with a question
+# word, ends in a question mark together with one, or compares ("rebase vs merge"). "tell me what
+# is in it" inside an order is not a question.
+_QUESTION_WORD = (
+    r"(?:why|por que|what(?: does| is| are)?|que(?: significa| es| son)?|how(?: do| does| can| to)?|"
+    r"como(?: hago| puedo| se| funciona)?|explain|explica(?:me|r)?|difference|diferencia)"
+)
 CONCEPTUAL_QUESTION = re.compile(
-    r"\b(?:why|por que|what (?:does|is|are)|que (?:significa|es|son)|how (?:do|does|can|to)|"
-    r"como (?:hago|puedo|se|funciona)|difference|diferencia|vs\.?|versus|explain|explica(?:me|r)?)\b",
+    rf"^(?:por favor |please )?[?¿]*\s*{_QUESTION_WORD}\b"
+    rf"|\b{_QUESTION_WORD}\b.*\?\s*$"
+    r"|\b(?:vs\.?|versus|difference between|diferencia entre)\b",
     re.I,
 )
 EDUCATIONAL_ONLY = re.compile(
@@ -152,7 +161,8 @@ EXPLICIT_NEGATION = re.compile(
 _URL = re.compile(
     r"\b[a-z][a-z0-9+.-]*://\S+"  # https://example.com/page.html
     r"|\bwww\.\S+"
-    r"|(?<![\w./\\-])[a-z0-9-]+(?:\.[a-z0-9-]+)+/\S*",  # docs.python.org/3/library/os.html
+    # docs.python.org/3/library/os.html; only well-known endings, so my.app/src/main.py stays a path
+    r"|(?<![\w./\\-])[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:com|org|net|io|dev|edu|gov|ai|co|me|info|es|uk|de|fr)/\S*",
     re.I,
 )
 

@@ -188,3 +188,17 @@ def test_conceptual_questions_about_git_or_files_stay_in_chat() -> None:
     ):
         assert decide_mode(prompt).mode == "chat", prompt
     assert decide_mode("read data.csv and summarize it").mode == "agent"
+
+
+def test_orders_that_contain_a_question_word_still_go_to_the_agent() -> None:
+    for prompt in (
+        "Read config.yaml and tell me what is in it",
+        "lee data.csv y dime que es lo que hace",
+        "summarize README.md, explain the setup",
+    ):
+        assert decide_mode(prompt).mode == "agent", prompt
+
+
+def test_paths_with_a_dotted_first_folder_are_workspace_files_not_urls() -> None:
+    for prompt in ("read my.app/src/main.py", "read v1.2/notes.md", "read com.example/Foo.java"):
+        assert decide_mode(prompt).mode == "agent", prompt

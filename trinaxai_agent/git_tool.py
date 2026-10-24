@@ -407,7 +407,9 @@ def git_env(base: dict[str, str]) -> dict[str, str]:
     env = {k: v for k, v in base.items() if not k.upper().startswith("GIT_") or k.upper() in _KEPT_GIT_ENV}
     # Error hints match git's English messages, whatever language the user's system speaks.
     env.pop("LANGUAGE", None)
-    env.pop("LC_ALL", None)
+    charset = env.pop("LC_ALL", None)
+    if charset and "LC_CTYPE" not in env:
+        env["LC_CTYPE"] = charset  # keep the user's character set; only the messages are forced
     env.update(
         {
             "LC_MESSAGES": "C",

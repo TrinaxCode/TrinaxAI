@@ -341,13 +341,13 @@ def test_an_untrusted_certificate_is_not_reported_as_a_stopped_service(monkeypat
     assert "trinaxai start" in str(stopped.value)
 
 
-def _serve_plain_http(status: int = 200):
+def _serve_plain_http(status: int = 200, payload: bytes = b'{"ok":true}'):
     import http.server
     import threading
 
     class Handler(http.server.BaseHTTPRequestHandler):
         def do_GET(self) -> None:  # noqa: N802 - http.server API
-            body = b'{"status":"ok"}'
+            body = payload
             self.send_response(status)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(body)))
@@ -366,7 +366,7 @@ def test_a_local_api_without_https_is_reached_over_plain_http() -> None:
     server = _serve_plain_http()
     try:
         client = TrinaxAPIClient(f"https://127.0.0.1:{server.server_port}", verify_tls=None)
-        assert client._get("/health") == {"status": "ok"}
+        assert client._get("/health") == {"ok": True}
         assert client.base_url == f"http://127.0.0.1:{server.server_port}"
     finally:
         server.shutdown()
@@ -404,3 +404,23 @@ def test_ensure_reachable_settles_the_scheme_before_a_streamed_request() -> None
     refused = TrinaxAPIClient("https://127.0.0.1:9", verify_tls=None)
     refused.ensure_reachable()
     assert refused.base_url.startswith("https://")
+
+
+def test_another_program_on_the_port_is_not_mistaken_for_trinaxai() -> None:
+    for status, payload in ((404, b"{}"), (200, b'{"hello":"world"}'), (200, b"[]")):
+        server = _serve_plain_http(status, payload)
+        try:
+            client = TrinaxAPIClient(f"https://127.0.0.1:{server.server_port}", verify_tls=None)
+            assert client._use_plain_http_if_served() is False
+            assert client.base_url.startswith("https://")
+        finally:
+            server.shutdown()
+            server.server_close()
+
+
+def test_ensure_reachable_probes_only_once_per_client() -> None:
+    client = _client()
+    client._client = MagicMock()
+    client.ensure_reachable()
+    client.ensure_reachable()
+    assert client._client.get.call_count == 1

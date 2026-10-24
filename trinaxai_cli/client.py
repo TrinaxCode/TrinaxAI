@@ -260,12 +260,14 @@ class TrinaxAPIClient:
         proved nothing was sent, and verification is never relaxed for an HTTPS server.
         """
         parsed = urlparse(self.base_url)
-        if parsed.scheme != "https" or parsed.hostname not in {"localhost", "127.0.0.1"}:
+        if parsed.scheme != "https" or parsed.hostname not in {"localhost", "127.0.0.1", "::1"}:
             return False
         candidate = urlunparse(parsed._replace(scheme="http"))
         try:
             with httpx.Client(base_url=candidate, timeout=min(float(self.timeout), 1.5)) as probe:
-                if probe.get("/health").status_code >= 500:
+                answer = probe.get("/health")
+                # Another program on that port must not be adopted: require TrinaxAI's own answer.
+                if answer.status_code != 200 or not isinstance(answer.json(), dict) or "ok" not in answer.json():
                     return False
         except Exception:  # noqa: BLE001 - a failed probe just means there is no plain-HTTP API
             return False
@@ -273,7 +275,10 @@ class TrinaxAPIClient:
         return True
 
     def ensure_reachable(self) -> None:
-        """Settle http vs https before a streamed request, which bypasses ``_send``."""
+        """Settle http vs https before a streamed request, which bypasses ``_send``. Once per client."""
+        if getattr(self, "_reachability_checked", False):
+            return
+        self._reachability_checked = True
         try:
             self._client.get("/health", timeout=min(float(self.timeout), 1.5))
         except httpx.TransportError as exc:
