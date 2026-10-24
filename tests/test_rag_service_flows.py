@@ -102,6 +102,21 @@ def test_rag_abstention_signal_is_limited_to_deterministic_messages() -> None:
         "La fecha no est\u00e1 disponible en el contexto.",
     ):
         assert rag_service._is_rag_abstention(refusal, rag_requested=True), refusal
+    # The same words late in a long, grounded answer are not a refusal (they dropped its sources).
+    grounded = (
+        "TrinaxAI usa 8 hilos por defecto, limitados a los n\u00facleos de la m\u00e1quina. "
+        + "El valor se calcula al arrancar a partir de la afinidad de CPU del proceso. " * 5
+        + "Si esto falla o no est\u00e1 disponible en el entorno, recurre a os.cpu_count(). "
+        "It is not available on Windows, so it falls back; the value is not specified elsewhere."
+    )
+    assert len(grounded) > rag_service._ABSTENTION_WINDOW
+    assert not rag_service._is_rag_abstention(grounded, rag_requested=True)
+    # ... but a refusal that opens a long answer still is one.
+    opening = (
+        "No se menciona en los documentos qui\u00e9n es el CEO. "
+        + "El documento solo trata del animal guardi\u00e1n. " * 8
+    )
+    assert rag_service._is_rag_abstention(opening, rag_requested=True)
     # Answers that merely use similar words about the topic stay grounded.
     assert not rag_service._is_rag_abstention(
         "The launch key is AURORA-17 and the plan includes access.", rag_requested=True

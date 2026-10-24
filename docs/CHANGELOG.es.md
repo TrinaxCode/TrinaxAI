@@ -115,6 +115,9 @@ el formato de [Keep a Changelog](https://keepachangelog.com/).
 
 ### Corregido
 
+- Una respuesta larga y correcta ya no se confunde con una negativa (ni pierde sus
+  fuentes) solo porque una frase como «no está disponible» aparezca a mitad de la
+  explicación. Las negativas solo se reconocen al comienzo de la respuesta.
 - `./install.sh --dry-run` ya no anuncia un enlace LAN cuando elegiste mantener
   TrinaxAI solo en este equipo; lo indica, igual que la instalación real.
 - `trinaxai models` muestra el tamaño de los modelos como `3.1 GB` en vez de bytes, y la
