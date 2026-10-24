@@ -425,6 +425,10 @@ def test_a_missing_model_is_named_with_the_command_that_installs_it(monkeypatch)
 
     # A different 404 (or any other failure) is not mistaken for a missing model, and still
     # points at starting the services.
+    client.stream_ollama.return_value = _Response(status=404, body=b"404 page not found")
+    with pytest.raises(RuntimeError, match="HTTP 404") as proxy:
+        chat._stream_from_ollama(client, ui, [{"role": "user", "content": "hi"}], "m")
+    assert not isinstance(proxy.value, chat.ModelNotInstalledError)  # a wrong URL is not a missing model
     client.stream_ollama.return_value = _Response(status=404, body=b"page gone")
     with pytest.raises(RuntimeError, match="HTTP 404") as other:
         chat._stream_from_ollama(client, ui, [{"role": "user", "content": "hi"}], "m")

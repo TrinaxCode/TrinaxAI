@@ -384,7 +384,8 @@ def _stream_from_ollama(
         with client.stream_ollama(base_url, payload, timeout=900.0) as response:
             if response.status_code >= 400:
                 detail = response.read().decode("utf-8", errors="replace")[:200]
-                if response.status_code == 404 and "not found" in detail.lower():
+                lowered = detail.lower()
+                if response.status_code == 404 and "model" in lowered and "not found" in lowered:
                     raise ModelNotInstalledError(selected_model)
                 raise RuntimeError(f"ollama: HTTP {response.status_code} — {detail}")
             for line in response.iter_lines():
