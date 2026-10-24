@@ -107,12 +107,13 @@ el formato de [Keep a Changelog](https://keepachangelog.com/).
   CVE-2026-115585) y `setuptools` a 84.1.0 (GHSA-xmj3-9gf7-h52w) en el lock de
   dependencias, y `zod` (solo desarrollo) a 4.6.7 (GHSA-mrhx-c7xc-m3w5) en el
   lockfile de la PWA.
-- El sandbox del terminal del Agente ahora monta el `.git` del workspace en solo
-  lectura. Las herramientas de archivo ya se negaban a escribir metadatos de
-  git, pero un comando de shell podía editar `.git/config` o los hooks que git
-  ejecuta después por ti. Leer el historial (`git status`, `git diff`,
-  `git log`) sigue funcionando; `git add` y `git commit` ya no son posibles
-  desde el Agente.
+- El sandbox del terminal del Agente ahora monta `.git/config` y `.git/hooks`
+  del workspace en solo lectura. Las herramientas de archivo ya se negaban a
+  escribir metadatos de git, pero un comando de shell podía plantar alias o
+  hooks que git ejecuta después por ti fuera del sandbox. `git add` y
+  `git commit` siguen funcionando cuando lo pides, con tu nombre y correo de git
+  (si no, el sandbox no ve tu configuración global de git). `git push` sigue
+  necesitando red, que el sandbox no tiene.
 - La API y el gateway de la PWA ahora rechazan peticiones cuya cabecera `Host`
   nombra un dominio ajeno (`421`). Esto impide que páginas con DNS rebinding
   lean datos privados cuando TrinaxAI funciona por HTTP (sin certificado local o

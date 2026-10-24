@@ -686,19 +686,64 @@ def _is_enabled(name: str) -> bool:
 
 
 def _git_metadata_mounts(root: Path) -> tuple[str, ...]:
-    """Mount the workspace's own ``.git`` read-only inside the command sandbox.
+    """Mount the parts of the workspace's ``.git`` that can run programs read-only.
 
-    The file tools already refuse to write git metadata because ``.git/config``
-    and hooks can make git run programs for the *user* later. Without this the
-    terminal tool could write the same files. A real directory or file is
-    mounted (a worktree's ``.git`` is a file); a symlink is skipped because its
-    target is not part of the sandbox anyway. Repositories nested deeper than
-    the workspace root are not covered here.
+    ``.git/config`` (aliases, ``core.fsmonitor``, filter drivers) and
+    ``.git/hooks`` make git run programs for the *user* the next time they use
+    the repository, outside this sandbox. The file tools already refuse to
+    write git metadata; without these mounts a shell command could still plant
+    them. Everything else in ``.git`` (objects, refs, index) stays writable, so
+    ``git add`` and ``git commit`` work when the user asks for them. A ``.git``
+    file (worktree pointer) is mounted read-only as a whole; a symlink is
+    skipped because its target is not part of the sandbox anyway. Repositories
+    nested deeper than the workspace root are not covered.
     """
     git_path = root / ".git"
     if git_path.is_symlink() or not git_path.exists():
         return ()
-    return ("--ro-bind", str(git_path), str(git_path))
+    if not git_path.is_dir():
+        return ("--ro-bind", str(git_path), str(git_path))
+    mounts: list[str] = []
+    for name in ("config", "hooks"):
+        target = git_path / name
+        if target.exists() and not target.is_symlink():
+            mounts.extend(("--ro-bind", str(target), str(target)))
+    return tuple(mounts)
+
+
+def _git_identity_env(root: Path) -> tuple[str, ...]:
+    """Pass the user's git name and email into the sandbox as ``--setenv`` pairs.
+
+    The sandbox has a private ``$HOME``, so the user's global git identity is
+    invisible and ``git commit`` would stop with "Author identity unknown". Only
+    the two effective values (repository setting first, then global) are read
+    on the host and forwarded; the rest of the user's git configuration stays
+    outside the sandbox. ``git config`` only reads files; it never runs hooks.
+    """
+    if not (root / ".git").exists():
+        return ()
+    values: dict[str, str] = {}
+    for key in ("user.name", "user.email"):
+        try:
+            result = subprocess.run(
+                ["git", "config", "--get", key],
+                cwd=str(root),
+                capture_output=True,
+                text=True,
+                timeout=3,
+                check=False,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return ()
+        value = result.stdout.strip() if result.returncode == 0 else ""
+        if value:
+            values[key] = value
+    pairs: list[str] = []
+    for key, role in (("user.name", "NAME"), ("user.email", "EMAIL")):
+        if key in values:
+            for who in ("AUTHOR", "COMMITTER"):
+                pairs.extend(("--setenv", f"GIT_{who}_{role}", values[key]))
+    return tuple(pairs)
 
 
 def _bubblewrap_argv(workspace_root: Path, command: str) -> list[str] | None:
@@ -780,6 +825,7 @@ def _bubblewrap_argv(workspace_root: Path, command: str) -> list[str] | None:
             "--setenv",
             "PYTHONNOUSERSITE",
             "1",
+            *_git_identity_env(root),
             "--setenv",
             "PIP_NO_INDEX",
             "1",

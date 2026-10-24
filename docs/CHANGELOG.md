@@ -102,11 +102,13 @@ All notable changes to TrinaxAI are documented here. This project follows the
   CVE-2026-115585) and `setuptools` to 84.1.0 (GHSA-xmj3-9gf7-h52w) in the
   dependency lock, and the development-only `zod` to 4.6.7 (GHSA-mrhx-c7xc-m3w5)
   in the PWA lockfile.
-- The Agent's terminal sandbox now mounts the workspace's `.git` read-only. The
-  file tools already refused to write git metadata, but a shell command could
-  edit `.git/config` or hooks that git later runs for you. Reading history
-  (`git status`, `git diff`, `git log`) still works; `git add` and `git commit`
-  are no longer possible from the Agent.
+- The Agent's terminal sandbox now mounts the workspace's `.git/config` and
+  `.git/hooks` read-only. The file tools already refused to write git metadata,
+  but a shell command could plant aliases or hooks that git later runs for you
+  outside the sandbox. `git add` and `git commit` keep working when you ask for
+  them, using your git name and email (the sandbox cannot see your global git
+  configuration otherwise). `git push` still needs network access, which the
+  sandbox does not have.
 - The API and the PWA gateway now reject requests whose `Host` header names a
   foreign domain (`421`). This blocks DNS-rebinding pages from reading private
   data when TrinaxAI runs over plain HTTP (no local certificate, or Docker).
