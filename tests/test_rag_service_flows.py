@@ -92,6 +92,21 @@ def test_rag_abstention_signal_is_limited_to_deterministic_messages() -> None:
     assert rag_service._is_rag_abstention("No se ha encontrado información en los archivos.", rag_requested=True)
     assert not rag_service._is_rag_abstention(rag_service.NO_RELEVANT_RESULTS_MSG, rag_requested=False)
     assert not rag_service._is_rag_abstention("The model chose these words.", rag_requested=True)
+    # Wordings small local models actually produce when the context lacks the answer.
+    for refusal in (
+        "I'm sorry, but I don't have access to the specific information about the 2025 budget.",
+        "I\u2019m sorry, I don\u2019t have access to that.",
+        "The provided context doesn't mention a CEO.",
+        "No tengo acceso a esa informaci\u00f3n en los documentos.",
+        "El documento no especifica el presupuesto.",
+        "La fecha no est\u00e1 disponible en el contexto.",
+    ):
+        assert rag_service._is_rag_abstention(refusal, rag_requested=True), refusal
+    # Answers that merely use similar words about the topic stay grounded.
+    assert not rag_service._is_rag_abstention(
+        "The launch key is AURORA-17 and the plan includes access.", rag_requested=True
+    )
+    assert not rag_service._is_rag_abstention("El plan incluye acceso para todos los equipos.", rag_requested=True)
 
 
 def test_run_rag_generates_without_retrieval_for_ordinary_chat(monkeypatch) -> None:

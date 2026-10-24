@@ -117,6 +117,20 @@ _ABSTENTION_MARKERS = (
     "no hay evidencia",
     "no aparece en",
     "no puedo determinar",
+    "no puedo encontrar",
+    "no pude encontrar",
+    "no se menciona",
+    "no se especifica",
+    "no especifica",
+    "no se proporciona",
+    "no se indica",
+    "no hay informaci",
+    "no tengo acceso",
+    "no tengo informaci",
+    "no dispongo de",
+    "no está disponible",
+    "no esta disponible",
+    "información insuficiente",
     "i don't know",
     "i do not know",
     "i did not find",
@@ -133,6 +147,18 @@ _ABSTENTION_MARKERS = (
     "does not mention",
     "unable to answer",
     "do not have access",
+    "don't have access",
+    "do not have information",
+    "don't have information",
+    "don't have any information",
+    "not enough information",
+    "insufficient information",
+    "cannot find",
+    "can't find",
+    "unable to locate",
+    "doesn't mention",
+    "doesn't specify",
+    "does not specify",
     "not found in",
     "no evidence",
     "cannot determine",
@@ -243,7 +269,8 @@ def _is_rag_abstention(content: str, *, rag_requested: bool) -> bool:
         return False
     if content in _ABSTENTION_MESSAGES:
         return True
-    normalized = re.sub(r"\s+", " ", str(content or "").casefold()).strip()
+    text = str(content or "").replace("\u2019", "'").casefold()
+    normalized = re.sub(r"\s+", " ", text).strip()
     return any(marker in normalized for marker in _ABSTENTION_MARKERS)
 
 

@@ -96,7 +96,7 @@ Estos valores los consume `compose.yaml`; son ajustes de despliegue, no opciones
 | `TRINAXAI_AGENT_STALL_TIMEOUT` | `120` | Máximo de segundos sin tokens, actividad de herramientas o aprobación pendiente. |
 | `TRINAXAI_AGENT_QUEUE_MAXSIZE` | `128` | Máximo de eventos SSE almacenados por sesión del Agent antes de cancelar por backpressure. |
 | `TRINAXAI_AGENT_QUEUE_PUT_TIMEOUT` | `0.25` | Segundos que el worker espera para encolar un evento SSE antes de considerar que el cliente no puede seguir el ritmo. |
-| `TRINAXAI_NUM_THREAD` | `8` | Hilos CPU solicitados por generación Ollama. |
+| `TRINAXAI_NUM_THREAD` | `min(8, núcleos de CPU)` | Hilos CPU solicitados por generación Ollama. |
 | `OLLAMA_NUM_GPU` | autodetectado | Hints de capas GPU de Ollama; `0` usa CPU y un valor alto descarga las capas que caben en la GPU detectada. |
 | `TRINAXAI_KEEP_ALIVE` | derivado del perfil | Duración de permanencia de modelos Ollama. |
 | `TRINAXAI_TIMEOUT` | `300` | Timeout de solicitudes Ollama en segundos. |
