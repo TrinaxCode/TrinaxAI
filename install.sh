@@ -1285,7 +1285,10 @@ run_dry_run() {
   echo ""
   echo -e "${BOLD}${CYAN}$(tr_text 'Links to enter')${NC}"
   echo "  Localhost:       https://localhost:3334"
-  if [ "$LANGUAGE" = "es" ]; then
+  if [ "$LAN_ACCESS" != "1" ]; then
+    # Matches the real install: unless the user allowed it, nothing listens beyond this computer.
+    echo "  $(tr_text 'LAN / Red local'): $(tr_text 'This computer only. To allow other devices later, run: trinaxai network refresh')"
+  elif [ "$LANGUAGE" = "es" ]; then
     echo "  LAN / Red local: https://[TU-IP-LAN]:3334"
   else
     echo "  LAN:             https://[YOUR-LAN-IP]:3334"

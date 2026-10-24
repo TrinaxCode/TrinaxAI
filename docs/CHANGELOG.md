@@ -110,6 +110,8 @@ All notable changes to TrinaxAI are documented here. This project follows the
 
 ### Fixed
 
+- `./install.sh --dry-run` no longer announces a LAN link when you chose to keep
+  TrinaxAI on this computer only; it says so, as the real installation does.
 - `trinaxai models` shows model sizes as `3.1 GB` instead of a raw byte count, and the
   `trinaxai doctor` row about the agent's terminal sandbox is translated to Spanish.
 - The terminal assistant now sends file and version-control requests to the coding
