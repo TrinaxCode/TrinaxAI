@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # TrinaxAI — One-Command Installer (Linux/macOS/Windows Bash)
 # Linux/macOS release-pinned install (this script is copied into each stable release):
-#   version="1.3.0"
+#   version="1.4.0"
 #   base="https://github.com/TrinaxCode/TrinaxAI/releases/download/v${version}"
 #   installer="$(mktemp)"; manifest="$(mktemp)"
 #   curl --fail --location --output "$installer" "${base}/TrinaxAI-${version}-installer.sh"
@@ -1330,7 +1330,7 @@ if [ -z "$SCRIPT_DIR" ] || [ ! -f "$SCRIPT_DIR/rag_api.py" ] || [ ! -f "$SCRIPT_
     mkdir -p "$(dirname "$REPO_DIR")"
     temp_dir="$(mktemp -d "${TMPDIR:-/tmp}/trinaxai.XXXXXX")"
     trap 'download_status=$?; rm -rf -- "$temp_dir"; (exit "$download_status"); pause_on_macos_failure' EXIT
-    release_version="${TRINAXAI_RELEASE_VERSION:-1.3.0}"
+    release_version="${TRINAXAI_RELEASE_VERSION:-1.4.0}"
     if [ -n "$release_version" ] && [[ ! "$release_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
       print_err "TRINAXAI_RELEASE_VERSION must be a semantic version."
       exit 2

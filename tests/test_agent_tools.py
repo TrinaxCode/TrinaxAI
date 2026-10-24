@@ -179,3 +179,49 @@ def test_write_tools_refuse_git_metadata(tmp_path: Path) -> None:
         agent_tools._edit_file(tmp_path, ".git/config", "[core]", "[evil]")
     assert (tmp_path / ".git" / "config").read_text() == "[core]\n"
     assert "created" in agent_tools._write_file(tmp_path, ".gitignore", "x\n")
+
+
+def test_git_metadata_is_mounted_read_only_in_the_command_sandbox(tmp_path: Path) -> None:
+    assert agent_tools._git_metadata_mounts(tmp_path) == ()
+
+    (tmp_path / ".git").mkdir()
+    git_dir = str(tmp_path / ".git")
+    assert agent_tools._git_metadata_mounts(tmp_path) == ("--ro-bind", git_dir, git_dir)
+
+    other = tmp_path / "worktree"
+    other.mkdir()
+    (other / ".git").write_text("gitdir: ../elsewhere\n", encoding="utf-8")
+    assert agent_tools._git_metadata_mounts(other) == ("--ro-bind", str(other / ".git"), str(other / ".git"))
+
+    linked = tmp_path / "linked"
+    linked.mkdir()
+    (linked / ".git").symlink_to(tmp_path / ".git")
+    assert agent_tools._git_metadata_mounts(linked) == ()
+
+
+def test_command_sandbox_places_the_git_mount_after_the_workspace_bind(tmp_path: Path) -> None:
+    (tmp_path / ".git").mkdir()
+    argv = _bubblewrap_argv(tmp_path, "true")
+    if argv is None:
+        pytest.skip("bubblewrap is not available on this host")
+    root = str(tmp_path.resolve())
+    workspace_bind = argv.index("--bind")
+    assert argv[workspace_bind : workspace_bind + 3] == ["--bind", root, root]
+    assert argv[workspace_bind + 3 : workspace_bind + 6] == ["--ro-bind", f"{root}/.git", f"{root}/.git"]
+
+
+def test_terminal_cannot_write_git_metadata_but_can_write_the_workspace(tmp_path: Path) -> None:
+    if _bubblewrap_argv(tmp_path, "true") is None:
+        pytest.skip("bubblewrap is not available on this host")
+    (tmp_path / ".git" / "hooks").mkdir(parents=True)
+    (tmp_path / ".git" / "config").write_text("[core]\n", encoding="utf-8")
+
+    result = _run_command(
+        tmp_path,
+        "echo ok > note.txt; echo '[alias]' >> .git/config; echo x > .git/hooks/pre-commit; cat .git/config",
+    )
+
+    assert (tmp_path / "note.txt").read_text(encoding="utf-8") == "ok\n"
+    assert (tmp_path / ".git" / "config").read_text(encoding="utf-8") == "[core]\n"
+    assert not (tmp_path / ".git" / "hooks" / "pre-commit").exists()
+    assert "Read-only file system" in result

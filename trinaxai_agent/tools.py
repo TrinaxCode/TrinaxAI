@@ -685,6 +685,22 @@ def _is_enabled(name: str) -> bool:
     return os.getenv(name, "").strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _git_metadata_mounts(root: Path) -> tuple[str, ...]:
+    """Mount the workspace's own ``.git`` read-only inside the command sandbox.
+
+    The file tools already refuse to write git metadata because ``.git/config``
+    and hooks can make git run programs for the *user* later. Without this the
+    terminal tool could write the same files. A real directory or file is
+    mounted (a worktree's ``.git`` is a file); a symlink is skipped because its
+    target is not part of the sandbox anyway. Repositories nested deeper than
+    the workspace root are not covered here.
+    """
+    git_path = root / ".git"
+    if git_path.is_symlink() or not git_path.exists():
+        return ()
+    return ("--ro-bind", str(git_path), str(git_path))
+
+
 def _bubblewrap_argv(workspace_root: Path, command: str) -> list[str] | None:
     """Build a networkless Linux sandbox for a shell command.
 
@@ -746,6 +762,7 @@ def _bubblewrap_argv(workspace_root: Path, command: str) -> list[str] | None:
             "--bind",
             str(root),
             str(root),
+            *_git_metadata_mounts(root),
             "--chdir",
             str(root),
             "--setenv",
