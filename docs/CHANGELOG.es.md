@@ -112,7 +112,8 @@ el formato de [Keep a Changelog](https://keepachangelog.com/).
 - Se actualizaron `pypdf` a 6.21.2 (CVE-2026-115572, CVE-2026-115580,
   CVE-2026-115585) y `setuptools` a 84.1.0 (GHSA-xmj3-9gf7-h52w) en el lock de
   dependencias, y `zod` (solo desarrollo) a 4.6.7 (GHSA-mrhx-c7xc-m3w5) en el
-  lockfile de la PWA.
+  lockfile de la PWA, además de `undici` (7.30.1), `fast-uri` (3.1.9) y
+  `serialize-javascript` (7.1.4), solo de desarrollo, tras nuevos avisos.
 - El sandbox del terminal del Agente ahora monta `.git/config` y `.git/hooks`
   del workspace en solo lectura. Las herramientas de archivo ya se negaban a
   escribir metadatos de git, pero un comando de shell podía plantar alias o
