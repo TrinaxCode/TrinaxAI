@@ -256,6 +256,8 @@ def test_index_success_reloads_live_rag_index(tmp_path: Path) -> None:
     assert result == 0
     client.reload_index.assert_called_once_with()
     assert spawn.call_args.kwargs["env"]["TRINAXAI_INDEX_APPEND"] == "0"
+    # A terminal must not be flooded with the machine-readable lines the API parses.
+    assert spawn.call_args.kwargs["env"]["TRINAXAI_PROGRESS_LINES"] == "0"
 
 
 def test_cli_export_produces_markdown_with_session_name(tmp_path: Path) -> None:
@@ -326,3 +328,24 @@ def test_cli_version_prints_version_string() -> None:
     printed = ui.print.call_args[0][0]
     assert "TrinaxAI CLI" in printed
     assert VERSION in printed
+
+
+def test_collections_list_shows_readable_dates() -> None:
+    import time
+
+    stamp = 1792831863.1113875
+    client = MagicMock()
+    client.list_collections.return_value = [
+        {"id": "default", "name": "General", "created_at": stamp},
+        {"id": "old", "name": "Old"},  # no timestamp stored
+        {"id": "odd", "name": "Odd", "created_at": "yesterday"},
+        {"id": "huge", "name": "Huge", "created_at": 1e30},
+    ]
+    ui = MagicMock()
+
+    assert collections.run(SimpleNamespace(collections_command="list"), client, ui, CLIConfig()) == 0
+
+    rows = ui.table.call_args.args[1]
+    assert rows[0][2] == time.strftime("%Y-%m-%d %H:%M", time.localtime(stamp))
+    assert "." not in rows[0][2].split()[0] and rows[1][2] == "" and rows[2][2] == "yesterday"
+    assert rows[3][2] == str(1e30)

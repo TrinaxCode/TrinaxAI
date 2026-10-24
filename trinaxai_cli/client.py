@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any, Iterable
 from urllib.parse import urlencode, urlparse, urlunparse
 
-from trinaxai.errors import classify_error
+from trinaxai.errors import ErrorCategory, classify_error
 from trinaxai_cli.i18n import normalize_lang
 
 try:
@@ -38,8 +38,18 @@ class TrinaxAPIError(RuntimeError):
         self.technical_message = message
         self.language = normalize_lang(language)
         info = classify_error(RuntimeError(message), status_code=status, hint=message)
-        public_message = info.definition.message_es if self.language == "es" else info.definition.message
-        public_recovery = info.definition.recovery_es if self.language == "es" else info.definition.recovery
+        spanish = self.language == "es"
+        public_message = info.definition.message_es if spanish else info.definition.message
+        public_recovery = info.definition.recovery_es if spanish else info.definition.recovery
+        if info.category is ErrorCategory.INTERNET_UNAVAILABLE:
+            # This client only ever talks to the local TrinaxAI API, so a refused or
+            # failed connection means the service is not running, not that the
+            # internet is down.
+            public_message, public_recovery = (
+                ("No se puede conectar con el servicio local de TrinaxAI.", "Inícialo con: trinaxai start")
+                if spanish
+                else ("Cannot reach the local TrinaxAI service.", "Start it with: trinaxai start")
+            )
         super().__init__(f"{public_message} {public_recovery}")
         self.status = status
         self.payload = payload

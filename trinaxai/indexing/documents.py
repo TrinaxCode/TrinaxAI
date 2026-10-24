@@ -344,6 +344,10 @@ def _load_extracted_documents(path: str) -> list[Document]:
 
 
 def emit_progress(phase: str, **values: object) -> None:
+    # Machine-readable telemetry for the API's index jobs. A person running the CLI
+    # opts out (TRINAXAI_PROGRESS_LINES=0) because it is noise on a terminal.
+    if os.getenv("TRINAXAI_PROGRESS_LINES", "1") == "0":
+        return
     print("TRINAXAI_PROGRESS " + json.dumps({"phase": phase, **values}, ensure_ascii=False), flush=True)
 
 

@@ -406,3 +406,104 @@ def test_repl_handles_pending_slash_input_then_exit(monkeypatch) -> None:
     assert result == 0
     assert dispatched == ["current topic"]
     ui.reset_title.assert_called_once()
+
+
+def test_a_missing_model_is_named_with_the_command_that_installs_it(monkeypatch) -> None:
+    ui = _ui()
+    client = MagicMock()
+    monkeypatch.setattr(chat._system, "env_value", lambda _name: "")
+    client.stream_ollama.return_value = _Response(status=404, body=b'{"error":"model \'qwen3.5:2b\' not found"}')
+
+    with pytest.raises(chat.ModelNotInstalledError) as raised:
+        chat._stream_from_ollama(client, ui, [{"role": "user", "content": "hi"}], "qwen3.5:2b")
+    assert raised.value.model == "qwen3.5:2b"
+
+    chat.report_local_ai_failure(ui, raised.value)
+    ui.error.assert_called_once_with("The model 'qwen3.5:2b' is not installed.")
+    ui.info.assert_called_once_with("Install it with: ollama pull qwen3.5:2b")
+    ui.failure.assert_not_called()
+
+    # A different 404 (or any other failure) is not mistaken for a missing model, and still
+    # points at starting the services.
+    client.stream_ollama.return_value = _Response(status=404, body=b"page gone")
+    with pytest.raises(RuntimeError, match="HTTP 404") as other:
+        chat._stream_from_ollama(client, ui, [{"role": "user", "content": "hi"}], "m")
+    assert not isinstance(other.value, chat.ModelNotInstalledError)
+
+    ui = _ui()
+    chat.report_local_ai_failure(ui, other.value)
+    ui.failure.assert_called_once_with("Local AI request", other.value)
+    ui.info.assert_called_once_with("Start TrinaxAI with: trinaxai start")
+
+
+def test_missing_model_messages_are_translated() -> None:
+    from trinaxai_cli.i18n import translate
+
+    assert translate("The model 'qwen3.5:2b' is not installed.", "es") == "El modelo 'qwen3.5:2b' no está instalado."
+    assert translate("Install it with: ollama pull qwen3.5:2b", "es") == "Instálalo con: ollama pull qwen3.5:2b"
+
+
+def test_typed_api_errors_are_shown_as_written_and_do_not_say_to_start_the_service() -> None:
+    ui = _ui()
+    error = {
+        "category": "ai_model_unavailable",
+        "code": "ERR_AI_MODEL_UNAVAILABLE",
+        "message": "The selected AI model is unavailable.",
+        "recovery": "Check that the model is installed and the AI service is running.",
+    }
+    line = 'data: {"trinaxai_error": %s}' % __import__("json").dumps(error)
+    client = SimpleNamespace(_client=SimpleNamespace(stream=lambda *_a, **_k: _Response([line])))
+
+    with pytest.raises(chat.BackendStreamError) as raised:
+        chat._stream_from_rag(client, ui, [], ["docs"], "m")
+
+    chat.report_local_ai_failure(ui, raised.value)
+    ui.error.assert_called_once_with(
+        "The selected AI model is unavailable. Check that the model is installed and the AI service is running."
+    )
+    ui.info.assert_called_once_with("See which models are installed with: trinaxai models")
+
+    other = chat.BackendStreamError({"category": "resource_exhausted", "message": "Busy.", "recovery": "Wait."})
+    ui = _ui()
+    chat.report_local_ai_failure(ui, other)
+    ui.error.assert_called_once_with("Busy. Wait.")
+    ui.info.assert_not_called()
+
+    from trinaxai_cli.i18n import translate
+
+    assert translate("See which models are installed with: trinaxai models", "es").startswith("Mira qué modelos")
+
+
+def test_rag_answers_list_the_files_they_cite() -> None:
+    import json
+
+    ui = _ui()
+    sources = [
+        {"file": "aurora.md", "page": None, "score": 0.9},
+        {"file": "manual.pdf", "page": 3},
+        {"file": "aurora.md", "page": None},  # the same file twice is shown once
+        {"page": 1},  # no file name: skipped
+        "not-a-source",
+    ]
+    response = _Response(
+        [
+            'data: {"choices":[{"delta":{"content":"hello"}}]}',
+            "data: " + json.dumps({"trinaxai_sources": sources}),
+            "data: [DONE]",
+        ]
+    )
+    client = SimpleNamespace(_client=SimpleNamespace(stream=lambda *_a, **_k: response))
+
+    assert chat._stream_from_rag(client, ui, [], ["docs"], "m") == "hello"
+    ui.info.assert_called_once_with("Sources: aurora.md, manual.pdf (p. 3)")
+
+    # An abstained answer carries no sources, so nothing is listed.
+    ui = _ui()
+    response = _Response(['data: {"choices":[{"delta":{"content":"no data"}}]}', "data: [DONE]"])
+    client = SimpleNamespace(_client=SimpleNamespace(stream=lambda *_a, **_k: response))
+    chat._stream_from_rag(client, ui, [], ["docs"], "m")
+    ui.info.assert_not_called()
+
+    from trinaxai_cli.i18n import translate
+
+    assert translate("Sources: aurora.md", "es") == "Fuentes: aurora.md"

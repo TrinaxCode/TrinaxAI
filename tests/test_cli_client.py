@@ -293,3 +293,26 @@ def test_research_only_sends_requested_optional_values() -> None:
         "model": "model",
     }
     assert client._post.call_args.kwargs["timeout"] == 300.0
+
+
+def test_unreachable_local_service_is_not_blamed_on_the_internet() -> None:
+    from trinaxai_cli.client import TrinaxAPIError
+
+    english = TrinaxAPIError(0, "local service unavailable", language="en")
+    assert "internet" not in str(english).lower()
+    assert str(english) == "Cannot reach the local TrinaxAI service. Start it with: trinaxai start"
+    assert (english.status, english.category, english.error_code) == (
+        0,
+        "internet_unavailable",
+        "ERR_INTERNET_UNAVAILABLE",
+    )
+
+    spanish = TrinaxAPIError(0, "local service unavailable", language="es")
+    assert str(spanish) == "No se puede conectar con el servicio local de TrinaxAI. Inícialo con: trinaxai start"
+
+    # A timeout and real HTTP failures keep their own messages.
+    assert (
+        "too long" in str(TrinaxAPIError(0, "request timed out")).lower()
+        or "timed out" in str(TrinaxAPIError(0, "request timed out")).lower()
+    )
+    assert "Start it with" not in str(TrinaxAPIError(404, "not found"))

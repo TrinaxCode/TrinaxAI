@@ -22,6 +22,9 @@ All notable changes to TrinaxAI are documented here. This project follows the
 
 ### Added
 
+- `trinaxai ask` and the RAG chat list the files an answer comes from
+  (`Sources: aurora.md, manual.pdf (p. 3)`), as the web app already did. An
+  answer that says the information is missing lists none.
 - The installer asks whether other devices on your home or local network may open
   TrinaxAI. The default is this computer only; a yes sets
   `TRINAXAI_PWA_HOST=0.0.0.0`, and every device still needs a one-time pairing
@@ -74,6 +77,10 @@ All notable changes to TrinaxAI are documented here. This project follows the
 
 ### Changed
 
+- `trinaxai ask` and `trinaxai chat` use the model the installer chose for your
+  computer (`TRINAXAI_MODEL_GENERAL`) instead of a fixed `qwen3.5:2b`, which left
+  them on the smallest model even on machines with room for a better one. Set
+  `model` under `[defaults]` in the CLI config to pin one.
 - The interactive `trinaxai agent` loads the model and its fixed prompt in the
   background while you type your first task. On a 4-core CPU with `qwen3.5:4b`
   the first task went from 82.6 s to 35.2 s after the warm-up. Nothing changes
@@ -103,6 +110,15 @@ All notable changes to TrinaxAI are documented here. This project follows the
 
 ### Fixed
 
+- Errors now name the real cause. With TrinaxAI stopped the CLI no longer says
+  "the internet connection is unavailable" but "Cannot reach the local TrinaxAI
+  service. Start it with: trinaxai start". A model that is not installed is
+  reported as such (`The model 'x' is not installed. Install it with: ollama
+  pull x`) in the CLI and the API, instead of a generic "start TrinaxAI" or
+  "external service unavailable", and "Please retry" is only suggested when a
+  retry can help.
+- `trinaxai index` no longer prints the internal `TRINAXAI_PROGRESS` lines, and
+  `trinaxai collections list` shows a readable date instead of a raw timestamp.
 - Answers are no longer slowed down by too many CPU threads. `TRINAXAI_NUM_THREAD`
   defaulted to a fixed 8; on a 4-core computer that made the same answer take
   76-93 s instead of 16 s. The default is now the smaller of 8 and the CPUs you

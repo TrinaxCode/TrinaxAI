@@ -79,3 +79,18 @@ def test_http_boundary_localizes_canonical_errors_from_accept_language() -> None
     assert spanish["error"]["message"] == "Un servicio externo no está disponible."
     assert english["error"]["message"] == "An external service is unavailable."
     assert spanish["error"]["message"] != english["error"]["message"]
+
+
+def test_ollama_naming_the_missing_model_is_a_model_error_not_a_service_outage() -> None:
+    for text in (
+        "model 'qwen3.5:2b' not found (status code: 404)",
+        'model "llama3.2" not found',
+        "model qwen3.5:4b not found, try pulling it first",
+    ):
+        info = classify_error(RuntimeError(text), status_code=503)
+        assert info.category is ErrorCategory.AI_MODEL_UNAVAILABLE, text
+        assert "qwen" not in str(info.to_client_dict()) and "llama" not in str(info.to_client_dict())
+
+    # A missing page or collection is still not a model problem.
+    assert classify_error(RuntimeError("page not found"), status_code=404).category is ErrorCategory.FILE_NOT_FOUND
+    assert classify_error(RuntimeError("busy"), status_code=503).category is ErrorCategory.EXTERNAL_SERVICE_UNAVAILABLE

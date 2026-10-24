@@ -47,6 +47,40 @@ class LocalAttachmentError(ValueError):
     """A local file cannot be safely prepared for the current turn."""
 
 
+class ModelNotInstalledError(RuntimeError):
+    """Ollama is running but does not have the requested model."""
+
+    def __init__(self, model: str) -> None:
+        super().__init__(f"model '{model}' is not installed")
+        self.model = model
+
+
+class BackendStreamError(RuntimeError):
+    """The TrinaxAI API reported a typed failure while streaming an answer."""
+
+    def __init__(self, info: dict[str, Any]) -> None:
+        self.category = str(info.get("category") or "")
+        self.public = " ".join(str(info[key]) for key in ("message", "recovery") if info.get(key))
+        super().__init__(self.public or str(info))
+
+
+def report_local_ai_failure(ui: Any, exc: BaseException) -> None:
+    """Explain a failed local AI request with the fix that matches its cause."""
+    if isinstance(exc, BackendStreamError) and exc.public:
+        # The API is running and already wrote a safe explanation; do not tell the
+        # user to start it.
+        ui.error(exc.public)
+        if exc.category == "ai_model_unavailable":
+            ui.info("See which models are installed with: trinaxai models")
+        return
+    if isinstance(exc, ModelNotInstalledError):
+        ui.error(f"The model '{exc.model}' is not installed.")
+        ui.info(f"Install it with: ollama pull {exc.model}")
+        return
+    ui.failure("Local AI request", exc)
+    ui.info("Start TrinaxAI with: trinaxai start")
+
+
 # ponytail: fixed caps avoid adding an image re-encoder dependency; add bounded
 # resize/streaming only if real CLI users hit the 8 MiB image ceiling.
 LOCAL_IMAGE_MAX_BYTES = 8 * 1024 * 1024
@@ -241,6 +275,7 @@ def _stream_from_rag(
         "think": thinking,
     }
     full = ""
+    sources: list[Any] = []
     started = False
     saw_done = False
     with ui.thinking() as ready:
@@ -262,7 +297,10 @@ def _stream_from_rag(
                     continue
                 error = parsed.get("trinaxai_error")
                 if error:
-                    raise RuntimeError(str(error))
+                    raise BackendStreamError(error) if isinstance(error, dict) else RuntimeError(str(error))
+                cited = parsed.get("trinaxai_sources")
+                if isinstance(cited, list):
+                    sources = cited
                 token = ((parsed.get("choices") or [{}])[0].get("delta") or {}).get("content") or ""
                 if token:
                     if not started:
@@ -274,7 +312,24 @@ def _stream_from_rag(
     ui.print("")
     if not saw_done:
         raise RuntimeError("chat: stream ended before completion")
+    cited_files = _source_labels(sources)
+    if cited_files:
+        ui.info("Sources: " + ", ".join(cited_files))
     return full or "(no answer)"
+
+
+def _source_labels(sources: list[Any]) -> list[str]:
+    """File names (with page when known) of the documents an answer cites, once each."""
+    labels: list[str] = []
+    for source in sources:
+        if not isinstance(source, dict) or not source.get("file"):
+            continue
+        label = str(source["file"])
+        if source.get("page") not in (None, ""):
+            label += f" (p. {source['page']})"
+        if label not in labels:
+            labels.append(label)
+    return labels
 
 
 def _stream_from_ollama(
@@ -329,6 +384,8 @@ def _stream_from_ollama(
         with client.stream_ollama(base_url, payload, timeout=900.0) as response:
             if response.status_code >= 400:
                 detail = response.read().decode("utf-8", errors="replace")[:200]
+                if response.status_code == 404 and "not found" in detail.lower():
+                    raise ModelNotInstalledError(selected_model)
                 raise RuntimeError(f"ollama: HTTP {response.status_code} — {detail}")
             for line in response.iter_lines():
                 if not line.strip():
@@ -681,8 +738,7 @@ def _dispatch_turn(
     try:
         answer = _stream_answer(client, ui, messages, engine, collections, state.model, state.thinking)
     except Exception as exc:  # noqa: BLE001
-        ui.failure("Local AI request", exc)
-        ui.info("Start TrinaxAI with: trinaxai start")
+        report_local_ai_failure(ui, exc)
         messages.pop()  # drop the user turn we couldn't answer
         return
     session.append("assistant", answer, {"mode": mode})
@@ -744,7 +800,7 @@ def run(args: Any, client: Any, ui: Any, config: Any) -> int:
     state = ChatState(
         engine=engine,
         collections=list(collections),
-        model=getattr(config, "model", None),
+        model=getattr(config, "model", None) or None,
         thinking=getattr(config, "thinking_enabled", True)
         if getattr(args, "thinking", None) is None
         else bool(args.thinking),

@@ -75,7 +75,10 @@ class CLIConfig:
     # Match the PWA: a new general chat talks directly to Ollama. RAG is
     # opt-in so unrelated indexed documents cannot hijack a casual prompt.
     engine: str = "ollama"
-    model: str = "qwen3.5:2b"
+    # Empty means automatic: use the model the installer chose for this computer
+    # (TRINAXAI_MODEL_GENERAL). A pinned default here overrode that choice and left
+    # `trinaxai ask` on the smallest model even on machines with room for a better one.
+    model: str = ""
     collections: list[str] = field(default_factory=lambda: ["default"])
     active_collection: str = "default"
     thinking_enabled: bool = True

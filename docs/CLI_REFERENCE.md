@@ -305,7 +305,7 @@ verify_tls = true
 
 [defaults]
 engine = "ollama"
-model = "qwen3.5:2b"
+model = ""  # empty = automatic: the model chosen for this computer
 collections = ["default"]
 thinking = true
 

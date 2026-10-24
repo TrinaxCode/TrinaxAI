@@ -22,6 +22,9 @@ el formato de [Keep a Changelog](https://keepachangelog.com/).
 
 ### Añadido
 
+- `trinaxai ask` y el chat con RAG listan los archivos de los que sale la
+  respuesta (`Fuentes: aurora.md, manual.pdf (p. 3)`), como ya hacía la app web.
+  Una respuesta que dice que falta la información no lista ninguno.
 - El instalador pregunta si otros dispositivos de tu red doméstica o local pueden
   abrir TrinaxAI. Por defecto, solo este equipo; un sí escribe
   `TRINAXAI_PWA_HOST=0.0.0.0` y cada dispositivo sigue necesitando un código de
@@ -77,6 +80,10 @@ el formato de [Keep a Changelog](https://keepachangelog.com/).
 
 ### Cambiado
 
+- `trinaxai ask` y `trinaxai chat` usan el modelo que el instalador eligió para
+  tu equipo (`TRINAXAI_MODEL_GENERAL`) en lugar de un `qwen3.5:2b` fijo, que los
+  dejaba en el modelo más pequeño incluso en equipos con margen para uno mejor.
+  Para fijar uno, pon `model` en `[defaults]` de la config de la CLI.
 - El `trinaxai agent` interactivo carga el modelo y su prompt fijo en segundo
   plano mientras escribes tu primera tarea. En una CPU de 4 núcleos con
   `qwen3.5:4b`, la primera tarea pasó de 82,6 s a 35,2 s tras el precalentamiento.
@@ -108,6 +115,15 @@ el formato de [Keep a Changelog](https://keepachangelog.com/).
 
 ### Corregido
 
+- Los errores nombran la causa real. Con TrinaxAI detenido, la CLI ya no dice
+  «la conexión a Internet no está disponible» sino «No se puede conectar con el
+  servicio local de TrinaxAI. Inícialo con: trinaxai start». Un modelo no
+  instalado se informa como tal («El modelo 'x' no está instalado. Instálalo
+  con: ollama pull x») en la CLI y en la API, en lugar de un genérico «inicia
+  TrinaxAI» o «servicio externo no disponible», y «Reintenta» solo se sugiere
+  cuando reintentar puede ayudar.
+- `trinaxai index` ya no imprime las líneas internas `TRINAXAI_PROGRESS`, y
+  `trinaxai collections list` muestra una fecha legible en vez de un número.
 - Las respuestas ya no se ralentizan por usar demasiados hilos de CPU.
   `TRINAXAI_NUM_THREAD` valía 8 fijo; en un equipo de 4 núcleos la misma
   respuesta tardaba 76-93 s en lugar de 16 s. Ahora vale el menor entre 8 y las

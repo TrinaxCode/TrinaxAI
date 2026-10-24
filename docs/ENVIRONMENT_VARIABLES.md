@@ -166,6 +166,7 @@ Ollama also consumes `OLLAMA_BASE_URL` (backend endpoint), `OLLAMA_HOST`
 | `TRINAXAI_INDEX_LOAD_WORKERS` | up to `8` | Concurrent source-file loaders. |
 | `TRINAXAI_INDEX_LOCK_TIMEOUT` | `60` | Seconds to wait for the cross-process index writer lock. |
 | `TRINAXAI_INDEX_TIMEOUT` | `3600` | Seconds the packaged CLI waits for its spawned indexer process before terminating the process group. |
+| `TRINAXAI_PROGRESS_LINES` | `1` | Set to `0` to stop the indexer printing the machine-readable `TRINAXAI_PROGRESS` lines the API reads. The CLI sets it so a terminal shows only readable messages. |
 | `TRINAXAI_WATCH_INDEX_TIMEOUT` | `1800` | Seconds the watcher allows one queued indexer subprocess before terminating its process group and reporting the failure. |
 | `TRINAXAI_WATCH_RELOAD_TIMEOUT` | `30` | Seconds the watcher waits for the RAG backend to reload engines after a successful index job before treating the reload as timed out. |
 | `TRINAXAI_WATCH_OUTPUT_MAX_BYTES` | `16384` | Maximum trailing stdout/stderr bytes retained for one watcher index job. |
