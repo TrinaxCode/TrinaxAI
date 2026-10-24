@@ -127,6 +127,10 @@ el formato de [Keep a Changelog](https://keepachangelog.com/).
 
 ### Corregido
 
+- En Debian y Ubuntu la terminal del agente no encontraba `python3`, `python`, `cc` ni `awk`
+  ("python3: not found"), porque esos nombres son enlaces a través de `/etc/alternatives`, que el
+  sandbox no incluía. Ahora se monta esa única carpeta de enlaces hacia `/usr`, de solo lectura
+  (el resto de `/etc` sigue oculto), así que "corre las pruebas" funciona en esos sistemas.
 - `install.sh`, `update.sh` y `uninstall.sh` imprimen texto plano (sin códigos de color) cuando su salida se redirige o
   `NO_COLOR` está definido, para que los registros y la salida de CI sean legibles.
 - La indexación dice que un archivo sin texto está "vacío, o es un escaneo que necesita

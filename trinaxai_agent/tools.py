@@ -760,7 +760,8 @@ def _bubblewrap_argv(workspace_root: Path, command: str) -> list[str] | None:
 
     The namespace contains only the workspace, a private ``/tmp``/``$HOME`` and
     read-only operating-system runtime directories.  In particular, the host's
-    home directories and ``/etc`` are not mounted.  Returning ``None`` means the
+    home directories and ``/etc`` are not mounted (only ``/etc/alternatives``, whose
+    symlinks point into ``/usr``).  Returning ``None`` means the
     host cannot provide the isolation TrinaxAI promises, so callers must fail
     closed unless the user explicitly opts into the legacy unsafe behaviour.
     """
@@ -789,6 +790,11 @@ def _bubblewrap_argv(workspace_root: Path, command: str) -> list[str] | None:
             argv.extend(("--symlink", os.readlink(path), raw))
         elif path.exists():
             argv.extend(("--ro-bind", raw, raw))
+
+    # Debian and Ubuntu point tools such as python3, cc and awk at /etc/alternatives. Without that
+    # one directory of symlinks into /usr they dangle inside the sandbox ("python3: not found").
+    if Path("/etc/alternatives").is_dir():
+        argv.extend(("--ro-bind", "/etc/alternatives", "/etc/alternatives"))
 
     path_value = ":".join(
         (

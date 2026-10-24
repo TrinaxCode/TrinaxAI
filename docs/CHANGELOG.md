@@ -121,6 +121,10 @@ All notable changes to TrinaxAI are documented here. This project follows the
 
 ### Fixed
 
+- On Debian and Ubuntu the agent's terminal could not find `python3`, `python`, `cc` or `awk`
+  ("python3: not found"), because those names are links through `/etc/alternatives`, which the
+  sandbox did not include. That one read-only folder of links into `/usr` is now mounted (the
+  rest of `/etc` stays hidden), so "run the tests" works on those systems.
 - `install.sh`, `update.sh` and `uninstall.sh` print plain text (no color codes) when its output is piped or `NO_COLOR` is
   set, so logs and CI output are readable.
 - Indexing says a file with no text is "empty, or a scan that needs OCR" and is checked

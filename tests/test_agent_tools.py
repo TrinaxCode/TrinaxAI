@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -286,3 +287,23 @@ def test_terminal_can_commit_but_cannot_plant_git_config_or_hooks(tmp_path: Path
     assert (tmp_path / "note.txt").read_text(encoding="utf-8") == "ok\n"
     assert (tmp_path / ".git" / "config").read_text(encoding="utf-8") == before
     assert not (tmp_path / ".git" / "hooks" / "pre-commit").exists()
+
+
+def test_command_sandbox_keeps_debian_alternatives_so_python3_and_cc_resolve(tmp_path: Path, monkeypatch) -> None:
+    real_is_dir = Path.is_dir
+    monkeypatch.setattr(Path, "is_dir", lambda self: True if str(self) == "/etc/alternatives" else real_is_dir(self))
+    argv = _bubblewrap_argv(tmp_path, "true")
+    if argv is None:
+        pytest.skip("bubblewrap is not available on this host")
+    position = argv.index("/etc/alternatives")
+    assert argv[position - 1 : position + 2] == ["--ro-bind", "/etc/alternatives", "/etc/alternatives"]
+    # Only that directory of symlinks into /usr is added, never the rest of /etc.
+    assert not any(item == "/etc" for item in argv)
+
+
+def test_python3_runs_inside_the_command_sandbox(tmp_path: Path) -> None:
+    argv = _bubblewrap_argv(tmp_path, "python3 -c 'print(6*7)'")
+    if argv is None or not str(Path(agent_tools.shutil.which("python3") or "").resolve()).startswith("/usr/"):
+        pytest.skip("bubblewrap and a system python3 are required")
+    result = subprocess.run(argv, capture_output=True, text=True, check=False, timeout=60)
+    assert result.stdout.strip() == "42", result.stderr
