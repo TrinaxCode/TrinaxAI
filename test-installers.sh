@@ -138,6 +138,17 @@ grep -Fq 'qwen3-embedding:4b' "$ROOT/uninstall.sh" || fail "shell purge misses t
 grep -Fq 'qwen3-embedding:4b' "$ROOT/uninstall.ps1" || fail "PowerShell purge misses the current large embedding model"
 ok "Release pinning, checksums, canonical profiles, readiness gates, and embedding purge checks found"
 
+# A lifecycle script must never kill by a word on the command line: `pkill -f ollama`
+# also ends the script that was started with --remove-ollama and every program that
+# merely mentions the word.
+for script in uninstall.sh update.sh; do
+  if grep -En 'pkill[^|;&]*[[:space:]]-[A-Za-z]*f' "$ROOT/$script" >/dev/null; then
+    fail "$script kills processes by command-line text (pkill -f)"
+  fi
+  grep -Fq 'pkill -TERM -x ollama' "$ROOT/$script" || fail "$script does not stop Ollama by exact process name"
+done
+ok "Lifecycle scripts stop Ollama by exact process name, never by command-line text"
+
 grep -Fq 'python3 -m pip --version' "$ROOT/install.sh" || fail "installer does not check pip availability"
 grep -Fq 'python3 -m venv --help' "$ROOT/install.sh" || fail "installer does not check venv availability"
 grep -Fq 'process.versions.node.split(".")[0]) >= 22' "$ROOT/install.sh" || fail "installer does not refresh an old Node.js runtime"

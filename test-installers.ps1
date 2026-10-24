@@ -67,6 +67,10 @@ Assert-Contains $Install "Acceso desde otros dispositivos" "Installer plan omits
 Assert-Contains $Install "Installation plan" "Installer does not show a plan before changing the system"
 Assert-Contains $Install "Test-GitHubReachable" "Installer has no connectivity preflight"
 foreach ($Text in @($Install, $Update, $Uninstall)) { Assert-Contains $Text '"[S/n]"' "Spanish yes/no suffix is missing" }
+foreach ($Text in @($Update, $Uninstall)) {
+  Assert-NotMatches $Text '(?i)CommandLine\s+-like\s+"\*ollama\*"' "Ollama processes must be stopped by name, not by command-line text"
+  Assert-Contains $Text 'Get-Process -Name "ollama"' "Ollama is not stopped by process name"
+}
 Assert-Contains $Install 'if ($NoStart) {' "Installer live URLs are not conditional on startup"
 Assert-Contains $Install "function Get-ConfiguredModels" "Installer does not read persisted model configuration"
 Assert-Contains $Install '$Models = @(Get-ConfiguredModels)' "Installer model checks do not use persisted models"

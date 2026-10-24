@@ -15,7 +15,10 @@ import json
 import os
 import platform
 import plistlib
+import re
+import shlex
 import shutil
+import signal
 import socket
 import subprocess
 import sys
@@ -283,6 +286,149 @@ class _DirectBackend(_Backend):
         return _pgrep_status(name)
 
 
+# ── Process ownership (POSIX) ──────────────────────────────────────
+# Status and stop must only ever touch processes that belong to *this*
+# installation. Matching a phrase such as "npm run dev" or "ollama" anywhere in
+# a command line also matches the user's editors, shells and other projects'
+# dev servers, so a process counts only when its program is the expected one
+# AND it runs from the install directory (or names a path inside it).
+_SERVICE_PROGRAMS: dict[str, tuple[str, ...]] = {
+    "ollama": ("ollama",),
+    "rag_api": ("python", "uvicorn"),
+    "trinaxai-frontend": ("node", "nodejs", "npm", "npx", "vite", "sh", "bash", "dash", "zsh"),
+    "trinaxai-supervisor": ("python",),
+}
+
+
+@dataclass(frozen=True)
+class _Proc:
+    pid: int
+    argv: tuple[str, ...]
+
+
+def _program_name(argv: tuple[str, ...]) -> str:
+    """Executable name without directory or version suffix (``python3.12`` -> ``python``)."""
+    if not argv:
+        return ""
+    return re.sub(r"[\d.]+$", "", os.path.basename(argv[0]).lower())
+
+
+def _process_table() -> list[_Proc]:
+    """Every visible process with its argument vector (Linux ``/proc``, else ``ps``)."""
+    procs: list[_Proc] = []
+    if os.path.isdir("/proc/self"):
+        for entry in os.listdir("/proc"):
+            if not entry.isdigit():
+                continue
+            try:
+                raw = Path("/proc", entry, "cmdline").read_bytes()
+            except OSError:
+                continue
+            argv = tuple(part.decode("utf-8", "replace") for part in raw.split(b"\0") if part)
+            if argv:
+                procs.append(_Proc(int(entry), argv))
+        return procs
+    result = subprocess.run(["ps", "-axo", "pid=,command="], capture_output=True, text=True, timeout=8)
+    for line in result.stdout.splitlines():
+        parts = line.strip().split(None, 1)
+        if len(parts) == 2 and parts[0].isdigit():
+            try:
+                argv = tuple(shlex.split(parts[1]))
+            except ValueError:
+                argv = tuple(parts[1].split())
+            if argv:
+                procs.append(_Proc(int(parts[0]), argv))
+    return procs
+
+
+def _process_cwd(pid: int) -> str | None:
+    try:
+        if os.path.isdir("/proc/self"):
+            return os.readlink(f"/proc/{pid}/cwd")
+        result = subprocess.run(
+            ["lsof", "-a", "-p", str(pid), "-d", "cwd", "-Fn"], capture_output=True, text=True, timeout=5
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    for line in result.stdout.splitlines():
+        if line.startswith("n"):
+            return line[1:]
+    return None
+
+
+def _install_prefix() -> str:
+    return str(PROJECT_ROOT_RESOLVED).rstrip(os.sep) + os.sep
+
+
+def _in_install(proc: _Proc) -> bool:
+    prefix = _install_prefix()
+    if any(prefix in arg or arg == prefix.rstrip(os.sep) for arg in proc.argv):
+        return True
+    cwd = _process_cwd(proc.pid)
+    return bool(cwd) and (cwd + os.sep).startswith(prefix)
+
+
+def _ancestors() -> set[int]:
+    """This process and its parents: a stop request must never end the shell that sent it."""
+    pids = {os.getpid(), os.getppid()}
+    pid = os.getppid()
+    for _ in range(32):
+        try:
+            fields = (
+                Path("/proc", str(pid), "stat").read_text(encoding="utf-8", errors="replace").rsplit(")", 1)[1].split()
+            )
+            pid = int(fields[1])
+        except (OSError, IndexError, ValueError):
+            break
+        if pid <= 1 or pid in pids:
+            break
+        pids.add(pid)
+    return pids
+
+
+def _service_processes(name: str) -> list[tuple[int, str]]:
+    """``(pid, matched pattern)`` for the processes of service ``name`` in this installation."""
+    patterns = PROCESS_PATTERNS.get(name, [name])
+    programs = _SERVICE_PROGRAMS.get(name)
+    skip = _ancestors()
+    found: list[tuple[int, str]] = []
+    for proc in _process_table():
+        if proc.pid in skip:
+            continue
+        line = " ".join(proc.argv)
+        pattern = next((candidate for candidate in patterns if candidate in line), None)
+        if pattern is None:
+            continue
+        if programs is not None and _program_name(proc.argv) not in programs:
+            continue
+        if name == "ollama":
+            # The server, not a client such as `ollama run`. Ownership of a server we did
+            # not start is decided by the callers (`ollama_owned`), not by its directory.
+            if "serve" not in proc.argv[1:]:
+                continue
+        elif not _in_install(proc):
+            continue
+        found.append((proc.pid, pattern))
+    return found
+
+
+def _signal_process(pid: int, sig: int) -> None:
+    try:
+        os.kill(pid, sig)
+    except (ProcessLookupError, PermissionError):
+        pass
+
+
+def _process_alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
 # ── Shared helpers ─────────────────────────────────────────────────
 def _pgrep_status(name: str) -> ProcessState:
     """Check if a process with *name* in its command line is running."""
@@ -320,19 +466,13 @@ def _pgrep_status(name: str) -> ProcessState:
                 detail=f"pid {pid} (windows)" if running else "not found",
             )
         else:
-            for pattern in PROCESS_PATTERNS.get(name, [name]):
-                r = subprocess.run(["pgrep", "-f", pattern], capture_output=True, text=True, timeout=5)
-                if r.returncode == 0 and r.stdout.strip():
-                    pid = int(r.stdout.strip().split("\n")[0])
-                    return ProcessState(
-                        name=name,
-                        running=True,
-                        pid=pid,
-                        detail=f"pid {pid} ({pattern})",
-                    )
+            found = _service_processes(name)
+            if found:
+                pid, pattern = found[0]
+                return ProcessState(name=name, running=True, pid=pid, detail=f"pid {pid} ({pattern})")
             return ProcessState(name=name, running=False, detail="not found")
     except (FileNotFoundError, subprocess.TimeoutExpired, ValueError):
-        return ProcessState(name=name, running=False, detail="pgrep/tasklist unavailable")
+        return ProcessState(name=name, running=False, detail="process list unavailable")
 
 
 def _stop_by_name(name: str) -> ProcessState:
@@ -363,15 +503,17 @@ def _stop_by_name(name: str) -> ProcessState:
         return ProcessState(name=name, running=False, detail="stopped matching processes")
     else:
         try:
-            for pattern in patterns:
-                subprocess.run(["pkill", "-TERM", "-f", pattern], timeout=10, capture_output=True)
+            pids = [pid for pid, _pattern in _service_processes(name)]
+        except (OSError, subprocess.SubprocessError):
+            return ProcessState(name=name, running=False, detail="process list unavailable")
+        for pid in pids:
+            _signal_process(pid, signal.SIGTERM)
+        if pids:
             time.sleep(1)
-            # Hard kill survivors
-            for pattern in patterns:
-                subprocess.run(["pkill", "-KILL", "-f", pattern], timeout=5, capture_output=True)
-        except (FileNotFoundError, subprocess.TimeoutExpired):
-            if shutil.which("killall"):
-                subprocess.run(["killall", name], timeout=10, capture_output=True)
+        # Hard kill survivors
+        for pid in pids:
+            if _process_alive(pid):
+                _signal_process(pid, signal.SIGKILL)
         return ProcessState(name=name, running=False, detail="stopped matching processes")
 
 

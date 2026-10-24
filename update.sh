@@ -619,9 +619,14 @@ remove_configured_models() {
 }
 
 remove_ollama_app() {
-  pkill -TERM -f "ollama" 2>/dev/null || true
+  # Match the process name exactly. `-f "ollama"` also matches this script itself
+  # (`--remove-ollama` is on its command line) and any unrelated program that
+  # merely mentions the word.
+  pkill -TERM -x ollama 2>/dev/null || true
+  pkill -TERM -x Ollama 2>/dev/null || true
   sleep 1
-  pkill -KILL -f "ollama" 2>/dev/null || true
+  pkill -KILL -x ollama 2>/dev/null || true
+  pkill -KILL -x Ollama 2>/dev/null || true
   if command -v brew >/dev/null 2>&1; then
     brew uninstall ollama 2>/dev/null || true
   elif command -v apt-get >/dev/null 2>&1; then
