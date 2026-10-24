@@ -307,6 +307,35 @@ def test_a_full_local_workflow_runs_through_the_tool(tmp_path: Path) -> None:
 
 
 @needs_git
+def test_a_commit_with_nothing_staged_tells_the_model_how_to_recover(tmp_path: Path) -> None:
+    _run(tmp_path, "init", "-q", "-b", "main")
+    _identity(tmp_path)
+    (tmp_path / "a.txt").write_text("one\n", encoding="utf-8")
+    _run(tmp_path, "add", "a.txt")
+    _run(tmp_path, "commit", "-m", "first")
+    (tmp_path / "a.txt").write_text("two\n", encoding="utf-8")  # modified, not staged
+
+    unstaged = _run(tmp_path, "commit", "-m", "second")
+    assert "[exit 1" in unstaged and "[hint] Nothing is staged" in unstaged and "add <file>" in unstaged
+    assert "[exit 0" in _run(tmp_path, "commit", "-a", "-m", "second")  # the hint's second way works
+
+    clean = _run(tmp_path, "commit", "-m", "third")
+    assert "[exit 1" in clean and "[hint] There is nothing to commit" in clean
+
+
+def test_failure_hints_are_only_given_for_a_failed_commit() -> None:
+    hint = agent_tools._git_failure_hint
+    staged_message = 'no changes added to commit (use "git add" and/or "git commit -a")'
+    assert hint(("commit", "-m", "x"), 1, staged_message).startswith("Nothing is staged")
+    assert hint(("commit",), 1, "On branch main\nChanges not staged for commit:").startswith("Nothing is staged")
+    assert hint(("commit",), 1, "nothing to commit, working tree clean").startswith("There is nothing to commit")
+    assert hint(("commit",), 1, "fatal: unable to auto-detect email address") == ""  # unrelated failure
+    assert hint(("commit", "-m", "x"), 0, staged_message) == ""  # success is never annotated
+    assert hint(("status",), 1, staged_message) == ""  # other subcommands are untouched
+    assert hint((), 1, staged_message) == ""
+
+
+@needs_git
 def test_push_and_pull_use_a_remote_the_user_configured(tmp_path: Path) -> None:
     remote = tmp_path / "remote.git"
     subprocess.run([GIT, "init", "-q", "--bare", str(remote)], check=True)

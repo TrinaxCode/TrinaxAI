@@ -37,7 +37,7 @@ import unicodedata
 import urllib.error
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Sequence
 
 from trinaxai_agent.extract import extract_document_text, is_document
 from trinaxai_agent.git_tool import (
@@ -951,6 +951,22 @@ def _git_toplevel(executable: str, root: Path) -> Path | None:
     return Path(out.strip().splitlines()[0]).resolve()
 
 
+def _git_failure_hint(args: Sequence[str], returncode: int, output: str) -> str:
+    """Tell the model how to recover from the one git mistake small models repeat.
+
+    Seen with a real model in the CLI, over HTTP and in the web app: ``commit`` before
+    ``add``. Without the hint the model has to guess why git said "no changes added".
+    """
+    if returncode == 0 or not args or args[0] != "commit":
+        return ""
+    lowered = output.lower()
+    if "nothing to commit" in lowered and "working tree clean" in lowered:
+        return "There is nothing to commit: the working tree is clean."
+    if "no changes added to commit" in lowered or "changes not staged for commit" in lowered:
+        return "Nothing is staged. Stage the files first with the git tool (add <file>), or use commit -a for tracked files."
+    return ""
+
+
 def _git(workspace_root: Path, args: Any = None, command: Any = None, allow_network: bool = True, **_: Any) -> str:
     """Run git on the host (outside the command sandbox) for one validated call."""
     try:
@@ -984,6 +1000,9 @@ def _git(workspace_root: Path, args: Any = None, command: Any = None, allow_netw
     except OSError as exc:
         return f"error: cannot run git: {exc}"
     out = stdout + (("\n[stderr]\n" + stderr) if stderr else "")
+    hint = _git_failure_hint(parsed.args, returncode, out)
+    if hint:
+        out += f"\n[hint] {hint}"
     status = f"[exit {returncode}; git on this computer, outside the sandbox]"
     return _truncate(f"{status}\n{out}".strip()) or status
 

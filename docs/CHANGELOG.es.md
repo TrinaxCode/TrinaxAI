@@ -83,6 +83,10 @@ el formato de [Keep a Changelog](https://keepachangelog.com/).
 
 ### Cambiado
 
+- Cuando el `git commit` del agente falla porque no hay nada preparado (o el árbol está limpio),
+  el resultado lo dice y explica cómo arreglarlo (`add <archivo>`, o `commit -a`) en vez de solo
+  el texto crudo de git. Los modelos locales pequeños suelen confirmar antes de preparar; con el
+  modelo real esto no evitó que el primer intento fallara, pero el fallo ahora se explica.
 - `trinaxai ask` y `trinaxai chat` usan el modelo que el instalador eligió para
   tu equipo (`TRINAXAI_MODEL_GENERAL`) en lugar de un `qwen3.5:2b` fijo, que los
   dejaba en el modelo más pequeño incluso en equipos con margen para uno mejor.

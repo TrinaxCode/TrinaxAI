@@ -80,6 +80,10 @@ All notable changes to TrinaxAI are documented here. This project follows the
 
 ### Changed
 
+- When the agent's `git commit` fails because nothing is staged (or the tree is clean), the
+  result now says so and how to fix it (`add <file>`, or `commit -a`) instead of only git's raw
+  text. Small local models often commit before staging; with the real model this did not stop the
+  first attempt from failing, but the failure is now explained.
 - `trinaxai ask` and `trinaxai chat` use the model the installer chose for your
   computer (`TRINAXAI_MODEL_GENERAL`) instead of a fixed `qwen3.5:2b`, which left
   them on the smallest model even on machines with room for a better one. Set
