@@ -129,6 +129,12 @@ GIT_ACTION = re.compile(
     r"sube\s+(?:los |mis |estos )?cambios|make a commit)",
     re.I,
 )
+# Wording of a question about how something works, as opposed to an order to do it.
+CONCEPTUAL_QUESTION = re.compile(
+    r"\b(?:why|por que|what (?:does|is|are)|que (?:significa|es|son)|how (?:do|does|can|to)|"
+    r"como (?:hago|puedo|se|funciona)|difference|diferencia|vs\.?|versus|explain|explica(?:me|r)?)\b",
+    re.I,
+)
 EDUCATIONAL_ONLY = re.compile(
     r"\b(?:explica(?:me|r)?|como|ejemplo|ensena(?:me|r)?|explain|how to|example|teach)\b.{0,100}"
     r"\b(?:editar|modificar|corregir|ejecutar|instalar|crear|construir|disenar|desarrollar|"
@@ -140,6 +146,19 @@ EXPLICIT_NEGATION = re.compile(
     r"\b(?:modificar|editar|ejecutar|instalar|modify|edit|run|install)\b",
     re.I,
 )
+
+
+_URL = re.compile(
+    r"\b[a-z][a-z0-9+.-]*://\S+"  # https://example.com/page.html
+    r"|\bwww\.\S+"
+    r"|(?<![\w./\\-])[a-z0-9-]+(?:\.[a-z0-9-]+)+/\S*",  # docs.python.org/3/library/os.html
+    re.I,
+)
+
+
+def _without_urls(text: str) -> str:
+    """Web addresses end in names like page.html or post.md but are not workspace files."""
+    return _URL.sub(" ", text)
 
 
 def _recent_topic(history: list[dict[str, str]]) -> str:
@@ -158,11 +177,13 @@ def decide_mode(prompt: str, context: RouteContext | None = None) -> RouteDecisi
     local_grounding = bool(LOCAL_GROUNDING.search(contextual) or PERSONAL_KNOWLEDGE.search(contextual))
     direct_lookup = bool(DIRECT_LOOKUP.search(current))
     explicit_web = bool(EXPLICIT_WEB.search(current))
-    file_named = bool(FILE_REFERENCE.search(current))
+    file_named = bool(FILE_REFERENCE.search(_without_urls(current)))
+    # "why does git push fail?" or "explain how to read data.csv" ask about a tool; they do not order it.
+    conceptual = bool(CONCEPTUAL_QUESTION.search(current))
     agent_task = (
         (bool(AGENT_ACTION.search(current)) and (bool(AGENT_TARGET.search(contextual)) or file_named))
-        or (bool(READ_ACTION.search(current)) and file_named)
-        or bool(GIT_ACTION.search(current))
+        or (bool(READ_ACTION.search(current)) and file_named and not conceptual)
+        or (bool(GIT_ACTION.search(current)) and not conceptual)
     )
     needs_web_evidence = bool(explicit_web or CURRENT_INFO.search(current) or DEEP.search(current))
     needs_combined_evidence = local_grounding and needs_web_evidence

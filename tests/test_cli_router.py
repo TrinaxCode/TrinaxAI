@@ -161,3 +161,25 @@ def test_version_control_orders_go_to_the_agent_but_questions_about_them_do_not(
         assert decide_mode(prompt).mode == "chat", prompt
     # With documents attached the turn stays about them, as for every other workspace action.
     assert decide_mode("commit these changes", RouteContext(has_documents=True)).mode != "agent"
+
+
+def test_urls_are_not_mistaken_for_workspace_files() -> None:
+    for prompt in (
+        "resume https://example.com/article.html",
+        "summarize https://blog.dev/post.md",
+        "please read the docs at docs.python.org/3/library/os.html",
+    ):
+        assert decide_mode(prompt).mode != "agent", prompt
+    assert decide_mode("read main.py and fix the bug").mode == "agent"
+
+
+def test_conceptual_questions_about_git_or_files_stay_in_chat() -> None:
+    for prompt in (
+        "git push fails with 'rejected', why?",
+        "use git rebase vs merge difference",
+        "explain how to read data.csv in pandas",
+        "¿qué significa git push --force?",
+        "how do I read data.csv with pandas?",
+    ):
+        assert decide_mode(prompt).mode == "chat", prompt
+    assert decide_mode("read data.csv and summarize it").mode == "agent"
