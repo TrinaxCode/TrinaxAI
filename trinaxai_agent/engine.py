@@ -545,16 +545,18 @@ class AgentEngine:
             if self.on_tool_result:
                 self.on_tool_result(tool, result)
             return result
-        precheck = getattr(tool, "precheck", None)  # tools from integrations may predate the hook
-        if precheck is not None:
-            problem = precheck(args)
-            if problem:
-                # A call that cannot succeed is never worth the user's attention.
-                result = format_tool_failure(name, problem)
-                self._last_call_key = call_key
-                if self.on_tool_result:
-                    self.on_tool_result(tool, result)
-                return result
+        precheck = getattr(tool, "precheck", None)  # tools from integrations may predate the hooks
+        state_check = getattr(tool, "state_check", None)
+        problem = precheck(args) if precheck is not None else None
+        if not problem and state_check is not None:
+            problem = state_check(self.workspace_root, args)
+        if problem:
+            # A call that cannot succeed is never worth the user's attention.
+            result = format_tool_failure(name, problem)
+            self._last_call_key = call_key
+            if self.on_tool_result:
+                self.on_tool_result(tool, result)
+            return result
         if tool.dangerous and self.on_confirm is not None and not self.on_confirm(tool, args):
             denied = format_tool_failure(name, "The action was denied by user, so no change was made.")
             self._last_call_key = call_key

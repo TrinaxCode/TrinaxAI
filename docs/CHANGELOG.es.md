@@ -83,6 +83,11 @@ el formato de [Keep a Changelog](https://keepachangelog.com/).
 
 ### Cambiado
 
+- El agente ya no te pide aprobar un `git commit -m ...` sencillo cuando no hay nada preparado
+  (el primer intento habitual de los modelos locales pequeños, que siempre falla): se rechaza
+  de antemano con la solución (`add <archivo>` o `commit -a`). Los commits con `-a`, `--amend`,
+  `--allow-empty`, rutas, y cualquiera durante un merge, cherry-pick, revert o rebase los
+  decide git.
 - Cuando el `git commit` del agente falla porque no hay nada preparado (o el árbol está limpio),
   el resultado lo dice y explica cómo arreglarlo (`add <archivo>`, o `commit -a`) en vez de solo
   el texto crudo de git. Los modelos locales pequeños suelen confirmar antes de preparar; con el

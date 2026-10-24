@@ -1022,6 +1022,9 @@ class Tool:
     # it to the model right away instead of asking the user to approve a call that
     # is certain to fail.
     precheck: Callable[[dict[str, Any]], str | None] | None = None
+    # Like ``precheck`` but may look at the workspace (for example the state of a git
+    # repository), so it can also spare the user a prompt for a call that is certain to fail.
+    state_check: Callable[[Path, dict[str, Any]], str | None] | None = None
 
     def schema(self) -> dict[str, Any]:
         """Return the Ollama/OpenAI-style function schema for this tool."""
@@ -1040,6 +1043,74 @@ def _precheck_git(arguments: dict[str, Any]) -> str | None:
         classify_git(git_input(arguments))
     except GitUsageError as exc:
         return str(exc)
+    return None
+
+
+_PLAIN_COMMIT_FLAGS = frozenset({"-q", "--quiet", "-s", "--signoff", "-n", "--no-verify", "--no-gpg-sign"})
+# A commit that concludes a merge, cherry-pick, revert or rebase can be valid with an empty index.
+_OPERATION_MARKERS = ("MERGE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD", "rebase-merge", "rebase-apply")
+
+
+def _is_plain_commit(args: Sequence[str]) -> bool:
+    """True only for ``commit -m <message>`` with harmless flags.
+
+    Anything else (-a, --amend, --allow-empty, -F, pathspecs, combined short flags ...) can
+    commit without a staged change, so it is left to git to judge.
+    """
+    if not args or args[0] != "commit":
+        return False
+    rest = list(args[1:])
+    has_message = False
+    index = 0
+    while index < len(rest):
+        token = rest[index]
+        if token in ("-m", "--message"):
+            if index + 1 >= len(rest):
+                return False
+            has_message = True
+            index += 2
+        elif token.startswith("--message="):
+            has_message = True
+            index += 1
+        elif token in _PLAIN_COMMIT_FLAGS:
+            index += 1
+        else:
+            return False
+    return has_message
+
+
+def _git_state_check(root: Path, arguments: dict[str, Any]) -> str | None:
+    """Refuse a plain ``git commit`` when nothing is staged, before asking the user.
+
+    With a real model the first commit fails for this reason in nearly every run; approving
+    it only to read "no changes added to commit" wastes the user's click and a round trip.
+    Any doubt (not a repository, git failing, an operation in progress) returns None and
+    lets the normal flow run.
+    """
+    try:
+        parsed = classify_git(git_input(arguments))
+    except GitUsageError:
+        return None  # the precheck reports usage problems
+    if not _is_plain_commit(parsed.args):
+        return None
+    executable = shutil.which("git")
+    if executable is None:
+        return None
+    try:
+        top = _git_toplevel(executable, root)
+        if top is None or top != root.resolve():
+            return None
+        code, out, _ = _git_run(executable, ("rev-parse", "--git-dir"), root)
+        if code != 0 or not out.strip():
+            return None
+        git_dir = (root / out.strip().splitlines()[0]).resolve()
+        if any((git_dir / marker).exists() for marker in _OPERATION_MARKERS):
+            return None
+        code, _, _ = _git_run(executable, ("diff", "--cached", "--quiet"), root)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if code == 0:  # exit 1 means there are staged changes; anything else is an error to ignore
+        return "nothing is staged, so this commit would fail. Stage the files first with the git tool (add <file>), or use commit -a for tracked files."
     return None
 
 
@@ -1175,6 +1246,7 @@ DEFAULT_TOOLS: tuple[Tool, ...] = (
         handler=_git,
         dangerous=True,
         precheck=_precheck_git,
+        state_check=_git_state_check,
     ),
 )
 

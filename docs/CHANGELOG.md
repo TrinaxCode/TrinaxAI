@@ -80,6 +80,10 @@ All notable changes to TrinaxAI are documented here. This project follows the
 
 ### Changed
 
+- The agent no longer asks you to approve a plain `git commit -m ...` when nothing is staged
+  (the usual first attempt of small local models, which always fails): it is refused up front
+  with the fix (`add <file>` or `commit -a`). Commits with `-a`, `--amend`, `--allow-empty`,
+  paths, and anything during a merge, cherry-pick, revert or rebase are left to git.
 - When the agent's `git commit` fails because nothing is staged (or the tree is clean), the
   result now says so and how to fix it (`add <file>`, or `commit -a`) instead of only git's raw
   text. Small local models often commit before staging; with the real model this did not stop the
