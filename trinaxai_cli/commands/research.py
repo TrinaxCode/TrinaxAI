@@ -39,11 +39,11 @@ def run(args: Any, client: Any, ui: Any, config: Any) -> int:
             research_kwargs: dict[str, Any] = {"query": query, "collections": collections, "depth": depth}
             if getattr(args, "web", False):
                 research_kwargs["web_search"] = True
-            if hasattr(config, "thinking_enabled"):
-                thinking = config.thinking_enabled
-                if getattr(args, "thinking", None) is not None:
-                    thinking = bool(args.thinking)
-                research_kwargs["thinking"] = bool(thinking)
+            # Only an explicit --thinking/--no-thinking is sent. The CLI's default preference (on) would
+            # override the server, which turns reasoning off for a quick web lookup: on a CPU the model
+            # then spends its whole budget thinking and the synthesis never completes.
+            if getattr(args, "thinking", None) is not None:
+                research_kwargs["thinking"] = bool(args.thinking)
             res = client.research(**research_kwargs)
         session_name = getattr(args, "session", None)
         if session_name:

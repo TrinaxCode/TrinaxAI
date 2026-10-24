@@ -130,6 +130,10 @@ el formato de [Keep a Changelog](https://keepachangelog.com/).
 
 ### Corregido
 
+- `trinaxai research` ya no envía la preferencia por defecto "razonamiento activado" de la CLI: en CPU
+  el modelo gastaba todo su presupuesto razonando y la síntesis web nunca terminaba (2,5 minutos y
+  solo una lista de fuentes). Ahora deja que decida el servidor, como la app web, y `--thinking` /
+  `--no-thinking` siguen forzándolo. Una consulta web responde aquí en menos de un minuto.
 - Cuando `trinaxai research` agota su tiempo de espera en un equipo lento, la CLI ya no culpa a la
   red ("The network request timed out"): dice que TrinaxAI no terminó a tiempo y sugiere
   `--depth 1`. `TRINAXAI_CLI_TIMEOUT` sube el límite.

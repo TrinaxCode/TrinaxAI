@@ -124,6 +124,10 @@ All notable changes to TrinaxAI are documented here. This project follows the
 
 ### Fixed
 
+- `trinaxai research` no longer sends the CLI's default "thinking on" preference: on a CPU the model
+  spent its whole budget reasoning and the web synthesis never finished (2.5 minutes, then only
+  a list of sources). It now lets the server choose, as the web app does, and `--thinking` /
+  `--no-thinking` still force it. A web lookup now answers in under a minute here.
 - When `trinaxai research` runs out of its wait limit on a slow computer, the CLI no longer blames
   the network ("The network request timed out"): it says TrinaxAI did not finish in time and
   suggests `--depth 1`. `TRINAXAI_CLI_TIMEOUT` raises the limit.

@@ -109,6 +109,13 @@ def test_research_validates_and_renders_results(ui) -> None:
     )
     client.research.assert_called_once_with(query="topic", collections=["docs", "notes"], depth=2)
     ui.markdown.assert_called_once_with("answer")
+    # Reasoning is sent only when asked for; the CLI's default preference must not override the server.
+    client.research.reset_mock()
+    config = SimpleNamespace(thinking_enabled=True)
+    assert research.run(SimpleNamespace(query="topic", thinking=None, depth=1), client, ui, config) == 0
+    assert "thinking" not in client.research.call_args.kwargs
+    assert research.run(SimpleNamespace(query="topic", thinking=False, depth=1), client, ui, config) == 0
+    assert client.research.call_args.kwargs["thinking"] is False
     # --web grounds the research on web search; without it the server decides as before.
     client.research.reset_mock()
     assert research.run(SimpleNamespace(query="topic", web=True, depth=1), client, ui, None) == 0
