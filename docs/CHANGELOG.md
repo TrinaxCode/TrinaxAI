@@ -121,6 +121,8 @@ All notable changes to TrinaxAI are documented here. This project follows the
 
 ### Fixed
 
+- `install.sh` prints plain text (no color codes) when its output is piped or `NO_COLOR` is
+  set, so logs and CI output are readable.
 - Indexing says a file with no text is "empty, or a scan that needs OCR" and is checked
   again on the next run, instead of the vaguer "will retry".
 - `trinaxai ask --collection x` says "The collection 'x' does not exist" and how to list

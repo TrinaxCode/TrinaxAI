@@ -352,6 +352,10 @@ fi
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; BLUE='\033[0;34m'
 YELLOW='\033[1;33m'; CYAN='\033[0;36m'; NC='\033[0m'; BOLD='\033[1m'
+# Plain text for logs, pipes and NO_COLOR (https://no-color.org), so captured output has no escape codes.
+if [ -n "${NO_COLOR:-}" ] || [ ! -t 1 ]; then
+  RED=''; GREEN=''; BLUE=''; YELLOW=''; CYAN=''; NC=''; BOLD=''
+fi
 
 usage() {
   if [ "$LANGUAGE" = "es" ]; then
