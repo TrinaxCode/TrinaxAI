@@ -130,6 +130,9 @@ el formato de [Keep a Changelog](https://keepachangelog.com/).
 
 ### Corregido
 
+- El agente es más preciso sobre qué persigue: un comando fallido ya no se persigue tras editar el archivo, un
+  `echo` que pasa ya no oculta una ejecución de pruebas fallida, "renombra la variable a total" no se toma
+  como renombrar una variable llamada `variable`, y "crea un archivo de prueba x.txt" sigue siendo un solo archivo.
 - Tras "renombra X a Y" el agente busca el nombre antiguo en el proyecto y, si queda algún uso como palabra
   completa (una llamada que ninguna prueba cubre), vuelve a corregirlo en vez de decir "renombrado en todas partes".
 - El agente ya no lista una ejecución de pruebas fallida bajo la respuesta cuando una ejecución posterior
@@ -255,6 +258,8 @@ el formato de [Keep a Changelog](https://keepachangelog.com/).
 
 ### Seguridad
 
+- Si la API local corre sin HTTPS y necesita token, escribe `api.base_url = "http://localhost:3333"` en la
+  configuración: el respaldo automático a HTTP simple no envía token, a propósito.
 - El respaldo automático de la CLI a una API local en HTTP simple ya no envía el token de administrador ni
   de dispositivo, que no se pudo verificar con TLS. La búsqueda de un identificador renombrado del agente
   omite los enlaces simbólicos, igual que las herramientas de archivos.

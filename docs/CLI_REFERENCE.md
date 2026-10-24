@@ -115,7 +115,7 @@ Use `trinaxai chat --file PATH --prompt "Describe this"` to analyze one local
 image or text/document file. The attachment path is validated locally and the
 file is not uploaded by the CLI.
 
-Without `--web`, `research` works from your indexed documents (and searches the web only when the question asks for current information); `--web` always grounds it on web search, which sends the question to the search provider. `research` tries to read bounded page text (`full_page`) and keeps the search
+Without `--web`, `research` works from your indexed documents (and searches the web only when the question asks for current information); `--web` always grounds it on web search, which sends the question to the search provider. `research` lets the server choose whether to reason (fast for a quick web lookup); `--thinking` / `--no-thinking` force it, and the config's `defaults.thinking` applies to `chat` and `ask` only. `research` tries to read bounded page text (`full_page`) and keeps the search
 excerpt as a fallback (`snippet_only`); the sources say which one was used. Add `--session NAME` to save the question, answer,
 public research metadata, and sources for a later `trinaxai export`.
 

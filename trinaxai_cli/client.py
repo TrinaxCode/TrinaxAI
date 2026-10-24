@@ -96,12 +96,12 @@ _CREDENTIAL_HEADERS = frozenset({"X-Admin-Token", "X-TrinaxAI-Device-Token"})
 
 
 def _cli_timeout() -> float | None:
-    """Seconds from ``TRINAXAI_CLI_TIMEOUT`` for long requests, or None to use the built-in limits."""
+    """Seconds from ``TRINAXAI_CLI_TIMEOUT`` (30 to 86400) for API requests, or None to use the built-in limits."""
     try:
         value = float(os.getenv("TRINAXAI_CLI_TIMEOUT", "").strip())
     except ValueError:
         return None
-    return value if 5.0 <= value <= 86400.0 else None
+    return value if 30.0 <= value <= 86400.0 else None
 
 
 def _speaks_no_tls(exc: BaseException) -> bool:
@@ -327,7 +327,7 @@ class TrinaxAPIClient:
         timeout: float | None = None,
     ) -> Any:
         """Issue a request, translating transport failures into TrinaxAPIError."""
-        effective_timeout = timeout or self.timeout
+        effective_timeout = timeout or _cli_timeout() or self.timeout
         retryable_method = method.upper() in {"GET", "HEAD", "OPTIONS"}
         for attempt in range(2 if retryable_method else 1):
             try:

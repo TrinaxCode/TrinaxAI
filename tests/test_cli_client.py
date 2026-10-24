@@ -434,7 +434,7 @@ def test_cli_timeout_overrides_the_research_wait(monkeypatch) -> None:
     monkeypatch.setenv("TRINAXAI_CLI_TIMEOUT", "900")
     client.research("q", depth=1)
     assert client._post.call_args.kwargs["timeout"] == 900.0
-    for bad in ("soon", "1", "999999", ""):
+    for bad in ("soon", "5", "999999", ""):
         monkeypatch.setenv("TRINAXAI_CLI_TIMEOUT", bad)
         client.research("q", depth=1)
         assert client._post.call_args.kwargs["timeout"] == 180.0, bad
@@ -456,3 +456,14 @@ def test_the_plain_http_fallback_never_sends_credentials(monkeypatch) -> None:
     finally:
         server.shutdown()
         server.server_close()
+
+
+def test_cli_timeout_also_sets_the_wait_for_ordinary_requests(monkeypatch) -> None:
+    client = _client()
+    client._client = MagicMock()
+    client._client.request.return_value = SimpleNamespace(status_code=200, content=b"{}", json=lambda: {}, text="{}")
+    client._get("/health")
+    assert client._client.request.call_args.kwargs["timeout"] == 10.0
+    monkeypatch.setenv("TRINAXAI_CLI_TIMEOUT", "600")
+    client._get("/health")
+    assert client._client.request.call_args.kwargs["timeout"] == 600.0

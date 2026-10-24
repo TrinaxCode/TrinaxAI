@@ -250,6 +250,7 @@ class AgentEngine:
         rename = _rename_request(_latest_user_text(messages))
         failed_run_nudges = 0
         last_run_failed = False
+        failed_by_command: dict[str, str] = {}
         mutated = False
         ran_command = False
         wants_change = _requests_change(_latest_user_text(messages)) and any(
@@ -415,19 +416,24 @@ class AgentEngine:
                 result = self._execute_call(call)
                 name, args = _parse_tool_call(call)
                 tool = self._tool_map.get(name)
-                if not is_degraded_tool_result(result):
-                    # `mutated` gates the "you claimed a change you never made" nudge, so it must
-                    # turn true once a file really changed.
-                    mutated = mutated or name in ("write_file", "edit_file")
+                if not is_degraded_tool_result(result) and name in ("write_file", "edit_file"):
+                    # `mutated` gates the "you claimed a change you never made" nudge, so it must turn true
+                    # once a file really changed. An edit after a failed run also means that failure is old
+                    # news: the model has acted on it.
+                    mutated = True
+                    last_run_failed = False
                 if name == "run_command":
                     ran_command = True
+                    command_text = str(args.get("command") or "")
                     last_run_failed = is_degraded_tool_result(result)
-                    if not last_run_failed:
-                        # A later passing run supersedes the earlier failed ones: reporting them under the
-                        # answer would say the command failed when it has since succeeded.
-                        marker = "tool=run_command]"
-                        reported_results[:] = [r for r in reported_results if marker not in r[:80]]
-                        degraded_results[:] = [r for r in degraded_results if marker not in r[:80]]
+                    if last_run_failed:
+                        failed_by_command[command_text] = result
+                    elif command_text in failed_by_command:
+                        # The same command passes now: reporting its earlier failure under the answer would
+                        # say it failed after it was fixed. Other commands' failures stay reported.
+                        earlier = failed_by_command.pop(command_text)
+                        reported_results[:] = [r for r in reported_results if r != earlier]
+                        degraded_results[:] = [r for r in degraded_results if r != earlier]
                 # A refusal by the user is a decision, not an outage: do not
                 # bolt a "what happened / still works" block onto the answer.
                 if (
@@ -932,12 +938,15 @@ _RENAME_RE = re.compile(
     r"variable\s+|m[eé]todo\s+|method\s+)?[`'\"]?([A-Za-z_]\w*)[`'\"]?\s+(?:a|como|to|por|->)\s+[`'\"]?([A-Za-z_]\w*)",
     re.IGNORECASE,
 )
+_RENAME_NOUNS = frozenset(
+    {"funcion", "función", "function", "clase", "class", "variable", "metodo", "método", "method"}
+)
 _SKIP_DIRS = frozenset({".git", "node_modules", ".venv", "venv", "__pycache__", "dist", "build", ".mypy_cache"})
 
 
 def _rename_request(user_text: str) -> tuple[str, str] | None:
     match = _RENAME_RE.search(user_text or "")
-    if not match or match.group(1) == match.group(2):
+    if not match or match.group(1) == match.group(2) or match.group(1).lower() in _RENAME_NOUNS:
         return None
     return match.group(1), match.group(2)
 
@@ -950,9 +959,6 @@ def _leftover_name_hits(root: Path, name: str, *, limit: int = 8) -> list[str]:
     for current, dirs, files in os.walk(root):
         dirs[:] = [d for d in dirs if d not in _SKIP_DIRS]
         for filename in files:
-            checked += 1
-            if checked > 500:
-                return hits
             path = Path(current) / filename
             if path.is_symlink():
                 continue  # a link could lead outside the workspace, which the file tools never read
@@ -962,6 +968,9 @@ def _leftover_name_hits(root: Path, name: str, *, limit: int = 8) -> list[str]:
                 text = path.read_text(encoding="utf-8")
             except (OSError, UnicodeDecodeError):
                 continue
+            checked += 1
+            if checked > 500:
+                return hits
             for number, line in enumerate(text.splitlines(), start=1):
                 if pattern.search(line):
                     hits.append(f"{path.relative_to(root)}:{number}: {line.strip()[:100]}")
@@ -971,7 +980,7 @@ def _leftover_name_hits(root: Path, name: str, *, limit: int = 8) -> list[str]:
 
 
 _RUN_VERB_RE = re.compile(
-    r"\b(?:ejecut\w*|corre|correr|pru[eé]ba\w*|prueb[ae]|lanza\w*|run|execute|test)\b", re.IGNORECASE
+    r"\b(?:ejecut\w*|corre|correr|lanza\w*|run|execute|pru[eé]ba(?:lo|la|los|las)|try it out)\b", re.IGNORECASE
 )
 
 

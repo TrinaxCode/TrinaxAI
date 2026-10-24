@@ -221,6 +221,10 @@ grep -Fq 'Descargar modelos ahora: No' "$plan_output" || fail "installer plan ig
 grep -Fq 'Iniciar con tu equipo: No' "$plan_output" || fail "installer plan ignores --no-autostart"
 grep -Fq 'Acceso desde otros dispositivos: No' "$plan_output" || fail "installer plan does not default to this computer only"
 if grep -q "$(printf '\033')" "$plan_output"; then fail "installer output captured to a file contains color escape codes"; fi
+# No-color mode must leave every color variable empty (a typo once left a literal "=" in NC/BOLD).
+for script in install.sh update.sh uninstall.sh setup_trinaxai.sh; do
+  if grep -Eq "(NC|BOLD|RED|GREEN|BLUE|YELLOW|CYAN)=''=" "$ROOT/$script"; then fail "$script assigns a stray '=' in its no-color block"; fi
+done
 (cd "$ROOT" && bash install.sh --dry-run --language es --no-models --lan-access >"$plan_output" 2>&1) || fail "install dry-run with --lan-access failed"
 grep -Fq 'Acceso desde otros dispositivos: Sí' "$plan_output" || fail "installer plan ignores --lan-access"
 grep -Fq 'TU-IP-LAN' "$plan_output" || fail "dry-run with --lan-access does not announce the LAN link"

@@ -111,7 +111,7 @@ FastAPI application options.
 | `OLLAMA_NUM_GPU` | auto-detected | Ollama GPU layer hint; `0` keeps inference on CPU, while a high value offloads all layers that fit on a detected GPU. |
 | `TRINAXAI_KEEP_ALIVE` | profile-derived | Ollama chat-model residency duration, such as `0s` or `10m`. |
 | `TRINAXAI_TIMEOUT` | `300` | Ollama request timeout in seconds. |
-| `TRINAXAI_CLI_TIMEOUT` | (unset) | Seconds the CLI waits for `trinaxai research` before giving up (5 to 86400). Unset uses 3 to 5 minutes by depth; raise it on slower computers. |
+| `TRINAXAI_CLI_TIMEOUT` | (unset) | Seconds the CLI waits for an API request, including `trinaxai research`, before giving up (30 to 86400). Unset uses 30 seconds for ordinary requests and 3 to 5 minutes for research by depth; raise it on slower computers. |
 | `TRINAXAI_MODEL_MAX_CONCURRENCY` | `1` | Concurrent model tasks; keep constrained to avoid RAM/VRAM thrashing. |
 | `TRINAXAI_INFERENCE_QUEUE_TIMEOUT` | `600` | Seconds FastAPI and the PWA gateway wait for the shared cross-process inference lock. |
 | `TRINAXAI_INFERENCE_LOCK_FILE` | `storage/.inference.lock` | Shared atomic lock-directory path used by the gateway. It must match the backend's storage lock when overridden. |

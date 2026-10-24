@@ -124,6 +124,9 @@ All notable changes to TrinaxAI are documented here. This project follows the
 
 ### Fixed
 
+- Agent follow-through is stricter about what it chases: a failed command is no longer chased after the file
+  was edited, a passing `echo` no longer hides a failed test run, "rename the variable to total" is not
+  treated as renaming a variable called `variable`, and "create a test file x.txt" stays a one-file request.
 - After "rename X to Y" the agent searches the project for the old name and, if any whole-word use is left
   (a call no test covers), sends itself back to update it instead of reporting "renamed everywhere".
 - The agent no longer lists an earlier failed test run under an answer once a later run passed (it said
@@ -245,6 +248,8 @@ All notable changes to TrinaxAI are documented here. This project follows the
 
 ### Security
 
+- If the local API runs without HTTPS and needs a token, set `api.base_url = "http://localhost:3333"` in the config:
+  the automatic fall-back to plain HTTP sends no token, by design.
 - The CLI's automatic fall-back to a plain-HTTP local API no longer sends the admin or device token, which
   could not be verified with TLS. The agent's search for a renamed identifier skips symbolic links, as the
   file tools do.

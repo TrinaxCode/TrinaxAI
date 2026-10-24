@@ -115,7 +115,7 @@ Usa `trinaxai chat --file RUTA --prompt "Describe esto"` para analizar una
 imagen o archivo local de texto/documento. La ruta se valida localmente y la CLI
 no sube el archivo.
 
-Sin `--web`, `research` trabaja con tus documentos indexados (y busca en la web solo si la pregunta pide información actual); `--web` siempre la apoya en búsqueda web, lo que envía la pregunta al proveedor de búsqueda. `research` intenta leer texto acotado de las páginas (`full_page`) y conserva el
+Sin `--web`, `research` trabaja con tus documentos indexados (y busca en la web solo si la pregunta pide información actual); `--web` siempre la apoya en búsqueda web, lo que envía la pregunta al proveedor de búsqueda. `research` deja que el servidor decida si razonar (rápido para una consulta web breve); `--thinking` / `--no-thinking` lo fuerzan, y `defaults.thinking` de la configuración aplica solo a `chat` y `ask`. `research` intenta leer texto acotado de las páginas (`full_page`) y conserva el
 extracto del buscador como fallback (`snippet_only`); las fuentes indican cuál
 se usó. Añade `--session NOMBRE` para guardar la pregunta, la respuesta, los
 metadatos públicos y las fuentes, y después exportar la sesión.
