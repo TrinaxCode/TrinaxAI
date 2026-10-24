@@ -74,6 +74,10 @@ All notable changes to TrinaxAI are documented here. This project follows the
 
 ### Changed
 
+- The interactive `trinaxai agent` loads the model and its fixed prompt in the
+  background while you type your first task. On a 4-core CPU with `qwen3.5:4b`
+  the first task went from 82.6 s to 35.2 s after the warm-up. Nothing changes
+  for one-shot runs (`-p`), where the task is sent right away.
 - English/Spanish documentation parity: `CONFIGURATION`, `API_REFERENCE`,
   `CLI_REFERENCE`, `ENVIRONMENT_VARIABLES`, `SECURITY` and the PWA README now
   carry the same sections in both languages, and the Spanish CLI localizes the

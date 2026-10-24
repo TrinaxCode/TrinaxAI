@@ -77,6 +77,10 @@ el formato de [Keep a Changelog](https://keepachangelog.com/).
 
 ### Cambiado
 
+- El `trinaxai agent` interactivo carga el modelo y su prompt fijo en segundo
+  plano mientras escribes tu primera tarea. En una CPU de 4 núcleos con
+  `qwen3.5:4b`, la primera tarea pasó de 82,6 s a 35,2 s tras el precalentamiento.
+  Las ejecuciones de una sola tarea (`-p`) no cambian: la tarea se envía de inmediato.
 - Paridad de documentación inglés/español: `CONFIGURATION`, `API_REFERENCE`,
   `CLI_REFERENCE`, `ENVIRONMENT_VARIABLES`, `SECURITY` y el README de la PWA
   tienen ahora las mismas secciones en ambos idiomas, y la CLI en español

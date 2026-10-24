@@ -609,6 +609,35 @@ class AgentEngine:
                 return data.get("message") or {}
             return self._chat_stream(f"{self.ollama_url.rstrip('/')}/api/chat", payload)
 
+    def warm_up(self) -> bool:
+        """Load the model and process the fixed prompt prefix before the first task.
+
+        On a CPU the first request pays for loading the model plus the system
+        prompt and tool schemas (about 2,000 tokens, over a minute with a 4B
+        model), while later turns reuse that prefix from Ollama's cache. Sending
+        the same prefix with a one-token reply while the user is still typing
+        moves that cost out of the wait. It is best-effort: a failure only means
+        the first task pays the cost, as before.
+        """
+        payload = {
+            "model": self.model,
+            "messages": [
+                {"role": "system", "content": self.system_prompt},
+                {"role": "user", "content": "ping"},
+            ],
+            "tools": [tool.schema() for tool in self.tools],
+            "stream": False,
+            "think": False,
+            "keep_alive": self.keep_alive,
+            # num_ctx must match _chat: another value makes Ollama reload the model.
+            "options": {"num_ctx": self.num_ctx, "temperature": self.temperature, "num_predict": 1},
+        }
+        try:
+            data = self._post(f"{self.ollama_url.rstrip('/')}/api/chat", payload)
+        except Exception:  # noqa: BLE001 - warming is an optimisation, never an error
+            return False
+        return not data.get("error")
+
     def _raise_if_cancelled(self) -> None:
         if self.should_cancel is not None and self.should_cancel():
             raise AgentCancelled("Agent run cancelled by caller.")
