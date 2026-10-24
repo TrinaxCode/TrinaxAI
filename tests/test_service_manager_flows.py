@@ -94,7 +94,7 @@ def test_direct_process_status_stop_and_start_failure_are_safe(monkeypatch, tmp_
     monkeypatch.setattr(sm, "_process_alive", lambda _pid: True)
     monkeypatch.setattr(sm.time, "sleep", lambda _seconds: None)
     assert sm._stop_by_name("rag_api").running is False
-    assert signals == [(321, sm.signal.SIGTERM), (321, sm.signal.SIGKILL)]
+    assert signals == [(321, sm.signal.SIGTERM), (321, sm._SIGKILL)]
 
     log = tmp_path / "service.log"
     monkeypatch.setattr(sm.subprocess, "Popen", lambda *_args, **_kwargs: (_ for _ in ()).throw(OSError("denied")))

@@ -286,6 +286,10 @@ class _DirectBackend(_Backend):
         return _pgrep_status(name)
 
 
+# Windows has no SIGKILL; the POSIX stop path never runs there, but stays importable.
+_SIGKILL = getattr(signal, "SIGKILL", signal.SIGTERM)
+
+
 # ── Process ownership (POSIX) ──────────────────────────────────────
 # Status and stop must only ever touch processes that belong to *this*
 # installation. Matching a phrase such as "npm run dev" or "ollama" anywhere in
@@ -513,7 +517,7 @@ def _stop_by_name(name: str) -> ProcessState:
         # Hard kill survivors
         for pid in pids:
             if _process_alive(pid):
-                _signal_process(pid, signal.SIGKILL)
+                _signal_process(pid, _SIGKILL)
         return ProcessState(name=name, running=False, detail="stopped matching processes")
 
 

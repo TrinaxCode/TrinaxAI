@@ -80,6 +80,7 @@ def test_service_processes_pick_only_the_right_program_in_the_right_place(monkey
 
 
 def test_only_a_running_ollama_server_counts_not_its_clients(monkeypatch) -> None:
+    monkeypatch.setattr(sm.sys, "platform", "linux")  # the POSIX lookup, whatever runs the tests
     table = [
         _proc(20, "/usr/local/bin/ollama", "run", "llama3"),
         _proc(21, "vim", "ollama-notes.md"),
@@ -126,11 +127,13 @@ def test_ancestor_walk_stops_on_unreadable_or_looping_parent_entries(monkeypatch
 # ------------------------------------------------- process listing branches
 
 
-def test_process_table_on_linux_reads_proc_entries(monkeypatch, tmp_path: Path) -> None:
-    table = sm._process_table()
-    mine = next(proc for proc in table if proc.pid == os.getpid())
+@posix_only
+def test_process_table_lists_this_very_process() -> None:
+    mine = next(proc for proc in sm._process_table() if proc.pid == os.getpid())
     assert mine.argv[0]
 
+
+def test_process_table_on_linux_reads_proc_entries(monkeypatch) -> None:
     monkeypatch.setattr(sm.os.path, "isdir", lambda path: path == "/proc/self")
     monkeypatch.setattr(sm.os, "listdir", lambda _path: ["12", "self", "13"])
     files = {"12": b"python\x00rag_api.py\x00", "13": b""}
