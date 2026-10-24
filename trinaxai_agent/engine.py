@@ -245,6 +245,8 @@ class AgentEngine:
         nudged = False
         claim_nudged = False
         run_nudged = False
+        failed_run_nudges = 0
+        last_run_failed = False
         mutated = False
         ran_command = False
         wants_change = _requests_change(_latest_user_text(messages)) and any(
@@ -336,6 +338,23 @@ class AgentEngine:
                         }
                     )
                     continue
+                # The last command failed (for example a test the change broke) and the model is about to
+                # report success. Give it up to two chances to fix the cause and run it again.
+                if last_run_failed and (wants_run or wants_change) and failed_run_nudges < 2 and used_tools:
+                    failed_run_nudges += 1
+                    last_run_failed = False
+                    messages.append({"role": "assistant", "content": content})
+                    messages.append(
+                        {
+                            "role": "user",
+                            "content": (
+                                "The last command you ran failed. Read its error, fix the cause with "
+                                "edit_file or write_file, run it again, and report the real result. Do not "
+                                "say it works unless the command succeeded."
+                            ),
+                        }
+                    )
+                    continue
                 if _is_final_answer(content, used_tools):
                     content = _append_degradation_notes(content, reported_results)
                     if review_mode and used_tools:
@@ -380,6 +399,7 @@ class AgentEngine:
                     mutated = mutated or name in ("write_file", "edit_file")
                 if name == "run_command":
                     ran_command = True
+                    last_run_failed = is_degraded_tool_result(result)
                 # A refusal by the user is a decision, not an outage: do not
                 # bolt a "what happened / still works" block onto the answer.
                 if (

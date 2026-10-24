@@ -124,6 +124,9 @@ All notable changes to TrinaxAI are documented here. This project follows the
 
 ### Fixed
 
+- When a command the agent ran fails (for example a test its change broke) and it is about to report
+  success, it is now asked, up to twice, to read the error, fix the cause and run it again. In a real
+  rename across three files it had left one call unrenamed and still reported "functional".
 - The agent's "create one file" shortcut (which ends the turn right after the first write) now applies
   only when exactly one file is requested and nothing is to be run, so "create the module and its
   tests, then run them" is no longer cut short with "Created primos.py".

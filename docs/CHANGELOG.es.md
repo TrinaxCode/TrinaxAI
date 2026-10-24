@@ -130,6 +130,9 @@ el formato de [Keep a Changelog](https://keepachangelog.com/).
 
 ### Corregido
 
+- Cuando un comando que ejecutó el agente falla (por ejemplo una prueba que rompió su cambio) y está por
+  reportar éxito, ahora se le pide, hasta dos veces, que lea el error, corrija la causa y lo ejecute de
+  nuevo. En un renombrado real en tres archivos dejó una llamada sin renombrar y aun así dijo "funcional".
 - El atajo "crear un archivo" del agente (que termina el turno tras la primera escritura) ahora solo
   se aplica cuando se pide exactamente un archivo y nada que ejecutar, así que "crea el módulo y sus
   pruebas y ejecútalas" ya no se corta con "Archivo creado: primos.py".

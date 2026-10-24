@@ -749,3 +749,41 @@ def test_one_file_request_ends_after_the_write_but_a_bigger_request_does_not(tmp
         "Crea un archivo app.py y pruébalo",
     ):
         assert not simple(ask(bigger)), bigger
+
+
+def test_a_failed_run_gets_chances_to_be_fixed_before_success_is_reported(tmp_path: Path) -> None:
+    from trinaxai_agent.tools import format_tool_failure
+
+    run = {"function": {"name": "run_command", "arguments": {"command": "pytest"}}}
+    seen: list[list[dict]] = []
+
+    class Breaker(AgentEngine):
+        replies = [
+            {"tool_calls": [run]},
+            {"content": "All good, the project works."},  # but the run failed
+            {"tool_calls": [run]},  # asked once: it runs again, and it fails again
+            {"content": "Fixed now."},  # asked a second time
+            {"tool_calls": [run]},
+            {"content": "Done."},  # capped at two: this ends the turn
+        ]
+
+        def _chat(self, messages):
+            seen.append([dict(m) for m in messages])
+            return self.replies.pop(0)
+
+        def _execute_call(self, call):
+            return format_tool_failure("run_command", "[exit 1; sandboxed] 1 failed")
+
+    engine = Breaker(model="m", workspace_root=tmp_path, on_confirm=None)
+    answer = engine.run([{"role": "user", "content": "Rename calcula to multiplica and run the tests"}])
+    assert answer.startswith("Done.") and "What happened:" in answer  # the failure stays visible
+    assert sum("The last command you ran failed" in str(m.get("content")) for m in seen[-1]) == 2
+
+    # Nothing was asked to be run or changed: a failing command is not chased.
+    seen.clear()
+    Breaker.replies = [{"tool_calls": [run]}, {"content": "It failed, as you can see."}]
+    quiet = Breaker(model="m", workspace_root=tmp_path, on_confirm=None).run(
+        [{"role": "user", "content": "What does the tests folder contain?"}]
+    )
+    assert quiet.startswith("It failed")
+    assert not any("The last command you ran failed" in str(m.get("content")) for m in seen[-1])
