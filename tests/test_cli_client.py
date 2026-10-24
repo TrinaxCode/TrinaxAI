@@ -293,3 +293,177 @@ def test_research_only_sends_requested_optional_values() -> None:
         "model": "model",
     }
     assert client._post.call_args.kwargs["timeout"] == 300.0
+
+
+def test_unreachable_local_service_is_not_blamed_on_the_internet() -> None:
+    from trinaxai_cli.client import TrinaxAPIError
+
+    english = TrinaxAPIError(0, "local service unavailable", language="en")
+    assert "internet" not in str(english).lower()
+    assert str(english) == "Cannot reach the local TrinaxAI service. Start it with: trinaxai start"
+    assert (english.status, english.category, english.error_code) == (
+        0,
+        "internet_unavailable",
+        "ERR_INTERNET_UNAVAILABLE",
+    )
+
+    spanish = TrinaxAPIError(0, "local service unavailable", language="es")
+    assert str(spanish) == "No se puede conectar con el servicio local de TrinaxAI. Inícialo con: trinaxai start"
+
+    # A timeout and real HTTP failures keep their own messages.
+    waited = str(TrinaxAPIError(0, "request timed out"))
+    assert "did not finish within the wait limit" in waited and "network" not in waited.lower()
+    assert "TRINAXAI_CLI_TIMEOUT" in waited and "--depth 1" in waited
+    assert str(TrinaxAPIError(0, "request timed out", language="es")).startswith("TrinaxAI no terminó")
+    assert "Start it with" not in str(TrinaxAPIError(404, "not found"))
+
+
+def test_an_untrusted_certificate_is_not_reported_as_a_stopped_service(monkeypatch) -> None:
+    client = _client()
+    client._client = MagicMock()
+    monkeypatch.setattr(client_module.time, "sleep", lambda _seconds: None)
+    rejected = httpx.ConnectError("[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed")
+    rejected.__cause__ = ssl.SSLCertVerificationError(1, "certificate verify failed")
+    client._client.request.side_effect = rejected
+
+    with pytest.raises(TrinaxAPIError) as raised:
+        client._send("GET", "/health")
+
+    message = str(raised.value)
+    assert message == "This computer does not trust the local TrinaxAI certificate. Run: trinaxai doctor"
+    assert "start" not in message.lower() and raised.value.recovery_included is True
+    spanish = TrinaxAPIError(0, "x", language="es", certificate_problem=True)
+    assert str(spanish).startswith("Este equipo no conf")
+    # A plain refused connection is still a stopped service.
+    client._client.request.side_effect = httpx.ConnectError("refused")
+    with pytest.raises(TrinaxAPIError) as stopped:
+        client._send("GET", "/health")
+    assert "trinaxai start" in str(stopped.value)
+
+
+def _serve_plain_http(status: int = 200, payload: bytes = b'{"ok":true}'):
+    import http.server
+    import threading
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self) -> None:  # noqa: N802 - http.server API
+            body = payload
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *_args) -> None:
+            pass
+
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    return server
+
+
+def test_a_local_api_without_https_is_reached_over_plain_http() -> None:
+    server = _serve_plain_http()
+    try:
+        client = TrinaxAPIClient(f"https://127.0.0.1:{server.server_port}", verify_tls=None)
+        assert client._get("/health") == {"ok": True}
+        assert client.base_url == f"http://127.0.0.1:{server.server_port}"
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_the_plain_http_fallback_is_only_for_a_local_server_that_answers() -> None:
+    server = _serve_plain_http(status=503)
+    try:
+        client = TrinaxAPIClient(f"https://127.0.0.1:{server.server_port}", verify_tls=None)
+        with pytest.raises(TrinaxAPIError):
+            client._get("/health")
+        assert client.base_url.startswith("https://")  # an unhealthy server is not adopted
+    finally:
+        server.shutdown()
+        server.server_close()
+    remote = _client()
+    remote.base_url = "https://example.com:3333"
+    assert remote._use_plain_http_if_served() is False
+    already_plain = _client()
+    already_plain.base_url = "http://localhost:3333"
+    assert already_plain._use_plain_http_if_served() is False
+
+
+def test_ensure_reachable_settles_the_scheme_before_a_streamed_request() -> None:
+    server = _serve_plain_http()
+    try:
+        client = TrinaxAPIClient(f"https://127.0.0.1:{server.server_port}", verify_tls=None)
+        client.ensure_reachable()
+        assert client.base_url.startswith("http://")
+    finally:
+        server.shutdown()
+        server.server_close()
+    # Anything else (here: nothing listening) is left for the real request to report.
+    refused = TrinaxAPIClient("https://127.0.0.1:9", verify_tls=None)
+    refused.ensure_reachable()
+    assert refused.base_url.startswith("https://")
+
+
+def test_another_program_on_the_port_is_not_mistaken_for_trinaxai() -> None:
+    for status, payload in ((404, b"{}"), (200, b'{"hello":"world"}'), (200, b"[]")):
+        server = _serve_plain_http(status, payload)
+        try:
+            client = TrinaxAPIClient(f"https://127.0.0.1:{server.server_port}", verify_tls=None)
+            assert client._use_plain_http_if_served() is False
+            assert client.base_url.startswith("https://")
+        finally:
+            server.shutdown()
+            server.server_close()
+
+
+def test_ensure_reachable_probes_only_once_per_client() -> None:
+    client = _client()
+    client._client = MagicMock()
+    client.ensure_reachable()
+    client.ensure_reachable()
+    assert client._client.get.call_count == 1
+
+
+def test_cli_timeout_overrides_the_research_wait(monkeypatch) -> None:
+    client = _client()
+    client._post = MagicMock(return_value={})
+    client.research("q", depth=1)
+    assert client._post.call_args.kwargs["timeout"] == 180.0
+    monkeypatch.setenv("TRINAXAI_CLI_TIMEOUT", "900")
+    client.research("q", depth=1)
+    assert client._post.call_args.kwargs["timeout"] == 900.0
+    for bad in ("soon", "5", "999999", ""):
+        monkeypatch.setenv("TRINAXAI_CLI_TIMEOUT", bad)
+        client.research("q", depth=1)
+        assert client._post.call_args.kwargs["timeout"] == 180.0, bad
+
+
+def test_the_plain_http_fallback_never_sends_credentials(monkeypatch) -> None:
+    monkeypatch.setenv("TRINAXAI_ADMIN_TOKEN", "secret-admin")
+    monkeypatch.setenv("TRINAXAI_DEVICE_TOKEN", "secret-device")
+    server = _serve_plain_http()
+    try:
+        client = TrinaxAPIClient(f"https://127.0.0.1:{server.server_port}", verify_tls=None, language="en")
+        assert client._request_headers["X-Admin-Token"] == "secret-admin"
+        assert client._get("/health") == {"ok": True}
+        assert client.base_url.startswith("http://")
+        assert "X-Admin-Token" not in client._request_headers
+        assert "X-TrinaxAI-Device-Token" not in client._request_headers
+        assert "X-Admin-Token" not in client._client.headers
+        assert client._client.headers.get("Accept-Language") == "en"  # harmless headers are kept
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_cli_timeout_also_sets_the_wait_for_ordinary_requests(monkeypatch) -> None:
+    client = _client()
+    client._client = MagicMock()
+    client._client.request.return_value = SimpleNamespace(status_code=200, content=b"{}", json=lambda: {}, text="{}")
+    client._get("/health")
+    assert client._client.request.call_args.kwargs["timeout"] == 10.0
+    monkeypatch.setenv("TRINAXAI_CLI_TIMEOUT", "600")
+    client._get("/health")
+    assert client._client.request.call_args.kwargs["timeout"] == 600.0

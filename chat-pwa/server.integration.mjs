@@ -117,6 +117,44 @@ test('network status reads CORS origins from disk instead of the stale service e
       status.configurationCurrent,
       status.urls.every((url) => (onDisk || 'https://stale.invalid:3334').includes(url)),
     );
+    // This computer only: an out-of-date LAN configuration affects nobody, so it never asks for a refresh.
+    assert.equal(status.lanAccess, false);
+    assert.equal(status.needsRefresh, false);
+  } finally {
+    gateway.kill();
+  }
+});
+
+test('a gateway open to the local network asks for a refresh when its LAN configuration is stale', async () => {
+  ensureFrontendFixture();
+  const gatewayPort = await unusedPort();
+  const gateway = spawn(process.execPath, ['server.mjs'], {
+    cwd: new URL('.', import.meta.url),
+    env: {
+      ...process.env,
+      CI: 'true',
+      TRINAXAI_PWA_HOST: '0.0.0.0',
+      TRINAXAI_PWA_PORT: String(gatewayPort),
+      TRINAXAI_ALLOW_INSECURE_HTTP: '1',
+      TRINAXAI_CORS_ORIGINS: 'https://stale.invalid:3334',
+    },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  try {
+    await new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error('gateway startup timed out')), 5000);
+      gateway.once('exit', (code) => reject(new Error(`gateway exited with ${code}`)));
+      gateway.stdout.on('data', (chunk) => {
+        if (!String(chunk).includes('listening')) return;
+        clearTimeout(timeout);
+        resolve();
+      });
+    });
+
+    const status = await (await fetch(`http://127.0.0.1:${gatewayPort}/api/network`)).json();
+    assert.equal(status.lanAccess, true);
+    if (status.configurationCurrent === false) assert.equal(status.needsRefresh, true);
+    assert.equal(status.needsRefresh, status.configurationCurrent === false || status.certificateCurrent === false);
   } finally {
     gateway.kill();
   }
@@ -224,7 +262,11 @@ test('production gateway preserves credentials, replaces proxy identity, and rej
     assert.equal(networkBody.capabilities.manageSystem, true);
     assert.equal(typeof networkBody.existingInstallation, 'boolean');
     assert.equal(networkBody.refreshCommand, 'trinaxai network refresh');
-    assert.match(networkBody.recommendedUrl, /^https:\/\/(?:\d{1,3}\.){3}\d{1,3}:/);
+    // Without a private LAN interface (a container, an offline VM) the stable `.local` name is recommended.
+    assert.match(
+      networkBody.recommendedUrl,
+      privateLanAddress() ? /^https:\/\/(?:\d{1,3}\.){3}\d{1,3}:/ : /^https:\/\/[^/]+\.local:\d+$/,
+    );
 
     const forbiddenRefresh = await fetch(`http://127.0.0.1:${gatewayPort}/api/system/network-refresh`, {
       method: 'POST',

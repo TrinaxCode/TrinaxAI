@@ -22,6 +22,15 @@ All notable changes to TrinaxAI are documented here. This project follows the
 
 ### Added
 
+- `trinaxai research --web` grounds the research on web search, as the chat's deep-research mode
+  does. Without it, a general question ("what is an inverted index?") was answered only from
+  indexed documents and returned unrelated fragments.
+- `trinaxai network off` returns TrinaxAI to this computer only after you allowed
+  other devices, and `trinaxai network` now says whether that access is on. Before,
+  undoing the installer's "allow other devices" answer meant editing `.env` by hand.
+- `trinaxai ask` and the RAG chat list the files an answer comes from
+  (`Sources: aurora.md, manual.pdf (p. 3)`), as the web app already did. An
+  answer that says the information is missing lists none.
 - The installer asks whether other devices on your home or local network may open
   TrinaxAI. The default is this computer only; a yes sets
   `TRINAXAI_PWA_HOST=0.0.0.0`, and every device still needs a one-time pairing
@@ -74,6 +83,23 @@ All notable changes to TrinaxAI are documented here. This project follows the
 
 ### Changed
 
+- The README command table lists `trinaxai research "..."` with `--web`, and `trinaxai network` / `network off`.
+- The agent no longer asks you to approve a plain `git commit -m ...` when nothing is staged
+  (the usual first attempt of small local models, which always fails): it is refused up front
+  with the fix (`add <file>` or `commit -a`). Commits with `-a`, `--amend`, `--allow-empty`,
+  paths, and anything during a merge, cherry-pick, revert or rebase are left to git.
+- When the agent's `git commit` fails because nothing is staged (or the tree is clean), the
+  result now says so and how to fix it (`add <file>`, or `commit -a`) instead of only git's raw
+  text. Small local models often commit before staging; with the real model this did not stop the
+  first attempt from failing, but the failure is now explained.
+- `trinaxai ask` and `trinaxai chat` use the model the installer chose for your
+  computer (`TRINAXAI_MODEL_GENERAL`) instead of a fixed `qwen3.5:2b`, which left
+  them on the smallest model even on machines with room for a better one. Set
+  `model` under `[defaults]` in the CLI config to pin one.
+- The interactive `trinaxai agent` loads the model and its fixed prompt in the
+  background while you type your first task. On a 4-core CPU with `qwen3.5:4b`
+  the first task went from 82.6 s to 35.2 s after the warm-up. Nothing changes
+  for one-shot runs (`-p`), where the task is sent right away.
 - English/Spanish documentation parity: `CONFIGURATION`, `API_REFERENCE`,
   `CLI_REFERENCE`, `ENVIRONMENT_VARIABLES`, `SECURITY` and the PWA README now
   carry the same sections in both languages, and the Spanish CLI localizes the
@@ -99,6 +125,104 @@ All notable changes to TrinaxAI are documented here. This project follows the
 
 ### Fixed
 
+- A script run of `trinaxai agent -p` without `--yolo` now says on stderr why an edit or command was refused (no
+  terminal to ask), instead of leaving the model to blame "a system restriction". Stdout still has only the answer.
+- Agent follow-through is stricter about what it chases: a failed command is no longer chased after the file
+  was edited, a passing `echo` no longer hides a failed test run, "rename the variable to total" is not
+  treated as renaming a variable called `variable`, and "create a test file x.txt" stays a one-file request.
+- After "rename X to Y" the agent searches the project for the old name and, if any whole-word use is left
+  (a call no test covers), sends itself back to update it instead of reporting "renamed everywhere".
+- The agent no longer lists an earlier failed test run under an answer once a later run passed (it said
+  the command failed after it had been fixed).
+- When a command the agent ran fails (for example a test its change broke) and it is about to report
+  success, it is now asked, up to twice, to read the error, fix the cause and run it again. In a real
+  rename across three files it had left one call unrenamed and still reported "functional".
+- The agent's "create one file" shortcut (which ends the turn right after the first write) now applies
+  only when exactly one file is requested and nothing is to be run, so "create the module and its
+  tests, then run them" is no longer cut short with "Created primos.py".
+- The agent no longer stops after the first file when it was also asked to run something ("create the
+  module and its tests, run them"): if nothing has been run it is asked once to run it. Its
+  "you claimed a change you did not make" check also stops firing after a real edit.
+- `trinaxai research` no longer sends the CLI's default "thinking on" preference: on a CPU the model
+  spent its whole budget reasoning and the web synthesis never finished (2.5 minutes, then only
+  a list of sources). It now lets the server choose, as the web app does, and `--thinking` /
+  `--no-thinking` still force it. A web lookup now answers in under a minute here.
+- When `trinaxai research` runs out of its wait limit on a slow computer, the CLI no longer blames
+  the network ("The network request timed out"): it says TrinaxAI did not finish in time and
+  suggests `--depth 1`. `TRINAXAI_CLI_TIMEOUT` raises the limit.
+- `trinaxai research "your question"` takes the topic as plain words, like `ask`; `--query` still
+  works. Forgetting it now says how to write the command instead of "--query is required".
+- On Debian and Ubuntu the agent's terminal could not find `python3`, `python`, `cc` or `awk`
+  ("python3: not found"), because those names are links through `/etc/alternatives`, which the
+  sandbox did not include. That one read-only folder of links into `/usr` is now mounted (the
+  rest of `/etc` stays hidden), so "run the tests" works on those systems.
+- `install.sh`, `update.sh` and `uninstall.sh` print plain text (no color codes) when its output is piped or `NO_COLOR` is
+  set, so logs and CI output are readable.
+- Indexing says a file with no text is "empty, or a scan that needs OCR" and is checked
+  again on the next run, instead of the vaguer "will retry".
+- `trinaxai ask --collection x` says "The collection 'x' does not exist" and how to list
+  collections, instead of "Start TrinaxAI with: trinaxai start". Typed API errors during a
+  RAG answer now show their own message, and the CLI also finds a local API served over
+  plain HTTP when it streams an answer.
+- Indexing names the files it skips for being too large, with their size and the limit
+  (`huge.txt (5.7 MB; limit 3.0 MB)`), instead of only counting them.
+- The CLI works when the local API runs without HTTPS (no certificate could be created for
+  it): it now follows the port to plain HTTP on this computer instead of reporting that
+  the service is stopped. A server that does speak HTTPS is never downgraded.
+- `trinaxai network` no longer lists LAN addresses to open while access is limited to
+  this computer, where nothing listens on them. It shows `https://localhost:3334` and
+  how to allow other devices.
+- "Show me the git diff" and "muéstrame el git log" now go to the agent, which can run
+  them, instead of being answered as a chat question.
+- `trinaxai` no longer treats a URL such as `https://example.com/page.html` as a
+  file in your workspace, and questions about git or files ("why does git push
+  fail?", "how do I read data.csv in pandas?") stay a conversation instead of
+  starting the coding agent.
+- `trinaxai network` and `network off` read `.env` the way the service does
+  (indented lines, `KEY = value`, quotes), so they no longer miss a setting the
+  service honours.
+- A short answer that states the information is missing after a sentence of
+  context ("The documents cover X, but Y is not mentioned") no longer lists
+  sources for the missing information.
+- The agent's git errors are recognised whatever language the system speaks, so the
+  hint that tells the model what to do next always appears.
+- `trinaxai doctor` and every command say "This computer does not trust the local
+  TrinaxAI certificate. Run: trinaxai doctor" when the certificate is the problem,
+  instead of claiming the service is stopped.
+- A config file saved by an older version, which pinned `qwen3.5:2b`, now means
+  "automatic" again, so `ask`/`chat` use the model the installer chose. To pin one, set
+  `model = "<name>"` under `[defaults]` in the config file or pass `--model`.
+- `trinaxai doctor` no longer repeats the start command when TrinaxAI is stopped
+  ("Start it with: trinaxai start; run: trinaxai start").
+- In the web app's coding agent, a tool that ran but failed (for example a `git commit`
+  that exited with an error, or a command with a non-zero exit code) no longer shows a
+  green check next to its error text; it shows a warning icon.
+- A correct, long answer is no longer mistaken for a refusal (and stripped of its
+  sources) just because a phrase like "is not available" appears in the middle of
+  the explanation. Refusals are only recognised at the start of an answer.
+- `./install.sh --dry-run` no longer announces a LAN link when you chose to keep
+  TrinaxAI on this computer only; it says so, as the real installation does.
+- `trinaxai models` shows model sizes as `3.1 GB` instead of a raw byte count, and the
+  `trinaxai doctor` row about the agent's terminal sandbox is translated to Spanish.
+- The terminal assistant now sends file and version-control requests to the coding
+  agent instead of answering them as plain chat: "fix the bug in calc.py",
+  "read main.py and tell me what it does", "commit these changes". Questions about
+  those topics ("what is a git commit?", "what does next.js do?") stay in chat.
+- `trinaxai status` shows a service that is not running as `stopped` instead of the
+  contradictory `stopped not found`.
+- The web app no longer asks you to "prepare this network" when TrinaxAI is kept
+  on this computer only. A changed Wi-Fi address or an out-of-date LAN
+  certificate only matters when other devices can connect, so the notice now
+  appears only if you allowed access from your local network.
+- Errors now name the real cause. With TrinaxAI stopped the CLI no longer says
+  "the internet connection is unavailable" but "Cannot reach the local TrinaxAI
+  service. Start it with: trinaxai start". A model that is not installed is
+  reported as such (`The model 'x' is not installed. Install it with: ollama
+  pull x`) in the CLI and the API, instead of a generic "start TrinaxAI" or
+  "external service unavailable", and "Please retry" is only suggested when a
+  retry can help.
+- `trinaxai index` no longer prints the internal `TRINAXAI_PROGRESS` lines, and
+  `trinaxai collections list` shows a readable date instead of a raw timestamp.
 - Answers are no longer slowed down by too many CPU threads. `TRINAXAI_NUM_THREAD`
   defaulted to a fixed 8; on a 4-core computer that made the same answer take
   76-93 s instead of 16 s. The default is now the smaller of 8 and the CPUs you
@@ -127,6 +251,11 @@ All notable changes to TrinaxAI are documented here. This project follows the
 
 ### Security
 
+- If the local API runs without HTTPS and needs a token, set `api.base_url = "http://localhost:3333"` in the config:
+  the automatic fall-back to plain HTTP sends no token, by design.
+- The CLI's automatic fall-back to a plain-HTTP local API no longer sends the admin or device token, which
+  could not be verified with TLS. The agent's search for a renamed identifier skips symbolic links, as the
+  file tools do.
 - Updated `nltk` to 3.10.4 (GHSA-8mgp-746c-j5xp, path traversal in its model
   APIs) and removed the audit exception: `pip-audit` now fails on any known
   vulnerability.

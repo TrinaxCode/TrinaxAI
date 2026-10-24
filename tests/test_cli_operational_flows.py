@@ -226,6 +226,42 @@ def test_doctor_degrades_cleanly_when_install_and_api_are_unavailable(monkeypatc
     assert any(item["check"] == "RAG API" and not item["ok"] for item in payload["checks"])
 
 
+def test_doctor_does_not_repeat_the_start_hint_the_error_already_gives(monkeypatch, capsys) -> None:
+    from trinaxai_cli.client import TrinaxAPIError
+
+    monkeypatch.setattr(doctor._system, "project_root", lambda: None)
+    monkeypatch.setattr(doctor._system, "service_manager", lambda: Path("missing"))
+    monkeypatch.setattr(doctor._system, "env_value", lambda _key: "")
+    monkeypatch.setattr(doctor, "_find_ollama", lambda: None)
+    monkeypatch.setattr(doctor, "_ollama_api_ok", lambda _url: False)
+
+    def detail_for(error: Exception) -> str:
+        client = MagicMock()
+        client.health.side_effect = error
+        doctor.run(SimpleNamespace(json=True, strict=False), client, MagicMock(), None)
+        payload = json.loads(capsys.readouterr().out)
+        return next(item["detail"] for item in payload["checks"] if item["check"] == "RAG API")
+
+    stopped = detail_for(TrinaxAPIError(0, "local service unavailable"))
+    assert stopped == "Cannot reach the local TrinaxAI service. Start it with: trinaxai start"
+    untrusted = detail_for(TrinaxAPIError(0, "x", certificate_problem=True))
+    assert untrusted == "This computer does not trust the local TrinaxAI certificate. Run: trinaxai doctor"
+    assert detail_for(RuntimeError("boom")) == "boom; run: trinaxai start"  # other failures still get the hint
+    spanish = detail_for(TrinaxAPIError(0, "local service unavailable", language="es"))
+    assert spanish == "No se puede conectar con el servicio local de TrinaxAI. Inícialo con: trinaxai start"
+    assert spanish.count("trinaxai start") == 1
+    # An HTTP failure, a timeout, and an error that merely mentions the command keep the hint.
+    assert detail_for(TrinaxAPIError(500, "boom")).endswith("; run: trinaxai start")
+    assert detail_for(TrinaxAPIError(0, "request timed out")).endswith("; run: trinaxai start")
+    assert detail_for(RuntimeError("see trinaxai start docs")) == "see trinaxai start docs; run: trinaxai start"
+
+    from trinaxai_cli.i18n import translate
+
+    assert translate("Cannot reach the local TrinaxAI service. Start it with: trinaxai start", "es").startswith(
+        "No se puede"
+    )
+
+
 def test_collections_cover_empty_create_delete_validation_and_failure(tmp_path: Path) -> None:
     client = MagicMock()
     ui = MagicMock()

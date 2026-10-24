@@ -86,6 +86,7 @@ class FakeClient:
     def __init__(self, response: FakeResponse, *, models: list[dict[str, Any]] | None = None) -> None:
         self.response = response
         self.base_url = ""
+        self.ensure_reachable = lambda: None
         self.payload: dict[str, Any] = {}
         self.models = models or []
         self.collections = [
@@ -281,7 +282,7 @@ def test_default_collection_does_not_route_a_greeting_to_rag(monkeypatch) -> Non
 
     assert result == 0
     assert routes[0].mode == "chat"
-    assert models == ["qwen3.5:2b"]
+    assert models == [None]  # automatic: the installer-chosen model, not a pinned default
 
 
 def test_ask_rag_uses_configured_default_collection(monkeypatch) -> None:
@@ -302,7 +303,19 @@ def test_ask_rag_uses_configured_default_collection(monkeypatch) -> None:
     )
 
     assert result == 0
-    assert captured == {"engine": "rag", "collections": ["docs"], "model": "qwen3.5:2b"}
+    assert captured == {"engine": "rag", "collections": ["docs"], "model": None}
+
+
+def test_a_model_set_in_the_config_is_still_used(monkeypatch) -> None:
+    captured: dict[str, Any] = {}
+    monkeypatch.setattr(
+        ask, "_stream_answer", lambda _c, _u, _m, _e, _cols, model: captured.update(model=model) or "ok"
+    )
+    config = CLIConfig(model="qwen3.5:4b")
+
+    args = SimpleNamespace(prompt=["hola"], collections=None, engine="ollama", session=None)
+    assert ask.run(args, object(), FakeUI(), config) == 0
+    assert captured == {"model": "qwen3.5:4b"}
 
 
 def test_new_cli_chats_get_isolated_session_names() -> None:

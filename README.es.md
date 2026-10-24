@@ -91,9 +91,10 @@ El instalador detecta CPU, memoria, GPU y VRAM. Consulta
 | Abrir el asistente interactivo | `trinaxai chat` |
 | Hacer una pregunta | `trinaxai ask "..." --engine rag` |
 | Indexar una carpeta | `trinaxai index ./documentos` |
-| Ejecutar investigación | `trinaxai research --query "..." --depth 2` |
+| Ejecutar investigación (añade `--web` para apoyarla en búsqueda web) | `trinaxai research "..." --depth 2` |
 | Usar el agente | `trinaxai agent --workspace .` |
 | Revisar servicios | `trinaxai status` |
+| Ver o cambiar quién puede abrir TrinaxAI | `trinaxai network` / `trinaxai network off` |
 | Iniciar o detener servicios | `trinaxai start` / `trinaxai stop` |
 | Diagnosticar | `trinaxai doctor --strict` |
 | Actualizar | `trinaxai update` |

@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any, Iterable
 from urllib.parse import urlencode, urlparse, urlunparse
 
-from trinaxai.errors import classify_error
+from trinaxai.errors import ErrorCategory, classify_error
 from trinaxai_cli.i18n import normalize_lang
 
 try:
@@ -34,18 +34,101 @@ class TrinaxAPIError(RuntimeError):
     response was ever received.
     """
 
-    def __init__(self, status: int, message: str, payload: Any | None = None, *, language: str = "en") -> None:
+    def __init__(
+        self,
+        status: int,
+        message: str,
+        payload: Any | None = None,
+        *,
+        language: str = "en",
+        certificate_problem: bool = False,
+    ) -> None:
         self.technical_message = message
         self.language = normalize_lang(language)
         info = classify_error(RuntimeError(message), status_code=status, hint=message)
-        public_message = info.definition.message_es if self.language == "es" else info.definition.message
-        public_recovery = info.definition.recovery_es if self.language == "es" else info.definition.recovery
+        spanish = self.language == "es"
+        public_message = info.definition.message_es if spanish else info.definition.message
+        public_recovery = info.definition.recovery_es if spanish else info.definition.recovery
+        # True when the message already tells the user what to do next.
+        self.recovery_included = False
+        if certificate_problem:
+            self.recovery_included = True
+            public_message, public_recovery = (
+                (
+                    "Este equipo no confía en el certificado del servicio local de TrinaxAI.",
+                    "Ejecuta: trinaxai doctor",
+                )
+                if spanish
+                else ("This computer does not trust the local TrinaxAI certificate.", "Run: trinaxai doctor")
+            )
+        elif status == 0 and message == "request timed out":
+            # The wait limit ended while the local model was still working; the network is fine.
+            public_message, public_recovery = (
+                (
+                    "TrinaxAI no terminó dentro del tiempo de espera; este equipo puede necesitar más tiempo para esto.",
+                    "Prueba una petición más pequeña (en research: --depth 1) o sube TRINAXAI_CLI_TIMEOUT (segundos).",
+                )
+                if spanish
+                else (
+                    "TrinaxAI did not finish within the wait limit; this computer may need more time for this.",
+                    "Try a smaller request (for research: --depth 1) or raise TRINAXAI_CLI_TIMEOUT (seconds).",
+                )
+            )
+        elif info.category is ErrorCategory.INTERNET_UNAVAILABLE:
+            # This client only ever talks to the local TrinaxAI API, so a refused or
+            # failed connection means the service is not running, not that the
+            # internet is down.
+            self.recovery_included = True
+            public_message, public_recovery = (
+                ("No se puede conectar con el servicio local de TrinaxAI.", "Inícialo con: trinaxai start")
+                if spanish
+                else ("Cannot reach the local TrinaxAI service.", "Start it with: trinaxai start")
+            )
         super().__init__(f"{public_message} {public_recovery}")
         self.status = status
         self.payload = payload
         self.category = info.category.value
         self.error_code = info.code
         self.retryable = info.retryable
+
+
+_CREDENTIAL_HEADERS = frozenset({"X-Admin-Token", "X-TrinaxAI-Device-Token"})
+
+
+def _cli_timeout() -> float | None:
+    """Seconds from ``TRINAXAI_CLI_TIMEOUT`` (30 to 86400) for API requests, or None to use the built-in limits."""
+    try:
+        value = float(os.getenv("TRINAXAI_CLI_TIMEOUT", "").strip())
+    except ValueError:
+        return None
+    return value if 30.0 <= value <= 86400.0 else None
+
+
+def _exception_chain(exc: BaseException) -> Iterable[BaseException]:
+    """``exc`` and the causes behind it, each once."""
+    seen: set[int] = set()
+    current: BaseException | None = exc
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        yield current
+        current = current.__cause__ or current.__context__
+
+
+def _speaks_no_tls(exc: BaseException) -> bool:
+    """True when the handshake failed because the other end is a plain-HTTP server."""
+    return any(
+        isinstance(item, ssl.SSLError)
+        and ("wrong version number" in str(item).lower() or "http request" in str(item).lower())
+        for item in _exception_chain(exc)
+    )
+
+
+def _is_certificate_problem(exc: BaseException) -> bool:
+    """True when a transport failure was the TLS handshake rejecting the server's certificate."""
+    return any(
+        isinstance(item, ssl.SSLCertVerificationError) or "certificate verify failed" in str(item).lower()
+        for item in _exception_chain(exc)
+    )
 
 
 class TrinaxAPIClient:
@@ -197,6 +280,45 @@ class TrinaxAPIClient:
         except Exception:
             pass
 
+    def _use_plain_http_if_served(self) -> bool:
+        """Follow a local API that runs without HTTPS (no certificate was created for it).
+
+        Only a loopback address, and only when the port answers plain HTTP: the handshake
+        proved nothing was sent, and verification is never relaxed for an HTTPS server.
+        """
+        parsed = urlparse(self.base_url)
+        if parsed.scheme != "https" or parsed.hostname not in {"localhost", "127.0.0.1", "::1"}:
+            return False
+        candidate = urlunparse(parsed._replace(scheme="http"))
+        try:
+            with httpx.Client(base_url=candidate, timeout=min(float(self.timeout), 1.5)) as probe:
+                answer = probe.get("/health")
+                # Another program on that port must not be adopted: require TrinaxAI's own answer.
+                if answer.status_code != 200 or not isinstance(answer.json(), dict) or "ok" not in answer.json():
+                    return False
+        except Exception:  # noqa: BLE001 - a failed probe just means there is no plain-HTTP API
+            return False
+        # The port could not be verified with TLS, so no secret travels to it in clear text. A local
+        # program squatting on the port would otherwise receive the admin or device token.
+        self._request_headers = {
+            key: value for key, value in self._request_headers.items() if key not in _CREDENTIAL_HEADERS
+        }
+        self._switch_base_url(candidate)
+        return True
+
+    def ensure_reachable(self) -> None:
+        """Settle http vs https before a streamed request, which bypasses ``_send``. Once per client."""
+        if getattr(self, "_reachability_checked", False):
+            return
+        self._reachability_checked = True
+        try:
+            self._client.get("/health", timeout=min(float(self.timeout), 1.5))
+        except httpx.TransportError as exc:
+            if _speaks_no_tls(exc):
+                self._use_plain_http_if_served()
+        except Exception:  # noqa: BLE001 - the real request reports whatever is wrong
+            pass
+
     # ── internal details ──
     def _send(
         self,
@@ -207,7 +329,7 @@ class TrinaxAPIClient:
         timeout: float | None = None,
     ) -> Any:
         """Issue a request, translating transport failures into TrinaxAPIError."""
-        effective_timeout = timeout or self.timeout
+        effective_timeout = timeout or _cli_timeout() or self.timeout
         retryable_method = method.upper() in {"GET", "HEAD", "OPTIONS"}
         for attempt in range(2 if retryable_method else 1):
             try:
@@ -215,8 +337,15 @@ class TrinaxAPIClient:
                 return self._handle(r, language=getattr(self, "language", "en"))
             except httpx.TimeoutException:
                 error = TrinaxAPIError(0, "request timed out", language=getattr(self, "language", "en"))
-            except httpx.TransportError:
-                error = TrinaxAPIError(0, "local service unavailable", language=getattr(self, "language", "en"))
+            except httpx.TransportError as exc:
+                if _speaks_no_tls(exc) and self._use_plain_http_if_served():
+                    return self._send(method, url, json=json, timeout=timeout)
+                error = TrinaxAPIError(
+                    0,
+                    "local service unavailable",
+                    language=getattr(self, "language", "en"),
+                    certificate_problem=_is_certificate_problem(exc),
+                )
             except TrinaxAPIError as caught:
                 error = caught
                 if not (retryable_method and error.retryable and attempt == 0):
@@ -438,7 +567,7 @@ class TrinaxAPIClient:
         return self._post(
             "/v1/research",
             body,
-            timeout=max(float(self.timeout), 120.0 + 60.0 * max(1, min(depth, 3))),
+            timeout=_cli_timeout() or max(float(self.timeout), 120.0 + 60.0 * max(1, min(depth, 3))),
         )
 
     # ── Stats ──

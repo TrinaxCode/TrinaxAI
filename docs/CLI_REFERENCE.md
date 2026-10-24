@@ -48,7 +48,7 @@ trinaxai chat [--prompt TEXT] [--file PATH] [--engine ENGINE] [--collections IDS
 trinaxai ask [PROMPT ...] [--file PATH] [--engine ENGINE] [--collections IDS] [--thinking]
 trinaxai agent [TASK ...] [-p TEXT] [--workspace PATH] [--model NAME] [--max-steps N]
                [--permission-mode MODE] [--output-format text|json] [-c | -r SESSION] [--yolo]
-trinaxai research --query TEXT [--session NAME] [--depth DEPTH] [--collections IDS] [--thinking]
+trinaxai research TEXT|--query TEXT [--web] [--session NAME] [--depth DEPTH] [--collections IDS] [--thinking]
 trinaxai index [PATH] [--collection ID] [--append]
 trinaxai browse list-collections
 trinaxai browse list-files [--collection ID]
@@ -73,6 +73,7 @@ trinaxai stop
 trinaxai stop --all
 trinaxai network
 trinaxai network refresh
+trinaxai network off
 trinaxai update
 trinaxai uninstall
 ```
@@ -114,7 +115,7 @@ Use `trinaxai chat --file PATH --prompt "Describe this"` to analyze one local
 image or text/document file. The attachment path is validated locally and the
 file is not uploaded by the CLI.
 
-`research` tries to read bounded page text (`full_page`) and keeps the search
+Without `--web`, `research` works from your indexed documents (and searches the web only when the question asks for current information); `--web` always grounds it on web search, which sends the question to the search provider. `research` lets the server choose whether to reason (fast for a quick web lookup); `--thinking` / `--no-thinking` force it, and the config's `defaults.thinking` applies to `chat` and `ask` only. `research` tries to read bounded page text (`full_page`) and keeps the search
 excerpt as a fallback (`snippet_only`); the sources say which one was used. Add `--session NAME` to save the question, answer,
 public research metadata, and sources for a later `trinaxai export`.
 
@@ -248,6 +249,10 @@ the host to renew HTTPS, CORS, and the active service configuration. This does
 not erase data or grant every device access; existing pairing scopes remain in
 force.
 
+`trinaxai network` also says whether other devices may reach TrinaxAI. If you
+allowed that and change your mind, run `trinaxai network off` to keep it on this
+computer only (it restarts the web app); `trinaxai network refresh` allows it again.
+
 ## Agent workflow
 
 `trinaxai agent` follows the same workflow as other terminal coding agents.
@@ -305,7 +310,7 @@ verify_tls = true
 
 [defaults]
 engine = "ollama"
-model = "qwen3.5:2b"
+model = ""  # empty = automatic: the model chosen for this computer
 collections = ["default"]
 thinking = true
 

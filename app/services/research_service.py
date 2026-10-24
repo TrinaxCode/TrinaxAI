@@ -755,7 +755,8 @@ def _research_sse(payload: dict) -> str:
 def _research_sse_error(exc: Exception) -> str:
     info = classify_error(exc, status_code=503)
     error = info.to_client_dict()
-    error["recovery"] = f"{error['recovery']} Please retry."
+    if info.retryable:  # retrying will not install a missing model or fix a bad request
+        error["recovery"] = f"{error['recovery']} Please retry."
     return _research_sse(
         {
             "trinaxai_error": error,

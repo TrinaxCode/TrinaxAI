@@ -91,6 +91,23 @@ def trust_certificate(root: Path) -> tuple[Path, str] | None:
     return None
 
 
+def _assignment(raw: str) -> tuple[str, str] | None:
+    """Parse one ``.env`` line the way the service manager does (indentation, ``KEY = value``, quotes)."""
+    line = raw.strip()
+    if not line or line.startswith("#") or "=" not in line:
+        return None
+    key, value = line.split("=", 1)
+    key = key.strip()
+    if not key:
+        return None
+    return key, value.strip().strip('"').strip("'")
+
+
+def _is_assignment_of(raw: str, name: str) -> bool:
+    parsed = _assignment(raw)
+    return parsed is not None and parsed[0] == name
+
+
 def update_env(root: Path, addresses: list[str]) -> None:
     path = root / ".env"
     if not path.is_file():
@@ -101,10 +118,10 @@ def update_env(root: Path, addresses: list[str]) -> None:
     updated = False
     host_updated = False
     for index, raw in enumerate(lines):
-        if raw.startswith("TRINAXAI_CORS_ORIGINS=") and not updated:
+        if _is_assignment_of(raw, "TRINAXAI_CORS_ORIGINS") and not updated:
             lines[index] = replacement
             updated = True
-        if raw.startswith("TRINAXAI_PWA_HOST="):
+        if _is_assignment_of(raw, "TRINAXAI_PWA_HOST"):
             # The network refresh explicitly enables LAN access; the API stays loopback-bound.
             lines[index] = host_replacement
             host_updated = True
@@ -116,6 +133,45 @@ def update_env(root: Path, addresses: list[str]) -> None:
     temporary.write_text("\n".join(lines) + "\n", encoding="utf-8")
     os.chmod(temporary, path.stat().st_mode & 0o777)
     os.replace(temporary, path)
+
+
+_LOOPBACK_HOSTS = {"", "127.0.0.1", "localhost", "::1"}
+
+
+def _env_host(root: Path) -> str | None:
+    """The web app's bind address from ``.env`` (the last assignment wins)."""
+    try:
+        lines = (root / ".env").read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return None
+    value: str | None = None
+    for raw in lines:
+        parsed = _assignment(raw)
+        if parsed is not None and parsed[0] == "TRINAXAI_PWA_HOST":
+            value = parsed[1]
+    return value
+
+
+def lan_access_enabled(root: Path) -> bool:
+    """True when other devices on the local network may reach the web app."""
+    host = _env_host(root)
+    return host is not None and host.lower() not in _LOOPBACK_HOSTS
+
+
+def disable_lan_access(root: Path) -> bool:
+    """Bind the web app to this computer only. Returns False when it already was."""
+    path = root / ".env"
+    if not path.is_file():
+        raise FileNotFoundError(f"Missing TrinaxAI environment file: {path}")
+    if not lan_access_enabled(root):
+        return False
+    lines = path.read_text(encoding="utf-8").splitlines()
+    lines = ["TRINAXAI_PWA_HOST=127.0.0.1" if _is_assignment_of(raw, "TRINAXAI_PWA_HOST") else raw for raw in lines]
+    temporary = path.with_suffix(".env.tmp")
+    temporary.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    os.chmod(temporary, path.stat().st_mode & 0o777)
+    os.replace(temporary, path)
+    return True
 
 
 def refresh_certificate(root: Path, addresses: list[str]) -> None:

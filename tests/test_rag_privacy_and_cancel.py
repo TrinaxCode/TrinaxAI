@@ -60,3 +60,10 @@ def test_stream_errors_do_not_expose_exception_details() -> None:
 
     assert "secret path" not in payload
     assert "Please retry" in payload
+
+
+def test_stream_errors_only_suggest_retrying_when_a_retry_can_help() -> None:
+    missing_model = rag_service._sse_error(RuntimeError("model 'qwen3.5:2b' not found (status code: 404)"))
+
+    assert "model is unavailable" in missing_model
+    assert "Please retry" not in missing_model

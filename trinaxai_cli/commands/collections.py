@@ -2,7 +2,18 @@
 
 from __future__ import annotations
 
+import time
 from typing import Any
+
+
+def _created(value: Any) -> str:
+    """Show the epoch timestamp the API stores as a readable local date."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or value <= 0:
+        return str(value or "")
+    try:
+        return time.strftime("%Y-%m-%d %H:%M", time.localtime(value))
+    except (OverflowError, OSError, ValueError):
+        return str(value)
 
 
 def run(args: Any, client: Any, ui: Any, config: Any) -> int:
@@ -15,7 +26,7 @@ def run(args: Any, client: Any, ui: Any, config: Any) -> int:
                 return 0
             ui.table(
                 ["id", "name", "created"],
-                [[c.get("id", ""), c.get("name", ""), c.get("created_at", 0)] for c in cols],
+                [[c.get("id", ""), c.get("name", ""), _created(c.get("created_at"))] for c in cols],
                 title="Collections",
             )
             return 0

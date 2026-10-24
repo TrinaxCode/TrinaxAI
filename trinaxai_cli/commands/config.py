@@ -21,7 +21,7 @@ def run(args: Any, client: Any, ui: Any, config: CLIConfig) -> int:
         ["api.base_url", config.api_base_url],
         ["api.verify_tls", str(config.api_verify_tls)],
         ["defaults.engine", config.engine],
-        ["defaults.model", config.model],
+        ["defaults.model", config.model or "auto"],
         ["defaults.collections", ", ".join(config.collections)],
         ["defaults.thinking", str(config.thinking_enabled)],
         ["ui.color", config.ui_color],

@@ -71,6 +71,8 @@ def test_launchctl_backend_loads_existing_plist_and_falls_back(monkeypatch, tmp_
     plist.write_text("", encoding="utf-8")
     monkeypatch.setattr(sm.Path, "home", lambda: tmp_path)
     monkeypatch.setattr(sm.subprocess, "run", lambda *_args, **_kwargs: _completed())
+    # `stop` also looks for leftover processes: never let it see this machine's real ones.
+    monkeypatch.setattr(sm, "_process_table", lambda: [])
     backend = sm._LaunchctlBackend()
 
     assert backend.start("rag_api", command=["python"]).running is True

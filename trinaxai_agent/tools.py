@@ -37,7 +37,7 @@ import unicodedata
 import urllib.error
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Sequence
 
 from trinaxai_agent.extract import extract_document_text, is_document
 from trinaxai_agent.git_tool import (
@@ -760,7 +760,8 @@ def _bubblewrap_argv(workspace_root: Path, command: str) -> list[str] | None:
 
     The namespace contains only the workspace, a private ``/tmp``/``$HOME`` and
     read-only operating-system runtime directories.  In particular, the host's
-    home directories and ``/etc`` are not mounted.  Returning ``None`` means the
+    home directories and ``/etc`` are not mounted (only ``/etc/alternatives``, whose
+    symlinks point into ``/usr``).  Returning ``None`` means the
     host cannot provide the isolation TrinaxAI promises, so callers must fail
     closed unless the user explicitly opts into the legacy unsafe behaviour.
     """
@@ -789,6 +790,11 @@ def _bubblewrap_argv(workspace_root: Path, command: str) -> list[str] | None:
             argv.extend(("--symlink", os.readlink(path), raw))
         elif path.exists():
             argv.extend(("--ro-bind", raw, raw))
+
+    # Debian and Ubuntu point tools such as python3, cc and awk at /etc/alternatives. Without that
+    # one directory of symlinks into /usr they dangle inside the sandbox ("python3: not found").
+    if Path("/etc/alternatives").is_dir():
+        argv.extend(("--ro-bind", "/etc/alternatives", "/etc/alternatives"))
 
     path_value = ":".join(
         (
@@ -951,6 +957,22 @@ def _git_toplevel(executable: str, root: Path) -> Path | None:
     return Path(out.strip().splitlines()[0]).resolve()
 
 
+def _git_failure_hint(args: Sequence[str], returncode: int, output: str) -> str:
+    """Tell the model how to recover from the one git mistake small models repeat.
+
+    Seen with a real model in the CLI, over HTTP and in the web app: ``commit`` before
+    ``add``. Without the hint the model has to guess why git said "no changes added".
+    """
+    if returncode == 0 or not args or args[0] != "commit":
+        return ""
+    lowered = output.lower()
+    if "nothing to commit" in lowered and "working tree clean" in lowered:
+        return "There is nothing to commit: the working tree is clean."
+    if "no changes added to commit" in lowered or "changes not staged for commit" in lowered:
+        return "Nothing is staged. Stage the files first with the git tool (add <file>), or use commit -a for tracked files."
+    return ""
+
+
 def _git(workspace_root: Path, args: Any = None, command: Any = None, allow_network: bool = True, **_: Any) -> str:
     """Run git on the host (outside the command sandbox) for one validated call."""
     try:
@@ -984,6 +1006,9 @@ def _git(workspace_root: Path, args: Any = None, command: Any = None, allow_netw
     except OSError as exc:
         return f"error: cannot run git: {exc}"
     out = stdout + (("\n[stderr]\n" + stderr) if stderr else "")
+    hint = _git_failure_hint(parsed.args, returncode, out)
+    if hint:
+        out += f"\n[hint] {hint}"
     status = f"[exit {returncode}; git on this computer, outside the sandbox]"
     return _truncate(f"{status}\n{out}".strip()) or status
 
@@ -1003,6 +1028,9 @@ class Tool:
     # it to the model right away instead of asking the user to approve a call that
     # is certain to fail.
     precheck: Callable[[dict[str, Any]], str | None] | None = None
+    # Like ``precheck`` but may look at the workspace (for example the state of a git
+    # repository), so it can also spare the user a prompt for a call that is certain to fail.
+    state_check: Callable[[Path, dict[str, Any]], str | None] | None = None
 
     def schema(self) -> dict[str, Any]:
         """Return the Ollama/OpenAI-style function schema for this tool."""
@@ -1021,6 +1049,74 @@ def _precheck_git(arguments: dict[str, Any]) -> str | None:
         classify_git(git_input(arguments))
     except GitUsageError as exc:
         return str(exc)
+    return None
+
+
+_PLAIN_COMMIT_FLAGS = frozenset({"-q", "--quiet", "-s", "--signoff", "-n", "--no-verify", "--no-gpg-sign"})
+# A commit that concludes a merge, cherry-pick, revert or rebase can be valid with an empty index.
+_OPERATION_MARKERS = ("MERGE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD", "rebase-merge", "rebase-apply")
+
+
+def _is_plain_commit(args: Sequence[str]) -> bool:
+    """True only for ``commit -m <message>`` with harmless flags.
+
+    Anything else (-a, --amend, --allow-empty, -F, pathspecs, combined short flags ...) can
+    commit without a staged change, so it is left to git to judge.
+    """
+    if not args or args[0] != "commit":
+        return False
+    rest = list(args[1:])
+    has_message = False
+    index = 0
+    while index < len(rest):
+        token = rest[index]
+        if token in ("-m", "--message"):
+            if index + 1 >= len(rest):
+                return False
+            has_message = True
+            index += 2
+        elif token.startswith("--message="):
+            has_message = True
+            index += 1
+        elif token in _PLAIN_COMMIT_FLAGS:
+            index += 1
+        else:
+            return False
+    return has_message
+
+
+def _git_state_check(root: Path, arguments: dict[str, Any]) -> str | None:
+    """Refuse a plain ``git commit`` when nothing is staged, before asking the user.
+
+    With a real model the first commit fails for this reason in nearly every run; approving
+    it only to read "no changes added to commit" wastes the user's click and a round trip.
+    Any doubt (not a repository, git failing, an operation in progress) returns None and
+    lets the normal flow run.
+    """
+    try:
+        parsed = classify_git(git_input(arguments))
+    except GitUsageError:
+        return None  # the precheck reports usage problems
+    if not _is_plain_commit(parsed.args):
+        return None
+    executable = shutil.which("git")
+    if executable is None:
+        return None
+    try:
+        top = _git_toplevel(executable, root)
+        if top is None or top != root.resolve():
+            return None
+        code, out, _ = _git_run(executable, ("rev-parse", "--git-dir"), root)
+        if code != 0 or not out.strip():
+            return None
+        git_dir = (root / out.strip().splitlines()[0]).resolve()
+        if any((git_dir / marker).exists() for marker in _OPERATION_MARKERS):
+            return None
+        code, _, _ = _git_run(executable, ("diff", "--cached", "--quiet"), root)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if code == 0:  # exit 1 means there are staged changes; anything else is an error to ignore
+        return "nothing is staged, so this commit would fail. Stage the files first with the git tool (add <file>), or use commit -a for tracked files."
     return None
 
 
@@ -1156,6 +1252,7 @@ DEFAULT_TOOLS: tuple[Tool, ...] = (
         handler=_git,
         dangerous=True,
         precheck=_precheck_git,
+        state_check=_git_state_check,
     ),
 )
 

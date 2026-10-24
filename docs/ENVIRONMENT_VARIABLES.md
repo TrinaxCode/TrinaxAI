@@ -111,6 +111,7 @@ FastAPI application options.
 | `OLLAMA_NUM_GPU` | auto-detected | Ollama GPU layer hint; `0` keeps inference on CPU, while a high value offloads all layers that fit on a detected GPU. |
 | `TRINAXAI_KEEP_ALIVE` | profile-derived | Ollama chat-model residency duration, such as `0s` or `10m`. |
 | `TRINAXAI_TIMEOUT` | `300` | Ollama request timeout in seconds. |
+| `TRINAXAI_CLI_TIMEOUT` | (unset) | Seconds the CLI waits for an API request, including `trinaxai research`, before giving up (30 to 86400). Unset uses 30 seconds for ordinary requests and 3 to 5 minutes for research by depth; raise it on slower computers. |
 | `TRINAXAI_MODEL_MAX_CONCURRENCY` | `1` | Concurrent model tasks; keep constrained to avoid RAM/VRAM thrashing. |
 | `TRINAXAI_INFERENCE_QUEUE_TIMEOUT` | `600` | Seconds FastAPI and the PWA gateway wait for the shared cross-process inference lock. |
 | `TRINAXAI_INFERENCE_LOCK_FILE` | `storage/.inference.lock` | Shared atomic lock-directory path used by the gateway. It must match the backend's storage lock when overridden. |
@@ -166,6 +167,7 @@ Ollama also consumes `OLLAMA_BASE_URL` (backend endpoint), `OLLAMA_HOST`
 | `TRINAXAI_INDEX_LOAD_WORKERS` | up to `8` | Concurrent source-file loaders. |
 | `TRINAXAI_INDEX_LOCK_TIMEOUT` | `60` | Seconds to wait for the cross-process index writer lock. |
 | `TRINAXAI_INDEX_TIMEOUT` | `3600` | Seconds the packaged CLI waits for its spawned indexer process before terminating the process group. |
+| `TRINAXAI_PROGRESS_LINES` | `1` | Set to `0` to stop the indexer printing the machine-readable `TRINAXAI_PROGRESS` lines the API reads. The CLI sets it so a terminal shows only readable messages. |
 | `TRINAXAI_WATCH_INDEX_TIMEOUT` | `1800` | Seconds the watcher allows one queued indexer subprocess before terminating its process group and reporting the failure. |
 | `TRINAXAI_WATCH_RELOAD_TIMEOUT` | `30` | Seconds the watcher waits for the RAG backend to reload engines after a successful index job before treating the reload as timed out. |
 | `TRINAXAI_WATCH_OUTPUT_MAX_BYTES` | `16384` | Maximum trailing stdout/stderr bytes retained for one watcher index job. |

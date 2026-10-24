@@ -92,7 +92,10 @@ MESSAGES: dict[str, tuple[str, str]] = {
     ),
     "network_cancelled": ("Cancelled.", "Cancelado."),
     "method_not_allowed": ("Method not allowed.", "Método no permitido."),
-    "query_required": ("--query is required.", "--query es obligatorio."),
+    "query_required": (
+        'Say what to research: trinaxai research "your question" (or --query).',
+        'Indica qué investigar: trinaxai research "tu pregunta" (o --query).',
+    ),
     "file_path_required": ("File path required (use --file).", "Indica la ruta del archivo (usa --file)."),
     "service_start": ("Starting TrinaxAI services...", "Iniciando los servicios de TrinaxAI..."),
     "service_stop": ("Stopping TrinaxAI services...", "Deteniendo los servicios de TrinaxAI..."),
@@ -136,6 +139,50 @@ MESSAGES: dict[str, tuple[str, str]] = {
     "config_title": ("TrinaxAI config", "Configuración de TrinaxAI"),
     "doctor_title": ("TrinaxAI doctor", "Doctor de TrinaxAI"),
     "python_package": ("Python package", "Paquete de Python"),
+    "agent_shell_sandbox": ("Agent shell sandbox", "Sandbox de la terminal del agente"),
+    "service_unreachable": (
+        "Cannot reach the local TrinaxAI service. Start it with: trinaxai start",
+        "No se puede conectar con el servicio local de TrinaxAI. Inícialo con: trinaxai start",
+    ),
+    "lan_allowed": (
+        "Access from other devices: allowed (each device must be paired)",
+        "Acceso desde otros dispositivos: permitido (cada dispositivo debe vincularse)",
+    ),
+    "lan_this_computer": (
+        "Access from other devices: this computer only",
+        "Acceso desde otros dispositivos: solo este equipo",
+    ),
+    "lan_off_hint": (
+        "Use 'trinaxai network off' to keep TrinaxAI on this computer only.",
+        "Usa 'trinaxai network off' para mantener TrinaxAI solo en este equipo.",
+    ),
+    "lan_enable_hint": (
+        "To open TrinaxAI from a phone or another computer, run: trinaxai network refresh",
+        "Para abrir TrinaxAI desde un teléfono u otro equipo, ejecuta: trinaxai network refresh",
+    ),
+    "lan_already_off": (
+        "Already limited to this computer; nothing to change.",
+        "Ya está limitado a este equipo; no hay nada que cambiar.",
+    ),
+    "lan_off_confirm": ("Keep TrinaxAI on this computer only?", "¿Mantener TrinaxAI solo en este equipo?"),
+    "lan_off_done": ("TrinaxAI is now limited to this computer.", "TrinaxAI quedó limitado a este equipo."),
+    "lan_off_restart": ("Restart TrinaxAI to apply it.", "Reinicia TrinaxAI para aplicarlo."),
+    "lan_off_saved": (
+        "Configuration saved. Restart the PWA and RAG services to apply it.",
+        "Configuración guardada. Reinicia la PWA y la API RAG para aplicarla.",
+    ),
+    "sandbox_available": (
+        "bubblewrap sandbox available (networkless)",
+        "sandbox bubblewrap disponible (sin red)",
+    ),
+    "sandbox_linux_only": (
+        "terminal tool disabled: OS command sandbox is Linux-only (file tools still work)",
+        "terminal desactivada: el sandbox de comandos solo existe en Linux (las herramientas de archivos siguen funcionando)",
+    ),
+    "sandbox_needs_bubblewrap": (
+        "terminal tool disabled: install the 'bubblewrap' package (file tools still work)",
+        "terminal desactivada: instala el paquete 'bubblewrap' (las herramientas de archivos siguen funcionando)",
+    ),
     "cli_import_works": ("CLI import works", "La importación de la CLI funciona"),
     "install_root_label": ("Install root", "Raíz de instalación"),
     "ollama_command": ("Ollama command", "Comando de Ollama"),
@@ -279,8 +326,8 @@ MESSAGES: dict[str, tuple[str, str]] = {
         "   ⚠️  Error leyendo {name}, se reintentará: {error}",
     ),
     "idx_no_text": (
-        "   ⚠️  {name} contains no extractable text; will retry",
-        "   ⚠️  {name} no contiene texto extraíble; se reintentará",
+        "   ⚠️  {name} has no text to index (empty, or a scan that needs OCR); checked again on the next run",
+        "   ⚠️  {name} no tiene texto que indexar (vacío, o un escaneo que necesita OCR); se revisa en la próxima ejecución",
     ),
     "idx_ast_failed": (
         "   ⚠️  AST failed on {name} ({language}): {error} — falling back to text splitting",
@@ -355,6 +402,11 @@ MESSAGES: dict[str, tuple[str, str]] = {
     "idx_chunking_changes": ("✂️  Splitting changes...", "✂️  Troceando cambios..."),
     "idx_files_found_progress": ("   📂 {count} files found...", "   📂 {count} archivos encontrados..."),
     "idx_files_found_total": ("   📂 {count} files found in total", "   📂 {count} archivos encontrados en total"),
+    "idx_skipped_big_file": (
+        "      - {name} ({size} MB; limit {limit} MB)",
+        "      - {name} ({size} MB; límite {limit} MB)",
+    ),
+    "idx_skipped_big_more": ("      ... and {count} more", "      ... y {count} más"),
     "idx_skipped_big": (
         "   ⏭️  {count} files skipped by size (above the configured limit for their file type)",
         "   ⏭️  {count} archivos omitidos por tamaño (sobre el límite configurado para su tipo de archivo)",
@@ -432,6 +484,14 @@ def translate(message: Any, lang: str = "en") -> Any:
             r"No se encontró el nombre de colección '\1'; usa --collection-id.",
         ),
         (r"^Files in '(.+)' \((.+)\)$", r"Archivos en '\1' (\2)"),
+        (r"^The model '(.+)' is not installed\.$", r"El modelo '\1' no está instalado."),
+        (r"^The collection '(.+)' does not exist\.$", r"La colección '\1' no existe."),
+        (r"^See your collections with: (.+)$", r"Consulta tus colecciones con: \1"),
+        (r"^Install it with: (.+)$", r"Instálalo con: \1"),
+        (r"^Sources: (.+)$", r"Fuentes: \1"),
+        (r"^UNSANDBOXED opt-in via (.+)$", r"SIN SANDBOX por activación explícita con \1"),
+        (r"^cannot determine: (.+)$", r"no se pudo determinar: \1"),
+        (r"^See which models are installed with: (.+)$", r"Mira qué modelos hay instalados con: \1"),
         (r"^#(.+) score=(.+)$", r"#\1 puntuación=\2"),
         (r"^Memories \((.+)\)$", r"Memorias (\1)"),
         (r"^Host: (.+)$", r"Anfitrión: \1"),
@@ -446,7 +506,6 @@ def translate(message: Any, lang: str = "en") -> Any:
             r"^Import this certificate only on devices you control; never share the private key\.$",
             "Importa este certificado solo en dispositivos que controles; nunca compartas la clave privada.",
         ),
-        (r"^--query is required\.$", "--query es obligatorio."),
         (r"^Researching \(depth=(.+)\)\.\.\.$", r"Investigando (profundidad=\1)..."),
         (r"^Passes: (.+) · Model: (.+)$", r"Pasadas: \1 | Modelo: \2"),
         (r"^passes: (.+) \| model: (.+)( \| web: (.+))?$", r"pasadas: \1 | modelo: \2\4"),
@@ -806,8 +865,11 @@ def help_text(value: str, lang: str = "en") -> str:
         "Stop AI services and keep them off after reboot.": "Detener los servicios de IA y mantenerlos apagados tras reiniciar.",
         "Also stop the PWA frontend.": "Detener también el frontend PWA.",
         "Restart TrinaxAI local services.": "Reiniciar los servicios locales de TrinaxAI.",
-        "Show or refresh local-network access.": "Mostrar o renovar el acceso de red local.",
+        "Show, refresh or turn off local-network access.": "Mostrar, renovar o desactivar el acceso de red local.",
         "Renew HTTPS and allow the current LAN.": "Renovar HTTPS y permitir la LAN actual.",
+        "Keep TrinaxAI on this computer only (undo allowing other devices).": (
+            "Mantener TrinaxAI solo en este equipo (deshacer el acceso desde otros dispositivos)."
+        ),
         "Update files without restarting services.": "Actualizar archivos sin reiniciar servicios.",
         "List installed and recommended local models.": "Listar modelos locales instalados y recomendados.",
         "Pair and manage trusted LAN devices.": "Vincular y administrar dispositivos LAN confiables.",

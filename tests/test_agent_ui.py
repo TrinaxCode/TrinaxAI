@@ -682,3 +682,241 @@ def test_slash_diff_ignores_agent_written_git_config(tmp_path: Path) -> None:
 
     assert result.returncode == 0, result.stderr
     assert not marker.exists(), "/diff executed a program named in the workspace's .git/config"
+
+
+def test_a_real_edit_is_not_second_guessed_as_a_phantom_claim(tmp_path: Path) -> None:
+    (tmp_path / "calc.py").write_text("def add(a, b):\n    return a - b\n")
+    edit = {"function": {"name": "edit_file", "arguments": {"path": "calc.py", "old": "a - b", "new": "a + b"}}}
+
+    class Honest(AgentEngine):
+        replies = [
+            {"tool_calls": [{"function": {"name": "read_file", "arguments": {"path": "calc.py"}}}]},
+            {"tool_calls": [edit]},
+            {"content": "I fixed it: add now returns a + b."},
+        ]
+
+        def _chat(self, messages):
+            return self.replies.pop(0)  # an unexpected extra nudge would run out of replies
+
+    engine = Honest(model="m", workspace_root=tmp_path, on_confirm=None)
+    answer = engine.run([{"role": "user", "content": "Fix the bug in add in calc.py"}])
+    assert answer == "I fixed it: add now returns a + b."
+    assert "a + b" in (tmp_path / "calc.py").read_text()
+
+
+def test_the_agent_is_asked_once_to_run_what_it_was_asked_to_run(tmp_path: Path) -> None:
+    write = {"function": {"name": "write_file", "arguments": {"path": "primos.py", "content": "x = 1\n"}}}
+    seen: list[list[dict]] = []
+
+    class Skipper(AgentEngine):
+        replies = [
+            {"tool_calls": [write]},
+            {"content": "Created primos.py."},  # never ran anything
+            {"content": "Created primos.py, I did not run it."},
+        ]
+
+        def _chat(self, messages):
+            seen.append([dict(m) for m in messages])
+            return self.replies.pop(0)
+
+    task = "Create primos.py with is_prime and run the tests"
+    answer = Skipper(model="m", workspace_root=tmp_path, on_confirm=None).run([{"role": "user", "content": task}])
+    assert answer == "Created primos.py, I did not run it."
+    assert any("no command has been run yet" in str(m.get("content")) for m in seen[-1])
+
+    # Without a request to run anything, nothing extra is asked.
+    seen.clear()
+    Skipper.replies = [{"tool_calls": [write]}, {"content": "Created primos.py."}]
+    quiet = Skipper(model="m", workspace_root=tmp_path, on_confirm=None).run(
+        [{"role": "user", "content": "Create primos.py with is_prime"}]
+    )
+    assert quiet == "Created primos.py."
+    assert not any("no command has been run yet" in str(m.get("content")) for m in seen[-1])
+
+
+def test_one_file_request_ends_after_the_write_but_a_bigger_request_does_not(tmp_path: Path) -> None:
+    from trinaxai_agent.engine import _is_simple_file_creation as simple
+
+    def ask(text: str) -> list[dict]:
+        return [{"role": "user", "content": text}]
+
+    assert simple(ask("Crea un archivo clima.md que explique el calentamiento global"))
+    assert simple(ask("create a file notes.md with a todo list"))
+    for bigger in (
+        "Crea un archivo primos.py con es_primo y un archivo test_primos.py con pruebas. Ejecuta las pruebas.",
+        "Crea un archivo index.html y otro style.css",
+        "write a file a.py and run it",
+        "Crea un archivo app.py y pruébalo",
+    ):
+        assert not simple(ask(bigger)), bigger
+
+
+def test_a_failed_run_gets_chances_to_be_fixed_before_success_is_reported(tmp_path: Path) -> None:
+    from trinaxai_agent.tools import format_tool_failure
+
+    run = {"function": {"name": "run_command", "arguments": {"command": "pytest"}}}
+    seen: list[list[dict]] = []
+
+    class Breaker(AgentEngine):
+        replies = [
+            {"tool_calls": [run]},
+            {"content": "All good, the project works."},  # but the run failed
+            {"tool_calls": [run]},  # asked once: it runs again, and it fails again
+            {"content": "Fixed now."},  # asked a second time
+            {"tool_calls": [run]},
+            {"content": "Done."},  # capped at two: this ends the turn
+        ]
+
+        def _chat(self, messages):
+            seen.append([dict(m) for m in messages])
+            return self.replies.pop(0)
+
+        def _execute_call(self, call):
+            return format_tool_failure("run_command", "[exit 1; sandboxed] 1 failed")
+
+    engine = Breaker(model="m", workspace_root=tmp_path, on_confirm=None)
+    answer = engine.run([{"role": "user", "content": "Rename calcula to multiplica and run the tests"}])
+    assert answer.startswith("Done.") and "What happened:" in answer  # the failure stays visible
+    assert sum("The last command you ran failed" in str(m.get("content")) for m in seen[-1]) == 2
+
+    # Nothing was asked to be run or changed: a failing command is not chased.
+    seen.clear()
+    Breaker.replies = [{"tool_calls": [run]}, {"content": "It failed, as you can see."}]
+    quiet = Breaker(model="m", workspace_root=tmp_path, on_confirm=None).run(
+        [{"role": "user", "content": "What does the tests folder contain?"}]
+    )
+    assert quiet.startswith("It failed")
+    assert not any("The last command you ran failed" in str(m.get("content")) for m in seen[-1])
+
+
+def test_a_failed_run_is_not_reported_once_a_later_run_passes(tmp_path: Path) -> None:
+    from trinaxai_agent.tools import format_tool_failure
+
+    run = {"function": {"name": "run_command", "arguments": {"command": "pytest"}}}
+    results = iter(
+        [format_tool_failure("run_command", "[exit 1; sandboxed] 1 failed"), "[exit 0; sandboxed]\n1 passed"]
+    )
+
+    class Fixer(AgentEngine):
+        replies = [
+            {"tool_calls": [run]},
+            {"tool_calls": [run]},
+            {"content": "Fixed; the tests pass."},
+        ]
+
+        def _chat(self, messages):
+            return self.replies.pop(0)
+
+        def _execute_call(self, call):
+            return next(results)
+
+    answer = Fixer(model="m", workspace_root=tmp_path, on_confirm=None).run(
+        [{"role": "user", "content": "Fix it and run the tests"}]
+    )
+    assert answer == "Fixed; the tests pass."
+
+
+def test_rename_parsing_and_leftover_search(tmp_path: Path) -> None:
+    from trinaxai_agent.engine import _leftover_name_hits, _rename_request
+
+    assert _rename_request("Renombra la función calcula a multiplica en todo el proyecto") == ("calcula", "multiplica")
+    assert _rename_request("rename `parse_args` to read_args everywhere") == ("parse_args", "read_args")
+    assert _rename_request("renombra la clase Foo como Bar") == ("Foo", "Bar")
+    assert _rename_request("explica qué hace calcula") is None
+    assert _rename_request("rename foo to foo") is None
+
+    (tmp_path / "main.py").write_text("print(calcula(1, 2))\nrecalcula = 1\n")
+    (tmp_path / "util.py").write_text("def multiplica(a, b):\n    return a * b\n")
+    (tmp_path / "node_modules").mkdir()
+    (tmp_path / "node_modules" / "x.js").write_text("calcula()\n")
+    (tmp_path / "blob.bin").write_bytes(b"\xff\xfe calcula")
+    outside = tmp_path.parent / f"{tmp_path.name}-outside.txt"
+    outside.write_text("calcula secret\n")
+    try:
+        (tmp_path / "link.txt").symlink_to(outside)
+    except OSError:
+        pass
+    assert _leftover_name_hits(tmp_path, "calcula") == ["main.py:1: print(calcula(1, 2))"]  # whole word, no links
+    assert _leftover_name_hits(tmp_path, "nothing_here") == []
+
+
+def test_a_rename_that_left_the_old_name_behind_is_sent_back(tmp_path: Path) -> None:
+    (tmp_path / "util.py").write_text("def calcula(a, b):\n    return a * b\n")
+    (tmp_path / "main.py").write_text("from util import calcula\n\nprint(calcula(3, 4))\n")
+    seen: list[list[dict]] = []
+
+    def edit(path: str, old: str, new: str) -> dict:
+        return {"function": {"name": "edit_file", "arguments": {"path": path, "old": old, "new": new}}}
+
+    class Careless(AgentEngine):
+        replies = [
+            {"tool_calls": [edit("util.py", "def calcula", "def multiplica")]},
+            {"tool_calls": [edit("main.py", "from util import calcula", "from util import multiplica")]},
+            {"content": "Renamed everywhere."},  # main.py still calls calcula(3, 4)
+            {"tool_calls": [edit("main.py", "print(calcula(3, 4))", "print(multiplica(3, 4))")]},
+            {"content": "Now it really is everywhere."},
+        ]
+
+        def _chat(self, messages):
+            seen.append([dict(m) for m in messages])
+            return self.replies.pop(0)
+
+    engine = Careless(model="m", workspace_root=tmp_path, on_confirm=None)
+    answer = engine.run([{"role": "user", "content": "Renombra la función calcula a multiplica en todo el proyecto"}])
+    assert answer == "Now it really is everywhere."
+    assert any("main.py:3: print(calcula(3, 4))" in str(m.get("content")) for m in seen[3])
+    assert "calcula" not in (tmp_path / "main.py").read_text()
+
+
+def test_review_edge_cases_in_rename_run_and_creation_detection(tmp_path: Path) -> None:
+    from trinaxai_agent.engine import _is_simple_file_creation as simple
+    from trinaxai_agent.engine import _rename_request
+    from trinaxai_agent.tools import format_tool_failure
+
+    # A noun with no old name is not an identifier to search for.
+    assert _rename_request("rename the variable to total") is None
+    # A sample or test file is still a one-file request; only asking to run something is not.
+    for plain in ("crea un archivo de prueba hola.txt", "create a test file notes.txt"):
+        assert simple([{"role": "user", "content": plain}]), plain
+    assert not simple([{"role": "user", "content": "Crea un archivo app.py y pruébalo"}])
+
+    run_tests = {"function": {"name": "run_command", "arguments": {"command": "pytest"}}}
+    run_echo = {"function": {"name": "run_command", "arguments": {"command": "echo done"}}}
+    results = iter([format_tool_failure("run_command", "[exit 1] 1 failed"), "[exit 0]\ndone"])
+
+    class Unrelated(AgentEngine):
+        replies = [{"tool_calls": [run_tests]}, {"tool_calls": [run_echo]}, {"content": "Ran both."}]
+
+        def _chat(self, messages):
+            return self.replies.pop(0)
+
+        def _execute_call(self, call):
+            return next(results)
+
+    answer = Unrelated(model="m", workspace_root=tmp_path, on_confirm=None).run(
+        [{"role": "user", "content": "Run the tests and then echo done"}]
+    )
+    # A different command passing does not hide the failed test run.
+    assert "What happened:" in answer and "1 failed" in answer
+
+    # An exploratory command that fails before a good edit is not chased once the file changed.
+    (tmp_path / "a.py").write_text("x = 1\n")
+    edit = {"function": {"name": "edit_file", "arguments": {"path": "a.py", "old": "x = 1", "new": "x = 2"}}}
+    seen: list[list[dict]] = []
+    runs = iter([format_tool_failure("run_command", "[exit 1] no match"), "ok"])
+
+    class Explorer(AgentEngine):
+        replies = [{"tool_calls": [run_tests]}, {"tool_calls": [edit]}, {"content": "Changed x to 2."}]
+
+        def _chat(self, messages):
+            seen.append([dict(m) for m in messages])
+            return self.replies.pop(0)
+
+        def _execute_call(self, call):
+            name = call["function"]["name"]
+            return next(runs) if name == "run_command" else super()._execute_call(call)
+
+    Explorer(model="m", workspace_root=tmp_path, on_confirm=None).run(
+        [{"role": "user", "content": "Change x to 2 in a.py"}]
+    )
+    assert not any("The last command you ran failed" in str(m.get("content")) for m in seen[-1])

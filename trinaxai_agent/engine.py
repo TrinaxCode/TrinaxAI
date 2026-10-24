@@ -25,6 +25,7 @@ auto-approve (used by ``--yolo``).
 from __future__ import annotations
 
 import json
+import os
 import re
 import threading
 from contextlib import nullcontext
@@ -244,10 +245,18 @@ class AgentEngine:
         reported_results: list[str] = []
         nudged = False
         claim_nudged = False
+        run_nudged = False
+        rename_nudges = 0
+        rename = _rename_request(_latest_user_text(messages))
+        failed_run_nudges = 0
+        last_run_failed = False
+        failed_by_command: dict[str, str] = {}
         mutated = False
+        ran_command = False
         wants_change = _requests_change(_latest_user_text(messages)) and any(
             name in self._tool_map for name in _MUTATING_TOOLS
         )
+        wants_run = _requests_run(_latest_user_text(messages)) and "run_command" in self._tool_map
         # Code reviews get a second, code-specialized evidence audit. Suppress
         # the planner's draft so the UI never flashes unverified claims before
         # the corrected answer replaces them.
@@ -318,6 +327,45 @@ class AgentEngine:
                         }
                     )
                     continue
+                # A small model often creates the files and then reports "done" without running what
+                # it was asked to run. Ask once for the run it skipped.
+                if wants_run and not ran_command and not run_nudged and used_tools:
+                    run_nudged = True
+                    _nudge(
+                        messages,
+                        content,
+                        "You were also asked to run it, and no command has been run yet. Run it now "
+                        "with run_command, then report the real output.",
+                    )
+                    continue
+                # A rename that left the old name behind (a call no test covers) is found by searching
+                # for it, not by trusting the model's "all updated".
+                if rename and mutated and rename_nudges < 2 and used_tools:
+                    leftovers = _leftover_name_hits(self.workspace_root, rename[0])
+                    if leftovers:
+                        rename_nudges += 1
+                        _nudge(
+                            messages,
+                            content,
+                            f"The old name `{rename[0]}` still appears in the project:\n"
+                            + "\n".join(leftovers)
+                            + f"\nUpdate each one to `{rename[1]}` (or say why it must stay), then "
+                            "report what you changed.",
+                        )
+                        continue
+                # The last command failed (for example a test the change broke) and the model is about to
+                # report success. Give it up to two chances to fix the cause and run it again.
+                if last_run_failed and (wants_run or wants_change) and failed_run_nudges < 2 and used_tools:
+                    failed_run_nudges += 1
+                    last_run_failed = False
+                    _nudge(
+                        messages,
+                        content,
+                        "The last command you ran failed. Read its error, fix the cause with "
+                        "edit_file or write_file, run it again, and report the real result. Do not "
+                        "say it works unless the command succeeded.",
+                    )
+                    continue
                 if _is_final_answer(content, used_tools):
                     content = _append_degradation_notes(content, reported_results)
                     if review_mode and used_tools:
@@ -356,6 +404,24 @@ class AgentEngine:
                 result = self._execute_call(call)
                 name, args = _parse_tool_call(call)
                 tool = self._tool_map.get(name)
+                if not is_degraded_tool_result(result) and name in ("write_file", "edit_file"):
+                    # `mutated` gates the "you claimed a change you never made" nudge, so it must turn true
+                    # once a file really changed. An edit after a failed run also means that failure is old
+                    # news: the model has acted on it.
+                    mutated = True
+                    last_run_failed = False
+                if name == "run_command":
+                    ran_command = True
+                    command_text = str(args.get("command") or "")
+                    last_run_failed = is_degraded_tool_result(result)
+                    if last_run_failed:
+                        failed_by_command[command_text] = result
+                    elif command_text in failed_by_command:
+                        # The same command passes now: reporting its earlier failure under the answer would
+                        # say it failed after it was fixed. Other commands' failures stay reported.
+                        earlier = failed_by_command.pop(command_text)
+                        reported_results[:] = [r for r in reported_results if r != earlier]
+                        degraded_results[:] = [r for r in degraded_results if r != earlier]
                 # A refusal by the user is a decision, not an outage: do not
                 # bolt a "what happened / still works" block onto the answer.
                 if (
@@ -545,16 +611,18 @@ class AgentEngine:
             if self.on_tool_result:
                 self.on_tool_result(tool, result)
             return result
-        precheck = getattr(tool, "precheck", None)  # tools from integrations may predate the hook
-        if precheck is not None:
-            problem = precheck(args)
-            if problem:
-                # A call that cannot succeed is never worth the user's attention.
-                result = format_tool_failure(name, problem)
-                self._last_call_key = call_key
-                if self.on_tool_result:
-                    self.on_tool_result(tool, result)
-                return result
+        precheck = getattr(tool, "precheck", None)  # tools from integrations may predate the hooks
+        state_check = getattr(tool, "state_check", None)
+        problem = precheck(args) if precheck is not None else None
+        if not problem and state_check is not None:
+            problem = state_check(self.workspace_root, args)
+        if problem:
+            # A call that cannot succeed is never worth the user's attention.
+            result = format_tool_failure(name, problem)
+            self._last_call_key = call_key
+            if self.on_tool_result:
+                self.on_tool_result(tool, result)
+            return result
         if tool.dangerous and self.on_confirm is not None and not self.on_confirm(tool, args):
             denied = format_tool_failure(name, "The action was denied by user, so no change was made.")
             self._last_call_key = call_key
@@ -608,6 +676,35 @@ class AgentEngine:
                 self._record_usage(data)
                 return data.get("message") or {}
             return self._chat_stream(f"{self.ollama_url.rstrip('/')}/api/chat", payload)
+
+    def warm_up(self) -> bool:
+        """Load the model and process the fixed prompt prefix before the first task.
+
+        On a CPU the first request pays for loading the model plus the system
+        prompt and tool schemas (about 2,000 tokens, over a minute with a 4B
+        model), while later turns reuse that prefix from Ollama's cache. Sending
+        the same prefix with a one-token reply while the user is still typing
+        moves that cost out of the wait. It is best-effort: a failure only means
+        the first task pays the cost, as before.
+        """
+        payload = {
+            "model": self.model,
+            "messages": [
+                {"role": "system", "content": self.system_prompt},
+                {"role": "user", "content": "ping"},
+            ],
+            "tools": [tool.schema() for tool in self.tools],
+            "stream": False,
+            "think": False,
+            "keep_alive": self.keep_alive,
+            # num_ctx must match _chat: another value makes Ollama reload the model.
+            "options": {"num_ctx": self.num_ctx, "temperature": self.temperature, "num_predict": 1},
+        }
+        try:
+            data = self._post(f"{self.ollama_url.rstrip('/')}/api/chat", payload)
+        except Exception:  # noqa: BLE001 - warming is an optimisation, never an error
+            return False
+        return not data.get("error")
 
     def _raise_if_cancelled(self) -> None:
         if self.should_cancel is not None and self.should_cancel():
@@ -814,6 +911,78 @@ def _requests_change(user_text: str) -> bool:
     return bool(_CHANGE_REQUEST_RE.search(user_text or ""))
 
 
+_RUN_REQUEST_RE = re.compile(
+    r"\b(?:ejecuta\w*|corre|correr|corra|lanza\w*|run|execute)\b.{0,60}"
+    r"\b(?:pruebas?|tests?|pytest|script|comando|command|programa|program|npm|make)\b",
+    re.IGNORECASE,
+)
+_RUN_NEGATION_RE = re.compile(
+    r"\b(?:no|sin|don't|do not|never|nunca)\b.{0,20}\b(?:ejecut\w*|corr\w*|run|execute)\b", re.I
+)
+
+
+_RENAME_RE = re.compile(
+    r"\b(?:renombra\w*|rename)\s+(?:la\s+|el\s+|the\s+)?(?:funci[oó]n\s+|function\s+|clase\s+|class\s+|"
+    r"variable\s+|m[eé]todo\s+|method\s+)?[`'\"]?([A-Za-z_]\w*)[`'\"]?\s+(?:a|como|to|por|->)\s+[`'\"]?([A-Za-z_]\w*)",
+    re.IGNORECASE,
+)
+_RENAME_NOUNS = frozenset(
+    {"funcion", "función", "function", "clase", "class", "variable", "metodo", "método", "method"}
+)
+_SKIP_DIRS = frozenset({".git", "node_modules", ".venv", "venv", "__pycache__", "dist", "build", ".mypy_cache"})
+
+
+def _nudge(messages: list[dict[str, Any]], content: str, instruction: str) -> None:
+    """Keep the model's reply in history and answer it with one corrective instruction."""
+    messages.append({"role": "assistant", "content": content})
+    messages.append({"role": "user", "content": instruction})
+
+
+def _rename_request(user_text: str) -> tuple[str, str] | None:
+    match = _RENAME_RE.search(user_text or "")
+    if not match or match.group(1) == match.group(2) or match.group(1).lower() in _RENAME_NOUNS:
+        return None
+    return match.group(1), match.group(2)
+
+
+def _leftover_name_hits(root: Path, name: str, *, limit: int = 8) -> list[str]:
+    """``file:line`` places in the workspace that still use ``name`` as a whole word."""
+    pattern = re.compile(rf"(?<![\w]){re.escape(name)}(?![\w])")
+    hits: list[str] = []
+    checked = 0
+    for current, dirs, files in os.walk(root):
+        dirs[:] = [d for d in dirs if d not in _SKIP_DIRS]
+        for filename in files:
+            path = Path(current) / filename
+            if path.is_symlink():
+                continue  # a link could lead outside the workspace, which the file tools never read
+            try:
+                if path.stat().st_size > 1_000_000:
+                    continue
+                text = path.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError):
+                continue
+            checked += 1
+            if checked > 500:
+                return hits
+            for number, line in enumerate(text.splitlines(), start=1):
+                if pattern.search(line):
+                    hits.append(f"{path.relative_to(root)}:{number}: {line.strip()[:100]}")
+                    if len(hits) >= limit:
+                        return hits
+    return hits
+
+
+_RUN_VERB_RE = re.compile(
+    r"\b(?:ejecut\w*|corre|correr|lanza\w*|run|execute|pru[eé]ba(?:lo|la|los|las)|try it out)\b", re.IGNORECASE
+)
+
+
+def _requests_run(user_text: str) -> bool:
+    text = user_text or ""
+    return bool(_RUN_REQUEST_RE.search(text)) and not _RUN_NEGATION_RE.search(text)
+
+
 def _claims_change(answer: str) -> bool:
     return bool(_CHANGE_CLAIM_RE.search(answer or ""))
 
@@ -950,8 +1119,16 @@ def _latest_user_text(messages: list[dict[str, Any]]) -> str:
     )
 
 
+_FILE_WORD_RE = re.compile(r"\b(?:archivos?|files?)\b", re.IGNORECASE)
+_FILE_NAME_RE = re.compile(r"\b[\w-]+\.[a-z][a-z0-9]{0,5}\b", re.IGNORECASE)
+
+
 def _is_simple_file_creation(messages: list[dict[str, Any]]) -> bool:
-    return bool(_SIMPLE_FILE_CREATION_RE.search(_latest_user_text(messages)))
+    """One file to create and nothing else: only then may the first write end the turn."""
+    text = _latest_user_text(messages)
+    if not _SIMPLE_FILE_CREATION_RE.search(text) or _RUN_VERB_RE.search(text):
+        return False
+    return len(_FILE_WORD_RE.findall(text)) <= 1 and len(set(_FILE_NAME_RE.findall(text))) <= 1
 
 
 def _is_simple_root_listing(messages: list[dict[str, Any]]) -> bool:

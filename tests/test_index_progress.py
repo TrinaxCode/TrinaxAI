@@ -411,3 +411,15 @@ def test_prepare_batch_reports_files_as_they_are_chunked(tmp_path):
     assert [done for done, _ in chunked] == [11, 12]
     assert all(chunks > 0 for _, chunks in chunked)
     assert prepared.nodes
+
+
+def test_progress_lines_can_be_switched_off_for_terminal_runs(capsys, monkeypatch):
+    from trinaxai.indexing import documents
+
+    monkeypatch.setenv("TRINAXAI_PROGRESS_LINES", "0")
+    documents.emit_progress("extracting", files_total=3)
+    assert capsys.readouterr().out == ""
+
+    monkeypatch.delenv("TRINAXAI_PROGRESS_LINES")  # the API's default: still emitted
+    documents.emit_progress("extracting", files_total=3)
+    assert capsys.readouterr().out.startswith("TRINAXAI_PROGRESS ")

@@ -100,6 +100,7 @@ Estos valores los consume `compose.yaml`; son ajustes de despliegue, no opciones
 | `OLLAMA_NUM_GPU` | autodetectado | Hints de capas GPU de Ollama; `0` usa CPU y un valor alto descarga las capas que caben en la GPU detectada. |
 | `TRINAXAI_KEEP_ALIVE` | derivado del perfil | Duración de permanencia de modelos Ollama. |
 | `TRINAXAI_TIMEOUT` | `300` | Timeout de solicitudes Ollama en segundos. |
+| `TRINAXAI_CLI_TIMEOUT` | (sin definir) | Segundos que la CLI espera a una solicitud de la API, incluida `trinaxai research`, antes de rendirse (30 a 86400). Sin definir usa 30 segundos para solicitudes normales y de 3 a 5 minutos para research según la profundidad; súbelo en equipos más lentos. |
 | `TRINAXAI_MODEL_MAX_CONCURRENCY` | `1` | Tareas de modelo simultáneas; mantenlo bajo para evitar thrashing de RAM/VRAM. |
 | `TRINAXAI_INFERENCE_QUEUE_TIMEOUT` | `600` | Segundos que FastAPI y el gateway esperan el lock de inferencia compartido. |
 | `TRINAXAI_INFERENCE_LOCK_FILE` | `storage/.inference.lock` | Ruta del lock atómico compartido por el gateway. |
@@ -155,6 +156,7 @@ Ollama también consume `OLLAMA_BASE_URL` (endpoint del backend), `OLLAMA_HOST`
 | `TRINAXAI_INDEX_LOAD_WORKERS` | hasta `8` | Cargadores simultáneos de archivos fuente. |
 | `TRINAXAI_INDEX_LOCK_TIMEOUT` | `60` | Segundos de espera del lock del escritor del índice. |
 | `TRINAXAI_INDEX_TIMEOUT` | `3600` | Segundos que la CLI espera al proceso indexador. |
+| `TRINAXAI_PROGRESS_LINES` | `1` | Pon `0` para que el indexador no imprima las líneas `TRINAXAI_PROGRESS` que lee la API. La CLI lo activa para que la terminal muestre solo mensajes legibles. |
 | `TRINAXAI_WATCH_INDEX_TIMEOUT` | `1800` | Segundos permitidos a un indexador del watcher. |
 | `TRINAXAI_WATCH_RELOAD_TIMEOUT` | `30` | Segundos de espera para recargar motores RAG. |
 | `TRINAXAI_WATCH_OUTPUT_MAX_BYTES` | `16384` | Bytes máximos de stdout/stderr retenidos por trabajo. |

@@ -285,7 +285,7 @@ def test_confirm_runs_pre_approved_actions_and_refuses_in_plan_mode() -> None:
     ui.say.assert_not_called()
 
 
-def test_confirm_in_non_interactive_runs_never_asks_and_never_approves() -> None:
+def test_confirm_in_non_interactive_runs_never_asks_and_never_approves(capsys) -> None:
     renderer, ui, _policy = _confirming(interactive=False)
     assert renderer.on_confirm(_tool("run_command", True), {"command": "make"}) is False
     ui.choose.assert_not_called()
@@ -294,6 +294,9 @@ def test_confirm_in_non_interactive_runs_never_asks_and_never_approves() -> None
     quiet, ui, _ = _confirming(interactive=False, quiet=True)
     assert quiet.on_confirm(_tool("edit_file", True), {"path": "a"}) is False
     ui.say.assert_not_called()
+    captured = capsys.readouterr()
+    assert captured.out == ""  # stdout stays clean for the answer
+    assert "edit_file: No terminal to ask: action refused" in captured.err  # the reason still reaches the user
 
 
 def test_confirm_prompt_offers_yes_always_and_no_and_remembers_the_choice(tmp_path: Path) -> None:

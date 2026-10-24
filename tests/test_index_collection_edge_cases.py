@@ -9,7 +9,7 @@ import config
 import index
 
 
-def test_collect_files_filters_hidden_links_and_oversized_files(tmp_path: Path, monkeypatch) -> None:
+def test_collect_files_filters_hidden_links_and_oversized_files(tmp_path: Path, monkeypatch, capsys) -> None:
     visible = tmp_path / "visible.txt"
     visible.write_text("keep", encoding="utf-8")
     (tmp_path / ".private.txt").write_text("skip", encoding="utf-8")
@@ -28,6 +28,20 @@ def test_collect_files_filters_hidden_links_and_oversized_files(tmp_path: Path, 
 
     assert names == {visible.name}
     assert link is None or link.name not in names
+    # The user is told which file was left out, not only how many.
+    assert "oversized.txt (0.0 MB; limit 0.0 MB)" in capsys.readouterr().out
+
+
+def test_collect_files_names_only_the_first_oversized_files(tmp_path: Path, monkeypatch, capsys) -> None:
+    for number in range(8):
+        (tmp_path / f"big{number}.txt").write_text("too large", encoding="utf-8")
+    monkeypatch.setattr(config, "max_file_bytes", lambda _path: 0)
+
+    assert index.collect_files(str(tmp_path)) == []
+
+    output = capsys.readouterr().out
+    assert "8 files skipped by size" in output
+    assert output.count(" MB; limit ") == 5 and "and 3 more" in output
 
 
 def test_text_detector_handles_empty_invalid_and_unreadable_files(tmp_path: Path, monkeypatch) -> None:

@@ -26,9 +26,9 @@ def _research_metadata(result: dict[str, Any]) -> dict[str, Any]:
 
 
 def run(args: Any, client: Any, ui: Any, config: Any) -> int:
-    query = getattr(args, "query", None)
+    query = getattr(args, "query", None) or " ".join(getattr(args, "topic", None) or []).strip()
     if not query:
-        ui.error("--query is required.")
+        ui.error('Say what to research: trinaxai research "your question" (or --query).')
         return 1
     collections = getattr(args, "collections", None) or []
     if isinstance(collections, str):
@@ -37,11 +37,13 @@ def run(args: Any, client: Any, ui: Any, config: Any) -> int:
     try:
         with ui.spinner(f"Researching (depth={depth})..."):
             research_kwargs: dict[str, Any] = {"query": query, "collections": collections, "depth": depth}
-            if hasattr(config, "thinking_enabled"):
-                thinking = config.thinking_enabled
-                if getattr(args, "thinking", None) is not None:
-                    thinking = bool(args.thinking)
-                research_kwargs["thinking"] = bool(thinking)
+            if getattr(args, "web", False):
+                research_kwargs["web_search"] = True
+            # Only an explicit --thinking/--no-thinking is sent. The CLI's default preference (on) would
+            # override the server, which turns reasoning off for a quick web lookup: on a CPU the model
+            # then spends its whole budget thinking and the synthesis never completes.
+            if getattr(args, "thinking", None) is not None:
+                research_kwargs["thinking"] = bool(args.thinking)
             res = client.research(**research_kwargs)
         session_name = getattr(args, "session", None)
         if session_name:

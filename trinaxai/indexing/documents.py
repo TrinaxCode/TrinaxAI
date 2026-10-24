@@ -175,10 +175,17 @@ def is_indexable_file(path: str) -> bool:
     return is_probably_text_file(path)
 
 
+_SKIPPED_NAMES_SHOWN = 5
+
+
+def _megabytes(size: int) -> str:
+    return f"{size / (1024 * 1024):.1f}"
+
+
 def collect_files(root: str) -> list[str]:
     """Walk ``root`` while pruning dependencies, hidden folders and secrets."""
     files: list[str] = []
-    skipped_big = 0
+    skipped_big: list[tuple[str, int, int]] = []
     file_count = 0
     for dirpath, dirnames, filenames in os.walk(root):
         dirnames[:] = [
@@ -191,8 +198,10 @@ def collect_files(root: str) -> list[str]:
         for filename in filenames:
             full_path = os.path.join(dirpath, filename)
             try:
-                if os.path.getsize(full_path) > config.max_file_bytes(full_path):
-                    skipped_big += 1
+                size = os.path.getsize(full_path)
+                limit = config.max_file_bytes(full_path)
+                if size > limit:
+                    skipped_big.append((os.path.relpath(full_path, root), size, limit))
                     continue
             except OSError:
                 continue
@@ -205,7 +214,12 @@ def collect_files(root: str) -> list[str]:
     if file_count >= 5000:
         print(_text("idx_files_found_total", resolve_lang(), count=file_count))
     if skipped_big:
-        print(_text("idx_skipped_big", resolve_lang(), count=skipped_big))
+        language = resolve_lang()
+        print(_text("idx_skipped_big", language, count=len(skipped_big)))
+        for name, size, limit in skipped_big[:_SKIPPED_NAMES_SHOWN]:
+            print(_text("idx_skipped_big_file", language, name=name, size=_megabytes(size), limit=_megabytes(limit)))
+        if len(skipped_big) > _SKIPPED_NAMES_SHOWN:
+            print(_text("idx_skipped_big_more", language, count=len(skipped_big) - _SKIPPED_NAMES_SHOWN))
     return files
 
 
@@ -344,6 +358,10 @@ def _load_extracted_documents(path: str) -> list[Document]:
 
 
 def emit_progress(phase: str, **values: object) -> None:
+    # Machine-readable telemetry for the API's index jobs. A person running the CLI
+    # opts out (TRINAXAI_PROGRESS_LINES=0) because it is noise on a terminal.
+    if os.getenv("TRINAXAI_PROGRESS_LINES", "1") == "0":
+        return
     print("TRINAXAI_PROGRESS " + json.dumps({"phase": phase, **values}, ensure_ascii=False), flush=True)
 
 

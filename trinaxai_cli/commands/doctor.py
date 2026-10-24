@@ -243,7 +243,9 @@ def run(args: Any, client: Any, ui: Any, config: Any) -> int:
         except Exception:
             pass
     except Exception as exc:
-        add("RAG API", False, f"{exc}; run: trinaxai start", critical=True)
+        # The unreachable-service error already says how to start it; do not repeat the hint.
+        says_what_to_do = bool(getattr(exc, "recovery_included", False))
+        add("RAG API", False, str(exc) if says_what_to_do else f"{exc}; run: trinaxai start", critical=True)
 
     healthy = all(check["ok"] for check in checks if check["critical"])
     if json_output:

@@ -254,8 +254,14 @@ def test_environment_drops_git_redirection_and_never_prompts() -> None:
             "GIT_ASKPASS": "/usr/bin/askpass",
             "GIT_EXEC_PATH": "/evil",
             "GIT_EDITOR": "vim",
+            "LANGUAGE": "es",
+            "LC_ALL": "es_ES.UTF-8",
+            "LANG": "es_ES.UTF-8",
         }
     )
+    # Git speaks English here, so the failure hints recognise its messages.
+    assert env["LC_MESSAGES"] == "C" and "LANGUAGE" not in env and "LC_ALL" not in env
+    assert env["LANG"] == "es_ES.UTF-8" and env["LC_CTYPE"] == "es_ES.UTF-8"  # the character set survives
     assert env["PATH"] == "/usr/bin" and env["HOME"] == "/home/u"
     assert "GIT_DIR" not in env and "git_work_tree" not in env and "GIT_EXEC_PATH" not in env
     assert env["GIT_SSH_COMMAND"] == "ssh -i key" and env["GIT_ASKPASS"] == "/usr/bin/askpass"
@@ -304,6 +310,35 @@ def test_a_full_local_workflow_runs_through_the_tool(tmp_path: Path) -> None:
     assert "main" in _run(tmp_path, "branch", "--show-current")
     assert "outside the sandbox" in _run(tmp_path, "status", "--short")
     assert agent_tools._git(tmp_path, command="log --oneline").count("first commit") == 1
+
+
+@needs_git
+def test_a_commit_with_nothing_staged_tells_the_model_how_to_recover(tmp_path: Path) -> None:
+    _run(tmp_path, "init", "-q", "-b", "main")
+    _identity(tmp_path)
+    (tmp_path / "a.txt").write_text("one\n", encoding="utf-8")
+    _run(tmp_path, "add", "a.txt")
+    _run(tmp_path, "commit", "-m", "first")
+    (tmp_path / "a.txt").write_text("two\n", encoding="utf-8")  # modified, not staged
+
+    unstaged = _run(tmp_path, "commit", "-m", "second")
+    assert "[exit 1" in unstaged and "[hint] Nothing is staged" in unstaged and "add <file>" in unstaged
+    assert "[exit 0" in _run(tmp_path, "commit", "-a", "-m", "second")  # the hint's second way works
+
+    clean = _run(tmp_path, "commit", "-m", "third")
+    assert "[exit 1" in clean and "[hint] There is nothing to commit" in clean
+
+
+def test_failure_hints_are_only_given_for_a_failed_commit() -> None:
+    hint = agent_tools._git_failure_hint
+    staged_message = 'no changes added to commit (use "git add" and/or "git commit -a")'
+    assert hint(("commit", "-m", "x"), 1, staged_message).startswith("Nothing is staged")
+    assert hint(("commit",), 1, "On branch main\nChanges not staged for commit:").startswith("Nothing is staged")
+    assert hint(("commit",), 1, "nothing to commit, working tree clean").startswith("There is nothing to commit")
+    assert hint(("commit",), 1, "fatal: unable to auto-detect email address") == ""  # unrelated failure
+    assert hint(("commit", "-m", "x"), 0, staged_message) == ""  # success is never annotated
+    assert hint(("status",), 1, staged_message) == ""  # other subcommands are untouched
+    assert hint((), 1, staged_message) == ""
 
 
 @needs_git
@@ -637,3 +672,102 @@ def test_tools_without_a_precheck_still_run(tmp_path: Path) -> None:
     engine = AgentEngine(model="m", workspace_root=tmp_path, tools=(legacy,))
     assert "ok" in engine._execute_call({"function": {"name": "legacy", "arguments": {"a": 1}}})
     assert ran == [{"a": 1}]
+
+
+# ------------------------------------- a doomed commit is refused before the user is asked
+
+
+@pytest.mark.parametrize(
+    ("args", "plain"),
+    [
+        (("commit", "-m", "msg"), True),
+        (("commit", "--message", "msg", "-q"), True),
+        (("commit", "--message=msg", "--no-verify", "-s"), True),
+        (("commit", "-m", "-starts-with-dash"), True),
+        (("commit",), False),  # no message: git would open an editor
+        (("commit", "-m"), False),  # message missing
+        (("commit", "-a", "-m", "x"), False),  # stages tracked files itself
+        (("commit", "-am", "x"), False),  # combined short flags
+        (("commit", "--amend", "-m", "x"), False),
+        (("commit", "--allow-empty", "-m", "x"), False),
+        (("commit", "-m", "x", "a.txt"), False),  # a pathspec commits those files directly
+        (("commit", "-F", "notes.txt"), False),
+        (("status",), False),
+        ((), False),
+    ],
+)
+def test_only_a_plain_commit_is_checked_for_staged_changes(args, plain) -> None:
+    assert agent_tools._is_plain_commit(args) is plain
+
+
+@needs_git
+def test_a_plain_commit_with_nothing_staged_is_refused_in_advance(tmp_path: Path) -> None:
+    check = agent_tools._git_state_check
+    commit = {"args": ["commit", "-m", "x"]}
+    assert check(tmp_path, commit) is None  # not a repository: the handler explains that
+
+    _run(tmp_path, "init", "-q", "-b", "main")
+    _identity(tmp_path)
+    (tmp_path / "a.txt").write_text("one\n", encoding="utf-8")
+    assert "nothing is staged" in check(tmp_path, commit)  # an untracked file is not staged either
+
+    _run(tmp_path, "add", "a.txt")
+    assert check(tmp_path, commit) is None  # first commit with a staged file
+    _run(tmp_path, "commit", "-m", "first")
+    assert "nothing is staged" in check(tmp_path, commit)  # clean tree
+
+    (tmp_path / "a.txt").write_text("two\n", encoding="utf-8")
+    assert "nothing is staged" in check(tmp_path, commit)  # modified but not staged
+    assert check(tmp_path, {"args": ["commit", "-a", "-m", "x"]}) is None  # -a stages it
+    assert check(tmp_path, {"args": ["status"]}) is None
+    assert check(tmp_path, {"args": ["config", "user.name", "x"]}) is None  # refused elsewhere
+    _run(tmp_path, "add", "a.txt")
+    assert check(tmp_path, commit) is None
+
+    # Concluding a merge can be valid with an empty index, so an operation in progress is never second-guessed.
+    _run(tmp_path, "commit", "-m", "second")
+    (tmp_path / ".git" / "MERGE_HEAD").write_text("0" * 40 + "\n", encoding="utf-8")
+    assert check(tmp_path, commit) is None
+
+
+@needs_git
+def test_the_engine_does_not_ask_for_a_commit_that_cannot_work(tmp_path: Path) -> None:
+    _run(tmp_path, "init", "-q", "-b", "main")
+    _identity(tmp_path)
+    (tmp_path / "a.txt").write_text("one\n", encoding="utf-8")
+    asked: list[str] = []
+    engine = AgentEngine(
+        model="m", workspace_root=tmp_path, on_confirm=lambda tool, args: asked.append(tool.name) or True
+    )
+
+    refused = engine._execute_call(_call("commit", "-m", "first"))
+    assert asked == [] and "nothing is staged" in refused and "[tool_status=degraded" in refused
+
+    assert "[exit 0" in engine._execute_call(_call("add", "a.txt"))
+    assert asked == ["git"]
+    committed = engine._execute_call(_call("commit", "-m", "first"))
+    assert asked == ["git", "git"] and "[exit 0" in committed and "first" in committed
+
+
+def test_a_state_check_that_finds_nothing_wrong_lets_the_call_proceed(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(agent_tools.shutil, "which", lambda _name: None)
+    assert agent_tools._git_state_check(tmp_path, {"args": ["commit", "-m", "x"]}) is None  # git not installed
+
+    monkeypatch.setattr(agent_tools.shutil, "which", lambda _name: "/usr/bin/git")
+    monkeypatch.setattr(agent_tools, "_git_toplevel", lambda *_a: (_ for _ in ()).throw(OSError("boom")))
+    assert (
+        agent_tools._git_state_check(tmp_path, {"args": ["commit", "-m", "x"]}) is None
+    )  # git failing: stay out of the way
+    assert agent_tools._git_state_check(tmp_path, {}) is None  # unusable arguments are the precheck's business
+
+    legacy = SimpleNamespace(
+        name="legacy",
+        dangerous=False,
+        external=False,
+        handler=lambda _root, **kwargs: "ok",
+        schema=lambda: {"type": "function", "function": {"name": "legacy", "parameters": {"type": "object"}}},
+    )
+    engine = AgentEngine(model="m", workspace_root=tmp_path, tools=(legacy,))
+    assert "ok" in engine._execute_call(
+        {"function": {"name": "legacy", "arguments": {}}}
+    )  # tools without the hook still run

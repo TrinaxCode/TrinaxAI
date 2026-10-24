@@ -57,6 +57,7 @@ def run(args: Any, client: Any, ui: Any, config: Any) -> int:
     env["TRINAXAI_COLLECTION_ID"] = collection
     env["TRINAXAI_COLLECTION_NAME"] = collection
     env["TRINAXAI_INDEX_APPEND"] = "1" if append else "0"
+    env["TRINAXAI_PROGRESS_LINES"] = "0"  # the API reads these lines; a terminal should not show them
 
     ui.info(f"Indexing {folder_path} into collection '{collection}' (append={append})...")
     try:
