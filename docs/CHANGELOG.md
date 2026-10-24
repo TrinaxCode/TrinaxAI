@@ -110,6 +110,8 @@ All notable changes to TrinaxAI are documented here. This project follows the
 
 ### Fixed
 
+- `trinaxai models` shows model sizes as `3.1 GB` instead of a raw byte count, and the
+  `trinaxai doctor` row about the agent's terminal sandbox is translated to Spanish.
 - The terminal assistant now sends file and version-control requests to the coding
   agent instead of answering them as plain chat: "fix the bug in calc.py",
   "read main.py and tell me what it does", "commit these changes". Questions about

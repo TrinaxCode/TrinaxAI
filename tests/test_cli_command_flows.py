@@ -295,3 +295,32 @@ def test_help_and_mcp_have_stable_exit_contracts(monkeypatch, ui) -> None:
     assert help.run(SimpleNamespace(), None, ui, None) == 0
     assert mcp.run(SimpleNamespace(), None, ui, None) == 2
     ui.print.assert_called_once_with("usage")
+
+
+def test_models_shows_installed_sizes_in_human_units(monkeypatch, ui) -> None:
+    client = MagicMock()
+    client.list_ollama_models.return_value = [
+        {"name": "big", "size": 3324173934},
+        {"name": "mid", "size": 274302450},
+        {"name": "tiny", "size": 900},
+        {"name": "kb", "size": 4096},
+        {"name": "unknown"},
+        {"name": "odd", "size": "n/a"},
+    ]
+    monkeypatch.setattr(models._system, "env_value", lambda _name: None)
+
+    models.run(SimpleNamespace(), client, ui, None)
+
+    sizes = {row[0]: row[2] for row in ui.table.call_args.args[1] if row[1] == "installed"}
+    assert sizes == {"big": "3.1 GB", "mid": "261.6 MB", "tiny": "900 B", "kb": "4.0 KB", "unknown": "", "odd": "n/a"}
+
+
+def test_doctor_sandbox_rows_are_translated() -> None:
+    from trinaxai_cli.i18n import translate
+
+    assert translate("Agent shell sandbox", "es") == "Sandbox de la terminal del agente"
+    assert translate("bubblewrap sandbox available (networkless)", "es") == "sandbox bubblewrap disponible (sin red)"
+    assert translate(
+        "terminal tool disabled: install the 'bubblewrap' package (file tools still work)", "es"
+    ).startswith("terminal desactivada: instala el paquete 'bubblewrap'")
+    assert translate("UNSANDBOXED opt-in via TRINAXAI_X", "es") == "SIN SANDBOX por activación explícita con TRINAXAI_X"

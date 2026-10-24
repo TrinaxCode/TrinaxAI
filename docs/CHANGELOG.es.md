@@ -115,6 +115,8 @@ el formato de [Keep a Changelog](https://keepachangelog.com/).
 
 ### Corregido
 
+- `trinaxai models` muestra el tamaño de los modelos como `3.1 GB` en vez de bytes, y la
+  fila de `trinaxai doctor` sobre el sandbox de la terminal del agente está traducida.
 - El asistente de terminal ahora envía al agente de código las peticiones sobre
   archivos y control de versiones en vez de responderlas como chat normal:
   «arregla el bug en calc.py», «lee main.py y dime qué hace», «haz commit de los

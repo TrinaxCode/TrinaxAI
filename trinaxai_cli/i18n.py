@@ -136,6 +136,19 @@ MESSAGES: dict[str, tuple[str, str]] = {
     "config_title": ("TrinaxAI config", "Configuración de TrinaxAI"),
     "doctor_title": ("TrinaxAI doctor", "Doctor de TrinaxAI"),
     "python_package": ("Python package", "Paquete de Python"),
+    "agent_shell_sandbox": ("Agent shell sandbox", "Sandbox de la terminal del agente"),
+    "sandbox_available": (
+        "bubblewrap sandbox available (networkless)",
+        "sandbox bubblewrap disponible (sin red)",
+    ),
+    "sandbox_linux_only": (
+        "terminal tool disabled: OS command sandbox is Linux-only (file tools still work)",
+        "terminal desactivada: el sandbox de comandos solo existe en Linux (las herramientas de archivos siguen funcionando)",
+    ),
+    "sandbox_needs_bubblewrap": (
+        "terminal tool disabled: install the 'bubblewrap' package (file tools still work)",
+        "terminal desactivada: instala el paquete 'bubblewrap' (las herramientas de archivos siguen funcionando)",
+    ),
     "cli_import_works": ("CLI import works", "La importación de la CLI funciona"),
     "install_root_label": ("Install root", "Raíz de instalación"),
     "ollama_command": ("Ollama command", "Comando de Ollama"),
@@ -435,6 +448,8 @@ def translate(message: Any, lang: str = "en") -> Any:
         (r"^The model '(.+)' is not installed\.$", r"El modelo '\1' no está instalado."),
         (r"^Install it with: (.+)$", r"Instálalo con: \1"),
         (r"^Sources: (.+)$", r"Fuentes: \1"),
+        (r"^UNSANDBOXED opt-in via (.+)$", r"SIN SANDBOX por activación explícita con \1"),
+        (r"^cannot determine: (.+)$", r"no se pudo determinar: \1"),
         (r"^See which models are installed with: (.+)$", r"Mira qué modelos hay instalados con: \1"),
         (r"^#(.+) score=(.+)$", r"#\1 puntuación=\2"),
         (r"^Memories \((.+)\)$", r"Memorias (\1)"),
