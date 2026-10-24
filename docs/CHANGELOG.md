@@ -99,6 +99,14 @@ All notable changes to TrinaxAI are documented here. This project follows the
 
 ### Fixed
 
+- Answers are no longer slowed down by too many CPU threads. `TRINAXAI_NUM_THREAD`
+  defaulted to a fixed 8; on a 4-core computer that made the same answer take
+  76-93 s instead of 16 s. The default is now the smaller of 8 and the CPUs you
+  have.
+- A refusal such as "I don't have access to that information" (including the
+  typographic apostrophe and common Spanish wordings) is now recognised, so
+  TrinaxAI no longer lists an unrelated file as the source of an answer that
+  says the information is missing.
 - `trinaxai stop`, `restart` and `status` no longer touch processes that are not
   TrinaxAI's. They used to match words such as `npm run dev`, `vite --host`,
   `node server.mjs` or `ollama` anywhere in a command line, so `status` could
@@ -119,6 +127,9 @@ All notable changes to TrinaxAI are documented here. This project follows the
 
 ### Security
 
+- Updated `nltk` to 3.10.4 (GHSA-8mgp-746c-j5xp, path traversal in its model
+  APIs) and removed the audit exception: `pip-audit` now fails on any known
+  vulnerability.
 - Updated `pypdf` to 6.21.2 (CVE-2026-115572, CVE-2026-115580,
   CVE-2026-115585) and `setuptools` to 84.1.0 (GHSA-xmj3-9gf7-h52w) in the
   dependency lock, and the development-only `zod` to 4.6.7 (GHSA-mrhx-c7xc-m3w5)
