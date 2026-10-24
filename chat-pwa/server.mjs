@@ -509,6 +509,10 @@ function networkStatus() {
     certificateCurrent = subjectAltName.includes(`DNS:${stableHost}`)
       && addresses.every((address) => subjectAltName.includes(`IP Address:${address}`));
   } catch { /* PFX-only Windows installs are checked by the refresh command. */ }
+  // With the gateway bound to this computer only, a changed LAN address or an
+  // out-of-date LAN certificate affects nobody, so it must not nag the user (a
+  // laptop that moves between Wi-Fi networks would otherwise see it every time).
+  const lanReachable = !isLoopbackAddress(host);
   return {
     online: true,
     existingInstallation: hasExistingInstallation(),
@@ -516,9 +520,10 @@ function networkStatus() {
     addresses,
     urls,
     recommendedUrl: urls[0],
+    lanAccess: lanReachable,
     configurationCurrent,
     certificateCurrent,
-    needsRefresh: !configurationCurrent || certificateCurrent === false,
+    needsRefresh: lanReachable && (!configurationCurrent || certificateCurrent === false),
     refreshCommand: 'trinaxai network refresh',
   };
 }

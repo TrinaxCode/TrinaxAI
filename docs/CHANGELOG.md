@@ -110,6 +110,10 @@ All notable changes to TrinaxAI are documented here. This project follows the
 
 ### Fixed
 
+- The web app no longer asks you to "prepare this network" when TrinaxAI is kept
+  on this computer only. A changed Wi-Fi address or an out-of-date LAN
+  certificate only matters when other devices can connect, so the notice now
+  appears only if you allowed access from your local network.
 - Errors now name the real cause. With TrinaxAI stopped the CLI no longer says
   "the internet connection is unavailable" but "Cannot reach the local TrinaxAI
   service. Start it with: trinaxai start". A model that is not installed is

@@ -115,6 +115,10 @@ el formato de [Keep a Changelog](https://keepachangelog.com/).
 
 ### Corregido
 
+- La app web ya no te pide «preparar esta red» cuando TrinaxAI está solo en este
+  equipo. Un cambio de dirección Wi-Fi o un certificado de red local
+  desactualizado solo importa si otros dispositivos pueden conectarse, así que el
+  aviso aparece únicamente si permitiste el acceso desde tu red local.
 - Los errores nombran la causa real. Con TrinaxAI detenido, la CLI ya no dice
   «la conexión a Internet no está disponible» sino «No se puede conectar con el
   servicio local de TrinaxAI. Inícialo con: trinaxai start». Un modelo no
