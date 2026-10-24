@@ -564,11 +564,16 @@ class TestSystemEndpointSafety:
 
         client = TestClient(rag_api.app, raise_server_exceptions=False, client=("127.0.0.1", 50000))
 
-        # Simulate request from a public IP, no token
-        response = client.post(
-            "/system/shutdown",
-            headers={"X-Forwarded-For": "8.8.8.8"},
-        )
+        # Simulate request from a public IP, no token. A loopback request is allowed
+        # through, so keep it from launching the real service manager (it would stop
+        # the Ollama and API of whoever runs the tests).
+        from app.services import system_service
+
+        with patch.object(system_service, "_spawn_service_manager"):
+            response = client.post(
+                "/system/shutdown",
+                headers={"X-Forwarded-For": "8.8.8.8"},
+            )
         # The authorize_system function uses request.client.host, not X-Forwarded-For,
         # so TestClient connections from localhost will pass. This is expected behavior
         # for local testing. The security is validated in the unit tests above.
