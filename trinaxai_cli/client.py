@@ -104,29 +104,31 @@ def _cli_timeout() -> float | None:
     return value if 30.0 <= value <= 86400.0 else None
 
 
-def _speaks_no_tls(exc: BaseException) -> bool:
-    """True when the handshake failed because the other end is a plain-HTTP server."""
+def _exception_chain(exc: BaseException) -> Iterable[BaseException]:
+    """``exc`` and the causes behind it, each once."""
     seen: set[int] = set()
     current: BaseException | None = exc
     while current is not None and id(current) not in seen:
         seen.add(id(current))
-        text = str(current).lower()
-        if isinstance(current, ssl.SSLError) and ("wrong version number" in text or "http request" in text):
-            return True
+        yield current
         current = current.__cause__ or current.__context__
-    return False
+
+
+def _speaks_no_tls(exc: BaseException) -> bool:
+    """True when the handshake failed because the other end is a plain-HTTP server."""
+    return any(
+        isinstance(item, ssl.SSLError)
+        and ("wrong version number" in str(item).lower() or "http request" in str(item).lower())
+        for item in _exception_chain(exc)
+    )
 
 
 def _is_certificate_problem(exc: BaseException) -> bool:
     """True when a transport failure was the TLS handshake rejecting the server's certificate."""
-    seen: set[int] = set()
-    current: BaseException | None = exc
-    while current is not None and id(current) not in seen:
-        seen.add(id(current))
-        if isinstance(current, ssl.SSLCertVerificationError) or "certificate verify failed" in str(current).lower():
-            return True
-        current = current.__cause__ or current.__context__
-    return False
+    return any(
+        isinstance(item, ssl.SSLCertVerificationError) or "certificate verify failed" in str(item).lower()
+        for item in _exception_chain(exc)
+    )
 
 
 class TrinaxAPIClient:

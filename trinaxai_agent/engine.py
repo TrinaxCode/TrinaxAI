@@ -331,15 +331,11 @@ class AgentEngine:
                 # it was asked to run. Ask once for the run it skipped.
                 if wants_run and not ran_command and not run_nudged and used_tools:
                     run_nudged = True
-                    messages.append({"role": "assistant", "content": content})
-                    messages.append(
-                        {
-                            "role": "user",
-                            "content": (
-                                "You were also asked to run it, and no command has been run yet. Run it now "
-                                "with run_command, then report the real output."
-                            ),
-                        }
+                    _nudge(
+                        messages,
+                        content,
+                        "You were also asked to run it, and no command has been run yet. Run it now "
+                        "with run_command, then report the real output.",
                     )
                     continue
                 # A rename that left the old name behind (a call no test covers) is found by searching
@@ -348,17 +344,13 @@ class AgentEngine:
                     leftovers = _leftover_name_hits(self.workspace_root, rename[0])
                     if leftovers:
                         rename_nudges += 1
-                        messages.append({"role": "assistant", "content": content})
-                        messages.append(
-                            {
-                                "role": "user",
-                                "content": (
-                                    f"The old name `{rename[0]}` still appears in the project:\n"
-                                    + "\n".join(leftovers)
-                                    + f"\nUpdate each one to `{rename[1]}` (or say why it must stay), then "
-                                    "report what you changed."
-                                ),
-                            }
+                        _nudge(
+                            messages,
+                            content,
+                            f"The old name `{rename[0]}` still appears in the project:\n"
+                            + "\n".join(leftovers)
+                            + f"\nUpdate each one to `{rename[1]}` (or say why it must stay), then "
+                            "report what you changed.",
                         )
                         continue
                 # The last command failed (for example a test the change broke) and the model is about to
@@ -366,16 +358,12 @@ class AgentEngine:
                 if last_run_failed and (wants_run or wants_change) and failed_run_nudges < 2 and used_tools:
                     failed_run_nudges += 1
                     last_run_failed = False
-                    messages.append({"role": "assistant", "content": content})
-                    messages.append(
-                        {
-                            "role": "user",
-                            "content": (
-                                "The last command you ran failed. Read its error, fix the cause with "
-                                "edit_file or write_file, run it again, and report the real result. Do not "
-                                "say it works unless the command succeeded."
-                            ),
-                        }
+                    _nudge(
+                        messages,
+                        content,
+                        "The last command you ran failed. Read its error, fix the cause with "
+                        "edit_file or write_file, run it again, and report the real result. Do not "
+                        "say it works unless the command succeeded.",
                     )
                     continue
                 if _is_final_answer(content, used_tools):
@@ -942,6 +930,12 @@ _RENAME_NOUNS = frozenset(
     {"funcion", "función", "function", "clase", "class", "variable", "metodo", "método", "method"}
 )
 _SKIP_DIRS = frozenset({".git", "node_modules", ".venv", "venv", "__pycache__", "dist", "build", ".mypy_cache"})
+
+
+def _nudge(messages: list[dict[str, Any]], content: str, instruction: str) -> None:
+    """Keep the model's reply in history and answer it with one corrective instruction."""
+    messages.append({"role": "assistant", "content": content})
+    messages.append({"role": "user", "content": instruction})
 
 
 def _rename_request(user_text: str) -> tuple[str, str] | None:
