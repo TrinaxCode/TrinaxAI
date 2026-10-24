@@ -107,7 +107,7 @@ FastAPI application options.
 | `TRINAXAI_AGENT_STALL_TIMEOUT` | `120` | Maximum seconds without tokens, tool activity, or pending approval before a run is cancelled as stalled. |
 | `TRINAXAI_AGENT_QUEUE_MAXSIZE` | `128` | Maximum buffered SSE events per Agent session before the run is cancelled with backpressure. |
 | `TRINAXAI_AGENT_QUEUE_PUT_TIMEOUT` | `0.25` | Seconds the Agent worker waits to enqueue one SSE event before treating the client as unable to keep up. |
-| `TRINAXAI_NUM_THREAD` | `8` | CPU threads requested per Ollama generation. |
+| `TRINAXAI_NUM_THREAD` | `min(8, CPU cores)` | CPU threads requested per Ollama generation. |
 | `OLLAMA_NUM_GPU` | auto-detected | Ollama GPU layer hint; `0` keeps inference on CPU, while a high value offloads all layers that fit on a detected GPU. |
 | `TRINAXAI_KEEP_ALIVE` | profile-derived | Ollama chat-model residency duration, such as `0s` or `10m`. |
 | `TRINAXAI_TIMEOUT` | `300` | Ollama request timeout in seconds. |

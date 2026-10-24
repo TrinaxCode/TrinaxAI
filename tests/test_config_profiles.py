@@ -198,3 +198,25 @@ def test_detected_profile_drives_recommendations_and_explicit_override_caps_them
 
     assert json.loads(detected.stdout) == ["32gb", "32gb", "qwen3.5:9b"]
     assert json.loads(overridden.stdout) == ["32gb", "8gb", "qwen3.5:2b"]
+
+
+def test_default_thread_count_never_exceeds_the_cpus_available(monkeypatch) -> None:
+    import os
+
+    from trinaxai import config
+
+    monkeypatch.setattr(os, "sched_getaffinity", lambda _pid: {0, 1, 2, 3}, raising=False)
+    assert config._default_num_thread() == 4  # 8 threads on 4 cores measured 5x slower
+    monkeypatch.setattr(os, "sched_getaffinity", lambda _pid: set(range(32)), raising=False)
+    assert config._default_num_thread() == 8  # still capped
+    monkeypatch.setattr(os, "sched_getaffinity", lambda _pid: set(), raising=False)
+    assert config._default_num_thread() == 1
+
+    def unsupported(_pid):
+        raise AttributeError
+
+    monkeypatch.setattr(os, "sched_getaffinity", unsupported, raising=False)
+    monkeypatch.setattr(os, "cpu_count", lambda: 2)
+    assert config._default_num_thread() == 2
+    monkeypatch.setattr(os, "cpu_count", lambda: None)
+    assert config._default_num_thread() == 8

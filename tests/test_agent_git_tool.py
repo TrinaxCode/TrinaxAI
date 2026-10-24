@@ -12,6 +12,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from trinaxai_agent import AgentEngine
 from trinaxai_agent import tools as agent_tools
 from trinaxai_agent.git_tool import (
     LOCAL,
@@ -588,3 +589,51 @@ def test_the_git_tool_is_hidden_when_git_is_not_installed(monkeypatch, tmp_path:
     assert "git" in agent_service._available_agent_tool_names(req, request, None)
     monkeypatch.setattr(agent_service.shutil, "which", lambda _name: None)
     assert "git" not in agent_service._available_agent_tool_names(req, request, None)
+
+
+# ------------------------------------------------- impossible calls skip the prompt
+
+
+def _call(*args: str) -> dict:
+    return {"function": {"name": "git", "arguments": {"args": list(args)}}}
+
+
+def test_a_call_that_cannot_succeed_is_reported_without_asking_the_user(tmp_path: Path) -> None:
+    asked: list[str] = []
+    seen: list[str] = []
+    engine = AgentEngine(
+        model="m",
+        workspace_root=tmp_path,
+        on_confirm=lambda tool, args: asked.append(tool.name) or False,
+        on_tool_result=lambda _tool, result: seen.append(result),
+    )
+
+    refused = engine._execute_call(_call("-c", "core.pager=evil", "status"))
+    assert asked == []
+    assert "global options" in refused and "[tool_status=degraded" in refused
+    assert seen == [refused]
+
+    assert "denied by user" in engine._execute_call(_call("commit", "-m", "x"))
+    assert asked == ["git"]  # a valid change still asks
+
+
+def test_the_precheck_hook_only_blocks_when_it_reports_a_problem(tmp_path: Path) -> None:
+    assert agent_tools._precheck_git({"args": ["status"]}) is None
+    assert "not available" in agent_tools._precheck_git({"args": ["config", "user.name", "x"]})
+    assert "no git arguments" in agent_tools._precheck_git({})
+
+
+def test_tools_without_a_precheck_still_run(tmp_path: Path) -> None:
+    from types import SimpleNamespace
+
+    ran: list[dict] = []
+    legacy = SimpleNamespace(
+        name="legacy",
+        dangerous=False,
+        external=False,
+        handler=lambda _root, **kwargs: ran.append(kwargs) or "ok",
+        schema=lambda: {"type": "function", "function": {"name": "legacy", "parameters": {"type": "object"}}},
+    )
+    engine = AgentEngine(model="m", workspace_root=tmp_path, tools=(legacy,))
+    assert "ok" in engine._execute_call({"function": {"name": "legacy", "arguments": {"a": 1}}})
+    assert ran == [{"a": 1}]

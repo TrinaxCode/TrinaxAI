@@ -84,16 +84,17 @@ def test_launchctl_backend_loads_existing_plist_and_falls_back(monkeypatch, tmp_
 
 def test_direct_process_status_stop_and_start_failure_are_safe(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setattr(sm.sys, "platform", "linux")
-    responses = iter([_completed(1), _completed(0, stdout="321\n")])
-    monkeypatch.setattr(sm.subprocess, "run", lambda *_args, **_kwargs: next(responses))
+    monkeypatch.setattr(sm, "_process_table", lambda: [sm._Proc(321, ("/x/.venv/bin/python", "rag_api.py"))])
+    monkeypatch.setattr(sm, "_in_install", lambda _proc: True)
+    monkeypatch.setattr(sm, "_ancestors", lambda: set())
     assert sm._pgrep_status("rag_api").pid == 321
 
-    calls = []
-    monkeypatch.setattr(sm.subprocess, "run", lambda command, **_kwargs: calls.append(command) or _completed())
+    signals = []
+    monkeypatch.setattr(sm, "_signal_process", lambda pid, sig: signals.append((pid, sig)))
+    monkeypatch.setattr(sm, "_process_alive", lambda _pid: True)
     monkeypatch.setattr(sm.time, "sleep", lambda _seconds: None)
     assert sm._stop_by_name("rag_api").running is False
-    assert any("-TERM" in command for command in calls)
-    assert any("-KILL" in command for command in calls)
+    assert signals == [(321, sm.signal.SIGTERM), (321, sm._SIGKILL)]
 
     log = tmp_path / "service.log"
     monkeypatch.setattr(sm.subprocess, "Popen", lambda *_args, **_kwargs: (_ for _ in ()).throw(OSError("denied")))
@@ -410,19 +411,14 @@ def test_direct_backend_and_windows_process_paths(monkeypatch, tmp_path: Path) -
 def test_process_helpers_cover_fallbacks_and_zombie_reaping(monkeypatch) -> None:
     monkeypatch.setattr(sm.sys, "platform", "linux")
     monkeypatch.setattr(
-        sm.subprocess,
-        "run",
-        lambda *_args, **_kwargs: (_ for _ in ()).throw(subprocess.TimeoutExpired("pgrep", 1)),
+        sm,
+        "_process_table",
+        lambda: (_ for _ in ()).throw(subprocess.TimeoutExpired("ps", 1)),
     )
-    assert sm._pgrep_status("missing").detail == "pgrep/tasklist unavailable"
+    assert sm._pgrep_status("missing").detail == "process list unavailable"
+    assert sm._stop_by_name("missing").detail == "process list unavailable"
 
-    calls = []
-    responses = iter([_completed(), _completed()])
-    monkeypatch.setattr(
-        sm.subprocess,
-        "run",
-        lambda command, **_kwargs: calls.append(command) or next(responses),
-    )
+    monkeypatch.setattr(sm, "_process_table", lambda: [])
     monkeypatch.setattr(sm, "PROCESS_PATTERNS", {"custom": ["one"]})
     monkeypatch.setattr(sm.time, "sleep", lambda _seconds: None)
     assert sm._stop_by_name("custom").running is False
@@ -615,6 +611,7 @@ def test_service_manager_platform_failure_edges(monkeypatch, tmp_path: Path) -> 
     monkeypatch.setattr(sm, "_run_systemctl", lambda *_args, **_kwargs: (_ for _ in ()).throw(FileNotFoundError()))
     monkeypatch.setattr(sm, "_start_direct", lambda name, **_kwargs: sm.ProcessState(name, True, pid=3))
     assert backend.start("rag_api", command=["python"]).pid == 3
+    real_stop_by_name = sm._stop_by_name
     monkeypatch.setattr(sm, "_stop_by_name", lambda name: sm.ProcessState(name, False, detail="fallback"))
     assert backend.stop("rag_api").detail == "fallback"
 
@@ -635,11 +632,12 @@ def test_service_manager_platform_failure_edges(monkeypatch, tmp_path: Path) -> 
 
     monkeypatch.setattr(sm.sys, "platform", "linux")
     monkeypatch.setattr(sm, "_pgrep_status", real_pgrep_status)
-    monkeypatch.setattr(sm.subprocess, "run", lambda *_args, **_kwargs: _completed(0, stdout="321\n"))
+    monkeypatch.setattr(sm, "_process_table", lambda: [sm._Proc(321, ("python", "rag_api.py"))])
+    monkeypatch.setattr(sm, "_in_install", lambda _proc: True)
+    monkeypatch.setattr(sm, "_ancestors", lambda: set())
     assert sm._pgrep_status("rag_api").pid == 321
-    monkeypatch.setattr(sm.shutil, "which", lambda name: "/usr/bin/killall" if name == "killall" else None)
-    monkeypatch.setattr(sm.subprocess, "run", lambda *_args, **_kwargs: (_ for _ in ()).throw(FileNotFoundError()))
-    assert sm._stop_by_name("rag_api").running is False
+    monkeypatch.setattr(sm, "_process_table", lambda: (_ for _ in ()).throw(FileNotFoundError("ps")))
+    assert real_stop_by_name("rag_api").detail == "process list unavailable"
 
     monkeypatch.setattr(sm.sys, "platform", "win32")
     sm._reap_zombie_children()

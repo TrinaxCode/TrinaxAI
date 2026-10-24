@@ -55,7 +55,7 @@ canonical list of every supported `TRINAXAI_*` and `VITE_TRINAXAI_*` setting.
 | `TRINAXAI_PERFORMANCE_MODE` | `fast` | `fast`, `balanced`, `quality`; changes retrieval and chunking. |
 | `TRINAXAI_THINKING_MODE` | `1` | Backend default when a client omits `think`; `0` disables reasoning. Depth-1 web research disables it by default so the model output is reserved for the answer; an explicit `think` wins. |
 | `TRINAXAI_NUM_CTX` | profile-derived | LLM context window. |
-| `TRINAXAI_NUM_THREAD` | `8` | CPU threads per request. |
+| `TRINAXAI_NUM_THREAD` | `min(8, CPU cores)` | CPU threads per request. Never default above the cores you have: oversubscribing makes answers several times slower. |
 | `TRINAXAI_KEEP_ALIVE` | profile/mode-derived | How long the chat model stays loaded (`0s`, `15m`, etc.). |
 | `TRINAXAI_TIMEOUT` | `300` | Timeout of requests to Ollama, in seconds. |
 | `TRINAXAI_AGGRESSIVE_QUANT` | `0` | Enables the aggressive quantization profile. |

@@ -216,9 +216,10 @@ function Assert-RuntimeReady {
 }
 function Stop-OllamaProcesses {
   try {
-    Get-CimInstance Win32_Process |
-      Where-Object { $_.CommandLine -and ($_.CommandLine -like "*ollama*") } |
-      ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+    # By process name: matching "*ollama*" on the command line also matched this very
+    # script (-RemoveOllama) and any other program that mentions the word.
+    Get-Process -Name "ollama", "ollama app" -ErrorAction SilentlyContinue |
+      Stop-Process -Force -ErrorAction SilentlyContinue
   } catch {
     Write-Warn (T "Could not enumerate Ollama processes." "No se pudieron enumerar los procesos de Ollama.")
   }

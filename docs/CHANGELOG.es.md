@@ -104,11 +104,39 @@ el formato de [Keep a Changelog](https://keepachangelog.com/).
 
 ### Corregido
 
+- Las respuestas ya no se ralentizan por usar demasiados hilos de CPU.
+  `TRINAXAI_NUM_THREAD` valía 8 fijo; en un equipo de 4 núcleos la misma
+  respuesta tardaba 76-93 s en lugar de 16 s. Ahora vale el menor entre 8 y las
+  CPU que tienes.
+- Se reconoce una negativa como «no tengo acceso a esa información» (también con
+  el apóstrofo tipográfico y las formas habituales en español), así que
+  TrinaxAI ya no muestra un archivo sin relación como fuente de una respuesta
+  que dice que falta la información.
+- `trinaxai stop`, `restart` y `status` ya no tocan procesos que no son de
+  TrinaxAI. Buscaban palabras como `npm run dev`, `vite --host`, `node server.mjs`
+  u `ollama` en cualquier parte de la línea de comandos, así que `status` podía
+  dar la PWA por activa por el servidor de desarrollo de otro proyecto y `stop`
+  terminaba ese servidor. Ahora un proceso cuenta solo si es el programa esperado
+  y corre desde la carpeta de esta instalación (Linux y macOS; Windows conserva la
+  coincidencia anterior).
+- `uninstall.sh --remove-ollama` y `update.sh --remove-ollama` se terminaban a sí
+  mismos: detenían Ollama con `pkill -f ollama`, que también coincide con su
+  propio argumento `--remove-ollama`, y la eliminación quedaba a medias. Ahora
+  (igual que los scripts de Windows) detienen Ollama por el nombre exacto del
+  proceso.
+- La comprobación previa de investigación ya no bloquea la API mientras consulta
+  a Ollama.
+- El prompt del Agente ahora indica usar la herramienta `git` para git, y una
+  llamada a `git` que nunca puede funcionar (opción rechazada, subcomando
+  desconocido) se informa al modelo de inmediato en vez de pedirte aprobarla.
 - Las comprobaciones de fundamentación de revisión de código del agente reconocen la redacción de los docstrings de `turtle` en Python 3.13, de modo que la evidencia verificada sigue detectando afirmaciones falsas sobre `goto` en todos los intérpretes compatibles.
 - El badge de versión del changelog apunta ahora a 1.3.0 en ambos idiomas.
 
 ### Seguridad
 
+- `nltk` actualizado a 3.10.4 (GHSA-8mgp-746c-j5xp, recorrido de rutas en sus
+  API de modelos) y eliminada la excepción de auditoría: `pip-audit` falla ante
+  cualquier vulnerabilidad conocida.
 - Se actualizaron `pypdf` a 6.21.2 (CVE-2026-115572, CVE-2026-115580,
   CVE-2026-115585) y `setuptools` a 84.1.0 (GHSA-xmj3-9gf7-h52w) en el lock de
   dependencias, y `zod` (solo desarrollo) a 4.6.7 (GHSA-mrhx-c7xc-m3w5) en el

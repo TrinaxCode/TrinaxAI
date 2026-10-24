@@ -719,7 +719,7 @@ def translate(message: Any, lang: str = "en") -> Any:
         (r"^active \(systemd: (.+)\)$", r"activo (systemd: \1)"),
         (r"^loaded (.+)$", r"cargado \1"),
         (r"^pid (.+) \((.+)\)$", r"pid \1 (\2)"),
-        (r"^pgrep/tasklist unavailable$", "pgrep/tasklist no disponible"),
+        (r"^process list unavailable$", "lista de procesos no disponible"),
         (r"^stopped matching processes$", "procesos coincidentes detenidos"),
         (r"^started directly \(pid (.+)\)$", r"iniciado directamente (pid \1)"),
         (r"^failed: (.+)$", r"falló: \1"),

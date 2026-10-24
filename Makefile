@@ -7,7 +7,6 @@ VENV_PYTHON := $(shell if test -f .venv/bin/python; then echo .venv/bin/python; 
                  else echo $(PYTHON); fi)
 REQUIREMENTS_INSTALL_ARGS := $(if $(wildcard requirements.lock),--require-hashes -r requirements.lock,-r requirements.txt)
 AUDIT_REQUIREMENTS := $(if $(wildcard requirements.lock),--require-hashes -r requirements.lock,-r requirements.txt)
-AUDIT_IGNORES := --ignore PYSEC-2026-3740
 
 help:
 	@echo "TrinaxAI — available targets:"
@@ -90,7 +89,7 @@ audit:
 	bash -n backup.sh
 	bash -n uninstall.sh
 	cd chat-pwa && npm audit --audit-level=high
-	$(VENV_PYTHON) -m pip_audit $(AUDIT_REQUIREMENTS) $(AUDIT_IGNORES)
+	$(VENV_PYTHON) -m pip_audit $(AUDIT_REQUIREMENTS)
 
 audit-optional:
 	@echo "Optional security checks; install each tool locally before running:"

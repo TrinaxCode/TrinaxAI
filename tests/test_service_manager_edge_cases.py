@@ -23,21 +23,15 @@ def test_service_manager_low_level_platform_and_wait_edges(monkeypatch, tmp_path
     monkeypatch.setattr(sm.subprocess, "run", lambda *_args, **_kwargs: _completed(1))
     assert sm._pgrep_status("missing").running is False
 
-    calls = []
-    responses = iter([FileNotFoundError("pkill"), _completed()])
-
-    def stop_run(command, **kwargs):
-        calls.append(command)
-        response = next(responses)
-        if isinstance(response, Exception):
-            raise response
-        return response
-
-    monkeypatch.setattr(sm.subprocess, "run", stop_run)
-    monkeypatch.setattr(sm.shutil, "which", lambda name: "/usr/bin/killall" if name == "killall" else None)
+    sent = []
+    monkeypatch.setattr(sm, "_process_table", lambda: [sm._Proc(41, ("custom",)), sm._Proc(42, ("other",))])
+    monkeypatch.setattr(sm, "_in_install", lambda _proc: True)
+    monkeypatch.setattr(sm, "_ancestors", lambda: set())
+    monkeypatch.setattr(sm, "_signal_process", lambda pid, sig: sent.append((pid, sig)))
+    monkeypatch.setattr(sm, "_process_alive", lambda _pid: False)
     monkeypatch.setattr(sm.time, "sleep", lambda _seconds: None)
     assert sm._stop_by_name("custom").running is False
-    assert calls[-1] == ["killall", "custom"]
+    assert sent == [(41, sm.signal.SIGTERM)]  # only the matching process, and no KILL once it is gone
 
     monkeypatch.setattr(sm.sys, "platform", "win32")
     monkeypatch.setattr(sm.shutil, "which", lambda name: "C:/Ollama/ollama.exe" if name == "ollama.exe" else None)

@@ -46,6 +46,7 @@ from trinaxai_agent.git_tool import (
     classify_git,
     git_argv,
     git_env,
+    git_input,
     hooks_enabled,
 )
 
@@ -998,6 +999,10 @@ class Tool:
     handler: Callable[..., str]
     dangerous: bool
     external: bool = False
+    # Returns an error message when the call can never succeed. The engine reports
+    # it to the model right away instead of asking the user to approve a call that
+    # is certain to fail.
+    precheck: Callable[[dict[str, Any]], str | None] | None = None
 
     def schema(self) -> dict[str, Any]:
         """Return the Ollama/OpenAI-style function schema for this tool."""
@@ -1009,6 +1014,14 @@ class Tool:
                 "parameters": self.parameters,
             },
         }
+
+
+def _precheck_git(arguments: dict[str, Any]) -> str | None:
+    try:
+        classify_git(git_input(arguments))
+    except GitUsageError as exc:
+        return str(exc)
+    return None
 
 
 def _string_param(desc: str) -> dict[str, Any]:
@@ -1142,6 +1155,7 @@ DEFAULT_TOOLS: tuple[Tool, ...] = (
         },
         handler=_git,
         dangerous=True,
+        precheck=_precheck_git,
     ),
 )
 

@@ -227,10 +227,26 @@ NUM_CTX = _env_int(
     minimum=512,
     maximum=131072,
 )
-# Threads per request. 8 (not 16) avoids oversubscription: with several concurrent
-# embeddings, 16 threads/req makes slots fight for the CPU and everything goes
-# SLOWER on modest hardware. 8 threads/req is usually a balanced value.
-NUM_THREAD = _env_int("TRINAXAI_NUM_THREAD", 8, minimum=1, maximum=256)
+
+
+def _default_num_thread() -> int:
+    """8 threads, but never more than the CPUs this process may actually use.
+
+    llama.cpp spins its threads, so asking for more than the machine has makes
+    them fight for the cores: measured 5x slower answers with 8 threads on a
+    4-core host (76-93 s against 16 s for the same request).
+    """
+    try:
+        available = len(os.sched_getaffinity(0))
+    except (AttributeError, OSError):
+        available = os.cpu_count() or 8
+    return max(1, min(8, available))
+
+
+# Threads per request. Capped at 8 (not 16) to avoid oversubscription: with several
+# concurrent embeddings, 16 threads/req makes slots fight for the CPU and everything
+# goes SLOWER on modest hardware.
+NUM_THREAD = _env_int("TRINAXAI_NUM_THREAD", _default_num_thread(), minimum=1, maximum=256)
 # Concurrent embeddings. Indexing runs as its own subprocess with NO LLM loaded
 # (index.py never sets Settings.llm), so the embedder gets the whole CPU — the
 # old "avoid competing with the LLM" cap of 2 left modern multi-core laptops

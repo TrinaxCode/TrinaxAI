@@ -55,7 +55,7 @@ reúne todas las variables `TRINAXAI_*` y `VITE_TRINAXAI_*` admitidas.
 | `TRINAXAI_PERFORMANCE_MODE` | `fast` | `fast`, `balanced`, `quality`; cambia recuperación y chunking. |
 | `TRINAXAI_THINKING_MODE` | `1` | Valor predeterminado del backend cuando un cliente no envía `think`; `0` desactiva el razonamiento. La investigación web de profundidad 1 lo desactiva por defecto para reservar la salida del modelo a la respuesta; `think` explícito prevalece. |
 | `TRINAXAI_NUM_CTX` | según perfil | Ventana de contexto del LLM. |
-| `TRINAXAI_NUM_THREAD` | `8` | Hilos CPU por solicitud. |
+| `TRINAXAI_NUM_THREAD` | `min(8, núcleos de CPU)` | Hilos CPU por solicitud. Nunca por encima de tus núcleos: pasarse hace las respuestas varias veces más lentas. |
 | `TRINAXAI_KEEP_ALIVE` | según perfil/modo | Tiempo que el modelo de chat permanece cargado (`0s`, `15m`, etc.). |
 | `TRINAXAI_TIMEOUT` | `300` | Timeout de solicitudes a Ollama, en segundos. |
 | `TRINAXAI_AGGRESSIVE_QUANT` | `0` | Activa el perfil de cuantización agresivo. |
