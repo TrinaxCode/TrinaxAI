@@ -22,6 +22,12 @@ All notable changes to TrinaxAI are documented here. This project follows the
 
 ### Added
 
+- The installer asks whether other devices on your home or local network may open
+  TrinaxAI. The default is this computer only; a yes sets
+  `TRINAXAI_PWA_HOST=0.0.0.0`, and every device still needs a one-time pairing
+  code. Use `--lan-access` / `--no-lan-access` (or `TRINAXAI_LAN_ACCESS`) to
+  answer without being asked. Host administration stays on this computer
+  whatever you choose.
 - Guided, client-first setup. `trinaxai setup` opens with a welcome and a
   language choice (English or Spanish), checks free disk space and the GitHub
   connection, asks every optional question up front, and shows an installation

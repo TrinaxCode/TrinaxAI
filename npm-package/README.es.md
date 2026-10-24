@@ -21,8 +21,9 @@ La instalación es guiada y está disponible en inglés y español:
 2. Comprobaciones previas: espacio libre en disco y conexión con GitHub. Si un
    proxy bloquea la descarga directa, el lanzador reintenta con `curl`.
 3. Todas las preguntas opcionales al principio: descarga de modelos, iniciar
-   ahora, iniciar con el equipo y una comprobación semanal de actualizaciones que
-   solo comprueba y nunca instala sin ti.
+   ahora, iniciar con el equipo, una comprobación semanal de actualizaciones que
+   solo comprueba y nunca instala sin ti, y si otros dispositivos de tu red pueden
+   abrir TrinaxAI (desactivado por defecto).
 4. Un plan de instalación que debes confirmar. No cambia nada antes de que lo aceptes.
 5. La instalación en sí, que se ejecuta sin más atención.
 

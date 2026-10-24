@@ -37,7 +37,8 @@ PWA, Ollama, and recommended models.
 
 Setup opens with a welcome and asks for your language (English or Spanish).
 It then checks your disk space and connection, asks every optional question up
-front (model downloads, start now, autostart, weekly update check), and shows
+front (model downloads, start now, autostart, weekly update check, access from
+other devices), and shows
 an installation plan to confirm before it changes anything. Run
 `trinaxai setup` again on an existing installation to repair, update, or
 uninstall it.
@@ -73,6 +74,7 @@ you are ready. Use `trinaxai --help` to see every available command.
 | --- | --- |
 | Defer model downloads | `trinaxai setup --no-models` |
 | Prepare without starting services | `trinaxai setup --no-start` |
+| Let other devices on your network open TrinaxAI (default: this computer only) | `trinaxai setup --lan-access` |
 | Choose a hardware profile | `trinaxai setup --profile 16gb` |
 | Preview changes | `trinaxai setup --dry-run` |
 | Skip the language question | `trinaxai setup --language es` |

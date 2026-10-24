@@ -60,6 +60,10 @@ Assert-Contains $Install "chat-pwa\dist\index.html" "Installer PWA artifact chec
 Assert-Contains $Install "Installation prepared; TrinaxAI is not running." "Installer no-start status is misleading"
 Assert-Contains $Install "Select language / Selecciona idioma" "Installer does not ask for a language"
 Assert-Contains $Install "PreferencesCollected" "Installer asks its questions twice"
+Assert-Contains $Install '[switch]$LanAccess' "Installer cannot accept -LanAccess"
+Assert-Contains $Install '[switch]$NoLanAccess' "Installer cannot accept -NoLanAccess"
+Assert-Contains $Install '"TRINAXAI_PWA_HOST" "0.0.0.0"' "Installer does not persist the network access choice"
+Assert-Contains $Install "Acceso desde otros dispositivos" "Installer plan omits network access"
 Assert-Contains $Install "Installation plan" "Installer does not show a plan before changing the system"
 Assert-Contains $Install "Test-GitHubReachable" "Installer has no connectivity preflight"
 foreach ($Text in @($Install, $Update, $Uninstall)) { Assert-Contains $Text '"[S/n]"' "Spanish yes/no suffix is missing" }

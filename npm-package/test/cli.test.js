@@ -46,6 +46,8 @@ async function main() {
 
   // The installer accepts the same "yes to everything" spellings on every platform.
   assert.deepEqual(setupArgs(["--yes"], "linux"), ["--non-interactive"]);
+  assert.deepEqual(setupArgs(["--lan-access"], "linux"), ["--lan-access"]);
+  assert.deepEqual(setupArgs(["--lan-access", "--no-lan-access"], "win32"), ["-LanAccess", "-NoLanAccess"]);
   assert.deepEqual(setupArgs(["-y"], "win32"), ["-NonInteractive"]);
   assert.deepEqual(setupArgs(["--interactive"], "win32"), ["-Interactive"]);
   assert.deepEqual(setupArgs(["--language", "es"], "win32"), ["-Language", "es"]);

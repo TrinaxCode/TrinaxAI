@@ -22,6 +22,12 @@ el formato de [Keep a Changelog](https://keepachangelog.com/).
 
 ### Añadido
 
+- El instalador pregunta si otros dispositivos de tu red doméstica o local pueden
+  abrir TrinaxAI. Por defecto, solo este equipo; un sí escribe
+  `TRINAXAI_PWA_HOST=0.0.0.0` y cada dispositivo sigue necesitando un código de
+  emparejamiento de un solo uso. Usa `--lan-access` / `--no-lan-access` (o
+  `TRINAXAI_LAN_ACCESS`) para responder sin que pregunte. La administración del
+  equipo se queda en este equipo elijas lo que elijas.
 - Instalación guiada y centrada en el cliente. `trinaxai setup` empieza con una
   bienvenida y la elección de idioma (español o inglés), comprueba el espacio
   libre en disco y la conexión con GitHub, hace todas las preguntas opcionales

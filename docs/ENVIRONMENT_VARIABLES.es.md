@@ -294,6 +294,7 @@ no ajustan el runtime de RAG.
 | `TRINAXAI_UPDATE_RESTART` | auto/preguntado | Reinicia servicios después de actualizar. |
 | `TRINAXAI_UPDATE_AUDIT` | `1` | Ejecuta el readiness audit posterior. |
 | `TRINAXAI_RELEASE_VERSION` | `1.4.0` | **Instalador:** versión semántica del release de GitHub usada para el paquete fuente versionado. El instalador nunca vuelve a `main`. |
+| `TRINAXAI_LAN_ACCESS` | sin definir | **Instalador:** responde la pregunta de red sin preguntar. `1` permite que otros dispositivos de la red local abran la PWA (escribe `TRINAXAI_PWA_HOST=0.0.0.0`); `0` mantiene TrinaxAI solo en este equipo (`127.0.0.1`). Sin definir: pregunta si es interactivo y, si no, conserva el valor existente o solo este equipo. Equivale a `--lan-access` / `--no-lan-access`. |
 | `TRINAXAI_SOURCE_URL` | release fijado de GitHub | **Origen de instalación:** URL HTTPS de un paquete fuente personalizado. |
 | `TRINAXAI_SOURCE_SHA256` | sin definir | **Instalador:** SHA-256 del archivo fuente personalizado; obligatorio junto con `TRINAXAI_SOURCE_URL`. |
 | `TRINAXAI_UPDATE_SOURCE_URL` | release fijado de GitHub | **Actualizador:** URL HTTPS del paquete fuente de actualización. |

@@ -8,6 +8,8 @@
   [switch]$NoStart,
   [switch]$DryRun,
   [switch]$LanSystem,
+  [switch]$LanAccess,
+  [switch]$NoLanAccess,
   [switch]$PreferencesCollected,
   [string]$InstallDir = "",
   [string]$SourceUrl = "",
@@ -34,6 +36,13 @@ Run in PowerShell:
 #>
 
 $ErrorActionPreference = "Stop"
+# TRINAXAI_LAN_ACCESS=1|0 answers the network-access question without a flag.
+if (-not $LanAccess -and -not $NoLanAccess) {
+  switch -Regex (("$($env:TRINAXAI_LAN_ACCESS)").ToLowerInvariant()) {
+    '^(1|true|yes|on)$' { $LanAccess = $true }
+    '^(0|false|no|off)$' { $NoLanAccess = $true }
+  }
+}
 $LanguageExplicit = -not [string]::IsNullOrWhiteSpace($Language) -or -not [string]::IsNullOrWhiteSpace($env:TRINAXAI_LANG)
 if ([string]::IsNullOrWhiteSpace($Language)) { $Language = if ($env:TRINAXAI_LANG -match '^es') { 'es' } elseif ((Get-Culture).Name -match '^es') { 'es' } else { 'en' } }
 function T($English, $Spanish) { if ($Language -eq 'es') { return $Spanish }; return $English }
@@ -736,7 +745,11 @@ if ($DryRun) {
   Write-Host ""
   Write-Host (T "Links to enter" "Enlaces de acceso") -ForegroundColor Cyan
   Write-Host (T "  Localhost:       https://localhost:3334" "  Localhost:       https://localhost:3334")
-  Write-Host (T "  LAN:             https://[YOUR-LAN-IP]:3334" "  LAN / Red local: https://[TU-IP-LAN]:3334")
+  if ($LanAccess) {
+    Write-Host (T "  LAN:             https://[YOUR-LAN-IP]:3334" "  LAN / Red local: https://[TU-IP-LAN]:3334")
+  } else {
+    Write-Host (T "  LAN:             This computer only. To allow other devices later, run: trinaxai network refresh" "  LAN / Red local: Solo este equipo. Para permitir otros dispositivos más tarde, ejecuta: trinaxai network refresh")
+  }
   Write-Host (T "  RAG health:      https://localhost:3333/health" "  Salud de RAG:    https://localhost:3333/health")
   Write-Ok (T "Dry-run finished; no changes were made" "Simulación terminada; no se hicieron cambios")
   exit 0
@@ -805,6 +818,10 @@ if (-not $PreferencesCollected) {
       Write-Host (T "  You can change this later in the PWA Settings page." "  Puedes cambiarlo después en la página Configuración de la PWA.") -ForegroundColor Cyan
       if (-not (Read-YesNo (T "Start TrinaxAI automatically when Windows starts?" "¿Iniciar TrinaxAI automáticamente al iniciar Windows?") $true)) { $NoAutostart = $true }
     }
+    if (-not $LanAccess -and -not $NoLanAccess) {
+      Write-Host (T "  Host administration always stays on this computer, whatever you choose." "  La administración del equipo siempre queda en este equipo, elijas lo que elijas.") -ForegroundColor Cyan
+      if (Read-YesNo (T "Allow other devices on your home or local network to open TrinaxAI? Each device must be paired with a one-time code. Choose N to keep TrinaxAI on this computer only." "¿Permitir que otros dispositivos de tu red doméstica o local abran TrinaxAI? Cada dispositivo debe emparejarse con un código de un solo uso. Elige N para usar TrinaxAI solo en este equipo.") $false) { $LanAccess = $true } else { $NoLanAccess = $true }
+    }
     if (-not $NoAutoUpdate) {
       if (-not (Read-YesNo (T "Check for TrinaxAI updates every week? It only checks; it never installs anything without you." "¿Comprobar cada semana si hay actualizaciones de TrinaxAI? Solo comprueba; nunca instala nada sin ti.") $true)) { $NoAutoUpdate = $true }
     }
@@ -817,6 +834,7 @@ if (-not $PreferencesCollected) {
   Write-Host ("  " + (T "Start TrinaxAI when finished" "Iniciar TrinaxAI al terminar") + ": " + (Write-YesNo (-not $NoStart)))
   Write-Host ("  " + (T "Start with your computer" "Iniciar con tu equipo") + ": " + (Write-YesNo ((-not $NoStart) -and (-not $NoAutostart))))
   Write-Host ("  " + (T "Weekly update check" "Comprobación semanal de actualizaciones") + ": " + (Write-YesNo (-not $NoAutoUpdate)))
+  Write-Host ("  " + (T "Access from other devices" "Acceso desde otros dispositivos") + ": " + (Write-YesNo ([bool]$LanAccess)))
   Write-Host ""
   if (-not $NonInteractive) {
     if (-not (Read-YesNo (T "Continue with this installation?" "¿Continuar con esta instalación?") $true)) {
@@ -856,6 +874,8 @@ if (
   if ($NoAutostart) { $Forward += "-NoAutostart" }
   if ($NoAutoUpdate) { $Forward += "-NoAutoUpdate" }
   if ($NoStart) { $Forward += "-NoStart" }
+  if ($LanAccess) { $Forward += "-LanAccess" }
+  if ($NoLanAccess) { $Forward += "-NoLanAccess" }
   if ($SourceUrl) { $Forward += @("-SourceUrl", $SourceUrl) }
   if ($SourceSha256) { $Forward += @("-SourceSha256", $SourceSha256) }
   if ($Profile) { $Forward += @("-Profile", $Profile) }
@@ -987,6 +1007,7 @@ $EnvLines = @(
   "TRINAXAI_PROFILE=$Profile",
   "TRINAXAI_PERFORMANCE_MODE=fast",
   "TRINAXAI_HOST=127.0.0.1",
+  "TRINAXAI_PWA_HOST=127.0.0.1",
   "TRINAXAI_PORT=3333",
   "TRINAXAI_HEALTH_URL=https://localhost:3333",
   "TRINAXAI_FRONTEND_URL=https://localhost:3334",
@@ -1024,6 +1045,9 @@ if ($Profile -eq "64gb") {
   )
 }
 Merge-EnvFileDefaults -Path ".env" -Defaults $EnvLines
+# 127.0.0.1 = this computer only; 0.0.0.0 = other devices on the local network can open the PWA.
+if ($LanAccess) { Set-EnvFileValue ".env" "TRINAXAI_PWA_HOST" "0.0.0.0" }
+elseif ($NoLanAccess) { Set-EnvFileValue ".env" "TRINAXAI_PWA_HOST" "127.0.0.1" }
 Set-EnvFileValue ".env" "TRINAXAI_ALLOW_LAN_SYSTEM" "0"
 Write-Ok (T ".env written with profile=$Profile" ".env escrito con el perfil=$Profile")
 
@@ -1147,7 +1171,12 @@ if ($NoStart) {
   Write-Ok (T "TrinaxAI is ready" "TrinaxAI está listo")
   Write-Host (T "Then open:" "Después abre:") -ForegroundColor Cyan
   Write-Host "  https://localhost:3334"
-  if ($LanIp) { Write-Host "  https://$($LanIp):3334" }
+  if ((Get-EnvFileValue "TRINAXAI_PWA_HOST") -eq "0.0.0.0") {
+    if ($LanIp) { Write-Host "  https://$($LanIp):3334" }
+    Write-Host (T "Other devices: trust the certificate (trinaxai network), then pair with a one-time code from Settings > Advanced." "Otros dispositivos: confía en el certificado (trinaxai network) y empareja con un código de un solo uso desde Configuración > Avanzado.")
+  } else {
+    Write-Host (T "This computer only. To allow other devices later, run: trinaxai network refresh" "Solo este equipo. Para permitir otros dispositivos más tarde, ejecuta: trinaxai network refresh")
+  }
 }
 Write-Host (T "CLI:" "CLI:") -ForegroundColor Cyan
 Write-Host "  trinaxai"
