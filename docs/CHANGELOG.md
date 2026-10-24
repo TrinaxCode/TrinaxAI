@@ -22,6 +22,9 @@ All notable changes to TrinaxAI are documented here. This project follows the
 
 ### Added
 
+- `trinaxai research --web` grounds the research on web search, as the chat's deep-research mode
+  does. Without it, a general question ("what is an inverted index?") was answered only from
+  indexed documents and returned unrelated fragments.
 - `trinaxai network off` returns TrinaxAI to this computer only after you allowed
   other devices, and `trinaxai network` now says whether that access is on. Before,
   undoing the installer's "allow other devices" answer meant editing `.env` by hand.

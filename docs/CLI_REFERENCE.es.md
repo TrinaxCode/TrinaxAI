@@ -48,7 +48,7 @@ trinaxai chat [--prompt TEXTO] [--file RUTA] [--engine MOTOR] [--collections IDS
 trinaxai ask [PREGUNTA ...] [--file RUTA] [--engine MOTOR] [--collections IDS] [--thinking]
 trinaxai agent [TAREA ...] [-p TEXTO] [--workspace RUTA] [--model NOMBRE] [--max-steps N]
                [--permission-mode MODO] [--output-format text|json] [-c | -r SESIÓN] [--yolo]
-trinaxai research TEXTO|--query TEXTO [--session NOMBRE] [--depth PROFUNDIDAD] [--collections IDS] [--thinking]
+trinaxai research TEXTO|--query TEXTO [--web] [--session NOMBRE] [--depth PROFUNDIDAD] [--collections IDS] [--thinking]
 trinaxai index [RUTA] [--collection ID] [--append]
 trinaxai browse list-collections
 trinaxai browse list-files [--collection ID]
@@ -115,7 +115,7 @@ Usa `trinaxai chat --file RUTA --prompt "Describe esto"` para analizar una
 imagen o archivo local de texto/documento. La ruta se valida localmente y la CLI
 no sube el archivo.
 
-`research` intenta leer texto acotado de las páginas (`full_page`) y conserva el
+Sin `--web`, `research` trabaja con tus documentos indexados (y busca en la web solo si la pregunta pide información actual); `--web` siempre la apoya en búsqueda web, lo que envía la pregunta al proveedor de búsqueda. `research` intenta leer texto acotado de las páginas (`full_page`) y conserva el
 extracto del buscador como fallback (`snippet_only`); las fuentes indican cuál
 se usó. Añade `--session NOMBRE` para guardar la pregunta, la respuesta, los
 metadatos públicos y las fuentes, y después exportar la sesión.

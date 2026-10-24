@@ -82,3 +82,9 @@ def test_research_takes_the_topic_as_words_or_as_query() -> None:
     assert by_words.topic == ["latest", "python", "news"] and by_words.query is None
     by_flag = parser.parse_args(["research", "--query", "topic"])
     assert by_flag.query == "topic" and by_flag.topic == []
+
+
+def test_research_web_flag_is_off_by_default() -> None:
+    parser = _build_parser()
+    assert parser.parse_args(["research", "topic"]).web is False
+    assert parser.parse_args(["research", "topic", "--web"]).web is True

@@ -22,6 +22,9 @@ el formato de [Keep a Changelog](https://keepachangelog.com/).
 
 ### Añadido
 
+- `trinaxai research --web` apoya la investigación en búsqueda web, como el modo de investigación
+  profunda del chat. Sin él, una pregunta general ("¿qué es un índice invertido?") se respondía solo
+  con los documentos indexados y devolvía fragmentos sin relación.
 - `trinaxai network off` devuelve TrinaxAI a «solo este equipo» después de haber
   permitido otros dispositivos, y `trinaxai network` indica si ese acceso está
   activado. Antes, deshacer la respuesta del instalador exigía editar `.env` a mano.

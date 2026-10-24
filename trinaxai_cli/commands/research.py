@@ -37,6 +37,8 @@ def run(args: Any, client: Any, ui: Any, config: Any) -> int:
     try:
         with ui.spinner(f"Researching (depth={depth})..."):
             research_kwargs: dict[str, Any] = {"query": query, "collections": collections, "depth": depth}
+            if getattr(args, "web", False):
+                research_kwargs["web_search"] = True
             if hasattr(config, "thinking_enabled"):
                 thinking = config.thinking_enabled
                 if getattr(args, "thinking", None) is not None:
