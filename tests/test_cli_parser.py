@@ -74,3 +74,11 @@ class CLIParserTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_research_takes_the_topic_as_words_or_as_query() -> None:
+    parser = _build_parser()
+    by_words = parser.parse_args(["research", "latest", "python", "news", "--depth", "1"])
+    assert by_words.topic == ["latest", "python", "news"] and by_words.query is None
+    by_flag = parser.parse_args(["research", "--query", "topic"])
+    assert by_flag.query == "topic" and by_flag.topic == []

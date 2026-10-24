@@ -48,7 +48,7 @@ trinaxai chat [--prompt TEXT] [--file PATH] [--engine ENGINE] [--collections IDS
 trinaxai ask [PROMPT ...] [--file PATH] [--engine ENGINE] [--collections IDS] [--thinking]
 trinaxai agent [TASK ...] [-p TEXT] [--workspace PATH] [--model NAME] [--max-steps N]
                [--permission-mode MODE] [--output-format text|json] [-c | -r SESSION] [--yolo]
-trinaxai research --query TEXT [--session NAME] [--depth DEPTH] [--collections IDS] [--thinking]
+trinaxai research TEXT|--query TEXT [--session NAME] [--depth DEPTH] [--collections IDS] [--thinking]
 trinaxai index [PATH] [--collection ID] [--append]
 trinaxai browse list-collections
 trinaxai browse list-files [--collection ID]

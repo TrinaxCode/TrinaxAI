@@ -127,6 +127,8 @@ el formato de [Keep a Changelog](https://keepachangelog.com/).
 
 ### Corregido
 
+- `trinaxai research "tu pregunta"` acepta el tema como palabras sueltas, igual que `ask`; `--query`
+  sigue funcionando. Olvidarlo ahora explica cómo escribir el comando en vez de "--query es obligatorio".
 - En Debian y Ubuntu la terminal del agente no encontraba `python3`, `python`, `cc` ni `awk`
   ("python3: not found"), porque esos nombres son enlaces a través de `/etc/alternatives`, que el
   sandbox no incluía. Ahora se monta esa única carpeta de enlaces hacia `/usr`, de solo lectura

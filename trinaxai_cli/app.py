@@ -188,7 +188,8 @@ def _build_parser(language: str | None = None) -> argparse.ArgumentParser:
     bsc.add_argument("--limit", type=int, default=50)
 
     res_p = sub.add_parser("research", help="Multi-pass deep research query.")
-    res_p.add_argument("--query", required=True)
+    res_p.add_argument("topic", nargs="*", help="What to research (or use --query).")
+    res_p.add_argument("--query", help="What to research.")
     res_p.add_argument("--session", help="Persist the research turn in a named session for later export.")
     res_p.add_argument("--collections", help="Comma-separated collection ids.")
     res_p.add_argument("--depth", type=int, default=2, choices=[1, 2, 3])

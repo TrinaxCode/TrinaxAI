@@ -26,9 +26,9 @@ def _research_metadata(result: dict[str, Any]) -> dict[str, Any]:
 
 
 def run(args: Any, client: Any, ui: Any, config: Any) -> int:
-    query = getattr(args, "query", None)
+    query = getattr(args, "query", None) or " ".join(getattr(args, "topic", None) or []).strip()
     if not query:
-        ui.error("--query is required.")
+        ui.error('Say what to research: trinaxai research "your question" (or --query).')
         return 1
     collections = getattr(args, "collections", None) or []
     if isinstance(collections, str):

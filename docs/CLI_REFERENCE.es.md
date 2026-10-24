@@ -48,7 +48,7 @@ trinaxai chat [--prompt TEXTO] [--file RUTA] [--engine MOTOR] [--collections IDS
 trinaxai ask [PREGUNTA ...] [--file RUTA] [--engine MOTOR] [--collections IDS] [--thinking]
 trinaxai agent [TAREA ...] [-p TEXTO] [--workspace RUTA] [--model NOMBRE] [--max-steps N]
                [--permission-mode MODO] [--output-format text|json] [-c | -r SESIÓN] [--yolo]
-trinaxai research --query TEXTO [--session NOMBRE] [--depth PROFUNDIDAD] [--collections IDS] [--thinking]
+trinaxai research TEXTO|--query TEXTO [--session NOMBRE] [--depth PROFUNDIDAD] [--collections IDS] [--thinking]
 trinaxai index [RUTA] [--collection ID] [--append]
 trinaxai browse list-collections
 trinaxai browse list-files [--collection ID]

@@ -97,6 +97,7 @@ def test_research_validates_and_renders_results(ui) -> None:
     }
 
     assert research.run(SimpleNamespace(query=None), client, ui, None) == 1
+    assert research.run(SimpleNamespace(query=None, topic=[]), client, ui, None) == 1
     assert (
         research.run(
             SimpleNamespace(query="topic", collections="docs, notes", depth=2),
@@ -108,6 +109,10 @@ def test_research_validates_and_renders_results(ui) -> None:
     )
     client.research.assert_called_once_with(query="topic", collections=["docs", "notes"], depth=2)
     ui.markdown.assert_called_once_with("answer")
+    # The topic can also be given as plain words.
+    client.research.reset_mock()
+    assert research.run(SimpleNamespace(query=None, topic=["compare", "both"], depth=1), client, ui, None) == 0
+    assert client.research.call_args.kwargs["query"] == "compare both"
 
     client.research.side_effect = RuntimeError("offline")
     assert research.run(SimpleNamespace(query="topic", collections=[], depth=1), client, ui, None) == 1

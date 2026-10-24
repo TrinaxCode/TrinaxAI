@@ -121,6 +121,8 @@ All notable changes to TrinaxAI are documented here. This project follows the
 
 ### Fixed
 
+- `trinaxai research "your question"` takes the topic as plain words, like `ask`; `--query` still
+  works. Forgetting it now says how to write the command instead of "--query is required".
 - On Debian and Ubuntu the agent's terminal could not find `python3`, `python`, `cc` or `awk`
   ("python3: not found"), because those names are links through `/etc/alternatives`, which the
   sandbox did not include. That one read-only folder of links into `/usr` is now mounted (the
