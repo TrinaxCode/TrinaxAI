@@ -103,14 +103,12 @@ def _systemd_units(name: str) -> list[str]:
     return SYSTEMD_SERVICE_ALIASES.get(name, [f"{name}.service"])
 
 
+# The background supervisor must never pop a desktop polkit dialog: nobody asked
+# for it and it would reappear on every retry. ``watch`` turns this off.
+_INTERACTIVE_AUTH = True
+
+
 def _run_systemctl(args: list[str], *, check: bool = False, timeout: int = 30) -> subprocess.CompletedProcess:
-    result = subprocess.run(
-        [_SYSTEMCTL, *args],
-        check=False,
-        timeout=timeout,
-        capture_output=True,
-        text=True,
-    )
     privileged_action = bool(args) and args[0] in {
         "start",
         "stop",
@@ -121,6 +119,16 @@ def _run_systemctl(args: list[str], *, check: bool = False, timeout: int = 30) -
         "mask",
         "unmask",
     }
+    command = [_SYSTEMCTL, *args]
+    if privileged_action and not _INTERACTIVE_AUTH:
+        command.insert(1, "--no-ask-password")
+    result = subprocess.run(
+        command,
+        check=False,
+        timeout=timeout,
+        capture_output=True,
+        text=True,
+    )
     if privileged_action and result.returncode != 0 and shutil.which("sudo"):
         sudo_result = subprocess.run(
             ["sudo", "-n", _SYSTEMCTL, *args],
@@ -1431,34 +1439,61 @@ def status(name: str) -> ProcessState:
     return _backend.status(name)
 
 
+WATCH_MAX_BACKOFF_SECONDS = 600
+
+
 def watch(base_dir: str, interval: int = 15) -> None:
     """Keep the local stack alive on platforms without a real service manager.
 
     Linux systemd services already use Restart=on-failure. This loop is the
     cross-platform fallback for macOS, Windows, WSL, and direct subprocess runs.
     """
+    global _INTERACTIVE_AUTH
     os.makedirs(os.path.join(base_dir, "logs"), exist_ok=True)
     print(f"TrinaxAI supervisor watching services every {interval}s")
-    while True:
-        _reap_zombie_children()
-        if _system_state(base_dir) == "stopped_by_user":
-            if not _recovery_pid(base_dir):
-                recovery = _start_recovery(base_dir)
-                print(f"recovery: {recovery.detail}")
+    _INTERACTIVE_AUTH = False
+    failures: dict[str, int] = {}
+    retry_at: dict[str, float] = {}
+    try:
+        while True:
+            _reap_zombie_children()
+            if _system_state(base_dir) == "stopped_by_user":
+                if not _recovery_pid(base_dir):
+                    recovery = _start_recovery(base_dir)
+                    print(f"recovery: {recovery.detail}")
+                time.sleep(max(5, interval))
+                return
+            wanted = [FRONTEND_SERVICE]
+            if _read_ai_enabled(base_dir):
+                wanted = STARTUP_ORDER
+            for name in wanted:
+                state = _backend.status(name)
+                if state.running:
+                    failures.pop(name, None)
+                    retry_at.pop(name, None)
+                    continue
+                if time.monotonic() < retry_at.get(name, 0.0):
+                    continue
+                restarted = _start_named(base_dir, name)
+                print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] restarted {name}: {restarted.detail}")
+                if restarted.running:
+                    failures.pop(name, None)
+                    retry_at.pop(name, None)
+                    continue
+                # A service that keeps failing to start will not be fixed by trying
+                # again every cycle: back off exponentially so a broken build or a
+                # missing permission is not retried (and logged) forever.
+                failures[name] = failures.get(name, 0) + 1
+                delay = min(max(5, interval) * 2 ** failures[name], WATCH_MAX_BACKOFF_SECONDS)
+                retry_at[name] = time.monotonic() + delay
+                print(
+                    f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] {name} failed to start "
+                    f"({failures[name]} in a row); next attempt in {int(delay)}s. "
+                    "Check its logs under logs/ or the service journal, or run `trinaxai doctor`."
+                )
             time.sleep(max(5, interval))
-            return
-        wanted = [FRONTEND_SERVICE]
-        if _read_ai_enabled(base_dir):
-            wanted = STARTUP_ORDER
-        for name in wanted:
-            state = _backend.status(name)
-            if state.running:
-                continue
-            restarted = _start_named(base_dir, name)
-            print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] restarted {name}: {restarted.detail}")
-            if name == "ollama":
-                continue
-        time.sleep(max(5, interval))
+    finally:
+        _INTERACTIVE_AUTH = True
 
 
 def main(argv: list[str] | None = None) -> int:

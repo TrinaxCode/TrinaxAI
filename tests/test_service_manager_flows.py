@@ -290,6 +290,69 @@ def test_supervisor_restarts_wanted_services_once(monkeypatch, tmp_path: Path) -
     assert statuses == [sm.FRONTEND_SERVICE]
 
 
+def test_supervisor_backs_off_when_a_service_keeps_failing_to_start(monkeypatch, tmp_path: Path, capsys) -> None:
+    attempts: list[str] = []
+    clock = {"now": 1000.0}
+    sleeps = {"count": 0}
+
+    def fake_sleep(_seconds):
+        clock["now"] += 15
+        sleeps["count"] += 1
+        if sleeps["count"] >= 12:
+            raise StopIteration
+
+    monkeypatch.setattr(sm, "_system_state", lambda _base: "running")
+    monkeypatch.setattr(sm, "_read_ai_enabled", lambda _base: False)
+    monkeypatch.setattr(sm, "_reap_zombie_children", lambda: None)
+    monkeypatch.setattr(sm, "_backend", SimpleNamespace(status=lambda name: sm.ProcessState(name, False)))
+    monkeypatch.setattr(
+        sm,
+        "_start_named",
+        lambda _base, name: attempts.append(name) or sm.ProcessState(name, False, detail="denied"),
+    )
+    monkeypatch.setattr(sm.time, "monotonic", lambda: clock["now"])
+    monkeypatch.setattr(sm.time, "sleep", fake_sleep)
+
+    with pytest.raises(StopIteration):
+        sm.watch(str(tmp_path), interval=15)
+
+    # 12 cycles of 15s with a retry delay that doubles (30s, 60s, 120s, ...):
+    # far fewer attempts than one per cycle.
+    assert 1 <= len(attempts) <= 4
+    assert "failed to start" in capsys.readouterr().out
+
+
+def test_supervisor_never_asks_for_interactive_authentication(monkeypatch, tmp_path: Path) -> None:
+    commands: list[list[str]] = []
+    monkeypatch.setattr(sm.subprocess, "run", lambda command, **_kwargs: commands.append(command) or _completed(0))
+    monkeypatch.setattr(sm.shutil, "which", lambda _name: None)
+
+    sm._run_systemctl(["start", "trinaxai-frontend.service"])
+    assert commands[-1] == [sm._SYSTEMCTL, "start", "trinaxai-frontend.service"]
+
+    seen: list[list[str]] = []
+
+    def fake_sleep(_seconds):
+        sm._run_systemctl(["start", "trinaxai-frontend.service"])
+        sm._run_systemctl(["is-active", "trinaxai-frontend.service"])
+        seen.extend(commands[-2:])
+        raise StopIteration
+
+    monkeypatch.setattr(sm, "_system_state", lambda _base: "running")
+    monkeypatch.setattr(sm, "_read_ai_enabled", lambda _base: False)
+    monkeypatch.setattr(sm, "_reap_zombie_children", lambda: None)
+    monkeypatch.setattr(sm, "_backend", SimpleNamespace(status=lambda name: sm.ProcessState(name, True)))
+    monkeypatch.setattr(sm.time, "sleep", fake_sleep)
+
+    with pytest.raises(StopIteration):
+        sm.watch(str(tmp_path), interval=5)
+
+    assert seen[0] == [sm._SYSTEMCTL, "--no-ask-password", "start", "trinaxai-frontend.service"]
+    assert seen[1] == [sm._SYSTEMCTL, "is-active", "trinaxai-frontend.service"]
+    # The flag is restored once the supervisor stops, so interactive CLI use is unchanged.
+    assert sm._INTERACTIVE_AUTH is True
+
+
 def test_service_manager_cli_dispatches_every_public_action(monkeypatch, tmp_path: Path, capsys) -> None:
     running = sm.ProcessState("rag_api", True, pid=3, detail="ready")
     stopped = sm.ProcessState("rag_api", False, detail="stopped")
