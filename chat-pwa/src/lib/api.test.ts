@@ -111,6 +111,18 @@ describe('api helpers', () => {
     log.mockRestore();
   });
 
+  it('logs an expected permission denial at debug level so scoped devices keep a quiet console', () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const debug = vi.spyOn(console, 'debug').mockImplementation(() => undefined);
+    const denied = apiErrorFromPayload(403, { detail: 'Device credential does not grant the read_private scope.' });
+
+    expect(denied.category).toBe('permission_denied');
+    expect(debug).toHaveBeenCalledWith('[TrinaxAI API] request failed', expect.objectContaining({ status: 403, category: 'permission_denied' }));
+    expect(error).not.toHaveBeenCalled();
+    error.mockRestore();
+    debug.mockRestore();
+  });
+
   it('exposes recovery and contextual actions for local service failures', () => {
     const unavailable = apiErrorFromPayload(503, { detail: { code: 'ollama_unavailable' } });
     const details = userFacingErrorDetails(unavailable);

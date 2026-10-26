@@ -277,7 +277,12 @@ export class ApiError extends Error {
     this.retryable = metadata.retryable ?? definition.retryable;
     this.requestId = metadata.requestId;
     this.technicalMessage = message;
-    if (message !== publicText) console.error('[TrinaxAI API] request failed', { status, category, code: definition.code });
+    if (message !== publicText) {
+      // A scoped device (for example a new chat-only device) is expected to be denied
+      // private reads, so that is diagnostics, not an error worth alarming the console.
+      const log = category === 'permission_denied' ? console.debug : console.error;
+      log('[TrinaxAI API] request failed', { status, category, code: definition.code });
+    }
   }
 }
 
