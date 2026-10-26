@@ -125,6 +125,16 @@ La configuración elige un perfil según la memoria y los recursos gráficos:
 El perfil `8gb` funciona solo con CPU. Consulta la
 [referencia de configuración](docs/CONFIGURATION.es.md) para modelos y recursos.
 
+## Límites conocidos
+
+- Preguntas sobre código respondidas por modelos locales pequeños: las fuentes
+  citadas a veces son erróneas o incompletas, así que abre el archivo citado
+  antes de fiarte de una respuesta.
+- `trinaxai research` es lento en un equipo sin GPU.
+- No medido: el flujo completo (instalación, chat, RAG, agente y app web) en
+  Windows, con GPU y con modelos grandes. macOS y Windows están cubiertos por las
+  comprobaciones automáticas de CI, no por ejecuciones de extremo a extremo.
+
 ## Privacidad y seguridad
 
 TrinaxAI enlaza los servicios locales a loopback por defecto. Ollama no se

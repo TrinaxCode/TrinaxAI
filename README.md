@@ -127,6 +127,16 @@ Setup chooses a model profile from available memory and GPU resources:
 The `8gb` profile works with CPU-only hardware. See the
 [configuration reference](docs/CONFIGURATION.md) for model and resource settings.
 
+## Known limits
+
+- Questions about code answered by small local models: the cited sources are
+  sometimes wrong or incomplete, so open the cited file before relying on an
+  answer.
+- `trinaxai research` is slow on a CPU-only computer.
+- Not measured: the full flow (install, chat, RAG, agent, web app) on Windows,
+  on a GPU, and with large models. macOS and Windows are covered by the automated
+  CI checks, not by end-to-end runs.
+
 ## Privacy and security
 
 TrinaxAI binds local services to loopback by default. Ollama is not exposed as

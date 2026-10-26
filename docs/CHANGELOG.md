@@ -18,7 +18,7 @@ All notable changes to TrinaxAI are documented here. This project follows the
 
 ## [Unreleased]
 
-## [1.4.0] — 2026-10-23
+## [1.4.0] — 2026-10-26
 
 ### Added
 
@@ -310,6 +310,16 @@ All notable changes to TrinaxAI are documented here. This project follows the
   Spanish prompts now read `[S/n]`.
 - Installer messages that appeared in English in Spanish mode are translated,
   and a failed install says it is safe to run again.
+
+### Known limits
+
+- Questions about code answered by small local models: the cited sources are
+  sometimes wrong or incomplete, so open the cited file before relying on an
+  answer.
+- `trinaxai research` is slow on a CPU-only computer.
+- Not measured: the full flow (install, chat, RAG, agent, web app) on Windows,
+  on a GPU, and with large models. macOS and Windows are covered by the automated
+  CI checks, not by end-to-end runs.
 
 ## [1.3.0] — 2026-10-18
 

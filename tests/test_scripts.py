@@ -590,7 +590,9 @@ def test_tagged_releases_publish_a_simple_verified_release() -> None:
     assert "SHA256SUMS" in workflow
     assert "gh release create" in workflow
     assert "--verify-tag" in workflow
-    assert "--generate-notes" in workflow
+    assert "--generate-notes" not in workflow
+    assert "scripts/release_notes.py" in workflow
+    assert workflow.count("--notes-file") == 2
     assert "docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e" in workflow
     assert "actions/attest@v4" not in workflow
 

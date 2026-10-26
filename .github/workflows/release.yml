@@ -142,6 +142,12 @@ jobs:
                 --output "${asset}.asc" "$asset"
           done
 
+      - name: Extract release notes from the changelog
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/release_notes.py "${GITHUB_REF_NAME#v}" > "${RUNNER_TEMP}/release-notes.md"
+
       - name: Stage draft release with assets
         env:
           GH_TOKEN: ${{ github.token }}
@@ -156,13 +162,16 @@ jobs:
             fi
             gh release upload "${GITHUB_REF_NAME}" release/* \
               --repo "${GITHUB_REPOSITORY}" --clobber
+            gh release edit "${GITHUB_REF_NAME}" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --notes-file "${RUNNER_TEMP}/release-notes.md"
           else
             gh release create "${GITHUB_REF_NAME}" release/* \
               --repo "${GITHUB_REPOSITORY}" \
               --draft \
               --verify-tag \
               --title "TrinaxAI ${GITHUB_REF_NAME#v}" \
-              --generate-notes
+              --notes-file "${RUNNER_TEMP}/release-notes.md"
           fi
 
       - name: Verify exact draft release assets and signatures

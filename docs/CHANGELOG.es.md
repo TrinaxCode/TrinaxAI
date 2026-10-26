@@ -18,7 +18,7 @@ el formato de [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Sin publicar]
 
-## [1.4.0] — 2026-10-23
+## [1.4.0] — 2026-10-26
 
 ### Añadido
 
@@ -325,6 +325,16 @@ el formato de [Keep a Changelog](https://keepachangelog.com/).
 - Los mensajes del instalador que aparecían en inglés en modo español están
   traducidos, y una instalación fallida indica que se puede ejecutar de nuevo
   sin riesgo.
+
+### Límites conocidos
+
+- Preguntas sobre código respondidas por modelos locales pequeños: las fuentes
+  citadas a veces son erróneas o incompletas, así que abre el archivo citado
+  antes de fiarte de una respuesta.
+- `trinaxai research` es lento en un equipo sin GPU.
+- No medido: el flujo completo (instalación, chat, RAG, agente y app web) en
+  Windows, con GPU y con modelos grandes. macOS y Windows están cubiertos por las
+  comprobaciones automáticas de CI, no por ejecuciones de extremo a extremo.
 
 ## [1.3.0] — 2026-10-18
 
