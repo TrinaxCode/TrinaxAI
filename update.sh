@@ -58,7 +58,7 @@ tr_text_es() {
       'Would check Ollama and pull configured models if requested') echo 'Se comprobaría Ollama y se descargarían los modelos configurados si se solicita' ;;
       'Would change autostart and run readiness checks') echo 'Se cambiaría el inicio automático y se ejecutarían comprobaciones de preparación' ;;
       'Would restart TrinaxAI if requested') echo 'Se reiniciaría TrinaxAI si se solicita' ;;
-      'Links to enter') echo 'Enlaces de acceso' ;;
+      'Open TrinaxAI at') echo 'Enlaces de acceso' ;;
       'LAN / Red local') echo 'LAN' ;;
       'RAG health') echo 'Salud de RAG' ;;
       'DRY-RUN: nothing will be downloaded, installed, or changed.') echo 'SIMULACIÓN: no se descargará, instalará ni modificará nada.' ;;
@@ -382,7 +382,7 @@ if [ "$DRY_RUN" = "1" ]; then
   print_step "Restart"
   print_info "Would restart TrinaxAI if requested"
   echo ""
-  echo -e "${BOLD}${CYAN}$(tr_text 'Links to enter')${NC}"
+  echo -e "${BOLD}${CYAN}$(tr_text 'Open TrinaxAI at')${NC}"
   echo "  Localhost:       https://localhost:3334"
   if [ "$LANGUAGE" = "es" ]; then
     echo "  LAN / Red local: https://[TU-IP-LAN]:3334"

@@ -16,7 +16,7 @@ function Invoke-PowerShellDryRun([string]$Script, [string[]]$Arguments = @()) {
   if (-not $PowerShellEngine) { return "" }
   $Output = & $PowerShellEngine.Source -NoProfile -ExecutionPolicy Bypass -File (Join-Path $Root $Script) @Arguments 2>&1 | Out-String
   if ($LASTEXITCODE -ne 0) { throw "PowerShell dry-run failed: $Script`n$Output" }
-  Assert-Contains $Output "Links to enter" "Missing links output: $Script"
+  Assert-Contains $Output "Open TrinaxAI at" "Missing links output: $Script"
   return $Output
 }
 

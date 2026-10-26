@@ -424,7 +424,7 @@ if ($DryRun) {
   Write-Step (T "Restart" "Reinicio")
   Write-Info (T "Would restart TrinaxAI if requested" "Se reiniciaría TrinaxAI si se solicita")
   Write-Host ""
-  Write-Host (T "Links to enter" "Enlaces de acceso") -ForegroundColor Cyan
+  Write-Host (T "Open TrinaxAI at" "Enlaces de acceso") -ForegroundColor Cyan
   Write-Host (T "  Localhost:       https://localhost:3334" "  Localhost:       https://localhost:3334")
   Write-Host (T "  LAN:             https://[YOUR-LAN-IP]:3334" "  LAN / Red local: https://[TU-IP-LAN]:3334")
   Write-Host (T "  RAG health:      https://localhost:3333/health" "  Salud de RAG:    https://localhost:3333/health")

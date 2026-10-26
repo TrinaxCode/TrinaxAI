@@ -82,7 +82,7 @@ Set-ExecutionPolicy -Scope Process Bypass
 .\uninstall.ps1 -DryRun
 ```
 
-The output must contain the localized access-links label: `Links to enter` in English or `Enlaces de acceso` in Spanish. The Windows install simulation also prints the official Ollama fallback instructions.
+The output must contain the localized access-links label: `Open TrinaxAI at` in English or `Enlaces de acceso` in Spanish. The Windows install simulation also prints the official Ollama fallback instructions.
 
 When a Windows host is not available, the PowerShell dry-run suite can still
 be exercised with the official PowerShell container:

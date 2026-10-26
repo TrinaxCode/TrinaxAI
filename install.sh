@@ -116,7 +116,7 @@ tr_text_es() {
       '  Embeddings:   RAG indexing and semantic search') echo '  Embeddings: indexación RAG y búsqueda semántica' ;;
       '  Vision:       image and screenshot analysis') echo '  Visión: análisis de imágenes y capturas de pantalla' ;;
       'Deprecated LAN system option ignored; host administration stays localhost-only.') echo 'La opción obsoleta de sistema por LAN se ignora; la administración del host queda solo en localhost.' ;;
-      'Links to enter') echo 'Enlaces de acceso' ;;
+      'Open TrinaxAI at') echo 'Enlaces de acceso' ;;
       'Localhost') echo 'Localhost' ;;
       'LAN / Red local') echo 'LAN' ;;
       'RAG health') echo 'Salud de RAG' ;;
@@ -1287,7 +1287,7 @@ run_dry_run() {
   print_info "Would optionally start TrinaxAI and configure auto-start/weekly updates"
   print_ok "Service and auto-start changes simulated"
   echo ""
-  echo -e "${BOLD}${CYAN}$(tr_text 'Links to enter')${NC}"
+  echo -e "${BOLD}${CYAN}$(tr_text 'Open TrinaxAI at')${NC}"
   echo "  Localhost:       https://localhost:3334"
   if [ "$LAN_ACCESS" != "1" ]; then
     # Matches the real install: unless the user allowed it, nothing listens beyond this computer.
@@ -1888,7 +1888,7 @@ echo ""
 if [ "$START_NOW" = "1" ]; then
   echo -e "${GREEN}${BOLD}$(tr_text 'TrinaxAI is ready!')${NC}"
   echo ""
-  echo -e "${BOLD}${CYAN}$(tr_text 'Links to enter')${NC}"
+  echo -e "${BOLD}${CYAN}$(tr_text 'Open TrinaxAI at')${NC}"
   echo -e "  ${BLUE}$(tr_text 'Localhost'):${NC}     https://localhost:3334"
   if [ "$(env_file_value TRINAXAI_PWA_HOST)" != "0.0.0.0" ]; then
     echo -e "  ${BLUE}$(tr_text 'LAN / Red local'):${NC} $(tr_text 'This computer only. To allow other devices later, run: trinaxai network refresh')"

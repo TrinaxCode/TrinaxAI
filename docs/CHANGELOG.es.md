@@ -131,6 +131,8 @@ el formato de [Keep a Changelog](https://keepachangelog.com/).
 
 ### Corregido
 
+- El instalador, el actualizador y el desinstalador muestran "Open TrinaxAI at" antes de la dirección web en
+  inglés (decía "Links to enter", una traducción literal). En español no cambia.
 - Una ejecución de `trinaxai agent -p` en un script sin `--yolo` ahora dice por stderr por qué se rechazó una
   edición o un comando (no hay terminal para preguntar), en vez de que el modelo culpe a "una restricción del
   sistema". La salida estándar sigue teniendo solo la respuesta.

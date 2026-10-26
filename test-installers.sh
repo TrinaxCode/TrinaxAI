@@ -171,7 +171,7 @@ for script in install.sh update.sh uninstall.sh; do
     cat "$output" >&2
     fail "dry-run failed: $script"
   fi
-  grep -Fq 'Links to enter' "$output" || fail "missing Links to enter: $script"
+  grep -Fq 'Open TrinaxAI at' "$output" || fail "missing Open TrinaxAI at: $script"
   if grep -Eiq 'unbound variable|unbound variable' "$output"; then
     fail "unbound variable reported: $script"
   fi
@@ -258,7 +258,7 @@ if command -v pwsh >/dev/null 2>&1; then
       cat "$output" >&2
       fail "PowerShell dry-run failed: $script"
     }
-    grep -Fq 'Links to enter' "$output" || fail "missing PowerShell links: $script"
+    grep -Fq 'Open TrinaxAI at' "$output" || fail "missing PowerShell links: $script"
     ok "PowerShell dry-run passed: $script"
   done
 else
