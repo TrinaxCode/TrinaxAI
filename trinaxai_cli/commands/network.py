@@ -24,14 +24,47 @@ def _show_trust_certificate(root: Any, ui: Any) -> None:
         ui.info("Import this certificate only on devices you control; never share the private key.")
 
 
+def _turn_off(args: Any, root: Any, ui: Any) -> int:
+    """Keep TrinaxAI on this computer only, undoing "allow other devices"."""
+    if not network.lan_access_enabled(root):
+        ui.info("Already limited to this computer; nothing to change.")
+        return 0
+    if not getattr(args, "yes", False) and not ui.confirm("Keep TrinaxAI on this computer only?", default=True):
+        ui.info("Cancelled.")
+        return 0
+    try:
+        network.disable_lan_access(root)
+    except (OSError, RuntimeError) as exc:
+        ui.failure("Network change", exc)
+        return 1
+    ui.success("TrinaxAI is now limited to this computer.")
+    if getattr(args, "no_restart", False):
+        ui.warn("Restart TrinaxAI to apply it.")
+        return 0
+    rc = _system.run_service_action("reload-network", ui, timeout=180)
+    if rc != 0:
+        ui.warn("Configuration saved. Restart the PWA and RAG services to apply it.")
+    return rc
+
+
 def run(args: Any, _client: Any, ui: Any, _config: Any) -> int:
     root = _system.project_root()
     if root is None:
         ui.error("Cannot locate the TrinaxAI installation. Set TRINAXAI_HOME or run this command there.")
         return 1
+    if getattr(args, "network_command", None) == "off":
+        return _turn_off(args, root, ui)
     addresses = network.lan_addresses()
     urls = network.pwa_urls(addresses)
     if getattr(args, "network_command", None) != "refresh":
+        if not network.lan_access_enabled(root):
+            # LAN addresses would only mislead here: nothing listens on them.
+            ui.info("Access from other devices: this computer only")
+            ui.print("https://localhost:3334")
+            ui.info("To open TrinaxAI from a phone or another computer, run: trinaxai network refresh")
+            return 0
+        ui.info("Access from other devices: allowed (each device must be paired)")
+        ui.info("Use 'trinaxai network off' to keep TrinaxAI on this computer only.")
         ui.info(f"Host: {network.local_hostname()}")
         ui.info(f"LAN addresses: {', '.join(addresses) if addresses else '(none detected)'}")
         for url in urls:

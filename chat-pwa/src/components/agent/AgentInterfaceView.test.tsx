@@ -194,6 +194,21 @@ describe('AgentInterfaceView', () => {
     expect(screen.getAllByText(/git push origin main/)).toHaveLength(2);
   });
 
+  it('marks tools that could not do their job with a warning instead of a green check', () => {
+    const steps = [
+      { id: 'f1', tool: 'git', dangerous: true, args: { args: 'commit -m x' }, status: 'done' as const, result: '[tool_status=degraded; tool=git]\nWhat happened: git could not complete this request.' },
+      { id: 'f2', tool: 'run_command', dangerous: true, args: { command: 'pytest' }, status: 'done' as const, result: '[exit 1; sandboxed, network=off]\nFAILED' },
+      { id: 'ok', tool: 'run_command', dangerous: true, args: { command: 'ls' }, status: 'done' as const, result: '[exit 0; sandboxed, network=off]\nfile.txt' },
+      { id: 'plain', tool: 'read_file', dangerous: false, args: { path: 'a.py' }, status: 'done' as const, result: 'print(1)' },
+      { id: 'denied', tool: 'write_file', dangerous: true, args: { path: 'b.py' }, status: 'denied' as const, result: '[exit 2] user said no' },
+    ];
+    render(<AgentInterfaceView {...props({ turns: [{ role: 'assistant' as const, content: '', steps }] })} />);
+
+    // Only the two steps that failed are flagged; a clean exit, a plain result and a denial are not.
+    expect(screen.getAllByRole('img', { name: 'agentStepFailed' })).toHaveLength(2);
+    expect(document.querySelectorAll('svg.text-green-500')).toHaveLength(2);
+  });
+
   it('covers editing, running activity, attached files, and stop states', () => {
     const p = props({
       isDark: true, running: true, editingIndex: 0, editingText: 'edit me',

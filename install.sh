@@ -352,6 +352,10 @@ fi
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; BLUE='\033[0;34m'
 YELLOW='\033[1;33m'; CYAN='\033[0;36m'; NC='\033[0m'; BOLD='\033[1m'
+# Plain text for logs, pipes and NO_COLOR (https://no-color.org), so captured output has no escape codes.
+if [ -n "${NO_COLOR:-}" ] || [ ! -t 1 ]; then
+  RED=''; GREEN=''; BLUE=''; YELLOW=''; CYAN=''; NC=''; BOLD=''
+fi
 
 usage() {
   if [ "$LANGUAGE" = "es" ]; then
@@ -1285,7 +1289,10 @@ run_dry_run() {
   echo ""
   echo -e "${BOLD}${CYAN}$(tr_text 'Links to enter')${NC}"
   echo "  Localhost:       https://localhost:3334"
-  if [ "$LANGUAGE" = "es" ]; then
+  if [ "$LAN_ACCESS" != "1" ]; then
+    # Matches the real install: unless the user allowed it, nothing listens beyond this computer.
+    echo "  $(tr_text 'LAN / Red local'): $(tr_text 'This computer only. To allow other devices later, run: trinaxai network refresh')"
+  elif [ "$LANGUAGE" = "es" ]; then
     echo "  LAN / Red local: https://[TU-IP-LAN]:3334"
   else
     echo "  LAN:             https://[YOUR-LAN-IP]:3334"

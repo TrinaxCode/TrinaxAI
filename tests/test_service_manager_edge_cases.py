@@ -273,3 +273,22 @@ def test_service_manager_autostart_failure_status_watch_and_cli_guard(monkeypatc
         runpy.run_path(str(Path(sm.__file__)), run_name="__main__")
     assert exc_info.value.code == 0
     assert exits == []
+
+
+def test_status_text_does_not_say_a_stopped_service_was_not_found(monkeypatch, capsys) -> None:
+    monkeypatch.setattr(
+        sm,
+        "status_all",
+        lambda: [
+            sm.ProcessState("trinaxai-frontend", False, detail="not found"),
+            sm.ProcessState("ollama", True, pid=7, detail="pid 7 (ollama serve)"),
+            sm.ProcessState("rag_api", False, detail="failed: port in use"),
+        ],
+    )
+
+    sm.main(["status", "--base-dir", "."])
+
+    lines = capsys.readouterr().out.splitlines()
+    assert lines[0].endswith(": stopped")
+    assert lines[1].endswith(": running pid 7 (ollama serve)")
+    assert lines[2].endswith(": stopped failed: port in use")

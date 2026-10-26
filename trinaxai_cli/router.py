@@ -53,7 +53,9 @@ def _normalize(value: str) -> str:
     return re.sub(r"\s+", " ", without_accents).strip().lower()
 
 
-# Bilingual intent patterns — kept in lockstep with modeRouter.ts. They run
+# Bilingual intent patterns, shared with modeRouter.ts for chat/web/research/RAG. The web app has no
+# workspace-action routing (its agent is a mode the user turns on); the terminal does, so the
+# agent/file/git patterns below exist only here. They run
 # against the accent-stripped, lowercased text so the Spanish variants omit
 # their accents on purpose.
 EXPLICIT_AGENT = re.compile(r"\b(?:modo agente|agente trinax|usa(?:r)? el agente|agent mode|use the agent)\b", re.I)
@@ -108,6 +110,41 @@ AGENT_TARGET = re.compile(
     r"component|command|dependencies|web interface)\b",
     re.I,
 )
+# A file name with a code/text extension is a workspace target on its own ("arregla el bug en
+# calc.py"). Framework names that end in ".js" (node.js, next.js, ...) are not files.
+FILE_REFERENCE = re.compile(
+    r"(?<![\w./\\-])(?!(?:node|next|vue|react|nuxt|express|three|d3|angular|ember|backbone|socket|chart|p5|alpine|"
+    r"svelte|deno|bun)\.js\b)[\w/\\-][\w./\\-]*\.(?:py|pyi|js|jsx|ts|tsx|mjs|cjs|json|ya?ml|toml|md|txt|html|css|scss|"
+    r"sh|bash|ps1|rs|go|java|kt|c|h|cpp|hpp|cs|rb|php|sql|ini|cfg|env|lock|csv)\b",
+    re.I,
+)
+READ_ACTION = re.compile(r"\b(?:lee|leer|abre|abrir|revisa|resume|read|open|review|inspect|summari[sz]e)\b", re.I)
+# Version-control orders. A bare "commit"/"push" is usually a noun in a question, so they must
+# open the message or follow `git`.
+_GIT_SUBCOMMAND = r"git\s+(?:status|diff|log|add|commit|push|pull|fetch|branch|checkout|switch|merge|rebase|stash|tag|reset|restore)\b"
+GIT_ACTION = re.compile(
+    rf"^(?:por favor |please )?{_GIT_SUBCOMMAND}"
+    rf"|\b(?:run|ejecuta|execute|usa|use|haz|hacer|do)\s+(?:un\s+|a\s+|el\s+|the\s+)?{_GIT_SUBCOMMAND}"
+    rf"|^(?:por favor |please )?(?:show(?: me)?|muestra(?:me)?|ensename|dame|give me)\s+(?:the\s+|el\s+|mi\s+|my\s+)?{_GIT_SUBCOMMAND}"
+    r"|^(?:por favor |please )?(?:haz(?:me)? (?:un )?(?:commit|push)|hacer (?:un )?commit|commitea|"
+    r"commit\s+(?:these|this|the|my|all|everything|changes|los|las|mis|todo|estos|este)\b|"
+    r"push\s+(?:these|this|the|my|all|everything|changes|to|los|las|mis|todo|estos|este)\b|"
+    r"sube\s+(?:los |mis |estos )?cambios|make a commit)",
+    re.I,
+)
+# A question about how something works, as opposed to an order to do it: it opens with a question
+# word, ends in a question mark together with one, or compares ("rebase vs merge"). "tell me what
+# is in it" inside an order is not a question.
+_QUESTION_WORD = (
+    r"(?:why|por que|what(?: does| is| are)?|que(?: significa| es| son)?|how(?: do| does| can| to)?|"
+    r"como(?: hago| puedo| se| funciona)?|explain|explica(?:me|r)?|difference|diferencia)"
+)
+CONCEPTUAL_QUESTION = re.compile(
+    rf"^(?:por favor |please )?[?¿]*\s*{_QUESTION_WORD}\b"
+    rf"|\b{_QUESTION_WORD}\b.*\?\s*$"
+    r"|\b(?:vs\.?|versus|difference between|diferencia entre)\b",
+    re.I,
+)
 EDUCATIONAL_ONLY = re.compile(
     r"\b(?:explica(?:me|r)?|como|ejemplo|ensena(?:me|r)?|explain|how to|example|teach)\b.{0,100}"
     r"\b(?:editar|modificar|corregir|ejecutar|instalar|crear|construir|disenar|desarrollar|"
@@ -119,6 +156,20 @@ EXPLICIT_NEGATION = re.compile(
     r"\b(?:modificar|editar|ejecutar|instalar|modify|edit|run|install)\b",
     re.I,
 )
+
+
+_URL = re.compile(
+    r"\b[a-z][a-z0-9+.-]*://\S+"  # https://example.com/page.html
+    r"|\bwww\.\S+"
+    # docs.python.org/3/library/os.html; only well-known endings, so my.app/src/main.py stays a path
+    r"|(?<![\w./\\-])[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:com|org|net|io|dev|edu|gov|ai|co|me|info|es|uk|de|fr)/\S*",
+    re.I,
+)
+
+
+def _without_urls(text: str) -> str:
+    """Web addresses end in names like page.html or post.md but are not workspace files."""
+    return _URL.sub(" ", text)
 
 
 def _recent_topic(history: list[dict[str, str]]) -> str:
@@ -137,7 +188,14 @@ def decide_mode(prompt: str, context: RouteContext | None = None) -> RouteDecisi
     local_grounding = bool(LOCAL_GROUNDING.search(contextual) or PERSONAL_KNOWLEDGE.search(contextual))
     direct_lookup = bool(DIRECT_LOOKUP.search(current))
     explicit_web = bool(EXPLICIT_WEB.search(current))
-    agent_task = bool(AGENT_ACTION.search(current)) and bool(AGENT_TARGET.search(contextual))
+    file_named = bool(FILE_REFERENCE.search(_without_urls(current)))
+    # "why does git push fail?" or "explain how to read data.csv" ask about a tool; they do not order it.
+    conceptual = bool(CONCEPTUAL_QUESTION.search(current))
+    agent_task = (
+        (bool(AGENT_ACTION.search(current)) and (bool(AGENT_TARGET.search(contextual)) or file_named))
+        or (bool(READ_ACTION.search(current)) and file_named and not conceptual)
+        or (bool(GIT_ACTION.search(current)) and not conceptual)
+    )
     needs_web_evidence = bool(explicit_web or CURRENT_INFO.search(current) or DEEP.search(current))
     needs_combined_evidence = local_grounding and needs_web_evidence
     educational_only = bool(EDUCATIONAL_ONLY.search(current) or EXPLICIT_NEGATION.search(current))

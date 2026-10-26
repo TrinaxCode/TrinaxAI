@@ -97,6 +97,7 @@ def test_research_validates_and_renders_results(ui) -> None:
     }
 
     assert research.run(SimpleNamespace(query=None), client, ui, None) == 1
+    assert research.run(SimpleNamespace(query=None, topic=[]), client, ui, None) == 1
     assert (
         research.run(
             SimpleNamespace(query="topic", collections="docs, notes", depth=2),
@@ -108,6 +109,21 @@ def test_research_validates_and_renders_results(ui) -> None:
     )
     client.research.assert_called_once_with(query="topic", collections=["docs", "notes"], depth=2)
     ui.markdown.assert_called_once_with("answer")
+    # Reasoning is sent only when asked for; the CLI's default preference must not override the server.
+    client.research.reset_mock()
+    config = SimpleNamespace(thinking_enabled=True)
+    assert research.run(SimpleNamespace(query="topic", thinking=None, depth=1), client, ui, config) == 0
+    assert "thinking" not in client.research.call_args.kwargs
+    assert research.run(SimpleNamespace(query="topic", thinking=False, depth=1), client, ui, config) == 0
+    assert client.research.call_args.kwargs["thinking"] is False
+    # --web grounds the research on web search; without it the server decides as before.
+    client.research.reset_mock()
+    assert research.run(SimpleNamespace(query="topic", web=True, depth=1), client, ui, None) == 0
+    assert client.research.call_args.kwargs["web_search"] is True
+    # The topic can also be given as plain words.
+    client.research.reset_mock()
+    assert research.run(SimpleNamespace(query=None, topic=["compare", "both"], depth=1), client, ui, None) == 0
+    assert client.research.call_args.kwargs["query"] == "compare both"
 
     client.research.side_effect = RuntimeError("offline")
     assert research.run(SimpleNamespace(query="topic", collections=[], depth=1), client, ui, None) == 1
@@ -295,3 +311,32 @@ def test_help_and_mcp_have_stable_exit_contracts(monkeypatch, ui) -> None:
     assert help.run(SimpleNamespace(), None, ui, None) == 0
     assert mcp.run(SimpleNamespace(), None, ui, None) == 2
     ui.print.assert_called_once_with("usage")
+
+
+def test_models_shows_installed_sizes_in_human_units(monkeypatch, ui) -> None:
+    client = MagicMock()
+    client.list_ollama_models.return_value = [
+        {"name": "big", "size": 3324173934},
+        {"name": "mid", "size": 274302450},
+        {"name": "tiny", "size": 900},
+        {"name": "kb", "size": 4096},
+        {"name": "unknown"},
+        {"name": "odd", "size": "n/a"},
+    ]
+    monkeypatch.setattr(models._system, "env_value", lambda _name: None)
+
+    models.run(SimpleNamespace(), client, ui, None)
+
+    sizes = {row[0]: row[2] for row in ui.table.call_args.args[1] if row[1] == "installed"}
+    assert sizes == {"big": "3.1 GB", "mid": "261.6 MB", "tiny": "900 B", "kb": "4.0 KB", "unknown": "", "odd": "n/a"}
+
+
+def test_doctor_sandbox_rows_are_translated() -> None:
+    from trinaxai_cli.i18n import translate
+
+    assert translate("Agent shell sandbox", "es") == "Sandbox de la terminal del agente"
+    assert translate("bubblewrap sandbox available (networkless)", "es") == "sandbox bubblewrap disponible (sin red)"
+    assert translate(
+        "terminal tool disabled: install the 'bubblewrap' package (file tools still work)", "es"
+    ).startswith("terminal desactivada: instala el paquete 'bubblewrap'")
+    assert translate("UNSANDBOXED opt-in via TRINAXAI_X", "es") == "SIN SANDBOX por activación explícita con TRINAXAI_X"

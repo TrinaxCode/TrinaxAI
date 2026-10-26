@@ -1,6 +1,6 @@
 import type { Dispatch, RefObject, SetStateAction } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
-import { MdCheck, MdClose, MdContentCopy, MdEdit, MdRefresh, MdStop, MdUploadFile, MdVolumeUp } from 'react-icons/md';
+import { MdCheck, MdClose, MdContentCopy, MdEdit, MdRefresh, MdStop, MdUploadFile, MdVolumeUp, MdWarningAmber } from 'react-icons/md';
 import type { Translate } from '../chat/types';
 import ChatMarkdown from '../chat/ChatMarkdown';
 import type { AgentStep, AgentTurn } from './agentTypes';
@@ -261,13 +261,24 @@ interface StepCardProps {
   t: Translate;
 }
 
+// A tool that ran but could not do its job (degraded result, or a command that exited non-zero)
+// is still "done" for the protocol; a green check would tell the user the opposite of what happened.
+const FAILED_RESULT = /^\[(?:tool_status=degraded\b|exit (?!0\b)-?\d+)/;
+
 function AgentStepCard({ step, isDark, cardBg, subtle, onApprove, t }: StepCardProps) {
-  const statusIcon = {
-    running: <span className="h-2 w-2 animate-pulse rounded-full bg-[#006bbd]" />,
-    awaiting: <span className="h-2 w-2 rounded-full bg-amber-400" />,
-    done: <MdCheck size={14} className="text-green-500" />,
-    denied: <MdClose size={14} className="text-red-500" />,
-  }[step.status];
+  const failed = step.status === 'done' && FAILED_RESULT.test(step.result ?? '');
+  const statusIcon = failed
+    ? (
+      <span role="img" aria-label={t('agentStepFailed')} title={t('agentStepFailed')} className="inline-flex">
+        <MdWarningAmber size={14} className="text-amber-500" />
+      </span>
+    )
+    : {
+      running: <span className="h-2 w-2 animate-pulse rounded-full bg-[#006bbd]" />,
+      awaiting: <span className="h-2 w-2 rounded-full bg-amber-400" />,
+      done: <MdCheck size={14} className="text-green-500" />,
+      denied: <MdClose size={14} className="text-red-500" />,
+    }[step.status];
 
   const summary = argSummary(step.tool, step.args);
   const dangerKey = step.tool === 'git' && GIT_REMOTE_COMMAND.test(step.args.args ?? step.args.command ?? '')

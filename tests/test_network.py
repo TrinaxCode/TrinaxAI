@@ -248,3 +248,135 @@ def test_refresh_command_uses_linux_restart_fallback(monkeypatch, tmp_path: Path
         lambda *_args, **_kwargs: SimpleNamespace(returncode=0),
     )
     assert network_command.run(SimpleNamespace(network_command="refresh", yes=True), None, ui, None) == 0
+
+
+def _install_with_host(tmp_path: Path, host_line: str | None) -> Path:
+    root = tmp_path / "install"
+    root.mkdir(parents=True)
+    lines = ["TRINAXAI_ADMIN_TOKEN=secret", "TRINAXAI_CORS_ORIGINS=https://localhost:3334"]
+    if host_line is not None:
+        lines.append(host_line)
+    (root / ".env").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return root
+
+
+def test_lan_access_is_read_from_the_web_apps_bind_address(tmp_path: Path) -> None:
+    assert network.lan_access_enabled(_install_with_host(tmp_path / "a", None)) is False  # unset: this computer only
+    assert network.lan_access_enabled(_install_with_host(tmp_path / "b", "TRINAXAI_PWA_HOST=127.0.0.1")) is False
+    assert network.lan_access_enabled(_install_with_host(tmp_path / "c", 'TRINAXAI_PWA_HOST="localhost"')) is False
+    assert network.lan_access_enabled(_install_with_host(tmp_path / "d", "TRINAXAI_PWA_HOST=0.0.0.0")) is True
+    assert network.lan_access_enabled(tmp_path / "missing") is False
+
+
+def test_disable_lan_access_binds_to_this_computer_and_keeps_everything_else(tmp_path: Path) -> None:
+    root = _install_with_host(tmp_path, "TRINAXAI_PWA_HOST=0.0.0.0")
+    before = (root / ".env").read_text(encoding="utf-8")
+
+    assert network.disable_lan_access(root) is True
+
+    after = (root / ".env").read_text(encoding="utf-8")
+    assert after == before.replace("TRINAXAI_PWA_HOST=0.0.0.0", "TRINAXAI_PWA_HOST=127.0.0.1")
+    assert network.lan_access_enabled(root) is False
+    assert network.disable_lan_access(root) is False  # already limited: nothing rewritten
+    with pytest.raises(FileNotFoundError):
+        network.disable_lan_access(tmp_path / "missing")
+
+
+def test_network_status_and_off_command(monkeypatch, tmp_path: Path) -> None:
+    root = _install_with_host(tmp_path, "TRINAXAI_PWA_HOST=0.0.0.0")
+    monkeypatch.setattr(network_command._system, "project_root", lambda: root)
+    monkeypatch.setattr(network_command.network, "lan_addresses", lambda: ["192.168.0.18"])
+    actions: list[str] = []
+    monkeypatch.setattr(
+        network_command._system, "run_service_action", lambda action, _ui, timeout: actions.append(action) or 0
+    )
+
+    ui = UI()
+    assert network_command.run(SimpleNamespace(network_command=None), None, ui, None) == 0
+    assert "Access from other devices: allowed (each device must be paired)" in ui.messages
+    assert "Use 'trinaxai network off' to keep TrinaxAI on this computer only." in ui.messages
+
+    ui = UI()
+    assert network_command.run(SimpleNamespace(network_command="off", yes=True, no_restart=False), None, ui, None) == 0
+    assert "TrinaxAI is now limited to this computer." in ui.messages
+    assert actions == ["reload-network"]
+    assert network.lan_access_enabled(root) is False
+
+    ui = UI()
+    assert network_command.run(SimpleNamespace(network_command=None), None, ui, None) == 0
+    assert "Access from other devices: this computer only" in ui.messages
+    # Nothing listens on the LAN addresses now, so they are not offered as places to open it.
+    assert "https://localhost:3334" in ui.messages
+    assert not any("192.168.0.18" in message for message in ui.messages)
+    assert "To open TrinaxAI from a phone or another computer, run: trinaxai network refresh" in ui.messages
+    ui = UI()
+    assert network_command.run(SimpleNamespace(network_command="off", yes=True), None, ui, None) == 0
+    assert "Already limited to this computer; nothing to change." in ui.messages
+    assert actions == ["reload-network"]  # nothing restarted the second time
+
+
+def test_network_off_can_be_cancelled_skip_the_restart_or_report_failures(monkeypatch, tmp_path: Path) -> None:
+    root = _install_with_host(tmp_path, "TRINAXAI_PWA_HOST=0.0.0.0")
+    monkeypatch.setattr(network_command._system, "project_root", lambda: root)
+    restarts: list[str] = []
+    monkeypatch.setattr(
+        network_command._system, "run_service_action", lambda action, _ui, timeout: restarts.append(action) or 1
+    )
+
+    declined = UI()
+    declined.confirm = lambda *_a, **_k: False  # type: ignore[method-assign]
+    assert network_command.run(SimpleNamespace(network_command="off", yes=False), None, declined, None) == 0
+    assert "Cancelled." in declined.messages and network.lan_access_enabled(root) is True
+
+    ui = UI()
+    args = SimpleNamespace(network_command="off", yes=True, no_restart=True)
+    assert network_command.run(args, None, ui, None) == 0
+    assert "Restart TrinaxAI to apply it." in ui.messages and restarts == []
+
+    root_again = _install_with_host(tmp_path / "again", "TRINAXAI_PWA_HOST=0.0.0.0")
+    monkeypatch.setattr(network_command._system, "project_root", lambda: root_again)
+    ui = UI()
+    assert network_command.run(SimpleNamespace(network_command="off", yes=True, no_restart=False), None, ui, None) == 1
+    assert "Configuration saved. Restart the PWA and RAG services to apply it." in ui.messages
+
+    def broken(_root):
+        raise OSError("read-only file system")
+
+    monkeypatch.setattr(network_command.network, "disable_lan_access", broken)
+    root_third = _install_with_host(tmp_path / "third", "TRINAXAI_PWA_HOST=0.0.0.0")
+    monkeypatch.setattr(network_command._system, "project_root", lambda: root_third)
+    ui = UI()
+    assert network_command.run(SimpleNamespace(network_command="off", yes=True), None, ui, None) == 1
+    assert any(message.startswith("Network change:") for message in ui.messages)
+
+
+def test_network_off_messages_are_translated() -> None:
+    from trinaxai_cli.i18n import translate
+
+    assert translate("Access from other devices: this computer only", "es") == (
+        "Acceso desde otros dispositivos: solo este equipo"
+    )
+    assert translate(
+        "To open TrinaxAI from a phone or another computer, run: trinaxai network refresh", "es"
+    ).startswith("Para abrir TrinaxAI desde")
+    assert translate("TrinaxAI is now limited to this computer.", "es") == "TrinaxAI quedó limitado a este equipo."
+    assert translate("Keep TrinaxAI on this computer only?", "es") == "¿Mantener TrinaxAI solo en este equipo?"
+
+
+def test_env_lines_are_read_the_way_the_service_reads_them(tmp_path: Path) -> None:
+    for index, line in enumerate(
+        ("  TRINAXAI_PWA_HOST=0.0.0.0", "TRINAXAI_PWA_HOST = 0.0.0.0", "TRINAXAI_PWA_HOST='0.0.0.0'")
+    ):
+        root = _install_with_host(tmp_path / str(index), line)
+        assert network.lan_access_enabled(root) is True, line
+        assert network.disable_lan_access(root) is True, line
+        assert network.lan_access_enabled(root) is False, line
+        assert "0.0.0.0" not in (root / ".env").read_text(encoding="utf-8")
+
+
+def test_update_env_rewrites_indented_or_spaced_assignments_instead_of_duplicating_them(tmp_path: Path) -> None:
+    root = _install_with_host(tmp_path, "  TRINAXAI_PWA_HOST = 127.0.0.1")
+    network.update_env(root, ["192.168.1.20"])
+    lines = (root / ".env").read_text(encoding="utf-8").splitlines()
+    assert sum(1 for raw in lines if raw.split("=", 1)[0].strip() == "TRINAXAI_PWA_HOST") == 1
+    assert "TRINAXAI_PWA_HOST=0.0.0.0" in lines

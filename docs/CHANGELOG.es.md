@@ -22,6 +22,15 @@ el formato de [Keep a Changelog](https://keepachangelog.com/).
 
 ### Añadido
 
+- `trinaxai research --web` apoya la investigación en búsqueda web, como el modo de investigación
+  profunda del chat. Sin él, una pregunta general ("¿qué es un índice invertido?") se respondía solo
+  con los documentos indexados y devolvía fragmentos sin relación.
+- `trinaxai network off` devuelve TrinaxAI a «solo este equipo» después de haber
+  permitido otros dispositivos, y `trinaxai network` indica si ese acceso está
+  activado. Antes, deshacer la respuesta del instalador exigía editar `.env` a mano.
+- `trinaxai ask` y el chat con RAG listan los archivos de los que sale la
+  respuesta (`Fuentes: aurora.md, manual.pdf (p. 3)`), como ya hacía la app web.
+  Una respuesta que dice que falta la información no lista ninguno.
 - El instalador pregunta si otros dispositivos de tu red doméstica o local pueden
   abrir TrinaxAI. Por defecto, solo este equipo; un sí escribe
   `TRINAXAI_PWA_HOST=0.0.0.0` y cada dispositivo sigue necesitando un código de
@@ -77,6 +86,24 @@ el formato de [Keep a Changelog](https://keepachangelog.com/).
 
 ### Cambiado
 
+- La tabla de comandos del README lista `trinaxai research "..."` con `--web`, y `trinaxai network` / `network off`.
+- El agente ya no te pide aprobar un `git commit -m ...` sencillo cuando no hay nada preparado
+  (el primer intento habitual de los modelos locales pequeños, que siempre falla): se rechaza
+  de antemano con la solución (`add <archivo>` o `commit -a`). Los commits con `-a`, `--amend`,
+  `--allow-empty`, rutas, y cualquiera durante un merge, cherry-pick, revert o rebase los
+  decide git.
+- Cuando el `git commit` del agente falla porque no hay nada preparado (o el árbol está limpio),
+  el resultado lo dice y explica cómo arreglarlo (`add <archivo>`, o `commit -a`) en vez de solo
+  el texto crudo de git. Los modelos locales pequeños suelen confirmar antes de preparar; con el
+  modelo real esto no evitó que el primer intento fallara, pero el fallo ahora se explica.
+- `trinaxai ask` y `trinaxai chat` usan el modelo que el instalador eligió para
+  tu equipo (`TRINAXAI_MODEL_GENERAL`) en lugar de un `qwen3.5:2b` fijo, que los
+  dejaba en el modelo más pequeño incluso en equipos con margen para uno mejor.
+  Para fijar uno, pon `model` en `[defaults]` de la config de la CLI.
+- El `trinaxai agent` interactivo carga el modelo y su prompt fijo en segundo
+  plano mientras escribes tu primera tarea. En una CPU de 4 núcleos con
+  `qwen3.5:4b`, la primera tarea pasó de 82,6 s a 35,2 s tras el precalentamiento.
+  Las ejecuciones de una sola tarea (`-p`) no cambian: la tarea se envía de inmediato.
 - Paridad de documentación inglés/español: `CONFIGURATION`, `API_REFERENCE`,
   `CLI_REFERENCE`, `ENVIRONMENT_VARIABLES`, `SECURITY` y el README de la PWA
   tienen ahora las mismas secciones en ambos idiomas, y la CLI en español
@@ -104,6 +131,107 @@ el formato de [Keep a Changelog](https://keepachangelog.com/).
 
 ### Corregido
 
+- Una ejecución de `trinaxai agent -p` en un script sin `--yolo` ahora dice por stderr por qué se rechazó una
+  edición o un comando (no hay terminal para preguntar), en vez de que el modelo culpe a "una restricción del
+  sistema". La salida estándar sigue teniendo solo la respuesta.
+- El agente es más preciso sobre qué persigue: un comando fallido ya no se persigue tras editar el archivo, un
+  `echo` que pasa ya no oculta una ejecución de pruebas fallida, "renombra la variable a total" no se toma
+  como renombrar una variable llamada `variable`, y "crea un archivo de prueba x.txt" sigue siendo un solo archivo.
+- Tras "renombra X a Y" el agente busca el nombre antiguo en el proyecto y, si queda algún uso como palabra
+  completa (una llamada que ninguna prueba cubre), vuelve a corregirlo en vez de decir "renombrado en todas partes".
+- El agente ya no lista una ejecución de pruebas fallida bajo la respuesta cuando una ejecución posterior
+  pasó (decía que el comando falló después de haberse corregido).
+- Cuando un comando que ejecutó el agente falla (por ejemplo una prueba que rompió su cambio) y está por
+  reportar éxito, ahora se le pide, hasta dos veces, que lea el error, corrija la causa y lo ejecute de
+  nuevo. En un renombrado real en tres archivos dejó una llamada sin renombrar y aun así dijo "funcional".
+- El atajo "crear un archivo" del agente (que termina el turno tras la primera escritura) ahora solo
+  se aplica cuando se pide exactamente un archivo y nada que ejecutar, así que "crea el módulo y sus
+  pruebas y ejecútalas" ya no se corta con "Archivo creado: primos.py".
+- El agente ya no se detiene tras el primer archivo cuando también se le pidió ejecutar algo ("crea el
+  módulo y sus pruebas, ejecútalas"): si no ha corrido nada, se le pide una vez que lo ejecute. Su
+  comprobación "afirmaste un cambio que no hiciste" también deja de dispararse tras una edición real.
+- `trinaxai research` ya no envía la preferencia por defecto "razonamiento activado" de la CLI: en CPU
+  el modelo gastaba todo su presupuesto razonando y la síntesis web nunca terminaba (2,5 minutos y
+  solo una lista de fuentes). Ahora deja que decida el servidor, como la app web, y `--thinking` /
+  `--no-thinking` siguen forzándolo. Una consulta web responde aquí en menos de un minuto.
+- Cuando `trinaxai research` agota su tiempo de espera en un equipo lento, la CLI ya no culpa a la
+  red ("The network request timed out"): dice que TrinaxAI no terminó a tiempo y sugiere
+  `--depth 1`. `TRINAXAI_CLI_TIMEOUT` sube el límite.
+- `trinaxai research "tu pregunta"` acepta el tema como palabras sueltas, igual que `ask`; `--query`
+  sigue funcionando. Olvidarlo ahora explica cómo escribir el comando en vez de "--query es obligatorio".
+- En Debian y Ubuntu la terminal del agente no encontraba `python3`, `python`, `cc` ni `awk`
+  ("python3: not found"), porque esos nombres son enlaces a través de `/etc/alternatives`, que el
+  sandbox no incluía. Ahora se monta esa única carpeta de enlaces hacia `/usr`, de solo lectura
+  (el resto de `/etc` sigue oculto), así que "corre las pruebas" funciona en esos sistemas.
+- `install.sh`, `update.sh` y `uninstall.sh` imprimen texto plano (sin códigos de color) cuando su salida se redirige o
+  `NO_COLOR` está definido, para que los registros y la salida de CI sean legibles.
+- La indexación dice que un archivo sin texto está "vacío, o es un escaneo que necesita
+  OCR" y se revisa en la próxima ejecución, en vez del impreciso "se reintentará".
+- `trinaxai ask --collection x` dice "La colección 'x' no existe" y cómo listarlas, en vez
+  de "Inicia TrinaxAI con: trinaxai start". Los errores tipados de la API durante una
+  respuesta RAG muestran su propio mensaje, y la CLI también encuentra una API local
+  servida por HTTP simple al transmitir una respuesta.
+- La indexación nombra los archivos que omite por ser demasiado grandes, con su tamaño y el
+  límite (`huge.txt (5.7 MB; límite 3.0 MB)`), en vez de solo contarlos.
+- La CLI funciona cuando la API local corre sin HTTPS (no se pudo crear un certificado):
+  ahora sigue el puerto a HTTP simple en este equipo en vez de decir que el servicio está
+  detenido. Un servidor que sí habla HTTPS nunca se degrada.
+- `trinaxai network` ya no lista direcciones LAN para abrir mientras el acceso está
+  limitado a este equipo, donde nada escucha en ellas. Muestra `https://localhost:3334`
+  y cómo permitir otros dispositivos.
+- "Muéstrame el git diff" y "show me the git log" ahora van al agente, que puede
+  ejecutarlos, en vez de responderse como una pregunta de chat.
+- `trinaxai` ya no toma una URL como `https://example.com/pagina.html` por un
+  archivo de tu espacio de trabajo, y las preguntas sobre git o archivos ("¿por qué
+  falla git push?", "¿cómo leo data.csv en pandas?") siguen siendo una conversación
+  en vez de iniciar el agente de código.
+- `trinaxai network` y `network off` leen `.env` igual que el servicio (líneas con
+  sangría, `CLAVE = valor`, comillas), así que ya no pasan por alto un ajuste que el
+  servicio sí respeta.
+- Una respuesta corta que indica que falta la información tras una frase de contexto
+  ("Los documentos tratan de X, pero Y no se menciona") ya no lista fuentes para lo
+  que falta.
+- Los errores de git del agente se reconocen sea cual sea el idioma del sistema, de
+  modo que la pista que le dice al modelo qué hacer siempre aparece.
+- `trinaxai doctor` y los demás comandos dicen "Este equipo no confía en el
+  certificado del servicio local de TrinaxAI. Ejecuta: trinaxai doctor" cuando el
+  problema es el certificado, en vez de afirmar que el servicio está detenido.
+- Un archivo de configuración guardado por una versión anterior, que fijaba
+  `qwen3.5:2b`, vuelve a significar "automático", así que `ask`/`chat` usan el modelo
+  que eligió el instalador. Para fijar uno, escribe
+  `model = "<nombre>"` en `[defaults]` del archivo de configuración o usa `--model`.
+- `trinaxai doctor` ya no repite el comando de arranque cuando TrinaxAI está detenido
+  («Inícialo con: trinaxai start; run: trinaxai start»).
+- En el agente de código de la app web, una herramienta que se ejecutó pero falló (por
+  ejemplo un `git commit` con error, o un comando con código de salida distinto de cero)
+  ya no muestra una marca verde junto a su mensaje de error; muestra un icono de aviso.
+- Una respuesta larga y correcta ya no se confunde con una negativa (ni pierde sus
+  fuentes) solo porque una frase como «no está disponible» aparezca a mitad de la
+  explicación. Las negativas solo se reconocen al comienzo de la respuesta.
+- `./install.sh --dry-run` ya no anuncia un enlace LAN cuando elegiste mantener
+  TrinaxAI solo en este equipo; lo indica, igual que la instalación real.
+- `trinaxai models` muestra el tamaño de los modelos como `3.1 GB` en vez de bytes, y la
+  fila de `trinaxai doctor` sobre el sandbox de la terminal del agente está traducida.
+- El asistente de terminal ahora envía al agente de código las peticiones sobre
+  archivos y control de versiones en vez de responderlas como chat normal:
+  «arregla el bug en calc.py», «lee main.py y dime qué hace», «haz commit de los
+  cambios». Las preguntas sobre esos temas («¿qué es un commit de git?», «¿qué
+  hace next.js?») siguen en el chat.
+- `trinaxai status` muestra un servicio que no está en marcha como `detenido` en
+  lugar del contradictorio `detenido no encontrado`.
+- La app web ya no te pide «preparar esta red» cuando TrinaxAI está solo en este
+  equipo. Un cambio de dirección Wi-Fi o un certificado de red local
+  desactualizado solo importa si otros dispositivos pueden conectarse, así que el
+  aviso aparece únicamente si permitiste el acceso desde tu red local.
+- Los errores nombran la causa real. Con TrinaxAI detenido, la CLI ya no dice
+  «la conexión a Internet no está disponible» sino «No se puede conectar con el
+  servicio local de TrinaxAI. Inícialo con: trinaxai start». Un modelo no
+  instalado se informa como tal («El modelo 'x' no está instalado. Instálalo
+  con: ollama pull x») en la CLI y en la API, en lugar de un genérico «inicia
+  TrinaxAI» o «servicio externo no disponible», y «Reintenta» solo se sugiere
+  cuando reintentar puede ayudar.
+- `trinaxai index` ya no imprime las líneas internas `TRINAXAI_PROGRESS`, y
+  `trinaxai collections list` muestra una fecha legible en vez de un número.
 - Las respuestas ya no se ralentizan por usar demasiados hilos de CPU.
   `TRINAXAI_NUM_THREAD` valía 8 fijo; en un equipo de 4 núcleos la misma
   respuesta tardaba 76-93 s en lugar de 16 s. Ahora vale el menor entre 8 y las
@@ -134,6 +262,11 @@ el formato de [Keep a Changelog](https://keepachangelog.com/).
 
 ### Seguridad
 
+- Si la API local corre sin HTTPS y necesita token, escribe `api.base_url = "http://localhost:3333"` en la
+  configuración: el respaldo automático a HTTP simple no envía token, a propósito.
+- El respaldo automático de la CLI a una API local en HTTP simple ya no envía el token de administrador ni
+  de dispositivo, que no se pudo verificar con TLS. La búsqueda de un identificador renombrado del agente
+  omite los enlaces simbólicos, igual que las herramientas de archivos.
 - `nltk` actualizado a 3.10.4 (GHSA-8mgp-746c-j5xp, recorrido de rutas en sus
   API de modelos) y eliminada la excepción de auditoría: `pip-audit` falla ante
   cualquier vulnerabilidad conocida.

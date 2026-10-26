@@ -4,6 +4,22 @@ from typing import Any
 
 from trinaxai_cli.commands import _system
 
+
+def _format_size(value: Any) -> str:
+    """Ollama reports sizes in bytes; show them the way people read them."""
+    try:
+        size = float(value)
+    except (TypeError, ValueError):
+        return str(value or "")
+    if size <= 0:
+        return ""
+    for unit in ("B", "KB", "MB", "GB"):
+        if size < 1024 or unit == "GB":
+            return f"{size:.0f} {unit}" if unit == "B" else f"{size:.1f} {unit}"
+        size /= 1024
+    return ""
+
+
 RECOMMENDED = ["qwen3.5:2b", "qwen3.5:4b", "qwen3-embedding:0.6b"]
 ON_DEMAND: list[str] = []
 
@@ -17,7 +33,7 @@ def run(args: Any, client: Any, ui: Any, config: Any) -> int:
             name = str(model.get("name", ""))
             if name:
                 installed.add(name)
-                rows.append([name, "installed", str(model.get("size", ""))])
+                rows.append([name, "installed", _format_size(model.get("size"))])
     except Exception as exc:
         ui.failure("Model listing", exc)
         ui.info("Start TrinaxAI with: trinaxai start")

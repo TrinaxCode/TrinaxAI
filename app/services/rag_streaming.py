@@ -54,7 +54,8 @@ def _sse_error(exc: Exception) -> str:
         type(exc).__name__,
     )
     error = info.to_client_dict()
-    error["recovery"] = f"{error['recovery']} Please retry."
+    if info.retryable:  # retrying will not install a missing model or fix a bad request
+        error["recovery"] = f"{error['recovery']} Please retry."
     return _sse({"trinaxai_error": error, "trinaxai_finish": _completion_metadata("error")})
 
 

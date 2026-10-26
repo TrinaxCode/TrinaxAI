@@ -14,6 +14,7 @@ from __future__ import annotations
 import os
 import shlex
 import subprocess
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
@@ -437,6 +438,18 @@ def _welcome(ctx: ReplContext, resumed: bool) -> None:
     ui.panel("\n".join(lines), title=_t(ui, "TrinaxAI Agent", "Agente de TrinaxAI"))
 
 
+def _warm_up_in_background(engine: Any) -> None:
+    """Let the model load while the user types their first task.
+
+    This warms the engine's current model: the one the user pinned, or the installer's general
+    model, which is what routing picks for coding tasks. A task routed elsewhere loads that
+    model as before; the warm-up is only ever a head start.
+    """
+    warm_up = getattr(engine, "warm_up", None)
+    if callable(warm_up):
+        threading.Thread(target=warm_up, name="agent-warm-up", daemon=True).start()
+
+
 def run_repl(
     args: Any,
     client: Any,
@@ -465,6 +478,7 @@ def run_repl(
         pinned_model=getattr(args, "model", None),
     )
     _welcome(ctx, resumed)
+    _warm_up_in_background(engine)
     menu = slash_menu()
     while True:
         if ctx.pending:

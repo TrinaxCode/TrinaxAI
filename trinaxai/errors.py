@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any
@@ -251,7 +252,7 @@ def _category_from_hint(hint: str, status_code: int | None) -> ErrorCategory | N
     if any(
         token in lowered
         for token in ("model unavailable", "model not found", "ollama_unavailable", "ollama is not running")
-    ):
+    ) or re.search(r"model\s+['\"]?[\w./:@-]+['\"]?\s+not found", lowered):  # Ollama names the model
         return ErrorCategory.AI_MODEL_UNAVAILABLE
     if any(token in lowered for token in ("tool timeout", "agent timed out", "agent stalled", "execution timed out")):
         return ErrorCategory.TOOL_TIMEOUT

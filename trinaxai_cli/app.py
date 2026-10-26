@@ -188,10 +188,16 @@ def _build_parser(language: str | None = None) -> argparse.ArgumentParser:
     bsc.add_argument("--limit", type=int, default=50)
 
     res_p = sub.add_parser("research", help="Multi-pass deep research query.")
-    res_p.add_argument("--query", required=True)
+    res_p.add_argument("topic", nargs="*", help="What to research (or use --query).")
+    res_p.add_argument("--query", help="What to research.")
     res_p.add_argument("--session", help="Persist the research turn in a named session for later export.")
     res_p.add_argument("--collections", help="Comma-separated collection ids.")
     res_p.add_argument("--depth", type=int, default=2, choices=[1, 2, 3])
+    res_p.add_argument(
+        "--web",
+        action="store_true",
+        help="Ground the research on web search (sends the question to the configured search provider).",
+    )
     research_thinking = res_p.add_mutually_exclusive_group()
     research_thinking.add_argument(
         "--thinking", dest="thinking", action="store_true", help="Allow efficient reasoning during research."
@@ -208,11 +214,16 @@ def _build_parser(language: str | None = None) -> argparse.ArgumentParser:
     stop_p.add_argument("-y", "--yes", action="store_true", help="Skip confirmation.")
     restart_p = sub.add_parser("restart", help="Restart TrinaxAI local services.")
     restart_p.add_argument("-y", "--yes", action="store_true", help="Skip confirmation.")
-    network_p = sub.add_parser("network", help="Show or refresh local-network access.")
+    network_p = sub.add_parser("network", help="Show, refresh or turn off local-network access.")
     network_sub = network_p.add_subparsers(dest="network_command", metavar="ACTION")
     network_refresh = network_sub.add_parser("refresh", help="Renew HTTPS and allow the current LAN.")
     network_refresh.add_argument("-y", "--yes", action="store_true", help="Skip confirmation.")
     network_refresh.add_argument("--no-restart", action="store_true", help="Update files without restarting services.")
+    network_off = network_sub.add_parser(
+        "off", help="Keep TrinaxAI on this computer only (undo allowing other devices)."
+    )
+    network_off.add_argument("-y", "--yes", action="store_true", help="Skip confirmation.")
+    network_off.add_argument("--no-restart", action="store_true", help="Update files without restarting services.")
     sub.add_parser("models", help="List installed and recommended local models.")
     pair_p = sub.add_parser("pair", help="Pair and manage trusted LAN devices.")
     pair_sub = pair_p.add_subparsers(dest="pair_command", metavar="ACTION")

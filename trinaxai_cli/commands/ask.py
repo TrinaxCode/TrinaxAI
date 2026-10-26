@@ -9,6 +9,7 @@ from trinaxai_cli.commands.chat import (
     _stream_answer,
     new_session_name,
     prepare_local_file,
+    report_local_ai_failure,
 )
 from trinaxai_cli.session import Session
 
@@ -64,13 +65,12 @@ def run(args: Any, client: Any, ui: Any, config: Any) -> int:
             thinking = getattr(config, "thinking_enabled", True)
             if getattr(args, "thinking", None) is not None:
                 thinking = bool(args.thinking)
-            stream_args = (client, ui, messages, engine, collections, getattr(config, "model", None))
+            stream_args = (client, ui, messages, engine, collections, getattr(config, "model", None) or None)
             # Keep the historical six-argument integration surface for the
             # default-enabled path; only pass the new override when disabling.
             answer = _stream_answer(*stream_args, False) if not thinking else _stream_answer(*stream_args)
         except Exception as exc:
-            ui.failure("Local AI request", exc)
-            ui.info("Start TrinaxAI with: trinaxai start")
+            report_local_ai_failure(ui, exc)
             return 1
         session.append("assistant", answer)
     return 0

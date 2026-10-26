@@ -75,7 +75,10 @@ class CLIConfig:
     # Match the PWA: a new general chat talks directly to Ollama. RAG is
     # opt-in so unrelated indexed documents cannot hijack a casual prompt.
     engine: str = "ollama"
-    model: str = "qwen3.5:2b"
+    # Empty means automatic: use the model the installer chose for this computer
+    # (TRINAXAI_MODEL_GENERAL). A pinned default here overrode that choice and left
+    # `trinaxai ask` on the smallest model even on machines with room for a better one.
+    model: str = ""
     collections: list[str] = field(default_factory=lambda: ["default"])
     active_collection: str = "default"
     thinking_enabled: bool = True
@@ -222,6 +225,9 @@ def _split_list(inner: str) -> list[str]:
     return items
 
 
+_LEGACY_DEFAULT_MODEL = "qwen3.5:2b"
+
+
 def _apply_section(cfg: CLIConfig, parsed: dict[str, Any]) -> None:
     api = parsed.get("api") or {}
     if isinstance(api, dict):
@@ -235,7 +241,10 @@ def _apply_section(cfg: CLIConfig, parsed: dict[str, Any]) -> None:
         if "engine" in defaults:
             cfg.engine = str(defaults["engine"])
         if "model" in defaults:
-            cfg.model = str(defaults["model"])
+            model = str(defaults["model"])
+            # Older versions wrote their built-in default into every saved file, which kept
+            # `ask`/`chat` on the smallest model after the installer chose a better one.
+            cfg.model = "" if model == _LEGACY_DEFAULT_MODEL else model
         if "collections" in defaults:
             cols = defaults["collections"]
             if isinstance(cols, list):
