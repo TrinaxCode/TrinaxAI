@@ -232,6 +232,16 @@ grep -Fq 'TU-IP-LAN' "$plan_output" || fail "dry-run with --lan-access does not 
 grep -Fq 'Access from other devices: No' "$plan_output" || fail "--no-lan-access does not override TRINAXAI_LAN_ACCESS"
 if grep -Fq 'YOUR-LAN-IP' "$plan_output"; then fail "dry-run announces a LAN link although LAN access is off"; fi
 grep -Fq 'This computer only' "$plan_output" || fail "dry-run does not say TrinaxAI stays on this computer"
+# The updater keeps the .env, so its dry-run tells the truth about LAN access too.
+update_root="$TMP_DIR/update-root"
+mkdir -p "$update_root"
+printf 'TRINAXAI_PWA_HOST=127.0.0.1\n' >"$update_root/.env"
+(cd "$ROOT" && TRINAXAI_UPDATE_ROOT="$update_root" bash update.sh --dry-run --language en >"$plan_output" 2>&1) || fail "update dry-run (LAN off) failed"
+if grep -Fq 'YOUR-LAN-IP' "$plan_output"; then fail "update dry-run announces a LAN link although LAN access is off"; fi
+grep -Fq 'This computer only' "$plan_output" || fail "update dry-run does not say TrinaxAI stays on this computer"
+printf 'TRINAXAI_PWA_HOST=0.0.0.0\n' >"$update_root/.env"
+(cd "$ROOT" && TRINAXAI_UPDATE_ROOT="$update_root" bash update.sh --dry-run --language en >"$plan_output" 2>&1) || fail "update dry-run (LAN on) failed"
+grep -Fq 'YOUR-LAN-IP' "$plan_output" || fail "update dry-run hides the LAN link although LAN access is on"
 (cd "$ROOT" && bash install.sh --dry-run --language en >"$plan_output" 2>&1) || fail "english install dry-run failed"
 grep -Fq 'Installation plan' "$plan_output" || fail "installer plan is missing in English"
 ok "Installer shows a localized plan before it changes anything"

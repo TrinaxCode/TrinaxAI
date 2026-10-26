@@ -131,6 +131,8 @@ el formato de [Keep a Changelog](https://keepachangelog.com/).
 
 ### Corregido
 
+- La simulación del actualizador ya no anuncia una dirección LAN cuando nunca se permitieron otros
+  dispositivos (shell y PowerShell), como ya hacía la del instalador.
 - El instalador, el actualizador y el desinstalador muestran "Open TrinaxAI at" antes de la dirección web en
   inglés (decía "Links to enter", una traducción literal). En español no cambia.
 - Una ejecución de `trinaxai agent -p` en un script sin `--yolo` ahora dice por stderr por qué se rechazó una
