@@ -210,6 +210,15 @@ def _load_file_documents_result(path: str) -> tuple[str, list[Document], Excepti
         return path, [], exc
 
 
+# Only the file's name and path say something about its content. The rest (ids, absolute root, collection,
+# pipeline version) is the same boilerplate on every chunk, so embedding it only blurs short chunks.
+_EMBED_METADATA_KEYS = frozenset({"rel_path", "file_name"})
+
+
+def _embed_excluded_keys(metadata: dict[str, Any]) -> list[str]:
+    return sorted(key for key in metadata if key not in _EMBED_METADATA_KEYS)
+
+
 def _pipeline_version() -> str:
     """Stable version of every setting that changes generated chunks/vectors."""
     inputs = {
@@ -221,7 +230,7 @@ def _pipeline_version() -> str:
         "code_chunk_lines": config.CODE_CHUNK_LINES,
         "code_chunk_overlap": config.CODE_CHUNK_LINES_OVERLAP,
         "code_max_chars": config.CODE_MAX_CHARS,
-        "extractor_version": 2,
+        "extractor_version": 3,
     }
     payload = json.dumps(inputs, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return hashlib.sha256(payload).hexdigest()[:20]
@@ -457,7 +466,7 @@ def load_docs_with_status(
                         }
                     )
                     d.metadata = metadata
-                    d.excluded_embed_metadata_keys = []
+                    d.excluded_embed_metadata_keys = _embed_excluded_keys(metadata)
                     d.excluded_llm_metadata_keys = []
                     result.documents.append(d)
                 result.loaded_paths.add(fp)
@@ -503,7 +512,13 @@ def build_nodes(documents: list[Document]) -> list[BaseNode]:
             doc_nodes = _sentence_splitter().get_nodes_from_documents([doc]) or []
             prose_count += 1
         if not doc_nodes and str(doc.text or "").strip():
-            doc_nodes = [TextNode(text=str(doc.text).strip(), metadata=dict(doc.metadata or {}))]
+            doc_nodes = [
+                TextNode(
+                    text=str(doc.text).strip(),
+                    metadata=dict(doc.metadata or {}),
+                    excluded_embed_metadata_keys=list(getattr(doc, "excluded_embed_metadata_keys", None) or []),
+                )
+            ]
             fallback += 1
         nodes.extend(doc_nodes)
 

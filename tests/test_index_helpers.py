@@ -288,3 +288,26 @@ def test_manifest_recovery_preserves_foreign_collection(monkeypatch, tmp_path) -
     manifest = json.loads((tmp_path / "manifest.json").read_text(encoding="utf-8"))
     assert manifest["default:active.txt"] == new_state["default:active.txt"]
     assert manifest["other:foreign.txt"] == {"unverified": True}
+
+
+def test_only_the_file_name_and_path_are_embedded_with_a_chunk() -> None:
+    from llama_index.core.schema import MetadataMode, TextNode
+
+    from trinaxai.indexing.indexer import _embed_excluded_keys
+
+    metadata = {
+        "rel_path": "pkg/git_tool.py",
+        "file_name": "git_tool.py",
+        "source_id": "code-1234",
+        "source_root": "/home/u/proj",
+        "pipeline_version": "abc",
+    }
+    assert _embed_excluded_keys(metadata) == ["pipeline_version", "source_id", "source_root"]
+    node = TextNode(
+        text="def run(): ...", metadata=metadata, excluded_embed_metadata_keys=_embed_excluded_keys(metadata)
+    )
+    embedded = node.get_content(metadata_mode=MetadataMode.EMBED)
+    assert "rel_path: pkg/git_tool.py" in embedded and "file_name: git_tool.py" in embedded
+    assert "source_id" not in embedded and "/home/u/proj" not in embedded and "pipeline_version" not in embedded
+    # The metadata is still stored on the node for filtering and citations.
+    assert node.metadata["source_id"] == "code-1234"
