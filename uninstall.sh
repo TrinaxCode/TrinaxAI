@@ -50,7 +50,7 @@ tr_text_es() {
       'Would remove .venv, frontend build, and logs (configuration .env is preserved)') echo 'Se eliminarían .venv, la compilación frontend y los logs (la configuración .env se conserva)' ;;
       'Would preserve source code, indexes, models, and personal data by default') echo 'El código fuente, los índices, los modelos y los datos personales se conservarían por defecto' ;;
       'Would remove configured models/app only when explicitly requested') echo 'Solo se eliminarían los modelos o la aplicación configurados si se solicita explícitamente' ;;
-      'Links to enter') echo 'Enlaces de acceso' ;;
+      'Open TrinaxAI at') echo 'Enlaces de acceso' ;;
       'LAN / Red local') echo 'LAN' ;;
       'RAG health') echo 'Salud de RAG' ;;
       'DRY-RUN: nothing will be stopped, removed, or changed.') echo 'SIMULACIÓN: no se detendrá, borrará ni modificará nada.' ;;
@@ -301,7 +301,7 @@ if [ "$DRY_RUN" = "1" ]; then
   print_step "Ollama"
   echo "  $(tr_text 'Would remove configured models/app only when explicitly requested')"
   echo ""
-  echo -e "${BOLD}${CYAN}$(tr_text 'Links to enter')${NC}"
+  echo -e "${BOLD}${CYAN}$(tr_text 'Open TrinaxAI at')${NC}"
   echo "  Localhost:       https://localhost:3334"
   if [ "$LANGUAGE" = "es" ]; then
     echo "  LAN / Red local: https://[TU-IP-LAN]:3334"

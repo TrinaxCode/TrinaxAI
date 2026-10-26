@@ -125,6 +125,10 @@ All notable changes to TrinaxAI are documented here. This project follows the
 
 ### Fixed
 
+- The updater's dry-run no longer announces a LAN address when other devices were never allowed (shell and
+  PowerShell), as the installer's already did.
+- The installer, updater and uninstaller print "Open TrinaxAI at" before the web address (it said "Links to
+  enter", a literal translation).
 - A script run of `trinaxai agent -p` without `--yolo` now says on stderr why an edit or command was refused (no
   terminal to ask), instead of leaving the model to blame "a system restriction". Stdout still has only the answer.
 - Agent follow-through is stricter about what it chases: a failed command is no longer chased after the file

@@ -296,7 +296,7 @@ if ($DryRun) {
   Write-Step (T "Ollama" "Ollama")
   Write-Host (T "  Would remove configured models/app only when explicitly requested" "  Solo se eliminarían los modelos o la aplicación configurados si se solicita explícitamente")
   Write-Host ""
-  Write-Host (T "Links to enter" "Enlaces de acceso") -ForegroundColor Cyan
+  Write-Host (T "Open TrinaxAI at" "Enlaces de acceso") -ForegroundColor Cyan
   Write-Host (T "  Localhost:       https://localhost:3334" "  Localhost:       https://localhost:3334")
   Write-Host (T "  LAN:             https://[YOUR-LAN-IP]:3334" "  LAN / Red local: https://[TU-IP-LAN]:3334")
   Write-Host (T "  RAG health:      https://localhost:3333/health" "  Salud de RAG:    https://localhost:3333/health")

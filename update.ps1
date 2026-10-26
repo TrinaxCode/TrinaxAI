@@ -424,9 +424,20 @@ if ($DryRun) {
   Write-Step (T "Restart" "Reinicio")
   Write-Info (T "Would restart TrinaxAI if requested" "Se reiniciaría TrinaxAI si se solicita")
   Write-Host ""
-  Write-Host (T "Links to enter" "Enlaces de acceso") -ForegroundColor Cyan
+  Write-Host (T "Open TrinaxAI at" "Enlaces de acceso") -ForegroundColor Cyan
   Write-Host (T "  Localhost:       https://localhost:3334" "  Localhost:       https://localhost:3334")
-  Write-Host (T "  LAN:             https://[YOUR-LAN-IP]:3334" "  LAN / Red local: https://[TU-IP-LAN]:3334")
+  # The update keeps the .env as it is: a LAN address is only real when other devices were allowed.
+  $PwaHost = ""
+  $EnvFile = Join-Path $Repo ".env"
+  if (Test-Path -LiteralPath $EnvFile -PathType Leaf) {
+    $HostLine = Get-Content -LiteralPath $EnvFile | Where-Object { $_ -match '^\s*TRINAXAI_PWA_HOST\s*=' } | Select-Object -Last 1
+    if ($HostLine) { $PwaHost = ($HostLine -replace '^[^=]*=', '').Trim().Trim('"').Trim("'") }
+  }
+  if (@("", "127.0.0.1", "localhost", "::1") -contains $PwaHost) {
+    Write-Host (T "  LAN:             This computer only. To allow other devices later, run: trinaxai network refresh" "  LAN / Red local: Solo este equipo. Para permitir otros dispositivos: trinaxai network refresh")
+  } else {
+    Write-Host (T "  LAN:             https://[YOUR-LAN-IP]:3334" "  LAN / Red local: https://[TU-IP-LAN]:3334")
+  }
   Write-Host (T "  RAG health:      https://localhost:3333/health" "  Salud de RAG:    https://localhost:3333/health")
   Write-Ok (T "Dry-run finished; no changes were made" "Simulación terminada; no se hicieron cambios")
   exit 0

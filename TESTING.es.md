@@ -84,7 +84,7 @@ Set-ExecutionPolicy -Scope Process Bypass
 .\uninstall.ps1 -DryRun
 ```
 
-La salida debe contener la etiqueta de enlaces de acceso del idioma seleccionado: `Links to enter` en inglés o `Enlaces de acceso` en español. La simulación de instalación de Windows también muestra las instrucciones oficiales de respaldo de Ollama.
+La salida debe contener la etiqueta de enlaces de acceso del idioma seleccionado: `Open TrinaxAI at` en inglés o `Enlaces de acceso` en español. La simulación de instalación de Windows también muestra las instrucciones oficiales de respaldo de Ollama.
 
 Si no hay una máquina Windows disponible, todavía se puede ejecutar la suite
 de simulación de PowerShell con el contenedor oficial:

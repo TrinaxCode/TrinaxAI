@@ -58,7 +58,7 @@ tr_text_es() {
       'Would check Ollama and pull configured models if requested') echo 'Se comprobaría Ollama y se descargarían los modelos configurados si se solicita' ;;
       'Would change autostart and run readiness checks') echo 'Se cambiaría el inicio automático y se ejecutarían comprobaciones de preparación' ;;
       'Would restart TrinaxAI if requested') echo 'Se reiniciaría TrinaxAI si se solicita' ;;
-      'Links to enter') echo 'Enlaces de acceso' ;;
+      'Open TrinaxAI at') echo 'Enlaces de acceso' ;;
       'LAN / Red local') echo 'LAN' ;;
       'RAG health') echo 'Salud de RAG' ;;
       'DRY-RUN: nothing will be downloaded, installed, or changed.') echo 'SIMULACIÓN: no se descargará, instalará ni modificará nada.' ;;
@@ -382,13 +382,26 @@ if [ "$DRY_RUN" = "1" ]; then
   print_step "Restart"
   print_info "Would restart TrinaxAI if requested"
   echo ""
-  echo -e "${BOLD}${CYAN}$(tr_text 'Links to enter')${NC}"
+  echo -e "${BOLD}${CYAN}$(tr_text 'Open TrinaxAI at')${NC}"
   echo "  Localhost:       https://localhost:3334"
-  if [ "$LANGUAGE" = "es" ]; then
-    echo "  LAN / Red local: https://[TU-IP-LAN]:3334"
-  else
-    echo "  LAN:             https://[YOUR-LAN-IP]:3334"
-  fi
+  # The update keeps the .env as it is: a LAN address is only real when other devices were allowed.
+  pwa_host="$(awk -F= '$1 == "TRINAXAI_PWA_HOST" { sub(/^[^=]*=/, ""); gsub(/\r$/, ""); print; exit }' .env 2>/dev/null || true)"
+  case "$pwa_host" in
+    ""|127.0.0.1|localhost|::1)
+      if [ "$LANGUAGE" = "es" ]; then
+        echo "  LAN / Red local: Solo este equipo. Para permitir otros dispositivos: trinaxai network refresh"
+      else
+        echo "  LAN:             This computer only. To allow other devices later, run: trinaxai network refresh"
+      fi
+      ;;
+    *)
+      if [ "$LANGUAGE" = "es" ]; then
+        echo "  LAN / Red local: https://[TU-IP-LAN]:3334"
+      else
+        echo "  LAN:             https://[YOUR-LAN-IP]:3334"
+      fi
+      ;;
+  esac
   echo "  $(tr_text 'RAG health'):      https://localhost:3333/health"
   print_ok "Dry-run finished; no changes were made"
   exit 0

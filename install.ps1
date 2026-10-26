@@ -743,7 +743,7 @@ if ($DryRun) {
   Write-Host (T "DRY-RUN: nothing will be downloaded, installed, or changed." "SIMULACIÓN: no se descargará, instalará ni modificará nada.") -ForegroundColor Yellow
   Write-Host (T "Would use installation directory:" "Se usaría el directorio de instalación:") $InstallDir
   Write-Host ""
-  Write-Host (T "Links to enter" "Enlaces de acceso") -ForegroundColor Cyan
+  Write-Host (T "Open TrinaxAI at" "Enlaces de acceso") -ForegroundColor Cyan
   Write-Host (T "  Localhost:       https://localhost:3334" "  Localhost:       https://localhost:3334")
   if ($LanAccess) {
     Write-Host (T "  LAN:             https://[YOUR-LAN-IP]:3334" "  LAN / Red local: https://[TU-IP-LAN]:3334")
