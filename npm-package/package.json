@@ -1,6 +1,6 @@
 {
   "name": "trinaxai",
-  "version": "1.4.0",
+  "version": "1.4.1",
   "description": "Verified installer and command-line launcher for TrinaxAI.",
   "license": "AGPL-3.0-or-later",
   "repository": {

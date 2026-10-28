@@ -18,6 +18,23 @@ All notable changes to TrinaxAI are documented here. This project follows the
 
 ## [Unreleased]
 
+## [1.4.1] — 2026-10-27
+
+### Fixed
+
+- The background supervisor no longer opens a desktop authentication (polkit) dialog.
+  When a service such as the web app kept crashing, it ran `systemctl start` every
+  cycle and the dialog reappeared about every 37 seconds. Privileged `systemctl`
+  calls from the supervisor now never ask for a password.
+- A service that fails to start is retried with growing waits (up to 10 minutes)
+  instead of every cycle, and the supervisor says how many times in a row it
+  failed and where to look (`logs/`, the service journal, `trinaxai doctor`).
+- `trinaxai doctor` no longer reports frontend drift for a service unit that
+  still runs `npm run preview`: it is the same script as `npm run serve`.
+- A device with limited permissions (for example a new chat-only device) that is
+  denied a private read no longer fills the browser console with errors; the
+  denial is logged at debug level.
+
 ## [1.4.0] — 2026-10-26
 
 ### Added

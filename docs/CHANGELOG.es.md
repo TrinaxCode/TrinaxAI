@@ -18,6 +18,23 @@ el formato de [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Sin publicar]
 
+## [1.4.1] — 2026-10-27
+
+### Corregido
+
+- El supervisor en segundo plano ya no abre un diálogo de autenticación (polkit) del
+  escritorio. Cuando un servicio como la aplicación web fallaba una y otra vez, ejecutaba
+  `systemctl start` en cada ciclo y el diálogo reaparecía cada 37 segundos aproximadamente.
+  Las llamadas privilegiadas a `systemctl` del supervisor ya nunca piden contraseña.
+- Un servicio que no consigue arrancar se reintenta con esperas crecientes (hasta 10
+  minutos) en lugar de en cada ciclo, y el supervisor indica cuántas veces seguidas ha
+  fallado y dónde mirar (`logs/`, el journal del servicio, `trinaxai doctor`).
+- `trinaxai doctor` ya no informa de desviación del frontend en una unidad de servicio que
+  todavía ejecuta `npm run preview`: es el mismo script que `npm run serve`.
+- Un dispositivo con permisos limitados (por ejemplo, un dispositivo nuevo solo de chat)
+  al que se le deniega una lectura privada ya no llena la consola del navegador de errores;
+  la denegación se registra a nivel de depuración.
+
 ## [1.4.0] — 2026-10-26
 
 ### Añadido
