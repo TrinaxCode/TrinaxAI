@@ -278,6 +278,8 @@ tr_text_es() {
       'System dependencies already available') echo 'Las dependencias del sistema ya están disponibles' ;;
       'Homebrew is required but was not found. Install Homebrew and run the installer again.') echo 'Se requiere Homebrew, pero no se encontró. Instala Homebrew y vuelve a ejecutar el instalador.' ;;
       'macOS dependencies could not be installed.') echo 'No se pudieron instalar las dependencias de macOS.' ;;
+      'Homebrew is not writable by your user.') echo 'Tu usuario no tiene permiso de escritura en Homebrew.' ;;
+      'Run this command in Terminal, then run the installer again:') echo 'Ejecuta este comando en Terminal y luego vuelve a ejecutar el instalador:' ;;
       '  • Python 3.10+ from '*) echo "  • Python 3.10+ desde${1#  • Python 3.10+ from }" ;;
       '  • WSL2 recommended for full functionality') echo '  • Se recomienda WSL2 para disfrutar de toda la funcionalidad' ;;
       'Installer failed with exit code '*'. The error is above.') echo "El instalador falló con el código de salida ${1#Installer failed with exit code }; el error aparece arriba." ;;
@@ -1479,6 +1481,14 @@ elif [ "$OS" = "macos" ]; then
   fi
   if ! command -v brew &>/dev/null; then
     print_err "Homebrew is required but was not found. Install Homebrew and run the installer again."
+    exit 1
+  fi
+  # A Homebrew owned by another user (e.g. after a Mac migration) fails mid-install with obscure lock errors.
+  BREW_PREFIX="$(brew --prefix 2>/dev/null)"
+  if [ -n "$BREW_PREFIX" ] && [ ! -w "$BREW_PREFIX" ]; then
+    print_err "Homebrew is not writable by your user."
+    print_info "Run this command in Terminal, then run the installer again:"
+    echo "      sudo chown -R $(id -un) \"$BREW_PREFIX\""
     exit 1
   fi
   if ! brew install python@3.11 node curl openssl; then
