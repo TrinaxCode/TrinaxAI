@@ -301,6 +301,8 @@ tr_text_es() {
       '0/6 Downloading TrinaxAI') echo '0/6 Descargando TrinaxAI' ;;
       'Install directory exists but is not a TrinaxAI installation:'*) echo "El directorio de instalación existe, pero no es una instalación de TrinaxAI:${1#Install directory exists but is not a TrinaxAI installation:}" ;;
       'Choose another location with --install-dir PATH.') echo 'Elige otra ubicación con --install-dir PATH.' ;;
+      'The existing installation is version '*) rest="${1#The existing installation is version }"; echo "La instalación existente es la versión ${rest%%, not *}, no la ${rest#*, not }" ;;
+      'Update it with ./update.sh inside that folder, or move that folder aside and run the installer again.') echo 'Actualízala con ./update.sh dentro de esa carpeta, o mueve esa carpeta a otro sitio y vuelve a ejecutar el instalador.' ;;
       'Existing TrinaxAI installation found at '*) echo "Se encontró una instalación existente de TrinaxAI en${1#Existing TrinaxAI installation found at }" ;;
       'TRINAXAI_RELEASE_VERSION must be a semantic version.') echo 'TRINAXAI_RELEASE_VERSION debe ser una versión semántica.' ;;
       'Source package URL must use HTTPS.') echo 'La URL del paquete fuente debe usar HTTPS.' ;;
@@ -1377,6 +1379,13 @@ if [ -z "$SCRIPT_DIR" ] || [ ! -f "$SCRIPT_DIR/rag_api.py" ] || [ ! -f "$SCRIPT_
       exit 1
     fi
     print_ok "Existing TrinaxAI installation found at $REPO_DIR"
+    # Reusing an older managed copy breaks later steps with obscure ImportErrors.
+    existing_version="$(sed -n 's/^version = "\(.*\)"/\1/p' "$REPO_DIR/pyproject.toml" | head -1)"
+    if [ -f "$REPO_DIR/.trinaxai-managed" ] && [ "$existing_version" != "${TRINAXAI_RELEASE_VERSION:-1.4.1}" ]; then
+      print_err "The existing installation is version ${existing_version:-unknown}, not ${TRINAXAI_RELEASE_VERSION:-1.4.1}: $REPO_DIR"
+      print_info "Update it with ./update.sh inside that folder, or move that folder aside and run the installer again."
+      exit 1
+    fi
     cd "$REPO_DIR"
   else
     mkdir -p "$(dirname "$REPO_DIR")"
