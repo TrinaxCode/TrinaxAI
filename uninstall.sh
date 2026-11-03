@@ -528,7 +528,12 @@ fi
 
 if [ "$REMOVE_CERTS" = "1" ]; then
   if [ "$(uname -s)" = "Darwin" ] && command -v security >/dev/null 2>&1; then
-    security delete-certificate -c "TrinaxAI Local HTTPS" "$HOME/Library/Keychains/login.keychain-db" >/dev/null 2>&1 || true
+    # Reinstalls leave several certificates with the same name, and -c refuses an ambiguous name: delete by hash.
+    login_keychain="$HOME/Library/Keychains/login.keychain-db"
+    security find-certificate -a -c "TrinaxAI Local HTTPS" -Z "$login_keychain" 2>/dev/null | awk '/^SHA-1 hash:/ {print $3}' |
+      while read -r cert_hash; do
+        security delete-certificate -Z "$cert_hash" -t "$login_keychain" >/dev/null 2>&1 || true
+      done
   elif [ "$(uname -s)" = "Linux" ]; then
     as_root rm -f /usr/local/share/ca-certificates/trinaxai-local.crt /etc/pki/ca-trust/source/anchors/trinaxai-local.crt 2>/dev/null || true
     command -v update-ca-certificates >/dev/null 2>&1 && as_root update-ca-certificates >/dev/null 2>&1 || true
