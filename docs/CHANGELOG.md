@@ -18,6 +18,18 @@ All notable changes to TrinaxAI are documented here. This project follows the
 
 ## [Unreleased]
 
+### Fixed
+
+- The "different network detected" notice no longer appears on a first start. The installer wrote `Mac.local.local` into the certificate and the allowed origins because macOS reports its host name as `Mac.local`, and the PWA compared against every network interface (Docker, VPN, Internet Sharing) while `trinaxai network refresh` records only the routed address. Both now use the first host-name label and the routed address; an existing install is corrected by the "Prepare this network" button or `trinaxai network refresh`.
+- HTTPS certificates on macOS: the OpenSSL certificate now carries `serverAuth`, a key usage and an 825-day lifetime (Safari and Chrome refused the previous one even after it was trusted); trust is added in the user keychain instead of the admin domain that failed without `sudo`; mkcert installs its authority instead of the leaf certificate; and `trinaxai network refresh` trusts the renewed certificate (it used to leave a new, untrusted one behind). Linux imports it into the Chrome/Chromium NSS database when `certutil` is present, and Windows picks the default-route adapter's address instead of a WSL or Hyper-V one.
+- The Agent in the PWA can use a project folder anywhere under the home directory (it was limited to the installation and the indexed folders); paired devices stay confined and `TRINAXAI_AGENT_WORKSPACE_ROOTS` remains a hard limit. The folder picker can climb above the installation.
+- `trinaxai agent` no longer quits on a single Ctrl-C at the prompt; press it twice or type `/exit`.
+- Voice: the system voice is ranked (macOS novelty and compact voices are skipped, premium and enhanced voices win), links, emoji and formulas are no longer read aloud, and a Mac without Dictation falls back to local recording instead of ending the call. Recording asks for echo cancellation and no longer hangs when Safari keeps the audio context suspended.
+
+### Changed
+
+- Call mode closes the sidebar when it starts and shows live captions of what is heard and said.
+
 ## [1.4.1] — 2026-10-27
 
 ### Fixed

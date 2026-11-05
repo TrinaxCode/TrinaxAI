@@ -7,15 +7,28 @@ interface VoiceCallViewProps {
   listening: boolean;
   speaking: boolean;
   thinking: boolean;
+  /** What the user is saying right now (interim speech recognition), if the browser reports it. */
+  heard?: string;
+  /** The reply being written or spoken. */
+  reply?: string;
   onEnd: () => void;
 }
 
-export default function VoiceCallView({ isDark, listening, speaking, thinking, onEnd }: VoiceCallViewProps) {
+const CAPTION_CHARS = 200;
+
+// Captions show the tail of long text so the newest words stay visible without scrolling.
+function captionTail(text: string): string {
+  const flat = text.replace(/\s+/g, ' ').trim();
+  return flat.length > CAPTION_CHARS ? `…${flat.slice(-CAPTION_CHARS).trimStart()}` : flat;
+}
+
+export default function VoiceCallView({ isDark, listening, speaking, thinking, heard = '', reply = '', onEnd }: VoiceCallViewProps) {
   const { t } = useI18n();
   const reduceMotion = useReducedMotion();
   const status = speaking ? t('speaking') : thinking ? t('thinking') : listening ? t('listening') : t('voiceMode');
   const active = speaking || listening || thinking;
   const foreground = isDark ? 'text-white' : 'text-slate-900';
+  const caption = captionTail(speaking || thinking ? reply : listening ? heard : '');
 
   // The call surface mounts as one unit, so the workspace, status copy and the
   // hang-up control settle in sequence instead of appearing all at once.
@@ -77,6 +90,13 @@ export default function VoiceCallView({ isDark, listening, speaking, thinking, o
         <motion.p key={status} initial={reduceMotion ? false : { opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} className={`voice-call-status mt-6 text-lg font-semibold ${foreground}`} role="status" aria-live="polite">
           {status}
         </motion.p>
+        {/* Decorative: screen readers already get the status line and the spoken reply. */}
+        <p
+          aria-hidden="true"
+          className={`voice-call-caption mt-4 min-h-[3.75rem] max-w-md text-balance break-words text-base leading-relaxed ${isDark ? 'text-white/70' : 'text-slate-600'}`}
+        >
+          {caption}
+        </p>
         <div className="voice-call-bars mt-4 flex h-6 items-center justify-center gap-1" aria-hidden="true">
           {[0, 1, 2, 3, 4].map((bar) => (
             <motion.span

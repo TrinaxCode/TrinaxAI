@@ -301,7 +301,7 @@ def test_agent_workspace_defaults_and_tool_failures(monkeypatch, tmp_path: Path)
     assert agent_service._configured_workspace_roots() == (root.resolve(),)
     monkeypatch.setattr(agent_service, "_read_app_state", lambda: (_ for _ in ()).throw(RuntimeError("state")))
     assert agent_service._resolve_workspace("") == root.resolve()
-    monkeypatch.setattr(agent_service, "_configured_workspace_roots", lambda: ())
+    monkeypatch.setattr(agent_service, "_configured_workspace_roots", lambda **_kwargs: ())
     with pytest.raises(HTTPException) as exc:
         agent_service._resolve_workspace("")
     assert exc.value.status_code == 503

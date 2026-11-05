@@ -15,6 +15,7 @@ import os
 import shlex
 import subprocess
 import threading
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
@@ -42,6 +43,9 @@ INIT_PROMPT = (
     "create a TRINAXAI.md at the root with: what the project is, how to run/test/lint/build it, the layout, "
     "and the conventions a new contributor must follow. Keep it under 80 lines and only state facts you verified."
 )
+
+
+_EXIT_CONFIRM_SECONDS = 2.0
 
 
 def _t(ui: Any, en: str, es: str) -> str:
@@ -480,6 +484,7 @@ def run_repl(
     _welcome(ctx, resumed)
     _warm_up_in_background(engine)
     menu = slash_menu()
+    last_interrupt = 0.0
     while True:
         if ctx.pending:
             task, ctx.pending = ctx.pending, None
@@ -491,9 +496,25 @@ def run_repl(
                     toolbar=lambda: _toolbar(ctx),
                     on_cycle_mode=policy.cycle,
                 )
-            except (EOFError, KeyboardInterrupt):
+            except EOFError:
                 ui.info("\nbye.")
                 return 0
+            except KeyboardInterrupt:
+                # One stray Ctrl-C (for instance one sent to stop a long answer that had just
+                # finished) must not throw away the session; a second press within 2 s leaves.
+                now = time.monotonic()
+                if now - last_interrupt <= _EXIT_CONFIRM_SECONDS:
+                    ui.info("\nbye.")
+                    return 0
+                last_interrupt = now
+                ui.info(
+                    _t(
+                        ui,
+                        "\nPress Ctrl-C again to exit, or type /exit.",
+                        "\nPulsa Ctrl-C otra vez para salir, o escribe /exit.",
+                    )
+                )
+                continue
         task = (task or "").strip() if isinstance(task, str) else ""
         if not task:
             continue

@@ -163,6 +163,8 @@ export function ChatInterfaceView({ controller }: { controller: ChatController }
               listening={listening}
               speaking={ttsSpeaking}
               thinking={busy}
+              heard={input}
+              reply={streamedText}
               onEnd={toggleVoice}
             />
           </motion.div>

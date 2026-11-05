@@ -174,7 +174,8 @@ def disable_lan_access(root: Path) -> bool:
     return True
 
 
-def refresh_certificate(root: Path, addresses: list[str]) -> None:
+def refresh_certificate(root: Path, addresses: list[str]) -> bool:
+    """Write a fresh certificate for the current names. Returns True when mkcert signed it."""
     cert_dir = root / "chat-pwa" / "certs"
     cert_dir.mkdir(parents=True, exist_ok=True)
     names = ["localhost", local_hostname(), f"{local_hostname()}.local", "127.0.0.1", "::1", *addresses]
@@ -199,8 +200,9 @@ def refresh_certificate(root: Path, addresses: list[str]) -> None:
                 "-newkey",
                 "rsa:2048",
                 "-sha256",
+                # Apple rejects server certificates that live longer than 825 days.
                 "-days",
-                "1825",
+                "825",
                 "-nodes",
                 "-keyout",
                 str(key),
@@ -210,6 +212,13 @@ def refresh_certificate(root: Path, addresses: list[str]) -> None:
                 "/CN=TrinaxAI Local HTTPS",
                 "-addext",
                 f"subjectAltName={san}",
+                # Safari and Chrome on macOS require serverAuth; without it the trusted certificate is still refused.
+                "-addext",
+                "basicConstraints=critical,CA:FALSE",
+                "-addext",
+                "keyUsage=critical,digitalSignature,keyEncipherment",
+                "-addext",
+                "extendedKeyUsage=serverAuth",
             ]
         result = subprocess.run(command, capture_output=True, text=True, timeout=60, check=False)
         if result.returncode != 0:
@@ -249,6 +258,76 @@ def refresh_certificate(root: Path, addresses: list[str]) -> None:
             os.replace(pfx, cert_dir / "trinaxai-local.pfx")
         elif platform.system() == "Windows":
             (cert_dir / "trinaxai-local.pfx").unlink(missing_ok=True)
+    return bool(mkcert)
+
+
+_CERT_NAME = "TrinaxAI Local HTTPS"
+
+
+def _run_quiet(command: list[str], *, timeout: float) -> bool:
+    try:
+        result = subprocess.run(command, capture_output=True, text=True, timeout=timeout, check=False)
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return result.returncode == 0
+
+
+def trust_refreshed_certificate(root: Path, used_mkcert: bool) -> list[str]:
+    """Trust the certificate written by :func:`refresh_certificate` for the current user.
+
+    A renewed self-signed certificate is a different certificate, so the trust
+    given to the previous one no longer applies and every browser would warn
+    again. mkcert keeps one authority, which only needs to be installed once.
+    Returns human-readable notes for the steps that need the user's attention.
+    """
+    certificate = root / "chat-pwa" / "certs" / "trinaxai-local.crt"
+    if not certificate.is_file():
+        return []
+    system = platform.system()
+    if used_mkcert:
+        mkcert = shutil.which("mkcert")
+        if mkcert and _run_quiet([mkcert, "-install"], timeout=120):
+            return []
+        return ["Could not trust the mkcert authority automatically. Run: mkcert -install"]
+    if system == "Darwin":
+        keychain = Path.home() / "Library" / "Keychains" / "login.keychain-db"
+        # The user domain (no -d) needs only the login password; macOS may show a prompt.
+        if _run_quiet(
+            ["security", "add-trusted-cert", "-r", "trustRoot", "-k", str(keychain), str(certificate)], timeout=180
+        ):
+            return []
+        return [
+            "Could not trust the new certificate in the macOS keychain. Run: "
+            f"security add-trusted-cert -r trustRoot -k ~/Library/Keychains/login.keychain-db {certificate}"
+        ]
+    if system == "Windows":
+        command = [
+            "powershell",
+            "-NoProfile",
+            "-Command",
+            f"Import-Certificate -FilePath '{certificate}' -CertStoreLocation Cert:\\CurrentUser\\Root | Out-Null",
+        ]
+        if _run_quiet(command, timeout=180):
+            return []
+        return [
+            f"Could not trust the new certificate in Windows. Import {certificate} into Trusted Root Certification Authorities."
+        ]
+    certutil = shutil.which("certutil")
+    notes = [f"Import {certificate} into your browser or system certificate store to remove the security warning."]
+    if certutil:
+        database = Path.home() / ".pki" / "nssdb"
+        database.mkdir(parents=True, exist_ok=True)
+        if not (database / "cert9.db").exists():
+            _run_quiet([certutil, "-d", f"sql:{database}", "-N", "--empty-password"], timeout=30)
+        _run_quiet([certutil, "-d", f"sql:{database}", "-D", "-n", _CERT_NAME], timeout=30)
+        if _run_quiet(
+            [certutil, "-d", f"sql:{database}", "-A", "-t", "C,,", "-n", _CERT_NAME, "-i", str(certificate)], timeout=30
+        ):
+            return [
+                "Chrome/Chromium trust the new certificate. For the system store and Firefox, import "
+                f"{certificate} manually or run 'mkcert -install'."
+            ]
+    return notes
 
 
 def _is_ip(value: str) -> bool:

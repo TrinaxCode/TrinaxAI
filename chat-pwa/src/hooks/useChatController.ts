@@ -134,6 +134,13 @@ export function useChatController({
     toast,
     voiceLang,
   });
+  // The call surface is full-screen: an open sidebar drawer would sit on top of it (mobile) or
+  // squeeze it (desktop). Close it only as the call begins, so reopening it mid-call still works.
+  const wasInCallRef = useRef(false);
+  useEffect(() => {
+    if (callMode && !wasInCallRef.current && menuOpen) onMenuToggle();
+    wasInCallRef.current = callMode;
+  }, [callMode, menuOpen, onMenuToggle]);
   useEffect(() => {
     if (callMode || isMobile) return undefined;
     const frame = window.requestAnimationFrame(() => {

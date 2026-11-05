@@ -8,6 +8,10 @@ export interface RecorderCallbacks {
 }
 
 const DEFAULT_MAX_RECORDING_MS = 60_000;
+// Without a running AudioContext there is no silence detection, so a turn is cut after this long.
+const UNMONITORED_MAX_RECORDING_MS = 8_000;
+// Safari may leave resume() pending until a user gesture; never wait on it forever.
+const AUDIO_CONTEXT_RESUME_TIMEOUT_MS = 1_500;
 
 function selectMimeType(): string {
   const types = ['audio/webm', 'audio/mp4', 'audio/ogg', 'audio/wav'];
@@ -74,7 +78,11 @@ async function createAudioRecorder(
   maxDurationMs: number,
 ): Promise<AudioRecorder> {
   const mimeType = selectMimeType();
-  const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  // Speakers and microphone share a room in a voice call: ask for echo cancellation explicitly
+  // instead of relying on each browser's default.
+  const stream = await navigator.mediaDevices.getUserMedia({
+    audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+  });
   let mediaRecorder: MediaRecorder;
   let audioCtx: AudioContext | undefined;
   let analyser: AnalyserNode;
@@ -90,7 +98,12 @@ async function createAudioRecorder(
     // Mobile browsers commonly create AudioContext in "suspended" state.
     // Without resuming it, the analyser receives zeros forever and VAD never
     // reaches silence after speech, leaving the call stuck on listening.
-    if (typeof audioCtx.resume === 'function') await audioCtx.resume();
+    if (typeof audioCtx.resume === 'function' && audioCtx.state !== 'running') {
+      await Promise.race([
+        audioCtx.resume(),
+        new Promise<void>((resolve) => { window.setTimeout(resolve, AUDIO_CONTEXT_RESUME_TIMEOUT_MS); }),
+      ]);
+    }
   } catch (error) {
     void audioCtx?.close().catch(() => undefined);
     stream.getTracks().forEach((track) => track.stop());
@@ -204,7 +217,8 @@ async function createAudioRecorder(
       started = true;
       callbacks.onStart?.();
       rafId = window.requestAnimationFrame(check);
-      const duration = Number.isFinite(maxDurationMs) ? Math.max(1, maxDurationMs) : DEFAULT_MAX_RECORDING_MS;
+      const requested = Number.isFinite(maxDurationMs) ? Math.max(1, maxDurationMs) : DEFAULT_MAX_RECORDING_MS;
+      const duration = audioCtx.state === 'running' ? requested : Math.min(requested, UNMONITORED_MAX_RECORDING_MS);
       maxDurationTimer = window.setTimeout(() => {
         maxDurationTimer = 0;
         stop();

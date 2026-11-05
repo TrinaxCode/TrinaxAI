@@ -14,7 +14,8 @@ const voice = vi.hoisted(() => ({
 const recorder = vi.hoisted(() => ({ startAudioRecorder: vi.fn() }));
 const audio = vi.hoisted(() => ({ play: vi.fn() }));
 
-vi.mock('../services/voice', () => voice);
+// Pure helpers (voice ranking, text cleaning) stay real; only browser and network entry points are stubbed.
+vi.mock('../services/voice', async (importOriginal) => ({ ...await importOriginal<typeof import('../services/voice')>(), ...voice }));
 vi.mock('../utils/audioRecorder', () => recorder);
 vi.mock('../services/audioManager', () => ({ audioManager: audio }));
 
@@ -248,7 +249,7 @@ describe('chat voice hook', () => {
     expect(recorder.startAudioRecorder).toHaveBeenCalled();
   });
 
-  it('falls back to backend recording when native call recognition reports a network error', async () => {
+  it.each(['network', 'service-not-allowed', 'language-not-supported'])('falls back to backend recording when native call recognition reports %s', async (error) => {
     Object.defineProperty(window, 'isSecureContext', { configurable: true, value: true });
     Object.defineProperty(window, 'SpeechRecognition', { configurable: true, value: FakeRecognition });
     voice.detectSpeechRecognition.mockReturnValue(true);
@@ -263,7 +264,7 @@ describe('chat voice hook', () => {
     const { result } = renderHook(() => useChatVoice(opts));
 
     act(() => result.current.startCall());
-    FakeRecognition.instances[0].onerror?.({ error: 'network' });
+    FakeRecognition.instances[0].onerror?.({ error });
 
     await waitFor(() => expect(callbacks).toHaveLength(1));
     expect(result.current.callMode).toBe(true);

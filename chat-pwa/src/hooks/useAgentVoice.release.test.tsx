@@ -128,6 +128,28 @@ describe('agent voice release paths', () => {
     expect(result.current.listening).toBe(false);
   });
 
+  it.each(['network', 'service-not-allowed', 'language-not-supported'])(
+    'records and transcribes locally when native dictation reports %s',
+    async (error) => {
+      voice.detectSpeechRecognition.mockReturnValue(true);
+      voice.detectBackendVoice.mockReturnValue(true);
+      Object.defineProperty(window, 'SpeechRecognition', { configurable: true, value: FakeRecognition });
+      recorder.startAudioRecorder.mockImplementation(async (value: any) => {
+        value.onStart?.();
+        return { cancel: vi.fn(), stop: vi.fn() };
+      });
+      const opts = options();
+      const { result } = renderHook(() => useAgentVoice(opts));
+
+      act(() => result.current.toggleDictation());
+      act(() => FakeRecognition.instances[0].onerror?.({ error }));
+
+      await waitFor(() => expect(recorder.startAudioRecorder).toHaveBeenCalledTimes(1));
+      expect(opts.setImageError).not.toHaveBeenCalled();
+      expect(result.current.listening).toBe(true);
+    },
+  );
+
   it('restarts browser recognition after recoverable errors and onend', async () => {
     vi.useFakeTimers();
     voice.detectSpeechRecognition.mockReturnValue(true);

@@ -276,5 +276,10 @@ def test_repl_exit_words_unknown_errors_and_degraded_notice(tmp_path: Path) -> N
     assert code == 0
     assert any("degraded" in str(call.args[0]) for call in ui.warn.call_args_list)
 
-    code, ui = run_with([KeyboardInterrupt()], lambda _m: "x")
+    code, ui = run_with([KeyboardInterrupt(), KeyboardInterrupt()], lambda _m: "x")
     assert code == 0 and ui.info.call_args.args[0] == "\nbye."
+
+    # A single Ctrl-C at the prompt only warns; the session carries on until /exit.
+    code, ui = run_with([KeyboardInterrupt(), "/exit"], lambda _m: "x")
+    assert code == 0 and ui.info.call_args.args[0] == "bye."
+    assert any("Ctrl-C again" in str(call.args[0]) for call in ui.info.call_args_list)

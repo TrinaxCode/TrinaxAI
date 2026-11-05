@@ -353,7 +353,8 @@ booleans can restrict availability; setting one never forces its execution.
 must include both the `session_id` from the stream's `start` event and
 the `approval_id`, and must use the same authenticated identity that opened the stream.
 Requested workspaces must be descendants of `TRINAXAI_AGENT_WORKSPACE_ROOTS` (configured
-index roots and the repository are the fallback), and filesystem roots are
+index roots and the repository are the fallback; the host's own session may also use
+any folder under its home directory, a paired device may not), and filesystem roots are
 rejected. HTTP yolo is off by default and, even when enabled, only works over a
 real loopback transport with the `agent_yolo` capability. Remote agent callers
 always approve dangerous actions individually.

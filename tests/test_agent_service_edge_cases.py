@@ -334,7 +334,7 @@ async def test_agent_endpoint_and_cancel_pending_approval(monkeypatch, tmp_path:
     monkeypatch.setattr(agent_service, "_authorize_system", lambda _request: None)
     monkeypatch.setattr(agent_service, "_authorize_http_yolo", lambda *_args: None)
     monkeypatch.setattr(agent_service, "enforce_rate_limit", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(agent_service, "_resolve_workspace", lambda _workspace: tmp_path)
+    monkeypatch.setattr(agent_service, "_resolve_workspace", lambda _workspace, _roots=None: tmp_path)
     monkeypatch.setattr(agent_service, "_resolve_model", lambda *_args: "model")
     monkeypatch.setattr(agent_service, "_agent_tools", lambda **_kwargs: ())
     monkeypatch.setattr(agent_service, "_client_host", lambda _request: "127.0.0.1")
@@ -359,8 +359,8 @@ async def test_agent_browse_handles_unreadable_children_and_permission(monkeypat
     bad = root / "bad"
     bad.mkdir()
     monkeypatch.setattr(agent_service, "_authorize_system", lambda _request: None)
-    monkeypatch.setattr(agent_service, "_browse_start_dir", lambda _path: root)
-    monkeypatch.setattr(agent_service, "_configured_workspace_roots", lambda: (root,))
+    monkeypatch.setattr(agent_service, "_browse_start_dir", lambda _path, _roots=None: root)
+    monkeypatch.setattr(agent_service, "_configured_workspace_roots", lambda **_kwargs: (root,))
     real_resolve = Path.resolve
 
     def resolve_bad(path, *args, **kwargs):
@@ -395,11 +395,11 @@ def test_agent_remaining_workspace_model_queue_and_approval_edges(monkeypatch, t
     monkeypatch.setattr(agent_service.config, "BASE_DIR", str(tmp_path))
     assert agent_service._configured_workspace_roots() == (tmp_path.resolve(),)
 
-    monkeypatch.setattr(agent_service, "_configured_workspace_roots", lambda: ())
+    monkeypatch.setattr(agent_service, "_configured_workspace_roots", lambda **_kwargs: ())
     with pytest.raises(HTTPException, match="workspace root"):
         agent_service._resolve_workspace("")
 
-    monkeypatch.setattr(agent_service, "_configured_workspace_roots", lambda: (tmp_path,))
+    monkeypatch.setattr(agent_service, "_configured_workspace_roots", lambda **_kwargs: (tmp_path,))
     monkeypatch.setattr(agent_service, "_read_app_state", lambda: (_ for _ in ()).throw(OSError("offline")))
     monkeypatch.setattr(agent_service, "_default_workspace", lambda _roots: tmp_path)
     assert agent_service._resolve_workspace("") == tmp_path
@@ -485,7 +485,7 @@ async def test_agent_endpoint_keeps_git_remote_commands_on_the_host(monkeypatch,
     monkeypatch.setattr(agent_service, "_authorize_system", lambda _request: None)
     monkeypatch.setattr(agent_service, "_authorize_http_yolo", lambda *_args: None)
     monkeypatch.setattr(agent_service, "enforce_rate_limit", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(agent_service, "_resolve_workspace", lambda _workspace: tmp_path)
+    monkeypatch.setattr(agent_service, "_resolve_workspace", lambda _workspace, _roots=None: tmp_path)
     monkeypatch.setattr(agent_service, "_resolve_model", lambda *_args: "model")
     seen: list[bool] = []
 

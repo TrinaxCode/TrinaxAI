@@ -18,6 +18,18 @@ el formato de [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Sin publicar]
 
+### Corregido
+
+- El aviso «Se detectó una red distinta» ya no aparece en el primer arranque. El instalador escribía `Mac.local.local` en el certificado y en los orígenes permitidos porque macOS informa su nombre como `Mac.local`, y la PWA comparaba contra todas las interfaces (Docker, VPN, Compartir Internet) mientras `trinaxai network refresh` registra solo la dirección enrutada. Ahora ambos usan la primera etiqueta del nombre y la dirección enrutada; una instalación existente se corrige con el botón «Preparar esta red» o con `trinaxai network refresh`.
+- Certificados HTTPS en macOS: el certificado de OpenSSL ahora lleva `serverAuth`, uso de clave y 825 días de vigencia (Safari y Chrome rechazaban el anterior aunque estuviera confiado); la confianza se añade al llavero del usuario y no al dominio de administrador, que fallaba sin `sudo`; mkcert instala su autoridad en lugar del certificado hoja; y `trinaxai network refresh` confía el certificado renovado (antes dejaba uno nuevo sin confianza). En Linux se importa a la base NSS de Chrome/Chromium si hay `certutil`, y en Windows se usa la dirección del adaptador de la ruta predeterminada y no la de WSL o Hyper-V.
+- El Agent de la PWA puede usar una carpeta de proyecto en cualquier lugar de la carpeta personal (estaba limitado a la instalación y a las carpetas indexadas); los dispositivos emparejados siguen confinados y `TRINAXAI_AGENT_WORKSPACE_ROOTS` sigue siendo un límite estricto. El selector de carpetas puede subir por encima de la instalación.
+- `trinaxai agent` ya no se cierra con un solo Ctrl-C en el prompt; púlsalo dos veces o escribe `/exit`.
+- Voz: la voz del sistema se puntúa (se evitan las voces de novedad y compactas de macOS, ganan las premium y mejoradas), ya no se leen enlaces, emoji ni fórmulas, y un Mac sin Dictado recurre a la grabación local en lugar de terminar la llamada. La grabación pide cancelación de eco y no se cuelga cuando Safari deja suspendido el contexto de audio.
+
+### Cambiado
+
+- El modo llamada cierra el sidebar al iniciar y muestra subtítulos en vivo de lo que se oye y se dice.
+
 ## [1.4.1] — 2026-10-27
 
 ### Corregido

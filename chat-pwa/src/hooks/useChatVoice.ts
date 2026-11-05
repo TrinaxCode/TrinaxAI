@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type Dispatch, type MutableRefObject, type RefObject, type SetStateAction } from 'react';
 import { startAudioRecorder, type AudioRecorder } from '../utils/audioRecorder';
 import { audioManager } from '../services/audioManager';
-import { detectBackendVoice, detectSpeechRecognition, detectSpeechSynthesis, shouldStopBackendVoice, speakBackend, stopBackendSpeech, takeSpeechChunk, transcribeAudio } from '../services/voice';
+import { cleanSpeechText as toSpeakableText, detectBackendVoice, detectSpeechRecognition, detectSpeechSynthesis, pickBestVoice, shouldStopBackendVoice, speakBackend, stopBackendSpeech, takeSpeechChunk, transcribeAudio } from '../services/voice';
 import type { ToastOptions } from '../components/Toast';
 import type { TranslationKey } from '../i18n/translations';
 import type { ChatMessage } from '../lib/api';
@@ -244,10 +244,7 @@ export function useChatVoice({
   const pickVoice = useCallback(() => {
     if (!ttsSupported) return undefined;
     const voices = window.speechSynthesis.getVoices();
-    const baseLang = voiceLang.slice(0, 2);
-    return voices.find((vo) => vo.lang === voiceLang)
-      || voices.find((vo) => vo.lang.toLowerCase().startsWith(baseLang))
-      || voices[0];
+    return pickBestVoice(voices, voiceLang) || voices.find((vo) => vo.default) || voices[0];
   }, [ttsSupported, voiceLang, voiceVersion]);
 
   const splitSpeech = useCallback((text: string) => {
@@ -437,13 +434,10 @@ export function useChatVoice({
     });
   }, [finishCallSpeech, pickVoice, showVoiceToast, startTtsPump, t, voiceLang]);
 
-  const cleanSpeechText = useCallback((text: string) => text
-    .replace(/```[\s\S]*?```/g, t('ttsCodeBlockReplacement'))
-    .replace(/`[^`]*`/g, '')
-    .replace(/\[(.*?)\]\(.*?\)/g, '$1')
-    .replace(/[#*_>~|]/g, '')
-    .replace(/\s+/g, ' ')
-    .trim(), [t]);
+  const cleanSpeechText = useCallback(
+    (text: string) => toSpeakableText(text, t('ttsCodeBlockReplacement')),
+    [t],
+  );
 
   const flushVoiceTts = useCallback((force = false, onDone?: () => void) => {
     let pending = ttsTailRef.current;
@@ -690,10 +684,11 @@ export function useChatVoice({
       clearSpeechTimers();
       setListening(false);
       const error = String(event?.error || 'unknown');
-      // Safari/iOS exposes SpeechRecognition but its remote recognition service
-      // can fail with `network`. Switch to the microphone recorder instead of
-      // retrying the same unavailable native service forever.
-      if (error === 'network' && detectBackendVoice()) {
+      // Safari exposes SpeechRecognition but its service can fail with `network`, or with
+      // `service-not-allowed` when Dictation/Siri is off (the usual state of a new Mac), and
+      // Chrome reports `language-not-supported` for locales it cannot recognise. The microphone
+      // recorder and the local transcriber still work, so switch instead of giving up.
+      if (['network', 'service-not-allowed', 'language-not-supported'].includes(error) && detectBackendVoice()) {
         stopAfterError = true;
         recognitionRunRef.current += 1;
         try { rec.abort(); } catch { /* already ended */ }

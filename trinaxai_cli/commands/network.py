@@ -82,12 +82,14 @@ def run(args: Any, _client: Any, ui: Any, _config: Any) -> int:
         ui.info("Cancelled.")
         return 0
     try:
-        network.refresh_certificate(root, addresses)
+        used_mkcert = network.refresh_certificate(root, addresses)
         network.update_env(root, addresses)
     except (OSError, RuntimeError) as exc:
         ui.failure("Network refresh", exc)
         return 1
     ui.success("Current network added and local HTTPS certificate renewed.")
+    for note in network.trust_refreshed_certificate(root, bool(used_mkcert)):
+        ui.warn(note)
     for url in urls:
         ui.print(url)
     _show_trust_certificate(root, ui)

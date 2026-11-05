@@ -98,6 +98,32 @@ describe('chat controller integration surface', () => {
     expect(props.onWebSearchBlocked).toHaveBeenCalled();
   });
 
+  it('closes the sidebar when a call starts, once, and leaves it alone afterwards', () => {
+    const props = { ...baseProps(), menuOpen: true };
+    const inCall = (callMode: boolean) => ({ ...voice.useChatVoice(), callMode, callModeRef: { current: callMode } });
+    voice.useChatVoice.mockReturnValue(inCall(false));
+    const { rerender } = renderHook((p: ChatInterfaceProps) => useChatController(p), { initialProps: props });
+    expect(props.onMenuToggle).not.toHaveBeenCalled();
+
+    voice.useChatVoice.mockReturnValue(inCall(true));
+    rerender(props);
+    expect(props.onMenuToggle).toHaveBeenCalledTimes(1);
+
+    // The user reopens the drawer during the call: that must not be undone.
+    rerender({ ...props, menuOpen: false });
+    rerender({ ...props, menuOpen: true });
+    expect(props.onMenuToggle).toHaveBeenCalledTimes(1);
+    voice.useChatVoice.mockReturnValue(inCall(false));
+  });
+
+  it('does not touch an already closed sidebar when a call starts', () => {
+    const props = { ...baseProps(), menuOpen: false };
+    voice.useChatVoice.mockReturnValue({ ...voice.useChatVoice(), callMode: true, callModeRef: { current: true } });
+    renderHook(() => useChatController(props));
+    expect(props.onMenuToggle).not.toHaveBeenCalled();
+    voice.useChatVoice.mockReturnValue({ ...voice.useChatVoice(), callMode: false, callModeRef: { current: false } });
+  });
+
   it('allows web search mode for a paired remote device with web scope', async () => {
     auth.deviceSessionHasScope.mockReturnValue(true);
     const props = baseProps();

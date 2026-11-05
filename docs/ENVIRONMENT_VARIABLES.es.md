@@ -234,7 +234,7 @@ basura.
 
 | Variable | Predeterminado | Propósito |
 |---|---|---|
-| `TRINAXAI_AGENT_WORKSPACE_ROOTS` | raíces configuradas y luego repositorio | Allowlist de workspaces HTTP del Agent separada por el separador de cada plataforma. |
+| `TRINAXAI_AGENT_WORKSPACE_ROOTS` | raíces configuradas, repositorio y —solo en la sesión del propio anfitrión— la carpeta personal | Allowlist de workspaces HTTP del Agent separada por el separador de cada plataforma. Si se define, es un límite estricto para todos. Los dispositivos emparejados nunca reciben la carpeta personal. |
 | `TRINAXAI_AGENT_HTTP_YOLO` | `0` | Activa autoaprobación HTTP solo con prueba adicional de `agent_yolo`; el acceso remoto normal sigue bloqueado. |
 | `TRINAXAI_AGENT_ALLOW_UNSANDBOXED_COMMANDS` | `0` | Escape explícito de alto riesgo cuando no hay sandbox del sistema. |
 | `TRINAXAI_AGENT_GIT_HOOKS` | `0` | Permite que la herramienta `git` del Agente ejecute los hooks del repositorio (pre-commit, pre-push ...). Desactivado por defecto porque los hooks se ejecutan en el equipo con tus credenciales y pueden redirigirse al workspace (`core.hooksPath`), donde el Agente puede escribir archivos. |

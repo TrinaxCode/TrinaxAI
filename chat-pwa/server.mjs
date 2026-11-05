@@ -1,5 +1,6 @@
 import { execFile, spawn } from 'node:child_process';
 import { createHmac, randomBytes, X509Certificate } from 'node:crypto';
+import dgram from 'node:dgram';
 import fs from 'node:fs';
 import http from 'node:http';
 import https from 'node:https';
@@ -459,17 +460,49 @@ function systemAuthorized(req) {
   return trustedOrigin && isAuthorizedSystemProxyPeer(peer);
 }
 
-function lanAddresses() {
+function interfaceAddresses() {
   const addresses = [];
   for (const [name, entries] of Object.entries(os.networkInterfaces())) {
-    if (/^(docker|br-|veth|virbr)/i.test(name)) continue;
+    if (/^(docker|br-|veth|virbr|vmnet|vboxnet|utun|awdl|llw|anpi|bridge|gif|stf|ap\d)/i.test(name)) continue;
     for (const entry of entries || []) {
       const address = normalizeAddress(entry.address || '');
       const linkLocal = /^(fe8|fe9|fea|feb)/i.test(address);
       if (!entry.internal && !linkLocal && isPrivateLanAddress(address) && !addresses.includes(address)) addresses.push(address);
     }
   }
-  return addresses.sort((left, right) => Number(left.includes(':')) - Number(right.includes(':')) || left.localeCompare(right));
+  return addresses;
+}
+
+// The address the OS would use to leave this computer. `trinaxai network refresh`
+// records exactly this one (see trinaxai_cli/network.py), so comparing against
+// every interface instead would flag a Mac with Docker, a VPN or Internet
+// Sharing as "a different network" forever, even right after a refresh.
+function routedAddress(family) {
+  return new Promise((resolve) => {
+    let socket;
+    const finish = (value) => {
+      try { socket?.close(); } catch { /* The probe socket was never opened. */ }
+      resolve(value);
+    };
+    try {
+      socket = dgram.createSocket(family === 6 ? 'udp6' : 'udp4');
+      socket.once('error', () => finish(''));
+      // Connecting a UDP socket only selects a route; no packet is sent.
+      socket.connect(9, family === 6 ? '2001:db8::1' : '192.0.2.1', () => {
+        try { finish(normalizeAddress(socket.address().address || '').split('%', 1)[0]); } catch { finish(''); }
+      });
+    } catch {
+      finish('');
+    }
+  });
+}
+
+async function lanAddresses() {
+  const routed = (await Promise.all([routedAddress(4), routedAddress(6)]))
+    .filter((address) => address && !isLoopbackAddress(address) && !/^(fe8|fe9|fea|feb)/i.test(address) && isPrivateLanAddress(address));
+  const addresses = routed.length ? routed : interfaceAddresses();
+  return [...new Set(addresses)]
+    .sort((left, right) => Number(left.includes(':')) - Number(right.includes(':')) || left.localeCompare(right));
 }
 
 function hasExistingInstallation() {
@@ -486,28 +519,44 @@ function hasExistingInstallation() {
 // disk is the only current source for origins refreshed after a network change.
 function configuredCorsOrigins() {
   try {
-    const lines = readBounded(path.join(repoRoot, '.env'), 1024 * 1024, 'utf8').split('\n');
+    const lines = readBounded(path.join(repoRoot, '.env'), 1024 * 1024, 'utf8').split(/\r?\n/);
     for (let index = lines.length - 1; index >= 0; index -= 1) {
-      if (lines[index].startsWith('TRINAXAI_CORS_ORIGINS=')) return lines[index].split('=', 2)[1].trim();
+      const match = /^\s*TRINAXAI_CORS_ORIGINS\s*=(.*)$/.exec(lines[index]);
+      if (match) return match[1].trim().replace(/^(["'])(.*)\1$/, '$2');
     }
   } catch { /* Without a readable .env the process environment is the best source. */ }
   return String(process.env.TRINAXAI_CORS_ORIGINS || '');
 }
 
-function networkStatus() {
+// Certificates print IPv6 expanded (`0:0:0:0:0:0:0:1`); the URL parser compresses it the way os.networkInterfaces() does.
+function canonicalAddress(address) {
+  if (!address.includes(':')) return address;
+  try { return new URL(`http://[${address}]`).hostname.slice(1, -1); } catch { return address.toLowerCase(); }
+}
+
+async function networkStatus() {
+  // macOS reports names such as `Mac.local` or `Mac.lan`; only the first label is the host name.
   const hostname = os.hostname().split('.', 1)[0] || 'trinaxai';
   const stableHost = `${hostname}.local`;
-  const addresses = lanAddresses();
+  const addresses = await lanAddresses();
   const renderUrl = (address) => `https://${address.includes(':') ? `[${address}]` : address}:${port}`;
   const urls = [...addresses.map(renderUrl), renderUrl(stableHost)];
-  const configuredOrigins = configuredCorsOrigins();
-  const configurationCurrent = urls.every((url) => configuredOrigins.includes(url));
+  // Host names are case-insensitive: Windows reports DESKTOP-ABC while a certificate may say desktop-abc.
+  const configuredOrigins = configuredCorsOrigins().toLowerCase();
+  const configurationCurrent = urls.every((url) => configuredOrigins.includes(url.toLowerCase()));
   let certificateCurrent = null;
   try {
     const certificate = new X509Certificate(readBounded(localCaPath, 1024 * 1024));
-    const subjectAltName = certificate.subjectAltName || '';
-    certificateCurrent = subjectAltName.includes(`DNS:${stableHost}`)
-      && addresses.every((address) => subjectAltName.includes(`IP Address:${address}`));
+    const subjectAltName = (certificate.subjectAltName || '').toLowerCase();
+    const coveredAddresses = new Set(
+      [...subjectAltName.matchAll(/ip address:([^,\s]+)/g)].map((match) => canonicalAddress(match[1])),
+    );
+    const covers = (address) => coveredAddresses.has(canonicalAddress(address));
+    // A certificate that expires within two weeks is as good as stale: browsers will reject it soon.
+    const expiresSoon = Date.parse(certificate.validTo) - Date.now() < 14 * 24 * 60 * 60 * 1000;
+    certificateCurrent = subjectAltName.includes(`dns:${stableHost.toLowerCase()}`)
+      && addresses.every(covers)
+      && !expiresSoon;
   } catch { /* PFX-only Windows installs are checked by the refresh command. */ }
   // With the gateway bound to this computer only, a changed LAN address or an
   // out-of-date LAN certificate affects nobody, so it must not nag the user (a
@@ -528,12 +577,12 @@ function networkStatus() {
   };
 }
 
-function networkInfo(req, res) {
+async function networkInfo(req, res) {
   if (req.method !== 'GET') {
     sendError(res, 405, 'method_not_allowed');
     return;
   }
-  const status = networkStatus();
+  const status = await networkStatus();
   const peer = normalizeAddress(req.socket.remoteAddress || 'unknown');
   if (!isLoopbackAddress(peer)) {
     sendJson(res, 200, {
@@ -564,13 +613,13 @@ function systemControl(req, res, pathname) {
       '-m', 'trinaxai_cli', '--install-root', repoRoot,
       'network', 'refresh', '--yes', '--no-restart',
     ];
-    execFile(localPython(), args, { cwd: repoRoot, windowsHide: true }, (error) => {
+    execFile(localPython(), args, { cwd: repoRoot, windowsHide: true }, async (error) => {
       if (error) {
         console.error(`TrinaxAI network refresh failed: ${error.message}`);
         sendError(res, 500, 'network_refresh_failed');
         return;
       }
-      sendJson(res, 200, { ok: true, ...networkStatus(), restartRequired: true });
+      sendJson(res, 200, { ok: true, ...(await networkStatus()), restartRequired: true });
       setTimeout(() => {
         const child = spawn(
           localPython(),
@@ -678,7 +727,10 @@ function requestHandler(req, res) {
   } else if (url.pathname.startsWith('/api/system/')) {
     systemControl(req, res, url.pathname);
   } else if (url.pathname === '/api/network') {
-    networkInfo(req, res);
+    networkInfo(req, res).catch((error) => {
+      console.error(`TrinaxAI network status failed: ${error.message}`);
+      if (!res.headersSent) sendError(res, 500, 'network_status_failed');
+    });
   } else if (url.pathname.startsWith('/api/')) {
     sendError(res, 404, 'route_not_found');
   } else if (req.method === 'GET' || req.method === 'HEAD') {

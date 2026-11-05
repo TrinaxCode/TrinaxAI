@@ -1,9 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  cleanSpeechText,
   detectBackendVoice,
   detectSpeechRecognition,
   getVoiceCapabilities,
+  pickBestVoice,
+  scoreVoice,
   shouldStopBackendVoice,
   speakBackend,
   stopBackendSpeech,
@@ -220,4 +223,51 @@ describe('voice API routes', () => {
 it('stops backend voice after consecutive retries reach the cap', () => {
   expect(shouldStopBackendVoice(2)).toBe(false);
   expect(shouldStopBackendVoice(3)).toBe(true);
+});
+
+
+const voice = (name: string, lang: string, extra: Partial<SpeechSynthesisVoice> = {}) =>
+  ({ name, lang, voiceURI: name, default: false, localService: true, ...extra }) as SpeechSynthesisVoice;
+
+describe('voice selection', () => {
+  it('skips the macOS novelty and compact voices that used to be picked first', () => {
+    const voices = [
+      voice('Eddy (Spanish (Mexico))', 'es-MX'),
+      voice('Zarvox', 'es-MX'),
+      voice('Paulina', 'es-MX'),
+      voice('Samantha', 'en-US'),
+    ];
+    expect(pickBestVoice(voices, 'es-MX')?.name).toBe('Paulina');
+  });
+
+  it('prefers premium or enhanced downloads over the compact default', () => {
+    const voices = [voice('Paulina', 'es-MX', { default: true }), voice('Mónica (Enhanced)', 'es-ES')];
+    expect(pickBestVoice(voices, 'es-MX')?.name).toBe('Paulina');
+    expect(pickBestVoice([voice('Jorge', 'es-ES'), voice('Mónica (Premium)', 'es-ES')], 'es-ES')?.name).toBe('Mónica (Premium)');
+  });
+
+  it('matches locales written with an underscore, as Android and some Safari builds do', () => {
+    expect(scoreVoice(voice('Juan', 'es_MX'), 'es-MX')).toBeGreaterThanOrEqual(100);
+  });
+
+  it('prefers an exact locale over another region of the same language', () => {
+    const voices = [voice('Jorge', 'es-ES'), voice('Juan', 'es-MX')];
+    expect(pickBestVoice(voices, 'es-MX')?.name).toBe('Juan');
+  });
+
+  it('never returns a voice that speaks another language', () => {
+    expect(pickBestVoice([voice('Samantha', 'en-US')], 'es-MX')).toBeUndefined();
+    expect(pickBestVoice([], 'es-MX')).toBeUndefined();
+  });
+});
+
+describe('speakable text', () => {
+  it('drops links, emoji, formulas and markdown that a synthesizer reads aloud', () => {
+    const text = '## Resumen\n- Visita https://example.com/docs ahora 😀\n1. Usa **negrita** y `codigo` con $x^2$.\n[Guía](https://a.b/c)';
+    expect(cleanSpeechText(text)).toBe('Resumen Visita ahora Usa negrita y con . Guía');
+  });
+
+  it('replaces fenced code with the spoken placeholder', () => {
+    expect(cleanSpeechText('Antes\n```js\nconsole.log(1)\n```\nDespués', 'bloque de código')).toBe('Antes bloque de código Después');
+  });
 });

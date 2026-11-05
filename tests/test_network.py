@@ -380,3 +380,107 @@ def test_update_env_rewrites_indented_or_spaced_assignments_instead_of_duplicati
     lines = (root / ".env").read_text(encoding="utf-8").splitlines()
     assert sum(1 for raw in lines if raw.split("=", 1)[0].strip() == "TRINAXAI_PWA_HOST") == 1
     assert "TRINAXAI_PWA_HOST=0.0.0.0" in lines
+
+
+def test_openssl_certificate_meets_apple_server_requirements(tmp_path: Path, monkeypatch) -> None:
+    commands: list[list[str]] = []
+
+    def run(command, **_kwargs):
+        commands.append(list(command))
+        Path(command[command.index("-out") + 1]).write_text("certificate", encoding="utf-8")
+        Path(command[command.index("-keyout") + 1]).write_text("key", encoding="utf-8")
+        return SimpleNamespace(returncode=0, stderr="", stdout="")
+
+    monkeypatch.setattr(network.shutil, "which", lambda name: None if name == "mkcert" else "/bin/openssl")
+    monkeypatch.setattr(network.subprocess, "run", run)
+    monkeypatch.setattr(network.platform, "system", lambda: "Darwin")
+    assert network.refresh_certificate(tmp_path, ["192.168.0.18"]) is False
+    command = commands[0]
+    assert command[command.index("-days") + 1] == "825"
+    extensions = [command[index + 1] for index, value in enumerate(command) if value == "-addext"]
+    assert "extendedKeyUsage=serverAuth" in extensions
+    assert "basicConstraints=critical,CA:FALSE" in extensions
+    assert any(item.startswith("subjectAltName=") and "IP:192.168.0.18" in item for item in extensions)
+
+
+def test_refresh_certificate_reports_whether_mkcert_signed_it(tmp_path: Path, monkeypatch) -> None:
+    def run(command, **_kwargs):
+        Path(command[command.index("-cert-file") + 1]).write_text("certificate", encoding="utf-8")
+        Path(command[command.index("-key-file") + 1]).write_text("key", encoding="utf-8")
+        return SimpleNamespace(returncode=0, stderr="", stdout="")
+
+    monkeypatch.setattr(network.shutil, "which", lambda name: f"/bin/{name}")
+    monkeypatch.setattr(network.subprocess, "run", run)
+    monkeypatch.setattr(network.platform, "system", lambda: "Linux")
+    assert network.refresh_certificate(tmp_path, []) is True
+
+
+def _certificate(tmp_path: Path) -> Path:
+    certificate = tmp_path / "chat-pwa" / "certs" / "trinaxai-local.crt"
+    certificate.parent.mkdir(parents=True)
+    certificate.write_text("certificate", encoding="utf-8")
+    return certificate
+
+
+def test_trust_refreshed_certificate_does_nothing_without_a_certificate(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(network.subprocess, "run", lambda *_a, **_k: pytest.fail("must not run"))
+    assert network.trust_refreshed_certificate(tmp_path, False) == []
+
+
+def test_trust_refreshed_certificate_uses_the_macos_user_keychain(tmp_path: Path, monkeypatch) -> None:
+    certificate = _certificate(tmp_path)
+    calls: list[list[str]] = []
+    monkeypatch.setattr(network.platform, "system", lambda: "Darwin")
+    monkeypatch.setattr(
+        network.subprocess,
+        "run",
+        lambda command, **_kwargs: calls.append(list(command)) or SimpleNamespace(returncode=0, stdout="", stderr=""),
+    )
+    assert network.trust_refreshed_certificate(tmp_path, False) == []
+    assert calls[0][:4] == ["security", "add-trusted-cert", "-r", "trustRoot"]
+    assert "-d" not in calls[0], "the admin domain needs sudo and fails without a terminal"
+    assert calls[0][-1] == str(certificate)
+
+
+def test_trust_refreshed_certificate_tells_the_user_when_macos_refuses(tmp_path: Path, monkeypatch) -> None:
+    _certificate(tmp_path)
+    monkeypatch.setattr(network.platform, "system", lambda: "Darwin")
+    monkeypatch.setattr(
+        network.subprocess, "run", lambda *_a, **_k: SimpleNamespace(returncode=1, stdout="", stderr="denied")
+    )
+    notes = network.trust_refreshed_certificate(tmp_path, False)
+    assert notes and "security add-trusted-cert" in notes[0]
+
+
+def test_trust_refreshed_certificate_installs_the_mkcert_authority(tmp_path: Path, monkeypatch) -> None:
+    _certificate(tmp_path)
+    calls: list[list[str]] = []
+    monkeypatch.setattr(network.shutil, "which", lambda name: f"/bin/{name}")
+    monkeypatch.setattr(
+        network.subprocess,
+        "run",
+        lambda command, **_kwargs: calls.append(list(command)) or SimpleNamespace(returncode=0, stdout="", stderr=""),
+    )
+    assert network.trust_refreshed_certificate(tmp_path, True) == []
+    assert calls == [["/bin/mkcert", "-install"]]
+
+
+def test_trust_refreshed_certificate_imports_into_the_windows_user_store(tmp_path: Path, monkeypatch) -> None:
+    _certificate(tmp_path)
+    calls: list[list[str]] = []
+    monkeypatch.setattr(network.platform, "system", lambda: "Windows")
+    monkeypatch.setattr(
+        network.subprocess,
+        "run",
+        lambda command, **_kwargs: calls.append(list(command)) or SimpleNamespace(returncode=0, stdout="", stderr=""),
+    )
+    assert network.trust_refreshed_certificate(tmp_path, False) == []
+    assert "Import-Certificate" in calls[0][-1] and "CurrentUser" in calls[0][-1]
+
+
+def test_trust_refreshed_certificate_points_linux_users_at_the_manual_step(tmp_path: Path, monkeypatch) -> None:
+    certificate = _certificate(tmp_path)
+    monkeypatch.setattr(network.platform, "system", lambda: "Linux")
+    monkeypatch.setattr(network.shutil, "which", lambda _name: None)
+    notes = network.trust_refreshed_certificate(tmp_path, False)
+    assert notes and str(certificate) in notes[0]

@@ -229,7 +229,7 @@ def test_agent_browse_lists_only_safe_visible_directories(monkeypatch, tmp_path)
     (tmp_path / "file.txt").write_text("not a directory", encoding="utf-8")
     request = SimpleNamespace(query_params={"path": str(tmp_path)})
     monkeypatch.setattr(agent_service, "_authorize_system", lambda _request: None)
-    monkeypatch.setattr(agent_service, "_configured_workspace_roots", lambda: (tmp_path.resolve(),))
+    monkeypatch.setattr(agent_service, "_configured_workspace_roots", lambda **_kwargs: (tmp_path.resolve(),))
     monkeypatch.setattr(agent_service, "_default_workspace", lambda _roots: tmp_path.resolve())
 
     result = asyncio.run(agent_service.agent_browse(request))
@@ -285,7 +285,7 @@ def install_layout(monkeypatch, tmp_path):
         agent_service, "credential_files", lambda: (install / "storage" / "r.json", install / "storage" / ".s")
     )
     monkeypatch.setattr(agent_service, "proxy_secret_file", lambda: install / "storage" / ".proxy_secret")
-    monkeypatch.setattr(agent_service, "_configured_workspace_roots", lambda: (projects.resolve(), install.resolve()))
+    monkeypatch.setattr(agent_service, "_configured_workspace_roots", lambda **_kwargs: (projects.resolve(), install.resolve()))
     monkeypatch.setattr(agent_service, "_authorize_system", lambda _request: None)
     return SimpleNamespace(projects=projects.resolve(), install=install.resolve(), other=other.resolve())
 
@@ -311,11 +311,11 @@ def test_device_workspace_never_includes_trinaxai_own_files(install_layout) -> N
 
 def test_device_default_workspace_is_replaced_by_a_root_that_is_safe(monkeypatch, install_layout) -> None:
     monkeypatch.setattr(
-        agent_service, "_configured_workspace_roots", lambda: (install_layout.install, install_layout.other)
+        agent_service, "_configured_workspace_roots", lambda **_kwargs: (install_layout.install, install_layout.other)
     )
     chosen = agent_service._confine_device_workspace(install_layout.install, _device_request(), explicit=False)
     assert chosen == install_layout.other
-    monkeypatch.setattr(agent_service, "_configured_workspace_roots", lambda: (install_layout.install,))
+    monkeypatch.setattr(agent_service, "_configured_workspace_roots", lambda **_kwargs: (install_layout.install,))
     with pytest.raises(HTTPException) as denied:
         agent_service._confine_device_workspace(install_layout.install, _device_request(), explicit=False)
     assert denied.value.status_code == 403

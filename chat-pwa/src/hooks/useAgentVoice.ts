@@ -33,6 +33,8 @@ export function useAgentVoice({ inputRef, lang, setInput, setImageError, t }: Us
   const manualDictationRef = useRef(false);
   const voiceRestartTimerRef = useRef<number | null>(null);
   const startDictationRef = useRef<() => void>(() => undefined);
+  // Set once the native recognizer proves unusable, so this session records and transcribes locally.
+  const forceBackendRef = useRef(false);
 
   const cancelDictation = useCallback(() => {
     manualDictationRef.current = false;
@@ -69,7 +71,7 @@ export function useAgentVoice({ inputRef, lang, setInput, setImageError, t }: Us
     recorderRef.current = null;
     backendTranscriptionAbortRef.current?.abort();
     backendTranscriptionAbortRef.current = null;
-    if (voiceSupported) {
+    if (voiceSupported && !forceBackendRef.current) {
       const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
       const recognition = new SpeechRecognition();
       const runId = ++recognitionRunRef.current;
@@ -92,6 +94,17 @@ export function useAgentVoice({ inputRef, lang, setInput, setImageError, t }: Us
       recognition.onerror = (event: any) => {
         if (runId !== recognitionRunRef.current) return;
         const error = String(event?.error || 'unknown');
+        // Safari without Dictation/Siri, an offline Chrome or an unsupported locale cannot use the
+        // native service; the recorder plus local transcription still works.
+        if (['network', 'service-not-allowed', 'language-not-supported'].includes(error) && detectBackendVoice()) {
+          stopAfterError = true;
+          forceBackendRef.current = true;
+          recognitionRunRef.current += 1;
+          try { recognition.abort(); } catch { /* recognition already ended */ }
+          recognitionRef.current = null;
+          startDictationRef.current();
+          return;
+        }
         if (['not-allowed', 'service-not-allowed', 'audio-capture', 'language-not-supported'].includes(error)) {
           stopAfterError = true;
           manualDictationRef.current = false;

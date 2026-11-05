@@ -632,11 +632,14 @@ function Ensure-TrinaxAICertificate($Repo, $LanIp) {
       $SanParts = @("DNS:localhost", "DNS:$env:COMPUTERNAME", "DNS:$env:COMPUTERNAME.local", "IP:127.0.0.1")
       if ($LanIp) { $SanParts += "IP:$LanIp" }
       $San = "subjectAltName=$($SanParts -join ',')"
-      & $OpenSsl req -x509 -newkey rsa:2048 -sha256 -days 1825 -nodes `
+      & $OpenSsl req -x509 -newkey rsa:2048 -sha256 -days 825 -nodes `
         -keyout $KeyPath `
         -out $CertPath `
         -subj "/CN=TrinaxAI Local HTTPS" `
-        -addext $San | Out-Null
+        -addext $San `
+        -addext "basicConstraints=critical,CA:FALSE" `
+        -addext "keyUsage=critical,digitalSignature,keyEncipherment" `
+        -addext "extendedKeyUsage=serverAuth" | Out-Null
       if ($LASTEXITCODE -ne 0) { throw (T "openssl certificate generation failed" "Falló la generación del certificado con openssl") }
       Copy-Item -Force $CertPath $CrtPath
       & $OpenSsl pkcs12 -export -out $PfxPath -inkey $KeyPath -in $CertPath -passout "pass:$Passphrase" | Out-Null
@@ -990,9 +993,23 @@ if (-not $NonInteractive) {
   }
 }
 
-$LanIp = (Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
-  Where-Object { $_.IPAddress -match "^(192\.168|10\.|172\.(1[6-9]|2[0-9]|3[0-1]))" } |
-  Select-Object -First 1 -ExpandProperty IPAddress)
+# Use the adapter that owns the default route. The first private address is often a
+# WSL, Hyper-V or VPN adapter that no other device can reach.
+$LanIp = $null
+try {
+  $DefaultRoute = Get-NetRoute -DestinationPrefix "0.0.0.0/0" -ErrorAction Stop |
+    Sort-Object { $_.RouteMetric + $_.InterfaceMetric } | Select-Object -First 1
+  if ($DefaultRoute) {
+    $LanIp = (Get-NetIPAddress -AddressFamily IPv4 -InterfaceIndex $DefaultRoute.InterfaceIndex -ErrorAction Stop |
+      Where-Object { $_.IPAddress -match "^(192\.168|10\.|172\.(1[6-9]|2[0-9]|3[0-1]))" } |
+      Select-Object -First 1 -ExpandProperty IPAddress)
+  }
+} catch { $LanIp = $null }
+if (-not $LanIp) {
+  $LanIp = (Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
+    Where-Object { $_.IPAddress -match "^(192\.168|10\.|172\.(1[6-9]|2[0-9]|3[0-1]))" } |
+    Select-Object -First 1 -ExpandProperty IPAddress)
+}
 
 $EnableLanSystem = 0
 

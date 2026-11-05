@@ -670,14 +670,29 @@ print("\t".join(
 PY
 }
 
+# The address this computer uses to reach the local network (the default route),
+# not the first interface: Docker, WSL and VPN adapters would otherwise win.
 lan_ip() {
+  local ip="" iface=""
   if [ "$OS" = "linux" ]; then
-    hostname -I 2>/dev/null | awk '{print $1}'
+    ip="$(ip -4 route get 192.0.2.1 2>/dev/null | awk '{for (i = 1; i < NF; i++) if ($i == "src") { print $(i + 1); exit }}')"
+    [ -n "$ip" ] || ip="$(hostname -I 2>/dev/null | awk '{print $1}')"
   elif [ "$OS" = "macos" ]; then
-    ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null || true
-  else
-    echo ""
+    iface="$(route -n get default 2>/dev/null | awk '/interface:/ {print $2; exit}')"
+    [ -z "$iface" ] || ip="$(ipconfig getifaddr "$iface" 2>/dev/null || true)"
+    [ -n "$ip" ] || ip="$(ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null || true)"
   fi
+  echo "$ip"
+}
+
+# macOS answers `hostname` with `Mac.local` (or `Mac.lan`, `Mac.home`...). Only the
+# first label is the host name; appending `.local` to the whole value produced
+# `Mac.local.local`, which no device can resolve and the certificate never matched.
+short_hostname() {
+  local name
+  name="$(hostname 2>/dev/null || true)"
+  name="${name%%.*}"
+  echo "${name:-trinaxai}"
 }
 
 free_disk_gb() {
@@ -799,6 +814,27 @@ set_env_file_value() {
   return 1
 }
 
+# Keep the allowed browser origins in step with this computer's name and address
+# when .env already exists (reinstall, update): a stale list made the PWA ask for
+# a "network refresh" on its first start.
+merge_cors_origins() {
+  local current merged origin scheme port
+  current="$(env_file_value TRINAXAI_CORS_ORIGINS)"
+  [ -n "$current" ] || return 0
+  merged="$current"
+  for origin in "$LAN_HOSTNAME.local" ${LAN_IP:+"$LAN_IP"}; do
+    for scheme in https http; do
+      for port in 3334 3335; do
+        case ",$merged," in
+          *",$scheme://$origin:$port,"*) ;;
+          *) merged="$merged,$scheme://$origin:$port" ;;
+        esac
+      done
+    done
+  done
+  [ "$merged" = "$current" ] || set_env_file_value TRINAXAI_CORS_ORIGINS "$merged" || true
+}
+
 add_unique_model() {
   local model="$1"
   [ -n "$model" ] || return 0
@@ -886,62 +922,34 @@ assert_runtime_ready() {
   print_ok "Backend, PWA, and smoke inference are ready"
 }
 
-ensure_https_certificate() {
-  mkdir -p "$SCRIPT_DIR/chat-pwa/certs"
-  cert_key="$SCRIPT_DIR/chat-pwa/certs/localhost-key.pem"
-  cert_file="$SCRIPT_DIR/chat-pwa/certs/localhost.pem"
-  cert_crt="$SCRIPT_DIR/chat-pwa/certs/trinaxai-local.crt"
-  local_dns="$(hostname 2>/dev/null || echo trinaxai).local"
-  if [ -f "$cert_key" ] && [ -f "$cert_file" ]; then
-    if { [ -z "${LAN_IP:-}" ] || ! command -v openssl >/dev/null 2>&1 || \
-      openssl x509 -in "$cert_file" -noout -ext subjectAltName 2>/dev/null | grep -Fq "IP Address:$LAN_IP"; } && \
-      { ! command -v openssl >/dev/null 2>&1 || \
-      openssl x509 -in "$cert_file" -noout -ext subjectAltName 2>/dev/null | grep -Fq "DNS:$local_dns"; }; then
-      print_ok "HTTPS certificate found"
+# Subject Alternative Names of a certificate, one per line. `openssl x509 -ext`
+# does not exist in the LibreSSL that ships with macOS, so read the text dump.
+cert_san() {
+  openssl x509 -in "$1" -noout -text 2>/dev/null | awk '/Subject Alternative Name/ {getline; print; exit}' | tr ',' '\n' | sed 's/^ *//'
+}
+
+# Trust the generated certificate for the current user. Browsers on macOS and
+# Linux do not read the same store, so each platform needs its own step.
+trust_https_certificate() {
+  local cert_crt="$1" mkcert_ok="$2"
+  if [ "$OS" = "macos" ]; then
+    if [ "$mkcert_ok" = "1" ]; then
+      # mkcert signs with its own CA; trusting that CA covers every certificate it issues later.
+      mkcert -install >/dev/null 2>&1 && \
+        print_ok "HTTPS certificate authority trusted in the macOS keychain" || \
+        print_warn "Could not trust the mkcert authority. Run: mkcert -install"
+    else
+      # The user domain (no -d) needs only the login password; the admin domain demanded sudo and failed silently.
+      security add-trusted-cert -r trustRoot -k "$HOME/Library/Keychains/login.keychain-db" "$cert_crt" >/dev/null 2>&1 && \
+        print_ok "HTTPS certificate trusted in macOS login keychain" || \
+        print_warn "Could not auto-trust the certificate. Run: security add-trusted-cert -r trustRoot -k ~/Library/Keychains/login.keychain-db $cert_crt"
+    fi
+  elif [ "$OS" = "linux" ]; then
+    if [ "$mkcert_ok" = "1" ]; then
+      mkcert -install >/dev/null 2>&1 && print_ok "HTTPS certificate authority trusted (system and browsers)" || \
+        print_warn "Could not trust the mkcert authority. Run: mkcert -install"
       return 0
     fi
-    print_info "LAN IP changed to $LAN_IP; renewing the HTTPS certificate..."
-  fi
-  if ! command -v openssl >/dev/null 2>&1; then
-    print_warn "OpenSSL was not found. HTTPS certificate generation skipped."
-    print_warn "The PWA may run as HTTP or show a browser security warning."
-    return 0
-  fi
-  print_info "Creating local HTTPS certificate for TrinaxAI..."
-  san_entries="DNS:localhost,DNS:$(hostname 2>/dev/null || echo trinaxai),DNS:$local_dns,IP:127.0.0.1,IP:::1"
-  if [ -n "${LAN_IP:-}" ]; then
-    san_entries="$san_entries,IP:$LAN_IP"
-  fi
-  mkcert_ok=0
-  if command -v mkcert >/dev/null 2>&1; then
-    mkcert_names=(localhost "$(hostname 2>/dev/null || echo trinaxai)" "$local_dns" 127.0.0.1 ::1)
-    if [ -n "${LAN_IP:-}" ]; then
-      mkcert_names+=("$LAN_IP")
-    fi
-    mkcert -cert-file "$cert_file" -key-file "$cert_key" \
-      "${mkcert_names[@]}" >/dev/null 2>&1 && mkcert_ok=1 || {
-        print_warn "mkcert could not generate HTTPS certificate; trying OpenSSL."
-      }
-  fi
-  if [ "$mkcert_ok" -ne 1 ]; then
-    openssl req -x509 -newkey rsa:2048 -sha256 -days 1825 -nodes \
-      -keyout "$cert_key" \
-      -out "$cert_file" \
-      -subj "/CN=TrinaxAI Local HTTPS" \
-      -addext "subjectAltName=$san_entries" >/dev/null 2>&1 || {
-        print_warn "Could not generate HTTPS certificate."
-        return 0
-      }
-  fi
-  cp "$cert_file" "$cert_crt"
-  chmod 600 "$cert_key" 2>/dev/null || true
-  print_ok "HTTPS certificate generated"
-
-  if [ "$OS" = "macos" ]; then
-    security add-trusted-cert -d -r trustRoot -k "$HOME/Library/Keychains/login.keychain-db" "$cert_crt" >/dev/null 2>&1 && \
-      print_ok "HTTPS certificate trusted in macOS login keychain" || \
-      print_warn "Could not auto-trust the certificate. Add $cert_crt to Keychain Access and trust it."
-  elif [ "$OS" = "linux" ]; then
     if command -v update-ca-certificates >/dev/null 2>&1; then
       as_root cp "$cert_crt" /usr/local/share/ca-certificates/trinaxai-local.crt >/dev/null 2>&1 && \
       as_root update-ca-certificates >/dev/null 2>&1 && \
@@ -955,7 +963,77 @@ ensure_https_certificate() {
     else
       print_warn "No supported CA trust updater found. Import $cert_crt manually in your browser/system."
     fi
+    # Chrome, Chromium and Edge read the per-user NSS database, not the system store.
+    if command -v certutil >/dev/null 2>&1; then
+      mkdir -p "$HOME/.pki/nssdb" 2>/dev/null || true
+      [ -f "$HOME/.pki/nssdb/cert9.db" ] || certutil -d "sql:$HOME/.pki/nssdb" -N --empty-password >/dev/null 2>&1 || true
+      certutil -d "sql:$HOME/.pki/nssdb" -D -n "TrinaxAI Local HTTPS" >/dev/null 2>&1 || true
+      certutil -d "sql:$HOME/.pki/nssdb" -A -t "C,," -n "TrinaxAI Local HTTPS" -i "$cert_crt" >/dev/null 2>&1 && \
+        print_ok "HTTPS certificate trusted in the Chrome/Chromium certificate database" || true
+    else
+      print_info "Chrome/Chromium on Linux use their own certificate store; install libnss3-tools (certutil) and rerun, or import $cert_crt in Settings > Privacy > Manage certificates."
+    fi
   fi
+}
+
+ensure_https_certificate() {
+  mkdir -p "$SCRIPT_DIR/chat-pwa/certs"
+  cert_key="$SCRIPT_DIR/chat-pwa/certs/localhost-key.pem"
+  cert_file="$SCRIPT_DIR/chat-pwa/certs/localhost.pem"
+  cert_crt="$SCRIPT_DIR/chat-pwa/certs/trinaxai-local.crt"
+  host_short="$(short_hostname)"
+  local_dns="$host_short.local"
+  if [ -f "$cert_key" ] && [ -f "$cert_file" ]; then
+    if { [ -z "${LAN_IP:-}" ] || ! command -v openssl >/dev/null 2>&1 || \
+      cert_san "$cert_file" | grep -Fqx "IP Address:$LAN_IP"; } && \
+      { ! command -v openssl >/dev/null 2>&1 || \
+      cert_san "$cert_file" | grep -Fqix "DNS:$local_dns"; }; then
+      print_ok "HTTPS certificate found"
+      return 0
+    fi
+    print_info "Network or host name changed; renewing the HTTPS certificate..."
+  fi
+  if ! command -v openssl >/dev/null 2>&1 && ! command -v mkcert >/dev/null 2>&1; then
+    print_warn "OpenSSL was not found. HTTPS certificate generation skipped."
+    print_warn "The PWA may run as HTTP or show a browser security warning."
+    return 0
+  fi
+  print_info "Creating local HTTPS certificate for TrinaxAI..."
+  san_entries="DNS:localhost,DNS:$host_short,DNS:$local_dns,IP:127.0.0.1,IP:::1"
+  if [ -n "${LAN_IP:-}" ]; then
+    san_entries="$san_entries,IP:$LAN_IP"
+  fi
+  mkcert_ok=0
+  if command -v mkcert >/dev/null 2>&1; then
+    mkcert_names=(localhost "$host_short" "$local_dns" 127.0.0.1 ::1)
+    if [ -n "${LAN_IP:-}" ]; then
+      mkcert_names+=("$LAN_IP")
+    fi
+    mkcert -cert-file "$cert_file" -key-file "$cert_key" \
+      "${mkcert_names[@]}" >/dev/null 2>&1 && mkcert_ok=1 || {
+        print_warn "mkcert could not generate HTTPS certificate; trying OpenSSL."
+      }
+  fi
+  if [ "$mkcert_ok" -ne 1 ]; then
+    # Safari and Chrome on macOS reject a server certificate without serverAuth, a SAN and
+    # a lifetime of at most 825 days; the old command set only the SAN and lived 1825 days.
+    command -v openssl >/dev/null 2>&1 || { print_warn "OpenSSL was not found. HTTPS certificate generation skipped."; return 0; }
+    openssl req -x509 -newkey rsa:2048 -sha256 -days 825 -nodes \
+      -keyout "$cert_key" \
+      -out "$cert_file" \
+      -subj "/CN=TrinaxAI Local HTTPS" \
+      -addext "subjectAltName=$san_entries" \
+      -addext "basicConstraints=critical,CA:FALSE" \
+      -addext "keyUsage=critical,digitalSignature,keyEncipherment" \
+      -addext "extendedKeyUsage=serverAuth" >/dev/null 2>&1 || {
+        print_warn "Could not generate HTTPS certificate."
+        return 0
+      }
+  fi
+  cp "$cert_file" "$cert_crt"
+  chmod 600 "$cert_key" 2>/dev/null || true
+  print_ok "HTTPS certificate generated"
+  trust_https_certificate "$cert_crt" "$mkcert_ok"
 }
 
 install_node_22_linux() (
@@ -1585,13 +1663,14 @@ fi
 ENABLE_LAN_SYSTEM=0
 
 LAN_IP="$(lan_ip)"
-LAN_HOSTNAME="$(hostname 2>/dev/null || echo trinaxai)"
+LAN_HOSTNAME="$(short_hostname)"
 if [ -L .env ]; then
   print_err "Refusing to write .env through a symbolic link."
   exit 1
 fi
 if [ -f .env ]; then
   print_ok ".env already exists; preserving the existing configuration"
+  merge_cors_origins
   if [ -n "$LAN_ACCESS" ]; then
     if [ "$LAN_ACCESS" = "1" ]; then set_env_file_value TRINAXAI_PWA_HOST 0.0.0.0; else set_env_file_value TRINAXAI_PWA_HOST 127.0.0.1; fi \
       || print_warn "Could not update TRINAXAI_PWA_HOST in .env; set it by hand (0.0.0.0 allows other devices)."

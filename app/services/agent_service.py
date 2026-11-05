@@ -112,13 +112,15 @@ def _sse_done() -> str:
     return "data: [DONE]\n\n"
 
 
-def _configured_workspace_roots() -> tuple[Path, ...]:
+def _configured_workspace_roots(*, include_home: bool = False) -> tuple[Path, ...]:
     """Return canonical roots the HTTP agent is allowed to enter.
 
     ``TRINAXAI_AGENT_WORKSPACE_ROOTS`` is a platform-path-separator-delimited
     allowlist.  When omitted, the configured indexing roots are used, with the
-    repository itself as a safe fallback.  Filesystem roots are never accepted
-    as agent roots.
+    repository itself as a safe fallback, and ``include_home`` (the host's own
+    session, never a paired device) also opens the user's home directory so a
+    project can live anywhere the user keeps their work.  Filesystem roots are
+    never accepted as agent roots.
     """
     configured = os.getenv("TRINAXAI_AGENT_WORKSPACE_ROOTS", "").strip()
     if configured:
@@ -126,6 +128,8 @@ def _configured_workspace_roots() -> tuple[Path, ...]:
     else:
         candidates = [str(item) for item in getattr(config, "PROJECTS_DIRS", ())]
         candidates.append(str(config.BASE_DIR))
+        if include_home:
+            candidates.append(str(Path.home()))
 
     roots: list[Path] = []
     for candidate in candidates:
@@ -241,9 +245,14 @@ def _confine_device_workspace(workspace: Path, request: Request, *, explicit: bo
     )
 
 
-def _resolve_workspace(requested: str | None) -> Path:
+def _workspace_roots_for(request: Request) -> tuple[Path, ...]:
+    """Roots this caller may enter: the host also gets its home folder, a paired device never does."""
+    return _configured_workspace_roots(include_home=not _is_device_request(request))
+
+
+def _resolve_workspace(requested: str | None, roots: tuple[Path, ...] | None = None) -> Path:
     """Resolve a requested workspace without defaulting to a broad user folder."""
-    roots = _configured_workspace_roots()
+    roots = roots if roots is not None else _configured_workspace_roots()
     if not roots:
         raise HTTPException(status_code=503, detail="No agent workspace root is configured.")
     explicit = bool((requested or "").strip())
@@ -1047,7 +1056,7 @@ async def agent(req: AgentRequest, request: Request):
     _authorize_http_yolo(req, request)
     enforce_rate_limit(request, bucket="chat")
     workspace = _confine_device_workspace(
-        _resolve_workspace(req.workspace),
+        _resolve_workspace(req.workspace, _workspace_roots_for(request)),
         request,
         explicit=bool((req.workspace or "").strip()),
     )
@@ -1101,8 +1110,8 @@ async def agent_cancel(req: AgentCancelRequest, request: Request):
     return {"ok": True, "cancelled": True}
 
 
-def _browse_start_dir(path: str | None) -> Path:
-    return _resolve_workspace(path)
+def _browse_start_dir(path: str | None, roots: tuple[Path, ...] | None = None) -> Path:
+    return _resolve_workspace(path, roots)
 
 
 async def agent_browse(request: Request):
@@ -1112,14 +1121,18 @@ async def agent_browse(request: Request):
     contents. Used solely to choose the agent's workspace root.
     """
     _authorize_system(request)
-    resolved = _browse_start_dir(request.query_params.get("path"))
-    roots = _configured_workspace_roots()
+    roots = _workspace_roots_for(request)
+    resolved = _browse_start_dir(request.query_params.get("path"), roots)
     device = _is_device_request(request)
     if device and _inside_protected(resolved):
         if (request.query_params.get("path") or "").strip():
             raise HTTPException(status_code=403, detail="This folder holds TrinaxAI's own files.")
         resolved = _device_browse_home(roots)
-    enclosing_root = next(root for root in roots if resolved == root or root in resolved.parents)
+    # The outermost matching root, so the picker can climb from a project up to the folder that holds it.
+    enclosing_root = min(
+        (root for root in roots if resolved == root or root in resolved.parents),
+        key=lambda root: len(root.parts),
+    )
     entries = []
     try:
         for child in sorted(resolved.iterdir(), key=lambda p: p.name.lower()):

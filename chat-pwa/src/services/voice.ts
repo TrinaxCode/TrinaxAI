@@ -33,6 +33,65 @@ export function takeSpeechChunk(text: string, force = false): SpeechChunk {
   return { chunk: normalized.slice(0, cut).trim(), remainder: normalized.slice(cut).trimStart() };
 }
 
+// macOS lists dozens of novelty voices (Zarvox, Bells, Whisper...) and its compact
+// Spanish voices (Eddy, Flo, Reed...) sound robotic; `voices[0]` and the first
+// `es-MX` match often landed on one of them.
+const NOVELTY_VOICE = /^(albert|bad news|bahh|bells|boing|bubbles|cellos|deranged|good news|hysterical|jester|organ|pipe organ|superstar|trinoids|whisper|wobble|zarvox|fred|junior|ralph|kathy|agnes|bruce|princess|vicki)\b/i;
+const COMPACT_VOICE = /^(eddy|flo|grandma|grandpa|reed|rocko|sandy|shelley)\b/i;
+const HIGH_QUALITY_VOICE = /premium|enhanced|neural|natural|siri|online|wavenet|studio/i;
+const PREFERRED_VOICE = /^(paulina|m[oó]nica|jorge|juan|diego|marisol|ang[eé]lica|francisca|google|samantha|allison|ava|susan|zoe|tom|daniel|karen|moira)\b/i;
+
+function normalizeLang(value: string): string {
+  return value.replace('_', '-').toLowerCase();
+}
+
+export function scoreVoice(voice: Pick<SpeechSynthesisVoice, 'name' | 'lang' | 'voiceURI' | 'default'>, lang: string): number {
+  const wanted = normalizeLang(lang);
+  const actual = normalizeLang(voice.lang || '');
+  const name = voice.name || '';
+  let score = 0;
+  if (actual === wanted) score += 100;
+  else if (actual.slice(0, 2) === wanted.slice(0, 2)) score += 60;
+  else return -1000;
+  if (HIGH_QUALITY_VOICE.test(`${name} ${voice.voiceURI || ''}`)) score += 40;
+  if (PREFERRED_VOICE.test(name)) score += 20;
+  if (voice.default) score += 5;
+  if (COMPACT_VOICE.test(name)) score -= 30;
+  if (NOVELTY_VOICE.test(name)) score -= 200;
+  return score;
+}
+
+/** The most natural installed voice for `lang`, or undefined when none speaks that language. */
+export function pickBestVoice(voices: readonly SpeechSynthesisVoice[], lang: string): SpeechSynthesisVoice | undefined {
+  let best: SpeechSynthesisVoice | undefined;
+  let bestScore = 0;
+  for (const voice of voices) {
+    const score = scoreVoice(voice, lang);
+    if (score > bestScore) {
+      best = voice;
+      bestScore = score;
+    }
+  }
+  return best;
+}
+
+/** Plain text a synthesizer can read: no markdown, links, emoji or code. */
+export function cleanSpeechText(text: string, codeReplacement = ''): string {
+  return text
+    .replace(/```[\s\S]*?```/g, ` ${codeReplacement} `)
+    .replace(/`[^`]*`/g, '')
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, '')
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/https?:\/\/\S+/g, '')
+    .replace(/\$\$[\s\S]*?\$\$|\$[^$\n]+\$/g, '')
+    .replace(/\p{Extended_Pictographic}/gu, '')
+    .replace(/\u200d|\ufe0f/g, '')
+    .replace(/^\s{0,3}(?:[-*+]|\d+[.)])\s+/gm, '')
+    .replace(/[#*_>~|]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 export function detectSpeechRecognition(): boolean {
   return typeof window !== 'undefined' && !!(window.SpeechRecognition || window.webkitSpeechRecognition);
 }

@@ -255,3 +255,54 @@ it('stops once at the maximum duration and ignores late recorder events', async 
   vi.useRealTimers();
   vi.unstubAllGlobals();
 });
+
+function stubRecorderEnvironment(context: { state: string; resume: () => Promise<void> }) {
+  const stop = vi.fn();
+  const getUserMedia = vi.fn().mockResolvedValue({
+    getTracks: () => [{ kind: 'audio', stop, addEventListener: vi.fn(), removeEventListener: vi.fn() }],
+  });
+  vi.stubGlobal('MediaRecorder', class {
+    static isTypeSupported = () => true;
+    ondataavailable = () => {};
+    onstop = () => {};
+    onerror = () => {};
+    onstart = () => {};
+    start() { this.onstart(); }
+    stop() { this.onstop(); }
+  });
+  vi.stubGlobal('AudioContext', class {
+    state = context.state;
+    resume = context.resume;
+    createMediaStreamSource = () => ({ connect: vi.fn() });
+    createAnalyser = () => ({ fftSize: 0, smoothingTimeConstant: 0, getByteTimeDomainData: vi.fn() });
+    close = vi.fn().mockResolvedValue(undefined);
+  });
+  Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: { getUserMedia } });
+  vi.stubGlobal('requestAnimationFrame', vi.fn(() => 1));
+  vi.stubGlobal('cancelAnimationFrame', vi.fn());
+  return { getUserMedia, stop };
+}
+
+it('asks the browser for echo cancellation so a call does not hear its own speakers', async () => {
+  const { getUserMedia } = stubRecorderEnvironment({ state: 'running', resume: vi.fn() });
+  const recorder = await startAudioRecorder({ onSilence: vi.fn(), onError: vi.fn() });
+  expect(getUserMedia).toHaveBeenCalledWith({
+    audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+  });
+  recorder.cancel();
+  vi.unstubAllGlobals();
+});
+
+it('starts recording even when Safari never resumes the audio context, and cuts the turn short', async () => {
+  vi.useFakeTimers();
+  const onSilence = vi.fn();
+  stubRecorderEnvironment({ state: 'suspended', resume: () => new Promise<void>(() => {}) });
+  const started = startAudioRecorder({ onSilence, onError: vi.fn() });
+  await vi.advanceTimersByTimeAsync(1_600);
+  await started;
+  // Without silence detection the recorder must still end the turn on its own.
+  await vi.advanceTimersByTimeAsync(8_100);
+  expect(onSilence).toHaveBeenCalledOnce();
+  vi.useRealTimers();
+  vi.unstubAllGlobals();
+});

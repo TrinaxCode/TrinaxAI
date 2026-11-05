@@ -245,7 +245,7 @@ garbage.
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `TRINAXAI_AGENT_WORKSPACE_ROOTS` | configured indexing roots, then repository | Platform-path-separator-delimited allowlist for HTTP-agent workspaces. Filesystem roots are rejected. |
+| `TRINAXAI_AGENT_WORKSPACE_ROOTS` | configured indexing roots, repository and — for the host's own session only — the home folder | Platform-path-separator-delimited allowlist for HTTP-agent workspaces. When set, it is a hard limit for everyone. Paired devices never get the home folder. Filesystem roots are rejected. |
 | `TRINAXAI_AGENT_HTTP_YOLO` | `0` | Enables HTTP auto-approval after the caller also proves `agent_yolo`; with the normal remote gate disabled, this remains loopback-only. |
 | `TRINAXAI_AGENT_ALLOW_UNSANDBOXED_COMMANDS` | `0` | Explicit high-risk compatibility escape hatch when an OS command sandbox is unavailable. With the default `0`, terminal execution fails closed. |
 | `TRINAXAI_AGENT_GIT_HOOKS` | `0` | Let the Agent's `git` tool run the repository's git hooks (pre-commit, pre-push ...). Off by default because hooks run on the host with your credentials and can be redirected into the workspace (`core.hooksPath`), where the Agent can write files. |
