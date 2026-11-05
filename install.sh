@@ -278,6 +278,8 @@ tr_text_es() {
       'System dependencies already available') echo 'Las dependencias del sistema ya están disponibles' ;;
       'Homebrew is required but was not found. Install Homebrew and run the installer again.') echo 'Se requiere Homebrew, pero no se encontró. Instala Homebrew y vuelve a ejecutar el instalador.' ;;
       'macOS dependencies could not be installed.') echo 'No se pudieron instalar las dependencias de macOS.' ;;
+      'Homebrew is not writable by your user.') echo 'Tu usuario no tiene permiso de escritura en Homebrew.' ;;
+      'Run this command in Terminal, then run the installer again:') echo 'Ejecuta este comando en Terminal y luego vuelve a ejecutar el instalador:' ;;
       '  • Python 3.10+ from '*) echo "  • Python 3.10+ desde${1#  • Python 3.10+ from }" ;;
       '  • WSL2 recommended for full functionality') echo '  • Se recomienda WSL2 para disfrutar de toda la funcionalidad' ;;
       'Installer failed with exit code '*'. The error is above.') echo "El instalador falló con el código de salida ${1#Installer failed with exit code }; el error aparece arriba." ;;
@@ -299,6 +301,8 @@ tr_text_es() {
       '0/6 Downloading TrinaxAI') echo '0/6 Descargando TrinaxAI' ;;
       'Install directory exists but is not a TrinaxAI installation:'*) echo "El directorio de instalación existe, pero no es una instalación de TrinaxAI:${1#Install directory exists but is not a TrinaxAI installation:}" ;;
       'Choose another location with --install-dir PATH.') echo 'Elige otra ubicación con --install-dir PATH.' ;;
+      'The existing installation is version '*) rest="${1#The existing installation is version }"; echo "La instalación existente es la versión ${rest%%, not *}, no la ${rest#*, not }" ;;
+      'Update it with ./update.sh inside that folder, or move that folder aside and run the installer again.') echo 'Actualízala con ./update.sh dentro de esa carpeta, o mueve esa carpeta a otro sitio y vuelve a ejecutar el instalador.' ;;
       'Existing TrinaxAI installation found at '*) echo "Se encontró una instalación existente de TrinaxAI en${1#Existing TrinaxAI installation found at }" ;;
       'TRINAXAI_RELEASE_VERSION must be a semantic version.') echo 'TRINAXAI_RELEASE_VERSION debe ser una versión semántica.' ;;
       'Source package URL must use HTTPS.') echo 'La URL del paquete fuente debe usar HTTPS.' ;;
@@ -886,6 +890,16 @@ assert_runtime_ready() {
   print_ok "Backend, PWA, and smoke inference are ready"
 }
 
+# Trust in the user domain: the admin domain (-d) needs sudo and used to fail silently.
+trust_https_certificate_macos() {
+  if security add-trusted-cert -r trustRoot -p ssl -k "$HOME/Library/Keychains/login.keychain-db" "$cert_crt" >/dev/null 2>&1; then
+    print_ok "HTTPS certificate trusted in macOS login keychain"
+  else
+    print_warn "Could not auto-trust the certificate. Add $cert_crt to Keychain Access and trust it."
+    echo "      security add-trusted-cert -r trustRoot -p ssl -k ~/Library/Keychains/login.keychain-db \"$cert_crt\""
+  fi
+}
+
 ensure_https_certificate() {
   mkdir -p "$SCRIPT_DIR/chat-pwa/certs"
   cert_key="$SCRIPT_DIR/chat-pwa/certs/localhost-key.pem"
@@ -898,6 +912,12 @@ ensure_https_certificate() {
       { ! command -v openssl >/dev/null 2>&1 || \
       openssl x509 -in "$cert_file" -noout -ext subjectAltName 2>/dev/null | grep -Fq "DNS:$local_dns"; }; then
       print_ok "HTTPS certificate found"
+      # An earlier run may have created the certificate but failed to trust it.
+      if [ "$OS" = "macos" ] && [ -f "$cert_crt" ] && \
+        openssl x509 -in "$cert_file" -noout -subject 2>/dev/null | grep -q "TrinaxAI Local HTTPS" && \
+        ! security dump-trust-settings 2>/dev/null | grep -q "TrinaxAI Local HTTPS"; then
+        trust_https_certificate_macos
+      fi
       return 0
     fi
     print_info "LAN IP changed to $LAN_IP; renewing the HTTPS certificate..."
@@ -938,9 +958,7 @@ ensure_https_certificate() {
   print_ok "HTTPS certificate generated"
 
   if [ "$OS" = "macos" ]; then
-    security add-trusted-cert -d -r trustRoot -k "$HOME/Library/Keychains/login.keychain-db" "$cert_crt" >/dev/null 2>&1 && \
-      print_ok "HTTPS certificate trusted in macOS login keychain" || \
-      print_warn "Could not auto-trust the certificate. Add $cert_crt to Keychain Access and trust it."
+    trust_https_certificate_macos
   elif [ "$OS" = "linux" ]; then
     if command -v update-ca-certificates >/dev/null 2>&1; then
       as_root cp "$cert_crt" /usr/local/share/ca-certificates/trinaxai-local.crt >/dev/null 2>&1 && \
@@ -1375,6 +1393,13 @@ if [ -z "$SCRIPT_DIR" ] || [ ! -f "$SCRIPT_DIR/rag_api.py" ] || [ ! -f "$SCRIPT_
       exit 1
     fi
     print_ok "Existing TrinaxAI installation found at $REPO_DIR"
+    # Reusing an older managed copy breaks later steps with obscure ImportErrors.
+    existing_version="$(sed -n 's/^version = "\(.*\)"/\1/p' "$REPO_DIR/pyproject.toml" | head -1)"
+    if [ -f "$REPO_DIR/.trinaxai-managed" ] && [ "$existing_version" != "${TRINAXAI_RELEASE_VERSION:-1.4.1}" ]; then
+      print_err "The existing installation is version ${existing_version:-unknown}, not ${TRINAXAI_RELEASE_VERSION:-1.4.1}: $REPO_DIR"
+      print_info "Update it with ./update.sh inside that folder, or move that folder aside and run the installer again."
+      exit 1
+    fi
     cd "$REPO_DIR"
   else
     mkdir -p "$(dirname "$REPO_DIR")"
@@ -1479,6 +1504,14 @@ elif [ "$OS" = "macos" ]; then
   fi
   if ! command -v brew &>/dev/null; then
     print_err "Homebrew is required but was not found. Install Homebrew and run the installer again."
+    exit 1
+  fi
+  # A Homebrew owned by another user (e.g. after a Mac migration) fails mid-install with obscure lock errors.
+  BREW_PREFIX="$(brew --prefix 2>/dev/null)"
+  if [ -n "$BREW_PREFIX" ] && [ ! -w "$BREW_PREFIX" ]; then
+    print_err "Homebrew is not writable by your user."
+    print_info "Run this command in Terminal, then run the installer again:"
+    echo "      sudo chown -R $(id -un) \"$BREW_PREFIX\""
     exit 1
   fi
   if ! brew install python@3.11 node curl openssl; then
