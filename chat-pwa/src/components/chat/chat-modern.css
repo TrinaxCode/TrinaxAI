@@ -535,10 +535,70 @@ html.light .tc-sources-score {
   }
 }
 
+/* Call mode: TrinaxAI mark, speaking equalizer and thinking orbit. */
+.vc-mark {
+  display: block;
+  width: 5.25rem;
+  height: 5.25rem;
+  background: #fff;
+  -webkit-mask: url('/logo-for-ai-transparent.webp') center / 170% no-repeat;
+  mask: url('/logo-for-ai-transparent.webp') center / 170% no-repeat;
+  filter: drop-shadow(0 2px 10px rgba(0, 40, 90, 0.35));
+}
+
+.vc-bars {
+  --vc-radius: 5rem;
+  --vc-len: 1.75rem;
+}
+
+.vc-bar {
+  position: absolute;
+  top: 50%;
+  left: calc(50% - 1.5px);
+  width: 3px;
+  height: 0;
+}
+
+.vc-bar-fill {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  height: var(--vc-len);
+  border-radius: 999px;
+  background: linear-gradient(to top, #006bbd, #8fd0f5);
+  transform-origin: 50% 100%;
+  animation: vc-eq var(--vc-dur, 0.9s) ease-in-out var(--vc-delay, 0s) infinite alternate;
+}
+
+@keyframes vc-eq {
+  from { transform: scaleY(0.14); }
+  to { transform: scaleY(var(--vc-peak, 0.8)); }
+}
+
+@keyframes vc-spin {
+  to { transform: rotate(360deg); }
+}
+
+.vc-spin { animation: vc-spin 1.6s linear infinite; }
+.vc-spin-reverse { animation: vc-spin 2.4s linear infinite reverse; }
+
+@media (min-width: 640px) {
+  .vc-bars { --vc-radius: 5.5rem; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vc-bar-fill { animation: none; transform: scaleY(0.45); }
+  .vc-spin,
+  .vc-spin-reverse { animation: none; }
+}
+
 @media (max-height: 420px) {
   .voice-call-surface { padding-top: 0.5rem; padding-bottom: 5rem; }
   .voice-call-orb { width: 8rem; height: 8rem; }
   .voice-call-core { width: 5rem; height: 5rem; }
   .voice-call-status { margin-top: 0.5rem; font-size: 1rem; }
   .voice-call-bars { margin-top: 0.25rem; height: 1rem; }
+  .vc-mark { width: 3.25rem; height: 3.25rem; }
+  .vc-bars { --vc-radius: 3.35rem; --vc-len: 0.9rem; }
 }

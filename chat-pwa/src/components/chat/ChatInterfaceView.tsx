@@ -155,7 +155,8 @@ export function ChatInterfaceView({ controller }: { controller: ChatController }
             className="flex min-h-0 flex-1 flex-col"
             initial={prefersReducedMotion ? false : { opacity: 0, y: 24, scale: 0.98 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 24, scale: 0.98 }}
+            // The call view runs its own hang-up animation and holds the exit open.
+            exit={{ opacity: 1 }}
             transition={sectionTransition}
           >
             <VoiceCallView

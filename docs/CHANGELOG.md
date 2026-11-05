@@ -28,6 +28,7 @@ All notable changes to TrinaxAI are documented here. This project follows the
 
 ### Changed
 
+- Call mode has a new look: a microphone while TrinaxAI listens, the TrinaxAI mark inside an orbit while it thinks, the mark with a radial equalizer while it speaks, and a hang-up animation ("Call ended") before returning to the chat. Reduced-motion users get static versions of each state.
 - Call mode closes the sidebar when it starts and shows live captions of what is heard and said.
 
 ## [1.4.1] — 2026-10-27

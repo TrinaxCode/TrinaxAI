@@ -28,6 +28,7 @@ el formato de [Keep a Changelog](https://keepachangelog.com/).
 
 ### Cambiado
 
+- El modo llamada estrena diseño: un micrófono mientras TrinaxAI escucha, la marca de TrinaxAI dentro de una órbita mientras piensa, la marca con un ecualizador radial mientras habla y una animación de cierre («Llamada finalizada») antes de volver al chat. Con movimiento reducido cada estado se muestra estático.
 - El modo llamada cierra el sidebar al iniciar y muestra subtítulos en vivo de lo que se oye y se dice.
 
 ## [1.4.1] — 2026-10-27

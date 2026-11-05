@@ -1,4 +1,5 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
+import { AnimatePresence } from 'framer-motion';
 import { describe, expect, it } from 'vitest';
 
 import { I18nProvider } from '../../i18n/I18nContext';
@@ -51,5 +52,42 @@ describe('VoiceCallView palette', () => {
     expect(text.startsWith('…')).toBe(true);
     expect(text.endsWith('final')).toBe(true);
     expect(text.length).toBeLessThanOrEqual(201);
+  });
+
+  it.each([
+    ['listening', { listening: true, speaking: false, thinking: false }, 'mic'],
+    ['idle', { listening: false, speaking: false, thinking: false }, 'mic'],
+    ['thinking', { listening: false, speaking: false, thinking: true }, 'mark'],
+    ['speaking', { listening: false, speaking: true, thinking: false }, 'mark'],
+  ])('shows the %s emblem', (state, flags, emblem) => {
+    const { container } = render(
+      <I18nProvider>
+        <VoiceCallView isDark {...flags} onEnd={() => undefined} />
+      </I18nProvider>,
+    );
+    const orb = container.querySelector('.voice-call-orb');
+    expect(orb).toHaveAttribute('data-call-state', state);
+    expect(orb).toHaveAttribute('data-emblem', emblem);
+    // The radial equalizer only exists while TrinaxAI is the one speaking.
+    expect(container.querySelectorAll('.vc-bar')).toHaveLength(state === 'speaking' ? 40 : 0);
+  });
+
+  it('plays a hang-up animation before the surface is released', async () => {
+    const Harness = ({ open }: { open: boolean }) => (
+      <I18nProvider>
+        <AnimatePresence>
+          {open && <VoiceCallView isDark listening speaking={false} thinking={false} onEnd={() => undefined} />}
+        </AnimatePresence>
+      </I18nProvider>
+    );
+    const { rerender, container } = render(<Harness open />);
+    expect(container.querySelector('[data-call-state="listening"]')).not.toBeNull();
+
+    rerender(<Harness open={false} />);
+    expect(container.querySelector('[data-call-state="ending"]')).not.toBeNull();
+    expect(screen.getByText('Call ended')).toBeInTheDocument();
+    expect(screen.getByRole('button')).toBeDisabled();
+
+    await waitFor(() => expect(container.querySelector('[data-call-state]')).toBeNull(), { timeout: 3000 });
   });
 });

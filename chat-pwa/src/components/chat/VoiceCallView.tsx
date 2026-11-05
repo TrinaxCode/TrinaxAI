@@ -1,6 +1,8 @@
-import { motion, useReducedMotion, type Variants } from 'framer-motion';
-import { MdCallEnd, MdMic, MdVolumeUp } from 'react-icons/md';
+import { useEffect } from 'react';
+import { motion, useReducedMotion, usePresence, type Variants } from 'framer-motion';
+import { MdCallEnd } from 'react-icons/md';
 import { useI18n } from '../../i18n/I18nContext';
+import VoiceCallOrb, { type CallState } from './VoiceCallOrb';
 
 interface VoiceCallViewProps {
   isDark: boolean;
@@ -15,6 +17,8 @@ interface VoiceCallViewProps {
 }
 
 const CAPTION_CHARS = 200;
+const CLOSING_MS = 750;
+const CLOSING_REDUCED_MS = 120;
 
 // Captions show the tail of long text so the newest words stay visible without scrolling.
 function captionTail(text: string): string {
@@ -25,10 +29,20 @@ function captionTail(text: string): string {
 export default function VoiceCallView({ isDark, listening, speaking, thinking, heard = '', reply = '', onEnd }: VoiceCallViewProps) {
   const { t } = useI18n();
   const reduceMotion = useReducedMotion();
-  const status = speaking ? t('speaking') : thinking ? t('thinking') : listening ? t('listening') : t('voiceMode');
-  const active = speaking || listening || thinking;
+  // The parent keeps this view mounted while it leaves, so the hang-up plays
+  // out here: the orb collapses and the surface is only released afterwards.
+  const [isPresent, safeToRemove] = usePresence();
+  const ending = !isPresent;
+  useEffect(() => {
+    if (isPresent) return undefined;
+    const timer = window.setTimeout(() => safeToRemove?.(), reduceMotion ? CLOSING_REDUCED_MS : CLOSING_MS);
+    return () => window.clearTimeout(timer);
+  }, [isPresent, reduceMotion, safeToRemove]);
+
+  const state: CallState = ending ? 'ending' : speaking ? 'speaking' : thinking ? 'thinking' : listening ? 'listening' : 'idle';
+  const status = ending ? t('callEnded') : speaking ? t('speaking') : thinking ? t('thinking') : listening ? t('listening') : t('voiceMode');
   const foreground = isDark ? 'text-white' : 'text-slate-900';
-  const caption = captionTail(speaking || thinking ? reply : listening ? heard : '');
+  const caption = ending ? '' : captionTail(speaking || thinking ? reply : listening ? heard : '');
 
   // The call surface mounts as one unit, so the workspace, status copy and the
   // hang-up control settle in sequence instead of appearing all at once.
@@ -58,6 +72,8 @@ export default function VoiceCallView({ isDark, listening, speaking, thinking, h
       variants={container}
       initial={reduceMotion ? false : 'hidden'}
       animate="show"
+      exit={{ opacity: 0, transition: { duration: reduceMotion ? 0.1 : 0.3, delay: reduceMotion ? 0 : 0.42 } }}
+      data-call-state={state}
       className={`voice-call-surface relative flex min-h-0 flex-1 flex-col items-center justify-center overflow-hidden px-6 pb-28 pt-12 ${isDark ? 'bg-[#05080d]/70' : 'bg-[#f4f9fd]/70'}`}
       aria-label={t('voiceMode')}
     >
@@ -67,26 +83,7 @@ export default function VoiceCallView({ isDark, listening, speaking, thinking, h
       <motion.div variants={fade} className={`pointer-events-none absolute inset-x-0 bottom-0 h-40 bg-gradient-to-t ${isDark ? 'from-black/50' : 'from-white/70'} to-transparent`} />
 
       <motion.div variants={item} className="relative z-10 flex flex-col items-center text-center">
-        <div className="voice-call-orb relative grid h-52 w-52 place-items-center sm:h-60 sm:w-60">
-          {[1, 0.78, 0.58].map((scale, index) => (
-            <motion.span
-              key={scale}
-              className={`absolute inset-0 rounded-full border ${isDark ? 'border-[#4ea3e0]/25' : 'border-[#006bbd]/20'}`}
-              style={{ scale }}
-              animate={active && !reduceMotion ? { opacity: [0.15, 0.55, 0.15], scale: [scale, scale + 0.035, scale] } : { opacity: 0.3, scale }}
-              transition={{ duration: 2.5, delay: index * 0.25, repeat: active && !reduceMotion ? Infinity : 0, ease: 'easeInOut' }}
-            />
-          ))}
-          <motion.div
-            className="voice-call-core relative grid h-28 w-28 place-items-center rounded-full border border-white/30 bg-gradient-to-br from-[#4ea3e0] via-[#006bbd] to-[#004d8a] shadow-[0_20px_65px_rgba(0,107,189,0.42)] sm:h-32 sm:w-32"
-            animate={active && !reduceMotion ? { scale: [1, 1.055, 1], boxShadow: ['0 20px 55px rgba(0,107,189,.34)', '0 20px 80px rgba(78,163,224,.55)', '0 20px 55px rgba(0,107,189,.34)'] } : { scale: 1 }}
-            transition={{ duration: speaking ? 1.05 : 1.8, repeat: active && !reduceMotion ? Infinity : 0, ease: 'easeInOut' }}
-          >
-            <div className="absolute inset-2 rounded-full border border-white/20" />
-            <div className="absolute inset-7 rounded-full bg-white/20 blur-xl" />
-            {speaking ? <MdVolumeUp size={38} className="relative text-white" /> : <MdMic size={38} className="relative text-white" />}
-          </motion.div>
-        </div>
+        <VoiceCallOrb state={state} isDark={isDark} reduceMotion={Boolean(reduceMotion)} />
         <motion.p key={status} initial={reduceMotion ? false : { opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} className={`voice-call-status mt-6 text-lg font-semibold ${foreground}`} role="status" aria-live="polite">
           {status}
         </motion.p>
@@ -97,18 +94,18 @@ export default function VoiceCallView({ isDark, listening, speaking, thinking, h
         >
           {caption}
         </p>
-        <div className="voice-call-bars mt-4 flex h-6 items-center justify-center gap-1" aria-hidden="true">
-          {[0, 1, 2, 3, 4].map((bar) => (
-            <motion.span
-              key={bar}
-              className={`w-1 rounded-full ${active ? 'bg-[#4ea3e0]' : isDark ? 'bg-white/20' : 'bg-slate-300'}`}
-              animate={active && !reduceMotion ? { height: [5, 20 - Math.abs(2 - bar) * 4, 5] } : { height: 5 }}
-              transition={{ duration: 0.8, delay: bar * 0.1, repeat: active && !reduceMotion ? Infinity : 0, ease: 'easeInOut' }}
-            />
-          ))}
-        </div>
       </motion.div>
-      <motion.button variants={item} autoFocus type="button" onClick={onEnd} className="absolute bottom-[max(2rem,env(safe-area-inset-bottom))] z-10 flex min-h-14 items-center gap-3 rounded-full bg-red-600 px-6 font-semibold text-white shadow-lg shadow-red-500/25 transition hover:bg-red-700 active:scale-95" aria-label={t('exitVoiceMode')} title={t('exitVoiceMode')}>
+      <motion.button
+        variants={item}
+        exit={{ opacity: 0, y: 16, transition: { duration: 0.2 } }}
+        autoFocus
+        type="button"
+        onClick={onEnd}
+        disabled={ending}
+        className="absolute bottom-[max(2rem,env(safe-area-inset-bottom))] z-10 flex min-h-14 items-center gap-3 rounded-full bg-red-600 px-6 font-semibold text-white shadow-lg shadow-red-500/25 transition hover:bg-red-700 active:scale-95"
+        aria-label={t('exitVoiceMode')}
+        title={t('exitVoiceMode')}
+      >
         <MdCallEnd size={24} />
         <span>{t('exitVoiceMode')}</span>
       </motion.button>
