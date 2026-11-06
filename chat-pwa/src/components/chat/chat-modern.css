@@ -540,10 +540,7 @@ html.light .tc-sources-score {
   display: block;
   width: 5.25rem;
   height: 5.25rem;
-  background: #fff;
-  -webkit-mask: url('/logo-for-ai-transparent.webp') center / 170% no-repeat;
-  mask: url('/logo-for-ai-transparent.webp') center / 170% no-repeat;
-  filter: drop-shadow(0 2px 10px rgba(0, 40, 90, 0.35));
+  background: url('/logo-for-ai-transparent.webp') center / 170% no-repeat;
 }
 
 .vc-bars {

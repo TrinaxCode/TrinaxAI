@@ -6,16 +6,20 @@ import { I18nProvider } from '../../i18n/I18nContext';
 import VoiceCallView from './VoiceCallView';
 
 describe('VoiceCallView palette', () => {
-  it('uses TrinaxAI blue for the call surface and red only for ending the call', () => {
+  it.each([
+    [true, 'bg-black'],
+    [false, 'bg-white'],
+  ])('draws the call disc for isDark=%s with %s and red only for ending the call', (isDark, disc) => {
     const { container } = render(
       <I18nProvider>
-        <VoiceCallView isDark listening={false} speaking={true} thinking={false} onEnd={() => undefined} />
+        <VoiceCallView isDark={isDark} listening={false} speaking={true} thinking={false} onEnd={() => undefined} />
       </I18nProvider>,
     );
 
     expect(container.innerHTML).not.toContain('rose');
-    expect(container.innerHTML).toContain('via-[#006bbd]');
-    expect(container.innerHTML).toContain('from-[#4ea3e0]');
+    expect(container.querySelector('.voice-call-core')).toHaveClass(disc);
+    // The mark keeps its own colours, so it is never tinted white.
+    expect(container.querySelector('.vc-mark')).not.toBeNull();
 
     const endCall = screen.getByRole('button');
     expect(endCall).toHaveFocus();

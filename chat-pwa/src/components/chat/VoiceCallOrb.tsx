@@ -22,13 +22,13 @@ const BARS = Array.from({ length: BAR_COUNT }, (_, index) => ({
 
 const EASE = [0.16, 1, 0.3, 1] as const;
 
-/** The TrinaxAI mark, tinted with the page's own alpha so it works on any surface. */
+/** The TrinaxAI mark in its own colours; the disc behind it flips with the theme. */
 function BrandMark() {
   return <span aria-hidden="true" className="vc-mark" />;
 }
 
 /** A microphone for the moments TrinaxAI is the one listening. */
-function MicEmblem({ reduceMotion }: { reduceMotion: boolean }) {
+function MicEmblem({ reduceMotion, isDark }: { reduceMotion: boolean; isDark: boolean }) {
   const wave = (side: 'left' | 'right') => (
     <motion.path
       d={side === 'left' ? 'M6 18c-3 5-3 9 0 14' : 'M42 18c3 5 3 9 0 14'}
@@ -41,7 +41,7 @@ function MicEmblem({ reduceMotion }: { reduceMotion: boolean }) {
     />
   );
   return (
-    <svg viewBox="0 0 48 48" className="h-14 w-14 text-white" aria-hidden="true">
+    <svg viewBox="0 0 48 48" className={`h-14 w-14 ${isDark ? 'text-white' : 'text-[#006bbd]'}`} aria-hidden="true">
       <rect x="17" y="5" width="14" height="25" rx="7" fill="currentColor" />
       <path d="M11 23v1.5a13 13 0 0 0 26 0V23" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" />
       <path d="M24 38v6M17.5 44h13" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" />
@@ -162,7 +162,7 @@ export default function VoiceCallOrb({ state, isDark, reduceMotion }: VoiceCallO
           ))}
           <motion.span
             aria-hidden="true"
-            className="absolute h-32 w-32 rounded-full border-2 border-white/70"
+            className={`absolute h-32 w-32 rounded-full border-2 ${isDark ? 'border-white/70' : 'border-[#006bbd]/60'}`}
             initial={{ opacity: 0.8, scale: 0.4 }}
             animate={{ opacity: 0, scale: 1.7 }}
             transition={{ duration: 0.6, delay: 0.38, ease: 'easeOut' }}
@@ -171,7 +171,7 @@ export default function VoiceCallOrb({ state, isDark, reduceMotion }: VoiceCallO
       )}
 
       <motion.div
-        className="voice-call-core relative grid h-32 w-32 place-items-center rounded-full border border-white/30 bg-gradient-to-br from-[#4ea3e0] via-[#006bbd] to-[#004d8a] shadow-[0_20px_65px_rgba(0,107,189,0.42)] sm:h-36 sm:w-36"
+        className={`voice-call-core relative grid h-32 w-32 place-items-center rounded-full border sm:h-36 sm:w-36 ${isDark ? 'border-white/15 bg-black shadow-[0_20px_65px_rgba(78,163,224,0.35)]' : 'border-slate-200 bg-white shadow-[0_20px_65px_rgba(0,107,189,0.28)]'}`}
         animate={
           state === 'ending'
             ? { scale: [1, 1.1, 0], opacity: [1, 1, 0] }
@@ -185,8 +185,7 @@ export default function VoiceCallOrb({ state, isDark, reduceMotion }: VoiceCallO
             : { duration: core.duration, repeat: animateCore ? Infinity : 0, ease: 'easeInOut' }
         }
       >
-        <div className="absolute inset-2 rounded-full border border-white/20" />
-        <div className="absolute inset-7 rounded-full bg-white/20 blur-xl" />
+        <div className={`absolute inset-2 rounded-full border ${isDark ? 'border-white/10' : 'border-[#006bbd]/15'}`} />
         <AnimatePresence mode="wait" initial={false}>
           <motion.div
             key={emblem}
@@ -196,7 +195,7 @@ export default function VoiceCallOrb({ state, isDark, reduceMotion }: VoiceCallO
             exit={reduceMotion ? { opacity: 0 } : { opacity: 0, scale: 0.6, rotate: emblem === 'mark' ? 12 : -12 }}
             transition={{ duration: 0.24, ease: EASE }}
           >
-            {emblem === 'mark' ? <BrandMark /> : <MicEmblem reduceMotion={reduceMotion} />}
+            {emblem === 'mark' ? <BrandMark /> : <MicEmblem reduceMotion={reduceMotion} isDark={isDark} />}
           </motion.div>
         </AnimatePresence>
       </motion.div>
