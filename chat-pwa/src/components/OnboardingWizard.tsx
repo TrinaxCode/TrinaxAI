@@ -1,661 +1,136 @@
-import { useState, useCallback, useRef, useEffect, useLayoutEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { MdContentCopy, MdCheck, MdStop } from 'react-icons/md';
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
+import { MdArrowForward } from 'react-icons/md';
+
 import { useI18n } from '../i18n/I18nContext';
 import { useTheme } from '../theme/ThemeContext';
-import { APP_CONFIG } from '../lib/config';
-import { MODEL_PRESETS, cancelIndexJob, checkStatus, folderLabelFromFiles, getIndexJob, indexableFilesFrom, retryIndexJob, startFolderIndex, type IndexJobStatus, type ModelPreset } from '../lib/api';
-import { systemFetch } from '../lib/authHeaders';
+import { MODEL_PRESETS, checkStatus, type ModelPreset } from '../lib/api';
 import { syncSharedStateOnce } from '../lib/sharedState';
-import BackButton from './BackButton';
+import OnboardingShell from './onboarding/OnboardingShell';
 
 interface Props {
   onComplete: () => void;
   canConfigureSystem: boolean;
 }
 
-type ModelRole = 'chat' | 'deep' | 'vision' | 'embed' | 'code' | 'fast';
-type OnboardingModels = Record<ModelRole, string>;
+const LANGUAGES = [
+  { code: 'es', short: 'ES', labelKey: 'languageSpanish' },
+  { code: 'en', short: 'EN', labelKey: 'languageEnglish' },
+] as const;
 
-function modelsForProfile(profile: ModelPreset): OnboardingModels {
+const THEMES = [
+  { mode: 'dark', labelKey: 'darkMode' },
+  { mode: 'light', labelKey: 'lightMode' },
+] as const;
+
+/** How long finishing waits for the hardware profile before moving on. */
+const PROFILE_WAIT_MS = 3500;
+
+/**
+ * Models follow the hardware profile the installer already detected; the
+ * wizard only copies that choice into this browser, it never asks about it.
+ */
+function applyProfileModels(profile: ModelPreset) {
   const preset = MODEL_PRESETS[profile];
-  return {
-    chat: preset['tc-models-chat'],
-    deep: preset['tc-models-deep'],
-    vision: preset['tc-models-vision'],
-    embed: preset['tc-models-embed'],
-    code: preset['tc-models-code'],
-    fast: preset['tc-models-fast'],
-  };
+  for (const [key, value] of Object.entries(preset)) localStorage.setItem(key, value);
+  localStorage.removeItem('tc-models-vision-quality');
 }
 
-type Step = 1 | 2 | 3 | 4 | 5 | 6;
-
-const stepVariants = {
-  enter: { opacity: 0, x: 40, scale: 0.97 },
-  center: { opacity: 1, x: 0, scale: 1 },
-  exit: { opacity: 0, x: -40, scale: 0.97 },
-};
-
 export default function OnboardingWizard({ onComplete, canConfigureSystem }: Props) {
-  const { t, lang, setLang } = useI18n();
-  const { isDark, setTheme } = useTheme();
-  const [step, setStep] = useState<Step>(1);
+  const { t, setLang, lang } = useI18n();
+  const { theme, setTheme } = useTheme();
   const [nickname, setNickname] = useState('');
   const [finishing, setFinishing] = useState(false);
-  const [modelChoice, setModelChoice] = useState<'default' | 'custom' | 'test' | null>(null);
-  const [recommendedModels, setRecommendedModels] = useState<OnboardingModels | null>(null);
-  const [customModels, setCustomModels] = useState(() => modelsForProfile('16gb'));
-  const [customStep, setCustomStep] = useState(0);
-  const customModelsEditedRef = useRef(new Set<ModelRole>());
-  const folderInputRef = useRef<HTMLInputElement>(null);
-  const [ollamaDetected, setOllamaDetected] = useState<boolean | null>(null);
-  const [indexing, setIndexing] = useState(false);
-  const [selectedFolderName, setSelectedFolderName] = useState('');
-  const [selectedFolderCount, setSelectedFolderCount] = useState(0);
-  const [indexJob, setIndexJob] = useState<IndexJobStatus | null>(null);
-  const [uploadProgress, setUploadProgress] = useState(0);
-  const [testResults, setTestResults] = useState<Record<string, boolean> | null>(null);
-  const [copiedCmd, setCopiedCmd] = useState<string | null>(null);
-  const indexAbortRef = useRef<AbortController | null>(null);
-  const wizardRef = useRef<HTMLDivElement>(null);
-
-  useLayoutEffect(() => {
-    if (wizardRef.current) wizardRef.current.scrollTop = 0;
-  }, [step]);
-
-  // Abort any in-flight indexing poll if the wizard unmounts mid-run.
-  useEffect(() => {
-    return () => indexAbortRef.current?.abort();
-  }, []);
+  const profileRef = useRef<Promise<ModelPreset | null>>(Promise.resolve(null));
 
   useEffect(() => {
-    if (!canConfigureSystem) return undefined;
-    let alive = true;
-    void checkStatus().then((status) => {
-      if (!alive || !status.profile) return;
-      const detectedModels = modelsForProfile(status.profile);
-      setRecommendedModels(detectedModels);
-      setCustomModels((current) => {
-        const next = { ...detectedModels };
-        for (const key of customModelsEditedRef.current) next[key] = current[key];
-        return next;
-      });
-    }).catch(() => undefined);
-    return () => { alive = false; };
+    if (!canConfigureSystem) return;
+    profileRef.current = Promise.resolve(checkStatus()).then((status) => status.profile).catch(() => null);
   }, [canConfigureSystem]);
 
-  const copyToClipboard = useCallback(async (text: string, key: string) => {
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopiedCmd(key);
-      setTimeout(() => setCopiedCmd(null), 1800);
-    } catch { /* ignore */ }
-  }, []);
-
-  const visibleSteps: Step[] = canConfigureSystem ? [1, 2, 3, 4, 5, 6] : [1, 2, 3, 6];
-
-  const saveAndNext = useCallback(() => {
-    const currentIndex = visibleSteps.indexOf(step);
-    const nextStep = visibleSteps[currentIndex + 1];
-    if (nextStep) setStep(nextStep);
-    else finish();
-  }, [step, canConfigureSystem]);
-
-  const prev = useCallback(() => {
-    const currentIndex = visibleSteps.indexOf(step);
-    const previousStep = visibleSteps[currentIndex - 1];
-    if (previousStep) setStep(previousStep);
-  }, [step, canConfigureSystem]);
-
-  const finish = useCallback(() => {
+  const finish = useCallback(async () => {
+    if (finishing) return;
     setFinishing(true);
-    localStorage.setItem('tc-onboarding-complete', 'true');
     const preferredName = nickname.trim();
     if (preferredName) localStorage.setItem('tc-user-nickname', preferredName);
     localStorage.removeItem('tc-user-name');
     localStorage.removeItem('tc-user-avatar');
     if (canConfigureSystem) {
-      const models = modelChoice === 'custom' ? customModels : recommendedModels;
-      if (models) {
-        const fields = [
-          ['chat', 'tc-models-chat'],
-          ['deep', 'tc-models-deep'],
-          ['vision', 'tc-models-vision'],
-          ['embed', 'tc-models-embed'],
-          ['code', 'tc-models-code'],
-          ['fast', 'tc-models-fast'],
-        ] as const;
-        for (const [role, storageKey] of fields) {
-          if (modelChoice !== 'custom' || recommendedModels || customModelsEditedRef.current.has(role)) {
-            localStorage.setItem(storageKey, models[role]);
-          }
-        }
-        if (modelChoice !== 'custom' || recommendedModels || customModelsEditedRef.current.has('vision')) {
-          localStorage.removeItem('tc-models-vision-quality');
-        }
-      }
+      // Never write a guessed default: only a profile the service reported.
+      const profile = await Promise.race([
+        profileRef.current,
+        new Promise<null>((resolve) => { window.setTimeout(() => resolve(null), PROFILE_WAIT_MS); }),
+      ]);
+      if (profile) applyProfileModels(profile);
     }
-    syncSharedStateOnce(2500, true).finally(() => {
-      setFinishing(false);
-      onComplete();
-    });
-  }, [nickname, modelChoice, customModels, recommendedModels, canConfigureSystem, onComplete]);
+    localStorage.setItem('tc-onboarding-complete', 'true');
+    await syncSharedStateOnce(2500, true).catch(() => undefined);
+    setFinishing(false);
+    onComplete();
+  }, [canConfigureSystem, finishing, nickname, onComplete]);
 
-  const runSystemTest = useCallback(async () => {
-    setTestResults(null);
-    const results: Record<string, boolean> = {};
-    try {
-      const r = await systemFetch(`${APP_CONFIG.ollamaBase}/api/tags`, {
-        signal: AbortSignal.timeout(5000),
-      });
-      results.ollama = r.ok;
-    } catch { results.ollama = false; }
-    try {
-      const r = await fetch(`${APP_CONFIG.ragBase}/health`, { signal: AbortSignal.timeout(5000) });
-      if (r.ok) {
-        const d = await r.json();
-        results.rag = true;
-        results.index = !!d.indexed;
-      } else { results.rag = false; results.index = false; }
-    } catch { results.rag = false; results.index = false; }
-    results.speech = typeof window !== 'undefined' && 'speechSynthesis' in window;
-    setTestResults(results);
-  }, []);
-
-  const checkOllama = useCallback(async () => {
-    try {
-      const r = await systemFetch(`${APP_CONFIG.ollamaBase}/api/tags`, {
-        signal: AbortSignal.timeout(5000),
-      });
-      setOllamaDetected(r.ok);
-    } catch { setOllamaDetected(false); }
-  }, []);
-
-  const triggerIndex = useCallback(async (files: File[]) => {
-    setIndexing(true);
-    setIndexJob(null);
-    setUploadProgress(0);
-    const controller = new AbortController();
-    indexAbortRef.current = controller;
-    try {
-      const result = await startFolderIndex(files, {
-        signal: controller.signal,
-        onUploadProgress: setUploadProgress,
-      });
-      setSelectedFolderName(folderLabelFromFiles(files));
-      setSelectedFolderCount(result.saved);
-      if (!result.job_id) return;
-      while (!controller.signal.aborted) {
-        const job = await getIndexJob(result.job_id, controller.signal);
-        setIndexJob(job);
-        setSelectedFolderCount(job.saved || result.saved);
-        if (['completed', 'failed', 'cancelled'].includes(job.status)) break;
-        await new Promise((resolve) => setTimeout(resolve, 1000));
-      }
-      // Completion state clearing & auto-advance handled by the useEffect below
-    } catch { /* user can continue and retry later from Settings */ }
-    finally {
-      setIndexing(false);
-      indexAbortRef.current = null;
-    }
-  }, []);
-
-  // Auto-advance to next step after successful indexing
-  useEffect(() => {
-    if (!indexing && indexJob?.status === 'completed' && !indexJob.skipped && !indexJob.failures.length && !indexJob.retry_recommended && step === 5) {
-      const timer = setTimeout(() => {
-        setIndexJob(null);
-        setStep(6);
-      }, 2500);
-      return () => clearTimeout(timer);
-    }
-  }, [indexing, indexJob?.status, indexJob?.id, indexJob?.skipped, indexJob?.failures.length, indexJob?.retry_recommended, step]);
-
-  const cancelIndex = useCallback(async () => {
-    indexAbortRef.current?.abort();
-    if (indexJob?.id) {
-      const cancelled = await cancelIndexJob(indexJob.id).catch(() => null);
-      if (cancelled) setIndexJob(cancelled);
-    }
-    setIndexing(false);
-  }, [indexJob]);
-
-  const retryIndex = useCallback(async () => {
-    if (!indexJob) return;
-    setIndexing(true);
-    const controller = new AbortController();
-    indexAbortRef.current = controller;
-    try {
-      let job = await retryIndexJob(indexJob.id, controller.signal);
-      setIndexJob(job);
-      while (!controller.signal.aborted && !['completed', 'failed', 'cancelled'].includes(job.status)) {
-        await new Promise((resolve) => setTimeout(resolve, 1000));
-        job = await getIndexJob(job.id, controller.signal);
-        setIndexJob(job);
-      }
-    } finally {
-      setIndexing(false);
-      indexAbortRef.current = null;
-    }
-  }, [indexJob]);
-
-  const modelKeys = [
-    { key: 'chat' as const, label: t('modelChat') },
-    { key: 'deep' as const, label: t('modelDeep') },
-    { key: 'vision' as const, label: t('modelVision') },
-    { key: 'embed' as const, label: t('modelEmbedding') },
-    { key: 'code' as const, label: t('modelCode') },
-    { key: 'fast' as const, label: t('modelFast') },
-  ];
-
-  const bg = isDark ? 'bg-[#0b111a]' : 'bg-[#f7f9fc]';
-  const cardBg = isDark ? 'bg-[#14202d] border-white/[0.10]' : 'bg-white border-slate-200';
-  const textMain = isDark ? 'text-white' : 'text-gray-900';
-  const textSub = isDark ? 'text-white/65' : 'text-gray-600';
-  const inputBg = isDark ? 'bg-[#14202d] border-white/[0.12] text-white placeholder-white/45' : 'bg-white border-gray-300 text-gray-900 placeholder-gray-500';
-  const btnPrimary = 'bg-[#006bbd] text-white hover:bg-[#0059a0] active:scale-95';
-  const btnSecondary = isDark ? 'bg-white/[0.06] text-white/70 hover:bg-white/[0.1]' : 'bg-gray-100 text-gray-700 hover:bg-gray-200';
-  const selectedCard = isDark ? 'border-[#168de2] bg-[#12314b] ring-1 ring-[#168de2]/30' : 'border-[#006bbd] bg-sky-50 ring-1 ring-[#006bbd]/20';
-  const stepDot = (s: Step) => step === s ? 'bg-[#006bbd] w-3' : (step > s ? 'bg-[#006bbd]/40' : (isDark ? 'bg-white/[0.15]' : 'bg-gray-300'));
-  const indexProgress = Math.max(uploadProgress, indexJob?.progress ?? 0);
-  const indexProgressExact = uploadProgress > 0 ? true : Boolean(indexJob?.progress_exact ?? true);
+  const submit = (event: FormEvent) => {
+    event.preventDefault();
+    void finish();
+  };
 
   return (
-    <motion.div
-      ref={wizardRef}
-      className={`fixed inset-0 z-50 flex flex-col items-center justify-start overflow-y-auto ${bg} px-4 py-6 transition-colors duration-300`}
-      role="main"
-      aria-labelledby="onboarding-title"
-      style={{
-        paddingTop: 'max(1.5rem, calc(env(safe-area-inset-top, 0px) + 1rem))',
-        paddingBottom: 'max(1.5rem, calc(env(safe-area-inset-bottom, 0px) + 1rem))',
-      }}
-      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-    >
-      <div className="my-auto w-full max-w-lg flex flex-col gap-5 sm:gap-6 px-1 sm:px-0">
-        {step === 1 || step === 6 ? (
-          <div className="text-center">
-            <p className={`text-[11px] font-semibold uppercase tracking-[0.2em] ${textSub}`}>{t('onboardingEyebrow')}</p>
-            <h1 id="onboarding-title" className={`mt-2 text-2xl font-semibold text-wrap-balance ${textMain}`}>{t('onboardingWelcome')}</h1>
-            <p className={`mt-2 text-sm ${textSub}`}>{t('onboardingIntro')}</p>
+    <OnboardingShell>
+      <form onSubmit={submit} noValidate aria-labelledby="onb-title" aria-busy={finishing}>
+        <h1 id="onb-title" className="onb-title">{t('onboardingWelcome')}</h1>
+        <p className="onb-lead mt-2">{t('onbLead')}</p>
+
+        <div className="mt-6 grid gap-5">
+          <fieldset className="m-0 min-w-0 border-0 p-0">
+            <legend className="onb-legend">{t('onbLanguageLegend')}</legend>
+            <div className="grid grid-cols-2 gap-2.5">
+              {LANGUAGES.map((option) => (
+                <label key={option.code} className="onb-option">
+                  <input type="radio" name="onb-language" value={option.code} checked={lang === option.code} onChange={() => setLang(option.code)} />
+                  <span className="onb-lang-code" aria-hidden="true">{option.short}</span>
+                  <span className="font-semibold">{t(option.labelKey)}</span>
+                  <span className="onb-radio" aria-hidden="true" />
+                </label>
+              ))}
+            </div>
+          </fieldset>
+
+          <fieldset className="m-0 min-w-0 border-0 p-0">
+            <legend className="onb-legend">{t('onbThemeLegend')}</legend>
+            <div className="grid grid-cols-2 gap-2.5">
+              {THEMES.map((option) => (
+                <label key={option.mode} className="onb-option">
+                  <input type="radio" name="onb-theme" value={option.mode} checked={theme === option.mode} onChange={() => setTheme(option.mode)} />
+                  <span className="onb-theme-thumb" data-mode={option.mode} aria-hidden="true"><i /><i /><i /></span>
+                  <span className="font-semibold">{t(option.labelKey)}</span>
+                  <span className="onb-radio" aria-hidden="true" />
+                </label>
+              ))}
+            </div>
+          </fieldset>
+
+          <div>
+            <label htmlFor="onboarding-nickname" className="onb-legend block">{t('onbNameLabel')}</label>
+            <input
+              id="onboarding-nickname"
+              name="nickname"
+              type="text"
+              className="onb-input"
+              value={nickname}
+              maxLength={40}
+              autoComplete="nickname"
+              aria-describedby="onb-name-hint"
+              onChange={(event) => setNickname(event.target.value)}
+            />
+            <p id="onb-name-hint" className="onb-muted mt-2 text-sm">{t('onbNameHint')}</p>
           </div>
-        ) : <h1 id="onboarding-title" className="sr-only">{t('onboardingWelcome')}</h1>}
+        </div>
 
-        <AnimatePresence mode="wait">
-          {/* Step 1: Language */}
-          {step === 1 && (
-            <motion.div key="s1" variants={stepVariants} initial="enter" animate="center" exit="exit" transition={{ duration: 0.25 }} className="flex flex-col gap-5">
-              <h2 className={`text-2xl font-semibold text-center ${textMain}`}>{t('onboardingStep1Title')}</h2>
-              <p className={`text-sm text-center ${textSub}`}>{t('onboardingStep1Desc')}</p>
-              <div className="grid grid-cols-2 gap-3">
-                {(['es', 'en'] as const).map((l) => (
-                  <motion.button
-                    key={l}
-                    whileTap={{ scale: 0.96 }}
-                    onClick={() => setLang(l)}
-                    className={`p-5 rounded-2xl border-2 text-center transition-[background-color,color,border-color,box-shadow,transform] ${lang === l ? selectedCard : `border-transparent ${cardBg} hover:border-sky-400/40`}`}
-                  >
-                    <span className="text-3xl">{l === 'es' ? '🇪🇸' : '🇺🇸'}</span>
-                    <p className={`mt-2 font-medium ${textMain}`}>{l === 'es' ? t('languageSpanish') : t('languageEnglish')}</p>
-                  </motion.button>
-                ))}
-              </div>
-            </motion.div>
-          )}
-
-          {/* Step 2: Theme */}
-          {step === 2 && (
-            <motion.div key="s2" variants={stepVariants} initial="enter" animate="center" exit="exit" transition={{ duration: 0.25 }} className="flex flex-col gap-5">
-              <h2 className={`text-2xl font-semibold text-center ${textMain}`}>{t('onboardingStep2Title')}</h2>
-              <p className={`text-sm text-center ${textSub}`}>{t('onboardingStep2Desc')}</p>
-              <div className="grid grid-cols-2 gap-3">
-                {(['dark', 'light'] as const).map((mode) => (
-                  <motion.button
-                    key={mode}
-                    whileTap={{ scale: 0.96 }}
-                    onClick={() => setTheme(mode)}
-                    className={`p-5 rounded-2xl border-2 text-center transition-[background-color,color,border-color,box-shadow,transform] ${(mode === 'dark') === isDark ? selectedCard : `border-transparent ${cardBg} hover:border-sky-400/40`}`}
-                  >
-                    <div className={`mx-auto w-16 h-10 rounded-lg mb-2 border ${mode === 'dark' ? 'bg-gray-900 border-gray-700' : 'bg-white border-gray-300'}`}>
-                      <div className={`h-2 w-8 mx-auto mt-1.5 rounded ${mode === 'dark' ? 'bg-gray-700' : 'bg-gray-200'}`} />
-                      <div className={`h-1.5 w-5 mx-auto mt-1 rounded ${mode === 'dark' ? 'bg-gray-600' : 'bg-gray-300'}`} />
-                    </div>
-                    <p className={`font-medium ${textMain}`}>{mode === 'dark' ? t('darkMode') : t('lightMode')}</p>
-                  </motion.button>
-                ))}
-              </div>
-            </motion.div>
-          )}
-
-          {/* Step 3: Name */}
-          {step === 3 && (
-            <motion.div key="s3" variants={stepVariants} initial="enter" animate="center" exit="exit" transition={{ duration: 0.25 }} className="flex flex-col gap-5">
-              <h2 className={`text-center text-2xl font-semibold ${textMain}`}>{t('onboardingStep3Title')}</h2>
-              <p className={`text-center text-sm ${textSub}`}>{t('onboardingStep3Desc')}</p>
-              <div className="space-y-4">
-                <label htmlFor="onboarding-nickname" className="sr-only">{t('onboardingStep3NicknameLabel')}</label>
-                <input
-                  id="onboarding-nickname"
-                  name="nickname"
-                  type="text"
-                  value={nickname}
-                  onChange={(e) => setNickname(e.target.value)}
-                  placeholder={t('onboardingStep3NicknameLabel')}
-                  autoComplete="nickname"
-                  className={`w-full px-4 py-3 rounded-xl border text-base outline-hidden focus-visible:border-[#006bbd] focus-visible:ring-2 focus-visible:ring-[#006bbd]/25 transition-[border-color,box-shadow] sm:text-sm ${inputBg}`}
-                />
-              </div>
-            </motion.div>
-          )}
-
-          {/* Step 4: Models */}
-          {canConfigureSystem && step === 4 && (
-            <motion.div key="s4" variants={stepVariants} initial="enter" animate="center" exit="exit" transition={{ duration: 0.25 }} className="flex flex-col gap-4">
-              <h2 className={`text-2xl font-semibold text-center ${textMain}`}>{t('onboardingStep5Title')}</h2>
-              <p className={`text-sm text-center ${textSub}`}>{t('onboardingStep5Desc')}</p>
-
-              {!modelChoice && (
-                <div className="space-y-3">
-                  {(['default', 'test', 'custom'] as const).map((choice) => (
-                    <motion.button
-                      key={choice}
-                      whileTap={{ scale: 0.97 }}
-                      onClick={() => {
-                        if (choice === 'default') { setModelChoice('default'); saveAndNext(); }
-                        else if (choice === 'test') { setModelChoice('test'); runSystemTest(); }
-                        else setModelChoice(choice);
-                      }}
-                      className={`w-full p-4 rounded-xl border text-left transition-[background-color,color,border-color,box-shadow,transform] ${modelChoice === choice ? selectedCard : `${cardBg} hover:border-sky-400/40`}`}
-                    >
-                      <p className={`font-medium text-sm ${textMain}`}>{t(`onboardingStep5${choice === 'default' ? 'Default' : choice === 'custom' ? 'Custom' : 'AutoTest'}` as any)}</p>
-                      <p className={`mt-1 text-sm leading-relaxed ${textSub}`}>{t(`onboardingStep5${choice === 'default' ? 'Default' : choice === 'custom' ? 'Custom' : 'AutoTest'}Desc` as any)}</p>
-                    </motion.button>
-                  ))}
-                </div>
-              )}
-
-              {/* Back to model choice */}
-              {modelChoice && (
-                <BackButton
-                  onClick={() => { setModelChoice(null); setTestResults(null); setCustomStep(0); }}
-                  label={t('onboardingBack')}
-                  isDark={isDark}
-                  className="self-start"
-                />
-              )}
-              {modelChoice === 'test' && testResults && (
-                <div className={`p-4 rounded-xl ${cardBg} space-y-2`}>
-                  <div className="flex items-center justify-between">
-                    <p className={`text-sm font-medium ${textMain}`}>{t('systemCheckTitle')}</p>
-                    <BackButton
-                      onClick={() => { setModelChoice(null); setTestResults(null); }}
-                      label={t('onboardingBack')}
-                      isDark={isDark}
-                    />
-                  </div>
-                  {Object.entries(testResults).map(([k, v]) => (
-                    <div key={k} className="flex items-center gap-2 text-sm">
-                      <span role="img" className={v ? 'text-green-400' : 'text-red-400'} aria-label={v ? t('systemCheckPassed') : t('systemCheckFailed')}>{v ? <MdCheck size={15} /> : '-'}</span>
-                      <span className={textSub}>{t(k as any)}</span>
-                    </div>
-                  ))}
-                  <motion.button whileTap={{ scale: 0.96 }} onClick={() => { setModelChoice('default'); setTestResults(null); saveAndNext(); }} className={`mt-2 w-full py-2 rounded-lg text-sm font-medium ${btnPrimary}`}>
-                    {t('onboardingNext')}
-                  </motion.button>
-                </div>
-              )}
-
-              {/* Custom model picker */}
-              {modelChoice === 'custom' && (
-                <div className={`p-4 rounded-xl ${cardBg} space-y-3`}>
-                  {customStep < modelKeys.length ? (
-                    <>
-                      <p className={`text-sm ${textSub}`}>{modelKeys[customStep].label}</p>
-                      <input
-                        type="text"
-                        aria-label={modelKeys[customStep].label}
-                        value={customModels[modelKeys[customStep].key]}
-                        onChange={(e) => {
-                          customModelsEditedRef.current.add(modelKeys[customStep].key);
-                          setCustomModels((m) => ({ ...m, [modelKeys[customStep].key]: e.target.value }));
-                        }}
-                        className={`w-full px-3 py-2 rounded-lg border text-base outline-hidden sm:text-sm ${inputBg}`}
-                      />
-                      <div className="flex gap-2">
-                        <motion.button whileTap={{ scale: 0.96 }} onClick={() => setCustomStep((s) => s + 1)} className={`flex-1 py-2 rounded-lg text-sm font-medium ${btnPrimary}`}>
-                          {customStep < modelKeys.length - 1 ? t('onboardingNext') : t('onboardingFinish')}
-                        </motion.button>
-                      </div>
-                    </>
-                  ) : (
-                    <motion.button whileTap={{ scale: 0.96 }} onClick={() => setModelChoice('default')} className={`w-full py-2 rounded-lg text-sm font-medium ${btnSecondary}`}>
-                      {t('modelRestoreDefaults')}
-                    </motion.button>
-                  )}
-                </div>
-              )}
-            </motion.div>
-          )}
-
-          {/* Step 5: Ollama + Indexing */}
-          {canConfigureSystem && step === 5 && (
-            <motion.div key="s5" variants={stepVariants} initial="enter" animate="center" exit="exit" transition={{ duration: 0.25 }} className="flex flex-col gap-5">
-              <h2 className={`text-2xl font-semibold text-center ${textMain}`}>{t('onboardingStep6Title')}</h2>
-              <p className={`text-sm text-center ${textSub}`}>{t('onboardingStep6Desc')}</p>
-
-              <div className={`p-4 rounded-xl ${cardBg} text-center`}>
-                {ollamaDetected === null ? (
-                  <div className="space-y-3">
-                    <p className={`text-sm ${textSub}`}>{t('ollamaCheckTitle')}</p>
-                    <motion.button whileTap={{ scale: 0.96 }} onClick={checkOllama} className={`px-6 py-2.5 rounded-xl text-sm font-medium ${btnPrimary}`}>
-                      {t('modelTestConnection')}
-                    </motion.button>
-                  </div>
-                ) : ollamaDetected ? (
-                  <p className="text-green-400 text-sm font-medium">{t('ollamaDetected')}</p>
-                ) : (
-                  <div className="space-y-3 text-left">
-                    <p className={`text-sm font-medium ${isDark ? 'text-amber-400' : 'text-amber-800'}`}>{t('ollamaNotDetected')}</p>
-                    <div className="space-y-2 text-sm">
-                      <details className={`p-2 rounded-lg ${cardBg}`}>
-                        <summary className="min-h-11 cursor-pointer py-3 font-medium">{t('platformLinux')}</summary>
-                        <a
-                          href="https://ollama.com/download/linux"
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className={`mt-1 block min-h-11 rounded-lg p-3 text-sm underline underline-offset-2 [overflow-wrap:anywhere] ${isDark ? 'bg-black/20 text-[#8ac9f5]' : 'border border-slate-200 bg-white text-[#0059a0]'}`}
-                        >
-                          {t('ollamaLinuxDownload')}
-                        </a>
-                      </details>
-                      <details className={`p-2 rounded-lg ${cardBg}`}>
-                        <summary className="min-h-11 cursor-pointer py-3 font-medium">{t('platformMac')}</summary>
-                        <div className="mt-1 flex items-center gap-2">
-                          <pre className={`min-w-0 flex-1 overflow-x-auto rounded p-2 text-sm ${isDark ? 'bg-black/20' : 'bg-white'}`}>brew install ollama</pre>
-                          <button
-                            onClick={(e) => { e.stopPropagation(); copyToClipboard('brew install ollama', 'mac'); }}
-                            className={`grid h-11 w-11 shrink-0 place-items-center rounded-lg transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-[#4aa7ed] ${copiedCmd === 'mac' ? 'bg-green-400/10 text-green-500' : isDark ? 'text-white/75 hover:bg-white/[0.06]' : 'text-gray-700 hover:bg-gray-100'}`}
-                            aria-label={t('copy')}
-                            title={t('copy')}
-                          >
-                            {copiedCmd === 'mac' ? <MdCheck size={14} /> : <MdContentCopy size={14} />}
-                          </button>
-                        </div>
-                      </details>
-                      <details className={`p-2 rounded-lg ${cardBg}`}>
-                        <summary className="min-h-11 cursor-pointer py-3 font-medium">{t('platformWindows')}</summary>
-                        <pre className={`mt-1 overflow-x-auto rounded p-2 text-sm ${isDark ? 'bg-black/20' : 'bg-white'}`}>{t('ollamaWindowsDownload')}</pre>
-                      </details>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              <div className="space-y-3">
-                <p className={`text-sm text-center ${textSub}`}>
-                  {t('indexFolderLabel')}
-                </p>
-                <input
-                  ref={folderInputRef}
-                  type="file"
-                  multiple
-                  className="hidden"
-                  onChange={(e) => {
-                    const files = e.target.files;
-                    const frozen = Array.from(files ?? []);
-                    const indexable = indexableFilesFrom(frozen);
-                    if (frozen.length && indexable.length) {
-                      setSelectedFolderName(folderLabelFromFiles(frozen));
-                      setSelectedFolderCount(indexable.length);
-                      triggerIndex(indexable);
-                    } else if (frozen.length) {
-                      setSelectedFolderName('');
-                      setSelectedFolderCount(0);
-                    }
-                    e.target.value = '';
-                  }}
-                  {...{ webkitdirectory: '', directory: '' }}
-                />
-                <motion.button whileTap={{ scale: 0.96 }} onClick={() => folderInputRef.current?.click()} disabled={indexing} className={`w-full py-3 rounded-xl text-sm font-medium transition-[background-color,color,border-color,opacity] ${btnSecondary} disabled:opacity-50`}>
-                  {selectedFolderName
-                    ? t('indexFolderSelected').replace('{folder}', selectedFolderName).replace('{count}', String(selectedFolderCount))
-                    : t('chooseFolder')}
-                </motion.button>
-                {(indexing || indexJob) && (
-                  <div className={`p-3 rounded-xl ${cardBg} space-y-2`}>
-                    {indexing ? (
-                      <>
-                        <div className="flex items-center justify-between text-sm">
-                          <span className={textSub}>{indexJob?.phase ? t('indexing') : t('loading')}</span>
-                          <span className={`font-semibold tabular-nums ${textMain}`}>
-                            {indexProgress}%{!indexProgressExact && <span className="ml-1.5 text-xs font-normal uppercase tracking-wide">{t('indexApprox')}</span>}
-                          </span>
-                        </div>
-                        <div
-                          className="tc-index-track"
-                          role="progressbar"
-                          aria-valuemin={0}
-                          aria-valuemax={100}
-                          aria-valuenow={indexProgress}
-                          aria-valuetext={`${indexProgress}%${indexProgressExact ? '' : ` ${t('indexApprox')}`}`}
-                          aria-label={t('indexing')}
-                        >
-                          <div className={`tc-index-fill${indexProgressExact ? '' : ' tc-index-fill--live'}`} style={{ width: `${Math.min(100, indexProgress)}%` }} />
-                        </div>
-                        <div className={`text-sm ${textSub}`}>
-                          {t('indexFiles')}: {indexJob?.files_processed || indexJob?.saved || 0} / {indexJob?.files_total || selectedFolderCount}
-                        </div>
-                        <button onClick={cancelIndex} className={`flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-red-500/30 bg-red-500/10 py-2.5 text-sm font-semibold shadow-sm transition-[background-color,border-color,transform] hover:border-red-500/50 hover:bg-red-500/20 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-red-400 active:scale-[.98] ${isDark ? 'text-red-300' : 'text-red-800'}`}>
-                          <MdStop size={15} />
-                          {t('indexCancel')}
-                        </button>
-                      </>
-                    ) : indexJob?.status === 'completed' ? (
-                      <div className="space-y-2">
-                      <div className="flex items-center gap-2 text-sm">
-                        <MdCheck className="text-green-400" size={16} aria-hidden="true" />
-                        <span className={`font-medium ${textMain}`}>{t('indexComplete')}</span>
-                        <span className={textSub}>({indexJob.saved} {t('indexFiles').toLowerCase()})</span>
-                      </div>
-                      {(indexJob.skipped > 0 || indexJob.failures.length > 0 || indexJob.retry_recommended) && (
-                        <div role="alert" className={`flex flex-wrap items-center gap-2 text-sm leading-relaxed ${isDark ? 'text-amber-200' : 'text-amber-800'}`}>
-                          <span>{indexJob.skipped || indexJob.failures.length ? t('indexPartialWarning').replace('{count}', String(indexJob.skipped || indexJob.failures.length)) : t('indexNeedsAttention')}</span>
-                          <button type="button" onClick={retryIndex} className={`min-h-11 rounded-lg bg-amber-400/15 px-3 font-semibold focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-amber-400 ${isDark ? 'text-amber-200' : 'text-amber-800'}`}>{t('retry')}</button>
-                        </div>
-                      )}
-                      {indexJob.failures.slice(0, 3).map((failure) => <p key={`${failure.path}:${failure.reason}`} className={`text-sm [overflow-wrap:anywhere] ${textSub}`}>{failure.path}: {failure.reason}</p>)}
-                      </div>
-                    ) : indexJob?.status === 'failed' ? (
-                      <div role="alert" className={`flex flex-wrap items-center gap-2 text-sm leading-relaxed ${isDark ? 'text-red-200' : 'text-red-800'}`}>
-                        <span>{indexJob.error || t('indexFailed')}</span>
-                        <button type="button" onClick={retryIndex} className={`min-h-11 rounded-lg bg-red-400/15 px-3 font-semibold focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-red-400 ${isDark ? 'text-red-200' : 'text-red-800'}`}>{t('retry')}</button>
-                      </div>
-                    ) : indexJob?.status === 'cancelled' ? (
-                      <div role="status" className={`text-sm ${textSub}`}>{t('indexCancelled')}</div>
-                    ) : null}
-                  </div>
-                )}
-                <p className={`text-center text-sm leading-relaxed ${isDark ? 'text-amber-200' : 'text-amber-800'}`}>{t('onboardingStep6Warning')}</p>
-                <div className="flex gap-3">
-                  <motion.button whileTap={{ scale: 0.96 }} onClick={saveAndNext} className={`flex-1 py-3 rounded-xl text-sm font-medium ${btnSecondary} active:scale-95`}>
-                    {t('onboardingStep6IndexLater')}
-                  </motion.button>
-                </div>
-              </div>
-            </motion.div>
-          )}
-
-          {/* Step 6: Done */}
-          {step === 6 && (
-            <motion.div key="s6" variants={stepVariants} initial="enter" animate="center" exit="exit" transition={{ duration: 0.25 }} className="flex flex-col gap-5 items-center text-center">
-              <h2 className={`text-2xl font-semibold ${textMain}`}>{t('onboardingStep7Title')}</h2>
-              <p className={`text-sm ${textSub}`}>{t('onboardingStep7Desc')}</p>
-
-              <div className={`w-full p-4 rounded-xl ${cardBg} space-y-2 text-left text-sm`}>
-                <p className={textSub}>{t('onboardingStep3NameLabel')}: <strong className={textMain}>{nickname || t('onboardingDefaultName')}</strong></p>
-                <p className={textSub}>{t('theme')}: <strong className={textMain}>{isDark ? t('darkMode') : t('lightMode')}</strong></p>
-                <p className={textSub}>{t('language')}: <strong className={textMain}>{lang === 'es' ? t('languageSpanish') : t('languageEnglish')}</strong></p>
-              </div>
-
-              <motion.button
-                whileTap={{ scale: 0.95 }}
-                onClick={finish}
-                className={`w-full py-4 rounded-xl text-lg font-semibold ${btnPrimary} shadow-lg shadow-[#006bbd]/25 animate-pulse`}
-              >
-                {t('onboardingStartNow')}
-              </motion.button>
-
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        {/* Bottom nav: Skip + Back/Next */}
-        {step < 6 && (
-          <div className="flex items-center gap-3">
-            <motion.button
-              whileTap={{ scale: 0.96 }}
-              onClick={finish}
-              disabled={finishing}
-              className={`-ml-2 min-h-11 min-w-11 px-2 text-sm ${isDark ? 'text-white/75 hover:text-white' : 'text-gray-700 hover:text-gray-900'} transition-colors disabled:opacity-50`}
-            >
-              {t('onboardingSkip')}
-            </motion.button>
-            <div className="flex-1" />
-            {step > 1 && (
-              <motion.button whileTap={{ scale: 0.96 }} onClick={prev} disabled={finishing} className={`min-h-11 rounded-xl px-5 py-2.5 text-sm font-medium ${btnSecondary} active:scale-95 disabled:opacity-50`}>
-                {t('onboardingBack')}
-              </motion.button>
-            )}
-            <motion.button whileTap={{ scale: 0.96 }} onClick={saveAndNext} disabled={finishing} className={`min-h-11 rounded-xl px-5 py-2.5 text-sm font-medium ${btnPrimary} disabled:opacity-50`}>
-              {finishing ? t('onboardingFinish') : t('onboardingNext')}
-            </motion.button>
-          </div>
-         )}
-
-         {/* Progress stays at the bottom of the onboarding flow. */}
-         <div aria-label={t('onboardingProgress')} className="flex items-center gap-2">
-           <div className={`h-1.5 flex-1 overflow-hidden rounded-full ${isDark ? 'bg-white/[0.12]' : 'bg-gray-200'}`}>
-             <motion.div
-               className="h-full rounded-full bg-[#006bbd]"
-               animate={{ width: `${Math.max(8, ((visibleSteps.indexOf(step) + 1) / visibleSteps.length) * 100)}%` }}
-               transition={{ duration: 0.25 }}
-             />
-           </div>
-           <span className={`shrink-0 text-xs tabular-nums ${textSub}`}>{visibleSteps.indexOf(step) + 1}/{visibleSteps.length}</span>
-         </div>
-
-         <div className="sr-only">{t('onboardingProgressStep').replace('{current}', String(visibleSteps.indexOf(step) + 1)).replace('{total}', String(visibleSteps.length))}</div>
-         <div className="flex justify-center gap-2">
-           {visibleSteps.map((s) => (
-             <motion.div
-               key={s}
-               className={`h-1.5 rounded-full transition-[width,background-color] duration-300 ${stepDot(s)}`}
-               animate={{ width: step === s ? 24 : 8 }}
-             />
-           ))}
-         </div>
-       </div>
-    </motion.div>
+        <button type="submit" className="onb-btn mt-7 w-full" data-variant="primary" disabled={finishing}>
+          {finishing ? <span className="onb-spinner" aria-hidden="true" style={{ borderTopColor: '#fff', borderColor: 'rgba(255,255,255,.4)' }} /> : null}
+          {finishing ? t('onbFinishing') : t('onboardingStartNow')}
+          {!finishing && <MdArrowForward size={20} aria-hidden="true" />}
+        </button>
+      </form>
+    </OnboardingShell>
   );
 }

@@ -1,0 +1,268 @@
+/* First-run screens. They float over the app's own animated Background and
+   reuse its blue, so onboarding reads as the same product as the chat.
+   Tokens are scoped to .onb-root and follow html.dark / html.light. */
+
+.onb-root {
+  --onb-blue: #006bbd;
+  --onb-blue-strong: #0059a0;
+  --onb-panel: rgba(255, 255, 255, 0.9);
+  --onb-panel-border: rgba(0, 107, 189, 0.24);
+  --onb-panel-shadow: 0 16px 34px rgba(15, 42, 70, 0.1);
+  --onb-surface: #ffffff;
+  --onb-surface-2: rgba(0, 107, 189, 0.06);
+  --onb-line: #d3dfeb;
+  --onb-line-strong: #9fb3c8;
+  --onb-ink: #0a1726;
+  --onb-muted: #475a6e;
+  --onb-accent-text: #0059a0;
+  --onb-accent-tint: rgba(0, 107, 189, 0.09);
+  --onb-danger: #b3261e;
+  --onb-danger-tint: rgba(179, 38, 30, 0.09);
+  --onb-focus: #0059a0;
+
+  background: transparent;
+  color: var(--onb-ink);
+}
+
+html.dark .onb-root {
+  --onb-panel: rgba(8, 14, 22, 0.78);
+  --onb-panel-border: rgba(22, 141, 226, 0.28);
+  --onb-panel-shadow: 0 18px 40px rgba(0, 0, 0, 0.4);
+  --onb-surface: rgba(255, 255, 255, 0.04);
+  --onb-surface-2: rgba(255, 255, 255, 0.07);
+  --onb-line: rgba(255, 255, 255, 0.12);
+  --onb-line-strong: rgba(255, 255, 255, 0.3);
+  --onb-ink: #f2f7fc;
+  --onb-muted: #a8bbcd;
+  --onb-accent-text: #8ac9f5;
+  --onb-accent-tint: rgba(22, 141, 226, 0.16);
+  --onb-danger: #ff9b93;
+  --onb-danger-tint: rgba(255, 155, 147, 0.1);
+  --onb-focus: #4ea3e0;
+}
+
+.onb-root :focus-visible {
+  outline: 3px solid var(--onb-focus);
+  outline-offset: 2px;
+}
+
+.onb-panel {
+  background: var(--onb-panel);
+  border: 1px solid var(--onb-panel-border);
+  border-radius: 1.5rem;
+  box-shadow: var(--onb-panel-shadow);
+  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
+}
+
+.onb-logo { width: 5rem; height: 5rem; object-fit: contain; user-select: none; }
+@media (min-width: 640px) { .onb-logo { width: 6rem; height: 6rem; } }
+/* Short screens: keep the whole panel above the fold. */
+@media (max-height: 800px) { .onb-logo { width: 4rem; height: 4rem; } }
+
+/* ── Type ─────────────────────────────────────────────────── */
+
+.onb-title {
+  font-size: clamp(1.5rem, 1.25rem + 1.2vw, 1.875rem);
+  line-height: 1.15;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  text-wrap: balance;
+}
+.onb-lead { color: var(--onb-muted); font-size: 1rem; line-height: 1.55; }
+.onb-muted { color: var(--onb-muted); }
+.onb-legend { font-size: 0.9375rem; font-weight: 600; margin-bottom: 0.5rem; }
+
+/* ── Choice cards (native radios underneath) ──────────────── */
+
+.onb-option {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  min-height: 3.25rem;
+  padding: 0.5rem 0.75rem;
+  border: 1.5px solid var(--onb-line);
+  border-radius: 0.875rem;
+  background: var(--onb-surface);
+  cursor: pointer;
+  transition: border-color 0.18s, background-color 0.18s, box-shadow 0.18s, transform 0.12s;
+}
+.onb-option:hover { border-color: var(--onb-line-strong); }
+.onb-option:active { transform: scale(0.99); }
+.onb-option:has(input:checked) {
+  border-color: var(--onb-blue);
+  background: var(--onb-accent-tint);
+  box-shadow: 0 0 0 1px var(--onb-blue);
+}
+.onb-option:has(input:focus-visible) {
+  outline: 3px solid var(--onb-focus);
+  outline-offset: 2px;
+}
+.onb-option input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
+
+.onb-radio {
+  flex: none;
+  width: 1.125rem;
+  height: 1.125rem;
+  margin-left: auto;
+  border-radius: 9999px;
+  border: 2px solid var(--onb-line-strong);
+  display: grid;
+  place-items: center;
+  transition: border-color 0.18s, background-color 0.18s;
+}
+.onb-radio::after {
+  content: '';
+  width: 0.4375rem;
+  height: 0.4375rem;
+  border-radius: 9999px;
+  background: #ffffff;
+  transform: scale(0);
+  transition: transform 0.18s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.onb-option:has(input:checked) .onb-radio { border-color: var(--onb-blue); background: var(--onb-blue); }
+.onb-option:has(input:checked) .onb-radio::after { transform: scale(1); }
+
+.onb-lang-code {
+  display: grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  flex: none;
+  border-radius: 0.5rem;
+  background: var(--onb-surface-2);
+  color: var(--onb-accent-text);
+  font-weight: 700;
+  font-size: 0.8125rem;
+  letter-spacing: 0.04em;
+}
+
+.onb-theme-thumb {
+  width: 2.75rem;
+  height: 2rem;
+  flex: none;
+  border-radius: 0.5rem;
+  border: 1px solid var(--onb-line-strong);
+  padding: 0.3rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+.onb-theme-thumb[data-mode='dark'] { background: #05090f; }
+.onb-theme-thumb[data-mode='light'] { background: #ffffff; }
+.onb-theme-thumb i { display: block; height: 0.25rem; border-radius: 9999px; }
+.onb-theme-thumb[data-mode='dark'] i { background: #2d4660; }
+.onb-theme-thumb[data-mode='light'] i { background: #c8d6e5; }
+.onb-theme-thumb i:first-child { width: 60%; background: var(--onb-blue); }
+.onb-theme-thumb i:last-child { width: 80%; }
+
+/* ── Controls ─────────────────────────────────────────────── */
+
+.onb-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  min-height: 3rem;
+  padding: 0 1.25rem;
+  border-radius: 0.875rem;
+  border: 1px solid transparent;
+  font-size: 1rem;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+  transition: background-color 0.18s, border-color 0.18s, transform 0.12s, opacity 0.18s;
+}
+.onb-btn:active:not(:disabled) { transform: scale(0.98); }
+.onb-btn:disabled { opacity: 0.6; cursor: default; }
+.onb-btn[data-variant='primary'] { background: var(--onb-blue); color: #ffffff; }
+.onb-btn[data-variant='primary']:hover:not(:disabled) { background: var(--onb-blue-strong); }
+
+.onb-input {
+  width: 100%;
+  min-height: 3rem;
+  padding: 0 0.875rem;
+  border-radius: 0.875rem;
+  border: 1.5px solid var(--onb-line-strong);
+  background: var(--onb-surface);
+  color: var(--onb-ink);
+  font-size: 1rem;
+  transition: border-color 0.18s, box-shadow 0.18s;
+}
+.onb-input::placeholder { color: var(--onb-muted); opacity: 0.8; }
+.onb-input:focus-visible {
+  outline: none;
+  border-color: var(--onb-blue);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--onb-focus) 35%, transparent);
+}
+
+.onb-note {
+  border-radius: 0.75rem;
+  padding: 0.75rem 0.875rem;
+  font-size: 0.9375rem;
+  line-height: 1.5;
+  border: 1px solid transparent;
+}
+.onb-note[data-tone='danger'] {
+  background: var(--onb-danger-tint);
+  color: var(--onb-danger);
+  border-color: color-mix(in srgb, var(--onb-danger) 30%, transparent);
+}
+
+.onb-spinner {
+  width: 1rem;
+  height: 1rem;
+  border-radius: 9999px;
+  border: 2px solid var(--onb-line-strong);
+  border-top-color: var(--onb-blue);
+  animation: onb-spin 0.8s linear infinite;
+}
+@keyframes onb-spin { to { transform: rotate(360deg); } }
+
+/* ── Device setup choice cards ────────────────────────────── */
+
+.onb-choice {
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+  width: 100%;
+  min-height: 5rem;
+  padding: 1rem;
+  text-align: left;
+  border: 1.5px solid var(--onb-line);
+  border-radius: 1rem;
+  background: var(--onb-surface);
+  color: var(--onb-ink);
+  cursor: pointer;
+  transition: border-color 0.18s, background-color 0.18s, transform 0.12s;
+}
+.onb-choice:hover:not(:disabled) { border-color: var(--onb-blue); background: var(--onb-accent-tint); }
+.onb-choice:active:not(:disabled) { transform: scale(0.99); }
+.onb-choice:disabled { opacity: 0.7; cursor: default; }
+.onb-choice[data-primary='true'] { border-color: var(--onb-blue); background: var(--onb-accent-tint); box-shadow: 0 0 0 1px var(--onb-blue); }
+.onb-choice-icon {
+  display: grid;
+  place-items: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  flex: none;
+  border-radius: 0.75rem;
+  background: var(--onb-surface-2);
+  color: var(--onb-accent-text);
+}
+.onb-choice[data-primary='true'] .onb-choice-icon { background: var(--onb-blue); color: #ffffff; }
+
+@media (prefers-reduced-motion: reduce) {
+  .onb-root *,
+  .onb-root *::before,
+  .onb-root *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
+@media (forced-colors: active) {
+  .onb-option:has(input:checked) { outline: 2px solid Highlight; }
+}

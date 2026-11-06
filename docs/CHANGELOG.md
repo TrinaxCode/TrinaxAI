@@ -28,6 +28,8 @@ All notable changes to TrinaxAI are documented here. This project follows the
 
 ### Changed
 
+- First-run onboarding is now one short screen over TrinaxAI's own animated background, with the bare logo: it asks only for language, appearance and an optional name. The memory/hardware readout, the model picker, the Ollama check and the folder-indexing step are gone because the installer already handles them (the hardware profile it detected is still copied into the browser silently, and never guessed when the service is unreachable); models, folders and everything else stay in Settings. The device choice (existing setup or new device) uses the same look.
+
 - Call mode has a new look: a microphone while TrinaxAI listens, the TrinaxAI mark inside an orbit while it thinks, the mark with a radial equalizer while it speaks, and a hang-up animation ("Call ended") before returning to the chat. Reduced-motion users get static versions of each state.
 - Call mode closes the sidebar when it starts and shows live captions of what is heard and said.
 - The indexing progress bar is now measured, not estimated. The indexer reports bytes (or files) read, split and embedded, and the supervisor folds them into one monotonic percentage; the time left comes from the pace actually observed over the last seconds and stays hidden ("calculating…") until there is enough evidence. The card was redesigned: one bar for the whole job, a ring per stage (upload, read, split, embed, save), the file being processed and live counters. Jobs expose the new `current_file`, `stages` and `bytes_total` fields; older clients keep working with `progress`.
