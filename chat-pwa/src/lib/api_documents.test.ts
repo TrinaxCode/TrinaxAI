@@ -92,7 +92,7 @@ describe('document API', () => {
     xhr.onload?.();
 
     await expect(promise).resolves.toMatchObject({ job_id: 'job-1' });
-    expect(progress.mock.calls.map(([value]) => value)).toEqual([15, 30]);
+    expect(progress.mock.calls.map(([value]) => value)).toEqual([5, 10]);
     expect(JSON.parse(localStorage.getItem('tc-last-index-import') || '{}')).toMatchObject({
       label: 'project', path: '/tmp/project', jobId: 'job-1', saved: 1,
     });

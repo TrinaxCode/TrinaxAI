@@ -72,8 +72,10 @@ def test_structured_job_progress_is_exact_and_stage_specific() -> None:
     changes = system_service._progress_changes(event)
     assert changes["phase"] == "extracting"
     assert changes["pages_processed"] == 80
-    assert changes["progress"] == 39
-    assert changes["progress_exact"] is True
+    # Pages of one file say nothing about the run as a whole: without the run's
+    # own counters the bar is neither moved nor presented as exact.
+    assert "progress" not in changes
+    assert changes["progress_exact"] is False
     # Unknown lines keep the current phase and never move the bar.
     assert system_service._line_progress("ordinary log line", 42) == (42, "")
 
@@ -152,8 +154,6 @@ def test_index_job_helpers_bound_untrusted_names_output_and_progress(monkeypatch
     assert system_service._safe_rel_path("/../") is None
     assert system_service._safe_label(" ..informe: julio.. ") == "informe_ julio"
     assert system_service._safe_label("???") == "import"
-    assert system_service._estimate_index_seconds(0, 0) == 45
-    assert system_service._estimate_index_seconds(10_000, 10_000_000_000) == 1800
 
     job = {
         "id": "bounded-job",
@@ -175,7 +175,8 @@ def test_index_job_helpers_bound_untrusted_names_output_and_progress(monkeypatch
         assert len(job["output"]) == 8000
         assert len(job["recent_activity"]) == 300
         assert public["progress"] == 10
-        assert public["eta_seconds"] == 900
+        # A job that has not reported measured work has no honest ETA yet.
+        assert public["eta_seconds"] is None
         assert public["elapsed_seconds"] == 100
     finally:
         with state.index_jobs_lock:
@@ -183,9 +184,9 @@ def test_index_job_helpers_bound_untrusted_names_output_and_progress(monkeypatch
         state.index_active_job_id = previous_active
 
     assert system_service._line_progress("Troceando documento", 10) == (10, "chunking")
-    assert system_service._line_progress("Embeddings lote 2/4", 10) == (77, "embedding")
-    assert system_service._line_progress("Persistiendo índice", 10) == (92, "saving_index")
-    assert system_service._line_progress("Completado", 10) == (97, "finishing")
+    assert system_service._line_progress("Embeddings lote 2/4", 10) == (52, "embedding")
+    assert system_service._line_progress("Persistiendo índice", 10) == (96, "saving_index")
+    assert system_service._line_progress("Completado", 10) == (98, "finishing")
     assert system_service._structured_progress("TRINAXAI_PROGRESS not-json") is None
 
 

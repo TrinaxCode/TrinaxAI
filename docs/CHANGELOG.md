@@ -30,6 +30,7 @@ All notable changes to TrinaxAI are documented here. This project follows the
 
 - Call mode has a new look: a microphone while TrinaxAI listens, the TrinaxAI mark inside an orbit while it thinks, the mark with a radial equalizer while it speaks, and a hang-up animation ("Call ended") before returning to the chat. Reduced-motion users get static versions of each state.
 - Call mode closes the sidebar when it starts and shows live captions of what is heard and said.
+- The indexing progress bar is now measured, not estimated. The indexer reports bytes (or files) read, split and embedded, and the supervisor folds them into one monotonic percentage; the time left comes from the pace actually observed over the last seconds and stays hidden ("calculating…") until there is enough evidence. The card was redesigned: one bar for the whole job, a ring per stage (upload, read, split, embed, save), the file being processed and live counters. Jobs expose the new `current_file`, `stages` and `bytes_total` fields; older clients keep working with `progress`.
 
 ## [1.4.1] — 2026-10-27
 

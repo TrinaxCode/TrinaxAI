@@ -101,17 +101,17 @@ describe('indexing progress bar', () => {
   });
 
   it('shows the percentage from the real counters with duration metrics', async () => {
-    renderIndexingTab();
+    const { container } = renderIndexingTab();
 
     const bar = await screen.findByRole('progressbar');
-    expect(bar).toHaveClass('tc-index-track');
+    expect(bar).toHaveClass('ip-track');
     expect(bar).toHaveAttribute('aria-valuenow', '74');
     expect(bar).toHaveAttribute('aria-valuemax', '100');
 
-    expect(screen.getByText('74%')).toBeInTheDocument();
-    // 97s elapsed and a 2m 05s estimate, both formatted from real seconds.
-    expect(screen.getByText('1m 37s')).toBeInTheDocument();
-    expect(screen.getByText('~2m 05s')).toBeInTheDocument();
+    expect(container.querySelector('.ip-percent')).toHaveTextContent('74%');
+    // 97s elapsed and a 125s estimate, both formatted from real seconds.
+    expect(screen.getByText('1 min 37 s')).toBeInTheDocument();
+    expect(screen.getByText(/~2 min/)).toBeInTheDocument();
     expect(screen.getByText('143')).toBeInTheDocument();
   });
 
@@ -119,8 +119,8 @@ describe('indexing progress bar', () => {
     const { container } = renderIndexingTab();
 
     await screen.findByRole('progressbar');
-    const fill = container.querySelector('.tc-index-fill');
-    expect(fill).toHaveClass('tc-index-fill--live');
+    const fill = container.querySelector('.ip-fill');
+    expect(fill).toHaveClass('ip-fill--estimating');
     expect(fill).toHaveStyle({ width: '74%' });
     expect(screen.getByText(/aprox|approx/i)).toBeInTheDocument();
   });
@@ -130,7 +130,7 @@ describe('indexing progress bar', () => {
     const { container } = renderIndexingTab();
 
     await screen.findByRole('progressbar');
-    expect(container.querySelector('.tc-index-fill--live')).toBeNull();
+    expect(container.querySelector('.ip-fill--estimating')).toBeNull();
     expect(screen.queryByText(/aprox|approx/i)).toBeNull();
   });
 
@@ -139,7 +139,7 @@ describe('indexing progress bar', () => {
     const { container } = renderIndexingTab();
 
     expect(await screen.findByRole('progressbar')).toHaveAttribute('aria-valuenow', String(expected));
-    expect(screen.getByText(`${expected}%`)).toBeInTheDocument();
-    expect(container.querySelector('.tc-index-fill')).toHaveStyle({ width: `${expected}%` });
+    expect(container.querySelector('.ip-percent')).toHaveTextContent(`${expected}%`);
+    expect(container.querySelector('.ip-fill')).toHaveStyle({ width: `${expected}%` });
   });
 });

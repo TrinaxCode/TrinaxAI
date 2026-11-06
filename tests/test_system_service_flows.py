@@ -412,14 +412,11 @@ def test_index_job_persistence_restore_prune_and_public_helpers(tmp_path, monkey
     assert system_service._safe_rel_path("../../a/../b?.md") == "a/b_.md"
     assert system_service._safe_rel_path("../..") is None
     assert system_service._safe_label(" .. ") == "import"
-    assert system_service._estimate_index_seconds(0, 0) == 45
     assert system_service._structured_progress("noise") is None
     assert system_service._structured_progress("TRINAXAI_PROGRESS not-json") is None
-    assert (
-        system_service._progress_changes(
-            {"phase": "embedding", "determinate": True, "batches_total": 4, "batches_processed": 2}
-        )["progress"]
-        == 77
+    # Batch counters alone carry no file totals, so they cannot place the bar.
+    assert "progress" not in system_service._progress_changes(
+        {"phase": "embedding", "determinate": True, "batches_total": 4, "batches_processed": 2}
     )
 
 
@@ -444,21 +441,22 @@ def test_collection_and_job_mutation_helpers(monkeypatch, isolated_jobs) -> None
         {
             **isolated_jobs[job["id"]],
             "status": "saving",
-            "progress": 10,
+            "progress": 5,
             "created_at": system_service.time.time() - 10,
         }
     )
-    assert public["eta_seconds"] and public["elapsed_seconds"] >= 9
+    # Uploading has no measured pace to extrapolate from, so no ETA is invented.
+    assert public["eta_seconds"] is None and public["elapsed_seconds"] >= 9
 
 
 @pytest.mark.parametrize(
     ("line", "expected", "phase"),
     [
         ("chunking documents", 7, "chunking"),
-        ("Embeddings lote 2/4", 77, "embedding"),
+        ("Embeddings lote 2/4", 52, "embedding"),
         ("embedding started", 7, "embedding"),
-        ("persisting index", 92, "saving_index"),
-        ("completed", 97, "finishing"),
+        ("persisting index", 96, "saving_index"),
+        ("completed", 98, "finishing"),
         ("other", 7, ""),
     ],
 )
@@ -639,10 +637,9 @@ def test_system_helpers_cover_invalid_restore_eta_and_stale_runs(tmp_path, monke
     job.update(
         status="indexing",
         started_at=system_service.time.time() - 1,
-        estimated_total_seconds=20,
         progress=40,
     )
-    assert system_service._job_public(job)["eta_seconds"] is not None
+    assert system_service._job_public(job)["eta_seconds"] is None
     assert system_service._progress_changes({"phase": "chunking"})["progress_exact"] is False
 
 

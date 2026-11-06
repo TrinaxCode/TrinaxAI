@@ -30,6 +30,7 @@ el formato de [Keep a Changelog](https://keepachangelog.com/).
 
 - El modo llamada estrena diseño: un micrófono mientras TrinaxAI escucha, la marca de TrinaxAI dentro de una órbita mientras piensa, la marca con un ecualizador radial mientras habla y una animación de cierre («Llamada finalizada») antes de volver al chat. Con movimiento reducido cada estado se muestra estático.
 - El modo llamada cierra el sidebar al iniciar y muestra subtítulos en vivo de lo que se oye y se dice.
+- La barra de progreso de la indexación ahora es medida, no estimada. El indexador informa los bytes (o archivos) leídos, divididos e incrustados y el supervisor los combina en un único porcentaje monótono; el tiempo restante sale del ritmo realmente observado en los últimos segundos y permanece oculto («calculando…») hasta tener evidencia suficiente. La tarjeta se rediseñó: una barra para todo el trabajo, un anillo por etapa (subida, lectura, división, incrustación, guardado), el archivo en proceso y contadores en vivo. Los trabajos exponen los campos nuevos `current_file`, `stages` y `bytes_total`; los clientes antiguos siguen funcionando con `progress`.
 
 ## [1.4.1] — 2026-10-27
 

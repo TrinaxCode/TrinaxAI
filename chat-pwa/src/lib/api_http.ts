@@ -95,6 +95,13 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
 
+function validateStages(value: unknown): IndexJobStatus['stages'] {
+  if (!isRecord(value)) return undefined;
+  const { read, chunk, embed } = value;
+  if (typeof read !== 'number' || typeof chunk !== 'number' || typeof embed !== 'number') return undefined;
+  return { read, chunk, embed };
+}
+
 export function validateIndexJobStatus(value: unknown): IndexJobStatus {
   if (!isRecord(value) || typeof value.id !== 'string' || typeof value.status !== 'string') {
     throw new ApiError('', 502, 'invalid_response');
@@ -127,6 +134,8 @@ export function validateIndexJobStatus(value: unknown): IndexJobStatus {
     batches_processed: typeof value.batches_processed === 'number' ? value.batches_processed : 0,
     progress_exact: Boolean(value.progress_exact),
     recent_activity: typeof value.recent_activity === 'string' ? value.recent_activity : undefined,
+    current_file: typeof value.current_file === 'string' && value.current_file ? value.current_file : undefined,
+    stages: validateStages(value.stages),
     failures: Array.isArray(value.failures) ? value.failures.flatMap((failure) => (
       isRecord(failure) && typeof failure.path === 'string' && typeof failure.reason === 'string'
         ? [{ path: failure.path, reason: failure.reason }]

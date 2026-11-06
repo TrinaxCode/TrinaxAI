@@ -42,6 +42,13 @@ export interface FolderImportResult {
   output?: string;
 }
 
+/**
+ * Share of the progress bar that belongs to sending the files. The server maps
+ * its own saving and indexing work onto the rest (see `UPLOAD_SHARE` in
+ * `app/services/index_progress.py`), so both must agree.
+ */
+export const INDEX_UPLOAD_SHARE = 10;
+
 export interface IndexJobStatus {
   id: string;
   label: string;
@@ -70,6 +77,10 @@ export interface IndexJobStatus {
   batches_processed: number;
   progress_exact: boolean;
   recent_activity?: string;
+  /** File the indexer is working on, relative to the indexed folder. */
+  current_file?: string;
+  /** Completed share (0..1) of each measured stage, straight from the indexer's counters. */
+  stages?: { read: number; chunk: number; embed: number };
   failures: Array<{ path: string; reason: string }>;
   retry_recommended: boolean;
 }
@@ -151,7 +162,7 @@ export function startFolderIndex(
     xhr.responseType = 'json';
     xhr.upload.onprogress = (event) => {
       if (event.lengthComputable && event.total > 0) {
-        options.onUploadProgress?.(Math.round((event.loaded / event.total) * 30));
+        options.onUploadProgress?.(Math.round((event.loaded / event.total) * INDEX_UPLOAD_SHARE));
       }
     };
     xhr.onload = () => {
@@ -173,7 +184,7 @@ export function startFolderIndex(
           collectionName: result.collection_name,
         }));
       } catch { /* ignore */ }
-      options.onUploadProgress?.(30);
+      options.onUploadProgress?.(INDEX_UPLOAD_SHARE);
       resolve(result as FolderImportResult);
     };
     xhr.onerror = () => { finish(); reject(new ApiError('', 0)); };

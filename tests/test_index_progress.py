@@ -47,21 +47,29 @@ def test_phase_announcements_never_invent_a_percentage():
 # ── Structured events: real counters per file and per embedding batch ─────
 
 
-def test_read_and_chunk_bands_track_processed_files():
-    reading = _progress_changes({"phase": "extracting", "files_total": 40, "files_processed": 10, "determinate": True})
-    chunking = _progress_changes({"phase": "chunking", "files_total": 40, "files_processed": 30, "determinate": True})
-    done = _progress_changes({"phase": "chunking", "files_total": 40, "files_processed": 40, "determinate": True})
+def test_read_and_chunk_progress_tracks_processed_files():
+    work = system_service.progress_model.new_work()
+    reading = _progress_changes(
+        {"phase": "extracting", "files_total": 40, "files_processed": 10, "determinate": True}, work
+    )
+    chunking = _progress_changes(
+        {"phase": "chunking", "files_total": 40, "files_processed": 30, "determinate": True}, work
+    )
+    done = _progress_changes({"phase": "chunking", "files_total": 40, "files_processed": 40, "determinate": True}, work)
 
-    assert reading["progress"] == 34  # 30 → 48 by files read
-    assert chunking["progress"] == 58  # 48 → 62 by files chunked
-    assert done["progress"] == 62
-    assert reading["progress_exact"] is True
+    # Reading and splitting are 6% of a document's cost; embedding is the rest.
+    assert reading["progress"] == 10  # 10 + int(85 * 0.04 * 10/40)
+    assert chunking["progress"] == 13  # 10 + int(85 * (0.04 * 30/40 + 0.02 * 30/40))
+    assert done["progress"] == 15  # 10 + int(85 * 0.06)
+    assert reading["progress"] <= chunking["progress"] < done["progress"] < 30
+    assert done["progress_exact"] is True
 
 
-def test_embedding_span_waits_for_the_last_file():
-    # Streaming runs read, chunk and embed in the same pass: mapping the
-    # embedding span while files are still pending would overstate the work.
-    pending = _progress_changes(
+def test_embedding_only_credits_the_batch_that_is_being_embedded():
+    # Streaming runs read, chunk and embed 100-file batches one after another:
+    # the batch in flight may only claim its own share, never the whole run's.
+    work = system_service.progress_model.new_work()
+    middle = _progress_changes(
         {
             "phase": "embedding",
             "batches_processed": 2,
@@ -69,25 +77,28 @@ def test_embedding_span_waits_for_the_last_file():
             "files_processed": 40,
             "files_total": 250,
             "determinate": True,
-        }
+        },
+        work,
     )
-    assert "progress" not in pending
-    assert pending["phase"] == "embedding"
+    assert middle["phase"] == "embedding"
+    assert middle["progress"] == 17  # 10 + 85 * ((0.04 + 0.02) * 40 + 0.94 * 20) / 250
 
-    ready = _progress_changes(
+    finished_batch = _progress_changes(
         {
             "phase": "embedding",
-            "batches_processed": 2,
+            "batches_processed": 4,
             "batches_total": 4,
             "files_processed": 40,
-            "files_total": 40,
+            "files_total": 250,
             "determinate": True,
-        }
+        },
+        work,
     )
-    assert ready["progress"] == 77  # 62 → 92
+    assert finished_batch["progress"] == 23  # 10 + 85 * ((0.04 + 0.02) * 40 + 0.94 * 40) / 250
 
 
-def test_embedding_start_flips_the_phase_and_marks_it_provisional():
+def test_embedding_start_flips_the_phase_without_moving_the_bar_backwards():
+    work = system_service.progress_model.new_work()
     changes = _progress_changes(
         {
             "phase": "embedding",
@@ -96,11 +107,19 @@ def test_embedding_start_flips_the_phase_and_marks_it_provisional():
             "files_processed": 40,
             "files_total": 40,
             "determinate": False,
-        }
+        },
+        work,
     )
     assert changes["phase"] == "embedding"
-    assert changes["progress"] == _EMBED_START
-    assert changes["progress_exact"] is False
+    assert changes["progress"] == 15  # reading and splitting are done, no batch embedded yet
+    assert changes["progress_exact"] is True
+
+
+def test_bytes_weigh_a_large_document_more_than_a_small_one():
+    work = system_service.progress_model.new_work()
+    # Three files, but the first one is 90% of the bytes.
+    event = {"phase": "extracting", "files_total": 3, "files_processed": 1, "bytes_total": 1000, "bytes_processed": 900}
+    assert _progress_changes(event, work)["progress"] == 13  # 10 + int(85 * 0.04 * 0.9)
 
 
 def test_chunking_without_counters_keeps_the_labelled_estimate():
@@ -205,9 +224,10 @@ def test_file_counter_never_walks_backwards_across_phases(monkeypatch):
 
     progress = [value for value, _, _ in snapshots]
     assert progress == sorted(progress)
-    assert 48 in progress  # first file chunked
-    assert 62 in progress  # every file chunked → embedding owns the bar
-    assert 77 in progress  # 1 of 2 embedding batches
+    assert 13 in progress  # every file read
+    assert 15 in progress  # every file chunked
+    assert 55 in progress  # 1 of 2 embedding batches
+    assert system_service.progress_model.FINISH_PROGRESS in progress  # engine reload
     assert snapshots[-1][0] == 100
 
     # Chunking reports earlier file positions than the reading phase already
@@ -229,7 +249,7 @@ def test_plain_log_lines_keep_the_exact_percentage_and_phase(monkeypatch):
 
     # The log line neither moved the bar nor downgraded it to an estimate, and
     # it did not relabel the phase.
-    assert (48, "extracting", True) in snapshots
+    assert (13, "extracting", True) in snapshots
     assert all(exact for _, _, exact in snapshots)
     assert all(phase != "" for _, phase, _ in snapshots)
     assert stored["progress_exact"] is True
@@ -272,9 +292,9 @@ def test_emit_embed_progress_prints_parseable_line(capsys):
 @pytest.mark.parametrize("label", ["batch", "lote"])
 def test_embedding_batch_line_maps_in_both_languages(label: str) -> None:
     # The log line is localized, so the supervisor must recognise either spelling.
-    value, phase = _line_progress(f"🔨 Embeddings {label} 3/12...", 40)
+    value, phase = _line_progress(f"🔨 Embeddings {label} 3/12...", 10)
     assert phase == "embedding"
-    assert value == 69  # 62 → 92 across the batch span
+    assert value == 31  # 10 → 95 across the batch span
 
 
 def test_degenerate_batch_line_does_not_move_the_bar():

@@ -57,9 +57,10 @@ def test_system_dispatch_and_shutdown_state_edges(monkeypatch, tmp_path: Path) -
     system_service._restore_index_jobs()
     monkeypatch.setattr(system_service.config, "PERSIST_DIR", "/tmp/nonexistent-persist")
     assert system_service._external_indexer_pid() is None
+    # One of two files read and chunked is 6% of the work x 1/2 → 10 + int(85 * 0.03).
     assert (
         system_service._progress_changes({"phase": "chunking", "files_total": 2, "files_processed": 1})["progress"]
-        == 55
+        == 12
     )
 
 

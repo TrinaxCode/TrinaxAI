@@ -283,11 +283,59 @@ def total_batches(items: list[str], batch_size: int = INDEX_BATCH_SIZE) -> int:
     return (len(items) + batch_size - 1) // batch_size if items else 0
 
 
+def _file_weight(path: str) -> int:
+    """Cost proxy of one document: its size, never zero so empty files still count."""
+    try:
+        return max(1, os.path.getsize(path))
+    except OSError:
+        return 1
+
+
+class RunMeter:
+    """Run-level counters shared by the full and the incremental indexer.
+
+    Files are processed in order, so the bytes done after ``n`` files are a
+    prefix sum. Reporting bytes next to files lets the supervisor weigh a
+    300-page PDF more than a note instead of treating every file alike.
+    """
+
+    def __init__(self, paths: list[str], context: SourceContext | None = None) -> None:
+        self.paths = paths
+        self.context = context
+        self.files_total = len(paths)
+        offsets = [0]
+        for path in paths:
+            offsets.append(offsets[-1] + _file_weight(path))
+        self.offsets = offsets
+
+    @property
+    def bytes_total(self) -> int:
+        return self.offsets[-1]
+
+    def bytes_done(self, files_done: int) -> int:
+        return self.offsets[min(max(files_done, 0), self.files_total)]
+
+    def counters(self, files_done: int, *, current: bool = False) -> dict[str, object]:
+        files_done = min(max(files_done, 0), self.files_total)
+        values: dict[str, object] = {
+            "files_total": self.files_total,
+            "files_processed": files_done,
+            "bytes_total": self.bytes_total,
+            "bytes_processed": self.offsets[files_done],
+        }
+        if current and files_done > 0:
+            values["current_file"] = _safe_failure_path(
+                self.paths[files_done - 1], self.context or _default_source_context()
+            )
+        return values
+
+
 def _emit_embed_progress(
     done: int,
     total: int,
     started: bool = False,
     files: tuple[int, int] | None = None,
+    weight: tuple[int, int] | None = None,
 ) -> None:
     """Emit a machine-parseable, newline-terminated embedding-progress line.
 
@@ -300,7 +348,8 @@ def _emit_embed_progress(
     phase label immediately instead of waiting for a full batch, and ``files``
     carries the run-level file counters so the supervisor only maps the
     embedding span once every file has been chunked (streaming runs read, chunk
-    and embed in the same pass).
+    and embed in the same pass). ``weight`` is the same position in bytes, which
+    lets the supervisor weigh a large document more than a small one.
     """
     if total <= 0:
         return
@@ -313,6 +362,8 @@ def _emit_embed_progress(
     }
     if files and files[1] > 0:
         payload["files_processed"], payload["files_total"] = files
+    if weight and weight[1] > 0:
+        payload["bytes_processed"], payload["bytes_total"] = weight
     emit_progress("embedding", **payload)
 
 
@@ -421,10 +472,13 @@ def load_docs_with_status(
     executor = ThreadPoolExecutor(max_workers=INDEX_LOAD_WORKERS) if INDEX_LOAD_WORKERS > 1 else None
     try:
         for batch in iter_batches(paths):
+            # Lazy on purpose: results are consumed in order as each file
+            # finishes, so progress advances while a slow file is still being
+            # read instead of arriving as one burst when the whole batch ends.
             loaded_results = (
-                list(executor.map(_load_file_documents_result, batch))
+                executor.map(_load_file_documents_result, batch)
                 if executor is not None and len(batch) > 1
-                else [_load_file_documents_result(path) for path in batch]
+                else (_load_file_documents_result(path) for path in batch)
             )
             for position, (fp, group, error) in enumerate(loaded_results, start=1):
                 if on_file_read is not None:
@@ -793,17 +847,13 @@ def run_full_index(
     total_nodes = 0
     indexed_paths: set[str] = set()
     failures: dict[str, str] = {}
-    files_total = len(paths)
+    meter = RunMeter(paths, source_context)
+    files_total = meter.files_total
     files_processed = 0
     chunks_in_batch = 0
 
     def report_read(files_done: int) -> None:
-        emit_progress(
-            "extracting",
-            files_total=files_total,
-            files_processed=files_done,
-            determinate=True,
-        )
+        emit_progress("extracting", **meter.counters(files_done, current=True), determinate=True)
 
     def report_chunked(files_done: int, chunks_in_file: int) -> None:
         # Running count for the batch in progress; ``total_nodes`` is the
@@ -812,14 +862,19 @@ def run_full_index(
         chunks_in_batch += chunks_in_file
         emit_progress(
             "chunking",
-            files_total=files_total,
-            files_processed=files_done,
+            **meter.counters(files_done, current=True),
             chunks_generated=total_nodes + chunks_in_batch,
             determinate=True,
         )
 
     def report_embed(done: int, total: int, started: bool) -> None:
-        _emit_embed_progress(done, total, started, files=(files_processed, files_total))
+        _emit_embed_progress(
+            done,
+            total,
+            started,
+            files=(files_processed, files_total),
+            weight=(meter.bytes_done(files_processed), meter.bytes_total),
+        )
 
     for batch_number, batch in enumerate(iter_batches(paths), start=1):
         prepared = prepare_batch(
@@ -837,8 +892,7 @@ def run_full_index(
         chunks_in_batch = 0
         emit_progress(
             "chunking",
-            files_total=files_total,
-            files_processed=files_processed,
+            **meter.counters(files_processed),
             chunks_generated=total_nodes,
             determinate=True,
         )

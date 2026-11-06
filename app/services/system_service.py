@@ -12,6 +12,7 @@ import httpx
 from trinaxai.core import _process_is_alive
 from trinaxai.indexing.documents import _SENSITIVE_EXTENSIONS, _SENSITIVE_NAMES
 
+from . import index_progress as progress_model
 from .app_state_service import _read_app_state
 from .shared_runtime import (
     _SAFE_SEGMENT,
@@ -208,7 +209,14 @@ def _dispatch_next_index_job() -> None:
                 return
             job_id = job["id"]
             run_token = uuid.uuid4().hex
-            job.update(status="indexing", phase="queued", progress=30, run_token=run_token, started_at=time.time())
+            job.update(
+                status="indexing",
+                phase="queued",
+                progress=progress_model.UPLOAD_SHARE,
+                work=progress_model.new_work(),
+                run_token=run_token,
+                started_at=time.time(),
+            )
             state.index_active_job_id = job_id
             _persist_index_jobs_locked()
         threading.Thread(
@@ -242,7 +250,7 @@ def _new_index_job(
         "path": target,
         "status": "saving",
         "phase": "saving",
-        "progress": 2,
+        "progress": 0,
         "saved": 0,
         "skipped": 0,
         "failures": [],
@@ -273,6 +281,8 @@ def _new_index_job(
         "batches_total": None,
         "batches_processed": 0,
         "progress_exact": True,
+        "current_file": "",
+        "work": progress_model.new_work(),
         "recent_activity": "Upload job created",
     }
     with state.index_jobs_lock:
@@ -306,24 +316,15 @@ def _append_index_output(job_id: str, text: str) -> None:
         _persist_index_jobs_locked()
 
 
-def _estimate_index_seconds(saved: int, total_bytes: int) -> int:
-    mb = max(0.1, total_bytes / (1024 * 1024))
-    # Local Ollama indexing cost is dominated by embeddings, not upload speed.
-    # This deliberately favors a stable countdown over a volatile percent-based ETA.
-    return int(max(45, min(1800, 35 + saved * 18 + mb * 12)))
-
-
 def _job_public(job: dict) -> dict:
     now = time.time()
     started = job.get("started_at") or job.get("created_at") or now
     elapsed = max(0, now - started)
     progress = max(0, min(100, int(job.get("progress") or 0)))
-    eta = None
-    if job.get("status") == "saving" and 5 < progress < 30:
-        eta = max(1, int(elapsed * (100 - progress) / progress))
-    elif job.get("status") in {"indexing", "saving"} and job.get("estimated_total_seconds"):
-        remaining = int(float(job["estimated_total_seconds"]) - elapsed)
-        eta = remaining if remaining > 0 else None
+    work = job.get("work")
+    # The estimate comes from the pace the indexer actually shows; until it has
+    # run long enough to say anything useful it stays empty, never a made-up figure.
+    eta = progress_model.eta_seconds(work) if job.get("status") == "indexing" else None
     return {
         "id": job["id"],
         "label": job.get("label", ""),
@@ -357,18 +358,20 @@ def _job_public(job: dict) -> dict:
         "batches_processed": job.get("batches_processed", 0),
         "progress_exact": bool(job.get("progress_exact", False)),
         "recent_activity": job.get("recent_activity", ""),
+        "current_file": job.get("current_file", ""),
+        "stages": progress_model.stage_fractions(work),
+        "bytes_total": int((work or {}).get("total") or 0) if (work or {}).get("unit") == "bytes" else 0,
     }
 
 
-# Each phase owns a slice of the bar sized by the wall-clock it really takes:
-# reading and chunking now report once per file, and embeddings (which dominate
-# a run) own the widest span. Every value comes from a real counter — files
-# read, files chunked or embedding batches done — never from a timer.
-_READ_PROGRESS_START, _READ_PROGRESS_END = 30, 48
-_CHUNK_PROGRESS_START, _CHUNK_PROGRESS_END = 48, 62
-_EMBED_PROGRESS_START, _EMBED_PROGRESS_END = 62, 92
-_PUBLISH_PROGRESS = 92
-_FINISH_PROGRESS = 97
+# The bar is driven by ``progress_model`` from the counters index.py reports
+# (bytes or files read, chunked and embedded). The spans below only serve the
+# plain-text fallback for an indexer that predates those counters, and the two
+# fixed marks after the measured work: publishing the generation and the
+# engine reload.
+_EMBED_PROGRESS_START, _EMBED_PROGRESS_END = progress_model.WORK_START, progress_model.WORK_END
+_PUBLISH_PROGRESS = progress_model.PUBLISH_PROGRESS
+_FINISH_PROGRESS = progress_model.FINISH_PROGRESS
 
 # index.py emits one "Embeddings lote N/M..." (Spanish) or
 # "Embeddings batch N/M..." (English) line per batch (see
@@ -420,9 +423,17 @@ def _structured_progress(line: str) -> dict | None:
     return event if isinstance(event, dict) and isinstance(event.get("phase"), str) else None
 
 
-def _progress_changes(event: dict) -> dict:
+def _progress_changes(event: dict, work: dict | None = None) -> dict:
+    """Translate one structured indexer event into job fields.
+
+    ``work`` holds the running counters of the job and is updated in place; a
+    stand-alone call (tests, tools) gets a throw-away one.
+    """
     phase = event["phase"]
-    changes = {"phase": phase, "progress_exact": bool(event.get("determinate"))}
+    tracked = work if work is not None else progress_model.new_work()
+    progress_model.record_event(tracked, event)
+    measured = progress_model.has_totals(tracked)
+    changes: dict = {"phase": phase, "progress_exact": measured}
     for key in (
         "pages_total",
         "pages_processed",
@@ -434,45 +445,12 @@ def _progress_changes(event: dict) -> dict:
     ):
         if isinstance(event.get(key), int):
             changes[key] = max(0, event[key])
-    if phase == "extracting" and changes.get("pages_total"):
-        changes["progress"] = _scaled_progress(
-            _READ_PROGRESS_START,
-            _READ_PROGRESS_END,
-            changes.get("pages_processed", 0),
-            changes["pages_total"],
-        )
-    elif phase == "extracting" and changes.get("files_total"):
-        changes["progress"] = _scaled_progress(
-            _READ_PROGRESS_START,
-            _READ_PROGRESS_END,
-            changes.get("files_processed", 0),
-            changes["files_total"],
-        )
-    elif phase == "chunking" and changes.get("files_total"):
-        changes["progress"] = _scaled_progress(
-            _CHUNK_PROGRESS_START,
-            _CHUNK_PROGRESS_END,
-            changes.get("files_processed", 0),
-            changes["files_total"],
-        )
-    elif phase == "chunking":
-        # No file counters yet: the label is honest, the number cannot be.
-        changes["progress_exact"] = False
-    elif phase == "embedding" and changes.get("batches_total"):
-        # Streaming runs read, chunk and embed in the same pass. The embedding
-        # span is only meaningful once every file has been chunked; before that
-        # the file counter owns the bar, so the percentage never runs ahead of
-        # work that is still pending.
-        files_total = changes.get("files_total")
-        files_done = changes.get("files_processed")
-        if not files_total or (files_done is not None and files_done >= files_total):
-            changes["progress"] = _scaled_progress(
-                _EMBED_PROGRESS_START,
-                _EMBED_PROGRESS_END,
-                changes.get("batches_processed", 0),
-                changes["batches_total"],
-            )
-    elif phase == "warning":
+    current_file = _safe_rel_path(str(event.get("current_file") or ""))
+    if current_file:
+        changes["current_file"] = current_file[:240]
+    if measured and phase in {"extracting", "chunking", "embedding"}:
+        changes["progress"] = progress_model.progress_percent(tracked)
+    if phase == "warning":
         skipped = event.get("skipped")
         failures = event.get("failures")
         if isinstance(skipped, int) and skipped > 0:
@@ -531,7 +509,13 @@ def _run_index_job(
         env["TRINAXAI_LANG"] = "en"
     if embed_model:
         env["TRINAXAI_EMBED"] = embed_model
-    update(status="indexing", phase="starting", progress=30, started_at=time.time())
+    update(
+        status="indexing",
+        phase="starting",
+        progress=progress_model.UPLOAD_SHARE,
+        work=progress_model.new_work(),
+        started_at=time.time(),
+    )
     process = None
     try:
         process = subprocess.Popen(
@@ -565,7 +549,7 @@ def _run_index_job(
             with state.index_jobs_lock:
                 job = state.index_jobs.get(job_id)
                 cancelled = bool(job and job.get("cancel_requested")) or state.lifecycle_stopping.is_set()
-                current = int(job.get("progress", 30)) if job else 30
+                current = int(job.get("progress", progress_model.UPLOAD_SHARE)) if job else progress_model.UPLOAD_SHARE
             if cancelled:
                 process.terminate()
                 break
@@ -594,7 +578,10 @@ def _run_index_job(
                 _append_index_output(job_id, line)
                 event = _structured_progress(line)
                 if event:
-                    changes = _progress_changes(event)
+                    with state.index_jobs_lock:
+                        live = state.index_jobs.get(job_id)
+                        work = live.setdefault("work", progress_model.new_work()) if live else None
+                        changes = _progress_changes(event, work)
                     if "progress" in changes:
                         changes["progress"] = max(current, changes["progress"])
                     if "files_processed" in changes:
@@ -612,10 +599,16 @@ def _run_index_job(
                 else:
                     progress, phase = _line_progress(line, current)
                     plain_changes: dict = {}
-                    if progress != current:
+                    with state.index_jobs_lock:
+                        measured = progress_model.has_totals((state.index_jobs.get(job_id) or {}).get("work"))
+                    # Once real counters drive the bar, log lines only relabel the
+                    # phase; the publish and finish marks are the sole exception.
+                    moves_bar = not measured or phase in {"saving_index", "finishing"}
+                    if progress != current and moves_bar:
                         # Only a line that actually moves the bar is an estimate.
                         plain_changes["progress"] = progress
-                        plain_changes["progress_exact"] = False
+                        if not measured:
+                            plain_changes["progress_exact"] = False
                     if phase:
                         plain_changes["phase"] = phase
                     if plain_changes:
@@ -674,6 +667,11 @@ def _run_index_job(
         _release_index_slot(job_id, run_token)
         return
 
+    # The indexer is done; loading the new generation into the engine is the
+    # last step and can take a moment, so say so instead of sitting still.
+    with state.index_jobs_lock:
+        reached = int((state.index_jobs.get(job_id) or {}).get("progress") or 0)
+    update(phase="finishing", progress=max(reached, progress_model.FINISH_PROGRESS))
     ok = build_engine()
     _prune_old_jobs()
     if ok:
@@ -954,7 +952,9 @@ async def system_index_upload(
             saved=saved,
             skipped=skipped,
             bytes=total_bytes,
-            progress=min(28, 4 + int(24 * saved / max(1, len(files)))),
+            progress=min(
+                progress_model.UPLOAD_SHARE - 1, int(progress_model.UPLOAD_SHARE * saved / max(1, len(files)))
+            ),
         )
 
     if saved == 0:
@@ -1036,8 +1036,7 @@ async def system_index_upload(
         bytes=total_bytes,
         status="queued",
         phase="queued",
-        progress=30,
-        estimated_total_seconds=_estimate_index_seconds(saved, total_bytes),
+        progress=progress_model.UPLOAD_SHARE,
         dedupe_key=dedupe_key,
         embed_model=(embed_model or "").strip() or None,
         aggressive_quant=bool(aggressive_quant),
@@ -1170,7 +1169,9 @@ async def system_retry_index_job(request: Request, job_id: str):
         job.update(
             status="queued",
             phase="queued",
-            progress=30,
+            progress=progress_model.UPLOAD_SHARE,
+            work=progress_model.new_work(),
+            current_file="",
             error="",
             output="",
             skipped=0,

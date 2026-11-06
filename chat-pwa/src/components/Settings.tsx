@@ -24,6 +24,7 @@ import { audioManager } from '../services/audioManager';
 import WebSearchSettings from './WebSearchSettings';
 import SettingsModels from './SettingsModels';
 import SettingsPrompts from './SettingsPrompts';
+import IndexProgress from './indexing/IndexProgress';
 
 type SettingsSection = 'general' | 'web-search' | 'indexing' | 'prompts' | 'memory' | 'stats' | 'advanced' | 'help';
 
@@ -34,12 +35,6 @@ interface Props {
   onSectionChange?: (section: SettingsSection) => void;
   canManageSystem?: boolean;
 }
-
-const formatSeconds = (seconds: number) => {
-  const total = Math.max(0, Math.round(seconds));
-  if (total < 60) return `${total}s`;
-  return `${Math.floor(total / 60)}m ${String(total % 60).padStart(2, '0')}s`;
-};
 
 export default function Settings({ onBack, onOpenDocs, initialSection = 'general', onSectionChange, canManageSystem = false }: Props) {
   // Collections can be cleared by the host or by a paired device the host granted `index`.
@@ -405,13 +400,6 @@ export default function Settings({ onBack, onOpenDocs, initialSection = 'general
     const profile = detectedProfile || '16gb';
     return modelSetting(key, MODEL_PRESETS[profile][key]);
   };
-  const progress = Math.min(100, Math.max(0, uploadProgress, indexJob?.progress ?? 0));
-  // The upload counter is always exact; the indexer reports whether its own
-  // percentage comes from real counters or is still only an estimate.
-  const progressExact = uploadProgress > 0 ? true : Boolean(indexJob?.progress_exact ?? true);
-  const etaSeconds = typeof indexJob?.eta_seconds === 'number' && indexJob.eta_seconds > 0 ? indexJob.eta_seconds : null;
-  const filesProcessed = indexJob?.files_processed || indexJob?.saved || 0;
-  const filesTotal = indexJob?.files_total || selectedFolderFiles?.length || indexJob?.saved || 0;
   const hasIndexFailures = Boolean(indexJob && (indexJob.skipped > 0 || indexJob.failures.length > 0 || indexJob.retry_recommended));
   const phaseLabel = (phase: string | undefined) => t(({
     saving: 'indexPhaseSaving',
@@ -822,42 +810,9 @@ export default function Settings({ onBack, onOpenDocs, initialSection = 'general
         </div>
         <p className={`mt-2 text-sm leading-relaxed ${textHeading}`}>{t('indexFolderBrowserHint')}</p>
         {(indexing || indexJob) && (
-          <div className="tc-index-card mt-3 space-y-3">
+          <div className={indexing ? 'mt-3' : 'tc-index-card mt-3 space-y-3'}>
             {indexing ? (
-              <>
-                <div className="flex items-center justify-between gap-3">
-                  <span className={`min-w-0 text-sm font-medium ${textLabel}`}>{phaseLabel(indexJob?.phase || (uploadProgress > 0 ? 'saving' : 'queued'))}</span>
-                  <span className="flex items-baseline gap-1.5">
-                    <span className={`text-xl font-semibold tabular-nums ${textLabel}`}>{progress}%</span>
-                    {!progressExact && <span className={`text-xs font-medium ${textHeading}`}>{t('indexApprox')}</span>}
-                  </span>
-                </div>
-                <div
-                  className="tc-index-track"
-                  role="progressbar"
-                  aria-valuemin={0}
-                  aria-valuemax={100}
-                  aria-valuenow={progress}
-                  aria-valuetext={`${progress}%${progressExact ? '' : ` ${t('indexApprox')}`}`}
-                  aria-label={phaseLabel(indexJob?.phase || 'indexing')}
-                >
-                  <div
-                    className={`tc-index-fill${progressExact ? '' : ' tc-index-fill--live'}`}
-                    style={{ width: `${progress}%` }}
-                  />
-                </div>
-                <div className={`flex flex-wrap items-center gap-2 text-sm ${textHeading}`}>
-                  <span className="tc-index-metric tabular-nums">{t('indexElapsed')}: <strong className={textLabel}>{formatSeconds(indexJob?.elapsed_seconds ?? 0)}</strong></span>
-                  {etaSeconds !== null && <span className="tc-index-metric tabular-nums">{t('indexEta')}: <strong className={textLabel}>~{formatSeconds(etaSeconds)}</strong></span>}
-                  <span className="tc-index-metric tabular-nums">{t('indexFiles')}: <strong className={textLabel}>{filesProcessed} / {filesTotal}</strong></span>
-                  {!!indexJob?.pages_total && <span className="tc-index-metric tabular-nums">{t('indexPages')}: <strong className={textLabel}>{indexJob.pages_processed}/{indexJob.pages_total}</strong></span>}
-                  {!!indexJob?.chunks_generated && <span className="tc-index-metric tabular-nums">{t('indexChunks')}: <strong className={textLabel}>{indexJob.chunks_generated}</strong></span>}
-                  {!!indexJob?.skipped && <span className="tc-index-metric tabular-nums">{t('indexSkipped')}: <strong className={textLabel}>{indexJob.skipped}</strong></span>}
-                </div>
-                {!!indexJob?.recent_activity && (
-                  <p className={`tc-index-metric break-words text-sm leading-relaxed ${textHeading}`}>{t('indexRecentActivity')}: {indexJob.recent_activity}</p>
-                )}
-              </>
+              <IndexProgress job={indexJob} uploadProgress={uploadProgress} selectedFiles={selectedFolderFiles?.length ?? selectedFolderTotal} />
             ) : indexJob?.status === 'completed' ? (
               <div className="space-y-2">
               <div className="flex items-center justify-between gap-2">
