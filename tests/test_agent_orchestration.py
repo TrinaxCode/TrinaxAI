@@ -285,7 +285,9 @@ def install_layout(monkeypatch, tmp_path):
         agent_service, "credential_files", lambda: (install / "storage" / "r.json", install / "storage" / ".s")
     )
     monkeypatch.setattr(agent_service, "proxy_secret_file", lambda: install / "storage" / ".proxy_secret")
-    monkeypatch.setattr(agent_service, "_configured_workspace_roots", lambda **_kwargs: (projects.resolve(), install.resolve()))
+    monkeypatch.setattr(
+        agent_service, "_configured_workspace_roots", lambda **_kwargs: (projects.resolve(), install.resolve())
+    )
     monkeypatch.setattr(agent_service, "_authorize_system", lambda _request: None)
     return SimpleNamespace(projects=projects.resolve(), install=install.resolve(), other=other.resolve())
 

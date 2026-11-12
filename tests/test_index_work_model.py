@@ -159,6 +159,25 @@ def test_eta_grows_while_the_run_is_stalled():
     assert later > soon
 
 
+def test_eta_is_not_extrapolated_from_reading_and_splitting_alone():
+    # Read and chunk finish quickly, but embedding is nearly all the work; a
+    # pace measured on them would promise a time that has no basis.
+    work = fold(
+        [
+            {"phase": "extracting", "files_total": 10, "files_processed": 10},
+            {"phase": "chunking", "files_total": 10, "files_processed": 10},
+            embed(0, 4, 10, 10),
+        ],
+        start=100.0,
+        step=5.0,
+    )
+    assert model.stage_fractions(work)["embed"] == 0.0
+    assert model.eta_seconds(work, now=140.0) is None
+
+    model.record_event(work, embed(1, 4, 10, 10), now=150.0)
+    assert model.eta_seconds(work, now=151.0) is not None
+
+
 def test_eta_is_zero_when_the_work_is_complete():
     work = fold(
         [

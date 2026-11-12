@@ -159,6 +159,11 @@ def eta_seconds(work: dict | None, now: float | None = None) -> int | None:
     fraction = samples[-1][1]
     if fraction >= 1.0:
         return 0
+    # Reading and splitting are a few percent of the work: the pace they show
+    # says nothing about embedding, which is nearly all of the time. Until a
+    # batch has really been embedded there is no evidence to extrapolate from.
+    if stage_fractions(work)["embed"] <= 0.0:
+        return None
     if fraction < _MIN_FRACTION_FOR_ETA or stamp - work["t0"] < _MIN_SECONDS_FOR_ETA:
         return None
     window_start = stamp - _WINDOW_SECONDS
