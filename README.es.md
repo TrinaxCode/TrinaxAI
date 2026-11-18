@@ -1,5 +1,5 @@
 <h1 align="center">
-  <a href="https://www.trinaxai.app/"><img src="chat-pwa/public/logo.webp" alt="TrinaxAI" width="220" valign="middle"></a>
+  <a href="https://github.com/TrinaxCode/TrinaxAI"><img src="chat-pwa/public/logo.webp" alt="TrinaxAI" width="220" valign="middle"></a>
 </h1>
 
 <p align="center">
@@ -18,7 +18,7 @@
   Pregunta y recibe respuestas que citan el archivo de origen, indexa carpetas, deja que un agente de código trabaje en un workspace que apruebas y empareja tu móvil. Todo se ejecuta en tu propio equipo.
 </p>
 
-<h3 align="center"><a href="#instalar"><ins>Instalar TrinaxAI</ins></a> &nbsp;·&nbsp; <a href="https://www.trinaxai.app/"><ins>Sitio web</ins></a> &nbsp;·&nbsp; <a href="docs/README.es.md"><ins>Documentación</ins></a></h3>
+<h3 align="center"><a href="#instalar"><ins>Instalar TrinaxAI</ins></a> &nbsp;·&nbsp; <a href="docs/README.es.md"><ins>Documentación</ins></a></h3>
 
 <p align="center">
   <img src="docs/assets/readme/hero.es.jpg" alt="TrinaxAI respondiendo una pregunta con fuentes citadas, con el agente pidiendo aprobación para ejecutar un comando y un código de un solo uso para emparejar otro dispositivo" width="960" />
@@ -283,5 +283,4 @@ Ejecuta `make check` antes de enviar cambios. Consulta la
 TrinaxAI se distribuye bajo AGPL-3.0-or-later. Consulta [LICENSE](LICENSE) y
 la [guía de marca](docs/TRADEMARK.es.md).
 
-Creado por [TrinaxCode](https://github.com/TrinaxCode) ·
-[trinaxai.app](https://www.trinaxai.app/)
+Creado por [TrinaxCode](https://github.com/TrinaxCode)
