@@ -224,6 +224,7 @@ class ToolHandlerTests(unittest.TestCase):
         with (
             TemporaryDirectory() as tmp,
             patch("trinaxai_cli.agent.tools._bubblewrap_argv", return_value=None),
+            patch("trinaxai_cli.agent.tools._seatbelt_usable", return_value=False),
             patch.dict("os.environ", {}, clear=True),
         ):
             result = _run_command(Path(tmp), "echo unsafe")

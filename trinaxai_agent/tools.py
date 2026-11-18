@@ -32,9 +32,11 @@ import os
 import re
 import shutil
 import signal
+import stat
 import subprocess
 import sys
 import tempfile
+import time
 import unicodedata
 import urllib.error
 from dataclasses import dataclass
@@ -870,6 +872,169 @@ def _bubblewrap_argv(workspace_root: Path, command: str) -> list[str] | None:
     return argv
 
 
+class _GitGuardError(Exception):
+    """The protected git metadata cannot be guarded, so the command must not run."""
+
+
+# (kind, payload, permission bits, link count). ``kind`` is "dir", "file" or "link".
+_GuardEntry = tuple[str, "bytes | str | None", int, int]
+
+
+def _scan_guarded(target: Path) -> dict[str, _GuardEntry]:
+    """Describe ``target`` (a file, or a directory tree) without following symlinks."""
+    entries: dict[str, _GuardEntry] = {}
+    budget = 2_000_000
+
+    def describe(path: Path, rel: str) -> None:
+        nonlocal budget
+        try:
+            info = os.lstat(path)
+        except FileNotFoundError:
+            return
+        mode = stat.S_IMODE(info.st_mode)
+        if stat.S_ISLNK(info.st_mode):
+            entries[rel] = ("link", os.readlink(path), mode, info.st_nlink)
+        elif stat.S_ISDIR(info.st_mode):
+            entries[rel] = ("dir", None, mode, info.st_nlink)
+            for child in sorted(os.listdir(path)):
+                describe(path / child, f"{rel}/{child}" if rel else child)
+        elif stat.S_ISREG(info.st_mode):
+            budget -= info.st_size
+            if budget < 0:
+                raise _GitGuardError(f"{target} is too large to protect")
+            entries[rel] = ("file", path.read_bytes(), mode, info.st_nlink)
+        else:
+            raise _GitGuardError(f"{path} is not a regular file or directory")
+
+    describe(target, "")
+    return entries
+
+
+def _git_guard_snapshot(root: Path) -> dict[Path, dict[str, _GuardEntry]]:
+    """Remember ``.git/config`` and ``.git/hooks`` before a sandboxed command runs.
+
+    Seatbelt denies writes to those paths by *name*. A hard link to the same inode
+    created inside the workspace would let a command rewrite them under another name,
+    so the sandbox alone cannot keep them read-only. The snapshot lets the host detect
+    that and put them back (see :func:`_git_guard_restore`) before git runs them.
+    """
+    snapshot: dict[Path, dict[str, _GuardEntry]] = {}
+    for target in _git_protected_paths(root):
+        entries = _scan_guarded(target)
+        for rel, (kind, _payload, _mode, links) in entries.items():
+            if kind == "file" and links > 1:
+                raise _GitGuardError(
+                    f"{target / rel if rel else target} has extra hard links; remove them before running commands"
+                )
+        snapshot[target] = entries
+    return snapshot
+
+
+def _write_guarded(path: Path, entry: _GuardEntry) -> None:
+    """Recreate one protected entry on the host, never through a name the command could pre-plant.
+
+    ``.git`` is writable inside the sandbox, so the command may leave symlinks or files next to the
+    protected paths. The parent must therefore be a real directory, and files are written through a
+    random, exclusively created temporary name (``mkstemp``) and renamed over the target.
+    """
+    kind, payload, mode, _links = entry
+    if os.path.islink(path.parent) or not os.path.isdir(path.parent):
+        raise OSError(f"{path.parent} is not a real directory")
+    if kind == "dir":
+        path.mkdir(exist_ok=True)
+        os.chmod(path, mode, follow_symlinks=False)
+        return
+    if kind == "link":
+        os.symlink(str(payload), path)
+        return
+    # A fresh inode: any hard link made during the command keeps only the old one.
+    fd, temp = tempfile.mkstemp(prefix=".trinaxai-restore-", dir=str(path.parent))
+    try:
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(payload if isinstance(payload, bytes) else b"")
+            os.fchmod(handle.fileno(), mode)
+        os.replace(temp, path)
+    except BaseException:
+        with contextlib.suppress(FileNotFoundError):
+            os.unlink(temp)
+        raise
+    info = os.lstat(path)
+    if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+        raise OSError(f"{path} could not be restored as a regular file")
+
+
+def _git_guard_restore(snapshot: dict[Path, dict[str, _GuardEntry]]) -> list[str]:
+    """Put back any protected git metadata a command changed; returns what was restored."""
+    restored: list[str] = []
+    for target, expected in snapshot.items():
+        try:
+            current = _scan_guarded(target)
+        except (OSError, _GitGuardError):
+            current = {}
+        unchanged = current.keys() == expected.keys() and all(
+            current[rel][:3] == expected[rel][:3] and (current[rel][0] != "file" or current[rel][3] == 1)
+            for rel in expected
+        )
+        if unchanged:
+            continue
+        if "" in expected and expected[""][0] == "dir":
+            if target.is_symlink() or target.is_file():
+                target.unlink()
+            else:
+                shutil.rmtree(target, ignore_errors=True)
+            for rel in sorted(expected, key=lambda item: item.count("/")):
+                _write_guarded(target / rel if rel else target, expected[rel])
+        else:
+            if target.is_symlink():
+                target.unlink()
+            elif target.is_dir():
+                shutil.rmtree(target, ignore_errors=True)
+            _write_guarded(target, expected[""])
+        restored.append(str(target))
+    return restored
+
+
+def _sandbox_leftover_pids(ps_output: str, marker: str, own_pid: int) -> list[int]:
+    """Processes in a ``ps -axwwE -o pid=,command=`` listing whose command or environment names ``marker``."""
+    pids: list[int] = []
+    for line in ps_output.splitlines():
+        pid_text, _, rest = line.strip().partition(" ")
+        if pid_text.isdigit() and int(pid_text) != own_pid and marker in rest:
+            pids.append(int(pid_text))
+    return pids
+
+
+def _kill_sandbox_leftovers(marker: str) -> None:
+    """Best-effort: kill processes a finished macOS command left behind.
+
+    Seatbelt has no PID namespace and the process-group kill misses a daemon that calls
+    ``setsid``. Every sandboxed command runs with a per-command scratch directory in its
+    ``TMPDIR`` and ``HOME``, so processes that still carry that unique path are its leftovers.
+    A daemon that also scrubs its environment is not found; it stays confined by the profile
+    (no network, writes only to the workspace) but is not cleaned up.
+    """
+    if sys.platform != "darwin" or os.name != "posix":
+        return
+    for _ in range(3):
+        try:
+            listing = subprocess.run(
+                ["/bin/ps", "-axwwE", "-o", "pid=,command="],
+                capture_output=True,
+                text=True,
+                timeout=10,
+                check=False,
+            ).stdout
+        except (OSError, subprocess.SubprocessError):
+            return
+        pids = _sandbox_leftover_pids(listing, marker, os.getpid())
+        if not pids:
+            return
+        for pid in pids:
+            with contextlib.suppress(ProcessLookupError, PermissionError):
+                os.kill(pid, signal.SIGKILL)
+        time.sleep(0.1)
+
+
 _SEATBELT_EXEC = "/usr/bin/sandbox-exec"
 
 # macOS Seatbelt profile (SBPL). Everything is denied unless listed; the workspace and the
@@ -974,8 +1139,10 @@ def _seatbelt_argv(workspace_root: Path, command: str, scratch: Path) -> list[st
     read-only by path, and the ``.git`` directory itself cannot be renamed or deleted: otherwise a
     command could move it aside, edit the config under its new name and move it back.
 
-    Unlike bubblewrap, Seatbelt has no PID namespace: a command that detaches a daemon can outlive
-    the timeout kill. Returns ``None`` where Seatbelt cannot be applied (callers fail closed).
+    Two limits of Seatbelt are handled outside the profile: it protects those paths by name, not by
+    inode (see :func:`_git_guard_snapshot`), and it has no PID namespace, so leftover processes are
+    cleaned up by :func:`_kill_sandbox_leftovers`. Returns ``None`` where Seatbelt cannot be applied
+    (callers fail closed).
     """
     if not _seatbelt_usable():
         return None
@@ -1034,6 +1201,7 @@ def _command_sandbox(root: Path, command: str) -> Generator[list[str] | None, No
         (scratch / "home").mkdir()
         yield _seatbelt_argv(root, command, scratch)
     finally:
+        _kill_sandbox_leftovers(str(scratch))
         shutil.rmtree(scratch, ignore_errors=True)
 
 
@@ -1060,8 +1228,13 @@ def shell_sandbox_status() -> tuple[bool, str]:
     return False, "terminal tool disabled: install the 'bubblewrap' package (file tools still work)"
 
 
-def _run_process(argv: list[str], *, cwd: Path, env: dict[str, str] | None = None) -> tuple[int, str, str]:
-    """Run a command and reliably terminate its complete process group."""
+def _run_process(
+    argv: list[str], *, cwd: Path, env: dict[str, str] | None = None, kill_group: bool = False
+) -> tuple[int, str, str]:
+    """Run a command and reliably terminate its complete process group.
+
+    With ``kill_group`` the group is also killed when the command ends normally, so a background
+    job it started cannot outlive it."""
     kwargs: dict[str, Any] = {
         "cwd": str(cwd),
         "text": True,
@@ -1075,6 +1248,8 @@ def _run_process(argv: list[str], *, cwd: Path, env: dict[str, str] | None = Non
         kwargs["start_new_session"] = True
     elif hasattr(subprocess, "CREATE_NEW_PROCESS_GROUP"):
         kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+    if kill_group and os.name == "posix":
+        return _run_process_to_files(argv, kwargs)
     proc = subprocess.Popen(argv, **kwargs)
     try:
         stdout, stderr = proc.communicate(timeout=RUN_TIMEOUT_SECONDS)
@@ -1091,34 +1266,93 @@ def _run_process(argv: list[str], *, cwd: Path, env: dict[str, str] | None = Non
     return proc.returncode, stdout or "", stderr or ""
 
 
+# Output kept from one command; the rest is discarded so a runaway command cannot fill the disk.
+_RUN_OUTPUT_READ_BYTES = 2_000_000
+
+
+def _read_captured(handle: Any) -> str:
+    handle.seek(0)
+    return handle.read(_RUN_OUTPUT_READ_BYTES).decode("utf-8", errors="replace")
+
+
+def _run_process_to_files(argv: list[str], kwargs: dict[str, Any]) -> tuple[int, str, str]:
+    """Run a command whose whole process group is killed once it ends.
+
+    Output goes to temporary files instead of pipes. With pipes ``communicate`` only returns when
+    every holder of the write end has exited, so ``cmd &`` would keep the call blocked for the whole
+    timeout even though the command itself finished; here the wait is on the command alone and any
+    background job it left behind is killed straight after.
+    """
+    with tempfile.TemporaryFile() as out_file, tempfile.TemporaryFile() as err_file:
+        kwargs = {**kwargs, "text": False, "stdout": out_file, "stderr": err_file}
+        proc = subprocess.Popen(argv, **kwargs)
+        timed_out = False
+        try:
+            proc.wait(timeout=RUN_TIMEOUT_SECONDS)
+        except subprocess.TimeoutExpired:
+            timed_out = True
+        finally:
+            with contextlib.suppress(ProcessLookupError, PermissionError):
+                os.killpg(proc.pid, signal.SIGKILL)
+            proc.wait()
+        stdout, stderr = _read_captured(out_file), _read_captured(err_file)
+    if timed_out:
+        raise subprocess.TimeoutExpired(argv, RUN_TIMEOUT_SECONDS, output=stdout, stderr=stderr)
+    return proc.returncode, stdout, stderr
+
+
 def _run_command(workspace_root: Path, command: str, **_: Any) -> str:
     cmd = (command or "").strip()
     if not cmd:
         return "error: empty command"
 
     root = workspace_root.resolve()
-    with _command_sandbox(root, cmd) as argv:
-        sandboxed = argv is not None
-        if argv is None:
-            if not _is_enabled(_UNSANDBOXED_COMMAND_ENV):
-                return (
-                    "error: terminal execution is disabled because this host has no supported "
-                    "sandbox. Install bubblewrap on Linux (macOS uses its built-in sandbox-exec), "
-                    f"or explicitly set {_UNSANDBOXED_COMMAND_ENV}=1 to accept full user-level host access."
-                )
-            # Compatibility escape hatch. It is intentionally explicit and never
-            # enabled by the PWA/API. Avoid ``shell=True`` even here so process-tree
-            # cleanup remains reliable.
-            shell = os.environ.get("SHELL") or ("cmd.exe" if os.name == "nt" else "/bin/sh")
-            flag = "/c" if os.name == "nt" else "-lc"
-            argv = [shell, flag, cmd]
-        try:
-            returncode, stdout, stderr = _run_process(argv, cwd=root)
-        except subprocess.TimeoutExpired:
-            return f"error: command timed out after {RUN_TIMEOUT_SECONDS}s: {cmd}"
-        except OSError as exc:
-            return f"error: cannot run command: {exc}"
+    guard: dict[Path, dict[str, _GuardEntry]] | None = None
+    restored: list[str] = []
+    try:
+        with _command_sandbox(root, cmd) as argv:
+            sandboxed = argv is not None
+            if argv is None:
+                if not _is_enabled(_UNSANDBOXED_COMMAND_ENV):
+                    return (
+                        "error: terminal execution is disabled because this host has no supported "
+                        "sandbox. Install bubblewrap on Linux (macOS uses its built-in sandbox-exec), "
+                        f"or explicitly set {_UNSANDBOXED_COMMAND_ENV}=1 to accept full user-level host access."
+                    )
+                # Compatibility escape hatch. It is intentionally explicit and never
+                # enabled by the PWA/API. Avoid ``shell=True`` even here so process-tree
+                # cleanup remains reliable.
+                shell = os.environ.get("SHELL") or ("cmd.exe" if os.name == "nt" else "/bin/sh")
+                flag = "/c" if os.name == "nt" else "-lc"
+                argv = [shell, flag, cmd]
+            else:
+                try:
+                    guard = _git_guard_snapshot(root)
+                except _GitGuardError as exc:
+                    return f"error: refusing to run: {exc}"
+                except OSError as exc:
+                    return f"error: cannot protect the git metadata before running: {exc}"
+            try:
+                returncode, stdout, stderr = _run_process(argv, cwd=root, kill_group=sandboxed)
+            except subprocess.TimeoutExpired:
+                return f"error: command timed out after {RUN_TIMEOUT_SECONDS}s: {cmd}"
+            except OSError as exc:
+                return f"error: cannot run command: {exc}"
+    finally:
+        # After the sandbox is gone and its leftover processes are killed: nothing can write
+        # the protected files any more, so what is restored now stays restored.
+        if guard is not None:
+            try:
+                restored = _git_guard_restore(guard)
+            except OSError:
+                restored = ["(could not verify)"]
     out = stdout + (("\n[stderr]\n" + stderr) if stderr else "")
+    if restored:
+        out += (
+            "\n[warning: the command changed protected git metadata ("
+            + ", ".join(restored)
+            + "); it was restored. Edit .git/config and .git/hooks yourself, outside the agent.]"
+        )
     status = f"[exit {returncode}; {'sandboxed, network=off' if sandboxed else 'UNSANDBOXED opt-in'}]"
     return _truncate(f"{status}\n{out}".strip()) or status
 

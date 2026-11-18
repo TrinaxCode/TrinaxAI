@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { I18nProvider } from '../../i18n/I18nContext';
 import type { IndexJobStatus } from '../../lib/api_documents';
 import IndexProgress from './IndexProgress';
-import { activeStageFor, deriveStages, formatDuration, formatEta } from './indexProgress';
+import { activeStageFor, deriveStages, formatDuration, formatEta } from './indexProgressModel';
 
 const baseJob: IndexJobStatus = {
   id: 'job',

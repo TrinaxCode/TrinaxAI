@@ -3,7 +3,7 @@ import { useI18n } from '../../i18n/I18nContext';
 import type { TranslationKey } from '../../i18n/translations';
 import type { IndexJobStatus } from '../../lib/api_documents';
 import { INDEX_UPLOAD_SHARE } from '../../lib/api_documents';
-import { deriveStages, formatDuration, formatEta, type IndexStage, type IndexStageKey } from './indexProgress';
+import { deriveStages, formatDuration, formatEta, type IndexStage, type IndexStageKey } from './indexProgressModel';
 import './index-progress.css';
 
 interface IndexProgressProps {

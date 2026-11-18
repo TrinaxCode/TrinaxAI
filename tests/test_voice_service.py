@@ -444,3 +444,34 @@ def test_stt_is_unavailable_without_faster_whisper(monkeypatch) -> None:
 
     monkeypatch.setattr(builtins, "__import__", fake_import)
     assert voice_service.stt_available() is False
+
+
+def test_pyttsx3_voice_skips_macos_novelty_voices_and_prefers_natural_ones() -> None:
+    from types import SimpleNamespace
+
+    from app.services.voice_service import _pick_pyttsx3_voice
+
+    def voice(name: str, language: str) -> SimpleNamespace:
+        return SimpleNamespace(id=f"com.apple.speech.synthesis.voice.{name}", name=name, languages=[language])
+
+    # Alphabetical order, as the system lists them: the first English match is a joke voice.
+    voices = [
+        voice("Albert", "en_US"),
+        voice("Bad News", "en_US"),
+        voice("Daniel", "en_GB"),
+        voice("Samantha", "en_US"),
+        voice("Zarvox", "en_US"),
+        voice("Eddy", "es_ES"),
+        voice("Monica", "es_ES"),
+        voice("Trinoids", "es_ES"),
+    ]
+    engine = SimpleNamespace(getProperty=lambda _name: voices)
+    # Preferred names win, in the order of the preference list (Samantha before Daniel).
+    assert _pick_pyttsx3_voice(engine, "en") == "com.apple.speech.synthesis.voice.Samantha"
+    assert _pick_pyttsx3_voice(engine, "es") == "com.apple.speech.synthesis.voice.Monica"
+
+    only_novelty = SimpleNamespace(getProperty=lambda _name: [voice("Albert", "en_US"), voice("Zarvox", "en_US")])
+    assert _pick_pyttsx3_voice(only_novelty, "en") == "com.apple.speech.synthesis.voice.Albert"  # better than none
+
+    unknown = [voice("Albert", "en_US"), voice("Moira", "en_IE"), voice("Tessa", "en_ZA")]
+    assert _pick_pyttsx3_voice(SimpleNamespace(getProperty=lambda _name: unknown), "en").endswith(".Moira")

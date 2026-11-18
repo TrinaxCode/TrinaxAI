@@ -163,12 +163,52 @@ def tts_preferred() -> str | None:
     return None
 
 
+# macOS ships joke voices ("Albert", "Zarvox", "Bubbles"...) next to the real ones, and the first
+# voice that matches a language alphabetically is often one of them.
+_NOVELTY_VOICES = frozenset(
+    {
+        "albert",
+        "bad news",
+        "bahh",
+        "bells",
+        "boing",
+        "bubbles",
+        "cellos",
+        "fred",
+        "good news",
+        "jester",
+        "junior",
+        "kathy",
+        "organ",
+        "ralph",
+        "superstar",
+        "trinoids",
+        "whisper",
+        "wobble",
+        "zarvox",
+    }
+)
+_PREFERRED_VOICES = ("samantha", "alex", "daniel", "karen", "paulina", "monica", "jorge", "juan", "diego")
+
+
+def _voice_name(voice: Any) -> str:
+    name = str(getattr(voice, "name", "") or "").strip().lower()
+    if name:
+        return name
+    return str(getattr(voice, "id", "")).rsplit(".", 1)[-1].lower()
+
+
 def _pick_pyttsx3_voice(engine: Any, lang: str) -> str | None:
-    """Choose a voice matching the requested language."""
+    """Choose a voice matching the requested language, preferring natural ones.
+
+    Among the voices for the language, known good voices come first (in the order of
+    ``_PREFERRED_VOICES``), joke voices last, and the engine's own order breaks ties (so engines without such voices behave as before).
+    """
     voices = engine.getProperty("voices")
     if not voices:
         return None
     base = lang.lower()[:2]
+    matches = []
     for v in voices:
         voice_id = getattr(v, "id", "").lower()
         voice_languages = getattr(v, "languages", []) or []
@@ -177,8 +217,18 @@ def _pick_pyttsx3_voice(engine: Any, lang: str) -> str | None:
         if re.search(rf"(?<![a-z]){re.escape(base)}(?![a-z])", voice_id) or any(
             re.match(rf"\W*{re.escape(base)}(?![a-z])", language) for language in voice_languages
         ):
-            return v.id
-    return None
+            matches.append(v)
+    if not matches:
+        return None
+
+    def rank(voice: Any) -> int:
+        name = _voice_name(voice)
+        if name in _NOVELTY_VOICES:
+            return len(_PREFERRED_VOICES) + 1
+        # Listed names first, in the order of the list; any other voice sits between.
+        return _PREFERRED_VOICES.index(name) if name in _PREFERRED_VOICES else len(_PREFERRED_VOICES)
+
+    return str(min(matches, key=rank).id)  # min() keeps the first of equals
 
 
 def _tts_pyttsx3(text: str, lang: str) -> tuple[bytes, str]:

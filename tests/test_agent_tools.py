@@ -589,3 +589,214 @@ def test_macos_sandbox_scratch_is_removed_and_timeouts_kill_the_command(monkeypa
     assert set(Path(agent_tools.tempfile.gettempdir()).glob("trinaxai-sandbox-*")) == before
     scratch = Path((tmp_path / "tmpdir.txt").read_text(encoding="utf-8").strip())
     assert scratch.name.startswith("trinaxai-sandbox-") and not scratch.exists()
+
+
+# --- git metadata guard and leftover processes (macOS Seatbelt limits) -------------------
+
+
+def _repo_with_git_metadata(tmp_path: Path) -> Path:
+    workspace = tmp_path / "ws"
+    hooks = workspace / ".git" / "hooks"
+    hooks.mkdir(parents=True)
+    (workspace / ".git" / "config").write_text("[core]\n\tbare = false\n", encoding="utf-8")
+    (hooks / "pre-commit").write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    return workspace
+
+
+def test_git_guard_restores_config_rewritten_through_a_hard_link(tmp_path: Path) -> None:
+    import os
+
+    workspace = _repo_with_git_metadata(tmp_path)
+    config = workspace / ".git" / "config"
+    original = config.read_bytes()
+    snapshot = agent_tools._git_guard_snapshot(workspace)
+    assert agent_tools._git_guard_restore(snapshot) == []  # nothing changed, nothing touched
+
+    # What a sandboxed command can do when the profile only denies the *name* .git/config.
+    alias = workspace / "alias"
+    os.link(config, alias)
+    with alias.open("a", encoding="utf-8") as handle:
+        handle.write("[core]\n\tfsmonitor = ./pwn\n")
+    assert b"fsmonitor" in config.read_bytes()
+
+    restored = agent_tools._git_guard_restore(snapshot)
+    assert restored == [str(config)]
+    assert config.read_bytes() == original
+    assert config.stat().st_nlink == 1  # a fresh inode: the alias no longer reaches it
+    with alias.open("a", encoding="utf-8") as handle:
+        handle.write("again\n")
+    assert config.read_bytes() == original
+
+
+def test_git_guard_restores_hooks_that_were_planted_or_removed(tmp_path: Path) -> None:
+    workspace = _repo_with_git_metadata(tmp_path)
+    hooks = workspace / ".git" / "hooks"
+    snapshot = agent_tools._git_guard_snapshot(workspace)
+
+    (hooks / "post-checkout").write_text("#!/bin/sh\ncurl evil\n", encoding="utf-8")
+    (hooks / "pre-commit").unlink()
+    assert agent_tools._git_guard_restore(snapshot) == [str(hooks)]
+    assert sorted(path.name for path in hooks.iterdir()) == ["pre-commit"]
+    assert (hooks / "pre-commit").read_text(encoding="utf-8") == "#!/bin/sh\nexit 0\n"
+
+
+def test_git_guard_restore_never_writes_through_a_name_the_command_planted(tmp_path: Path) -> None:
+    import os
+
+    workspace = _repo_with_git_metadata(tmp_path)
+    git_dir = workspace / ".git"
+    config = git_dir / "config"
+    original = config.read_bytes()
+    victim = tmp_path / "victim.txt"
+    victim.write_text("keep me", encoding="utf-8")
+    snapshot = agent_tools._git_guard_snapshot(workspace)
+
+    # The command rewrites the config and pre-plants symlinks at every name a restore could reuse.
+    config.write_text("[core]\n\tfsmonitor = ./pwn\n", encoding="utf-8")
+    os.symlink(victim, git_dir / "config.trinaxai-restore")
+    os.symlink(victim, git_dir / ".trinaxai-restore")
+
+    assert agent_tools._git_guard_restore(snapshot) == [str(config)]
+    assert config.read_bytes() == original
+    assert not config.is_symlink()
+    assert victim.read_text(encoding="utf-8") == "keep me"
+    assert [p.name for p in git_dir.iterdir() if p.name.startswith(".trinaxai-restore-")] == []
+
+
+def test_git_guard_restore_refuses_a_parent_swapped_for_a_symlink(tmp_path: Path) -> None:
+    import os
+    import shutil
+
+    workspace = _repo_with_git_metadata(tmp_path)
+    git_dir = workspace / ".git"
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    snapshot = agent_tools._git_guard_snapshot(workspace)
+
+    shutil.rmtree(git_dir)
+    os.symlink(outside, git_dir)  # .git now points out of the workspace
+
+    with pytest.raises(OSError, match="not a real directory"):
+        agent_tools._git_guard_restore(snapshot)
+    assert list(outside.iterdir()) == []  # nothing was written through the link
+
+
+def test_git_guard_refuses_metadata_that_already_has_extra_links(tmp_path: Path) -> None:
+    import os
+
+    workspace = _repo_with_git_metadata(tmp_path)
+    os.link(workspace / ".git" / "config", workspace / "alias")
+    with pytest.raises(agent_tools._GitGuardError, match="extra hard links"):
+        agent_tools._git_guard_snapshot(workspace)
+
+
+def test_run_command_puts_back_git_config_changed_during_the_command(monkeypatch, tmp_path: Path) -> None:
+    import contextlib
+
+    workspace = _repo_with_git_metadata(tmp_path)
+    config = workspace / ".git" / "config"
+    original = config.read_bytes()
+
+    @contextlib.contextmanager
+    def pretend_sandbox(_root, command):
+        yield ["/bin/sh", "-c", command]  # a real command, as the sandbox would run it
+
+    monkeypatch.setattr(agent_tools, "_command_sandbox", pretend_sandbox)
+    result = _run_command(workspace, "ln .git/config alias && echo '[core]' >> alias && echo done")
+    assert "done" in result and "restored" in result and ".git/config" in result
+    assert config.read_bytes() == original
+
+
+def test_run_command_refuses_to_start_when_git_metadata_cannot_be_guarded(monkeypatch, tmp_path: Path) -> None:
+    import contextlib
+    import os
+
+    workspace = _repo_with_git_metadata(tmp_path)
+    os.link(workspace / ".git" / "config", workspace / "alias")
+
+    @contextlib.contextmanager
+    def pretend_sandbox(_root, command):
+        yield ["/bin/sh", "-c", command]
+
+    monkeypatch.setattr(agent_tools, "_command_sandbox", pretend_sandbox)
+    result = _run_command(workspace, "echo should-not-run")
+    assert result.startswith("error: refusing to run") and "should-not-run" not in result
+
+
+def test_sandbox_leftovers_are_found_by_their_private_scratch_path() -> None:
+    scratch = "/var/folders/xx/trinaxai-sandbox-abc123"
+    listing = "\n".join(
+        [
+            f"  101 /usr/bin/python3 server.py TMPDIR={scratch} HOME={scratch}/home",
+            "  102 /usr/bin/python3 other.py TMPDIR=/var/folders/xx/trinaxai-sandbox-zzz999",
+            f"  103 sleep 1000 PATH=/usr/bin TMPDIR={scratch}",
+            f"  104 /bin/ps mentions {scratch}",
+            "garbage line",
+        ]
+    )
+    assert agent_tools._sandbox_leftover_pids(listing, scratch, own_pid=104) == [101, 103]
+
+
+def test_kill_group_signals_the_whole_group_even_when_the_command_ends_normally(monkeypatch, tmp_path: Path) -> None:
+    import signal
+
+    # The conftest guard refuses to signal a process group the test did not start (a background
+    # job that outlives its shell is exactly that), so the signal is recorded instead of sent.
+    sent: list[tuple[int, int]] = []
+    monkeypatch.setattr(agent_tools.os, "killpg", lambda pgid, sig: sent.append((pgid, sig)))
+
+    code, out, _ = agent_tools._run_process(["/bin/sh", "-c", "echo hi"], cwd=tmp_path)
+    assert (code, out.strip()) == (0, "hi") and sent == []  # default: unchanged behaviour
+
+    code, out, _ = agent_tools._run_process(["/bin/sh", "-c", "echo hi"], cwd=tmp_path, kill_group=True)
+    assert (code, out.strip()) == (0, "hi")
+    assert len(sent) == 1 and sent[0][1] == signal.SIGKILL and sent[0][0] > 1
+
+
+def test_kill_group_does_not_wait_for_a_background_job_holding_the_output(monkeypatch, tmp_path: Path) -> None:
+    import time
+
+    sent: list[tuple[int, int]] = []
+    monkeypatch.setattr(agent_tools.os, "killpg", lambda pgid, sig: sent.append((pgid, sig)))
+    monkeypatch.setattr(agent_tools, "RUN_TIMEOUT_SECONDS", 20)
+
+    # `cmd &` leaves a child that keeps stdout open; with pipes the call blocked until the timeout.
+    started = time.monotonic()
+    code, out, _ = agent_tools._run_process(
+        ["/bin/sh", "-c", "(sleep 4 &) ; echo started"], cwd=tmp_path, kill_group=True
+    )
+    assert (code, out.strip()) == (0, "started")
+    assert time.monotonic() - started < 3
+    assert len(sent) == 1
+
+
+def test_kill_group_timeout_keeps_the_output_written_so_far(monkeypatch, tmp_path: Path) -> None:
+    import subprocess
+
+    monkeypatch.setattr(agent_tools.os, "killpg", lambda pgid, sig: None)
+    monkeypatch.setattr(agent_tools, "RUN_TIMEOUT_SECONDS", 0.5)
+
+    with pytest.raises(subprocess.TimeoutExpired) as raised:
+        agent_tools._run_process(
+            ["/bin/sh", "-c", "echo partial; echo oops >&2; sleep 2"], cwd=tmp_path, kill_group=True
+        )
+    assert "partial" in (raised.value.output or "") and "oops" in (raised.value.stderr or "")
+
+
+def test_run_command_kills_the_group_only_when_it_is_sandboxed(monkeypatch, tmp_path: Path) -> None:
+    import contextlib
+
+    flags: list[bool] = []
+
+    def fake_run(argv, *, cwd, env=None, kill_group=False):
+        flags.append(kill_group)
+        return 0, "ok", ""
+
+    @contextlib.contextmanager
+    def pretend_sandbox(_root, command):
+        yield ["/bin/sh", "-c", command]
+
+    monkeypatch.setattr(agent_tools, "_run_process", fake_run)
+    monkeypatch.setattr(agent_tools, "_command_sandbox", pretend_sandbox)
+    _run_command(tmp_path, "true")
+    assert flags == [True]
