@@ -41,7 +41,7 @@ import unicodedata
 import urllib.error
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Generator, Sequence
+from typing import Any, Callable, Generator, NamedTuple, Sequence
 
 from trinaxai_agent.extract import extract_document_text, is_document
 from trinaxai_agent.git_tool import (
@@ -880,6 +880,21 @@ class _GitGuardError(Exception):
 _GuardEntry = tuple[str, "bytes | str | None", int, int]
 
 
+class _GuardedPath(NamedTuple):
+    """What was protected at one path, and which directory held it (device, inode)."""
+
+    entries: dict[str, _GuardEntry]
+    parent: tuple[int, int]
+
+
+def _directory_identity(path: Path) -> tuple[int, int]:
+    """(device, inode) of a real directory; refuses a symlink or anything else."""
+    info = os.lstat(path)
+    if not stat.S_ISDIR(info.st_mode):
+        raise OSError(f"{path} is not a real directory")
+    return info.st_dev, info.st_ino
+
+
 def _scan_guarded(target: Path) -> dict[str, _GuardEntry]:
     """Describe ``target`` (a file, or a directory tree) without following symlinks."""
     entries: dict[str, _GuardEntry] = {}
@@ -910,7 +925,7 @@ def _scan_guarded(target: Path) -> dict[str, _GuardEntry]:
     return entries
 
 
-def _git_guard_snapshot(root: Path) -> dict[Path, dict[str, _GuardEntry]]:
+def _git_guard_snapshot(root: Path) -> dict[Path, _GuardedPath]:
     """Remember ``.git/config`` and ``.git/hooks`` before a sandboxed command runs.
 
     Seatbelt denies writes to those paths by *name*. A hard link to the same inode
@@ -918,7 +933,7 @@ def _git_guard_snapshot(root: Path) -> dict[Path, dict[str, _GuardEntry]]:
     so the sandbox alone cannot keep them read-only. The snapshot lets the host detect
     that and put them back (see :func:`_git_guard_restore`) before git runs them.
     """
-    snapshot: dict[Path, dict[str, _GuardEntry]] = {}
+    snapshot: dict[Path, _GuardedPath] = {}
     for target in _git_protected_paths(root):
         entries = _scan_guarded(target)
         for rel, (kind, _payload, _mode, links) in entries.items():
@@ -926,7 +941,7 @@ def _git_guard_snapshot(root: Path) -> dict[Path, dict[str, _GuardEntry]]:
                 raise _GitGuardError(
                     f"{target / rel if rel else target} has extra hard links; remove them before running commands"
                 )
-        snapshot[target] = entries
+        snapshot[target] = _GuardedPath(entries, _directory_identity(target.parent))
     return snapshot
 
 
@@ -963,10 +978,16 @@ def _write_guarded(path: Path, entry: _GuardEntry) -> None:
         raise OSError(f"{path} could not be restored as a regular file")
 
 
-def _git_guard_restore(snapshot: dict[Path, dict[str, _GuardEntry]]) -> list[str]:
-    """Put back any protected git metadata a command changed; returns what was restored."""
+def _git_guard_restore(snapshot: dict[Path, _GuardedPath]) -> list[str]:
+    """Put back any protected git metadata a command changed; returns what was restored.
+
+    Nothing is removed or written unless the directory that holds the protected path is still the
+    very same real directory (not a symlink, not a replacement): a command that swapped ``.git``
+    for a link must not be able to make the host delete or write somewhere else.
+    """
     restored: list[str] = []
-    for target, expected in snapshot.items():
+    for target, guarded in snapshot.items():
+        expected = guarded.entries
         try:
             current = _scan_guarded(target)
         except (OSError, _GitGuardError):
@@ -977,6 +998,8 @@ def _git_guard_restore(snapshot: dict[Path, dict[str, _GuardEntry]]) -> list[str
         )
         if unchanged:
             continue
+        if _directory_identity(target.parent) != guarded.parent:
+            raise OSError(f"{target.parent} was replaced while the command ran")
         if "" in expected and expected[""][0] == "dir":
             if target.is_symlink() or target.is_file():
                 target.unlink()
@@ -1307,8 +1330,9 @@ def _run_command(workspace_root: Path, command: str, **_: Any) -> str:
         return "error: empty command"
 
     root = workspace_root.resolve()
-    guard: dict[Path, dict[str, _GuardEntry]] | None = None
+    guard: dict[Path, _GuardedPath] | None = None
     restored: list[str] = []
+    unverified = False
     try:
         with _command_sandbox(root, cmd) as argv:
             sandboxed = argv is not None
@@ -1339,19 +1363,26 @@ def _run_command(workspace_root: Path, command: str, **_: Any) -> str:
             except OSError as exc:
                 return f"error: cannot run command: {exc}"
     finally:
-        # After the sandbox is gone and its leftover processes are killed: nothing can write
-        # the protected files any more, so what is restored now stays restored.
+        # Runs once the sandbox is gone and its leftover processes are killed. A restored file is a
+        # fresh inode: a process that still slipped past the kill and holds the old one (or a hard
+        # link to it) writes to an inode git no longer reads, and writing by name is denied by the
+        # profile, so what is restored now stays restored.
         if guard is not None:
             try:
                 restored = _git_guard_restore(guard)
             except OSError:
-                restored = ["(could not verify)"]
+                unverified = True
     out = stdout + (("\n[stderr]\n" + stderr) if stderr else "")
     if restored:
         out += (
             "\n[warning: the command changed protected git metadata ("
             + ", ".join(restored)
             + "); it was restored. Edit .git/config and .git/hooks yourself, outside the agent.]"
+        )
+    if unverified:
+        out += (
+            "\n[warning: the protected git metadata could not be verified or restored (.git was "
+            "replaced or is unreadable). Check .git/config and .git/hooks before running git here.]"
         )
     status = f"[exit {returncode}; {'sandboxed, network=off' if sandboxed else 'UNSANDBOXED opt-in'}]"
     return _truncate(f"{status}\n{out}".strip()) or status

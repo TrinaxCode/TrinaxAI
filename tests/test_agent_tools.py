@@ -670,15 +670,49 @@ def test_git_guard_restore_refuses_a_parent_swapped_for_a_symlink(tmp_path: Path
     workspace = _repo_with_git_metadata(tmp_path)
     git_dir = workspace / ".git"
     outside = tmp_path / "outside"
-    outside.mkdir()
+    (outside / "hooks").mkdir(parents=True)
+    (outside / "hooks" / "precious").write_text("do not delete", encoding="utf-8")
+    (outside / "config").write_text("do not touch", encoding="utf-8")
     snapshot = agent_tools._git_guard_snapshot(workspace)
 
     shutil.rmtree(git_dir)
-    os.symlink(outside, git_dir)  # .git now points out of the workspace
+    os.symlink(outside, git_dir)  # .git now points to a directory outside the workspace
 
     with pytest.raises(OSError, match="not a real directory"):
         agent_tools._git_guard_restore(snapshot)
-    assert list(outside.iterdir()) == []  # nothing was written through the link
+    # Neither removed nor written through the link.
+    assert (outside / "hooks" / "precious").read_text(encoding="utf-8") == "do not delete"
+    assert (outside / "config").read_text(encoding="utf-8") == "do not touch"
+    assert sorted(p.name for p in outside.iterdir()) == ["config", "hooks"]
+
+
+def test_git_guard_restore_refuses_a_parent_replaced_by_another_directory(tmp_path: Path) -> None:
+    workspace = _repo_with_git_metadata(tmp_path)
+    git_dir = workspace / ".git"
+    snapshot = agent_tools._git_guard_snapshot(workspace)
+
+    git_dir.rename(workspace / ".git-old")  # kept, so the new directory cannot reuse its inode
+    (git_dir / "hooks").mkdir(parents=True)  # a real directory, but not the one that was guarded
+    (git_dir / "hooks" / "mine").write_text("keep", encoding="utf-8")
+
+    with pytest.raises(OSError, match="was replaced"):
+        agent_tools._git_guard_restore(snapshot)
+    assert (git_dir / "hooks" / "mine").read_text(encoding="utf-8") == "keep"
+
+
+def test_run_command_reports_when_the_git_metadata_could_not_be_verified(monkeypatch, tmp_path: Path) -> None:
+    import contextlib
+
+    workspace = _repo_with_git_metadata(tmp_path)
+
+    @contextlib.contextmanager
+    def pretend_sandbox(_root, command):
+        yield ["/bin/sh", "-c", command]
+
+    monkeypatch.setattr(agent_tools, "_command_sandbox", pretend_sandbox)
+    monkeypatch.setattr(agent_tools, "_git_guard_restore", lambda _guard: (_ for _ in ()).throw(OSError("x")))
+    result = _run_command(workspace, "echo hi")
+    assert "hi" in result and "could not be verified or restored" in result
 
 
 def test_git_guard_refuses_metadata_that_already_has_extra_links(tmp_path: Path) -> None:
