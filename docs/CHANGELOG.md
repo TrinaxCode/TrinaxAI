@@ -18,6 +18,10 @@ All notable changes to TrinaxAI are documented here. This project follows the
 
 ## [Unreleased]
 
+### Added
+
+- The Agent's terminal now works on macOS. It runs each command in a networkless Seatbelt sandbox (`sandbox-exec`, built into macOS), the counterpart of bubblewrap on Linux: only the workspace and a private temporary folder are writable, the home folder, `/Applications` and `/etc` are not readable, there is no network, Apple Events and most system services are unreachable, and `.git/config`, `.git/hooks` and the `.git` directory itself are read-only. Before, the tool was switched off on macOS and the model answered that `run_command` was not registered. `trinaxai doctor` reports the sandbox in use, and the terminal still fails closed if `sandbox-exec` is missing or blocked. Unlike bubblewrap there is no process namespace, so a command that detaches a background process can outlive its timeout.
+
 ### Fixed
 
 - The "different network detected" notice no longer appears on a first start. The installer wrote `Mac.local.local` into the certificate and the allowed origins because macOS reports its host name as `Mac.local`, and the PWA compared against every network interface (Docker, VPN, Internet Sharing) while `trinaxai network refresh` records only the routed address. Both now use the first host-name label and the routed address; an existing install is corrected by the "Prepare this network" button or `trinaxai network refresh`.

@@ -41,7 +41,7 @@ from trinaxai_agent import DEFAULT_TOOLS, AgentEngine, Tool, format_tool_failure
 from trinaxai_agent.engine import AgentCancelled  # noqa: E402
 from trinaxai_agent.git_tool import READ as _GIT_READ  # noqa: E402
 from trinaxai_agent.git_tool import git_input, git_risk  # noqa: E402
-from trinaxai_agent.tools import _bubblewrap_argv  # noqa: E402
+from trinaxai_agent.tools import _command_sandbox_available  # noqa: E402
 
 from .app_state_service import _read_app_state
 from .shared_runtime import (
@@ -858,7 +858,7 @@ def _available_agent_tool_names(
         names.add("web_search")
         if req.deep_research:
             names.add("deep_research")
-    if workspace is not None and _bubblewrap_argv(workspace, "true") is None:
+    if workspace is not None and not _command_sandbox_available():
         names.discard("run_command")
     if shutil.which("git") is None:
         names.discard("git")

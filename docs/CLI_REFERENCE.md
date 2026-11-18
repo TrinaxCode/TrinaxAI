@@ -284,10 +284,12 @@ trinaxai agent --permission-mode plan          # read-only: ask for a plan first
 
 `trinaxai agent` confines file operations to `--workspace` after resolving
 symlinks. Dangerous write/edit/terminal tools ask for approval unless the local
-operator explicitly passes `--yolo`. On Linux, terminal commands require
-bubblewrap, have no network, see the workspace as the only writable host tree,
-and are terminated as a process group on timeout. On macOS/Windows or a Linux
-host without bubblewrap, terminal execution fails closed. The compatibility
+operator explicitly passes `--yolo`. Terminal commands run in an OS
+sandbox (bubblewrap on Linux, Seatbelt on macOS), have no network, see the workspace
+as the only writable host tree, and are terminated as a process group on timeout
+(on macOS a command that detaches a background process can outlive that kill). On
+Windows, a Linux host without bubblewrap or a Mac where `sandbox-exec` is blocked,
+terminal execution fails closed. The compatibility
 escape hatch `TRINAXAI_AGENT_ALLOW_UNSANDBOXED_COMMANDS=1` grants full
 user-level host access and should not be used on remotely reachable services.
 

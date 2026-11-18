@@ -358,8 +358,8 @@ y usar la misma identidad autenticada que abrió el stream. El workspace debe de
 `TRINAXAI_AGENT_WORKSPACE_ROOTS`; se rechazan raíces del sistema. Yolo HTTP está
 apagado y, aun activado, solo funciona por transporte loopback real con
 `agent_yolo`. Todo agente remoto aprueba cada acción peligrosa. Las herramientas de archivo
-rechazan escapes por path/symlink. En Linux el shell exige bubblewrap sin red y
-solo el workspace es escribible; en hosts sin aislamiento falla cerrado salvo
+rechazan escapes por path/symlink. El shell se ejecuta en un sandbox del sistema
+sin red (bubblewrap en Linux, Seatbelt en macOS) y solo el workspace es escribible; en hosts sin aislamiento falla cerrado salvo
 opt-in explícito a acceso completo del usuario con
 `TRINAXAI_AGENT_ALLOW_UNSANDBOXED_COMMANDS=1`.
 

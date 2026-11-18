@@ -240,8 +240,9 @@ basura.
 | `TRINAXAI_AGENT_GIT_HOOKS` | `0` | Permite que la herramienta `git` del Agente ejecute los hooks del repositorio (pre-commit, pre-push ...). Desactivado por defecto porque los hooks se ejecutan en el equipo con tus credenciales y pueden redirigirse al workspace (`core.hooksPath`), donde el Agente puede escribir archivos. |
 
 Las herramientas resuelven symlinks y rechazan rutas fuera del workspace. En
-Linux, los comandos requieren bubblewrap, no tienen red y solo ven el workspace
-como árbol escribible. En hosts sin aislamiento compatible, la ejecución de
+los comandos de terminal se ejecutan en un sandbox del sistema sin red donde solo el
+workspace es escribible: bubblewrap en Linux, Seatbelt (`sandbox-exec`, incluido) en
+macOS. En hosts sin aislamiento compatible, la ejecución de
 terminal queda desactivada salvo que el operador acepte explícitamente el acceso
 completo al host con permisos de usuario mediante la variable anterior.
 

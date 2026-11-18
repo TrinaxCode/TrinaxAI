@@ -244,7 +244,7 @@ index.py starts
 | **Device identity** | Single-use pairing; scoped, revocable bearer kept in an `HttpOnly; SameSite=Strict` cookie; legacy CLI values remain header-only |
 | **Protected endpoints** | Low-risk operations use matching device/admin credentials; host administration requires verified original loopback; invalid credentials fail closed |
 | **Ollama facade** | Explicit method/path allowlist, peer authorization, monotonic token bucket and shared inference lock |
-| **Agent** | Registered workspace roots; path/symlink enforcement; networkless Linux bubblewrap; fail closed without isolation |
+| **Agent** | Registered workspace roots; path/symlink enforcement; networkless OS sandbox (Linux bubblewrap, macOS Seatbelt); fail closed without isolation |
 | **TLS** | Managed services can use local certificates; `TRINAXAI_TLS_VERIFY` controls selected outgoing verification |
 | **Sudoers** | Optional exact command points to a root-owned lifecycle wrapper, never repository-editable scripts |
 | **Data** | Host-backed by default; web search, model/dependency downloads and configured remote endpoints are explicit network paths |
@@ -434,7 +434,7 @@ These areas require extra care when modifying:
 | PWA `/api/rag` proxy | Remote-to-loopback privilege confusion | Strip client identity and attach a fresh HMAC-signed original peer |
 | PWA `/api/ollama` proxy | Model/disk administration and scheduler bypass | Fixed allowlist, remote credential, monotonic token bucket and inference lock |
 | Device pairing registry | Token theft, replay and over-broad access | Single-use expiring codes, keyed hashes, mode-0600 atomic files, scopes and revocation |
-| Agent shell | Host access and process escape | Registered roots, bubblewrap without network, process-group kill, fail closed |
+| Agent shell | Host access and process escape | Registered roots, OS sandbox without network (bubblewrap/Seatbelt), process-group kill, fail closed |
 | Rate limiting | DoS protection | Monotonic token bucket per verified IP/bucket, capacity 30 with 60 s refill by default |
 
 ---

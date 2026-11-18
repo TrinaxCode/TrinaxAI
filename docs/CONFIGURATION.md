@@ -106,9 +106,9 @@ Names must match `ollama list`. Download a model manually with `ollama pull NAME
   migration and removed after a successful response. Legacy CLI bearers
   remain header-only through `X-TrinaxAI-Device-Token`; pairing is device
   capability management, not a multi-user account system.
-- File tools remain under registered agent roots. Linux terminal calls require
-  networkless bubblewrap; unsupported hosts fail closed unless the operator
-  explicitly opts into full user-level host access.
+- File tools remain under registered agent roots. Terminal calls require
+  a networkless OS sandbox (bubblewrap on Linux, Seatbelt on macOS); unsupported hosts fail closed
+  unless the operator explicitly opts into full user-level host access.
 - Web search is opt-in. `TRINAXAI_WEB_SEARCH_PROVIDER=auto` prefers a configured Brave key (`TRINAXAI_BRAVE_SEARCH_API_KEY`), then a SearXNG URL (`TRINAXAI_SEARXNG_URL`), and otherwise uses DuckDuckGo without credentials. Tune `TRINAXAI_WEB_SEARCH_TIMEOUT` and `TRINAXAI_WEB_SEARCH_MAX_RESULTS` when needed.
 - The same providers can be managed under **PWA → Settings → Web search**. Managed values are stored only by the backend in `storage/web_search_settings.json` with mode `0600`; GET responses expose readiness booleans, never API keys. Precedence is environment variables, then managed settings, then defaults. Empty key fields preserve an existing key; deletion and reset are explicit actions. SearXNG URLs entered in the PWA must resolve to public HTTP(S) endpoints or the documented local loopback endpoint `http://127.0.0.1:8080`, and cannot contain credentials.
 
@@ -277,7 +277,7 @@ Run `trinaxai pair start` on the host to issue a single-use code. It grants `cha
 | `TRINAXAI_AGENT_HTTP_YOLO` | `0` | HTTP auto-approval only on true loopback, if enabled. |
 | `TRINAXAI_AGENT_ALLOW_UNSANDBOXED_COMMANDS` | `0` | High-risk escape hatch: shell with the user's full permissions. |
 
-File tools resolve symlinks and reject escapes. On Linux the shell requires networkless bubblewrap and leaves only the workspace writable. Without a compatible sandbox it fails closed unless the explicit opt-in above is set.
+File tools resolve symlinks and reject escapes. The shell runs in a networkless OS sandbox that leaves only the workspace writable: bubblewrap on Linux, Seatbelt (`sandbox-exec`, built into macOS) on macOS. Without a compatible sandbox it fails closed unless the explicit opt-in above is set.
 
 ## Voice
 

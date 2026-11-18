@@ -251,8 +251,9 @@ garbage.
 | `TRINAXAI_AGENT_GIT_HOOKS` | `0` | Let the Agent's `git` tool run the repository's git hooks (pre-commit, pre-push ...). Off by default because hooks run on the host with your credentials and can be redirected into the workspace (`core.hooksPath`), where the Agent can write files. |
 
 File tools resolve symlinks and reject paths outside the selected workspace.
-On Linux, terminal commands require bubblewrap, run without network access, and
-see the workspace as the only writable host tree. On hosts without supported
+Terminal commands run in an OS sandbox without network access where the workspace is
+the only writable host tree: bubblewrap on Linux, Seatbelt (`sandbox-exec`, built in) on
+macOS. On hosts without supported
 isolation, terminal execution is disabled unless the operator explicitly opts
 into full user-level host access with the variable above.
 

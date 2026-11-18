@@ -390,6 +390,7 @@ def test_tool_glob_grep_and_process_sandbox_edges(monkeypatch: pytest.MonkeyPatc
     monkeypatch.setattr(tools_module, "_run_process", lambda *_args, **_kwargs: (_ for _ in ()).throw(OSError("exec")))
     monkeypatch.setenv("TRINAXAI_AGENT_ALLOW_UNSANDBOXED_COMMANDS", "1")
     monkeypatch.setattr(tools_module, "_bubblewrap_argv", lambda *_args: None)
+    monkeypatch.setattr(tools_module, "_seatbelt_usable", lambda: False)
     assert "cannot run command" in _run_command(tmp_path, "echo ok")
 
 

@@ -245,7 +245,7 @@ index.py arranca
 | **Identidad de dispositivo** | Pairing de un uso; bearer revocable con scopes guardado en una cookie `HttpOnly; SameSite=Strict`; solo los valores legacy se migran desde el almacenamiento web |
 | **Endpoints protegidos** | Operaciones de bajo riesgo usan credenciales de dispositivo/admin; administrar el host exige loopback original verificado; credenciales inválidas fallan cerrado |
 | **Fachada Ollama** | Allowlist método/ruta, autorización, token bucket monotónico y lock de inferencia |
-| **Agente** | Raíces registradas, paths/symlinks, bubblewrap Linux sin red y fallo cerrado sin aislamiento |
+| **Agente** | Raíces registradas, paths/symlinks, sandbox del sistema sin red (bubblewrap en Linux, Seatbelt en macOS) y fallo cerrado sin aislamiento |
 | **TLS** | Los servicios administrados pueden usar certificados locales; `TRINAXAI_TLS_VERIFY` controla verificaciones salientes concretas |
 | **Sudoers** | Comando exacto opcional a wrapper root-owned, nunca scripts editables del repo |
 | **Datos** | Host por defecto; búsqueda web, descargas y endpoints remotos son rutas de red explícitas |
@@ -435,7 +435,7 @@ Estas áreas requieren cuidado extra al modificarlas:
 | Proxy PWA `/api/rag` | Confusión remoto→loopback | Elimina identidad del cliente y firma peer original con HMAC fresca |
 | Proxy PWA `/api/ollama` | Administración de modelos/disco y bypass del scheduler | Allowlist, credencial remota, token bucket monotónico y lock |
 | Registro de pairing | Robo/replay de token y privilegio excesivo | Códigos de un uso con expiración, hashes con clave, archivos atómicos 0600, scopes y revocación |
-| Shell del agente | Acceso/escape del host | Raíces registradas, bubblewrap sin red, kill de process group y fallo cerrado |
+| Shell del agente | Acceso/escape del host | Raíces registradas, sandbox del sistema sin red (bubblewrap/Seatbelt), kill de process group y fallo cerrado |
 | Límite de frecuencia | Protección DoS | Token bucket monotónico por IP/bucket, capacidad 30 y recarga en 60 s |
 
 ---

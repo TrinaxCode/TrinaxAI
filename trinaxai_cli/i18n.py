@@ -175,9 +175,17 @@ MESSAGES: dict[str, tuple[str, str]] = {
         "bubblewrap sandbox available (networkless)",
         "sandbox bubblewrap disponible (sin red)",
     ),
-    "sandbox_linux_only": (
-        "terminal tool disabled: OS command sandbox is Linux-only (file tools still work)",
-        "terminal desactivada: el sandbox de comandos solo existe en Linux (las herramientas de archivos siguen funcionando)",
+    "sandbox_available_macos": (
+        "macOS Seatbelt sandbox available (networkless)",
+        "sandbox Seatbelt de macOS disponible (sin red)",
+    ),
+    "sandbox_macos_blocked": (
+        "terminal tool disabled: macOS 'sandbox-exec' is unavailable or blocked (file tools still work)",
+        "terminal desactivada: 'sandbox-exec' de macOS no está disponible o está bloqueado (las herramientas de archivos siguen funcionando)",
+    ),
+    "sandbox_unsupported_os": (
+        "terminal tool disabled: OS command sandbox exists only on Linux and macOS (file tools still work)",
+        "terminal desactivada: el sandbox de comandos solo existe en Linux y macOS (las herramientas de archivos siguen funcionando)",
     ),
     "sandbox_needs_bubblewrap": (
         "terminal tool disabled: install the 'bubblewrap' package (file tools still work)",

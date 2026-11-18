@@ -358,8 +358,8 @@ any folder under its home directory, a paired device may not), and filesystem ro
 rejected. HTTP yolo is off by default and, even when enabled, only works over a
 real loopback transport with the `agent_yolo` capability. Remote agent callers
 always approve dangerous actions individually.
-File tools reject symlink/path escapes. On Linux, shell commands require
-networkless bubblewrap and expose only the workspace as writable; on unsupported
+File tools reject symlink/path escapes. Shell commands run in a
+networkless OS sandbox (bubblewrap on Linux, Seatbelt on macOS) and expose only the workspace as writable; on unsupported
 hosts terminal execution fails closed unless the operator explicitly accepts
 full user-level access with `TRINAXAI_AGENT_ALLOW_UNSANDBOXED_COMMANDS=1`.
 

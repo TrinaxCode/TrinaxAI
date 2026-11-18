@@ -283,9 +283,11 @@ trinaxai agent --permission-mode plan          # solo lectura: pide primero un p
 
 Las herramientas de archivo de `trinaxai agent` permanecen en `--workspace`
 después de resolver symlinks. Escritura/edición/terminal piden aprobación salvo
-que el operador local pase `--yolo`. En Linux el terminal exige bubblewrap, no
-tiene red, solo el workspace es escribible y un timeout termina el grupo de
-procesos. En macOS/Windows o Linux sin bubblewrap, el terminal falla cerrado.
+que el operador local pase `--yolo`. El terminal se ejecuta en un sandbox del
+sistema (bubblewrap en Linux, Seatbelt en macOS), sin red, con el workspace como único
+sitio escribible, y un timeout termina el grupo de procesos (en macOS un comando que
+deje un proceso en segundo plano puede sobrevivir a ese kill). En Windows, Linux sin
+bubblewrap o un Mac con `sandbox-exec` bloqueado, el terminal falla cerrado.
 `TRINAXAI_AGENT_ALLOW_UNSANDBOXED_COMMANDS=1` concede acceso completo con los
 permisos del usuario y no debe usarse en servicios alcanzables remotamente.
 

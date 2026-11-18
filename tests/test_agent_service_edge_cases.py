@@ -197,7 +197,7 @@ def test_agent_scope_and_capability_edges(monkeypatch, tmp_path: Path) -> None:
         knowledge_search=True,
         deep_research=True,
     )
-    monkeypatch.setattr(agent_service, "_bubblewrap_argv", lambda *_args: None)
+    monkeypatch.setattr(agent_service, "_command_sandbox_available", lambda: False)
     monkeypatch.setattr(agent_service.state, "fusion_retriever", object())
     names = agent_service._available_agent_tool_names(req, _request({"scopes": ["*"]}), tmp_path)
     assert "run_command" not in names

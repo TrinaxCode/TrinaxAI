@@ -22,7 +22,9 @@ can recover on the next turn.
 from __future__ import annotations
 
 import ast
+import contextlib
 import fnmatch
+import functools
 import importlib
 import importlib.util
 import inspect
@@ -37,7 +39,7 @@ import unicodedata
 import urllib.error
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Sequence
+from typing import Any, Callable, Generator, Sequence
 
 from trinaxai_agent.extract import extract_document_text, is_document
 from trinaxai_agent.git_tool import (
@@ -694,34 +696,39 @@ def _is_enabled(name: str) -> bool:
     return os.getenv(name, "").strip().lower() in {"1", "true", "yes", "on"}
 
 
-def _git_metadata_mounts(root: Path) -> tuple[str, ...]:
-    """Mount the parts of the workspace's ``.git`` that can run programs read-only.
+def _git_protected_paths(root: Path) -> tuple[Path, ...]:
+    """The parts of the workspace's ``.git`` that can run programs and must stay read-only.
 
     ``.git/config`` (aliases, ``core.fsmonitor``, filter drivers) and
     ``.git/hooks`` make git run programs for the *user* the next time they use
-    the repository, outside this sandbox. The file tools already refuse to
-    write git metadata; without these mounts a shell command could still plant
-    them. Everything else in ``.git`` (objects, refs, index) stays writable, so
-    ``git add`` and ``git commit`` work when the user asks for them. A ``.git``
-    file (worktree pointer) is mounted read-only as a whole; a symlink is
-    skipped because its target is not part of the sandbox anyway. Repositories
-    nested deeper than the workspace root are not covered.
+    the repository, outside the command sandbox. The file tools already refuse
+    to write git metadata; without protecting these a shell command could still
+    plant them. Everything else in ``.git`` (objects, refs, index) stays
+    writable, so ``git add`` and ``git commit`` work when the user asks for
+    them. A ``.git`` file (worktree pointer) is protected as a whole; a symlink
+    is skipped because its target is not part of the sandbox anyway.
+    Repositories nested deeper than the workspace root are not covered.
     """
     git_path = root / ".git"
     if git_path.is_symlink() or not git_path.exists():
         return ()
     if not git_path.is_dir():
-        return ("--ro-bind", str(git_path), str(git_path))
+        return (git_path,)
+    return tuple(
+        target for target in (git_path / "config", git_path / "hooks") if target.exists() and not target.is_symlink()
+    )
+
+
+def _git_metadata_mounts(root: Path) -> tuple[str, ...]:
+    """Bubblewrap arguments that mount :func:`_git_protected_paths` read-only."""
     mounts: list[str] = []
-    for name in ("config", "hooks"):
-        target = git_path / name
-        if target.exists() and not target.is_symlink():
-            mounts.extend(("--ro-bind", str(target), str(target)))
+    for target in _git_protected_paths(root):
+        mounts.extend(("--ro-bind", str(target), str(target)))
     return tuple(mounts)
 
 
-def _git_identity_env(root: Path) -> tuple[str, ...]:
-    """Pass the user's git name and email into the sandbox as ``--setenv`` pairs.
+def _git_identity_values(root: Path) -> dict[str, str]:
+    """The user's git name and email as ``GIT_AUTHOR_*``/``GIT_COMMITTER_*`` variables.
 
     The sandbox has a private ``$HOME``, so the user's global git identity is
     invisible and ``git commit`` would stop with "Author identity unknown". Only
@@ -730,7 +737,7 @@ def _git_identity_env(root: Path) -> tuple[str, ...]:
     outside the sandbox. ``git config`` only reads files; it never runs hooks.
     """
     if not (root / ".git").exists():
-        return ()
+        return {}
     values: dict[str, str] = {}
     for key in ("user.name", "user.email"):
         try:
@@ -743,15 +750,23 @@ def _git_identity_env(root: Path) -> tuple[str, ...]:
                 check=False,
             )
         except (OSError, subprocess.SubprocessError):
-            return ()
+            return {}
         value = result.stdout.strip() if result.returncode == 0 else ""
         if value:
             values[key] = value
-    pairs: list[str] = []
+    env: dict[str, str] = {}
     for key, role in (("user.name", "NAME"), ("user.email", "EMAIL")):
         if key in values:
             for who in ("AUTHOR", "COMMITTER"):
-                pairs.extend(("--setenv", f"GIT_{who}_{role}", values[key]))
+                env[f"GIT_{who}_{role}"] = values[key]
+    return env
+
+
+def _git_identity_env(root: Path) -> tuple[str, ...]:
+    """:func:`_git_identity_values` as bubblewrap ``--setenv`` pairs."""
+    pairs: list[str] = []
+    for name, value in _git_identity_values(root).items():
+        pairs.extend(("--setenv", name, value))
     return tuple(pairs)
 
 
@@ -855,14 +870,193 @@ def _bubblewrap_argv(workspace_root: Path, command: str) -> list[str] | None:
     return argv
 
 
+_SEATBELT_EXEC = "/usr/bin/sandbox-exec"
+
+# macOS Seatbelt profile (SBPL). Everything is denied unless listed; the workspace and the
+# per-command scratch directory are the only writable places. Paths come in through
+# ``-D name=value`` parameters, never by splicing text into the profile, so a workspace
+# path cannot break out of it.
+_SEATBELT_PROFILE_BASE = """\
+(version 1)
+(deny default)
+(deny network*)
+(allow process-exec*)
+(allow process-fork)
+(allow signal (target same-sandbox))
+(allow process-info* (target self))
+(allow sysctl-read)
+(allow mach-lookup
+  (global-name "com.apple.system.opendirectoryd.libinfo")
+  (global-name "com.apple.system.opendirectoryd.membership"))
+(allow file-read* (literal "/"))
+(allow file-read-metadata
+  (literal "/Library") (literal "/opt") (literal "/etc") (literal "/var") (literal "/tmp")
+  (literal "/private") (literal "/private/etc") (literal "/private/var") (literal "/private/tmp"))
+(allow file-read*
+  (subpath "/usr") (subpath "/bin") (subpath "/sbin") (subpath "/System")
+  (subpath "/Library/Developer") (subpath "/Library/Frameworks") (subpath "/Library/Apple")
+  (subpath "/opt/homebrew")
+  (subpath "/private/var/select") (subpath "/private/var/db/timezone")
+  (literal "/dev/null") (literal "/dev/zero") (literal "/dev/random") (literal "/dev/urandom")
+  (literal "/dev/dtracehelper") (literal "/dev/autofs_nowait") (subpath "/dev/fd")
+  (subpath (param "WORKSPACE")) (subpath (param "SCRATCH")))
+(allow file-write*
+  (subpath (param "WORKSPACE")) (subpath (param "SCRATCH")))
+(allow file-write-data (literal "/dev/null") (literal "/dev/dtracehelper") (subpath "/dev/fd"))
+(allow file-ioctl (literal "/dev/null") (literal "/dev/dtracehelper"))
+"""
+
+
+@functools.lru_cache(maxsize=1)
+def _seatbelt_usable() -> bool:
+    """True when this process can apply a Seatbelt profile (macOS with ``sandbox-exec``).
+
+    Applying a profile fails when the host removed the tool or when this process already runs
+    inside another sandbox, so the answer comes from a real probe instead of a platform check.
+    It is cached: the situation does not change while the process lives.
+    """
+    if sys.platform != "darwin" or not os.access(_SEATBELT_EXEC, os.X_OK):
+        return False
+    try:
+        probe = subprocess.run(
+            [_SEATBELT_EXEC, "-p", "(version 1)(allow default)(deny network*)", "/usr/bin/true"],
+            capture_output=True,
+            timeout=10,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return probe.returncode == 0
+
+
+def _seatbelt_environment(root: Path, scratch: Path) -> dict[str, str]:
+    """The only environment a macOS sandboxed command gets (the host's is never inherited)."""
+    path_parts = [
+        str(root / ".venv" / "bin"),
+        str(root / "node_modules" / ".bin"),
+        str(root / "chat-pwa" / "node_modules" / ".bin"),
+    ]
+    # Homebrew, then the Command Line Tools: their binaries are the real tools. The ones in
+    # /usr/bin (git, python3, make, cc) are shims that need the user's per-user cache directory,
+    # which the sandbox does not expose.
+    for extra in ("/opt/homebrew/bin", "/usr/local/bin", "/Library/Developer/CommandLineTools/usr/bin"):
+        if Path(extra).is_dir():
+            path_parts.append(extra)
+    path_parts.extend(("/usr/bin", "/bin"))
+    env = {
+        "HOME": str(scratch / "home"),
+        "TMPDIR": str(scratch),
+        "PATH": ":".join(path_parts),
+        "LANG": "en_US.UTF-8",
+        "PYTHONNOUSERSITE": "1",
+        "PIP_NO_INDEX": "1",
+        "npm_config_offline": "true",
+        # No /etc/gitconfig or /etc/gitattributes inside the sandbox, as on Linux.
+        "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_ATTR_NOSYSTEM": "1",
+    }
+    sdk = Path("/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk")
+    if sdk.exists():
+        env["SDKROOT"] = str(sdk)
+    env.update(_git_identity_values(root))
+    return env
+
+
+def _seatbelt_argv(workspace_root: Path, command: str, scratch: Path) -> list[str] | None:
+    """Build a networkless macOS sandbox for a shell command (the Seatbelt twin of bubblewrap).
+
+    ``scratch`` is a private directory that exists only for this command (the equivalent of
+    bubblewrap's private ``/tmp``): ``TMPDIR`` and ``$HOME`` point into it and the caller removes it
+    afterwards. The command can write only to the workspace and ``scratch``, read only the
+    workspace, ``scratch`` and the operating system's and Homebrew's runtime directories (not the
+    user's home, ``/Users``, ``/Applications`` or ``/etc``), and has no network. Programs cannot
+    send Apple Events or reach most system services. ``.git/config`` and ``.git/hooks`` are
+    read-only by path, and the ``.git`` directory itself cannot be renamed or deleted: otherwise a
+    command could move it aside, edit the config under its new name and move it back.
+
+    Unlike bubblewrap, Seatbelt has no PID namespace: a command that detaches a daemon can outlive
+    the timeout kill. Returns ``None`` where Seatbelt cannot be applied (callers fail closed).
+    """
+    if not _seatbelt_usable():
+        return None
+    root = workspace_root.resolve()
+    scratch = scratch.resolve()
+    params: dict[str, Path] = {"WORKSPACE": root, "SCRATCH": scratch}
+    for index, protected in enumerate(_git_protected_paths(root)):
+        params[f"GITRO{index}"] = protected
+    # stat() on every parent of an allowed directory, so realpath/getcwd work without exposing the
+    # contents of those parents.
+    ancestors: list[Path] = []
+    for base in (root, scratch):
+        for parent in base.parents:
+            if parent != Path("/") and parent not in ancestors:
+                ancestors.append(parent)
+    for index, parent in enumerate(ancestors):
+        params[f"PARENT{index}"] = parent
+
+    profile = [_SEATBELT_PROFILE_BASE]
+    if ancestors:
+        parents = " ".join(f'(literal (param "PARENT{index}"))' for index in range(len(ancestors)))
+        profile.append(f"(allow file-read-metadata {parents})\n")
+    protected_names = [name for name in params if name.startswith("GITRO")]
+    if protected_names:
+        denied = " ".join(f'(subpath (param "{name}"))' for name in protected_names)
+        profile.append(f"(deny file-write* {denied})\n")
+        git_dir = root / ".git"
+        if git_dir.is_dir() and not git_dir.is_symlink():
+            params["GITDIR"] = git_dir
+            profile.append('(deny file-write-unlink (literal (param "GITDIR")))\n')
+
+    environment = [f"{name}={value}" for name, value in _seatbelt_environment(root, scratch).items()]
+    argv = ["/usr/bin/env", "-i", *environment, _SEATBELT_EXEC, "-p", "".join(profile)]
+    for name, value in params.items():
+        argv.extend(("-D", f"{name}={value}"))
+    argv.extend(("/bin/sh", "-c", command))
+    return argv
+
+
+@contextlib.contextmanager
+def _command_sandbox(root: Path, command: str) -> Generator[list[str] | None, None, None]:
+    """Yield the argv that runs ``command`` isolated, or ``None`` when this host cannot isolate it.
+
+    Linux uses bubblewrap, macOS uses Seatbelt (with a private scratch directory that is deleted
+    when the command is done).
+    """
+    argv = _bubblewrap_argv(root, command)
+    if argv is not None:
+        yield argv
+        return
+    if not _seatbelt_usable():
+        yield None
+        return
+    scratch = Path(tempfile.mkdtemp(prefix="trinaxai-sandbox-")).resolve()
+    try:
+        (scratch / "home").mkdir()
+        yield _seatbelt_argv(root, command, scratch)
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def _command_sandbox_available() -> bool:
+    """Whether the terminal tool has an OS sandbox on this host (no unsandboxed opt-in counted)."""
+    return _bubblewrap_argv(Path.cwd(), ":") is not None or _seatbelt_usable()
+
+
 def shell_sandbox_status() -> tuple[bool, str]:
     """Report whether the Agent's terminal tool can run, and why not if it can't."""
     if _bubblewrap_argv(Path.cwd(), ":") is not None:
         return True, "bubblewrap sandbox available (networkless)"
+    if _seatbelt_usable():
+        return True, "macOS Seatbelt sandbox available (networkless)"
     if _is_enabled(_UNSANDBOXED_COMMAND_ENV):
         return True, f"UNSANDBOXED opt-in via {_UNSANDBOXED_COMMAND_ENV}"
+    if sys.platform == "darwin":
+        return False, "terminal tool disabled: macOS 'sandbox-exec' is unavailable or blocked (file tools still work)"
     if not sys.platform.startswith("linux"):
-        return False, "terminal tool disabled: OS command sandbox is Linux-only (file tools still work)"
+        return (
+            False,
+            "terminal tool disabled: OS command sandbox exists only on Linux and macOS (file tools still work)",
+        )
     return False, "terminal tool disabled: install the 'bubblewrap' package (file tools still work)"
 
 
@@ -903,27 +1097,27 @@ def _run_command(workspace_root: Path, command: str, **_: Any) -> str:
         return "error: empty command"
 
     root = workspace_root.resolve()
-    argv = _bubblewrap_argv(root, cmd)
-    sandboxed = argv is not None
-    if argv is None:
-        if not _is_enabled(_UNSANDBOXED_COMMAND_ENV):
-            return (
-                "error: terminal execution is disabled because this host has no supported "
-                "sandbox. Install bubblewrap on Linux, or explicitly set "
-                f"{_UNSANDBOXED_COMMAND_ENV}=1 to accept full user-level host access."
-            )
-        # Compatibility escape hatch. It is intentionally explicit and never
-        # enabled by the PWA/API. Avoid ``shell=True`` even here so process-tree
-        # cleanup remains reliable.
-        shell = os.environ.get("SHELL") or ("cmd.exe" if os.name == "nt" else "/bin/sh")
-        flag = "/c" if os.name == "nt" else "-lc"
-        argv = [shell, flag, cmd]
-    try:
-        returncode, stdout, stderr = _run_process(argv, cwd=root)
-    except subprocess.TimeoutExpired:
-        return f"error: command timed out after {RUN_TIMEOUT_SECONDS}s: {cmd}"
-    except OSError as exc:
-        return f"error: cannot run command: {exc}"
+    with _command_sandbox(root, cmd) as argv:
+        sandboxed = argv is not None
+        if argv is None:
+            if not _is_enabled(_UNSANDBOXED_COMMAND_ENV):
+                return (
+                    "error: terminal execution is disabled because this host has no supported "
+                    "sandbox. Install bubblewrap on Linux (macOS uses its built-in sandbox-exec), "
+                    f"or explicitly set {_UNSANDBOXED_COMMAND_ENV}=1 to accept full user-level host access."
+                )
+            # Compatibility escape hatch. It is intentionally explicit and never
+            # enabled by the PWA/API. Avoid ``shell=True`` even here so process-tree
+            # cleanup remains reliable.
+            shell = os.environ.get("SHELL") or ("cmd.exe" if os.name == "nt" else "/bin/sh")
+            flag = "/c" if os.name == "nt" else "-lc"
+            argv = [shell, flag, cmd]
+        try:
+            returncode, stdout, stderr = _run_process(argv, cwd=root)
+        except subprocess.TimeoutExpired:
+            return f"error: command timed out after {RUN_TIMEOUT_SECONDS}s: {cmd}"
+        except OSError as exc:
+            return f"error: cannot run command: {exc}"
     out = stdout + (("\n[stderr]\n" + stderr) if stderr else "")
     status = f"[exit {returncode}; {'sandboxed, network=off' if sandboxed else 'UNSANDBOXED opt-in'}]"
     return _truncate(f"{status}\n{out}".strip()) or status

@@ -18,6 +18,10 @@ el formato de [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Sin publicar]
 
+### Añadido
+
+- La terminal del Agente ya funciona en macOS. Cada comando se ejecuta en un sandbox Seatbelt sin red (`sandbox-exec`, incluido en macOS), el equivalente de bubblewrap en Linux: solo el workspace y una carpeta temporal privada son escribibles, la carpeta personal, `/Applications` y `/etc` no se pueden leer, no hay red, los Apple Events y casi todos los servicios del sistema son inalcanzables, y `.git/config`, `.git/hooks` y el propio directorio `.git` son de solo lectura. Antes la herramienta estaba apagada en macOS y el modelo respondía que `run_command` no estaba registrado. `trinaxai doctor` indica el sandbox en uso, y la terminal sigue fallando cerrada si falta `sandbox-exec` o está bloqueado. A diferencia de bubblewrap no hay espacio de procesos propio, así que un comando que deje un proceso en segundo plano puede sobrevivir a su timeout.
+
 ### Corregido
 
 - El aviso «Se detectó una red distinta» ya no aparece en el primer arranque. El instalador escribía `Mac.local.local` en el certificado y en los orígenes permitidos porque macOS informa su nombre como `Mac.local`, y la PWA comparaba contra todas las interfaces (Docker, VPN, Compartir Internet) mientras `trinaxai network refresh` registra solo la dirección enrutada. Ahora ambos usan la primera etiqueta del nombre y la dirección enrutada; una instalación existente se corrige con el botón «Preparar esta red» o con `trinaxai network refresh`.

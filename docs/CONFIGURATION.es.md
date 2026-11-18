@@ -104,8 +104,8 @@ Los nombres deben coincidir con `ollama list`. Descarga manualmente un modelo co
   no persiste tokens de dispositivo nuevos en el almacenamiento del navegador. Los bearers
   legacy de la CLI siguen usando solo la cabecera `X-TrinaxAI-Device-Token`; el pairing es
   administración de capabilities de dispositivo, no un sistema de cuentas multiusuario.
-- Las herramientas de archivo permanecen dentro de las raíces registradas del agente. Las llamadas de terminal en Linux exigen
-  bubblewrap sin red; los hosts no compatibles fallan cerrados salvo que el operador
+- Las herramientas de archivo permanecen dentro de las raíces registradas del agente. Las llamadas de terminal exigen
+  un sandbox del sistema sin red (bubblewrap en Linux, Seatbelt en macOS); los hosts no compatibles fallan cerrados salvo que el operador
   acepte explícitamente el acceso completo del usuario al host.
 - La búsqueda web es opt-in. `TRINAXAI_WEB_SEARCH_PROVIDER=auto` prefiere una clave de Brave configurada (`TRINAXAI_BRAVE_SEARCH_API_KEY`), luego una URL de SearXNG (`TRINAXAI_SEARXNG_URL`) y, si no hay ninguna, usa DuckDuckGo sin credenciales. Ajusta `TRINAXAI_WEB_SEARCH_TIMEOUT` y `TRINAXAI_WEB_SEARCH_MAX_RESULTS` cuando haga falta.
 - Los mismos proveedores se administran en **PWA → Configuración → Búsqueda web**. Los valores administrados solo los guarda el backend en `storage/web_search_settings.json` con modo `0600`; las respuestas GET exponen booleanos de disponibilidad, nunca claves API. La precedencia es: variables de entorno, configuración administrada y valores predeterminados. Un campo de clave vacío conserva la existente; eliminar y restablecer son acciones explícitas. Las URLs de SearXNG introducidas en la PWA deben resolver a endpoints HTTP(S) públicos o al endpoint loopback local documentado `http://127.0.0.1:8080`, y no pueden contener credenciales.
@@ -297,8 +297,9 @@ variables `VITE_*`.
 | `TRINAXAI_AGENT_HTTP_YOLO` | `0` | Autoaprobación HTTP solo en loopback real si se activa. |
 | `TRINAXAI_AGENT_ALLOW_UNSANDBOXED_COMMANDS` | `0` | Escape de alto riesgo: shell con permisos completos del usuario. |
 
-Las herramientas de archivo resuelven symlinks y rechazan escapes. En Linux el
-shell exige bubblewrap sin red y solo deja el workspace escribible. Sin sandbox
+Las herramientas de archivo resuelven symlinks y rechazan escapes. El
+shell se ejecuta en un sandbox del sistema sin red que solo deja el workspace escribible:
+bubblewrap en Linux, Seatbelt (`sandbox-exec`, incluido en macOS) en macOS. Sin sandbox
 compatible, falla cerrado salvo el opt-in explícito anterior.
 
 ## Voz
