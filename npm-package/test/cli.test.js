@@ -121,6 +121,32 @@ async function main() {
     const uninstall = spawnSync(process.execPath, [BIN, "uninstall"], { env, encoding: "utf8" });
     assert.equal(uninstall.status, 1);
     assert.match(uninstall.stderr, /No hay nada que desinstalar/);
+
+    // A default uninstall leaves the managed folder without its runtime (.venv, frontend build).
+    // The launcher must still run that folder's own uninstall script instead of claiming that
+    // nothing is installed, so the leftover files can be removed.
+    if (process.platform !== "win32") {
+      const leftover = path.join(root, "data", "trinaxai");
+      fs.mkdirSync(leftover, { recursive: true });
+      fs.writeFileSync(path.join(leftover, ".trinaxai-managed"), "Managed by the TrinaxAI installer.\n");
+      fs.writeFileSync(
+        path.join(leftover, "uninstall.sh"),
+        '#!/usr/bin/env bash\nprintf "%s\\n" "$@" > "$TRINAXAI_HOME/received.txt"\n[ -f "$TRINAXAI_HOME/wipe" ] && rm -rf "$TRINAXAI_HOME"\nexit 0\n',
+      );
+      const kept = spawnSync(process.execPath, [BIN, "uninstall", "--yes", "--remove-app", "--remove-data"], { env, encoding: "utf8" });
+      assert.equal(kept.status, 0, kept.stderr);
+      assert.equal(fs.readFileSync(path.join(leftover, "received.txt"), "utf8"), "--yes\n--remove-app\n--remove-data\n");
+      assert.match(kept.stdout, /sus archivos siguen en .*trinaxai/);
+      assert.match(kept.stdout, /--remove-app --remove-data/);
+      fs.writeFileSync(path.join(leftover, "wipe"), "");
+      const wiped = spawnSync(process.execPath, [BIN, "uninstall", "--yes", "--remove-app"], { env, encoding: "utf8" });
+      assert.equal(wiped.status, 0, wiped.stderr);
+      assert.match(wiped.stdout, /Se eliminó la aplicación instalada/);
+      assert.equal(fs.existsSync(leftover), false);
+      const again = spawnSync(process.execPath, [BIN, "uninstall"], { env, encoding: "utf8" });
+      assert.equal(again.status, 1); // nothing left: back to the plain message
+      assert.match(again.stderr, /No hay nada que desinstalar/);
+    }
     const english = spawnSync(process.execPath, [BIN, "doctor"], { env: { ...env, LANG: "en_US.UTF-8" }, encoding: "utf8" });
     assert.match(english.stderr, /TrinaxAI is not installed yet\. Run: trinaxai setup/);
     const help = spawnSync(process.execPath, [BIN, "setup", "--help"], { env, encoding: "utf8" });

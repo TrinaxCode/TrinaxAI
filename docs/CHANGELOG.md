@@ -24,6 +24,7 @@ All notable changes to TrinaxAI are documented here. This project follows the
 
 ### Fixed
 
+- `trinaxai uninstall` can finish the job. After a default uninstall (which keeps the source, the data and the `.env`) the launcher answered "Nothing to uninstall" because the runtime was gone, so the rest could only be deleted by hand; it now runs the folder's own uninstall script. Removing the application also deletes the lifecycle scripts and the empty folders it used to leave behind, a keychain certificate that macOS will not delete without your approval is reported instead of ignored, `--dry-run` shows what the flags you passed would remove, and the final message says whether files were kept.
 - Spoken replies on macOS no longer use a joke voice: with the built-in speech engine the first English voice alphabetically is "Albert", whose audio is hardly intelligible. Natural voices (Samantha, Alex, Daniel, Paulina, Monica…) are now preferred and the novelty ones only used when nothing else matches.
 - On macOS the Agent's terminal no longer hangs for two minutes when a command starts a background job (`cmd &`): output is captured in temporary files, so the call ends with the command itself and the job is killed.
 - The web app builds again on macOS and Windows: two files in `chat-pwa/src/components/indexing/` differed only by letter case (`IndexProgress.tsx` and `indexProgress.ts`), which case-insensitive file systems and `tsc` treat as the same module. The indexing model is now `indexProgressModel.ts`.

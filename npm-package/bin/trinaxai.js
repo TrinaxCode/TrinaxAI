@@ -51,6 +51,8 @@ const MESSAGES = {
     setupFailed: "Setup did not finish (exit code {code}). The error is above. It is safe to run \"trinaxai setup\" again.",
     setupDone: "Setup finished. Next: trinaxai doctor",
     uninstallLauncher: "The installed app was removed. To remove this launcher too: npm uninstall -g trinaxai",
+    uninstallDataKept: "TrinaxAI was removed. Your data and settings are still in {root}; delete that folder if you do not need them.",
+    uninstallKept: "TrinaxAI was stopped and its runtime removed, but its files are still in {root}. To delete them too run: trinaxai uninstall --yes --remove-app --remove-data --remove-models --remove-certs --remove-env",
     versionLine: "launcher {launcher}, installed app {installed}",
     updateHint: "The installed app is {installed} but this launcher is {launcher}. Run: trinaxai update",
     optionValue: "{option} requires a value",
@@ -107,6 +109,8 @@ Setup options:
     setupFailed: "La instalación no terminó (código de salida {code}). El error aparece arriba. Puedes ejecutar \"trinaxai setup\" de nuevo sin riesgo.",
     setupDone: "Instalación terminada. Siguiente paso: trinaxai doctor",
     uninstallLauncher: "Se eliminó la aplicación instalada. Para quitar también este lanzador: npm uninstall -g trinaxai",
+    uninstallDataKept: "TrinaxAI se eliminó. Tus datos y ajustes siguen en {root}; borra esa carpeta si no los necesitas.",
+    uninstallKept: "TrinaxAI se detuvo y se quitó su entorno de ejecución, pero sus archivos siguen en {root}. Para borrarlos también ejecuta: trinaxai uninstall --yes --remove-app --remove-data --remove-models --remove-certs --remove-env",
     versionLine: "lanzador {launcher}, aplicación instalada {installed}",
     updateHint: "La aplicación instalada es {installed} pero este lanzador es {launcher}. Ejecuta: trinaxai update",
     optionValue: "{option} requiere un valor",
@@ -356,6 +360,61 @@ function findInstallation() {
   return installationCandidates().find(isInstallation) || null;
 }
 
+// A default uninstall removes the runtime (.venv, frontend build) but keeps the source, the data and
+// the .env, so what is left is no longer runnable yet still belongs to TrinaxAI. The launcher must
+// still be able to finish the job, otherwise the files can only be removed by hand.
+function uninstallScriptName() {
+  return process.platform === "win32" ? "uninstall.ps1" : "uninstall.sh";
+}
+
+function isManagedLeftover(root) {
+  return fs.existsSync(path.join(root, ".trinaxai-managed")) && fs.existsSync(path.join(root, uninstallScriptName()));
+}
+
+function findLeftover() {
+  return installationCandidates().find(isManagedLeftover) || null;
+}
+
+const WINDOWS_UNINSTALL_FLAGS = {
+  "--yes": "-Yes",
+  "-y": "-Yes",
+  "--purge": "-Purge",
+  "--remove-data": "-RemoveData",
+  "--remove-models": "-RemoveModels",
+  "--remove-ollama": "-RemoveOllama",
+  "--keep-env": "-KeepEnv",
+  "--remove-env": "-RemoveEnv",
+  "--remove-certs": "-RemoveCerts",
+  "--remove-app": "-RemoveApp",
+  "--dry-run": "-DryRun",
+};
+
+function runLeftoverUninstall(args, root) {
+  const windows = process.platform === "win32";
+  const flags = args.map((argument) => (windows ? WINDOWS_UNINSTALL_FLAGS[argument] || argument : argument));
+  const script = path.join(root, uninstallScriptName());
+  const command = windows ? "powershell" : "bash";
+  const commandArgs = windows ? ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script, ...flags] : [script, ...flags];
+  const result = spawnSync(command, commandArgs, {
+    cwd: root,
+    env: { ...process.env, TRINAXAI_HOME: root },
+    stdio: "inherit",
+  });
+  if (result.error) throw result.error;
+  return result.status ?? 1;
+}
+
+function reportUninstall(language, root, dryRun) {
+  if (dryRun) return;
+  if (!fs.existsSync(root)) {
+    console.log(message(language, "uninstallLauncher"));
+  } else if (fs.existsSync(path.join(root, ".trinaxai-managed"))) {
+    console.log(message(language, "uninstallKept", { root }));
+  } else {
+    console.log(message(language, "uninstallDataKept", { root }));
+  }
+}
+
 function installedVersion(root) {
   try {
     const text = fs.readFileSync(path.join(root, "pyproject.toml"), "utf8");
@@ -532,9 +591,7 @@ async function setup(args, deps = {}) {
     }
     if (action === "update" || action === "uninstall") {
       const status = runInstalled([action], root);
-      if (action === "uninstall" && status === 0 && !isInstallation(root)) {
-        console.log(message(language, "uninstallLauncher"));
-      }
+      if (action === "uninstall" && status === 0 && !isInstallation(root)) reportUninstall(language, root, false);
       return status;
     }
   }
@@ -572,13 +629,22 @@ async function main(args = process.argv.slice(2)) {
     console.log(message(language, "cancelled"));
     return 0;
   }
+  if (!root && args[0] === "uninstall") {
+    const leftover = findLeftover();
+    if (leftover) {
+      const forwarded = args.slice(1);
+      const status = runLeftoverUninstall(forwarded, leftover);
+      if (status === 0) reportUninstall(language, leftover, forwarded.includes("--dry-run"));
+      return status;
+    }
+  }
   if (!root) {
     console.error(message(language, args[0] === "uninstall" ? "notInstalledUninstall" : "notInstalled"));
     return 1;
   }
   const status = runInstalled(args, root);
   if (args[0] === "uninstall" && status === 0 && !isInstallation(root)) {
-    console.log(message(language, "uninstallLauncher"));
+    reportUninstall(language, root, args.includes("--dry-run"));
   }
   return status;
 }
@@ -598,6 +664,7 @@ module.exports = {
   chooseLanguage,
   detectLanguage,
   download,
+  findLeftover,
   installedVersion,
   installerAsset,
   isInteractive,

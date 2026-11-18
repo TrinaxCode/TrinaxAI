@@ -49,6 +49,12 @@ tr_text_es() {
       'Would disable the weekly update task') echo 'Se desactivaría la tarea semanal de actualización' ;;
       'Would remove .venv, frontend build, and logs (configuration .env is preserved)') echo 'Se eliminarían .venv, la compilación frontend y los logs (la configuración .env se conserva)' ;;
       'Would preserve source code, indexes, models, and personal data by default') echo 'El código fuente, los índices, los modelos y los datos personales se conservarían por defecto' ;;
+      'Would remove .venv, frontend build, logs, and the .env configuration') echo 'Se eliminarían .venv, la compilación frontend, los logs y la configuración .env' ;;
+      'Would also remove the managed application files') echo 'También se eliminarían los archivos gestionados de la aplicación' ;;
+      'Would also remove indexes, memory and local_sources data') echo 'También se eliminarían los índices, la memoria y los datos de local_sources' ;;
+      'Would also remove the generated HTTPS certificates') echo 'También se eliminarían los certificados HTTPS generados' ;;
+      'Would remove the known models and the Ollama application and its data') echo 'Se eliminarían los modelos conocidos, la aplicación Ollama y sus datos' ;;
+      'Would remove the known Ollama models (the Ollama application is kept)') echo 'Se eliminarían los modelos conocidos de Ollama (la aplicación Ollama se conserva)' ;;
       'Would remove configured models/app only when explicitly requested') echo 'Solo se eliminarían los modelos o la aplicación configurados si se solicita explícitamente' ;;
       'Open TrinaxAI at') echo 'Enlaces de acceso' ;;
       'LAN / Red local') echo 'LAN' ;;
@@ -88,6 +94,7 @@ tr_text_es() {
       'Protected by default: source code, indexes, and Ollama models') echo 'Protegidos por defecto: código fuente, índices y modelos de Ollama' ;;
       'Type UNINSTALL to continue:') echo 'Escribe UNINSTALL para continuar:' ;;
       'Removed CLI launcher: '*) echo "Se eliminó el lanzador de la CLI:${1#Removed CLI launcher: }" ;;
+      'Could not remove '*' TrinaxAI certificate(s) from the keychain; macOS needs your approval. Delete them in Keychain Access (search: TrinaxAI Local HTTPS).') count="${1#Could not remove }"; echo "No se pudieron quitar ${count%% *} certificado(s) de TrinaxAI del llavero; macOS necesita tu aprobación. Bórralos en Acceso a Llaveros (busca: TrinaxAI Local HTTPS)." ;;
       'Ollama not found; model removal skipped.') echo 'No se encontró Ollama; se omitió la eliminación de modelos.' ;;
       'HOME is unsafe or unset; Ollama data was not removed.') echo 'HOME no es seguro o no está definido; no se eliminaron los datos de Ollama.' ;;
       'Ollama data path is a symbolic link; it was not removed.') echo 'La ruta de datos de Ollama es un enlace simbólico; no se eliminó.' ;;
@@ -184,6 +191,7 @@ REMOVE_LOGS=1
 REMOVE_ENV=0
 REMOVE_DATA=0
 REMOVE_APP=0
+APP_REMOVED=0
 REMOVE_CERTS=0
 REMOVE_MODELS=0
 REMOVE_MODELS_SET=0
@@ -296,10 +304,27 @@ if [ "$DRY_RUN" = "1" ]; then
   print_step "Automatic updates"
   echo "  $(tr_text 'Would disable the weekly update task')"
   print_step "Runtime files"
-  echo "  $(tr_text 'Would remove .venv, frontend build, and logs (configuration .env is preserved)')"
-  echo "  $(tr_text 'Would preserve source code, indexes, models, and personal data by default')"
+  if [ "$REMOVE_ENV" = "1" ]; then
+    echo "  $(tr_text 'Would remove .venv, frontend build, logs, and the .env configuration')"
+  else
+    echo "  $(tr_text 'Would remove .venv, frontend build, and logs (configuration .env is preserved)')"
+  fi
+  if [ "$REMOVE_APP$REMOVE_DATA$REMOVE_CERTS$REMOVE_MODELS$REMOVE_OLLAMA" = "00000" ]; then
+    echo "  $(tr_text 'Would preserve source code, indexes, models, and personal data by default')"
+  else
+    # What was asked for, not the defaults: a dry run that ignored the flags hid what a real run deletes.
+    [ "$REMOVE_APP" = "1" ] && echo "  $(tr_text 'Would also remove the managed application files')"
+    [ "$REMOVE_DATA" = "1" ] && echo "  $(tr_text 'Would also remove indexes, memory and local_sources data')"
+    [ "$REMOVE_CERTS" = "1" ] && echo "  $(tr_text 'Would also remove the generated HTTPS certificates')"
+  fi
   print_step "Ollama"
-  echo "  $(tr_text 'Would remove configured models/app only when explicitly requested')"
+  if [ "$REMOVE_OLLAMA" = "1" ]; then
+    echo "  $(tr_text 'Would remove the known models and the Ollama application and its data')"
+  elif [ "$REMOVE_MODELS" = "1" ]; then
+    echo "  $(tr_text 'Would remove the known Ollama models (the Ollama application is kept)')"
+  else
+    echo "  $(tr_text 'Would remove configured models/app only when explicitly requested')"
+  fi
   echo ""
   echo -e "${BOLD}${CYAN}$(tr_text 'Open TrinaxAI at')${NC}"
   echo "  Localhost:       https://localhost:3334"
@@ -530,10 +555,15 @@ if [ "$REMOVE_CERTS" = "1" ]; then
   if [ "$(uname -s)" = "Darwin" ] && command -v security >/dev/null 2>&1; then
     # Reinstalls leave several certificates with the same name, and -c refuses an ambiguous name: delete by hash.
     login_keychain="$HOME/Library/Keychains/login.keychain-db"
-    security find-certificate -a -c "TrinaxAI Local HTTPS" -Z "$login_keychain" 2>/dev/null | awk '/^SHA-1 hash:/ {print $3}' |
-      while read -r cert_hash; do
-        security delete-certificate -Z "$cert_hash" -t "$login_keychain" >/dev/null 2>&1 || true
-      done
+    cert_failures=0
+    for cert_hash in $(security find-certificate -a -c "TrinaxAI Local HTTPS" -Z "$login_keychain" 2>/dev/null | awk '/^SHA-1 hash:/ {print $3}'); do
+      security delete-certificate -Z "$cert_hash" -t "$login_keychain" >/dev/null 2>&1 || cert_failures=$((cert_failures + 1))
+    done
+    if [ "$cert_failures" -gt 0 ]; then
+      # A certificate that was trusted carries trust settings, and macOS only removes those after the
+      # user approves it (there is no way to answer that prompt from a script without a screen).
+      print_warn "Could not remove $cert_failures TrinaxAI certificate(s) from the keychain; macOS needs your approval. Delete them in Keychain Access (search: TrinaxAI Local HTTPS)."
+    fi
   elif [ "$(uname -s)" = "Linux" ]; then
     as_root rm -f /usr/local/share/ca-certificates/trinaxai-local.crt /etc/pki/ca-trust/source/anchors/trinaxai-local.crt 2>/dev/null || true
     command -v update-ca-certificates >/dev/null 2>&1 && as_root update-ca-certificates >/dev/null 2>&1 || true
@@ -552,6 +582,7 @@ REMOVE_TARGETS=()
 if [ "$REMOVE_APP" = "1" ]; then
   if [ -f "$ROOT/.trinaxai-managed" ] && [ -f "$ROOT/scripts/source_update.py" ]; then
     "${PYTHON_CMD[@]}" "$ROOT/scripts/source_update.py" remove --root "$ROOT"
+    APP_REMOVED=1
     print_ok "Managed TrinaxAI application files removed"
   else
     print_warn "Application source was kept because this is not a managed installation."
@@ -611,6 +642,17 @@ if [ "$REMOVE_OLLAMA" = "1" ]; then
   elif [ -d "$HOME/.ollama" ]; then
     rm -rf -- "$HOME/.ollama"
   fi
+fi
+
+# The application removal keeps the lifecycle scripts because this very script is one of them.
+# Everything else is gone by now, so remove them too, plus the folders that are left empty; a folder
+# that still holds anything else (your data, the .env) is never touched.
+if [ "$APP_REMOVED" = "1" ] && [ -d "$ROOT" ] && [ ! -e "$ROOT/.trinaxai-managed" ]; then
+  for lifecycle_file in backup.sh install.sh setup_trinaxai.sh shutdown_ai.sh startup_ai.sh uninstall.sh update.sh; do
+    [ -f "$ROOT/$lifecycle_file" ] && [ ! -L "$ROOT/$lifecycle_file" ] && rm -f -- "$ROOT/$lifecycle_file"
+  done
+  find "$ROOT" -mindepth 1 -depth -type d -empty -delete 2>/dev/null || true
+  rmdir "$ROOT" 2>/dev/null || true
 fi
 
 echo "$(tr_text 'TrinaxAI uninstall finished.')"
