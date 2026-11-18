@@ -4,7 +4,7 @@
 
 <p align="center">
   <a href="https://github.com/TrinaxCode/TrinaxAI"><img src="https://img.shields.io/github/stars/TrinaxCode/TrinaxAI?style=flat&amp;label=%E2%98%85&amp;color=006bbd" alt="Estrellas en GitHub"></a>
-  <a href="https://github.com/TrinaxCode/TrinaxAI/releases/latest"><img src="https://img.shields.io/github/v/release/TrinaxCode/TrinaxAI?style=flat&amp;label=release&amp;color=006bbd" alt="Último release"></a>
+  <a href="https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.4.1"><img src="https://img.shields.io/badge/version-1.4.1-006bbd" alt="Release estable: 1.4.1"></a>
   <a href="https://www.npmjs.com/package/trinaxai"><img src="https://img.shields.io/npm/v/trinaxai?style=flat&amp;label=npm&amp;color=006bbd" alt="Versión del paquete npm"></a>
   <a href="https://github.com/TrinaxCode/TrinaxAI/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/TrinaxCode/TrinaxAI/ci.yml?branch=main&amp;label=CI" alt="Estado de CI"></a>
   <a href="https://github.com/TrinaxCode/TrinaxAI/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0--or--later-006bbd" alt="Licencia AGPL-3.0-or-later"></a>

@@ -129,8 +129,8 @@ El modelo de amenazas de TrinaxAI asume:
    `storage/.proxy_secret` ni `storage/.device_secret`; conserva modo `0600`
    también en `storage/device_pairing.json`.
 5. **Usa firewall y VPN**; limita la PWA a dispositivos previstos y bloquea acceso directo a 3333/11434.
-6. **Mantén dependencias reproducibles/auditadas** — instala `requirements.lock`, ejecuta `pip-audit --require-hashes -r requirements.lock` y `npm audit`. No hay excepciones de avisos: CI falla ante cualquier vulnerabilidad conocida.
-7. **Mantén el shell con fallo cerrado.** Instala bubblewrap en Linux y no habilites `TRINAXAI_AGENT_ALLOW_UNSANDBOXED_COMMANDS` en servicios remotos.
+6. **Mantén dependencias reproducibles/auditadas** — instala `requirements.lock`, ejecuta `pip-audit --require-hashes -r requirements.lock` y `npm audit --omit=dev`. No hay excepciones de avisos para lo que se distribuye: CI falla ante cualquier vulnerabilidad alta conocida en dependencias de Python o de npm en producción. Las herramientas de build y pruebas no son una puerta del CI, porque algunos avisos no tienen todavía corrección upstream; Dependabot las vigila y se actualizan en cuanto exista una versión parcheada.
+7. **Mantén el shell con fallo cerrado.** Instala bubblewrap en Linux (macOS usa su sandbox integrado) y no habilites `TRINAXAI_AGENT_ALLOW_UNSANDBOXED_COMMANDS` en servicios remotos.
 8. **Cifra backups** cuando salgan del host; contienen `.env`, chats, adjuntos, fuentes e índices aunque el archivo tenga modo privado.
 9. **Audita** con `trinaxai doctor --strict --json` y `python3 scripts/public_readiness.py`.
 

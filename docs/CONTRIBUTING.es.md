@@ -112,7 +112,7 @@ ruff check .
 cd chat-pwa
 npx tsc --noEmit
 npm run build
-npm audit --audit-level=high
+npm audit --omit=dev --audit-level=high
 
 # Prueba del sistema (requiere servicios corriendo)
 trinaxai doctor

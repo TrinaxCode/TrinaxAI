@@ -4,7 +4,7 @@
 
 <p align="center">
   <a href="https://github.com/TrinaxCode/TrinaxAI"><img src="https://img.shields.io/github/stars/TrinaxCode/TrinaxAI?style=flat&amp;label=%E2%98%85&amp;color=006bbd" alt="GitHub stars"></a>
-  <a href="https://github.com/TrinaxCode/TrinaxAI/releases/latest"><img src="https://img.shields.io/github/v/release/TrinaxCode/TrinaxAI?style=flat&amp;label=release&amp;color=006bbd" alt="Latest release"></a>
+  <a href="https://github.com/TrinaxCode/TrinaxAI/releases/tag/v1.4.1"><img src="https://img.shields.io/badge/version-1.4.1-006bbd" alt="Stable release: 1.4.1"></a>
   <a href="https://www.npmjs.com/package/trinaxai"><img src="https://img.shields.io/npm/v/trinaxai?style=flat&amp;label=npm&amp;color=006bbd" alt="npm package version"></a>
   <a href="https://github.com/TrinaxCode/TrinaxAI/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/TrinaxCode/TrinaxAI/ci.yml?branch=main&amp;label=CI" alt="CI status"></a>
   <a href="https://github.com/TrinaxCode/TrinaxAI/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0--or--later-006bbd" alt="License: AGPL-3.0-or-later"></a>
