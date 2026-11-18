@@ -1,5 +1,5 @@
 <h1 align="center">
-  <a href="https://www.trinaxai.app/"><img src="chat-pwa/public/logo.webp" alt="TrinaxAI" width="220" valign="middle"></a>
+  <a href="https://github.com/TrinaxCode/TrinaxAI"><img src="chat-pwa/public/logo.webp" alt="TrinaxAI" width="220" valign="middle"></a>
 </h1>
 
 <p align="center">
@@ -18,7 +18,7 @@
   Ask questions and get answers that cite the file they came from, index folders, let a coding agent work in a workspace you approve, and pair your phone. It all runs on your own computer.
 </p>
 
-<h3 align="center"><a href="#install"><ins>Install TrinaxAI</ins></a> &nbsp;·&nbsp; <a href="https://www.trinaxai.app/"><ins>Website</ins></a> &nbsp;·&nbsp; <a href="docs/README.md"><ins>Documentation</ins></a></h3>
+<h3 align="center"><a href="#install"><ins>Install TrinaxAI</ins></a> &nbsp;·&nbsp; <a href="docs/README.md"><ins>Documentation</ins></a></h3>
 
 <p align="center">
   <img src="docs/assets/readme/hero.en.jpg" alt="TrinaxAI answering a question with cited sources, with the agent asking for approval to run a command and a one-time code to pair another device" width="960" />
@@ -280,5 +280,4 @@ Run `make check` before submitting a change. See the
 TrinaxAI is licensed under AGPL-3.0-or-later. See [LICENSE](LICENSE) and the
 [trademark guide](docs/TRADEMARK.md).
 
-Built by [TrinaxCode](https://github.com/TrinaxCode) ·
-[trinaxai.app](https://www.trinaxai.app/)
+Built by [TrinaxCode](https://github.com/TrinaxCode)
